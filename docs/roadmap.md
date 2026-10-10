@@ -38,15 +38,15 @@ In order, with the reasoning in [ideas](ideas.md):
   delivery remain deferred. `slop dev` keeps its native owner.
   [Hardening evidence](evidence/browser-host-hardening-2026-10-08.md) records the scope
   and verification limits.
-- Finish the launch foundation qualification: complete-value replacement, template
-  acceptance, command declaration checks, the SDK/ABI cleanup, dedicated captures and
-  document UUID copy rules. [Implementation evidence](evidence/launch-foundation-2026-10-07.md)
-  distinguishes implemented work from checks still pending.
+- Qualify the release candidate with the current [release checks](guides/releasing.md).
+  Complete-value replacement, template acceptance, command declaration checks,
+  dedicated captures and document UUID copy rules are implemented. Historical foundation
+  runs do not certify the current candidate.
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
 - Give that entry boundary documents: limits at their maximums and every descriptor kind.
   The dev corpus already covers every window kind (1× and 2× skins, glass, transparent,
-  path shapes), app media (font, image, audio) and page commands. Opening checks only
+  path shapes), app media (font, image, audio) and agent commands. Opening checks only
   what format 1 accepts, so tightening authoring rules never rejects a saved document.
 - Storage version 2, whenever it comes, ships with: a backup of each file before its first
   migration (a clean copy, `file/copy.rs`); a test that a frozen version-1 file migrated by
@@ -96,14 +96,15 @@ In order, with the reasoning in [ideas](ideas.md):
   the Mac app's release version.
 - Rust types own every wire and the app definition; ts-rs generates TypeScript and UniFFI
   carries types to Swift. Command arguments are `s.*` descriptors the owner checks.
-- Named commands run in the owner's restricted evaluator for page buttons and agents
-  alike; the page bundle carries no command bodies.
+- Beta commands are agent-only and accept flat scalar arguments. They run in the owner's restricted evaluator; pages use document handles
+  and the page bundle carries no command bodies.
 - Theme overrides share Loro storage, sequence, publications, undo and saving with data.
 - Sync's core and its proof: one Loro peer per session, three-way text merges without
   `base`, Loro's `UndoManager`, a merge-closed layout, the `history`/`share` storage tables,
   and the sync session with its owner hooks ([architecture](architecture.md#sync)). The
-  engine that ships syncs through a Durable Object byte relay on Cloudflare's runtime
-  ([evidence](evidence/sync-spikes-2026-10.md)). The production relay and clients are
+  core protocol was also qualified against a local Durable Object byte relay on
+  Cloudflare's runtime ([evidence](evidence/sync-spikes-2026-10.md)). The experiment's
+  relay source is outside this repository. The production relay and clients are
   [later](#later).
 - `slop.ts` declares the app: `view`, optional `export` and `icon` views, commands and
   artwork. Captures use fresh saved-state pages, with a fresh `view` as the export

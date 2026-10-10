@@ -48,6 +48,7 @@
   },
   "exports": {
     ".": "./src/sdk/schema.ts",
+    "./commands": "./src/sdk/commands.ts",
     "./svelte": "./src/sdk/app/store.svelte.ts",
     "./base.css": "./src/sdk/base.css",
     "./embed": "./src/sdk/app/embed.ts",

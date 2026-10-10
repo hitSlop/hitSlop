@@ -99,7 +99,7 @@ extension SlopDocumentWindowController {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.json]
     panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + " Theme.json"
-    guard let output = await runSheet(panel) else {
+    guard let output = await SlopPanels.select(panel, in: window) else {
       telemetry.send(.breadcrumb(.themeExport, .cancelled))
       return
     }
@@ -119,7 +119,7 @@ extension SlopDocumentWindowController {
     panel.allowedContentTypes = [.json]
     panel.allowsMultipleSelection = false
     panel.canChooseDirectories = false
-    guard let file = await runSheet(panel) else {
+    guard let file = await SlopPanels.select(panel, in: window) else {
       telemetry.send(.breadcrumb(.themeImport, .cancelled))
       return
     }

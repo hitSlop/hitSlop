@@ -1,4 +1,5 @@
-import type { Hourglass } from "./schema";
+import type doc from "./schema";
+export type Hourglass = typeof doc.current;
 
 const minute = 60_000;
 const hour = 60 * minute;

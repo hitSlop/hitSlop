@@ -1,4 +1,5 @@
 <script lang="ts">
+import "./styles.css";
   import { onMount } from "svelte";
   import { bindText, resizeWindow } from "hitslop/svelte";
   import doc from "./schema";

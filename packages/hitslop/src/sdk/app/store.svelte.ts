@@ -3,11 +3,9 @@ import { mount, tick, unmount, type Component } from "svelte";
 import type { CaptureMode, SlopApp, SlopContext } from "../abi";
 import type { Definition, LiveDocument, ObjectNode, Value } from "../schema";
 import { activate, deactivate, current } from "./context";
-import { bindCommands } from "../commands";
 import Root from "./Root.svelte";
-export type { SlopApp, SlopContext } from "../abi";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
-export { capture, type CaptureMode, type CaptureTarget } from "./capture";
+export { capture, type CaptureMode } from "./capture";
 export { default as EditableText } from "./EditableText.svelte";
 export { notify } from "./notice.svelte";
 export { draft } from "./draft.svelte";
@@ -15,16 +13,14 @@ export { motion } from "./motion.svelte";
 export { bindText } from "./bind-text";
 
 /**
- * The generated entry adapts the components registered in `defineSlop` to the host.
- * Once mounted, `schema` is the live document; component filenames are unrestricted.
+ * The generated entry adapts App.svelte and optional capture components to the host.
+ * Once mounted, `schema` is the live document.
  */
 export function svelteApp(App: Component, options: {
   schema: Definition<ObjectNode>;
-  commands?: Record<string, unknown>;
-  export?: Component<{ mode: Exclude<CaptureMode, "icon"> }>;
+  export?: Component<{ mode: Exclude<CaptureMode, "icon"> }> | Component<Record<string, never>>;
   icon?: Component;
 }): SlopApp {
-  bindCommands(options.commands ?? {}, options.schema);
   return {
     descriptor: options.schema.descriptor,
     mount(ctx, target) {
@@ -35,7 +31,7 @@ export function svelteApp(App: Component, options: {
         deactivate(ctx);
       };
       try {
-        const app = mount(Root, { target, props: { App, Export: options.export, Icon: options.icon } });
+        const app = mount(Root, { target, props: { App, Export: options.export as Component<{ mode: Exclude<CaptureMode, "icon"> }> | undefined, Icon: options.icon } });
         return {
           rendered: tick,
           unmount: async () => {

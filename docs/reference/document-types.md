@@ -11,7 +11,8 @@ The Rust core (`crates/hitslop-core`) enforces all of it. The SDK
 (`packages/hitslop/src/sdk`) gives authors types and adapters; the private shell implements
 the handles and immutable snapshots.
 
-`defineDocument` produces a plain object-root descriptor. Build validation calls the
+`defineDocument(fields, { initial })` produces a plain object-root descriptor.
+Initial values are required when a field has no default and cannot be omitted. Build validation calls the
 same Rust rules as native editing; the small TypeScript schema module is metadata and
 types, not a second validator. Catch document errors with `isDocumentError(error)`
 and semantic refusals with `isRejected(error)`; these guards work across the separately
@@ -31,7 +32,7 @@ export default defineDocument({
   tags: s.list(s.string()),
   checkins: s.record(s.integer({ min: 1 })),
   visits: s.counter(),
-});
+}, { initial: { mood: 3, lane: "todo" } });
 ```
 
 ## At a glance
@@ -128,7 +129,8 @@ document matching its descriptor, so a snapshot never holds a wrong type, an
 out-of-range value or a duplicate `$id`. Opening refuses a file whose saved state does
 not match (`invalid_bytes`) and changes nothing in it.
 
-**Error codes.**
+**Core reasons (`Code`).** These are the wire reply’s `reason`, distinct from its
+outcome `code`. `DocumentError.reason` exposes them to apps.
 
 | Code | Meaning |
 |---|---|
@@ -143,13 +145,14 @@ not match (`invalid_bytes`) and changes nothing in it.
 | `invalid_path` | a command path longer than 64 segments |
 | `stale_base` | a command's `ifVersion` that no longer matches the document (the owner retries once) |
 | `too_large` | a batch over 1,000 intents, a request over 4 MiB, or a list or descriptor over its limit |
-| `refused` | a command called `refuse(message)`, or a row argument names a row that no longer exists; the message is for the person |
+| `refused` | a command called `refuse(message)`; the message is for the caller |
 
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
 imported), `invalid_shape` (a window shape), `requires_update` (an app format,
 storage or document layout newer than this build), `is_template` (a template opened as a
-document: create a document from it) and `engine_error` (an unexpected Loro failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
+document: create a document from it) and `engine_error` (an unexpected Loro failure). Reasons may grow; `isDocumentError` recognizes the document-error envelope, while
+`isRejected` identifies a semantic refusal.
 
 **Paths** walk the schema from the root, in these segments:
 
@@ -258,7 +261,7 @@ by `$id`, never by position.
 
 - **Handle:**
   - `insert(value, { before | after })` mints the id and resolves `{id}`;
-  - `remove(id)`, `move(id, { before | after })`, `item(id)`.
+  - `remove(row)`, `move(row, { before | after })`, `item(row)`: row arguments and destinations accept a snapshot row or its `$id`, including inside `change()`.
   - Omitting the destination appends.
 - **Identity:** inserts, removes and moves from anywhere keep each row's `$id`; a removed
   row is no longer a valid target.
@@ -286,8 +289,7 @@ a 16×16 grid of colours.
 - **Positions:** an index means the position when the owner applies the edit, so an
   index read before another insertion can name a different element; a later `set` of
   one element wins.
-- **Publishing:** each change publishes the whole list. They are meant to be small (the
-  largest in the archive is 256 elements).
+- **Publishing:** each change publishes the whole list; use scalar lists for small values.
 - **CLI:**
   - `{"type":"insert","path":["tags"],"value":"urgent","index":0}`;
   - `{"type":"set","path":["tags",{"index":0}],"value":"later"}`;
@@ -323,7 +325,7 @@ widths by column. Values are scalars or objects.
 - **Don't read a value and write it back** (`set(qty + 1)`): the snapshot may be a moment
   old. Use `increment` on a counter, or await the earlier writes before reading. A
   `change` makes its writes atomic, but reads the same snapshot.
-- **Don't write in `$effect` or on mount.** Put defaults in `slop.ts`'s `initial`. If an effect must
+- **Don't write in `$effect` or on mount.** Put defaults in the `initial` option of `defineDocument` in `schema.ts`. If an effect must
   create something, guard it so it runs once, because it can rerun before the write is
   accepted.
 - **Await an insert** before using its id outside `change`. Inside `change`, the id is

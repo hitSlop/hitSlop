@@ -1,7 +1,6 @@
 import type { OwnerIntent } from "../schema/core";
 import type { ObjectNode } from "../sdk/schema";
-import type { Arguments, CommandContext } from "../sdk/commands";
-import { refuse as refusal } from "../sdk/errors";
+import type { CommandContext } from "../sdk/commands";
 import { handleFactory, type Collector } from "./owner/handles";
 import { mapPaths, type Locations } from "./owner/path";
 import { newID } from "./identity";
@@ -26,24 +25,7 @@ function freeze<T>(value: T): T {
   return value;
 }
 const refuse = (what: string) => () => { throw new Error(`Commands collect edits with tx; ${what} is not available`); };
-type ArgumentSpec = { kind: string; list?: string };
-/** Row arguments arrive as checked `$id`s; `run` receives the rows themselves from
- * `current`, so `tx.at(row)` finds them. A row that is gone refuses the command. */
-function resolveRows(spec: Record<string, ArgumentSpec>, args: Record<string, unknown>, current: Record<string, unknown>) {
-  const resolved: Record<string, unknown> = { ...args };
-  for (const [name, node] of Object.entries(spec)) {
-    const value = resolved[name];
-    if (value === undefined) continue;
-    if (node.kind === "row") {
-      const rows = current[node.list!] as { $id: string }[];
-      const row = rows.find((row) => row.$id === value);
-      if (!row) refusal(`That ${name} no longer exists.`);
-      resolved[name] = row;
-    }
-  }
-  return resolved;
-}
-export function evaluate<R>(request: CommandInput, command: (ctx: CommandContext<any>, args: any) => R, args: Arguments = {}): { intents: OwnerIntent[]; result: R } {
+export function evaluate<R>(request: CommandInput, command: (ctx: CommandContext<any>, args: any) => R): { intents: OwnerIntent[]; result: R } {
     const next = generator(request.seed);
     const random = () => next() / 2 ** 32;
     const current = freeze(request.value) as object;
@@ -83,8 +65,7 @@ export function evaluate<R>(request: CommandInput, command: (ctx: CommandContext
     });
     let result: unknown;
     try {
-      const received = resolveRows(args as Record<string, ArgumentSpec>, request.args as Record<string, unknown>, current as Record<string, unknown>);
-      result = command(Object.freeze({ current, tx, now: request.now, random }) as CommandContext<any>, freeze(received));
+      result = command(Object.freeze({ current, tx, now: request.now, random }) as CommandContext<any>, freeze(request.args));
     } finally {
       active = false;
     }

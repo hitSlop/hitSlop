@@ -7,7 +7,7 @@ A `.slop` is one file: a small database that holds the app needed to open it and
 
 ## Source is not the runtime file
 
-`slop.ts` explicitly declares identity, window, theme, document shape, initial values, imported view/capture components and commands. It imports styles and images through Vite; filenames do not assign roles. Before mounting, the host applies theme defaults and document overrides as `--slop-*` CSS variables.
+`slop.ts` declares identity, window, theme and optional artwork. `schema.ts` owns the document shape and initial values. The CLI discovers `App.svelte`, optional `Export.svelte`, `Icon.svelte` and agent-only `commands.ts` by these exact names. Components import styles and media through Vite. Before mounting, the host applies theme defaults and document overrides as `--slop-*` CSS variables.
 
 `slop build` compiles the app, evaluates the declaration in a restricted Rust runner, and packs the result into a template file:
 

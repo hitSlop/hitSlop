@@ -17,6 +17,6 @@ categories in slop.ts to match what you build (init flags can also set them). Re
 Human interactive setup can instead launch the user's chosen agent CLI after
 scaffolding. Do not start a nested agent when you are already implementing it.
 
-Run slop inspect DOCUMENT, then slop schema DOCUMENT and slop get DOCUMENT. Apply typed operations through slop apply/batch; never open a .slop file with SQLite or keep a JSON copy of a document. Open-document CLI routes to its native owner; closed editing uses the same engine. After an uncertain mutation, run get before another edit. Never automatically replay mutations.
+Run slop inspect DOCUMENT, then slop describe DOCUMENT: it lists the fields, current values and the app's named commands. When a command matches the task, prefer `slop call DOCUMENT NAME --args JSON`: it runs the app's own action as one atomic, undoable edit, and a refusal (reason `refused`) changes nothing. Otherwise apply typed operations through slop apply/batch, after slop schema and slop get; never open a .slop file with SQLite or keep a JSON copy of a document. Open-document CLI routes to its native owner; closed editing uses the same engine. After an uncertain mutation, run get before another edit. Never automatically replay mutations.
 
 Use File → Export PNG/PDF or slop export DOCUMENT --format png|pdf --output FILE to deliver output. Exports render saved data in a fresh page using the default view. The export flushes drafts and persistence, copies saved state, and waits for content in an independent renderer.

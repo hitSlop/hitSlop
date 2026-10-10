@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createFixture } from "../../packages/hitslop/tests/cli/dev-fixture";
 import { startDev } from "../../packages/hitslop/src/cli/dev";
-import { overrideSlop } from "../../packages/hitslop/tests/cli/source-fixture";
+import { overrideSchema } from "../../packages/hitslop/tests/cli/source-fixture";
 
 test("4000 rendered rows retain identity through command publications", async () => {
   const root = await mkdtemp(join(process.cwd(), ".large-preview-test-"));
@@ -15,7 +15,7 @@ test("4000 rendered rows retain identity through command publications", async ()
     await createFixture(process.cwd(), source);
     await writeFile(join(source, "seed.ts"), `export default ${JSON.stringify({ title: "4000 rows", tasks:
       Array.from({ length: 4000 }, (_, i) => ({ $id: `row-${i}`, text: `Task ${i}`, done: false })) })};\n`);
-    await overrideSlop(source, { initial: "seed" }, 'import seed from "./seed";');
+    await overrideSchema(source, "seed", 'import seed from "./seed";');
     const file = join(source, "App.svelte");
     await writeFile(file, (await readFile(file, "utf8"))
       .replace('<script lang="ts">', `<script lang="ts">

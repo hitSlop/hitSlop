@@ -22,4 +22,20 @@ export default defineDocument({
   slides: s.list(s.object({ title: s.text(), blocks: s.list(s.object({ text: s.text() })) })),
   attachment: s.optional(s.string()),
   photo: s.optional(s.string()),
-});
+}, { initial: {
+    title: "Svelte ABI 2",
+    version: "Authored version",
+    epoch: 42,
+    done: false,
+    hits: 0,
+    rows: [],
+    label: "",
+    ratio: 0.5,
+    count: 0,
+    lane: "todo",
+    settings: { volume: 5, muted: false },
+    colors: [],
+    checkins: {},
+    cells: {},
+    slides: [{ title: "Nested composition", blocks: [{ text: "First block" }, { text: "Second block" }] }],
+  } });

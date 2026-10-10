@@ -8,8 +8,7 @@ import WebKit
 extension SlopDocumentWindowController {
   public func pageSessionDidBecomeReady(_ session: DocumentSession) {
     toolbar.republishControls()
-    if reportedRendererFailure { telemetry.send(.breadcrumb(.renderer, .recovered)) }
-    reportedRendererFailure = false
+    failures.rendererRecovered(telemetry: telemetry)
     recordStartup("page-ready")
     #if DEBUG
       if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
@@ -26,24 +25,24 @@ extension SlopDocumentWindowController {
   func recordStartup(_ stage: String) {
     #if DEBUG
       if ProcessInfo.processInfo.environment["HITSLOP_STARTUP_TIMINGS"] == "1" {
-        print("[hitSlop startup] \(stage) \(startupStarted.duration(to: .now))")
+        print("[hitSlop startup] \(stage) \(presentation.started.duration(to: .now))")
       }
     #endif
   }
 
   func startLoading() {
     stopLoading()
-    isContentReady = false
-    isLoading = true
+    presentation.ready = false
+    presentation.loading = true
     // A replaced page starts without the panel; it reopens once the new page is ready.
     closeThemePanel()
     window?.orderOut(nil)
     toolbar.hide()
-    loadingWebView = session.webView
+    presentation.webView = session.webView
     session.webView.setAccessibilityHidden(true)
     toolbar.update()
-    if presentationRequested { showOpeningProgress() }
-    loadingTask = Task { @MainActor [weak self, session, weak view = session.webView] in
+    if presentation.requested { showOpeningProgress() }
+    presentation.task = Task { @MainActor [weak self, session, weak view = session.webView] in
       do {
         // The page reports ready once it has mounted and its fonts have settled. Let the
         // visible window paint normally instead of waiting for animation frames in an
@@ -51,10 +50,10 @@ extension SlopDocumentWindowController {
         try await session.waitUntilReady()
         try Task.checkCancellation()
         guard view != nil, session.isReady else { return }
-        guard let self, self.isLoading else { return }
-        self.isContentReady = true
+        guard let self, self.presentation.loading else { return }
+        self.presentation.ready = true
         self.finishLoading()
-        if self.presentationRequested { self.revealReadyWindow() }
+        if self.presentation.requested { self.revealReadyWindow() }
         self.updatePageFailure(nil)
         self.routing.pageReady()
       } catch is CancellationError {
@@ -66,27 +65,27 @@ extension SlopDocumentWindowController {
   }
 
   func finishLoading() {
-    isLoading = false
-    openingProgress?.finish()
-    openingProgress = nil
-    if let view = loadingWebView { view.setAccessibilityHidden(false) }
-    loadingWebView = nil
+    presentation.loading = false
+    presentation.progress?.finish()
+    presentation.progress = nil
+    if let view = presentation.webView { view.setAccessibilityHidden(false) }
+    presentation.webView = nil
     toolbar.update()
   }
 
   func stopLoading() {
-    loadingTask?.cancel()
-    loadingTask = nil
+    presentation.task?.cancel()
+    presentation.task = nil
     finishLoading()
   }
 
   func showOpeningProgress() {
-    if openingProgress == nil { openingProgress = SlopOpeningProgress(started: startupStarted) }
-    openingProgress?.onCancel = { [weak self] in
-      self?.loadingTask?.cancel()
+    if presentation.progress == nil { presentation.progress = SlopOpeningProgress(started: presentation.started) }
+    presentation.progress?.onCancel = { [weak self] in
+      self?.presentation.task?.cancel()
       self?.request(.close)
     }
-    openingProgress?.focus()
+    presentation.progress?.focus()
   }
 
   func revealReadyWindow() {
@@ -101,5 +100,5 @@ extension SlopDocumentWindowController {
     }
   }
 
-  func waitForPresentation() async { await loadingTask?.value }
+  func waitForPresentation() async { await presentation.task?.value }
 }

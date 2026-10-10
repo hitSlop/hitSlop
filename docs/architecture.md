@@ -36,7 +36,7 @@ when writing finishes or abandoned-copy cleanup acquires the lock. Resource deli
 uses bounded chunks, incremental attachment verification and a bounded decoded cache. Browser storage is local to the profile and is not a backup.
 Safari, mobile and hosted sharing are deferred.
 
- `slop dev` uses a temporary `.slop`
+`slop dev` uses a temporary `.slop`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
 owner, while a changed declaration invalidates it and creates a fresh preview. Linux
 preview qualification is deferred.
@@ -48,7 +48,6 @@ callback on its output. A full output queue or a stalled reader fails the dispos
 session, fences the page and attempts a bounded close; the browser must reload rather
 than replay an edit with an unknown outcome.
 
-
 Native operations keep a separate process boundary: the typed TypeScript CLI invokes
 `slop-engine`, which validates and forwards macOS requests to `hitslop-native`. The
 Swift helper receives Rust-decoded requests through UniFFI and supplies AppKit/WebKit
@@ -56,11 +55,12 @@ rendering; exports route through the Rust command router to a live owner or an i
 saved-state render. Replies return as structured JSON. The restricted command evaluator's
 short execution budget does not govern WebKit rendering.
 
-Authors compose one `defineSlop` entry with explicit imports for the document, view,
-optional export and icon views, skin, artwork and commands. Both Vite builds use the
-same resolver: the UI build strips command bodies and build metadata, while the command
-build substitutes component tokens and empty stylesheets. Its restricted evaluation
-returns `BuildInput`. Rust checks that input and the explicit resource inventory before
+Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
+in `App.svelte`. Optional `Export.svelte`, `Icon.svelte` and agent-only `commands.ts` have
+fixed root roles. Two disconnected Vite graphs share resolution: the page imports the
+schema and components, while the definition imports metadata, schema and commands.
+Neither graph rewrites command bodies or substitutes component tokens. The restricted
+definition evaluator returns a declaration for `BuildInput`. Rust checks that input and the explicit resource inventory before
 packing. Imported images, fonts and CSS URLs become content-addressed media resources;
 unimported files and `public/` are never copied.
 
@@ -68,8 +68,8 @@ The immutable `app` row contains catalog columns, compatibility markers and one
 `definition_json`: the window, ordered theme, original document descriptor, views and
 command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`
 and media. Pack inserts assets before the app row, whose presence seals them. Attachments
-and artwork have their own mutable lifecycles. Initial values live only in the
-history's first snapshot; there is no JSON copy of saved document state.
+and artwork have their own mutable lifecycles. Initial values seed the history's first snapshot; the authored schema module also includes
+those creation defaults. There is no JSON mirror of saved document state.
 
 Markers are checked before interpreting fields or comparing the layout. The format-1
 acceptance module is Rust serde plus explicit checks, including the descriptor validator
@@ -86,13 +86,13 @@ request once, applies its lifecycle fence, answers document requests, or returns
 native host action. Document JSON remains opaque text through the bridge. TypeBox,
 quicktype, handwritten contract generators and production JSON Schema validators are gone.
 
-Page command calls and `slop call` both send a name and arguments to the owner. Rust
+Agent commands through `slop call` send a name and arguments to the owner. Rust
 validates the argument descriptor, evaluates the private program in a fresh restricted
 child, validates its intents and applies one batch. Evaluation runs off the serial owner.
 A definite stale base retries once with the original clock and seed; an unknown outcome
-never retries. The page callable is a stub, and completion waits for publication; CLI
-completion also waits for persistence. `doc.change()` remains available for incidental UI
-edits. The page context and runner prelude have explicit ABI-1 arms.
+never retries. Completion waits for publication and persistence. Pages use handles and
+`doc.change()` for edits; they contain no command stubs or implementations. The page
+context and runner prelude have explicit ABI-1 arms.
 
 Attachments load through same-origin URLs, with range requests, sniffed passive media
 types, `nosniff` and a sandbox policy. The resource reader verifies the complete attachment
@@ -116,7 +116,7 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations and stored commands; ABI-specific preludes, sandbox and execution limits |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
-| Sync | `crates/hitslop-core/src/sync/`, `owner/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
+| Sync | `crates/hitslop-core/src/sync/`, `owner/actor/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
 | Owner | `crates/hitslop-core/src/owner/` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
 | Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, theme panel, page-failure overlay, the save-failure sheet (from the owner's save status); its document operations go to the app |
@@ -442,9 +442,10 @@ saved locally and sent to the relay independently, so neither waits for the othe
 editing works offline; offline edits merge when the copy reconnects. The relay stores the
 Loro updates copies push, indexed by the operation spans they hold, and backfills a copy
 by its version vector. It never reads Loro, validates state or runs commands. The core side
-is in place, and the engine that ships syncs through a spike relay on Cloudflare's runtime
-([evidence](evidence/sync-spikes-2026-10.md)). The production relay and the Mac app's
-connection are deferred ([roadmap](roadmap.md#later)).
+is implemented and tested in this repository. A local Durable Object experiment also
+qualified the protocol on Cloudflare's runtime
+([evidence](evidence/sync-spikes-2026-10.md)); that relay source is not in this repository.
+The production relay and the Mac app's connection are deferred ([roadmap](roadmap.md#later)).
 
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
   credential the host keeps, never in the file or in authored code. Sharing uploads a
@@ -453,7 +454,7 @@ connection are deferred ([roadmap](roadmap.md#later)).
   history and every attachment, because another copy's edits can depend on any of it, and
   it refuses discard, because other copies may already hold its edits. Relay compaction
   may only ever keep full history. A clean copy is unshared.
-- **Hooks** (`owner/sync.rs`, Rust only until a client exists). The host opens a socket
+- **Hooks** (`owner/actor/sync.rs`, Rust only until a client exists). The host opens a socket
   and attaches the owner with a sink (`sync_attach`), hands it each frame in order
   (`sync_frame`), sends each frame the sink receives and detaches when the socket closes
   (`sync_detach`). The sink also hears the status: offline; syncing (catching up, or
@@ -507,4 +508,5 @@ aspect lock or skin); other standard windows reflow to the viewport. Fitted cont
 retains its mask and coordinate system inside an opaque black fullscreen surface.
 The host restores desktop frame, constraints and level on exit. Fullscreen state is
 transient host state; captures keep their independent saved-state layout. Browser
-fullscreen follows the manifest flag; the durable browser host is a local Chrome beta. Safari qualification and hosted sharing remain deferred.
+fullscreen follows the manifest flag. Supported browser scope is described above;
+future platform and sharing work is tracked in the [roadmap](roadmap.md#later).

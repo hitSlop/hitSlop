@@ -8,14 +8,17 @@ use serde_json::Value;
 use svgtypes::{PathParser, PathSegment};
 
 /// One corner length: points, or a percentage of the window's width or height.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ShapeLength", export_to = "app.generated.ts"))]
 pub struct Length {
     pub value: f64,
     pub percent: bool,
 }
 /// Absolute path commands in SVG's y-down coordinates. Lines, quadratics, arcs and the
 /// shorthand forms are all expressed as lines and cubics.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "ShapeSegment", export_to = "app.generated.ts"))]
 pub enum Segment {
     Move { x: f64, y: f64 },
     Line { x: f64, y: f64 },
@@ -23,7 +26,9 @@ pub enum Segment {
     Close,
 }
 /// A window's shape, as the host draws it (it crosses to Swift as it is).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub enum Silhouette {
     /// Four lengths per axis, in CSS `border-radius` order: top-left, top-right,
     /// bottom-right, bottom-left.

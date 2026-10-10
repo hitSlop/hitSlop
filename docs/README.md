@@ -25,6 +25,7 @@ Packaged agent guidance lives in [packages/hitslop/skills](../packages/hitslop/s
 Measurements live in [`evidence/`](evidence/). They are frozen snapshots of the
 builds and environments named in each report, not current release acceptance. The
 [pre-launch simplification summary](evidence/prelaunch-simplification-2026-10-04.md)
-retains the decisions and integration findings from that work. Historical studies,
-spikes and working plans stay local and are not contracts; the architecture, direction
+retains the decisions and integration findings from that work. Superseded measurements
+stay in the local `archive/docs/evidence/` directory. Historical studies, spikes and
+working plans are not contracts; the architecture, direction
 and ideas above are the shared sources of truth.

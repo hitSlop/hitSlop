@@ -31,7 +31,7 @@ import Testing
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     let server = try owner.startServer(
-      exporter: NativeExports { _, _, _, _ in throw OwnerError.rejected("No renderer") })
+      exporter: NativeExports { _, _, _, _ in throw OwnerFailure.rejected("No renderer") })
     defer { server.stop() }
     // U+0001 is stored as one byte and written to JSON as six (`\u0001`): the reply outgrows
     // 48 MiB while the document stays far inside its 32 MiB.
@@ -332,11 +332,19 @@ import Testing
     owner.attach(view: "second")
     #expect(await page(owner, #"{"method":"open"}"#, view: "second") == nil)
     #expect(await page(owner, #"{"method":"open"}"#, view: "first")?.kind == .replaced)
-    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "first") }
+    await #expect {
+      _ = try await owner.apply(batch: self.increment, view: "first")
+    } throws: {
+      ($0 as? OwnerFailure)?.kind == .replaced
+    }
     _ = try await owner.apply(batch: increment, view: "second")
     try await owner.discardPending()
     owner.attach(view: "third")
-    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "second") }
+    await #expect {
+      _ = try await owner.apply(batch: self.increment, view: "second")
+    } throws: {
+      ($0 as? OwnerFailure)?.kind == .replaced
+    }
     #expect(await page(owner, #"{"method":"attachments.put","bytes":"AQ=="}"#, view: "second")?.kind == .replaced)
     #expect(try await hits(owner) == 0)
     try await owner.close()

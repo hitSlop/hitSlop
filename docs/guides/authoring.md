@@ -28,10 +28,10 @@ adding a template and choosing which templates ship.
   copy of the document.
 - Save only what is worth keeping. Selection, hover, drag positions and timers stay in
   Svelte `$state`; files are attachments, never base64 in fields.
-- Key rows by `$id`. Don't write in `$effect` or on mount; defaults belong in `slop.ts`'s
-  `initial`, which seeds new documents only. Changing the schema makes a new document type.
+- Key rows by `$id`. Don't write in `$effect` or on mount; defaults belong in `schema.ts` and its
+  `initial` option, which seeds new documents only. Changing the schema makes a new document type.
 - Don't silence writes with `.catch(() => {})`: the host reports a refused write, and the
-  window shows a command's `refuse(message)` in its notice region. Catch only to react in
+  window shows a page handler's `refuse(message)` in its notice region. Catch only to react in
   the template's own way. Order rows with `move`, not a position field.
 - Declare a scalar's `default` in the schema instead of repeating it at every insert.
 - Use `EditableText` for text, `draft` for composers, `motion` for animated numbers and
@@ -89,71 +89,69 @@ packaged [design skill](../../packages/hitslop/skills/hitslop-design/SKILL.md).
 
 ## Commands
 
-Keep the stored shape in `schema.ts`, declare actions at module scope with
-`doc.command({ description, args, run })` in a TypeScript command module, and register
-them by name in `defineSlop({ commands })`. Registration may rename or re-export the
-command value; descriptions do not identify it. Declarations in Svelte components,
-functions, loops or classes, and dynamically assembled command specifications are
-build errors. The same action can be called by a
-page button or `slop call`; either way it runs in the owner's restricted evaluator. Start with the few verbs
-that matter; ordinary handles, bindings and `doc.change()` remain available.
+Keep the stored shape and initial values in `schema.ts`. Optional `commands.ts`
+default-exports one `defineCommands` set for CLI and agent callers:
 
 ```ts
+import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
 import doc from "./schema";
 
-export const rename = doc.command({
-  description: "Change the title shown in the window.",
-  args: { title: s.string({ minLength: 1 }) },
-  run({ tx }, { title }) {
-    tx.fields.title.set(title);
+export default defineCommands(doc, {
+  rename: {
+    description: "Change the title shown in the window.",
+    args: { title: s.string({ minLength: 1 }) },
+    run({ tx }, { title }) { tx.fields.title.set(title); },
   },
 });
 ```
 
-A button imports `rename` and awaits `rename({ title: "Weekend" })`. The CLI discovers it
-with `slop describe My.slop` and calls `slop call My.slop rename --args '{"title":"Weekend"}'`.
+Only root `commands.ts` may import `hitslop/commands`, and the page cannot import
+`commands.ts`. The page edits with handles and `doc.change()`. To give the page and an
+agent the same edit, write it once over `Tx<typeof doc>` in a plain module:
 
-Teach this in order: declare the command, import its exports with
-`import * as commands from "./commands"`, register `commands` in `defineSlop`, then
-call the same export from the page. The [public command walkthrough](../../apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
-shows discovery, invocation, direct field edits and their responses. A command like
-`rename` with no return value and no inserts prints `{"result":null,"ids":[]}`;
-read the changed fields with `get`.
-Descriptions on fields use options such as `s.text({ description: "Window title." })`.
+```ts
+// tasks.ts
+import type { Tx } from "hitslop";
+import type doc from "./schema";
+export const rename = (tx: Tx<typeof doc>, title: string) => tx.fields.title.set(title);
+```
 
-Commands synchronously read immutable `ctx.current`, collect writes with `ctx.tx`, and
-return JSON or throw. Use `ctx.now` (epoch milliseconds) and `ctx.random()`; avoid ambient
-time, random sources, browser APIs, I/O and promises. Register commands by key in
-`defineSlop({ commands: { rename } })`. Page buttons and CLI calls both execute in the
-restricted child; module globals do not survive a call and `run` cannot capture Svelte
-state. Argument objects are strict automatically. Arguments support `s.string`, number,
-integer, boolean, enum, `s.row`, optional, nested objects and lists of scalars. Text, counters,
-records, object lists and unions are not argument types. `description` is allowed on any
-node. String `minLength` and `maxLength` count Unicode code points: an emoji is one;
-HTML `maxlength` and DOM caret positions count UTF-16 units instead.
-A successful command is one undo step. CLI completion means the batch was saved; page
-completion means its snapshot published. A definite stale conflict retries once with the
-same clock and seed; an unknown outcome never retries.
+The page calls `doc.change(tx => rename(tx, title))`; the command's `run` calls
+`rename(tx, title)`.
+The [public command walkthrough](../../apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
+shows discovery with `slop describe My.slop` and invocation with
+`slop call My.slop rename --args '{"title":"Weekend"}'`. A command without a return
+value or inserts prints `{"result":null,"ids":[]}`.
 
-`s.row("tasks")` takes one row of the document's list `tasks`: callers pass the row or its
-`$id`, Rust checks the ID and that the list exists, and the command program hands `run` the
-row from `current`, so `tx.at(task)` works without a search. A row that no longer exists
-refuses the command with "That task no longer exists." `refuse(message)` from `hitslop`
-stops a command with a message for the person: nothing changes, the reason is `refused`,
-and the window shows it in its notice region. Anything else a command throws is a fault.
-Arguments with a `default` may be omitted. A command the page declares but `defineSlop`
-does not register fails `check` and `build`.
+Commands synchronously read immutable `ctx.current`, collect writes with `ctx.tx`,
+and return JSON or throw. Use `ctx.now` and `ctx.random()`; no ambient clock, randomness,
+browser APIs, I/O, promises or generators. Module globals start fresh on every call.
+Reading the mounted document inside a command is refused: use the supplied context.
 
-Command metadata lives in `definition_json`; `commands.js` is private and immutable.
-JSON Schema is computed only for `describe` tool clients, never stored or accepted as input.
-Installing a newer hitSlop does not replace those assets or migrate a document's app.
+Arguments are a flat object of `s.string`, `s.number`, `s.integer`, `s.boolean` or
+`s.enum`, optionally wrapped in `s.optional`. Defaults are filled by Rust; unknown
+arguments are refused. Pass a row's `$id` as `s.string()` and address it through
+`tx.fields.tasks.item(id)` or `remove(id)`. A missing row rejects the entire edit.
+String bounds count Unicode code points; DOM offsets count UTF-16 units.
+
+A successful command is one undo step and completes after saving. A definite stale
+conflict retries once with the same clock and seed; an unknown outcome never retries.
+`refuse(message)` returns the authored message with reason `refused` and changes nothing.
+
+Command descriptors live in `definition_json`; `commands.js` is private and immutable.
+JSON Schema is computed only for `describe`, never stored or accepted as input.
+Installing hitSlop does not replace a document's embedded app.
 
 ## Entry and media
 
-`slop.ts` exports `defineSlop({ slug, title, description, author, categories, window,
-theme, document, initial, view, ... })`. Import components and CSS explicitly. Filenames
-such as `App.svelte`, `Export.svelte` and `schema.ts` are conventions, not discovery rules.
+`slop.ts` exports metadata through `defineSlop({ slug, title, description, author,
+categories, window, theme, artwork? })`. Required `schema.ts` default-exports
+`defineDocument(fields, { initial })`; `initial` is optional when all fields have defaults
+or may be omitted. Required `App.svelte` is the editor; `Export.svelte`, `Icon.svelte`
+and `commands.ts` are optional. These root names are case-sensitive. Import CSS from
+components. The page imports `schema.ts`, so
+its creation defaults ship in the page bundle; metadata and command bodies do not.
 The window is either `{ kind: "standard", width, height, ... }` or
 `{ kind: "skin", width, height, image: importedPNG }`.
 
@@ -179,13 +177,3 @@ User-imported images are attachments, separate from template assets. Import thro
 `app.attachments.url(ref.id)` in an image or media element. `read(id)` fetches a Blob when
 code needs bytes. The host supplies the media type and serves ranges without a base64
 read bridge. Attachments stay with the document when it is copied or shared.
-
-### Command declarations
-
-Declare commands at module scope with `document.command({ description, args, run })` and
-register them in `slop.ts`. The build follows document imports, re-exports, namespace
-members and immutable aliases to distinguish these declarations from other libraries'
-`.command()` methods. Write the specification as an object literal; do not extract or
-destructure the document's `command` method, or declare commands in a factory or Svelte
-component. Import registered callables into components instead. Development and packed
-builds apply the same rules.

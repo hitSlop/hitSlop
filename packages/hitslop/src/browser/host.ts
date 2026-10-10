@@ -1,7 +1,9 @@
-import { BrowserHost, DefaultWindowRadius } from "../schema/constants";
+import { BrowserHost } from "../schema/constants";
 import type { BrowserEvent, BrowserRequest } from "../wire/browser.generated";
-import type { WindowInput } from "../wire/app.generated";
+import type { WindowDefinition } from "../wire/app.generated";
 import { cleanup, listCopies, lockName, putCopy, removeCopy } from "./copies";
+import { silhouettePath } from "../schema/presentation";
+import { PendingRequests } from "./requests";
 
 const status = document.querySelector<HTMLElement>("#status")!;
 const title = document.querySelector<HTMLElement>("#title")!;
@@ -15,35 +17,29 @@ const id = params.get("copy");
 const source = new URLSearchParams(location.hash.slice(1)).get("import");
 const fail = (error: unknown) => { status.textContent = String(error); status.setAttribute("role", "alert"); };
 let worker: Worker | undefined;
-let evaluator: Worker | undefined;
 let page: MessagePort | undefined;
 let frame: HTMLIFrameElement | undefined;
 let surface: HTMLDivElement | undefined;
-let windowSpec: WindowInput | undefined;
-const requests = new Map<string, { resolve: (data: any) => void; reject: (error: Error) => void }>();
+let windowSpec: WindowDefinition | undefined;
+const requests = new PendingRequests();
 const send = (message: BrowserRequest) => worker!.postMessage(message);
 type WithoutId<T> = T extends { id: string } ? Omit<T, "id"> : never;
 function request(message: WithoutId<BrowserRequest>): Promise<any> {
-  const requestID = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { requests.delete(requestID); reject(new Error("The copy did not respond; keep this tab open and retry")); }, 60_000);
-    requests.set(requestID, { resolve: data => { clearTimeout(timeout); resolve(data); }, reject: error => { clearTimeout(timeout); reject(error); } });
-    send({ ...message, id: requestID } as BrowserRequest);
+  return requests.start(id => send({ ...message, id } as BrowserRequest), {
+    after: 60_000, message: "The copy did not respond; keep this tab open and retry",
   });
 }
 async function drain() {
   if (!page) throw new Error("Document is still opening");
-  const requestID = crypto.randomUUID();
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => { requests.delete(requestID); reject(new Error("The app did not finish saving")); }, 30_000);
-    requests.set(requestID, { resolve: () => { clearTimeout(timeout); resolve(); }, reject: error => { clearTimeout(timeout); reject(error); } });
-    page!.postMessage({ type: "host", id: requestID, request: { method: "flush" } });
+  await requests.start(id => page!.postMessage({ type: "host", id, request: { method: "flush" } }), {
+    after: 30_000, message: "The app did not finish saving",
   });
 }
 function fit() {
   if (!surface || !windowSpec) return;
-  const fixed = windowSpec.kind === "skin" || windowSpec.resizable === false;
-  const ratio = windowSpec.kind === "standard" && windowSpec.lockAspect;
+  const { frame } = windowSpec;
+  const fixed = frame.kind === "skin" || !frame.frame.resizable;
+  const ratio = frame.kind === "standard" && frame.frame.lockAspect;
   let width = stage.clientWidth, height = stage.clientHeight;
   if (ratio) { const scale = Math.min(width / windowSpec.width, height / windowSpec.height); width = windowSpec.width * scale; height = windowSpec.height * scale; }
   if (fixed) {
@@ -53,7 +49,7 @@ function fit() {
   } else { surface.style.width = `${width}px`; surface.style.height = `${height}px`; surface.style.transform = ""; }
 
 }
-function mount(spec: WindowInput) {
+function mount(spec: WindowDefinition) {
   windowSpec = spec;
   fullscreen.hidden = !spec.fullscreenable;
   frame = document.createElement("iframe");
@@ -72,18 +68,15 @@ function mount(spec: WindowInput) {
       if (data.type === "page" && typeof data.id === "string" && typeof data.request === "string")
         send({ type: "page", id: data.id, request: data.request });
       if (data.type === "hostReply") {
-        const pending = requests.get(data.id); requests.delete(data.id);
-        if (data.error) pending?.reject(new Error(data.error)); else pending?.resolve(data);
+        requests.settle(data.id, data, data.error ? new Error(data.error) : undefined);
       }
     };
     assets.port1.onmessage = ({ data }) => {
       if (data.type !== "resource" || !["app", "attachment"].includes(data.route) || typeof data.key !== "string") return;
-      const requestID = crypto.randomUUID();
-      requests.set(requestID, {
-        resolve: result => assets.port1.postMessage({ ...result, id: data.id }, result.bytes ? [result.bytes.buffer] : []),
-        reject: error => assets.port1.postMessage({ type: "error", id: data.id, error: error.message }),
-      });
-      send({ type: "resource", id: requestID, route: data.route, key: data.key, offset: data.offset, length: data.length });
+      void requests.start(id => send({ type: "resource", id, route: data.route, key: data.key, offset: data.offset, length: data.length })).then(
+        result => assets.port1.postMessage({ ...result, id: data.id }, result.bytes ? [result.bytes.buffer] : []),
+        error => assets.port1.postMessage({ type: "error", id: data.id, error: error.message }),
+      );
     };
     frame!.contentWindow!.postMessage({ type: "connect" }, origin, [pages.port2, assets.port2]);
   };
@@ -93,10 +86,11 @@ function mount(spec: WindowInput) {
   frame.style.cssText = "width:100%;height:100%;display:block";
   surface.append(frame);
   stage.replaceChildren(surface);
-  if (spec.kind === "skin") {
+  const windowFrame = spec.frame;
+  if (windowFrame.kind === "skin") {
     const target = surface;
     void (async () => {
-      const key = spec.image.replace(/^\/assets\//, "");
+      const key = windowFrame.skin;
       const info = await request({ type: "resource", route: "app", key, offset: 0, length: 0 });
       const chunks: Uint8Array<ArrayBuffer>[] = [];
       for (let offset = 0; offset < info.size; offset += BrowserHost.chunkBytes) {
@@ -108,44 +102,25 @@ function mount(spec: WindowInput) {
       target.style.mask = `url("${url}") 0 0/100% 100% no-repeat`;
     })().catch(fail);
   } else {
-    surface.style.background = spec.background === "transparent" ? "transparent" : spec.background === "glass" ? "#ffffff55" : "Canvas";
-    if (spec.background === "glass") surface.style.backdropFilter = "blur(24px) saturate(1.8)";
-    const shape = spec.shape ?? DefaultWindowRadius;
-    if (typeof shape === "string") surface.style.clipPath = `inset(0 round ${shape})`;
+    const { background, shape, radius } = windowFrame.frame;
+    surface.style.background = background === "transparent" ? "transparent" : background === "glass" ? "#ffffff55" : "Canvas";
+    if (background === "glass") surface.style.backdropFilter = "blur(24px) saturate(1.8)";
+    if (shape.kind === "radii") surface.style.clipPath = `inset(0 round ${radius})`;
     else {
       const ns = "http://www.w3.org/2000/svg";
       const svg = document.createElementNS(ns, "svg"), clip = document.createElementNS(ns, "clipPath"), path = document.createElementNS(ns, "path");
       svg.setAttribute("width", "0"); svg.setAttribute("height", "0"); svg.style.position = "absolute";
       clip.id = "window-shape"; clip.setAttribute("clipPathUnits", "objectBoundingBox");
-      const [w, h] = shape.viewBox ?? [spec.width, spec.height];
-      path.setAttribute("d", shape.path); path.setAttribute("transform", `scale(${1/w},${1/h})`);
-      path.setAttribute("clip-rule", shape.fillRule ?? "nonzero");
+      const { viewBoxWidth: w, viewBoxHeight: h } = shape;
+      path.setAttribute("d", silhouettePath(shape.segments)); path.setAttribute("transform", `scale(${1/w},${1/h})`);
+      path.setAttribute("clip-rule", shape.evenOdd ? "evenodd" : "nonzero");
       clip.append(path); svg.append(clip); stage.append(svg);
       surface.style.clipPath = "url(#window-shape)";
     }
   }
   new ResizeObserver(fit).observe(stage); fit();
 }
-function evaluate(input: string) {
-  evaluator?.terminate();
-  const child = new Worker("/browser/evaluator.js", { type: "module" });
-  evaluator = child;
-  let finished = false;
-  const finish = (output: string | null, error: string | null) => {
-    if (finished) return;
-    finished = true; clearTimeout(timeout); child.terminate(); evaluator = undefined;
-    send({ type: "evaluated", output, error });
-  };
-  let timeout = setTimeout(() => finish(null, "Command evaluator could not start; retry when this tab is active"), 15_000);
-  child.onmessage = ({ data }) => {
-    if (data.ready === true) {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => finish(null, "Command execution timed out"), BrowserHost.commandTimeout);
-      child.postMessage(input);
-    } else finish(data.output, data.error);
-  };
-  child.onerror = () => finish(null, "Command evaluator stopped unexpectedly");
-}
+
 async function own() {
   if (!id || !/^[0-9a-f-]{36}$/.test(id)) throw new Error("Invalid browser copy ID");
   await navigator.locks.request(lockName(id), { ifAvailable: true }, async lock => {
@@ -166,7 +141,12 @@ async function own() {
       const launch = (attempt: number) => {
         worker = new Worker("/browser/worker.js", { type: "module" });
         let opened = false;
-        worker.onerror = () => { download.disabled = true; fail("The document worker stopped. Reload to recover its last confirmed save."); };
+        worker.onerror = () => {
+          const error = new Error("The document worker stopped. Reload to recover its last confirmed save.");
+          requests.fail(error);
+          download.disabled = true;
+          fail(error.message);
+        };
         worker.onmessage = async ({ data }: MessageEvent<BrowserEvent & { bytes?: Uint8Array }>) => {
           if (data.type === "ready") {
             opened = true;
@@ -178,7 +158,7 @@ async function own() {
           } else if (data.type === "save") {
             status.textContent = data.error || (data.status === "saved" ? "Saved in this browser" : "Saving…");
             retry.hidden = data.status !== "failed";
-          } else if (data.type === "evaluate") evaluate(data.input);
+          }
           else if (data.type === "publication") page?.postMessage(data);
           else if (data.type === "error" && !data.id) {
             if (!opened) {
@@ -187,9 +167,8 @@ async function own() {
               reject(new Error(data.error));
             } else fail(data.error);
           } else if ("id" in data && data.id) {
-            const pending = requests.get(data.id);
-            if (pending) { requests.delete(data.id); if (data.type === "error") pending.reject(new Error(data.error)); else pending.resolve(data); }
-            else page?.postMessage(data);
+            if (!requests.settle(data.id, data, data.type === "error" ? new Error(data.error) : undefined))
+              page?.postMessage(data);
           }
         };
         send({ type: "open", copy: id, source });

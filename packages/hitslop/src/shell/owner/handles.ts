@@ -1,7 +1,14 @@
-import type { OwnerIntent, OwnerPath as Path } from "../../schema/core";
-import type { Node } from "../../sdk/schema";
+import type { Anchor, OwnerIntent, OwnerPath as Path } from "../../schema/core";
+import type { Destination, Node, RowRef } from "../../sdk/schema";
 import { isScalar } from "../../sdk/internal";
 import { newID } from "../identity";
+const rowID = (row: RowRef): string => typeof row === "string" ? row : row.$id;
+// Keep extra fields so normalization cannot turn a malformed anchor into an accepted one.
+const destination = (at: Destination): Anchor => ({
+  ...at,
+  ...("before" in at ? { before: rowID(at.before) } : { after: rowID(at.after) }),
+});
+
 export type Collector = (intent: OwnerIntent) => void;
 interface HandleHost {
   handle(node: Node, path: Path, collect: Collector | undefined): any;
@@ -105,17 +112,17 @@ export function handleFactory(host: HandleHost, mint: () => string = newID) {
         }
         const item = node.item;
         return Object.freeze({
-          item: (id: string) => host.handle(item, [...path, { id }], collect),
-          insert: (value: unknown, at?: { before: string } | { after: string }) => {
+          item: (row: RowRef) => host.handle(item, [...path, { id: rowID(row) }], collect),
+          insert: (value: unknown, at?: Destination) => {
             const id = mint();
             return send(
-              { type: "insert", path, value, id, ...(at ? { at } : {}) },
+              { type: "insert", path, value, id, ...(at ? { at: destination(at) } : {}) },
               Object.freeze({ id }),
             );
           },
-          remove: (id: string) => send({ type: "remove", path, id }),
-          move: (id: string, at?: { before: string } | { after: string }) =>
-            send({ type: "move", path, id, ...(at ? { at } : {}) }),
+          remove: (row: RowRef) => send({ type: "remove", path, id: rowID(row) }),
+          move: (row: RowRef, at?: Destination) =>
+            send({ type: "move", path, id: rowID(row), ...(at ? { at: destination(at) } : {}) }),
         });
       }
       case "text":

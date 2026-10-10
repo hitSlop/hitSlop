@@ -1,4 +1,4 @@
-//! The relay's rules (the Durable Object's, plans/sync-simplification.md §7.2) over
+//! The byte relay's rules (docs/architecture.md, Sync) over
 //! memory: records in arrival order and the version they add up to. It starts at the
 //! seed's version, which every replica already holds.
 use hitslop_core::sync::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};

@@ -1,4 +1,6 @@
 <script lang="ts">
+import "hitslop/base.css";
+import "./styles.css";
   import doc from "./schema";
   import Lamp from "./Lamp.svelte";
   let lookX = $state(0);

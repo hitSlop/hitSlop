@@ -239,7 +239,8 @@ every session reports `Synced`, and the relay's heads equal the replicas' versio
 | One 3 MB commit (an agent's title, stored across 2 MB-capped rows) | 192 ms to the other replica |
 | A fresh replica joins from the seed and backfills everything | 131 ms |
 
-Final relay state: 303 records, 3.2 MB. The wire needed no change: the spike relay and the
-shipped codec agree byte for byte. This closes the sync proof (the binary relay on
-Cloudflare's runtime, with the engine that ships). The production relay and the clients are
+Final relay state: 303 records, 3.2 MB. The wire needed no change: the experimental
+relay and the product codec agreed byte for byte in this run. This qualifies the protocol
+against Cloudflare's local runtime, not a hosted collaboration service. The relay source
+is outside this repository. The production relay and the clients are
 deferred ([roadmap](../roadmap.md)).

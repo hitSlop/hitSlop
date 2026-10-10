@@ -46,7 +46,7 @@ theme panel. An opaque page background hides the glass. The frost stays light in
 mode; a dark tint makes smoked glass. With Reduce Transparency on, macOS draws the frost
 as a solid light surface. Keep text on a surface with
 enough contrast over any desktop. Exports and icons can't capture the blur, so give
-the `export` view a solid surface.
+`Export.svelte` and `Icon.svelte` a solid surface.
 
 ## PNG skins
 
@@ -60,7 +60,7 @@ the application behind a hole, not merely that a DOM element ignores them.
 
 ## Static output
 
-Register an optional `export` view in `defineSlop`. It receives
+Add an optional root `Export.svelte`. It receives
 `mode: "preview" | "export"` and reads the same document by importing its module.
 Render saved data in a fresh page; transient editor selection is not carried over. Share presentation and theme components.
 Use normal flow rather than viewport heights or scrolling panels. This view also
@@ -80,7 +80,7 @@ failures still use native application-error recovery and prevent capture.
 
 ## Icon
 
-Register an optional `icon` view in `defineSlop`. It mounts
+Add an optional root `Icon.svelte`. It mounts
 only for capture, centered on a transparent 512×512 surface. Pass progress or other saved data if useful; keep
 a strong silhouette, safe margins, and no essential small text. It refreshes
 a document's artwork and Finder icon on close; the template's icon remains as built.

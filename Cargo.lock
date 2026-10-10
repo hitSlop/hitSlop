@@ -750,7 +750,6 @@ version = "0.0.0"
 dependencies = [
  "getrandom 0.2.17",
  "hitslop-core",
- "hitslop-runner",
  "js-sys",
  "rsqlite-vfs 0.2.0",
  "serde_json",

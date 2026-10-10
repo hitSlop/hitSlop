@@ -111,8 +111,8 @@ extension HostTests {
         _ = try await view.evaluateJavaScript(
           "globalThis.fullscreenProbe = 42; globalThis.fullscreenTicks = 0; setInterval(() => fullscreenTicks++, 40)")
         controller.toggleFullscreen()
-        await eventually(timeout: .seconds(10)) { controller.isFullscreen && !controller.fullscreenTransition }
-        try #require(controller.isFullscreen && !controller.fullscreenTransition)
+        await eventually(timeout: .seconds(10)) { controller.isFullscreen && !controller.fullscreen.transitioning }
+        try #require(controller.isFullscreen && !controller.fullscreen.transitioning)
         #expect(!controller.canPin)
         #expect(controller.session.webView === view)
         #expect(try await view.evaluateJavaScript("globalThis.fullscreenProbe") as? Int == 42)
@@ -150,8 +150,8 @@ extension HostTests {
         #expect(controller.toolbar.isVisible)
         #expect(controller.toolbar.panel?.isOnActiveSpace == true)
         controller.toggleFullscreen()
-        await eventually(timeout: .seconds(10)) { !controller.isFullscreen && !controller.fullscreenTransition }
-        try #require(!controller.isFullscreen && !controller.fullscreenTransition)
+        await eventually(timeout: .seconds(10)) { !controller.isFullscreen && !controller.fullscreen.transitioning }
+        try #require(!controller.isFullscreen && !controller.fullscreen.transitioning)
         #expect(controller.isPinned)
         #expect(window.frame == before)
         #expect(window.styleMask == style)
@@ -166,8 +166,8 @@ extension HostTests {
           // A renderer replacement must attach inside the fullscreen composition,
           // and its failure overlay must survive exiting the fullscreen surface.
           controller.toggleFullscreen()
-          await eventually(timeout: .seconds(10)) { controller.isFullscreen && !controller.fullscreenTransition }
-          try #require(controller.isFullscreen && !controller.fullscreenTransition)
+          await eventually(timeout: .seconds(10)) { controller.isFullscreen && !controller.fullscreen.transitioning }
+          try #require(controller.isFullscreen && !controller.fullscreen.transitioning)
           let pid = try #require(view.value(forKey: "_webProcessIdentifier") as? Int32)
           try #require(pid > 0)
           try #require(Darwin.kill(pid, SIGKILL) == 0)
@@ -182,7 +182,7 @@ extension HostTests {
           #expect(controller.failedOverlay == nil)
           #expect(controller.session.webView.superview === controller.documentComposition)
           controller.toggleFullscreen()
-          await eventually(timeout: .seconds(10)) { !controller.isFullscreen && !controller.fullscreenTransition }
+          await eventually(timeout: .seconds(10)) { !controller.isFullscreen && !controller.fullscreen.transitioning }
           #expect(window.frame == before)
         }
         try await controller.session.close()

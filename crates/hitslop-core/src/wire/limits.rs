@@ -49,6 +49,11 @@ pub const IMAGE_PIXELS: usize = 24000000;
 pub const ATTACHMENT_FILE_BYTES: usize = 10485760;
 pub const ATTACHMENT_BYTES: usize = 104857600;
 pub const ATTACHMENT_COUNT: usize = 256;
+/// An attachment display name, in UTF-8 bytes.
+pub const ATTACHMENT_NAME_BYTES: usize = 255;
+/// A file downloaded by an authored page, independent of document attachment storage.
+#[cfg(feature = "storage")]
+pub(crate) const DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 /// A window shape's longest path data and radius list, and its largest view box side.
 pub(crate) const SHAPE_PATH: usize = 4096;
 pub(crate) const SHAPE_RADIUS: usize = 256;
@@ -79,6 +84,7 @@ pub(crate) const ERROR_TEXT: usize = 4096;
 #[cfg(feature = "storage")]
 pub struct HostLimits {
     pub error_text: u64,
+    pub download_bytes: u64,
     pub storage_bytes: u64,
     pub theme_file: u64,
     pub push_items: u64,
@@ -98,6 +104,7 @@ pub struct HostLimits {
 pub fn host_limits() -> HostLimits {
     HostLimits {
         error_text: ERROR_TEXT as u64,
+        download_bytes: DOWNLOAD_BYTES,
         storage_bytes: STORAGE_BYTES as u64,
         theme_file: THEME_FILE_LIMIT as u64,
         push_items: 256,

@@ -6,7 +6,7 @@ import { negotiate } from "../../src/cli/engine";
 import { exec, run } from "../../../../scripts/lib/test-process";
 import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import { overrideSlop, stage } from "./source-fixture";
+import { overrideSlop, overrideSchema, stage } from "./source-fixture";
 import { buildTemplate } from "../../src/cli/template";
 
 /** What a new document of a built template holds: created and read by the engine. */
@@ -77,7 +77,7 @@ test("build paths and fresh source evaluation follow the declaration", async () 
     const defaultOutput = await buildTemplate(source, undefined);
     expect(defaultOutput).toBe(join(source, "dist", "starter.slop"));
     const first = await initialValue(defaultOutput);
-    await overrideSlop(source, { initial: JSON.stringify({ ...first, title: "Fresh evaluation" }) });
+    await overrideSchema(source, JSON.stringify({ ...first, title: "Fresh evaluation" }));
     const explicitOutput = join(root, "output with spaces.slop");
     expect(await buildTemplate(source, undefined, explicitOutput)).toBe(explicitOutput);
     expect((await initialValue(explicitOutput)).title).toBe("Fresh evaluation");
@@ -137,26 +137,23 @@ for (const [name, properties, initial, code] of [
   try {
     const source = join(root, "source");
     await cp("tests/apps/document", source, { recursive: true });
-    await writeFile(join(source, "schema.ts"), `import {defineDocument,s} from 'hitslop'; export default defineDocument(${properties});`);
-    await writeFile(join(source, "commands.ts"), "export {};\n");
-    await overrideSlop(source, { initial: JSON.stringify(initial), commands: "{}" });
+    await writeFile(join(source, "schema.ts"), `import {defineDocument,s} from 'hitslop'; export default defineDocument(${properties},{initial:${JSON.stringify(initial)}});`);
+    await rm(join(source, "commands.ts"));
     await expect(stage(source, join(root, "invalid"))).rejects.toThrow(code);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("only explicit roles are built; unrelated filenames are ignored", async () => {
+test("only conventional roles are built; unrelated filenames are ignored", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root,"source");
     await cp("tests/apps/document",source,{recursive:true});
     // Keep the declared view distinct on case-insensitive filesystems too.
     await rename(join(source, "Export.svelte"), join(source, "Capture.svelte"));
-    const declaration = join(source, "slop.ts");
-    await writeFile(declaration, (await readFile(declaration, "utf8")).replace("./Export.svelte", "./Capture.svelte"));
     await writeFile(join(source,"main.ts"), "this is not valid typescript");
-    await writeFile(join(source,"export.svelte"), "<script>const = ;</script>");
+    await writeFile(join(source,"Capture.svelte"), "<script>const = ;</script>");
     await stage(source,join(root,"built"));
-    // The imported role, however it is named, is compiled.
+    // A fixed role is compiled.
     await writeFile(join(source,"Icon.svelte"), "<script>const = ;</script>");
     await expect(stage(source,join(root,"invalid"))).rejects.toThrow();
   } finally { await rm(root,{recursive:true,force:true}); }
@@ -170,10 +167,11 @@ test("a capture view cannot read state the editor sets", async () => {
     await writeFile(join(source,"Tab.svelte"), `<script lang="ts">import { ui } from "./ui.svelte";</script><b>{ui.tab}</b>`);
     await writeFile(join(source,"Export.svelte"), `<script lang="ts">import Tab from "./Tab.svelte";</script><Tab />`);
     // Reusing the editor does not make its transient state available to captures.
-    await overrideSlop(source, { view: "Tab", export: "Tab" }, `import Tab from "./Tab.svelte";`);
+    await cp(join(source,"Tab.svelte"), join(source,"App.svelte"));
+    await cp(join(source,"Tab.svelte"), join(source,"Export.svelte"));
     await expect(stage(source,join(root,"editor"))).rejects.toThrow("fresh page");
     // A capture view sees only the initial value, even through a shared component.
-    await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
+    await writeFile(join(source,"Export.svelte"), `<script>import Tab from "./Tab.svelte";</script><Tab />`);
     await expect(stage(source,join(root,"export"))).rejects.toThrow("fresh page");
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);

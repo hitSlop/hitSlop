@@ -6,7 +6,7 @@ description: Work on hitSlop Apple hosting, the document owner, local storage, t
 # Native host
 
 Preserve the real macOS client and its target graph: Core, Document, Runtime, Host,
-Features/TCA, Catalog/local templates, Firebase Analytics/Crashlytics, Sparkle and
+Features, Catalog/local templates, Firebase Analytics/Crashlytics, Sparkle and
 NativeCLI. Do not replace it with a playground shell. Read docs/architecture.md first.
 
 **Ownership.** A `.slop` is one SQLite file: the app (its `app` row, assets and artwork)
@@ -26,7 +26,7 @@ the shared Rust owner in-process. The bundled `slop-engine` handles data command
 native helper supplies WebKit only for rendering and macOS services. The writer lock and the live owner's
 discovery live outside the file, in the core's registry (`~/.hitslop/live`, keyed by the
 file's device and inode); never remove a lock file there or bypass a busy lock, and never
-lock or open the database file outside the core. Closed edits never start WebKit. Page and CLI commands both use the owner's restricted child runner; the app embeds and signs `hitslop-evaluator`. A
+lock or open the database file outside the core. Closed edits never start WebKit. Agent commands use the owner's restricted child runner; pages edit through handles. The app embeds and signs `hitslop-evaluator`. A
 document is a local regular file: never a link, and never with a second hard link.
 
 **Errors.** Rust classifies command outcomes; `RequestOutcome` maps native UI failures

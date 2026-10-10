@@ -14,15 +14,6 @@ type Session = {
   close(): Promise<void>;
 };
 
-/** Internal development harness hook. The caller owns the existing file and supplies
- * the native process; ordinary previews keep creating disposable local documents. */
-export type PreviewOwnerFactory = (template: string) => Promise<{
-  path: string;
-  command: string[];
-  startup?: unknown;
-  dispose(): Promise<void>;
-}>;
-
 /** Vite already owns the loopback WebSocket. This adapter only frames requests;
  * the native owner holds all state, attachments, validation and save scheduling. */
 export class PreviewOwners {
@@ -32,7 +23,7 @@ export class PreviewOwners {
   private stopped = false;
   private available = true;
   private closing = new Set<Promise<void>>();
-  constructor(private root: string, private template: () => string, private factory?: PreviewOwnerFactory) {}
+  constructor(private root: string, private template: () => string) {}
 
   attach(server: ViteDevServer) {
     const admitted = new WeakSet<WebSocketClient["socket"]>();
@@ -110,20 +101,18 @@ export class PreviewOwners {
   }
 
   private async open(client: WebSocketClient, generation: number): Promise<Session> {
-    const supplied = await this.factory?.(this.template());
-    const directory = supplied ? undefined : await mkdtemp(join(this.root, "session-"));
-    const path = supplied?.path ?? join(directory!, "preview.slop");
+    const directory = await mkdtemp(join(this.root, "session-"));
+    const path = join(directory, "preview.slop");
     let disposed = false;
     const dispose = async () => {
       if (disposed) return;
       disposed = true;
-      if (supplied) await supplied.dispose();
-      else await rm(directory!, { recursive: true, force: true });
+      await rm(directory, { recursive: true, force: true });
     };
     try {
-      if (!supplied) await execute({ method: "create", from: this.template(), output: path });
+      await execute({ method: "create", from: this.template(), output: path });
       if (this.stopped || generation !== this.generation) throw new Error("Preview session replaced");
-      const child = Bun.spawn(supplied?.command ?? [...negotiate(await findEngine()), "--preview-owner", path], {
+      const child = Bun.spawn([...negotiate(await findEngine()), "--preview-owner", path], {
         stdin: "pipe", stdout: "pipe", stderr: "pipe",
       });
       const resourceToken = crypto.randomUUID();
@@ -174,10 +163,7 @@ export class PreviewOwners {
           this.remove(client);
         } finally { reader.releaseLock(); }
       })();
-      const stderr = new Response(child.stderr).text().then(output => {
-        if (supplied && output.trim()) console.error(output.trim());
-        return output;
-      });
+      const stderr = new Response(child.stderr).text();
       const disconnected = (error: unknown) => {
         if (active()) client.send("slop:fatal", { error: String(error) });
         this.remove(client);
@@ -209,19 +195,15 @@ export class PreviewOwners {
             child.stdin.end();
             const kill = setTimeout(() => child.kill(), 12000);
             try {
-              const code = await child.exited;
-              await read; const errors = await stderr;
-              if (supplied && code) throw new Error(`Replica owner close failed (${code}): ${errors}`);
+              await child.exited;
+              await read;
+              await stderr;
             }
             finally { clearTimeout(kill); await dispose(); }
           })();
         },
       };
       try {
-        if (supplied?.startup !== undefined) {
-          child.stdin.write(JSON.stringify(supplied.startup) + "\n");
-          await child.stdin.flush();
-        }
         await ready.promise; return session;
       }
       catch (error) { await session.close(); throw error; }

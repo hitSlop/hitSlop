@@ -1,4 +1,5 @@
 <script lang="ts">
+import "./styles.css";
   import { EditableText } from "hitslop/svelte";
   import doc from "./schema";
   let hidden = $state(false);

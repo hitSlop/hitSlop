@@ -66,7 +66,7 @@ Quick Checklist is the reference example. Active projects under `examples/slops`
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
 - `swift` (`bun run swift:test`): native tests with cached document/ABI apps and presentation fixtures.
 - `app`: complete macOS app build and bundle acceptance; included in `release:check`.
-- `browser`: Chrome durable copies and WebKit native-owner preview, without Swift/helper compilation; included by `--native`.
+- `browser`: Chrome durable copies and WebKit native-owner preview, without Swift/helper compilation; run explicitly or in nightly/manual qualification, not by `--native`.
 - `native` (`bun run test:native`): native CLI owners, the relocated helper, the native render of the fixtures (`HITSLOP_RENDER=all` for every bundled template), the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the corpus replay.
 - `packed`: exact npm artifact dependency/type/init/check/preview verification, without native rendering. `HITSLOP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
 - `landing` (`bun run landing:check`, `bun run landing:build`): public documentation and site validation.
@@ -76,7 +76,7 @@ Test locations, including `tests/release`, `tests/presentation`, `tests/verifica
 
 `bun run release:check` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/HitSlopApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
 
-`bun run shape:lab fixtures` builds and prints the standard, ellipse, glass and washer controls plus all six Shape Lab variants with dedicated and fallback exports. `bun run shape:lab open hole` opens a fresh writable vector-hole lab; `locked`, `radii`, `concave`, `rounded` and `washer` select the other variants. Open writable copies in the development app to inspect layout, toolbar dragging, focus, native clipping, and desktop click-through. These are test fixtures, not catalog entries. Automated tests verify dedicated exports ignore native masks and icons preserve transparency.
+`bun run shape:lab fixtures` builds and prints the standard, ellipse, glass and washer controls plus all seven Shape Lab variants with dedicated and fallback exports. `bun run shape:lab open hole` opens a fresh writable vector-hole lab; `locked`, `radii`, `concave`, `notch`, `rounded` and `washer` select the other variants. Open writable copies in the development app to inspect layout, toolbar dragging, focus, native clipping, and desktop click-through. These are test fixtures, not catalog entries. Automated tests verify dedicated exports ignore native masks and icons preserve transparency.
 
 `bun run bench:windows` runs the opt-in window matrix. Startup diagnostics are described in [testing](../testing.md#native-macos). Performance measurements are not CI latency thresholds.
 

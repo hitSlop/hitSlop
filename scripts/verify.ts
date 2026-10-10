@@ -182,12 +182,12 @@ const tiers: Tier[] = [
       if (!args.length) await prepare("Rust compilation and lints", async () => {
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
         // The WASM adapter's lints do not depend on the host: Linux and release runs check
-        // them, so macOS runs skip three builds and Homebrew's clang.
+        // them, so macOS runs skip two builds and Homebrew's clang.
         if (process.platform === "linux" || release) {
           const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
           await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
           const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
-          for (const feature of ["browser", "evaluator"]) await quiet(["cargo", "clippy", "--locked", ...wasm, "--features", feature, "--", "-D", "warnings"], { env: {
+          await quiet(["cargo", "clippy", "--locked", ...wasm, "--features", "browser", "--", "-D", "warnings"], { env: {
             CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
             AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
           } });
@@ -246,7 +246,7 @@ const tiers: Tier[] = [
     run: async () => {},
   },
   {
-    // Playwright WebKit and Chrome: `slop dev`, EditableText and the unshipped browser host.
+    // Playwright WebKit and Chrome: `slop dev`, EditableText and the local Chrome browser host.
     name: "browser", native: true, nightly: true, needs: ["browser"], inputs: tierInputs.browser,
     run: (args) => bunTest(inventory.browser, args, { HITSLOP_TEST_EVIDENCE: runDirectory }),
   },

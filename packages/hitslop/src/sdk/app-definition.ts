@@ -1,30 +1,17 @@
-import { bindCommands, commandInfo } from "./commands";
+import { commandSet } from "./command-set";
 import type { BuildDeclaration, ArtworkInput } from "../wire/app.generated";
 
-/** Plain declaration projection used in the restricted evaluator. Acceptance belongs
- * to Rust; these checks establish component/command registration, not metadata rules. */
-export function describeApp(app: any): BuildDeclaration & { artwork?: ArtworkInput; components: Record<string, string> } {
-  const { document, view, export: exportView, icon, commands = {}, theme, initial, window, artwork, ...metadata } = app;
-  const roles = { view, export: exportView, icon };
-  for (const [role, component] of Object.entries(roles)) {
-    if (role !== "view" && component === undefined) continue;
-    if (!component || (component as any)["~hitslop"] !== "component")
-      throw new Error(`${role} must reference an imported Svelte component`);
-  }
-  if (!document?.descriptor) throw new Error("document must be a defineDocument value");
-  bindCommands(commands, document);
+/** Projects the convention-discovered pieces; Rust owns app acceptance. */
+export function describeApp(app: any, document: any, commands: unknown, views: BuildDeclaration["views"]): BuildDeclaration & { artwork?: ArtworkInput } {
+  const { theme, window, artwork, ...metadata } = app;
+  if (!document?.descriptor) throw new Error("schema.ts must default-export a defineDocument value");
+  const set = commands === undefined ? undefined : commandSet(commands);
+  if (commands !== undefined && !set) throw new Error("commands.ts must default-export defineCommands(document, specs)");
+  if (set && set.document !== document) throw new Error("commands.ts must pass the schema.ts document to defineCommands");
   return {
-    metadata, window, document: document.descriptor, initial,
+    metadata, window, document: document.descriptor, initial: document.initial,
     theme: Object.entries(theme ?? {}).map(([token, color]) => ({ token, color: color as string })),
-    commands: Object.entries(commands).map(([name, command]) => {
-      const { spec } = commandInfo(command)!;
-      if (typeof spec.run !== "function") throw new Error(`commands.${name} needs run(ctx, args)`);
-      return { name, description: spec.description, args: { kind: "object", properties: spec.args } };
-    }),
-    views: { export: exportView !== undefined, icon: icon !== undefined },
-    artwork,
-    // Source files of the roles, for build checks; not part of the declaration.
-    components: Object.fromEntries(Object.entries(roles)
-      .filter(([, component]) => component !== undefined).map(([role, component]) => [role, component.id])),
+    commands: Object.entries(set?.specs ?? {}).map(([name, spec]) => ({ name, description: spec.description, args: { kind: "object", properties: spec.args } })),
+    views, artwork,
   };
 }

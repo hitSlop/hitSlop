@@ -11,6 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
+mod attachments;
 mod preview;
 
 /// A classified refusal, as every engine reply spells one.
@@ -97,6 +98,9 @@ fn native(protocol: u64, method: &str, input: &str) -> String {
 fn dispatch(request: EngineRequest) -> String {
     let result = (|| -> Result<EngineSuccess, hitslop_core::store::Error> {
         Ok(match request {
+            EngineRequest::AttachmentRef { file } => {
+                EngineSuccess::AttachmentRef { ok: True, reference: attachments::reference(Path::new(&file))? }
+            }
             EngineRequest::Templates {} => {
                 EngineSuccess::Templates { ok: True, catalog: file::list_templates(&file::template_roots()) }
             }
@@ -114,8 +118,8 @@ fn dispatch(request: EngineRequest) -> String {
                 EngineSuccess::ValidateMetadata { ok: True }
             }
             EngineRequest::ValidateApp { app, stage } => {
-                file::validate_app(app.get(), Path::new(&stage))?;
-                EngineSuccess::ValidateApp { ok: True }
+                let window = file::validate_app(app.get(), Path::new(&stage))?;
+                EngineSuccess::ValidateApp { ok: True, window }
             }
             EngineRequest::ArtworkExport { file: path, target, output } => {
                 let name = match target {

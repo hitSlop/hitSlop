@@ -1,10 +1,10 @@
-//! One command path for page and CLI. Evaluation never blocks the serial owner.
+//! Agent commands evaluate off the serial owner in a native child process.
 use super::*;
 use crate::engine::{False, True};
 use serde::Deserialize;
 use serde_json::Value;
 
-pub(super) struct Invocation {
+pub(in crate::owner) struct Invocation {
     generation: u64,
     view: Option<String>,
     deadline: Option<Duration>,
@@ -35,7 +35,7 @@ pub(super) struct Work {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Evaluation {
+pub(in crate::owner) struct Evaluation {
     #[serde(rename = "ok")]
     _ok: True,
     intents: Vec<crate::Intent>,
@@ -68,7 +68,6 @@ fn rejected(error: impl ToString) -> Failure {
     Failure::rejected(Code::InvalidRequest, error.to_string())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn worker(evaluator: Evaluator, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for work in work {
         let output = evaluator.run(work.runtime_abi, &work.bundle, &work.input);
@@ -80,10 +79,6 @@ pub(super) fn worker(evaluator: Evaluator, work: mpsc::Receiver<Work>, sender: m
 }
 
 impl Work {
-    #[cfg(target_arch = "wasm32")]
-    pub(super) fn input(&self) -> std::result::Result<String, String> {
-        hitslop_runner::command_input(self.runtime_abi, &self.bundle, &self.input)
-    }
     pub(super) fn finish(self, output: std::result::Result<String, String>) -> Message {
         let result = contained(|| {
             let output = output.map_err(host_fault)?;

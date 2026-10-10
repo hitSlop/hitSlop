@@ -1,25 +1,27 @@
 import { test, expect } from "bun:test";
 import { webkit } from "playwright";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { startDev } from "../../src/cli/dev";
 import { createFixture } from "./dev-fixture";
-import { overrideSlop } from "./source-fixture";
+import { overrideSlop, overrideSchema } from "./source-fixture";
 
-/** A module slop.ts takes its initial values from: three tasks under `title`. */
+/** A schema dependency supplies three tasks under `title`. */
 const seed = (title: string) =>
   `export default ${JSON.stringify({ title, tasks: ["One", "Two", "Three"].map((text) => ({ text, done: false })) })};\n`;
 
-test("HMR keeps one owner, accepted edits and row identity; metadata resets and recovers", async () => {
+test("HMR keeps one owner, accepted edits and row identity; definition resets and recovers", async () => {
   const root = await mkdtemp(join(process.cwd(), ".dev-test-"));
   let dev: Awaited<ReturnType<typeof startDev>> | undefined;
   const browser = await webkit.launch();
   try {
     const source = join(root, "source");
     await createFixture(process.cwd(), source);
-    // Metadata reloads when a module slop.ts imports changes.
+    const commands = await readFile(join(source, "commands.ts"), "utf8");
+    await rm(join(source, "commands.ts"));
+    // A schema dependency change rebuilds the disposable document.
     await writeFile(join(source, "seed.ts"), seed("A little room to think"));
-    await overrideSlop(source, { initial: "seed" }, 'import seed from "./seed";');
+    await overrideSchema(source, "seed", 'import seed from "./seed";');
     dev = await startDev(source);
     const page = await browser.newPage();
     page.setDefaultTimeout(15000);
@@ -65,18 +67,38 @@ test("HMR keeps one owner, accepted edits and row identity; metadata resets and 
     expect(await frame.locator("[data-probe]").count()).toBe(1);
     const response = await fetch(new URL("/__app__/@fs/etc/passwd", dev.url));
     expect(response.status).toBe(403);
-    // The page gets slop.ts projected to its UI roles; metadata stays in the definition build.
-    const declaration = await fetch(new URL("/__app__/slop.ts", dev.url));
-    expect(declaration.ok).toBe(true);
-    const served = await declaration.text();
-    expect(served).toContain("view");
-    expect(served).not.toContain("categories");
+    // Every inventory change must reset accepted state, not just leave the old page visible.
+    const roleChange = async (change: () => Promise<unknown>) => {
+      await frame.getByRole("textbox", { name: "Document title" }).fill("Before role change");
+      await frame.locator("[data-title]").filter({ hasText: "Before role change" }).waitFor();
+      await change();
+      await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
+      expect(await frame.locator("[data-probe]").count()).toBe(1);
+    };
+    await roleChange(() => rm(join(source, "Export.svelte")));
+    await roleChange(() => writeFile(join(source, "Export.svelte"), "<p>Capture role</p>"));
+    await rename(join(source, "Export.svelte"), join(source, "export.tmp"));
+    await rename(join(source, "export.tmp"), join(source, "export.svelte"));
+    await frame.locator("vite-error-overlay").waitFor();
+    await rename(join(source, "export.svelte"), join(source, "export.tmp"));
+    await rename(join(source, "export.tmp"), join(source, "Export.svelte"));
+    await frame.locator("vite-error-overlay").waitFor({ state: "detached" });
+    await frame.getByRole("heading", { name: "Recovered" }).waitFor();
+    // commands.ts was absent at startup; adding, fixing and removing it must all rebuild.
+    await roleChange(() => writeFile(join(source, "commands.ts"), commands));
+    await writeFile(join(source, "commands.ts"), "export default undefined;");
+    await frame.locator("vite-error-overlay").waitFor();
+    await writeFile(join(source, "commands.ts"), commands);
+    await frame.locator("vite-error-overlay").waitFor({ state: "detached" });
+    await frame.getByRole("heading", { name: "Recovered" }).waitFor();
+    await roleChange(() => rm(join(source, "commands.ts")));
+
   } finally {
     await browser.close();
     await dev?.close();
     await rm(root, { recursive: true, force: true });
   }
-}, 90000);
+}, 120000);
 
 test("cancelling startup stops a definition build without opening a preview", async () => {
   const root=await mkdtemp(join(process.cwd(),".dev-test-"));
@@ -104,7 +126,7 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     const ui = page.frameLocator("iframe");
     await ui.getByRole("heading", { name: "Revision zero" }).waitFor();
     const frame = page.frames().find(f => f.url().includes("/app.html"))!;
-    const benchmark = process.env.HITSLOP_BENCH_COMMANDS === "1";
+    const benchmark = process.env.HITSLOP_BENCH_EDITS === "1";
     const iterations = benchmark ? 40 : 1;
     const result = await frame.evaluate(async iterations => {
       const { doc, addRow, attachments } = (globalThis as any).__devProbe;
@@ -114,8 +136,11 @@ test("native preview serves sniffed attachments and fences disconnected owners",
         times.push(performance.now() - start);
       }
       const before = doc.current.tasks.length;
-      let invalid = "";
-      try { await addRow({ text: 3 }); } catch (e) { invalid = String(e); }
+      let invalid: { code?: string; reason?: string } | undefined;
+      try { await addRow({ text: 3 }); } catch (e) {
+        const error = e as { code?: string; reason?: string };
+        invalid = { code: error.code, reason: error.reason };
+      }
       const ref = await attachments.import(new File(["imported media"], "fake.png", { type: "image/png" }),
         (tx: any, ref: any) => tx.fields.title.set(ref.id));
       const url = attachments.url(ref.id);
@@ -128,13 +153,13 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     }, iterations);
     expect(result.before).toBe(3 + iterations);
     expect(result.before).toBe(result.after);
-    expect(result.invalid).toContain("Invalid arguments");
+    expect(result.invalid).toEqual({ code: "rejected", reason: "type_mismatch" });
     expect(result.type).toBe("application/octet-stream");
     expect(result.sandbox).toBe("sandbox"); expect(result.nosniff).toBe("nosniff");
     expect(result.bytes).toBe("imported media"); expect(result.rangeStatus).toBe(206); expect(result.range).toBe("impo");
     expect(result.missing).toBe(404);
     const sorted = [...result.times].sort((a, b) => a - b);
-    if (benchmark) console.log(`Native preview command latency (${sorted.length} fresh evaluations): p50=${sorted[Math.floor(sorted.length * .5)]}ms p95=${sorted[Math.ceil(sorted.length * .95)-1]}ms`);
+    if (benchmark) console.log(`Native preview edit latency (${sorted.length} fresh evaluations): p50=${sorted[Math.floor(sorted.length * .5)]}ms p95=${sorted[Math.ceil(sorted.length * .95)-1]}ms`);
     const [owner] = await dev.diagnostics(); expect(owner).toBeDefined();
     process.kill(owner!.pid, "SIGKILL");
     await ui.locator("#hitslop-preview-failure").waitFor();

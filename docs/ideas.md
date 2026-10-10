@@ -237,3 +237,10 @@ The manifesto also argues for cloud sandboxes, organization-wide governance and 
 between model providers. Those serve an enterprise agent platform. hitSlop takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
 stays local, with no account.
+
+## Possible command extensions after launch
+
+Commands currently serve agents and take flat scalar arguments. Page command calls
+could add a context method behind a new runtime ABI; `s.row(list)` could add a checked
+argument kind, and nested arguments could widen package-format acceptance. None is
+required for launch. Pages share plain functions over `Scope` with commands today.

@@ -88,9 +88,7 @@ test.if(nightly)("complete public slop.ts examples follow the current contract",
         await mkdir(project);
         await writeFile(join(project, "schema.ts"), schema!);
         await writeFile(join(project, "slop.ts"), slop);
-        // Components are the guide's to show in full; the contract here is slop.ts.
-        for (const [, component] of slop.matchAll(/from "\.\/(\w+\.svelte)"/g))
-          await writeFile(join(project, component!), "<h1>Guide example</h1>");
+        await writeFile(join(project, "App.svelte"), "<h1>Guide example</h1>");
         const [commands] = blocks("commands.ts");
         if (commands) await writeFile(join(project, "commands.ts"), commands);
         await writeFile(join(project, "styles.css"), "");

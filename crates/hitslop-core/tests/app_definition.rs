@@ -169,6 +169,9 @@ fn fullscreen_is_opt_in_for_both_window_kinds_and_survives_the_page_and_file_pro
             let reopened = AppDefinition::decode(1, 1, &metadata().to_string(), &saved).unwrap();
             assert_eq!(reopened.definition_json(), saved);
             assert_eq!(serde_json::to_value(reopened.page_window()).unwrap(), page);
+            let resolved = serde_json::to_value(app.window()).unwrap();
+            assert_eq!(resolved["fullscreenable"], enabled.unwrap_or(false));
+            assert_eq!(serde_json::to_value(reopened.window()).unwrap(), resolved);
             // Authoring input has the same optional-boolean rule, including skins.
             let mut invalid = page.clone();
             invalid["fullscreenable"] = Value::Null;
@@ -211,7 +214,16 @@ fn geometry_and_palette_use_the_existing_core_rules() {
     value["window"]["shape"] = json!({"path":"M0 0 X"});
     assert_eq!(read(&metadata(), &value).unwrap_err().code, Code::InvalidShape);
     value["window"]["shape"] = json!({"path":"M0 0L100 100Z","viewBox":[100,100]});
-    assert!(read(&metadata(), &value).is_ok());
+    let app = read(&metadata(), &value).unwrap();
+    let resolved = serde_json::to_value(app.window()).unwrap();
+    assert_eq!(resolved["frame"]["frame"]["radius"], "0");
+    assert_eq!(
+        resolved["frame"]["frame"]["shape"],
+        json!({
+            "kind":"path", "viewBoxWidth":100.0, "viewBoxHeight":100.0, "evenOdd":false,
+            "segments":[{"kind":"move","x":0.0,"y":0.0},{"kind":"line","x":100.0,"y":100.0},{"kind":"close"}]
+        })
+    );
     value["theme"][1]["token"] = "zinc".into();
     assert!(read(&metadata(), &value).is_err());
 }
@@ -233,19 +245,10 @@ fn commands_are_named_unique_and_use_the_descriptor_subset() {
 }
 
 #[test]
-fn row_arguments_name_a_list_of_objects_in_the_document() {
+fn row_arguments_are_not_accepted() {
     let mut value = definition();
-    value["document"]["properties"]["tasks"] =
-        json!({"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}});
-    value["document"]["properties"]["tags"] = json!({"kind":"list","item":{"kind":"string"}});
-    for (list, accepted) in [("tasks", true), ("tags", false), ("title", false), ("missing", false)] {
-        value["commands"][0]["args"]["properties"]["task"] = json!({"kind":"row","list":list});
-        let result = read(&metadata(), &value);
-        assert_eq!(result.is_ok(), accepted, "{list}");
-        if let Err(error) = result {
-            assert_eq!((error.code, error.pointer()), (Code::InvalidSchema, "/commands/0/args".into()));
-        }
-    }
+    value["commands"][0]["args"]["properties"]["task"] = json!({"kind":"row","list":"tasks"});
+    assert_eq!(read(&metadata(), &value).unwrap_err().code, Code::InvalidRequest);
 }
 
 #[test]

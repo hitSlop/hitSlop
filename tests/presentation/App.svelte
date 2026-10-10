@@ -1,4 +1,5 @@
 <script lang="ts">
+import "./styles.css";
     import doc from "./schema";
   // Native tests inject failures and refused writes without changing the shipped examples.
   function checkRender(kind: "editor" | "export" | "icon") {

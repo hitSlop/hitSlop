@@ -1,43 +1,16 @@
-import { json } from "./json";
-import type { EngineMethod, EngineRequestFor, EngineSuccess } from "../wire/engine";
+import { json, print } from "./json";
+import { execute as send } from "./engine";
 // Document commands. Each is one `SocketRequest` the document engine sends to the
 // document's live owner, or to an owner it opens; files the command names are read and
 // written here.
 import { lstat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "../schema/constants";
-import type { SocketFailure } from "../wire/socket";
-import type { OutcomeCode } from "../schema/values";
 import type { PaletteIntent, Batch } from "../schema/core";
 
 type ExportFormat = (typeof ExportFormats)[number];
-/** What a failed edit means for the next one. */
-const outcomes: Record<OutcomeCode, string> = {
-  rejected: "Not applied.",
-  owner_replaced: "Not applied. Run slop get before issuing another edit.",
-  closing: "Not applied. Run slop get before issuing another edit.",
-  owner_invalidated: "Not applied.",
-  save_failed: "Applied, but not yet saved. Run slop get before issuing another edit.",
-  unknown_outcome: "Outcome unknown. Run slop get before issuing another edit.",
-};
-
-/** A refusal in the core's words, with the operation it refused (`ops[N]`, an index into
- * the batch) and its reason code, so an agent knows what to fix. */
-function refusal({ error, reason, opIndex }: SocketFailure, remedy: (message: string) => string) {
-  const code = reason ? ` (${reason})` : "";
-  return opIndex === undefined ? `${(reason === "requires_update" ? remedy(error) : error)}${code}` : `Refused ops[${opIndex}]${code}: ${(reason === "requires_update" ? remedy(error) : error)}`;
-}
-/** One request, and its successful reply's result as the method's contract requires it.
- * A failed edit says what it means for the next one. */
-async function send<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }): Promise<Extract<EngineSuccess, { method: M }>> {
-  const { request, withRemedy } = await import("./engine");
-  const reply = await request<M>(body);
-  if (!reply.ok) throw new Error([refusal(reply, withRemedy), body.method === "batch" || body.method === "call" ? outcomes[reply.code] : undefined].filter(Boolean).join("\n"));
-  return reply as Extract<EngineSuccess, { method: M }>;
-}
 /** The document a request names. */
 const at = (document: string) => ({ documentPath: resolve(document) });
-const print = (value: unknown) => process.stdout.write(JSON.stringify(value, null, 2) + "\n");
 /** A regular file a command reads, at most `limit` bytes. */
 async function read(path: string, limit: number): Promise<Uint8Array> {
   const info = await lstat(path).catch(() => undefined);
@@ -60,7 +33,6 @@ async function publish(output: string, bytes: string | Uint8Array) {
   });
   console.log(resolve(output));
 }
-
 
 export async function get(document: string, snapshot: boolean) {
   const { state } = await send({ method: "get", ...at(document) });
@@ -105,7 +77,7 @@ export function batchIntents(ops: string): Batch["intents"] {
  * request, before the operations that reference them (`attachmentsRef` prints a reference). */
 export async function batch(document: string, ops: string, attach: string[] = []) {
   const intents = batchIntents(ops);
-  const attachments = await Promise.all(attach.map(async (file) => Buffer.from((await reference(file)).bytes).toString("base64")));
+  const attachments = await Promise.all(attach.map(async (file) => Buffer.from(await read(file, AttachmentLimits.file)).toString("base64")));
   if (attachments.reduce((total, encoded) => total + encoded.length, ops.length) > SocketLimits.attachment - 4096)
     throw new Error(`Attachments exceed ${SocketLimits.attachment >> 20} MiB in one batch; attach fewer files per batch`);
   const { ids } = await send({
@@ -171,22 +143,10 @@ export async function themeImport(document: string, file: string) {
 export async function attachmentsList(document: string) {
   print((await send({ method: "attachments.list", ...at(document) })).state);
 }
-/** A file as an attachment: its bytes, and the reference a document's operations store:
- * its identity (the SHA-256 of its bytes), length, name and type. */
-async function reference(file: string) {
-  const name = basename(file);
-  const mimeType = Bun.file(file).type.split(";")[0] || "application/octet-stream";
-  const length = (s: string) => new TextEncoder().encode(s).length;
-  if (length(name) > AttachmentLimits.name || length(mimeType) > AttachmentLimits.name)
-    throw new Error(`File name or type exceeds ${AttachmentLimits.name} bytes`);
-  const bytes = await read(file, AttachmentLimits.file);
-  const id = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
-  return { bytes, ref: { id, byteLength: bytes.length, name, mimeType } };
-}
 /** Prints a file's reference without reading any document: operations name it, and
  * `--attach` stores the file in their batch. */
 export async function attachmentsRef(file: string) {
-  print((await reference(file)).ref);
+  print((await send({ method: "attachments.ref", file: resolve(file) })).reference);
 }
 /** Writes an attachment's bytes to `output`. */
 export async function attachmentsExport(document: string, id: string, output: string) {

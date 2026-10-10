@@ -62,9 +62,9 @@ Commands (slop call PATH NAME --args JSON)
   archiveFinished — File every completed task and return the number filed.
     args: {"additionalProperties":false,"properties":{},"type":"object"}
   removeTask — Remove a task from the checklist.
-    args: {"additionalProperties":false,"properties":{"task":{"description":"The $id of a row in tasks","maxLength":64,"minLength":1,"pattern":"^[A-Za-z0-9_-]+$","type":"string"}},"required":["task"],"type":"object"}
+    args: {"additionalProperties":false,"properties":{"task":{"description":"The task's $id.","type":"string"}},"required":["task"],"type":"object"}
   restoreTask — Return a filed task to the active list, unfinished.
-    args: {"additionalProperties":false,"properties":{"task":{"description":"The $id of a row in tasks","maxLength":64,"minLength":1,"pattern":"^[A-Za-z0-9_-]+$","type":"string"}},"required":["task"],"type":"object"}
+    args: {"additionalProperties":false,"properties":{"task":{"description":"The task's $id.","type":"string"}},"required":["task"],"type":"object"}
 
 Value (rows retain their $id)
 {

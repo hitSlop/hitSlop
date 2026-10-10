@@ -41,7 +41,7 @@ public final class DocumentOwner: Sendable {
     }
   }
   /// The latest save's failure, until a save succeeds.
-  var saveFailure: SaveFailure? { events.facts.withLock { $0.failure } }
+  var saveFailure: OwnerFailure? { events.facts.withLock { $0.failure } }
   /// Whether this session published any change, so its document's artwork may be out of date.
   var edited: Bool { events.facts.withLock { $0.published } }
 
@@ -75,7 +75,7 @@ public final class DocumentOwner: Sendable {
   /// What the owner has said, so nothing asks it, and who hears it next.
   private struct Facts {
     var undo = UndoState(canUndo: false, canRedo: false)
-    var failure: SaveFailure?
+    var failure: OwnerFailure?
     var published = false
     var listener: (@Sendable (Event) -> Void)?
   }
@@ -98,10 +98,12 @@ public final class DocumentOwner: Sendable {
           facts.undo = state
           return (facts.listener, .undo(state))
         case .saveStatus(let status, let failure):
-          let failed = status == .failed ? failure.map(\.saveFailure) ?? .io("Saving failed") : nil
+          let failed =
+            status == .failed
+            ? failure ?? OwnerFailure(kind: .saveFailed, message: "Saving failed", reason: nil, opIndex: nil) : nil
           facts.failure = failed
           let saveStatus: DocumentSaveStatus =
-            if let failed { .failed(failed) } else if status == .saving { .saving } else { .saved }
+            if let failed { .failed(SaveFailure(failed)) } else if status == .saving { .saving } else { .saved }
           return (facts.listener, .saveStatus(saveStatus))
         }
       }
@@ -122,7 +124,7 @@ public final class DocumentOwner: Sendable {
     native.submit(
       request: request, view: view,
       completion: Completion { result in
-        if case .failed(let failure) = result { reply(.failure(failure.hostError)) } else { reply(.success(result)) }
+        if case .failed(let failure) = result { reply(.failure(failure)) } else { reply(.success(result)) }
       })
   }
   private func call(_ request: OwnerRequest, view: String? = nil) async throws -> OwnerReply {
@@ -133,15 +135,16 @@ public final class DocumentOwner: Sendable {
   private func unit(_ request: OwnerRequest) async throws {
     guard case .unit = try await call(request) else { throw SlopFailure("Invalid owner response") }
   }
-  public func state() async throws -> String {
+  /// Typed owner probes for integration tests; production pages use the page boundary.
+  func state() async throws -> String {
     guard case .state(let json) = try await call(.state) else { throw SlopFailure("Invalid state response") }
     return json
   }
-  public struct Applied: Sendable {
-    public let sequence: Int
-    public let ids: [String]
+  struct Applied: Sendable {
+    let sequence: Int
+    let ids: [String]
   }
-  public func apply(batch: String, view: String? = nil, origin: EditOrigin = .agent) async throws -> Applied {
+  func apply(batch: String, view: String? = nil, origin: EditOrigin = .agent) async throws -> Applied {
     guard case .applied(let sequence, let ids) = try await call(.apply(batch: batch, origin: origin), view: view)
     else { throw SlopFailure("Invalid apply response") }
     return Applied(sequence: Int(sequence), ids: ids)
@@ -164,7 +167,7 @@ public final class DocumentOwner: Sendable {
     func complete(reply: PageDispatch) { self.reply(reply) }
   }
   public func flush() async throws {
-    do { try await unit(.flush) } catch let error as SlopFailure { throw SaveFailure(error) }
+    try await unit(.flush)
   }
   public func discardPending() async throws { try await unit(.discard) }
   func startServer(exporter: any NativeExportHandler) throws -> NativeSocketServer {
@@ -219,9 +222,7 @@ public final class DocumentOwner: Sendable {
     return json
   }
   public func close(artwork: SlopRenderedArtwork? = nil) async throws {
-    do { try await unit(.close(preview: artwork?.preview, icon: artwork?.icon)) } catch let error as SlopFailure {
-      throw SaveFailure(error)
-    }
+    try await unit(.close(preview: artwork?.preview, icon: artwork?.icon))
   }
   public static var coreBuildID: String { coreBuildId() }
 }
@@ -234,7 +235,4 @@ public struct SlopRenderedArtwork: Sendable {
     self.preview = preview
     self.icon = icon
   }
-}
-public struct OwnerReplaced: LocalizedError {
-  public var errorDescription: String? { "owner_replaced: the document was reloaded; this edit was not applied" }
 }

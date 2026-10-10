@@ -47,7 +47,6 @@ export function wasmTransport(core: any): OwnerTransport {
   };
   return {
     readOnly: false,
-    runCommand: async () => { throw new DocumentError("rejected", "Commands require the native owner"); },
     open: async () => JSON.parse(core.state()),
     apply: async (batch) => {
       const { sequence, ids, selectionStart, selectionEnd } = execute(() =>

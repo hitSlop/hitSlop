@@ -8,7 +8,7 @@ import { join } from "node:path";
  * `statements` run first. */
 export async function overrideSlop(source: string, fields: Record<string, string>, statements = "") {
   if (!(await exists(join(source, "authored.ts")))) await rename(join(source, "slop.ts"), join(source, "authored.ts"));
-  const keys = new Set(["slug", "title", "description", "author", "categories", "document", "initial", "window", "theme", "view", "export", "icon", "commands", "artwork", ...Object.keys(fields)]);
+  const keys = new Set(["slug", "title", "description", "author", "categories", "window", "theme", "artwork", ...Object.keys(fields)]);
   const overrides = [...keys].map(key => `${key}: ${fields[key] ?? `slop.${key}`}`).join(", ");
   await writeFile(
     join(source, "slop.ts"),
@@ -21,4 +21,14 @@ export async function overrideSlop(source: string, fields: Record<string, string
 export async function stage(source: string, output: string) {
   await stageProject(source, output);
   return output;
+}
+
+/** Replace a copied schema's initial value while retaining its descriptor and identity. */
+export async function overrideSchema(source: string, initial: string, statements = "") {
+  if (!(await exists(join(source, "authored-schema.ts")))) await rename(join(source, "schema.ts"), join(source, "authored-schema.ts"));
+  await writeFile(join(source, "schema.ts"), `import authored from "./authored-schema";
+import {defineDocument} from "hitslop";
+${statements}
+export default defineDocument(authored.descriptor.properties, {initial:${initial}});
+`);
 }

@@ -80,7 +80,6 @@ test("dedicated capture components share the document and mode without mounting 
       let {mode} = $props();
       if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
     </script><Child />`);
-    await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
     const output = await buildTemplate(source, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, join(root, "probe.slop"));
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(output, name);

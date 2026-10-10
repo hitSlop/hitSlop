@@ -2,6 +2,17 @@
 
 **Tiny apps. Big personality.**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/hitSlop/hitSlop/ci.yml?branch=master&style=flat&label=CI)](https://github.com/hitSlop/hitSlop/actions/workflows/ci.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-7050ad?style=flat)](LICENSE)
+[![macOS 15.2+](https://img.shields.io/badge/macOS-15.2%2B-555555?style=flat&logo=apple&logoColor=white)](https://hitslop.com)
+[![Apple silicon](https://img.shields.io/badge/Apple-silicon-555555?style=flat&logo=apple&logoColor=white)](https://hitslop.com)
+[![Discord — show us your slop](https://img.shields.io/badge/Discord-show_us_your_slop-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
+[![GitHub stars](https://img.shields.io/github/stars/hitSlop/hitSlop?style=flat&color=e6a23c)](https://github.com/hitSlop/hitSlop/stargazers)
+
+[![Local-first](https://img.shields.io/badge/Local--first-487B41?style=flat)](#keep-the-app-keep-the-work)
+[![No account required](https://img.shields.io/badge/No_account-required-487B41?style=flat)](#keep-the-app-keep-the-work)
+[![Tiny apps. Big personality.](https://img.shields.io/badge/Tiny_apps-Big_personality-7050ad?style=flat)](#small-enough-to-be-yours)
+
 Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
 Each one is a document you and your agent share. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Everything stays on your Mac, in one `.slop` file (a SQLite database) you can keep, copy and send to a friend.
@@ -152,36 +163,32 @@ Replace the following starter files. Keep the generated `package.json` and `tsco
 
 ### 1. Say what it remembers
 
-`schema.ts` defines the saved fields. Text is editable; a counter supports increments.
+`schema.ts` defines the saved fields and what a new document starts with. Text is editable; a counter supports increments. It also holds the one action the button and your agent share:
 
 ```ts
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s, type Tx } from "hitslop";
 
-export default defineDocument({
+const doc = defineDocument({
   title: s.text(),
   wins: s.counter(),
-});
+}, { initial: { title: "Tiny wins today" } });
+export default doc;
+
+/** Give yourself credit for one little win. */
+export const countOne = (tx: Tx<typeof doc>) => tx.fields.wins.increment();
 ```
+
+Changing `initial` later doesn't overwrite saved wins.
 
 ### 2. Give it a name, a window and colors
 
-`slop.ts` describes the app: its name, its starting window size, the colors people can change, and the starting values for **new** documents. The explicit `slug` identifies the app.
+`slop.ts` describes the app: its name, its starting window size and the colors people can change. The explicit `slug` identifies the app.
 
 ```ts
 import { defineSlop } from "hitslop";
-import schema from "./schema";
-import App from "./App.svelte";
-import Export from "./Export.svelte";
-import Icon from "./Icon.svelte";
-import * as commands from "./commands";
-import "./styles.css";
 
 export default defineSlop({
   slug: "tiny-wins",
-  view: App,
-  export: Export,
-  icon: Icon,
-  commands,
   title: "Tiny Wins",
   description: "A little credit for the things you get done.",
   author: { name: "You" },
@@ -192,12 +199,10 @@ export default defineSlop({
     ink: "#382d24",
     accent: "#28634b",
   },
-  document: schema,
-  initial: { title: "Tiny wins today", wins: 0 },
 });
 ```
 
-Theme colors are CSS variables shared by the window, icon, and export. Change them through the theme panel or CLI, or share them as a theme file, without rebuilding. Changes stay with that document; the template keeps its defaults. Changing `initial` later doesn't overwrite saved wins.
+Theme colors are CSS variables shared by the window, icon, and export. Change them through the theme panel or CLI, or share them as a theme file, without rebuilding. Changes stay with that document; the template keeps its defaults.
 
 `fullscreenable: true` enables the Mac window's fullscreen control and **View ▸ Enter Full Screen**. See [window behavior](apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx#enable-fullscreen) for other window types.
 
@@ -206,16 +211,19 @@ Theme colors are CSS variables shared by the window, icon, and export. Change th
 Replace the starter's `commands.ts` with:
 
 ```ts
-import doc from "./schema";
+import { defineCommands } from "hitslop/commands";
+import doc, { countOne } from "./schema";
 
-export const countOne = doc.command({
-  description: "Give yourself credit for one little win.",
-  args: {},
-  run({ tx }) { tx.fields.wins.increment(); },
+export default defineCommands(doc, {
+  countOne: {
+    description: "Give yourself credit for one little win.",
+    args: {},
+    run: ({ tx }) => countOne(tx),
+  },
 });
 ```
 
-Declare commands at module scope and register their exports with `commands` in `defineSlop`, as above. The button imports `countOne`; an agent discovers it with `slop describe` and runs it with `slop call`. Both use the same action, applied atomically as one undo step. Commands with arguments declare them using `s.*` descriptors. Ordinary field handles remain useful for typing and other direct edits.
+The button runs `countOne` with `doc.change(countOne)`; an agent discovers the command with `slop describe` and runs it with `slop call`. Both apply the same action atomically, as one undo step. Commands are for agents, and their arguments are flat `s.*` scalars. Ordinary field handles remain useful for typing and other direct edits.
 
 ### 4. Build the app, icon, and export together
 
@@ -224,13 +232,13 @@ Declare commands at module scope and register their exports with `commands` in `
 ```svelte
 <script lang="ts">
   import { bindText } from "hitslop/svelte";
-  import doc from "./schema";
-  import { countOne } from "./commands";
+  import doc, { countOne } from "./schema";
+  import "./styles.css";
 </script>
 <main class="wins-card">
   <input aria-label="Counter title" use:bindText={doc.fields.title} />
   <p class="wins-number" aria-live="polite">{doc.current.wins}</p>
-  <button onclick={() => countOne()}>A little win +1</button>
+  <button onclick={() => doc.change(countOne)}>A little win +1</button>
 </main>
 ```
 
@@ -256,7 +264,7 @@ Declare commands at module scope and register their exports with `commands` in `
 <div class="wins-icon">{doc.current.wins}</div>
 ```
 
-`view: App` selects the editor. The declaration also selects two optional capture components:
+`App.svelte` is the editor. Two optional files supply capture components:
 
 - `Export.svelte` supplies the layout for previews and PNG/PDF exports. Use normal document flow so long content can expand. Without this component, hitSlop renders a fresh App from saved data with its default local view; mark controls with `data-slop-export="hide"` to leave them out.
 - `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Without it, Finder can use the saved preview or the generic document icon.
@@ -296,8 +304,9 @@ main.wins-card { min-height: 100%; }
 }
 ```
 
-The builder connects the explicitly imported views and styles to the host through
-`defineSlop`. Filenames do not assign roles. See the
+The builder finds each part by its filename: `slop.ts`, `schema.ts` and `App.svelte`, plus
+optional `Export.svelte`, `Icon.svelte` and `commands.ts`. Stylesheets are imported from
+components, as `App.svelte` does above. See the
 [runtime reference](docs/reference/runtime.md#page-shell-and-ctx) for the app interface.
 
 ### 5. Take it for a spin
@@ -319,6 +328,14 @@ In hitSlop, choose **Tiny Wins → Create**, then save your document as `My Wins
 Try the commands from [You and your agent, one document](#you-and-your-agent-one-document) on your saved document. `slop theme reset "My Wins.slop"` restores the template's colors.
 
 ## How it's built
+
+[![Rust](https://img.shields.io/badge/Rust-ce7043?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Swift](https://img.shields.io/badge/Swift-F05138?style=flat&logo=swift&logoColor=white)](https://www.swift.org/)
+[![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?style=flat&logo=svelte&logoColor=white)](https://svelte.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![Bun](https://img.shields.io/badge/Bun-282522?style=flat&logo=bun&logoColor=white)](https://bun.sh/)
+[![hitslop on npm](https://img.shields.io/badge/npm-hitslop-CB3837?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/hitslop)
 
 A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a slop the same way.
 
@@ -370,6 +387,27 @@ bun slop dev examples/slops/quick-checklist
 ```
 
 [Development](docs/guides/development.md) covers setup and adding templates, and the [documentation index](docs/README.md) covers how the platform works.
+
+## Show us your slop
+
+Made something wonderfully specific? Show us your slop. Share a screenshot, swap ideas, or help someone make their first tiny app.
+
+[![Join hitSlop on Discord](https://img.shields.io/badge/Discord-come_hang_out-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
+[![Follow hitSlop on X](https://img.shields.io/badge/X-%40hitslop-181717?style=flat&logo=x&logoColor=white)](https://x.com/hitslop)
+
+### Little things add up
+
+[![hitSlop repository activity and contributor insights](https://repobeats.axiom.co/api/embed/7fa6efb86563307a3adfcfd775c1f4ece1e346de.svg "Repobeats analytics image")](https://github.com/hitSlop/hitSlop/graphs/contributors)
+
+### Star history
+
+<a href="https://www.star-history.com/#hitSlop/hitSlop&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=hitSlop/hitSlop&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=hitSlop/hitSlop&amp;type=Date" />
+    <img alt="hitSlop GitHub star history chart" src="https://api.star-history.com/svg?repos=hitSlop/hitSlop&amp;type=Date" width="800" />
+  </picture>
+</a>
 
 ## Related projects
 

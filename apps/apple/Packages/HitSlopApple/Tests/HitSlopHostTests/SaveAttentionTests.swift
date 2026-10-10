@@ -1,4 +1,4 @@
-import HitSlopDocument
+import HitSlopCore
 import Testing
 
 @testable import HitSlopHost

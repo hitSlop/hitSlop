@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type Page } from "playwright";
-import { appendFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startBrowserHost } from "../../packages/hitslop/src/cli/browser";
 import { createFixture } from "../../packages/hitslop/tests/cli/dev-fixture";
@@ -49,11 +49,8 @@ beforeAll(async () => {
   directory = await mkdtemp(join(process.cwd(), ".browser-host-test-"));
   const source = join(directory, "source");
   await createFixture(process.cwd(), source);
-  await appendFile(join(source, "commands.ts"), '\nexport const spin = doc.command({description: "Watchdog fixture", args: {}, run() { while (true) {} }});\n');
   const declaration = join(source, "slop.ts");
   await writeFile(declaration, (await readFile(declaration, "utf8")).replace('window: { kind: "standard",', 'window: { kind: "standard", fullscreenable: true,'));
-  const fixtureApp = join(source, "App.svelte");
-  await writeFile(fixtureApp, (await readFile(fixtureApp, "utf8")).replace("{addRow}", "{addRow, spin}").replace("{doc, addRow, attachments}", "{doc, addRow, spin, attachments}"));
   const template = await buildTemplate(source, undefined, join(directory, "fixture.slop"));
   const original = join(directory, "original.slop");
   await execute({ method: "create", from: template, output: original });
@@ -72,7 +69,7 @@ async function imported(file = snapshot) {
 }
 
 for (const [name, engine] of [["Chrome", chromium]] as const) {
-  test(`${name}: real WASM commands, OPFS reload, tab lock, focused text download and native reopen`, async () => {
+  test(`${name}: real WASM edits, OPFS reload, tab lock, focused text download and native reopen`, async () => {
     const profile = await mkdtemp(join(directory, "chrome-profile-"));
     const context = await engine.launchPersistentContext(profile, { channel: "chrome", acceptDownloads: true });
     try {
@@ -89,19 +86,13 @@ for (const [name, engine] of [["Chrome", chromium]] as const) {
       await frame.waitForFunction(() => document.querySelector("[data-count]")?.textContent === "4", undefined, { timeout: 30_000 }).catch(async error => { throw new Error(`Command: ${await app.locator("[data-error]").textContent()}; status: ${await page.locator("#status").textContent()}`, { cause: error }); });
       expect(await app.locator("[data-error]").textContent()).toBe("");
       const attachment = await frame.evaluate(async () => {
-        const { doc, addRow, spin, attachments } = (globalThis as any).__devProbe;
-        let timeout = "";
-        try { await spin({}); } catch (error) { timeout = String(error); }
-        let refusal = "";
-        try { await addRow({ text: "" }); } catch (error) { refusal = String(error); }
+        const { doc, attachments } = (globalThis as any).__devProbe;
         const ref = await attachments.import(new File(["portable attachment"], "note.txt"),
           (tx: any, ref: any) => tx.fields.tasks.insert({ text: ref.id }));
         await doc.flush();
         const response = await fetch(attachments.url(ref.id), { headers: { Range: "bytes=0-7" } });
-        return { id: ref.id, refusal, timeout, range: await response.text(), status: response.status, sandbox: response.headers.get("Content-Security-Policy") };
+        return { id: ref.id, range: await response.text(), status: response.status, sandbox: response.headers.get("Content-Security-Policy") };
       });
-      expect(attachment.refusal).toContain("Text required");
-      expect(attachment.timeout).toMatch(/timed out|interrupt/i);
       expect(attachment.range).toBe("portable"); expect(attachment.status).toBe(206); expect(attachment.sandbox).toBe("sandbox");
       const cdp = await context.newCDPSession(page);
       await cdp.send("ServiceWorker.enable"); await cdp.send("ServiceWorker.stopAllWorkers");

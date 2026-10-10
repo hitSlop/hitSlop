@@ -6,16 +6,10 @@ impl Store {
     /// The blob is committed before any edit can save a reference to it.
     pub fn put_attachment(&self, bytes: &[u8]) -> Result<Attachment> {
         self.check(true)?;
-        if bytes.len() > crate::ATTACHMENT_FILE_BYTES {
-            return Err(rejected(
-                crate::Code::TooLarge,
-                format!("Attachment exceeds {} MiB", crate::ATTACHMENT_FILE_BYTES >> 20),
-            ));
-        }
-        let id = attachment_id(bytes);
-        self.connected(&mut lock(&self.backing).conn, |conn| self.store_attachment(conn, &id, bytes))?;
+        let attachment = Attachment::from_bytes(bytes)?;
+        self.connected(&mut lock(&self.backing).conn, |conn| self.store_attachment(conn, &attachment.id, bytes))?;
         lock(&self.account).changed = true;
-        Ok(Attachment { id, bytes: bytes.len() as u64, media_type: crate::media::attachment_type(bytes).into() })
+        Ok(attachment)
     }
 
     fn store_attachment(&self, conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
@@ -103,6 +97,22 @@ pub struct Attachment {
     pub media_type: String,
     pub id: String,
     pub bytes: u64,
+}
+impl Attachment {
+    /// The same limits, identity and passive-media classification used when storing a blob.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() > crate::ATTACHMENT_FILE_BYTES {
+            return Err(rejected(
+                crate::Code::TooLarge,
+                format!("Attachment exceeds {} MiB", crate::ATTACHMENT_FILE_BYTES >> 20),
+            ));
+        }
+        Ok(Self {
+            id: attachment_id(bytes),
+            bytes: bytes.len() as u64,
+            media_type: crate::media::attachment_type(bytes).into(),
+        })
+    }
 }
 fn attachment_id(bytes: &[u8]) -> String {
     crate::hex(Sha256::digest(bytes).as_slice())

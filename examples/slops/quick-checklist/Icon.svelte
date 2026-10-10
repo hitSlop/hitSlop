@@ -1,7 +1,8 @@
 <script lang="ts">
-import Check from "@lucide/svelte/icons/check";
-import doc, { checklistView } from "./schema";
-const { marks } = $derived(checklistView(doc.current));
+  import Check from "@lucide/svelte/icons/check";
+  import doc from "./schema";
+  import { checklistView } from "./tasks";
+  const { marks } = $derived(checklistView(doc.current));
 </script>
 
 <div class="checklist-icon-tile" aria-hidden="true">

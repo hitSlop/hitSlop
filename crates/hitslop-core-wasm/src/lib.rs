@@ -1,6 +1,6 @@
 //! wasm-bindgen adapter for the shared document core.
 #![cfg(target_arch = "wasm32")]
-#[cfg(not(any(feature = "browser", feature = "evaluator")))]
+#[cfg(not(feature = "browser"))]
 mod test_adapter {
     use hitslop_core::{AppSpec, Applied, Document as Core, Origin};
     use wasm_bindgen::prelude::*;
@@ -101,5 +101,3 @@ mod test_adapter {
 
 #[cfg(feature = "browser")]
 mod browser;
-#[cfg(feature = "evaluator")]
-mod evaluator;

@@ -103,7 +103,7 @@ and PDF behavior.
   (`--slop-surface`, `--slop-accent`, `--slop-ink`). This ensures each slop retains its
   authentic physical personality (Paper, Instrument, Skin) while remaining effortless
   to restyle or re-theme at runtime.
-- Keep structural styles in plain `styles.css`, imported explicitly from `slop.ts`. Declare the
+- Keep structural styles in plain `styles.css`, imported from `App.svelte` (never slop.ts). Declare the
   colors a person may change in slop.ts's `theme`: lowercase `#rrggbb`, or `#rrggbbaa`
   when translucent. Only colors belong there; fonts, sizes and colors derived with
   `color-mix(… var(--slop-ink) …)` go in `styles.css`. The build stores them as the
@@ -116,8 +116,8 @@ and PDF behavior.
   `slop theme get/set/reset/export/import`.
   The host saves overrides in the document's database; never edit it or compiled assets
   directly. Layout changes require authoring source and a rebuild.
-- Keep exportable content in normal flow. Without an `export` view, mark
-  editing-only UI with `data-slop-export="hide"`; with one, the editor is never
+- Keep exportable content in normal flow. Without `Export.svelte`, mark
+  editing-only UI with `data-slop-export="hide"`; with it, the editor is never
   captured.
 - Make each slop purpose-specific. Shared SDK patterns must not make unrelated
   objects look like one reskinned dashboard.

@@ -43,17 +43,17 @@ The final question asks which agent CLI should build it for you. Choose an insta
 
 ## Understand the source
 
-Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and a new document's values. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
+Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and optional artwork. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
-- `schema.ts` defines document fields; `slop.ts`'s `initial` provides creation-only values.
-- `commands.ts` exports named actions shared by the page and CLI; the starter includes `addTask`.
+- `schema.ts` default-exports the document fields and creation-only initial values.
+- `commands.ts` optionally default-exports agent commands; the starter includes `addTask`.
 - `App.svelte` renders and edits the document through typed handles.
 - `slop.ts`'s `theme` declares the colors people can change.
-- `styles.css` owns layout and component styling; import it explicitly from `slop.ts`.
+- `styles.css` owns layout and component styling; import it explicitly from `App.svelte`.
 
-Import the editor as `view` and optional capture components as `export` and `icon`. Filenames do not assign roles.
+The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, optional `Export.svelte`, `Icon.svelte` and `commands.ts`. Put helper modules anywhere.
 
-The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts` or the modules it imports outside components (such as `schema.ts`) resets the copy. Test native persistence in a writable document copy.
+The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to metadata, schema, commands, their dependencies or the role inventory resets the copy. Test native persistence in a writable document copy.
 
 ## Turn the starter into a counter
 
@@ -61,32 +61,22 @@ Replace the starter's data definition:
 
 ```ts title="schema.ts"
 import { defineDocument, s } from "hitslop";
-export default defineDocument({ title: s.text(), count: s.counter() });
+export default defineDocument({ title: s.text(), count: s.counter() }, { initial: { title: "Tiny Counter" } });
 ```
 
-Then describe the counter in `slop.ts`. Its `initial` values must fit the new schema, and its `theme` declares the colors `styles.css` uses below:
+Then describe the counter in `slop.ts`. Its `theme` declares the colors `styles.css` uses below:
 
 ```ts title="slop.ts"
 import { defineSlop } from "hitslop";
-import schema from "./schema";
-import App from "./App.svelte";
-import Icon from "./Icon.svelte";
-import * as commands from "./commands";
-import "./styles.css";
 
 export default defineSlop({
   slug: "tiny-counter",
-  view: App,
-  icon: Icon,
-  commands,
   title: "Tiny Counter",
   description: "Count the small things worth counting.",
   author: { name: "Your Name" },
   categories: ["utilities"],
   window: { kind: "standard", width: 360, height: 360, fullscreenable: true },
   theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
-  document: schema,
-  initial: { title: "Tiny Counter", count: 0 },
 });
 ```
 
@@ -97,18 +87,21 @@ See [fullscreen behavior](/docs/guides/manifest-and-windows/#enable-fullscreen).
 Replace the starter's `commands.ts` with a counter action:
 
 ```ts title="commands.ts"
+import { defineCommands } from "hitslop/commands";
 import doc from "./schema";
 
-export const countOne = doc.command({
-  description: "Count one more.",
-  args: {},
-  run({ tx }) { tx.fields.count.increment(); },
+export default defineCommands(doc, {
+  countOne: {
+    description: "Count one more.",
+    args: {},
+    run({ tx }) { tx.fields.count.increment(); },
+  },
 });
 ```
 
-The `commands` import above registers this export under its name, `countOne`.
-The page and CLI can now invoke the same action. Declare commands at module scope;
-their `args` use `s.*` descriptors, or `{}` when no arguments are needed.
+The CLI discovers `countOne` from this set. Commands are for agents; their arguments
+are flat scalars or optional scalars, or `{}` when none are needed. The page below
+edits with its document handle. To give the button and an agent one shared edit, see [share an edit with agents](/docs/guides/data-and-schemas/#share-an-edit-with-agents).
 
 Replace `App.svelte` with:
 
@@ -116,18 +109,18 @@ Replace `App.svelte` with:
 <script lang="ts">
   import { EditableText } from "hitslop/svelte";
   import doc from "./schema";
-  import { countOne } from "./commands";
+  import "./styles.css";
 </script>
 <main class="counter">
   <EditableText class="counter-title" field={doc.fields.title} label="Counter title" placeholder="Name it" />
   <p class="counter-value">{doc.current.count}</p>
-  <button data-slop-export="hide" onclick={() => countOne()}>
+  <button data-slop-export="hide" onclick={() => doc.fields.count.increment()}>
     Count one
   </button>
 </main>
 ```
 
-PNG and PDF exports render this view from the saved document in a fresh page; `data-slop-export="hide"` leaves the button out of them. Add a thin `export` component with natural height when content grows longer than the window or should become a different artifact. It reads the same saved state and mounts without the editor.
+PNG and PDF exports render this view from the saved document in a fresh page; `data-slop-export="hide"` leaves the button out of them. Add a thin `Export.svelte` component with natural height when content grows longer than the window or should become a different artifact. It reads the same saved state and mounts without the editor.
 
 `Icon.svelte` draws the Finder icon:
 

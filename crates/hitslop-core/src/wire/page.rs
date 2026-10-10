@@ -7,12 +7,6 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "method", deny_unknown_fields, rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
 pub enum PageRequest {
-    #[serde(rename = "commands.run")]
-    CommandsRun {
-        name: String,
-        #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-        args: serde_json::Value,
-    },
     Open {},
     Apply {
         batch: super::Batch,
@@ -62,9 +56,6 @@ impl PageRequest {
             batch.check_size(super::PAGE_PAYLOAD)?;
         }
         let valid = match self {
-            Self::CommandsRun { name, args } => {
-                super::engine::valid_command_name(name) && crate::encode(args).len() <= super::PAGE_PAYLOAD
-            }
             Self::Apply { .. } => true,
             Self::AttachmentsPut { bytes } => bytes.len() <= super::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4,
             Self::WindowResize { width, height } => {
@@ -92,14 +83,6 @@ pub enum HostAction {
 #[serde(tag = "method", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "page.generated.ts"))]
 pub enum PageSuccess {
-    #[serde(rename = "commands.run")]
-    CommandsRun {
-        ok: True,
-        sequence: u64,
-        ids: Vec<String>,
-        #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-        result: Box<serde_json::value::RawValue>,
-    },
     Open {
         ok: True,
         state: String,
@@ -130,7 +113,7 @@ pub enum PageSuccess {
         #[serde(rename = "runtimeABI")]
         runtime_abi: u64,
         style: bool,
-        window: super::build::WindowInput,
+        window: crate::app::WindowDefinition,
         #[cfg_attr(feature = "ts", ts(type = "object"))]
         descriptor: Box<serde_json::value::RawValue>,
     },

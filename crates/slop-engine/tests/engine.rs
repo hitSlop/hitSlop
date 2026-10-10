@@ -33,6 +33,33 @@ fn invoke(args: &[&str], input: &[u8], helper: Option<&Path>) -> std::process::O
 fn request(body: Value) -> Value {
     reply(&body.to_string(), None)
 }
+
+#[test]
+fn attachment_references_use_stored_blob_identity_and_media_rules_without_a_document() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("pretend.png");
+    fs::write(&file, b"abc").unwrap();
+    assert_eq!(
+        request(json!({"method":"attachments.ref","file":file})),
+        json!({"ok":true,"method":"attachments.ref","reference":{
+            "id":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            "byteLength":3,"name":"pretend.png","mimeType":"application/octet-stream"
+        }})
+    );
+    assert_eq!(fs::read(&file).unwrap(), b"abc");
+    let png = dir.path().join("image.txt");
+    fs::write(&png, b"\x89PNG\r\n\x1a\n").unwrap();
+    assert_eq!(request(json!({"method":"attachments.ref","file":png}))["reference"]["mimeType"], "image/png");
+
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    for path in [dir.path().to_path_buf(), link, dir.path().join("missing")] {
+        assert_eq!(request(json!({"method":"attachments.ref","file":path}))["reason"], "invalid_request");
+    }
+    fs::File::create(&file).unwrap().set_len(hitslop_core::ATTACHMENT_FILE_BYTES as u64 + 1).unwrap();
+    assert_eq!(request(json!({"method":"attachments.ref","file":file}))["reason"], "too_large");
+}
+
 fn reply(input: &str, helper: Option<&Path>) -> Value {
     let output = invoke(&["--client-protocol", &protocol()], input.as_bytes(), helper);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
@@ -127,10 +154,12 @@ fn app_validation_preserves_marker_order_and_limits() {
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
     let app = app(json!({"title":"Hello"}));
-    assert_eq!(
-        request(json!({"method":"validateApp","stage":stage,"app":app})),
-        json!({"ok":true,"method":"validateApp"})
-    );
+    let validated = request(json!({"method":"validateApp","stage":stage,"app":app}));
+    assert_eq!(validated["ok"], true);
+    assert_eq!(validated["method"], "validateApp");
+    assert_eq!(validated["window"]["frame"]["kind"], "standard");
+    assert_eq!(validated["window"]["frame"]["frame"]["resizable"], true);
+    assert_eq!(validated["window"]["frame"]["frame"]["radius"], "22px");
     for (field, replacement) in [
         ("initial", json!({"title":7})),
         ("theme", json!([{"token":"accent","color":"invalid"}])),

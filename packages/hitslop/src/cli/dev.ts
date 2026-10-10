@@ -1,18 +1,19 @@
 import { createServer, type Plugin, type ViteDevServer } from "vite";
 import { readFile, mkdtemp, rm, realpath, mkdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { appConfig } from "./vite";
+import { roleName } from "./app-vite";
+import { appConfig, virtualEntry } from "./vite";
 import { previewFrame } from "./preview";
 import { previewResizeScript } from "./preview-resize";
 import { cliRoot, shellDirectory } from "./paths";
 import { stageWorker } from "./build";
 import { execute } from "./engine";
-import { PreviewOwners, type PreviewOwnerFactory } from "./preview-owner";
+import { PreviewOwners } from "./preview-owner";
 import { previewClient } from "./preview-client";
-import type { BuildInput } from "../wire/app.generated";
-import { appContentSecurityPolicy } from "../schema/policy";
+import type { BuildInput, WindowDefinition } from "../wire/app.generated";
+import { appContentSecurityPolicy, previewHostPolicy } from "../schema/policy";
 import { AttachmentIdPattern } from "../schema/constants";
 
 /** Single byte ranges; malformed/multiple ranges are ignored, an empty range is 416. */
@@ -29,11 +30,11 @@ export function byteRange(header: string | undefined, size: number): [number, nu
   return [Math.max(0,size-last),size];
 }
 
-export async function startDev(source: string, port = 0, signal?: AbortSignal, owner?: PreviewOwnerFactory) {
+export async function startDev(source: string, port = 0, signal?: AbortSignal) {
   source = await realpath(resolve(source));
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
-  let stage = "", template = "", input: BuildInput;
-  const hosts = new PreviewOwners(temporary, () => template, owner);
+  let stage = "", template = "", input: BuildInput, window: WindowDefinition;
+  const hosts = new PreviewOwners(temporary, () => template);
   let dependencies = new Set([join(source,"slop.ts")]);
   let closed = false, failed = false;
   let server: ViteDevServer | undefined, child: {kill():void} | undefined;
@@ -47,7 +48,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal, o
       const built = await worker.done;
       await execute({method:"pack",app:built.input,stage:join(next,"stage"),file:join(next,"preview.slop")});
       const old = stage;
-      input = built.input; stage = next; template = join(next,"preview.slop");
+      input = built.input; window = built.window; stage = next; template = join(next,"preview.slop");
       dependencies = new Set(built.dependencies.definition.filter(path => !/\.(?:svelte|css)$/.test(path)));
       server?.watcher.add([...dependencies]);
       failed = false; hosts.activate();
@@ -56,14 +57,6 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal, o
     finally { child = undefined; }
   };
   const rebuild = () => {
-    // A supplied owner holds a particular embedded app. A new declaration requires a
-    // new harness session; it must never silently replace that owner's document.
-    if (owner) {
-      failed = true;
-      void hosts.invalidate().catch(console.error);
-      server?.ws.send({ type: "error", err: { message: "Definition changed; restart the shared development harness", stack: "", plugin: "hitslop-definition" } });
-      return;
-    }
     wanted = true;
     rebuilding ??= (async () => {
       while (wanted && !closed) {
@@ -88,9 +81,15 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal, o
       name:"hitslop-preview-host",
       configureServer(current) {
         hosts.attach(current);
-        current.watcher.add([...dependencies]);
+        current.watcher.add([source, ...dependencies]);
         current.watcher.on("all",(event,file) => {
-          if (!closed && ["add","unlink","change"].includes(event) && (dependencies.has(file) || (failed && /\.[cm]?[jt]s$/.test(file)))) rebuild();
+          const rootRole = dirname(file) === source && roleName(file);
+          const inventoryChanged = !!rootRole && event !== "change";
+          if (!closed && ["add","unlink","change"].includes(event) && (inventoryChanged || dependencies.has(file) || (failed && file.startsWith(source + "/")))) {
+            const entry = current.moduleGraph.getModuleById(virtualEntry);
+            if (entry) current.moduleGraph.invalidateModule(entry);
+            rebuild();
+          }
         });
         current.middlewares.use(async (req,res,next) => {
           let path = "";
@@ -98,7 +97,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal, o
             path = decodeURIComponent(new URL(req.url!,"http://localhost").pathname);
             const origin = new URL(current.resolvedUrls!.local[0]!).origin;
             let content: string | Buffer | undefined, type = "text/javascript";
-            if (path === "/") { content = previewFrame({title:input.declaration.metadata.title,window:input.declaration.window}); type="text/html"; }
+            if (path === "/") { content = previewFrame({title:input.declaration.metadata.title,window}); type="text/html"; }
             else if (path === "/app.html") {
               type="text/html";
               content=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}"></script></body></html>`;
@@ -137,7 +136,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal, o
             }
             if (content===undefined) {next();return;}
             res.setHeader("Content-Type",type);res.setHeader("Cache-Control","no-store");res.setHeader("X-Content-Type-Options","nosniff");
-            res.setHeader("Content-Security-Policy",path==="/" ? `default-src 'none'; script-src ${origin}/__preview__/resize.js; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'` : appContentSecurityPolicy("browser",origin));
+            res.setHeader("Content-Security-Policy",path==="/" ? previewHostPolicy(origin) : appContentSecurityPolicy("browser",origin));
             res.end(content);
           } catch(error) {
             if (path.startsWith("/attachments/")) { res.statusCode=404; res.end(); }
@@ -145,7 +144,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal, o
           }
         });
       },
-      handleHotUpdate(ctx) {if (dependencies.has(ctx.file)) return [];},
+      handleHotUpdate(ctx) {if (rebuilding || failed || dependencies.has(ctx.file)) return [];},
     };
     const config=await appConfig(source);
     server=await createServer({...config,plugins:[host,...(config.plugins??[])],appType:"custom",cacheDir:join(tmpdir(),"hitslop-vite-cache",createHash("sha256").update(cliRoot+source).digest("hex")),server:{host:"127.0.0.1",port,strictPort:port!==0,fs:{strict:true,allow:[source,cliRoot]}}});

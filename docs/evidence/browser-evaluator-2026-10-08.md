@@ -1,5 +1,10 @@
 # Browser command evaluator qualification
 
+> **Historical experiment; no shipped browser command evaluator.** Agent-only commands
+> now run through the native Rust evaluator. This report records the isolated evaluator
+> experiment. The durable Chrome owner and download path are now implemented; see
+> [browser-host hardening](browser-host-hardening-2026-10-08.md) for later qualification.
+
 The current QuickJS command path is feasible in a disposable browser WASM worker.
 This qualifies an evaluator route, not a browser document host. No `slop open --browser`
 command or durable browser owner is implemented by this experiment.

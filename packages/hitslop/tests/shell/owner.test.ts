@@ -5,7 +5,7 @@ import { expect, test } from "bun:test";
 import { OwnerDocument } from "../../src/shell/owner/document";
 import type { OwnerTransport } from "../../src/shell/owner/transport";
 import { wasmTransport } from "./wasm-transport";
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s, type Destination } from "hitslop";
 import { DocumentError } from "../../src/sdk/errors";
 import type { Batch } from "../../src/schema/core";
 import type { PagePush } from "../../src/wire/page";
@@ -32,7 +32,7 @@ const definition = defineDocument({
   done: s.boolean(),
   hits: s.counter(),
   rows: s.list(s.object({ text: s.text(), done: s.boolean() })),
-});
+}, { initial: { done: false } });
 const initial = {
   title: "Hello",
   done: false,
@@ -120,32 +120,6 @@ test("adapter replacement and repeated subscription cleanup preserve the live ob
   } finally { core.free(); }
 });
 
-test("commands drain pending edits and resolve after the owner's publication", async () => {
-  const { core, transport, doc } = await open();
-  const held = gate();
-  let observed: unknown;
-  transport.runCommand = async (name, args) => {
-    observed = { name, args, title: JSON.parse(core.state()).value.title };
-    await held.promise;
-    const result = await transport.apply({ intents: [{ type: "increment", path: ["hits"], by: 3 }] });
-    return { sequence: result.sequence, ids: result.ids, result: "accepted" };
-  };
-  try {
-    const edit = doc.fields.title.set("Before command");
-    const command = doc.runCommand("increment", { by: 3 });
-    await edit;
-    await Bun.sleep(0);
-    expect(observed).toEqual({ name: "increment", args: { by: 3 }, title: "Before command" });
-    expect(doc.current.hits).toBe(0);
-    held.release();
-    expect(await command).toBe("accepted");
-    expect(doc.current.hits).toBe(3);
-    await doc.undo();
-    expect(doc.current.hits).toBe(0);
-    expect(doc.current.title).toBe("Before command");
-  } finally { held.release(); core.free(); }
-});
-
 test("text handles read the shown text and collectors' handles do not", async () => {
   const { core, doc } = await open();
   try {
@@ -155,19 +129,6 @@ test("text handles read the shown text and collectors' handles do not", async ()
     expect(doc.fields.title.value).toBe("Next");
     await doc.change((tx) => { expect("value" in tx.fields.title).toBe(false); });
   } finally { core.free(); }
-});
-
-test("the page never retries command failures", async () => {
-  for (const outcome of ["unknown_outcome", "rejected"] as const) {
-    const { core, transport, doc } = await open();
-    let calls = 0;
-    transport.runCommand = async () => { calls++; throw new DocumentError(outcome, "test outcome", outcome === "rejected" ? "stale_base" : undefined); };
-    try {
-      await expect(doc.runCommand("increment", {})).rejects.toMatchObject({ code: outcome });
-      expect(calls).toBe(1);
-      expect(doc.current.hits).toBe(0);
-    } finally { core.free(); }
-  }
 });
 
 // Scalar writes show at once; other writes appear with their publication.
@@ -264,6 +225,57 @@ test("collectors insert then address minted IDs synchronously and resolve only a
   } finally {
     core.free();
   }
+});
+
+for (const transaction of [false, true]) for (const objects of [false, true]) {
+  test(`object-list edits accept ${objects ? "rows" : "IDs"} through ${transaction ? "transaction" : "live"} handles`, async () => {
+    const { core, doc, transport } = await open();
+    const intents: Batch["intents"] = [];
+    const apply = transport.apply;
+    transport.apply = batch => { intents.push(...structuredClone(batch.intents)); return apply(batch); };
+    const [first, second] = doc.current.rows;
+    const ref = (row: (typeof doc.current.rows)[number]) => objects ? row : row.$id;
+    try {
+      expect(doc.fields.rows.item(first!)).toBe(doc.fields.rows.item(first!.$id));
+      const value = { text: "New", done: false };
+      const inserted = transaction ? await doc.change(tx => {
+        tx.fields.rows.item(ref(first!)).done.set(true);
+        tx.fields.rows.move(ref(second!), { before: ref(first!) });
+        const inserted = tx.fields.rows.insert(value, { after: ref(second!) });
+        tx.fields.rows.remove(ref(first!));
+        return inserted;
+      }) : await (async () => {
+        await doc.fields.rows.item(ref(first!)).done.set(true);
+        await doc.fields.rows.move(ref(second!), { before: ref(first!) });
+        const inserted = await doc.fields.rows.insert(value, { after: ref(second!) });
+        await doc.fields.rows.remove(ref(first!));
+        return inserted;
+      })();
+      // The wire carries only stable IDs, regardless of the author's reference form.
+      expect(intents).toEqual([
+        { type: "set", path: ["rows", { id: "a" }, "done"], value: true },
+        { type: "move", path: ["rows"], id: "b", at: { before: "a" } },
+        { type: "insert", path: ["rows"], id: inserted.id, value, at: { after: "b" } },
+        { type: "remove", path: ["rows"], id: "a" },
+      ]);
+      expect(JSON.parse(JSON.stringify(doc.current.rows))).toEqual([second!, { $id: inserted.id, ...value }]);
+      const before = core.state();
+      await expect(doc.fields.rows.item(first!).done.set(false)).rejects.toThrow();
+      expect(core.state()).toBe(before);
+    } finally { core.free(); }
+  });
+}
+
+test("row destination normalization preserves malformed fields for core refusal", async () => {
+  const { core, doc } = await open();
+  try {
+    for (const at of [{ before: "a", after: "b" }, { before: { $id: "a" }, extra: true }]) {
+      const before = core.state();
+      await expect(doc.fields.rows.move("b", at as unknown as Destination)).rejects.toThrow();
+      await expect(doc.change(tx => tx.fields.rows.move("b", at as unknown as Destination))).rejects.toThrow();
+      expect(core.state()).toBe(before);
+    }
+  } finally { core.free(); }
 });
 
 test("throwing, async, nested and escaped collectors never submit their staged changes", async () => {
@@ -629,7 +641,7 @@ test("an optional text binding disables when its parent row disappears", async (
 for (const outcome of [false, true]) {
   test(`${outcome ? "outcome failure retains" : "semantic rejection reverts"} a preview at a close barrier`, async () => {
     const { DocumentError } = await import("../../src/sdk/internal");
-    const def = defineDocument({ n: s.integer({ max: 10 }), valid: s.integer() });
+    const def = defineDocument({ n: s.integer({ max: 10 }), valid: s.integer() }, { initial: { n: 1, valid: 0 } });
     const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ n: 1, valid: 0 }));
     const transport = wasmTransport(core);
     const errors: unknown[] = [];
@@ -678,7 +690,7 @@ test("a lost final publication settles without replaying the accepted mutation",
 
 for (const text of [false, true]) test(`an unknown ${text ? "text" : "scalar"} outcome retains input and fails the barrier`, async () => {
   const { DocumentError } = await import("../../src/sdk/internal");
-  const def = defineDocument({ value: text ? s.text() : s.string() });
+  const def = defineDocument({ value: text ? s.text() : s.string() }, { initial: { value: "before" } });
   const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ value: "before" }));
   const transport = wasmTransport(core);
   const errors: unknown[] = [];

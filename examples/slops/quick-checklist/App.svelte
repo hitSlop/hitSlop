@@ -1,8 +1,10 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import Brand from "./Brand.svelte";
   import Progress from "./Progress.svelte";
-  import doc, { checklistView } from "./schema";
-  import * as actions from "./commands";
+  import doc from "./schema";
+  import { addTask, checklistView, fileFinished as collectFinished, restoreTask } from "./tasks";
   import { EditableText, draft, motion, notify } from "hitslop/svelte";
   import { DropdownMenu, Tabs } from "bits-ui";
   import Check from "@lucide/svelte/icons/check";
@@ -14,7 +16,7 @@
   let activeView = $state<"tasks" | "filed">("tasks");
   const { visible, filed, finished, ratio } = $derived(checklistView(doc.current));
   const fill = motion(() => ratio);
-  const newTask = draft(text => actions.addTask({ text }));
+  const newTask = draft(text => doc.change(tx => addTask(tx, text)));
 
   let composer = $state<HTMLInputElement>();
   let openMenu = $state<string | null>(null);
@@ -26,20 +28,22 @@
     if (await newTask.submit(event)) composer?.focus();
   }
   async function move(id: string, direction: -1 | 1) {
-    const neighbor = visible[visible.findIndex(task => task.$id === id) + direction]; if (!neighbor) return;
-    await doc.fields.tasks.move(id, direction === -1 ? {before:neighbor.$id} : {after:neighbor.$id});
+    const index = visible.findIndex(task => task.$id === id);
+    const task = visible[index], neighbor = visible[index + direction];
+    if (!task || !neighbor) return;
+    await doc.fields.tasks.move(task, direction === -1 ? { before: neighbor } : { after: neighbor });
   }
   async function remove(id: string) {
-    await actions.removeTask({ task: id });
+    await doc.fields.tasks.remove(id);
     notify("Task removed.");
     composer?.focus();
   }
   async function fileFinished() {
-    const count = await actions.archiveFinished();
+    const count = await doc.change(tx => collectFinished(tx, doc.current));
     notify(`${count} ${count === 1 ? "task" : "tasks"} filed.`);
   }
   async function restore(task: (typeof filed)[number]) {
-    await actions.restoreTask({ task });
+    await doc.change(tx => restoreTask(tx, task));
     notify("Task moved back to your list.");
   }
   function openActions(id: string, button: HTMLElement) {
@@ -89,7 +93,7 @@
         >
       </Tabs.List>
     </Tabs.Root>
-    <div class={`${"checklist-scroller"} ${activeView === "filed" ? "checklist-filed-view" : ""}`}>
+    <div class={["checklist-scroller", activeView === "filed" && "checklist-filed-view"]}>
       {#if activeView === "tasks"}
         <ol class="checklist-list">
           {#each visible as task, index (task.$id)}
@@ -112,7 +116,6 @@
               />
               <button
                 class="checklist-more"
-               
                 aria-label={`Actions for ${task.text || "untitled task"}`}
                 aria-haspopup="menu"
                 aria-expanded={openMenu === task.$id}

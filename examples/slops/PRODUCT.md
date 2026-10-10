@@ -26,7 +26,9 @@ The supported authored examples use Svelte, Bits UI, the document DSL, and theme
 
 ## Capabilities and Constraints
 
-- Each `slop.ts` defines the initial viewport and window presentation.
+- Each `slop.ts` defines the initial viewport and window presentation. Put creation
+  values in `schema.ts`; use `App.svelte`, optional `Export.svelte` and `Icon.svelte`
+  for the fixed presentation roles.
 - Preserve saved data and useful behavior when redesigning an example.
 - Each object may have a distinct palette, typography, layout, and material.
 - Paper, Instrument, and Skin are optional directions, not mandatory looks.

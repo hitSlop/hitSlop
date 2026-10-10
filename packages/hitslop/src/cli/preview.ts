@@ -1,29 +1,29 @@
-import type { WindowInput } from "../wire/app.generated";
-import { DefaultWindowRadius } from "../schema/constants";
+import type { WindowDefinition } from "../wire/app.generated";
+import { silhouettePath } from "../schema/presentation";
 
 /** Stands in for the native window: manifest size, shape mask, and backing or skin chrome. */
-export function previewFrame(app: { title: string; window: WindowInput }) {
+export function previewFrame(app: { title: string; window: WindowDefinition }) {
   const presentation = app.window;
-  const { width, height } = presentation;
+  const { width, height, frame } = presentation;
   const escape = (value: string) => value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   const surface = [`width:${width}px`, `height:${height}px`];
   let definitions = "",
     resize = false,
     ratio = 0,
     shadow = false;
-  if (presentation.kind === "skin") {
+  if (frame.kind === "skin") {
     surface.push(
       ...["background", "-webkit-mask", "mask"].map(
-        (property) => `${property}:url("${presentation.image}") 0 0/100% 100% no-repeat`,
+        (property) => `${property}:url("/assets/${frame.skin}") 0 0/100% 100% no-repeat`,
       ),
     );
   } else {
-    const { shape = DefaultWindowRadius, background, resizable = true, lockAspect = false } = presentation;
+    const { shape, radius, background, resizable, lockAspect } = frame.frame;
     resize = resizable;
     ratio = lockAspect ? width / height : 0;
     // The stage's drop shadow is a filter, which would hide the page from a backdrop filter,
     // so glass frosts the checkerboard without it.
-    shadow = background === undefined;
+    shadow = background === null;
     if (shadow) surface.push("background:Canvas");
     if (background === "glass")
       surface.push(
@@ -31,12 +31,12 @@ export function previewFrame(app: { title: string; window: WindowInput }) {
         "-webkit-backdrop-filter:blur(24px) saturate(1.8)",
         "backdrop-filter:blur(24px) saturate(1.8)",
       );
-    if (typeof shape === "string")
-      surface.push(`border-radius:${shape}`, `clip-path:inset(0 round ${shape})`);
+    if (shape.kind === "radii")
+      surface.push(`border-radius:${radius}`, `clip-path:inset(0 round ${radius})`);
     else {
-      const [w, h] = shape.viewBox ?? [width, height];
-      const rule = shape.fillRule ?? "nonzero";
-      definitions = `<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><clipPath id="window-shape" clipPathUnits="objectBoundingBox"><path d="${escape(shape.path)}" transform="scale(${1 / w},${1 / h})" clip-rule="${rule}" fill-rule="${rule}"/></clipPath></defs></svg>`;
+      const { viewBoxWidth: w, viewBoxHeight: h } = shape;
+      const rule = shape.evenOdd ? "evenodd" : "nonzero";
+      definitions = `<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><clipPath id="window-shape" clipPathUnits="objectBoundingBox"><path d="${escape(silhouettePath(shape.segments))}" transform="scale(${1 / w},${1 / h})" clip-rule="${rule}" fill-rule="${rule}"/></clipPath></defs></svg>`;
       surface.push("clip-path:url(#window-shape)");
     }
   }

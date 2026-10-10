@@ -16,8 +16,6 @@ export function findEngine(): Promise<string> {
   );
 }
 
-/** Document commands always use the engine shipped with the invoked CLI. */
-
 /** The permanent engine preflight refusal: exit 2, before touching a document. */
 export class ExitStatus extends Error {
   constructor(readonly code: number, message = "") {
@@ -67,9 +65,9 @@ export async function request(body: EngineRequest, { binary, ...options }: Engin
 
 const replyFields = {
   copy: ["output"], get: ["state"], batch: ["ids"], export: ["output"], "theme.export": ["state"],
-  "attachments.list": ["state"], "attachments.read": ["state"], call: ["result", "ids"],
+  "attachments.ref": ["reference"], "attachments.list": ["state"], "attachments.read": ["state"], call: ["result", "ids"],
   "artwork.export": ["output"], templates: ["catalog"], create: ["documentPath"], inspect: ["info"], schema: ["schema"],
-  pack: [], validateApp: [], validateMetadata: [], describe: ["state"], open: ["documentPath"], screenshot: ["output"],
+  pack: [], validateApp: ["window"], validateMetadata: [], describe: ["state"], open: ["documentPath"], screenshot: ["output"],
 } satisfies Record<EngineMethod, readonly string[]>;
 function acknowledged(value: unknown, method: EngineMethod): value is EngineReply {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -90,13 +88,30 @@ function acknowledged(value: unknown, method: EngineMethod): value is EngineRepl
   if (method === "create" || method === "open") return typeof reply.documentPath === "string";
   return true;
 }
-/** Callers that do not present edit outcomes can unwrap a successful typed result. */
-export async function execute<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, options?: EngineOptions): Promise<Extract<EngineSuccess, { method: M }>> {
-  const reply = await request<M>(body, options);
+/** What a failed edit means for the next one. */
+const outcomes = {
+  rejected: "Not applied.",
+  owner_replaced: "Not applied. Run slop get before issuing another edit.",
+  closing: "Not applied. Run slop get before issuing another edit.",
+  owner_invalidated: "Not applied.",
+  save_failed: "Applied, but not yet saved. Run slop get before issuing another edit.",
+  unknown_outcome: "Outcome unknown. Run slop get before issuing another edit.",
+} satisfies Record<import("../schema/values").OutcomeCode, string>;
+
+/** One refusal format for authoring and document commands; transport validation stays above. */
+export function unwrap<M extends EngineMethod>(reply: EngineReplyFor<M>, method: M): Extract<EngineSuccess, { method: M }> {
   if (!reply.ok) {
     const error = reply.reason === "requires_update" ? withRemedy(reply.error) : reply.error;
-    const message = reply.reason ? `${error} (${reply.reason})` : error;
-    throw new Error(reply.code === "unknown_outcome" ? `${message}\nOutcome unknown. Inspect the document and output before retrying.` : message);
+    const reason = reply.reason ? ` (${reply.reason})` : "";
+    const message = reply.opIndex === undefined ? `${error}${reason}` : `Refused ops[${reply.opIndex}]${reason}: ${error}`;
+    const outcome = method === "batch" || method === "call" ? outcomes[reply.code]
+      : reply.code === "unknown_outcome" ? "Outcome unknown. Inspect the document and output before retrying." : undefined;
+    throw new Error([message, outcome].filter(Boolean).join("\n"));
   }
   return reply as Extract<EngineSuccess, { method: M }>;
+}
+
+/** Invoke once and unwrap the method's acknowledged result. */
+export async function execute<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, options?: EngineOptions): Promise<Extract<EngineSuccess, { method: M }>> {
+  return unwrap<M>(await request<M>(body, options), body.method);
 }

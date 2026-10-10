@@ -7,7 +7,7 @@ The editor, Finder artwork, and exported document should feel like the same obje
 
 ## Declare capture views
 
-Import your components and register `view`, optional `export`, and optional `icon` in `defineSlop`. The CLI generates the entry from those roles; filenames are up to you. Export receives `mode: "preview" | "export"`:
+Use `App.svelte` for the editor and optional root `Export.svelte` and `Icon.svelte` for captures. The CLI discovers these exact filenames. Export receives `mode: "preview" | "export"`:
 
 ```svelte
 <main class="note-editor">
@@ -16,7 +16,7 @@ Import your components and register `view`, optional `export`, and optional `ico
 </main>
 ```
 
-Captures render saved state in a fresh page, with transient state at its defaults. A dedicated export mounts without the editor and owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Without an `export` component, preview and export mount `view`; mark composers, menus and tabs with `data-slop-export="hide"` and make any scrolling layout adjustments in your CSS. The default Quick Look preview is a 2× snapshot of the window that preserves its silhouette. An export component (here `Export.svelte`, registered as `export`):
+Captures render saved state in a fresh page, with transient state at its defaults. A dedicated export mounts without the editor and owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Without `Export.svelte`, preview and export mount `App.svelte`; mark composers, menus and tabs with `data-slop-export="hide"` and make any scrolling layout adjustments in your CSS. The default Quick Look preview is a 2× snapshot of the window that preserves its silhouette. An export component (`Export.svelte`):
 
 ```svelte
 <script lang="ts">
@@ -40,7 +40,7 @@ Captures render saved state in a fresh page, with transient state at its default
 Use the app's existing document facade in capture components. Captures render saved
 data in a fresh read-only page. If an export should show a selected tab or report, save
 that choice in the document; transient editor state is not carried into the capture.
-Without an `export` view, a fresh rendering of your `view` with its default local state is the fallback.
+Without `Export.svelte`, a fresh rendering of `App.svelte` with its default local state is the fallback.
 An export or icon component that throws fails that capture without changing the live
 editor. A later attempt gets a fresh rendering page.
 
@@ -60,11 +60,11 @@ The artwork can be rectangular or another shape; only the canvas must be square.
 }
 ```
 
-An absent icon is optional. If you declare an icon and it throws, capture fails rather than silently hiding the broken view.
+An absent icon is optional. If `Icon.svelte` throws, capture fails rather than silently hiding the broken view.
 
 ## Make exports readable
 
-Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With an `export` view, the editor is never captured. If no dedicated export view is declared, a fresh App rendering saved data is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
+Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With `Export.svelte`, the editor is never captured. Without it, a fresh `App.svelte` rendering saved data is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
 
 The host sets `html[data-slop-capture="static"]` during capture. Use it for deliberate static layout adjustments:
 

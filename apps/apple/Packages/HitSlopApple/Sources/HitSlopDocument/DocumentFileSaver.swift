@@ -1,5 +1,6 @@
 import AppKit
 import CoreServices
+import HitSlopCoreBinding
 import UniformTypeIdentifiers
 @preconcurrency import WebKit
 
@@ -7,7 +8,8 @@ import UniformTypeIdentifiers
 /// private staging file; the chosen destination is replaced only after a complete download.
 @MainActor final class DocumentFileSaver: NSObject, WKDownloadDelegate {
   typealias Presenter = @MainActor (NSWindow, String, @escaping (URL?) -> Void) -> (() -> Void)
-  nonisolated static let maximumBytes: Int64 = 100 * 1024 * 1024
+  nonisolated static let maximumBytes = Int64(hostLimits().downloadBytes)
+  nonisolated private static let limitMessage = "Download exceeds the \(maximumBytes / (1024 * 1024)) MiB limit."
 
   private final class Transfer {
     let download: WKDownload
@@ -44,7 +46,7 @@ import UniformTypeIdentifiers
           self.transfers[ObjectIdentifier(download)] != nil
         else { return }
         self.stop(download)
-        self.onFailed?("Download exceeds the 100 MiB limit.")
+        self.onFailed?(Self.limitMessage)
       }
     }
   }
@@ -80,7 +82,7 @@ import UniformTypeIdentifiers
     guard response.expectedContentLength <= Self.maximumBytes else {
       completionHandler(nil)
       stop(download)
-      onFailed?("Download exceeds the 100 MiB limit.")
+      onFailed?(Self.limitMessage)
       return
     }
     transfer.completion = completionHandler
@@ -111,7 +113,7 @@ import UniformTypeIdentifiers
       let staging = transfer.staging, let destination = transfer.destination
     else { return }
     transfer.observation = nil
-    // A download can be 100 MiB; copying it never blocks the main thread.
+    // Copying a download never blocks the main thread.
     installing += 1
     Task {
       let result = await Task.detached(priority: .userInitiated) {
@@ -136,7 +138,7 @@ import UniformTypeIdentifiers
     guard let size = attributes[.size] as? NSNumber, size.int64Value <= limit else {
       throw NSError(
         domain: "hitSlop.Download", code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "Download exceeds the 100 MiB limit."])
+        userInfo: [NSLocalizedDescriptionKey: limitMessage])
     }
     let replacement = try manager.url(
       for: .itemReplacementDirectory, in: .userDomainMask,
