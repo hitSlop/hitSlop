@@ -48,14 +48,6 @@ callback on its output. A full output queue or a stalled reader fails the dispos
 session, fences the page and attempts a bounded close; the browser must reload rather
 than replay an edit with an unknown outcome.
 
-An opt-in `dev-sync` build may run a local authority and two replica owners as a
-development proof: the `slop-room` binary hosts them, and the owner's shared session
-(`owner/sync.rs`, chosen in place of the local `owner/session.rs`) forwards a replica's
-mutations to the authority. The document operations it uses (`document/replication.rs`) are
-ordinary core code. Accepted Loro bytes travel only between Rust processes. The proof disables shared undo and attachment
-imports, uses temporary files, and adds no released format or production listener.
-Disconnected-write fencing requires the replica owner to remain alive with its lock.
-Stopped harness files are inspection artifacts, not restart-safe shared documents.
 
 Native operations keep a separate process boundary: the typed TypeScript CLI invokes
 `slop-engine`, which validates and forwards macOS requests to `hitslop-native`. The
@@ -76,8 +68,8 @@ The immutable `app` row contains catalog columns, compatibility markers and one
 `definition_json`: the window, ordered theme, original document descriptor, views and
 command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`
 and media. Pack inserts assets before the app row, whose presence seals them. Attachments
-and artwork have their own mutable lifecycles. Initial values live only in the Loro
-checkpoint; there is no JSON copy of saved document state.
+and artwork have their own mutable lifecycles. Initial values live only in the
+history's first snapshot; there is no JSON copy of saved document state.
 
 Markers are checked before interpreting fields or comparing the layout. The format-1
 acceptance module is Rust serde plus explicit checks, including the descriptor validator
@@ -124,6 +116,7 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations and stored commands; ABI-specific preludes, sandbox and execution limits |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
+| Sync | `crates/hitslop-core/src/sync/`, `owner/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
 | Owner | `crates/hitslop-core/src/owner/` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
 | Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, theme panel, page-failure overlay, the save-failure sheet (from the owner's save status); its document operations go to the app |
@@ -166,44 +159,37 @@ app (descriptor and palette) and refuses a mismatch as `invalid_bytes` without w
 A gap (`previous` above the store's sequence), an apply failure, or the host's queue-overflow
 `resync` marker makes the page call `open` again and replace its state. The host keeps
 that marker as the bounded push queue's recovery path. Text still in a field survives: bindings keep their
-DOM text and their confirmed version, which stays valid because versions name owner
-history.
+DOM text and the text they last confirmed, which the owner merges from.
 
 ## Text
 
-The page and agents change text the same way: a `set` in a batch that names a `base`
-version means "this field was `from` at `base` and is now `value`". A text binding keeps
-the user's text in the field and sends at most one such batch at a time,
-`{base, intents: [{type: "set", path, value, from, selection}]}`. An agent passes the
-version it read (`--base`); its set has no `from`, so the core reads the field's text at
-`base`.
+The page and agents change text the same way: a `set` with `from` means "this field was
+`from` when I last saw it and is now `value`". A text binding keeps the user's text in the
+field and sends at most one such batch at a time,
+`{intents: [{type: "set", path, value, from, selection}]}`. An agent passes the text it
+read as `from`. No version names the starting point, so no edit is ever too old to merge.
 
 - The core computes the edit script on a throwaway document (its diff mutates while it
   runs, so it never touches the owner) and checks that the script reproduces the value.
 - **Fast path:** the owner's field still equals `from`, so the script applies directly.
-- **Merge path:** the field changed since `base`. The script is applied on a branch at
-  `base` (a state-only copy, which trimmed documents allow) and merged with Loro; the
-  caret is mapped through cursors. A field whose container `base` never saw (a row
-  removed and inserted again) is `path_not_found`.
+- **Merge path:** the field changed since. The core diffs `from → current` (what changed
+  concurrently) and `from → value` (the writer's edit), rebases the writer's script over
+  the concurrent one and applies it to the live text as the session's own peer. At one
+  place, the concurrent insertion comes first and the writer's after it, so a caret at the
+  end of its own typing stays there. Both diffs work on strings: when both sides delete
+  one of several identical adjacent characters, one of them may survive. Merges between
+  devices are Loro's own and exact.
 - A set carrying `selection` is the page's edit and its batch's only intent. The reply
-  names `authored`, the version right after this edit on its own branch, and the merged
-  selection. If the user kept typing, the next batch goes from the sent text at
-  `authored`.
+  carries the merged selection. If the user kept typing, the next batch goes from the
+  text this one sent.
 - During IME composition nothing is sent. Close and export commit a composition.
   Retargeting or unmounting a binding sends its unsent text first.
-- Every token is checked against the document's history before Loro sees it: a
-  malformed one is `invalid_version` and a foreign or trimmed one `stale_base`, never a
-  panic.
-- A mounted binding retains a `stale_base` draft and stops automatic sends. Flush and
-  close report the refusal until the user copies the draft and presses Escape to
-  discard it; Escape adopts the latest accepted text without authoring an edit. Composition
-  keeps its normal Escape behavior. Recovery after the control unmounts is still open.
 
-A text set without a base (a text handle's `set(value)`, or the CLI without `--base`)
-replaces the whole field as it is when the owner applies it, through the same script.
+A text set without `from` (a text handle's `set(value)`, or the CLI without it) replaces
+the whole field as it is when the owner applies it, through the same script.
 
 Merging works at three levels:
-- **Characters.** Loro gives each character an identity. A concurrent insert lands next
+- **Characters.** Between devices, Loro gives each character an identity. A concurrent insert lands next
   to the character it was typed beside, and inserts at one position are ordered by peer,
   so two people's typing never interleaves. Coarser units are worse: words duplicate when
   two people fix different letters of one word, lines conflict across paragraphs, and a
@@ -221,23 +207,24 @@ Merging works at three levels:
 
 ## Undo
 
-Edit ▸ Undo and Redo revert changes made since the document opened: the person's, and
-an agent's made through the CLI or socket. A document opens with nothing to undo. The
-core keeps up to 100 steps per open document, each holding Loro frontiers before and
-after the edit. Undo and redo restore either version as a new change with Loro's
-`revert_to`, which inverts the operations between the two versions (the palette with the
-data) and applies all of them or none. A restored row keeps its `$id`. There are no JSON
-snapshots or persistent undo records.
+Edit ▸ Undo and Redo revert changes made since the document opened: the person's, the
+window's, and an agent's made through the CLI or socket. All of them are the open
+session's own Loro peer, and Loro's `UndoManager` undoes that peer's steps: an undo
+reverses only the step's own operations (the palette with the data) and is rebased over
+changes made since by anyone else, which it keeps. A document opens with nothing to
+undo; the core keeps up to 100 steps per open document. A restored row keeps its `$id`.
+There are no JSON snapshots or persistent undo records.
 
 - **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
   to one field, each starting at the caret the last one left. Consecutive agent batches
   are one step, so one undo reverts what the agent just did. Consecutive window changes
-  to one palette color (a picker drag) are one step. Any other change, a
-  concurrent page text merge or undo/redo itself ends a run. The concurrent text edit
-  is its own step, even though the text implementation imports a temporary branch.
-- **Refusals.** A batch or JSON replacement refused after a partial mutation rebuilds
-  the owner at its pre-call version. Its history references survive replay, so undo,
-  redo and the current run remain available. No-op edits also preserve history.
+  to one palette color (a picker drag) are one step. Runs are `UndoManager` groups. Any
+  other change, a merged page text edit, or undo/redo itself ends a run.
+- **Refusals.** A batch that could fail after its first change (more than one intent, or
+  a JSON replacement) runs first on a copy of the current state, so a refusal never
+  touches the live document: undo, redo and the current run remain. If a live batch is
+  refused anyway, the owner rebuilds at its pre-call version under the same peer and
+  its undo starts over. No-op edits also preserve history.
 - **Result.** An undo is a new change: it publishes, autosaves and travels like any
   other. Nothing to undo publishes nothing.
 - **Window.** The document window's `NSUndoManager` (`DocumentUndoManager`) reports
@@ -262,9 +249,10 @@ snapshots or persistent undo records.
   succeeds.
 - A write that fails keeps ownership and all edits. Failures are typed
   (`full`, `busy`, `moved`, `invalidated`, `io`) and reach the window, which offers retry,
-  or discard for a full document.
+  or discard for a full document that is not shared.
 - `flush` resolves when the saved sequence covers every edit accepted before the call.
-  `close` refuses new edits, flushes, trims history (below), writes the artwork its
+  `close` refuses new edits, flushes, trims history (below; never a shared document's),
+  writes the artwork its
   window captured ([close](#close-export-and-capture)), reclaims attachments nothing
   references ([attachments](#themes-and-attachments)), then releases the lock.
   `discard` waits for the write in flight and reloads saved bytes; work queued for the
@@ -274,73 +262,35 @@ snapshots or persistent undo records.
   page learns durability only through `flush`, which resolves once saved and rejects
   when the save fails.
 
-Storage is `document(id, uuid)`, `checkpoint(bytes)` and `updates(seq, bytes)`. Creating a
-document validates the template's complete saved state in the source read transaction,
-then atomically writes a fresh UUID and initial checkpoint before publishing the file.
+Storage is `document(id, uuid)`, `history(seq, bytes)` (a snapshot, then the updates saved
+after it) and, for a shared document, `share(room, endpoint)`. A shared document keeps its
+whole history and every attachment, because another replica's edits can depend on any of
+it; a clean copy drops the share. Creating a document validates the template's complete saved state in the
+source read transaction, then atomically writes a fresh UUID and initial snapshot before
+publishing the file.
 The UUID names the logical document, not its writer or its inode-based lease. Open,
 save, rename, capture snapshots and internal backups preserve it; explicit Duplicate
 and independent editable copies receive a new UUID. Templates have no UUID. The core
 keeps this identity outside authored state; it is never a Loro peer ID.
-Saved updates without a checkpoint are
-refused and preserved for recovery. A checkpoint replaces the log at 256 updates or
-4 MiB; the limits are 4,096 updates and 32 MiB. Shared storage limits are defined in
+A history that does not start with a snapshot is
+refused and preserved for recovery. A checkpoint (one snapshot) replaces the history at 256
+updates or 4 MiB; the limits are 4,096 updates and 32 MiB. Shared storage limits are defined in
 [`wire/limits.rs`](../crates/hitslop-core/src/wire/limits.rs) and projected into host types.
 
 History is trimmed when nothing is editing. After its final save, a session that edited
 a document larger than 4 MiB writes one more checkpoint (`Store::close_job`) that keeps
-no history: undo covers the open session only, so nothing reads it later. Ordinary
-checkpoint selection retains the session's history when it fits 16 MiB and current state
-otherwise. When local owner maintenance is due, the already exported full checkpoint
-may be saved first if it fits the 32 MiB hard limit; the worker then writes the bounded
-replacement. This avoids constructing an expensive intermediate shallow checkpoint.
-There is no public live-compaction command. Only the checkpoint may
-start history late. Rollback rebuilds from where history starts; a version before it
-is `stale_base`, and a concurrent text edit never branches from before the latest cut,
-so no saved update depends on trimmed history. Files
+no history: undo covers the open session only, so nothing reads it later. While open, a
+checkpoint keeps the whole history when it fits the 32 MiB limit and the current state
+otherwise; the live document keeps its own history either way, so the session's undo
+still works. There is no live history rebuild: a long, heavy session's memory grows until
+it closes. There is no public live-compaction command. Only the checkpoint may
+start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
 loads, and the core is the only code that opens a `.slop` file.
 
-The local owner also rebuilds live history when a normal checkpoint measures a full
-snapshot above 16 MiB. It prefers a two-second editing pause; after thirty seconds it
-starts at the next opportunity when accepted edits are saved and no command is evaluating.
-Edits arriving during the rebuild still wait in a bounded admission queue. Ordinary
-reads continue against the original document. Flush and saved-state copies may proceed
-when no earlier edit is waiting; otherwise they queue behind that edit. These fences also
-wait for earlier command evaluations, including commands released from the queue. Close
-waits in order and refuses subsequent edits.
-
-The existing persistence worker builds and validates a shallow candidate, writes its
-checkpoint, then the owner installs it. Preparation first forks the immutable source on
-that worker to avoid holding the live document's Loro locks throughout historical export.
-The fork still briefly contends with reads and temporarily increases memory. In the
-measured 4,000-row workload, maintenance held later mutations for roughly one second;
-see the [owner benchmark](evidence/owner-history-2026-10-08.md). Those measurements preceded
-the idle scheduling change; scheduling reduces interruptions, not the duration of a rebuild.
-Sequence, writer peer, visible container identities and the attached view survive.
-The candidate retains the undo/redo window when it fits; otherwise it expires redo,
-then progressively retires older undo steps. Previously expired text bases never become
-valid again. This bounds serialized history, not total process RSS.
-
-An optional rebuild failure retains the original live core and releases queued requests;
-it is not a failure to save document edits, which were already durable before rebuilding.
-If the replacement write might have committed, the live core conservatively advances its
-text-history floor to the candidate's floor. The next rebuild waits for another 4 MiB
-of measured history growth past the failed baseline. A successful rebuild uses its new
-size as that baseline. Actual document-save failures retain their normal retry behavior.
-Discard cancels a rebuild's installation and rejects held work; the serial persistence
-worker finishes any already-running write before reloading durable state. Close can still
-trim history after a successful rebuild.
-
-The development shared roles disable this local retention policy. Their loopback proof
-establishes replication with an online authoritative writer using the current layout and
-exact integer counters. It does not qualify offline multi-writer editing, restart recovery,
-shared undo, attachment transfer, or Cloudflare hosting; those remain deferred. Replication
-primitives stay in core, while the feature-gated session and `slop-room` remain development
-infrastructure, with no production listener or new stored format.
-
 Live commits record timestamps and the messages `page`, `agent`, `command:{name}`,
-`window`, `undo`, `redo` and `create`, including temporary text branches. Template
+`window`, `undo`, `redo` and `create`. Template
 seeding uses deterministic operations without wall-clock timestamps. These messages
 describe origins; they are neither unique request IDs nor a durable audit log.
 
@@ -478,6 +428,61 @@ is referenced while its ID appears in a string, text or map key of the state
 (`Document::attachment_references`). A close after a session that saved an edit or stored
 a blob deletes the rest, after the final save; undo covers the open session only, so
 history keeps nothing alive.
+
+## Sync
+
+A shared document syncs through a relay, one Cloudflare Durable Object per room. Every
+copy is a local owner under its own session peer and runs its own commands. An edit is
+saved locally and sent to the relay independently, so neither waits for the other and
+editing works offline; offline edits merge when the copy reconnects. The relay stores the
+Loro updates copies push, indexed by the operation spans they hold, and backfills a copy
+by its version vector. It never reads Loro, validates state or runs commands. The core side
+is in place, and the engine that ships syncs through a spike relay on Cloudflare's runtime
+([evidence](evidence/sync-spikes-2026-10.md)). The production relay and the Mac app's
+connection are deferred ([roadmap](roadmap.md#later)).
+
+- **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
+  credential the host keeps, never in the file or in authored code. Sharing uploads a
+  backup of the document (same UUID and history) as the room's seed, and joining
+  downloads it; a room starts at the seed's version. A shared document keeps its whole
+  history and every attachment, because another copy's edits can depend on any of it, and
+  it refuses discard, because other copies may already hold its edits. Relay compaction
+  may only ever keep full history. A clean copy is unshared.
+- **Hooks** (`owner/sync.rs`, Rust only until a client exists). The host opens a socket
+  and attaches the owner with a sink (`sync_attach`), hands it each frame in order
+  (`sync_frame`), sends each frame the sink receives and detaches when the socket closes
+  (`sync_detach`). The sink also hears the status: offline; syncing (catching up, or
+  sending changes the relay has not acknowledged); synced (caught up, and the relay holds
+  every change this copy made); or paused, with a reason a person can act on. The
+  document's own listener hears only the changes.
+- **Session** (`hitslop_core::sync`, without IO, in memory). A Hello carries the
+  document's version and its app digest (`Store::app_digest`: the whole app row and its
+  assets); the relay welcomes with its own version, sends what the copy lacks, then says
+  it caught up. After every commit the owner pushes what the relay lacks, one push at a
+  time. A lost acknowledgement, a dropped socket or a crash heals with the next Hello:
+  nothing about sync is saved except the `share` row.
+- **Remote changes** import, pass the acceptance a saved file passes, and publish and save
+  like an edit; undo keeps them. A change the app refuses pauses sync and leaves the
+  document as it was. Changes whose history never arrives wait inside Loro, and pause sync
+  once the relay has caught the copy up. Frames wait while a command evaluates.
+- **Wire.** Binary frames (`sync::Frame`). The golden frames in
+  `crates/hitslop-core/tests/sync-frames.json` are the contract with the relay's codec.
+  No released build speaks it yet, so it may change freely until a relay ships; the
+  document layout and storage it carries are the released formats.
+
+Accepted limits, chosen for mini apps over heavier machinery:
+
+- **Text** merges on strings: when both sides delete one of several identical adjacent
+  characters, one of them may survive ([text](#text)).
+- **Counters** are Loro counters, exact until a counter's increments, summed as absolute
+  values, reach about 9×10^15.
+- **Live history** grows through a long session; nothing compacts it while the document is
+  open. An unshared document trims at close.
+- **Undo** starts over for the session if a live batch is refused after rehearsal
+  admitted it, which a rehearsed batch should never be ([undo](#undo)).
+- **A shared document** never trims, so the 32 MiB save limit bounds it. Before sharing
+  ships, a full shared document needs a way to save its live state as a new, unshared copy
+  without first saving the full history: discard is refused and a copy waits for a save.
 
 ## Tests and performance
 

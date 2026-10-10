@@ -42,7 +42,7 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
-  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "browser", "rust", "dev-sync", "packed", "swift", "native"]);
+  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "browser", "rust", "packed", "swift", "native"]);
   for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
@@ -92,9 +92,8 @@ test("required CI keeps document compatibility and packaging, without browser qu
     const all = ciJobs(candidates, event);
     for (const job of [all.fast, all.native, all.nativeRust, all.rust]) {
       expect(job.split(",")).not.toContain("browser");
-      expect(job.split(",")).not.toContain("dev-sync");
     }
-    expect(all.qualification).toBe(["schedule", "workflow_dispatch"].includes(event) ? "browser,dev-sync,cli,packed" : "");
+    expect(all.qualification).toBe(["schedule", "workflow_dispatch"].includes(event) ? "browser,cli,packed" : "");
   }
 });
 
@@ -140,16 +139,6 @@ test("verification propagates full compatibility independently of nightly checks
     });
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout).compatibility).toBe("full");
-  }
-});
-
-test("experimental sync requires explicit selection, including in full and release runs", async () => {
-  for (const args of [["--native", "--all"], ["--release"], ["dev-sync"]]) {
-    const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", ...args], { cwd: repository });
-    expect(result.code).toBe(0);
-    const names = JSON.parse(result.stdout).tiers.map((tier: { name: string }) => tier.name);
-    expect(names.includes("dev-sync")).toBe(args.includes("dev-sync"));
-    if (!args.includes("dev-sync")) expect(names).toEqual(expect.arrayContaining(["rust", "swift", "native"]));
   }
 });
 

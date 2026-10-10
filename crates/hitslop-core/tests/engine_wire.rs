@@ -15,7 +15,6 @@ fn engine_request_shapes_are_closed_and_optionals_are_not_nullable() {
         json!({"method":"get"}),
         json!({"method":"future"}),
         json!({"method":"batch","documentPath":"x","batch":{"intents":[],"ifVersion":null}}),
-        json!({"method":"batch","documentPath":"x","batch":{"intents":[],"base":null}}),
         json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"command":"rename"}),
         json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":null}),
         json!({"method":"screenshot","documentPath":"x","output":"y","target":"other","ifPresent":false}),

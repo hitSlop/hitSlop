@@ -1,5 +1,7 @@
 # Native authority proof and foundation continuation
 
+> **Superseded 2026-10-09.** The authority proof (`owner/sync.rs`, `slop-room`, `dev-sync`) and live history maintenance were removed; their commands no longer run. Sync is now local owners and a byte relay: see [sync spikes](sync-spikes-2026-10.md).
+
 This continues the [first foundation qualification](launch-foundation-2026-10-07.md)
 on `feat/launch-foundation`, based on master `8dec1847`. Changes are uncommitted.
 It implements the local authority proof and measured local history maintenance. It

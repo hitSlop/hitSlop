@@ -347,13 +347,13 @@ app          markers, catalog columns, definition_json               one immutab
 assets       key, media_type, encoding, size, bytes                    ui.js, ui.css, commands.js, media
 artwork      name (preview | icon), png                                 Quick Look preview and Finder icon
 -- populated when you create and edit a document
-document     id                                                         the document's identity
-checkpoint   bytes                                                      the saved Loro snapshot, including theme changes
-updates      seq, bytes                                                 Loro updates saved since the checkpoint
+document     uuid                                                       the document's identity
+history      seq, bytes                                                 saved Loro state: a snapshot, then the edits saved since
+share        room, endpoint                                             empty unless the document is shared (coming soon)
 attachments  id (SHA-256), media_type, bytes                           files you import
 ```
 
-Any SQLite tool shows these tables. `checkpoint` and `updates` hold Loro bytes rather than rows, so change a slop's data through hitSlop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro checkpoint; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
+Any SQLite tool shows these tables. `history` holds Loro bytes rather than rows, so change a slop's data through hitSlop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro snapshot; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
 
 [Architecture](docs/architecture.md) · [Engineering contract](docs/engineering-contract.md) · [Compatibility](docs/engineering-contract.md#compatibility)
 

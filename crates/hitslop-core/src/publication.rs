@@ -1,13 +1,16 @@
 //! Change-proportional publications driven by Loro events.
 //!
 //! Loro reports, after every commit or import, which containers changed and a typed
-//! diff for each. Publications are built from those diffs plus persistent per-list
-//! row indexes; neither the before nor the after document is materialized. Values
-//! are materialized only for changed fields and inserted rows. A delta this module cannot
-//! read against its index falls back to an exact `set` of that list.
+//! diff for each. Publications are built from those diffs: a text delta, a field's new
+//! value, or, for a row list whose rows or order changed, the row insertions, deletions and
+//! moves between its rows as last published and as they read now. Neither the before nor
+//! the after document is materialized. A change this module cannot place in the
+//! application's value falls back to an exact `set` of the whole document.
 use super::*;
-use loro::event::{Diff, DiffEvent, ListDiffItem};
-use loro::{ContainerType, LoroValue, Subscription};
+use layout::RowList;
+use loro::event::{Diff, DiffEvent};
+use loro::{LoroValue, Subscription};
+use std::collections::HashSet;
 use std::sync::Mutex;
 
 #[derive(Clone, Debug)]
@@ -16,17 +19,13 @@ pub(crate) enum Slot {
     Container(ContainerID),
 }
 #[derive(Debug)]
-pub(crate) enum Item {
-    Retain(usize),
-    Delete(usize),
-    Insert(Vec<Slot>, bool),
-}
-#[derive(Debug)]
 pub(crate) enum Change {
     Map(Vec<(String, Option<Slot>)>),
-    List(Vec<Item>),
+    /// A list's elements changed; the list is read again.
+    List,
     /// In Unicode code points of the previous text.
     Text(Vec<Hunk>),
+    Counter,
     Other,
 }
 #[derive(Debug)]
@@ -59,18 +58,7 @@ pub(super) fn subscribe(doc: &LoroDoc, events: &Events) -> Subscription {
                 Diff::Map(m) => {
                     Change::Map(m.updated.iter().map(|(k, v)| (k.to_string(), v.as_ref().map(slot))).collect())
                 }
-                Diff::List(items) => Change::List(
-                    items
-                        .iter()
-                        .map(|item| match item {
-                            ListDiffItem::Retain { retain } => Item::Retain(*retain),
-                            ListDiffItem::Delete { delete } => Item::Delete(*delete),
-                            ListDiffItem::Insert { insert, is_move } => {
-                                Item::Insert(insert.iter().map(slot).collect(), *is_move)
-                            }
-                        })
-                        .collect(),
-                ),
+                Diff::List(_) => Change::List,
                 Diff::Text(delta) => {
                     let mut hunks: Vec<Hunk> = delta
                         .iter()
@@ -92,6 +80,7 @@ pub(super) fn subscribe(doc: &LoroDoc, events: &Events) -> Subscription {
                     }
                     Change::Text(hunks)
                 }
+                Diff::Counter(_) => Change::Counter,
                 _ => Change::Other,
             };
             out.push(Event { target: c.target.clone(), path: c.path.to_vec(), change });
@@ -99,117 +88,100 @@ pub(super) fn subscribe(doc: &LoroDoc, events: &Events) -> Subscription {
     }))
 }
 
-/// Order and row identities of one row list, as of the last publication. Every row is a
-/// map holding its own unique `$id` (the open-time check and every write keep it so).
-#[derive(Default, Debug)]
-pub(crate) struct ListState {
-    pub(crate) order: Vec<ContainerID>,
-    id_of: HashMap<ContainerID, String>,
-    pub(crate) by_id: HashMap<String, ContainerID>,
-}
-impl ListState {
-    fn row_id(doc: &LoroDoc, cid: &ContainerID) -> Option<String> {
-        if cid.container_type() != ContainerType::Map {
-            return None;
-        }
-        stored_id(&doc.get_map(cid.clone()))
-    }
-    fn add(&mut self, doc: &LoroDoc, cid: ContainerID) {
-        if let Some(id) = Self::row_id(doc, &cid) {
-            self.by_id.insert(id.clone(), cid.clone());
-            self.id_of.insert(cid, id);
-        }
-    }
-    fn holds(&self, cid: &ContainerID) -> bool {
-        self.id_of.contains_key(cid)
-    }
-    fn drop_row(&mut self, cid: &ContainerID) {
-        if let Some(id) = self.id_of.remove(cid) {
-            self.by_id.remove(&id);
-        }
-    }
-    fn build(doc: &LoroDoc, list: &LoroMovableList) -> Self {
-        let mut state = Self::default();
-        state.order.reserve(list.len());
-        list.for_each(|v| {
-            if let ValueOrContainer::Container(c) = v {
-                state.order.push(c.id());
-                state.add(doc, c.id());
-            }
-        });
-        state
-    }
-}
-/// Indexes every movable list reachable from the document root. O(document), open only.
-pub(super) fn index_all(doc: &LoroDoc) -> HashMap<ContainerID, ListState> {
-    let mut out = HashMap::new();
-    walk(doc, &Container::Map(doc.get_map("data")), &mut out, &mut HashSet::new());
+/// Each row list's rows in application order as of the last publication, by the list's
+/// own map container.
+pub(crate) type Lists = HashMap<ContainerID, Vec<String>>;
+
+/// Every row list in the document, as it reads now. O(document), open only.
+pub(super) fn index_all(doc: &LoroDoc, schema: &Node) -> Lists {
+    let mut out = Lists::new();
+    index(schema, &ValueOrContainer::Container(Container::Map(doc.get_map("data"))), &mut out);
     out
 }
-/// Indexes every row list under `container`, replacing what the index held.
-fn walk(
-    doc: &LoroDoc,
-    container: &Container,
-    out: &mut HashMap<ContainerID, ListState>,
-    seen: &mut HashSet<ContainerID>,
-) {
-    let mut children = vec![];
-    match container {
-        Container::Map(map) => map.for_each(|_, v| {
-            if let ValueOrContainer::Container(c) = v {
-                children.push(c);
-            }
-        }),
-        Container::MovableList(list) => {
-            // A list inside several new containers is indexed once.
-            if !seen.insert(list.id()) {
-                return;
-            }
-            out.insert(list.id(), ListState::build(doc, list));
-            list.for_each(|v| {
-                if let ValueOrContainer::Container(c) = v {
-                    children.push(c);
+/// Records every row list inside `value`, which `node` describes.
+fn index(node: &Node, value: &ValueOrContainer, lists: &mut Lists) {
+    match (unwrap_optional(node), value) {
+        (Node::Object { properties }, ValueOrContainer::Container(Container::Map(map))) => {
+            for (key, child) in properties {
+                if let Some(value) = map.get(key) {
+                    index(child, &value, lists);
                 }
-            });
+            }
+        }
+        (Node::Record { value: entry }, ValueOrContainer::Container(Container::Map(map))) => {
+            map.for_each(|_, value| index(entry, &value, lists));
+        }
+        (Node::List { item }, value) if !is_scalar(item) => {
+            if let Ok(list) = RowList::of(value) {
+                let ids = list.ids();
+                for id in &ids {
+                    if let Some(row) = list.row(id) {
+                        index(item, &ValueOrContainer::Container(Container::Map(row)), lists);
+                    }
+                }
+                lists.insert(list.map.id(), ids);
+            }
         }
         _ => {}
     }
-    for child in &children {
-        walk(doc, child, out, seen);
-    }
 }
 
-pub(super) fn node_at<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<&'s Node> {
+/// Where a changed container sits in the application's value.
+enum Place<'s> {
+    /// A field's own container (an object, record entry, row, text, counter or scalar list).
+    Field { path: Vec<Segment>, node: &'s Node },
+    /// A row list: its own map, its rows or its order.
+    List { path: Vec<Segment>, node: &'s Node, list: ContainerID },
+}
+/// Places a Loro container path from the document root; `None` when the path does not
+/// follow the layout.
+fn place<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<Place<'s>> {
+    enum In {
+        Field,
+        ListMap(ContainerID),
+        Rows(ContainerID),
+        Order(ContainerID),
+    }
     let mut node = schema;
-    for (_, index) in path.iter().skip(1) {
-        node = match (unwrap_optional(node), index) {
-            (Node::Object { properties }, Index::Key(key)) => properties.get(key.as_str())?,
-            (Node::Record { value }, Index::Key(_)) => value,
-            (Node::List { item }, Index::Seq(_)) => item,
-            _ => return None,
+    let mut out = vec![];
+    let mut at = In::Field;
+    for (child, index) in path.iter().skip(1) {
+        let Index::Key(key) = index else { return None };
+        at = match at {
+            In::Field => {
+                node = match unwrap_optional(node) {
+                    Node::Object { properties } => properties.get(key.as_str())?,
+                    Node::Record { value } => value,
+                    _ => return None,
+                };
+                out.push(Segment::Key(key.to_string()));
+                match unwrap_optional(node) {
+                    Node::List { item } if !is_scalar(item) => In::ListMap(child.clone()),
+                    _ => In::Field,
+                }
+            }
+            In::ListMap(list) => match key.as_str() {
+                "rows" => In::Rows(list),
+                "order" => In::Order(list),
+                _ => return None,
+            },
+            In::Rows(_) => {
+                node = match unwrap_optional(node) {
+                    Node::List { item } => item,
+                    _ => return None,
+                };
+                out.push(Segment::Id { id: key.to_string() });
+                In::Field
+            }
+            In::Order(_) => return None,
         };
     }
-    Some(unwrap_optional(node))
+    Some(match at {
+        In::Field => Place::Field { path: out, node },
+        In::ListMap(list) | In::Rows(list) | In::Order(list) => Place::List { path: out, node, list },
+    })
 }
-/// Converts a Loro container path to a publication path. Rows are addressed by `$id`; a
-/// row the index does not know makes its list the fallback container.
-pub(super) fn json_path(
-    lists: &HashMap<ContainerID, ListState>,
-    path: &[(ContainerID, Index)],
-) -> std::result::Result<Vec<Segment>, ContainerID> {
-    let mut out = Vec::with_capacity(path.len());
-    for ((parent, _), (child, index)) in path.iter().zip(path.iter().skip(1)) {
-        match index {
-            Index::Key(key) => out.push(Segment::Key(key.to_string())),
-            Index::Seq(_) => match lists.get(parent).and_then(|s| s.id_of.get(child)) {
-                Some(id) => out.push(Segment::Id { id: id.clone() }),
-                None => return Err(parent.clone()),
-            },
-            Index::Node(_) => return Err(parent.clone()),
-        }
-    }
-    Ok(out)
-}
+
 fn deep(doc: &LoroDoc, cid: &ContainerID) -> Value {
     json(
         doc.get_container(cid.clone())
@@ -223,19 +195,16 @@ fn materialize(doc: &LoroDoc, slot: &Slot) -> Value {
         Slot::Container(c) => deep(doc, c),
     }
 }
-
-struct Out {
-    ops: Vec<PatchOp>,
-    fallback: Vec<ContainerID>,
-    /// A removed value may have held lists whose indexes must be dropped.
-    detached: bool,
+/// A container as a value `index` reads.
+fn container(doc: &LoroDoc, cid: &ContainerID) -> Option<ValueOrContainer> {
+    doc.get_container(cid.clone()).map(ValueOrContainer::Container)
 }
 
 /// The change's ops; `None` when nothing in the document root changed.
 pub(super) fn publish(
     doc: &LoroDoc,
     schema: &Node,
-    lists: &mut HashMap<ContainerID, ListState>,
+    lists: &mut Lists,
     mut events: Vec<Event>,
 ) -> Result<Option<Vec<PatchOp>>> {
     // Only the document root is projected; other Loro roots are not application data.
@@ -244,276 +213,157 @@ pub(super) fn publish(
     if events.is_empty() {
         return Ok(None);
     }
-    // Containers created by this change are published whole by whichever event
-    // introduced them (a row insertion or a map update); their own events are skipped.
-    let mut fresh = HashSet::new();
+    // Containers this change created or revived are published whole by the map update that
+    // introduced them (a field set or a row insertion); their own events are skipped.
+    let fresh: HashSet<ContainerID> = events
+        .iter()
+        .flat_map(|e| match &e.change {
+            Change::Map(updates) => updates
+                .iter()
+                .filter_map(|(_, s)| match s {
+                    Some(Slot::Container(c)) => Some(c.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => vec![],
+        })
+        .collect();
+    events.retain(|e| {
+        !e.path.iter().take(e.path.len() - 1).any(|(c, _)| fresh.contains(c)) && !fresh.contains(&e.target)
+    });
+    let mut ops = vec![];
+    let mut touched: Vec<(Vec<Segment>, &Node, ContainerID)> = vec![];
     for e in &events {
-        match &e.change {
-            Change::Map(updates) => {
-                for (_, s) in updates {
-                    if let Some(Slot::Container(c)) = s {
-                        fresh.insert(c.clone());
-                    }
+        let Some(place) = place(schema, &e.path) else {
+            return Ok(Some(everything(doc, schema, lists)));
+        };
+        match (place, &e.change) {
+            (Place::List { path, node, list }, Change::Map(_) | Change::List) => {
+                if !touched.iter().any(|(_, _, l)| *l == list) {
+                    touched.push((path, node, list));
                 }
             }
-            Change::List(items) => {
-                let state = lists.get(&e.target);
-                for item in items {
-                    if let Item::Insert(slots, is_move) = item {
-                        for s in slots {
+            (Place::Field { path, .. }, Change::Text(delta)) => {
+                if !delta.is_empty() {
+                    ops.push(PatchOp::Text { path, delta: delta.clone() });
+                }
+            }
+            (Place::Field { path, node }, Change::Counter | Change::List) => {
+                ops.push(PatchOp::Set { path, value: project(Some(node), deep(doc, &e.target)) });
+            }
+            (Place::Field { path, node }, Change::Map(updates)) => {
+                // Object fields are declared by name; every record key has the record's kind.
+                let (properties, entries) = match unwrap_optional(node) {
+                    Node::Object { properties } => (Some(properties), None),
+                    Node::Record { value } => (None, Some(&**value)),
+                    _ => return Ok(Some(everything(doc, schema, lists))),
+                };
+                let mut sorted: Vec<_> = updates.iter().collect();
+                sorted.sort_by(|a, b| a.0.cmp(&b.0));
+                for (key, s) in sorted {
+                    let mut path = path.clone();
+                    path.push(Segment::Key(key.to_owned()));
+                    let Some(declared) = properties.and_then(|p| p.get(key)).or(entries) else {
+                        return Ok(Some(everything(doc, schema, lists)));
+                    };
+                    match s {
+                        None => ops.push(PatchOp::Remove { path }),
+                        Some(s) => {
                             if let Slot::Container(c) = s
-                                && (!is_move || !state.is_some_and(|state| state.holds(c)))
+                                && let Some(value) = container(doc, c)
                             {
-                                fresh.insert(c.clone());
+                                index(declared, &value, lists);
                             }
+                            ops.push(PatchOp::Set { path, value: project(Some(declared), materialize(doc, s)) });
                         }
                     }
                 }
             }
-            _ => {}
+            _ => return Ok(Some(everything(doc, schema, lists))),
         }
     }
-    // Loro omits events for containers removed by the same change (a nested edit
-    // followed by removal of its row publishes only the row deletion), and rows are
-    // addressed by `$id`, so events apply in their emitted order.
-    events.retain(|e| !e.path.iter().any(|(c, _)| fresh.contains(c)));
-    let mut out = Out { ops: vec![], fallback: vec![], detached: false };
-    for e in &events {
-        match &e.change {
-            Change::Map(updates) => map_ops(doc, schema, lists, e, updates, &mut out),
-            Change::Text(delta) => match json_path(lists, &e.path) {
-                Ok(path) if !delta.is_empty() => out.ops.push(PatchOp::Text { path, delta: delta.clone() }),
-                Ok(_) => {}
-                Err(c) => out.fallback.push(c),
-            },
-            Change::List(items) => list_ops(doc, schema, lists, e, items, &mut out),
-            Change::Other => out.fallback.push(e.target.clone()),
-        }
+    for (path, node, list) in touched {
+        let Some(rows) = container(doc, &list).and_then(|value| RowList::of(&value).ok()) else {
+            return Ok(Some(everything(doc, schema, lists)));
+        };
+        let Node::List { item } = unwrap_optional(node) else {
+            return Ok(Some(everything(doc, schema, lists)));
+        };
+        let new = rows.ids();
+        let Some(old) = lists.get(&list).cloned() else {
+            index(node, &ValueOrContainer::Container(Container::Map(rows.map.clone())), lists);
+            ops.push(PatchOp::Set { path, value: project(Some(node), deep(doc, &list)) });
+            continue;
+        };
+        let (old_set, new_set): (HashSet<&String>, HashSet<&String>) = (old.iter().collect(), new.iter().collect());
+        // Rows that appear or go are published whole, or as one deletion: drop any field
+        // ops this change made inside them.
+        let changed: HashSet<&String> = old_set.symmetric_difference(&new_set).copied().collect();
+        ops.retain(|op| {
+            !op.path().get(path.len()).is_some_and(|segment| {
+                op.path().starts_with(&path) && matches!(segment, Segment::Id { id } if changed.contains(id))
+            })
+        });
+        let Some(diff) = diff(&path, &old, &new, |id| {
+            let row = rows.row(id)?;
+            index(item, &ValueOrContainer::Container(Container::Map(row.clone())), lists);
+            let mut value = project(Some(item), deep(doc, &row.id()));
+            if let Value::Object(fields) = &mut value {
+                fields.insert("$id".into(), Value::String(id.to_owned()));
+            }
+            Some(value)
+        }) else {
+            ops.retain(|op| !op.path().starts_with(&path));
+            ops.push(PatchOp::Set { path, value: project(Some(node), deep(doc, &list)) });
+            lists.insert(list, new);
+            continue;
+        };
+        ops.extend(diff);
+        lists.insert(list, new);
     }
-    let mut seen = HashSet::new();
-    for cid in &fresh {
-        if let Some(container) = doc.get_container(cid.clone()) {
-            walk(doc, &container, lists, &mut seen);
-        }
-    }
-    finish_fallbacks(doc, schema, lists, &mut out);
-    if out.detached {
-        lists.retain(|cid, _| doc.get_path_to_container(cid).is_some());
-    }
-    Ok(Some(out.ops))
+    Ok(Some(ops))
 }
 
-fn map_ops(
-    doc: &LoroDoc,
-    schema: &Node,
-    lists: &mut HashMap<ContainerID, ListState>,
-    e: &Event,
-    updates: &[(String, Option<Slot>)],
-    out: &mut Out,
-) {
-    let node = node_at(schema, &e.path);
-    let base = match json_path(lists, &e.path) {
-        Ok(path) => path,
-        Err(c) => {
-            out.fallback.push(c);
-            return;
-        }
-    };
-    // Object fields are declared by name; every record key has the record's value kind.
-    let (properties, entries) = match node {
-        Some(Node::Object { properties }) => (Some(properties), None),
-        Some(Node::Record { value }) => (None, Some(&**value)),
-        _ => (None, None),
-    };
-    let mut sorted: Vec<_> = updates.iter().collect();
-    sorted.sort_by(|a, b| a.0.cmp(&b.0));
-    for (key, s) in sorted {
-        let mut path = base.clone();
-        path.push(Segment::Key(key.to_owned()));
-        let declared = properties.and_then(|p| p.get(key)).or(entries);
-        // Replacing or removing a value can detach the lists it held.
-        out.detached |= declared.is_none_or(holds_collections);
-        match s {
-            None => out.ops.push(PatchOp::Remove { path }),
-            Some(s) => out.ops.push(PatchOp::Set { path, value: project(declared, materialize(doc, s)) }),
-        }
-    }
-}
-
-fn list_ops(
-    doc: &LoroDoc,
-    schema: &Node,
-    lists: &mut HashMap<ContainerID, ListState>,
-    e: &Event,
-    items: &[Item],
-    out: &mut Out,
-) {
-    let node = node_at(schema, &e.path);
-    let Ok(path) = json_path(lists, &e.path) else {
-        out.fallback.push(e.target.clone());
-        return;
-    };
-    let item_node = match node {
-        Some(Node::List { item }) => &**item,
-        _ => {
-            out.fallback.push(e.target.clone());
-            return;
-        }
-    };
-    // A scalar list has no row identity: publish it whole. The lists are small.
-    if is_scalar(item_node) {
-        let value = json(doc.get_movable_list(e.target.clone()).get_deep_value());
-        out.ops.push(PatchOp::Set { path, value: project(node, value) });
-        return;
-    }
-    let Some(state) = lists.get_mut(&e.target) else {
-        // Not indexed: cannot interpret the delta against a previous order.
-        let list = doc.get_movable_list(e.target.clone());
-        lists.insert(e.target.clone(), ListState::build(doc, &list));
-        out.fallback.push(e.target.clone());
-        return;
-    };
-    let old = &state.order;
-    let mut next = Vec::with_capacity(old.len() + 1);
-    let mut removed = vec![];
-    let mut moved = HashSet::new();
-    let mut inserted = vec![];
-    let mut cursor = 0usize;
-    let mut in_sync = true;
-    for item in items {
-        match item {
-            Item::Retain(n) | Item::Delete(n) if cursor + n > old.len() => {
-                in_sync = false;
-                break;
-            }
-            Item::Retain(n) => {
-                next.extend_from_slice(&old[cursor..cursor + n]);
-                cursor += n;
-            }
-            Item::Delete(n) => {
-                removed.extend_from_slice(&old[cursor..cursor + n]);
-                cursor += n;
-            }
-            Item::Insert(slots, is_move) => {
-                for s in slots {
-                    let Slot::Container(c) = s else {
-                        in_sync = false;
-                        break;
-                    };
-                    next.push(c.clone());
-                    // A row inserted and moved in one change arrives as a move of a row
-                    // the list never held.
-                    if *is_move && state.holds(c) {
-                        moved.insert(c.clone());
-                    } else {
-                        inserted.push(c.clone());
-                    }
-                }
-            }
-        }
-    }
-    if !in_sync {
-        *state = ListState::build(doc, &doc.get_movable_list(e.target.clone()));
-        out.fallback.push(e.target.clone());
-        return;
-    }
-    next.extend_from_slice(&old[cursor..]);
-    // A move is reported as a deletion plus an `is_move` insertion of the same row.
-    removed.retain(|r| !moved.contains(r));
-    let fresh: HashSet<_> = inserted.iter().cloned().collect();
+/// The ops that turn the rows `old` into `new`: deletions, then each row that is not part
+/// of the longest run already in order, moved or inserted right after its final
+/// predecessor. `None` when that does not reproduce `new`.
+fn diff(
+    path: &[Segment],
+    old: &[String],
+    new: &[String],
+    mut value: impl FnMut(&str) -> Option<Value>,
+) -> Option<Vec<PatchOp>> {
+    let new_set: HashSet<&String> = new.iter().collect();
+    let old_set: HashSet<&String> = old.iter().collect();
     let mut ops = vec![];
-    let mut exact = true;
-    for r in &removed {
-        match state.id_of.get(r) {
-            Some(id) => ops.push(PatchOp::DeleteRow { path: path.clone(), id: id.clone() }),
-            None => exact = false,
-        }
+    for id in old.iter().filter(|id| !new_set.contains(id)) {
+        ops.push(PatchOp::DeleteRow { path: path.to_vec(), id: id.clone() });
     }
-    let gone: HashSet<_> = removed.iter().cloned().collect();
-    let mut sim: Vec<ContainerID> = state.order.iter().filter(|c| !gone.contains(c)).cloned().collect();
-    // Place each changed row right after its final predecessor, in final order. Every row
-    // then directly follows its final predecessor, so `sim == next`.
-    for (f, c) in next.iter().enumerate() {
-        let is_move = moved.contains(c);
-        if !is_move && !fresh.contains(c) {
+    let mut sim: Vec<&String> = old.iter().filter(|id| new_set.contains(id)).collect();
+    let position: HashMap<&String, usize> = new.iter().enumerate().map(|(i, id)| (id, i)).collect();
+    let positions: Vec<usize> = sim.iter().map(|id| position[id]).collect();
+    let staying: HashSet<&String> = layout::longest_increasing(&positions).into_iter().map(|i| sim[i]).collect();
+    for (f, id) in new.iter().enumerate() {
+        if staying.contains(id) {
             continue;
         }
-        if is_move {
-            match sim.iter().position(|x| x == c) {
-                Some(j) => {
-                    sim.remove(j);
-                }
-                None => {
-                    exact = false;
-                    break;
-                }
-            }
+        let moved = old_set.contains(id);
+        if moved {
+            sim.retain(|x| *x != id);
         }
-        let at = if f == 0 {
-            0
+        let at = if f == 0 { 0 } else { sim.iter().position(|x| **x == new[f - 1])? + 1 };
+        sim.insert(at, id);
+        ops.push(if moved {
+            PatchOp::MoveRow { path: path.to_vec(), id: id.clone(), index: at }
         } else {
-            match sim.iter().position(|x| *x == next[f - 1]) {
-                Some(p) => p + 1,
-                None => {
-                    exact = false;
-                    break;
-                }
-            }
-        };
-        sim.insert(at, c.clone());
-        if is_move {
-            let Some(id) = state.id_of.get(c) else {
-                exact = false;
-                break;
-            };
-            ops.push(PatchOp::MoveRow { path: path.clone(), id: id.clone(), index: at });
-        } else {
-            ops.push(PatchOp::InsertRow {
-                path: path.clone(),
-                index: at,
-                value: project(Some(item_node), deep(doc, c)),
-            });
-        }
+            PatchOp::InsertRow { path: path.to_vec(), index: at, value: value(id)? }
+        });
     }
-    let exact = exact && sim == next;
-    out.detached |= !removed.is_empty() && holds_collections(item_node);
-    for r in &removed {
-        state.drop_row(r);
-    }
-    for c in &inserted {
-        state.add(doc, c.clone());
-    }
-    state.order = next;
-    if exact {
-        out.ops.extend(ops);
-    } else {
-        out.fallback.push(e.target.clone());
-    }
+    (sim.iter().map(|id| id.as_str()).eq(new.iter().map(String::as_str))).then_some(ops)
 }
 
-/// Replaces every op inside a fallback container with one exact `set` of it.
-fn finish_fallbacks(doc: &LoroDoc, schema: &Node, lists: &HashMap<ContainerID, ListState>, out: &mut Out) {
-    let mut resolved: Vec<(Vec<Segment>, ContainerID, Option<&Node>)> = vec![];
-    let mut work = std::mem::take(&mut out.fallback);
-    while let Some(cid) = work.pop() {
-        if resolved.iter().any(|(_, c, _)| *c == cid) {
-            continue;
-        }
-        // A detached (deleted) container has no path and nothing left to publish.
-        let Some(path) = doc.get_path_to_container(&cid) else {
-            continue;
-        };
-        match json_path(lists, &path) {
-            Ok(p) => resolved.push((p, cid, node_at(schema, &path))),
-            Err(ancestor) => work.push(ancestor),
-        }
-    }
-    let outer: Vec<_> = resolved
-        .iter()
-        .filter(|(p, _, _)| !resolved.iter().any(|(q, _, _)| q.len() < p.len() && p[..q.len()] == q[..]))
-        .collect();
-    out.ops.retain(|op| !outer.iter().any(|(p, _, _)| op.path().starts_with(p)));
-    for (p, cid, node) in outer {
-        out.ops.push(PatchOp::Set { path: p.clone(), value: project(*node, deep(doc, cid)) });
-    }
+/// The fallback: the whole document as one `set`, with every row list indexed again.
+fn everything(doc: &LoroDoc, schema: &Node, lists: &mut Lists) -> Vec<PatchOp> {
+    *lists = index_all(doc, schema);
+    vec![PatchOp::Set { path: vec![], value: project(Some(schema), json(doc.get_map("data").get_deep_value())) }]
 }

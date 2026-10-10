@@ -17,7 +17,7 @@ openable, so its frozen entries never change.
 | Boundary | Where | Proves |
 |---|---|---|
 | Rust semantics | `crates/hitslop-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
-| Rust storage | `crates/hitslop-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, saved updates without a checkpoint refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
+| Rust storage | `crates/hitslop-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, a history that does not start with a snapshot refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
 | File engine | `crates/slop-engine/tests` | `pack`, `inspect` and `schema` as the CLI runs them; a refused build publishes nothing |
 | Shell over WASM | `packages/hitslop/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
 | Author SDK | `packages/hitslop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` browser behavior |
@@ -52,7 +52,6 @@ bun run verify                 # the tiers this change touches
 bun run verify --native        # the same, with the native (macOS) tiers
 bun run verify --all           # all ordinary tiers (add --native for macOS tiers)
 bun run verify browser         # optional browser qualification (macOS)
-bun run verify dev-sync        # optional experimental collaboration qualification
 bun run verify rust store::    # one tier, with its own arguments (here a nextest filter)
 bun run verify --list          # what would run, and why
 bun run verify --list --json --native --base origin/master # CI selection; no builds/tools
@@ -66,7 +65,6 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `bun` | SDK, shell and release tests; up to four isolated file workers |
 | `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
 | `rust` | Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
-| `dev-sync` | Experimental collaboration Clippy and Rust tests; explicitly selected only, outside ordinary and release runs |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
@@ -103,8 +101,8 @@ markers or embedded apps does not prove saved scenarios behave equivalently.
 | Nightly and release only | Where it is selected |
 |---|---|
 | Presentation, pixel and telemetry checks: window shapes, toolbar, glass, theme panel, export size and colour, catalog thumbnails, telemetry wiring | Swift `.nightly` trait (`HitSlopTestSupport/Nightly.swift`) |
-| Storage-growth and history-trim budgets, rebuild scheduling, a busy display read | `default-filter` in `.config/nextest.toml` (`--ignore-default-filter` adds them) |
-| Full randomized budgets: model 8 seeds (4 otherwise), compat writers 2 seeds (1), publications 100 rounds (10) | `scripts/verify.ts` |
+| Storage-growth and history-trim budgets, a busy display read | `default-filter` in `.config/nextest.toml` (`--ignore-default-filter` adds them) |
+| Full randomized budgets: model 8 seeds (4 otherwise), merge 40 seeds (8), compat writers 2 seeds (1), publications 100 rounds (10) | `scripts/verify.ts` |
 | Large live/closed replies over 48 MiB with near-limit batches | `DocumentOwnerTests.largeDocumentsReadTheSameLiveAndClosed` |
 | The type fixtures' fresh native render (their saved documents are replayed every time) | `tests/native/render.native.test.ts` |
 | Landing generation, skills install, update notice, help wording, documentation examples, the tutorial build | `test.if(nightly)` in those files |
@@ -121,36 +119,12 @@ changes; otherwise ordinary local runs default to smoke. Reports record the mode
 passes cannot satisfy a full verification cache entry. Nightly and required-release replay
 override inherited smoke restrictions.
 
-Explicit Rust/dev-sync filters bypass nextest's default exclusions, so
+Explicit Rust filters bypass nextest's default exclusions, so
 `bun run verify rust a_busy_file_is_reported_busy_not_as_having_no_artwork` runs that test.
 
 A merged failure scenario keeps each failure it replaced named in its comment. Tests that
 wait out SQLite's busy timeout run their cases at once on separate documents, so a run
 pays that wait once.
-
-## Local authority proof
-
-`bun scripts/dev/live-sync.ts examples/slops/quick-checklist` builds the opt-in
-`dev-sync` engine and its `slop-room` binary in `target/dev-sync`, packs one app and
-prints two Vite URLs and a
-temporary directory. Open one browser page per URL. The room and each replica own a
-different SQLite file; ordinary `slop get`/`slop call` against a replica path reaches
-that live owner through the usual socket registry. Stop the script with Ctrl-C; its
-files remain available for inspection. Do not use these files as shared documents after
-the harness stops: storage 1 has no persistent room binding.
-
-`bun run verify browser live-sync` builds those binaries and runs the two-view WebKit test
-(it is skipped when run without them),
-including CLI bursts, text and commands, duplicate/missing delivery, snapshot replacement,
-disconnect fencing, retained drafts and reopen. With `HITSLOP_BENCH_SYNC=1` the test records
-loopback command/text timings and screenshots in its verification evidence directory. `bun run verify rust`
-also checks the feature-enabled owner, import and bounded framing tests alongside the
-ordinary configuration. Released builds do not enable this feature.
-
-All Loro bytes stay in Rust. Credentials are ephemeral and passed through stdin; the
-page receives ordinary owner publications. Shared undo/redo and attachment imports are
-refused. There is no automatic mutation retry after an unknown outcome, offline merge,
-restart recovery or production endpoint in this proof.
 
 Use `bun run verify cli agents.test.ts` for a CLI case. `bun run test` runs `tooling`,
 `bun` and `cli`; `verify tooling` runs the build-free infrastructure tests. Discovery rejects
@@ -179,6 +153,21 @@ publications replay to a fresh snapshot, the maintained state equals a recompute
 the document reopens the same: reopening checks the saved state against its descriptor,
 so a write that stored invalid state fails the run. `publications.rs` keeps its own budget
 (100 rounds × 100 steps, `HITSLOP_PUBLICATIONS_{ROUNDS,STEPS}`).
+
+`merge.rs` checks merge closure: three replicas of each fixture edit concurrently with every
+intent kind, refusals, undo and redo, insert rows from a small pool of IDs, and exchange
+whole histories in random order. Every merge must open (acceptance never refuses merged
+valid edits), both merge orders must read the same, and no row may read twice. It runs 40
+seeds of 120 steps by default (8 on an ordinary `verify`, 400 in the extended run;
+`HITSLOP_MERGE_{SEEDS,STEPS}`).
+
+`sync.rs` runs three replicas through the relay's rules (`tests/support/relay.rs`) with
+the real session and codec: dropped connections, relay restarts and crashes that reopen
+from the last save. Every replica must converge, every page view must equal its document,
+nothing saved or held by the relay may be lost, and nothing may pause. It shares the merge
+seeds (300 steps each). The golden frames (`tests/sync-frames.json`) are the wire's
+contract with the relay; `HITSLOP_WRITE_SYNC_FRAMES=1` rewrites them when the wire changes
+on purpose. `owner.rs` syncs two owners through their hooks alone.
 
 The default model takes under two seconds in the debug build (M1, 2026-10-05). The
 extended run is sized for CI; the `Core model` workflow runs it weekly and on demand:
@@ -232,12 +221,6 @@ without concurrent tests or compilation; these timings are not test assertions.
 The [2026-10-07 samples](evidence/replace-2026-10-07.json) compare the same-order
 row fast path with the original reconciler; shared-machine timing variation limits
 the comparison.
-`cargo run --release -p hitslop-core --example bench_owner_history` runs a live owner
-through 20 checkpoint cycles of constant-size churn and records retained history, peak
-RSS, flush latency and the pause each history rebuild holds edits for
-([2026-10-08 results](evidence/owner-history-2026-10-08.md)).
-`cargo test -p hitslop-core --test counter_exactness -- --ignored` reproduces Loro
-counter rounding past 2^53, the reason counters stay exact integers.
 
 Other performance diagnostics:
 `HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`,
@@ -278,20 +261,21 @@ not the installed application's bundle. The format markers can remain at 1 acros
 many releases; release versions and format requirements are different things.
 
 Old files are checked, not old programs. `tests/compat/<release>/` stores original built
-templates, saved documents (with their attachments), expected state, explicit page
-interactions, and the candidate writer: the darwin-arm64 `slop-engine` the release built
+templates, saved documents (with their attachments), expected state, page scenarios,
+and the candidate writer: the darwin-arm64 `slop-engine` the release built
 and wrote its documents with (`engine/darwin-arm64/slop-engine`, with its build ID, commit
 and hash in `release.json`). Its documents are written both ways a release writes them:
 through its CLI and helper, and by its own app's page (`NAME.page.slop`, saved by the page
-scenario, so text splices against older versions and page-minted IDs are replayed too). A
-small sample includes the conformance app (every `ctx` member and descriptor kind, a page
-command, app media: font, image and audio, and two attachment types), three type fixtures,
-the presentation fixtures for every window kind (1× and 2× PNG skins, glass, a transparent
-ellipse and a path shape) and selected real templates. It is regression evidence, not
-proof of all possible authored apps.
+scenario, so text splices against older versions and page-minted IDs are replayed too). It
+covers the runtime, not individual slops: the conformance app (every `ctx` member and
+descriptor kind, a stored command, app media: font, image and audio, and two attachment
+types) with its saved, page-saved and compacted documents, and a template for each window
+kind (1× and 2× PNG skins, glass, a transparent ellipse and a path shape), which later
+builds create, edit and render documents from. Shipped templates are not in it; the
+template render checks cover what ships now. It is regression evidence, not proof of all
+possible authored apps.
 
-`bun run compat:capture VERSION --frozen` builds the producing tools and templates (the
-shipped ones in `examples/slops/bundled.json`, or `--templates slug,slug`), records their
+`bun run compat:capture VERSION --frozen` builds the producing tools, records their
 source fingerprint and identities, and captures into a temporary directory. It records
 template digests, per-file hashes and the required case inventory. Only a completed capture
 is published and frozen. Recording an existing frozen entry is refused. Before launch `dev`
@@ -315,9 +299,8 @@ may be recaptured.
   evaluator with their recorded clock and seed, and through the owner with `slop call`
   (argument refusal first, then an edit). A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
   frozen entry.
-- Swift (`CompatCorpusTests`) runs frozen explicit UI actions (field edits or clicks) or the
-  old conformance app's own scenario, which includes a page command, requires an actual
-  saved edit and checks reopen. Missing controls fail.
+- Swift (`CompatCorpusTests`) runs the old conformance app's own scenario, which includes a
+  page command and a live agent edit, requires an actual saved edit and checks reopen.
 
 Each storage-version bump adds two Rust tests: a frozen file migrated by a write equals a
 newly created file in exact layout and value, and an interrupted migration leaves the
@@ -325,7 +308,7 @@ older file intact.
 
 The `compat` tier compares frozen entries with protected Git history and verifies their content
 hashes. Release checks additionally require the tagged entry to match current producing
-inputs and selected shipped templates, and its writer to come from the captured core. A
+inputs and window-kind templates, and its writer to come from the captured core. A
 corpus-only commit does not change the input fingerprint. Historical entries never need
 current build identities. The CLI and the app meet only through the command protocol, whose
 refusal path is fixed and tested in each build; old CLIs are never run against new apps.
@@ -341,7 +324,7 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
-| `qualification` (nightly/manual) | Playwright browser integration, experimental `dev-sync`, and the macOS portable CLI/package matrix; not required for merging |
+| `qualification` (nightly/manual) | Playwright browser integration and the macOS portable CLI/package matrix; not required for merging |
 | `release-templates` (nightly/manual) | Builds, caches and renders the full template corpus |
 | Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
 
@@ -498,9 +481,8 @@ contracts; only the latter survive, in the SDK fixture. No example test director
 accepted by discovery. No test quota is associated with a slop.
 
 Performance samples in browser correctness scenarios are opt-in:
-`HITSLOP_BENCH_PREVIEW=1 bun run verify browser large-preview` and
-`HITSLOP_BENCH_SYNC=1 bun run verify browser live-sync`. Ordinary runs still check
-large-list identity and shared-authority correctness without repeated timing samples.
+`HITSLOP_BENCH_PREVIEW=1 bun run verify browser large-preview`. Ordinary runs still check
+large-list identity without repeated timing samples.
 `HITSLOP_BENCH_COMMANDS=1` enables repeated command-latency samples in `verify browser dev.browser`
 and `verify swift --filter pageAndCLICommandsShareTheNativeOwner`; normal runs still
 exercise accepted commands, invalid arguments and publication to the page.

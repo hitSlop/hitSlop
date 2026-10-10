@@ -31,13 +31,6 @@ const slopFile = {
   required: true,
   description: "Path to a .slop template or document",
 } as const;
-/** The version an agent's text sets were written against. */
-const baseFlag = {
-  name: "base",
-  type: "string",
-  description:
-    "The version you read the text at (version from get --snapshot; read again before each rewrite). Text sets then change the text as it was at that version and keep edits made since, such as typing in an open window",
-} as const;
 const attachFlag = {
   name: "attach",
   type: "string",
@@ -338,10 +331,9 @@ export const app = new Crust("slop", {
               required: true,
               description: "Operation object as JSON",
             },
-            baseFlag,
             attachFlag,
           )
-          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op, flags.base, flags.attach)),
+          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op, flags.attach)),
     ),
   )
   .add(
@@ -358,10 +350,9 @@ export const app = new Crust("slop", {
               required: true,
               description: "Array of operations as JSON",
             },
-            baseFlag,
             attachFlag,
           )
-          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops, flags.base, flags.attach)),
+          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops, flags.attach)),
     ),
   )
   .add(

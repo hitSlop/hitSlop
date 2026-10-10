@@ -1,6 +1,6 @@
 //! Requests the owner admits later, in order, because work they must not interleave with is
-//! still running: a history rebuild, or edits a shared document forwarded and has not yet
-//! installed. One queue serves every holder, so `request` has one admission gate.
+//! still running: a command being evaluated. One queue serves every holder, so `request`
+//! has one admission gate.
 use super::*;
 use std::collections::VecDeque;
 

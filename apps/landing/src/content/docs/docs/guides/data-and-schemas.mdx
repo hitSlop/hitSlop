@@ -124,7 +124,7 @@ await doc.fields.tasks.remove(id);
 await doc.fields.visits.increment();
 ```
 
-`item(id)` is a row's handle by ID. `increment(-1)` subtracts; a counter has no reset. If a counter's merged contributions are invalid, its snapshot is `null`: show it as unavailable and disable its buttons. A deleted row is no longer a valid write target. Do not add `$id` manually to creation-only initial values.
+`item(id)` is a row's handle by ID. `increment(-1)` subtracts; a counter has no reset. A deleted row is no longer a valid write target. Do not add `$id` manually to creation-only initial values.
 
 ## Group changes
 

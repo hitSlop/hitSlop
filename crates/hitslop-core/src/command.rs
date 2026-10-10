@@ -125,7 +125,6 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDis
                     ids,
                     selection_start: text.as_ref().map(|t| t.selection[0]),
                     selection_end: text.as_ref().map(|t| t.selection[1]),
-                    authored: text.map(|t| t.authored),
                 }),
                 _ => None,
             }),

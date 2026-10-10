@@ -62,7 +62,8 @@ impl Store {
     /// and stored no attachment reclaims nothing, so reading never writes the file.
     pub fn reclaim_attachments(&self) -> Result<usize> {
         self.check(true)?;
-        if !lock(&self.account).changed {
+        // Another replica can still reference a shared document's attachment.
+        if !lock(&self.account).changed || self.is_shared() {
             return Ok(0);
         }
         self.connected(&mut lock(&self.backing).conn, |conn| {

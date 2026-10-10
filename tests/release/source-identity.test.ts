@@ -31,17 +31,11 @@ test("release acceptance compares presentation fixtures at their built location"
   try {
     await run(["git", "init", "--quiet"], { cwd: folder });
     await mkdir(join(folder, "generated/presentation"), { recursive: true });
-    await mkdir(join(folder, "generated/templates"), { recursive: true });
     const fixture = join(folder, "generated/presentation/ellipse.slop");
-    const template = join(folder, "generated/templates/minimal.slop");
     await writeFile(fixture, "captured presentation bytes");
-    await writeFile(template, "captured shipped template bytes");
     const release = {
       inputs: await sourceFingerprint(folder),
-      templates: {
-        "presentation-ellipse": await fileDigest(fixture),
-        minimal: await fileDigest(template),
-      },
+      templates: { "presentation-ellipse": await fileDigest(fixture) },
     };
     await verifyCandidate(folder, release, folder);
     await writeFile(fixture, "changed presentation bytes");

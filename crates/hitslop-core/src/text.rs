@@ -1,33 +1,17 @@
-//! Text sets from a version. The page, or an agent, reports that a field went from `from`
-//! (its text at the batch's `base`) to the set's value; the owner computes the edit script
-//! and merges it with whatever changed since. No draft state survives a batch.
+//! Text sets from what the writer last saw. The page, or an agent, reports that a field went
+//! from `from` (its text as the writer last confirmed it) to the set's value; the owner
+//! computes the edit script and, when the field changed since, merges it three ways with
+//! what changed: the writer's script is rebased over `from → current` and applied to the
+//! live text as this session's peer. No version is involved and no draft state survives a
+//! batch.
 use super::*;
 use execute::Location;
-use loro::{TextDelta, UpdateOptions, cursor::Side, event::Diff};
+use loro::{TextDelta, UpdateOptions, event::Diff};
 use wire::Selection;
 
 /// Bounds the diff; past it the script falls back to a single caret-hinted splice.
 const SCRIPT_TIMEOUT_MS: f64 = 50.0;
 
-/// A branch at `base` for authoring one concurrent edit: the state there with minimal
-/// history, so trimmed documents branch too (Loro has no `fork_at` for them). Safe where a
-/// long-lived replica is not (see `replica_at`): it lives for one edit, authors only text
-/// operations after checking its text equals `from`, and never imports later changes.
-fn branch_at(doc: &LoroDoc, base: &Frontiers) -> Result<LoroDoc> {
-    let branch = LoroDoc::new();
-    branch.set_record_timestamp(true);
-    branch.import(&doc.export(ExportMode::state_only(Some(base))).map_err(engine)?).map_err(engine)?;
-    Ok(branch)
-}
-/// The text at `path` in a branch; `None` for an optional text that is not set.
-fn text_at(doc: &LoroDoc, schema: &Node, path: &[Segment]) -> Result<Option<LoroText>> {
-    let loc = resolve(doc, schema, path, &Rows::new(&HashMap::new()))?;
-    match (unwrap_optional(loc.node), loc.value) {
-        (Node::Text {}, ValueOrContainer::Container(Container::Text(text))) => Ok(Some(text)),
-        (Node::Text {}, _) if loc.absent => Ok(None),
-        _ => Err(err(Code::TypeMismatch, "Expected text")),
-    }
-}
 /// The Unicode scalar offset of a UTF-16 offset, refusing one inside a surrogate pair.
 fn unicode_offset(text: &str, utf16: usize) -> Result<usize> {
     let mut n = 0;
@@ -198,47 +182,117 @@ fn semantic(old: &[char], delta: &[TextDelta]) -> Option<Vec<TextDelta>> {
     Some(out)
 }
 
-/// A batch's `base`, decoded once before any intent runs.
-pub(super) struct Base {
-    pub(super) token: String,
-    pub(super) at: Frontiers,
-    pub(super) vv: VersionVector,
+/// What a script does to each character of the text it starts from: the characters it
+/// inserts before character `k` (`k == len` is the end), and whether character `k` stays.
+struct Shape {
+    before: Vec<Vec<char>>,
+    kept: Vec<bool>,
 }
-/// What a batch's text sets need beyond the document: its base, where the saved history
-/// starts, and who sends it. Collects the page's text edit, the set carrying `selection`.
-pub(super) struct Texts<'a> {
-    pub(super) base: Option<&'a Base>,
-    pub(super) floor: &'a VersionVector,
-    pub(super) message: &'a str,
-    pub(super) typed: Option<Typed>,
+fn shape(delta: &[TextDelta], len: usize) -> Shape {
+    let mut out = Shape { before: vec![vec![]; len + 1], kept: vec![true; len] };
+    let mut at = 0;
+    // An insertion right after a deletion replaces it, so it belongs where the deleted span
+    // starts: an edit made inside that span lands after the replacement.
+    let mut replaced = None;
+    for item in delta {
+        match item {
+            TextDelta::Retain { retain, .. } => {
+                at += retain;
+                replaced = None;
+            }
+            TextDelta::Delete { delete } => {
+                out.kept[at..at + delete].iter_mut().for_each(|kept| *kept = false);
+                replaced = replaced.or(Some(at));
+                at += delete;
+            }
+            TextDelta::Insert { insert, .. } => out.before[replaced.unwrap_or(at)].extend(insert.chars()),
+        }
+    }
+    out
 }
+fn push(delta: &mut Vec<TextDelta>, item: TextDelta) {
+    match (delta.last_mut(), item) {
+        (_, TextDelta::Retain { retain: 0, .. } | TextDelta::Delete { delete: 0 }) => {}
+        (_, TextDelta::Insert { insert, .. }) if insert.is_empty() => {}
+        (Some(TextDelta::Retain { retain, .. }), TextDelta::Retain { retain: more, .. }) => *retain += more,
+        (Some(TextDelta::Delete { delete }), TextDelta::Delete { delete: more }) => *delete += more,
+        (Some(TextDelta::Insert { insert, .. }), TextDelta::Insert { insert: more, .. }) => insert.push_str(&more),
+        (_, item) => delta.push(item),
+    }
+}
+/// The writer's edit `from → to` rebased over `from → current`: the delta to apply to
+/// `current`, and `selection` (Unicode offsets in `to`) mapped into the merged text. At one
+/// place, what changed concurrently comes first and the writer's insertion after it, so a
+/// caret at the end of its own insertion stays there.
+pub(crate) fn rebase(from: &str, current: &str, to: &str, selection: [usize; 2]) -> (Vec<TextDelta>, [usize; 2]) {
+    let base: Vec<char> = from.chars().collect();
+    let theirs = shape(&script(from, current, current.chars().count()), base.len());
+    let mine = shape(&script(from, to, selection[1]), base.len());
+    let mut delta = vec![];
+    let (mut merged, mut in_to) = (0, 0);
+    let mut mapped: [Option<usize>; 2] = [None, None];
+    let mut note = |in_to: usize, merged: usize| {
+        for (slot, offset) in mapped.iter_mut().zip(selection) {
+            if slot.is_none() && in_to == offset {
+                *slot = Some(merged);
+            }
+        }
+    };
+    for k in 0..=base.len() {
+        push(&mut delta, TextDelta::Retain { retain: theirs.before[k].len(), attributes: None });
+        merged += theirs.before[k].len();
+        note(in_to, merged);
+        for ch in &mine.before[k] {
+            push(&mut delta, TextDelta::Insert { insert: ch.to_string(), attributes: None });
+            merged += 1;
+            in_to += 1;
+            note(in_to, merged);
+        }
+        if k < base.len() {
+            match (theirs.kept[k], mine.kept[k]) {
+                (true, true) => {
+                    push(&mut delta, TextDelta::Retain { retain: 1, attributes: None });
+                    merged += 1;
+                }
+                (true, false) => push(&mut delta, TextDelta::Delete { delete: 1 }),
+                (false, _) => {}
+            }
+            if mine.kept[k] {
+                in_to += 1;
+                note(in_to, merged);
+            }
+        }
+    }
+    // Trailing retains are implicit.
+    while matches!(delta.last(), Some(TextDelta::Retain { .. })) {
+        delta.pop();
+    }
+    (delta, mapped.map(|offset| offset.unwrap_or(merged)))
+}
+
 /// The page's text edit: the field went from `from` to `to` with the caret at `caret`
-/// (UTF-16, in `to`). `authored` is its own version when it merged from a branch or
-/// changed nothing, else the batch's; `selection` is in the merged text.
+/// (UTF-16, in `to`). `selection` is in the merged text; `merged` says another change was
+/// merged in.
 pub(super) struct Typed {
     pub(super) path: Vec<Segment>,
     pub(super) from: String,
     pub(super) to: String,
     pub(super) caret: usize,
-    pub(super) authored: Option<String>,
     pub(super) selection: [usize; 2],
     pub(super) merged: bool,
 }
 
-/// A text set from the batch's base: `at` is the field, `value` its new text.
-#[expect(clippy::too_many_arguments, reason = "text merge inputs belong to one bounded operation")]
+/// A text set from what the writer last saw: `at` is the field, `value` its new text, and
+/// `from` the text the writer started from (the current text when absent). Only the page's
+/// edit, the set carrying `selection`, reports back through `typed`.
 pub(super) fn set(
-    doc: &LoroDoc,
-    schema: &Node,
     path: &[Segment],
     at: Location,
     value: &Value,
     from: Option<&str>,
     selection: Option<Selection>,
-    rows: &mut Rows,
-    texts: &mut Texts,
+    typed: &mut Option<Typed>,
 ) -> Result<()> {
-    let base = texts.base.ok_or_else(|| err(Code::InvalidRequest, "`from` and `selection` need the batch's `base`"))?;
     let to = value.as_str().ok_or_else(|| err(Code::TypeMismatch, "Expected text"))?;
     let given = selection.map(|s| [s.start, s.end]);
     let selection = [
@@ -253,28 +307,14 @@ pub(super) fn set(
         _ if at.absent => None,
         _ => return Err(err(Code::TypeMismatch, "Expected text")),
     };
-    // The text at `base`: the page's own record of it, else read from that version.
-    let mut branch = None;
-    let from = match from {
-        Some(from) => from.to_owned(),
-        None if base.at == doc.oplog_frontiers() && doc.get_pending_txn_len() == 0 => {
-            current.as_ref().map(LoroText::to_string).unwrap_or_default()
-        }
-        None => {
-            let at_base = branch_at(doc, &base.at)?;
-            let text = text_at(&at_base, schema, path)?.map(|t| t.to_string()).unwrap_or_default();
-            branch = Some(at_base);
-            text
-        }
-    };
-    // Only the page's edit, the set carrying a selection, reports back.
-    let typed = |authored: Option<String>, positions: [usize; 2], merged: bool| {
+    let now = current.as_ref().map(LoroText::to_string).unwrap_or_default();
+    let from = from.map_or_else(|| now.clone(), str::to_owned);
+    let record = |positions: [usize; 2], merged: bool| {
         given.map(|[_, caret]| Typed {
             path: path.to_vec(),
             from: from.clone(),
             to: to.to_owned(),
             caret,
-            authored,
             selection: positions,
             merged,
         })
@@ -284,66 +324,26 @@ pub(super) fn set(
         if !from.is_empty() {
             return Err(err(Code::PathNotFound, "Text was cleared"));
         }
-        if to.is_empty() {
-            texts.typed = typed(Some(base.token.clone()), given.unwrap_or_default(), false);
-            return Ok(());
+        if !to.is_empty() {
+            let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Expected a field"))?;
+            put(&map, &key, &Node::Text {}, value)?;
         }
-        let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Expected a field"))?;
-        put(&map, &key, &Node::Text {}, value, rows)?;
-        texts.typed = typed(None, given.unwrap_or_default(), false);
+        *typed = record(given.unwrap_or_default(), false);
         return Ok(());
     };
-    // The field must be the same container the writer edited: a row removed and
-    // reinserted with the same `$id` has a new text that `base` never saw.
-    if let ContainerID::Normal { peer, counter, .. } = current.id()
-        && !base.vv.includes_id(ID::new(peer, counter))
-    {
-        return Err(err(Code::PathNotFound, "Text identity changed"));
-    }
-    if from == to {
-        texts.typed = typed(Some(base.token.clone()), given.unwrap_or_default(), false);
+    if now == from {
+        // Nearly every keystroke: nothing else changed this field since the writer saw it.
+        if from != to {
+            current.apply_delta(&script(&from, to, selection[1])).map_err(engine)?;
+        }
+        *typed = record(given.unwrap_or_default(), false);
         return Ok(());
     }
-    let delta = script(&from, to, selection[1]);
-    if current.to_string() == from {
-        // Nearly every keystroke: nothing else changed this field since `base`.
+    let (delta, positions) = rebase(&from, &now, to, selection);
+    if !delta.is_empty() {
         current.apply_delta(&delta).map_err(engine)?;
-        texts.typed = typed(None, given.unwrap_or_default(), false);
-        return Ok(());
     }
-    // This field changed since `base`: author the edit on a branch at `base` and let Loro
-    // merge it, so neither side's characters are lost.
-    if !base.vv.includes_vv(texts.floor) {
-        return Err(err(Code::StaleBase, "Version precedes the saved history"));
-    }
-    let branch = match branch {
-        Some(branch) => branch,
-        None => branch_at(doc, &base.at)?,
-    };
-    let text = text_at(&branch, schema, path)?.ok_or_else(|| err(Code::PathNotFound, "Text identity changed"))?;
-    if text.id() != current.id() {
-        return Err(err(Code::PathNotFound, "Text identity changed"));
-    }
-    if text.to_string() != from {
-        return Err(err(Code::StaleBase, "The field was not `from` at `base`"));
-    }
-    text.apply_delta(&delta).map_err(engine)?;
-    branch.set_next_commit_message(texts.message);
-    branch.commit();
-    let [start, end] = selection.map(|offset| {
-        text.get_cursor(offset, Side::Middle).ok_or_else(|| err(Code::OutOfRange, "Cannot anchor selection"))
-    });
-    let cursors = [start?, end?];
-    // Importing commits earlier intents too; all belong to this batch's origin.
-    doc.set_next_commit_message(texts.message);
-    doc.import(&branch.export(ExportMode::updates(&base.vv)).map_err(engine)?)
-        .map_err(|e| err(Code::InvalidBytes, e))?;
     let merged = current.to_string();
-    let mut positions = [0usize; 2];
-    for (slot, cursor) in positions.iter_mut().zip(cursors) {
-        let pos = doc.get_cursor_pos(&cursor).map_err(engine)?.current.pos;
-        *slot = utf16_offset(&merged, pos);
-    }
-    texts.typed = typed(Some(version_token(&branch.oplog_frontiers())), positions, true);
+    *typed = record(positions.map(|offset| utf16_offset(&merged, offset)), true);
     Ok(())
 }

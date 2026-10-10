@@ -127,7 +127,7 @@ fn creation_refuses_invalid_template_state_without_publishing_or_repairing_it() 
     ] {
         let dir = tempfile::tempdir().unwrap();
         let source = template(dir.path());
-        raw(&source).execute("UPDATE checkpoint SET bytes=?", [&checkpoint]).unwrap();
+        raw(&source).execute("UPDATE history SET bytes=?", [&checkpoint]).unwrap();
         let before = fs::read(&source).unwrap();
         let destination = dir.path().join("Refused.slop");
         assert!(file::create_document(&source, &destination).is_err(), "invalid saved state must refuse creation");
@@ -413,17 +413,23 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
         "CREATE TABLE extra(x)",
         "CREATE INDEX extra_index ON assets(bytes)",
         "CREATE VIEW extra_view AS SELECT 1",
-        "CREATE TRIGGER extra_trigger AFTER INSERT ON updates BEGIN DELETE FROM attachments; END",
+        "CREATE TRIGGER extra_trigger AFTER INSERT ON history BEGIN DELETE FROM attachments; END",
         "INSERT INTO assets VALUES('../escape.js', 'text/javascript', 'identity', 1, x'00')",
         "INSERT INTO assets VALUES('invalid.css', 'text/css', 'identity', 2, x'00')",
         "INSERT INTO assets VALUES('commands.js', 'text/javascript', 'br', 2, x'789c')",
-        "INSERT INTO updates(bytes) VALUES(x'00')",
+        "INSERT INTO history(bytes) VALUES(x'00')",
+        "INSERT INTO share VALUES(1, 'room', 'wss://relay.example')",
         "DELETE FROM app",
         "PRAGMA ignore_check_constraints=ON; INSERT INTO attachments VALUES('not-an-id', 'application/octet-stream', x'00')",
     ] {
         let dir = tempfile::tempdir().unwrap();
         let doc = document(dir.path());
-        let damaged = if ddl.starts_with("INSERT INTO updates") { template(dir.path()) } else { doc.clone() };
+        // A template holds one history row and no share.
+        let damaged = if ddl.starts_with("INSERT INTO history") || ddl.starts_with("INSERT INTO share") {
+            template(dir.path())
+        } else {
+            doc.clone()
+        };
         raw(&damaged).execute_batch(&format!("PRAGMA ignore_check_constraints=ON; {ddl}")).unwrap();
         assert!(file::open(&damaged, true).is_err(), "{ddl}");
         assert!(Store::open(&damaged, Mode::Snapshot).is_err(), "{ddl}");
@@ -509,16 +515,11 @@ fn a_newer_app_format_is_refused_before_its_tables_are_compared() {
 fn stored_values_are_bounded_as_writes_bound_them() {
     let many_tokens =
         format!("{{{}}}", (0..100_000).map(|i| format!(r##""t{i}":"#000000""##)).collect::<Vec<_>>().join(","));
-    let cases: [(&str, &str, Option<Vec<u8>>); 4] = [
+    let cases: [(&str, &str, Option<Vec<u8>>); 3] = [
         (
             "theme defaults over budget",
             "UPDATE app SET definition_json=CAST(? AS TEXT)",
             Some(many_tokens.into_bytes()),
-        ),
-        (
-            "a misnumbered checkpoint",
-            "PRAGMA ignore_check_constraints=ON; INSERT INTO checkpoint VALUES(2,x'00')",
-            None,
         ),
         (
             "a second document row",

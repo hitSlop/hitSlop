@@ -100,10 +100,10 @@ export function batchIntents(ops: string): Batch["intents"] {
   // Shape and value acceptance belong to Rust, including raw numeric tokens.
   return intents as Batch["intents"];
 }
-/** An atomic batch. Numeric tokens keep their spelling. Its text
- * sets merge from `base` when given. The `attach` files are stored in the same request,
- * before the operations that reference them (`attachmentsRef` prints a reference). */
-export async function batch(document: string, ops: string, base?: string, attach: string[] = []) {
+/** An atomic batch. Numeric tokens keep their spelling. A text set with `from` merges with
+ * edits made since the agent read the field. The `attach` files are stored in the same
+ * request, before the operations that reference them (`attachmentsRef` prints a reference). */
+export async function batch(document: string, ops: string, attach: string[] = []) {
   const intents = batchIntents(ops);
   const attachments = await Promise.all(attach.map(async (file) => Buffer.from((await reference(file)).bytes).toString("base64")));
   if (attachments.reduce((total, encoded) => total + encoded.length, ops.length) > SocketLimits.attachment - 4096)
@@ -111,15 +111,15 @@ export async function batch(document: string, ops: string, base?: string, attach
   const { ids } = await send({
     method: "batch",
     ...at(document),
-    batch: { intents, ...(base === undefined ? {} : { base }) },
+    batch: { intents },
     ...(attachments.length ? { attachments } : {}),
   });
   print({ ids });
 }
-export async function apply(document: string, op: string, base?: string, attach: string[] = []) {
+export async function apply(document: string, op: string, attach: string[] = []) {
   const value = json(op);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("--op must be one JSON object");
-  await batch(document, `[${op}]`, base, attach);
+  await batch(document, `[${op}]`, attach);
 }
 /** One `replace`: the value at `path` (the whole document by default) becomes the file's
  * JSON. Both are spliced as written; the core parses and validates the result. */

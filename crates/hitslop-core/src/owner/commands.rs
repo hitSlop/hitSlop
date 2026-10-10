@@ -16,7 +16,6 @@ pub(super) struct Invocation {
     origin: Origin,
     attempt: u8,
     callback: Option<Completion>,
-    pub(super) session: Option<session::Context>,
 }
 impl Invocation {
     pub(super) fn take_callback(&mut self) -> Completion {
@@ -134,7 +133,6 @@ impl Actor {
         let mut bytes = [0; 16];
         getrandom::getrandom(&mut bytes).map_err(rejected)?;
         let seed = std::array::from_fn(|i| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().expect("four bytes")));
-        let session = self.session_command();
         self.evaluate_command(Invocation {
             generation: self.generation,
             version: self.core.version(),
@@ -147,7 +145,6 @@ impl Actor {
             origin,
             attempt: 0,
             callback: Some(take(callback)),
-            session,
         });
         Ok(())
     }
@@ -177,13 +174,13 @@ impl Actor {
         let (bundle, input) = match prepare() {
             Ok(input) => input,
             Err(error) => {
-                self.command_answered(&mut invocation, Err(error));
+                complete(invocation.take_callback(), Err(error));
                 return;
             }
         };
         let Some(evaluate) = &self.evaluate else {
-            self.command_answered(
-                &mut invocation,
+            complete(
+                invocation.take_callback(),
                 Err(Failure::rejected(Code::EngineError, "This hitSlop has no command evaluator")),
             );
             return;
@@ -193,7 +190,7 @@ impl Actor {
             evaluate.send(Work { runtime_abi: self.store.app().runtime_abi, invocation, bundle, input })
         {
             self.evaluating = false;
-            self.command_answered(&mut invocation, Err(closed()));
+            complete(invocation.take_callback(), Err(closed()));
         }
     }
     pub(super) fn command_finished(&mut self, mut invocation: Invocation, result: Result<Evaluation>) {
@@ -211,7 +208,7 @@ impl Actor {
             }
             let output = result?;
             let intents = current_intents(self.store.app().runtime_abi, output.intents)?;
-            let batch = crate::Batch { intents, if_version: Some(invocation.version.clone()), base: None };
+            let batch = crate::Batch { intents, if_version: Some(invocation.version.clone()) };
             let accepted = self.edited(|core| core.apply_command(batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
             Ok(Reply::Command {
@@ -232,8 +229,9 @@ impl Actor {
             invocation.version = self.core.version();
             self.evaluate_command(invocation);
         } else {
-            self.command_answered(&mut invocation, applied);
+            complete(invocation.take_callback(), applied);
         }
         self.release_held();
+        self.sync_resume();
     }
 }

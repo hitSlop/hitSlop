@@ -100,7 +100,7 @@ pub(super) fn layout(conn: &Connection, version: i64) -> Result<()> {
     }
     // A file written without its CHECK constraints may hold other rows, which no read
     // would see.
-    for table in ["app", "document", "checkpoint"] {
+    for table in ["app", "document", "share"] {
         let (rows, first): (i64, i64) = conn
             .query_row(&format!("SELECT count(*), coalesce(sum(id=1),0) FROM {table}"), [], |r| {
                 Ok((r.get(0)?, r.get(1)?))
@@ -162,20 +162,20 @@ fn stored_assets(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
-/// Whether the file is a template or a document. Both hold exactly one checkpoint: a
-/// template's is its initial state, which only a document adds updates and attachments
-/// to. A document's attachments are within their limits and named by their hashes; the
-/// saved state's own budget is the store's (`checked_bounds`).
+/// Whether the file is a template or a document. Both hold a history: a template's is one
+/// snapshot, its initial state, which only a document adds updates and attachments to. A
+/// document's attachments are within their limits and named by their hashes; the saved
+/// state's own budget is the store's (`checked_bounds`).
 fn state(conn: &Connection) -> Result<Kind> {
     let documents = one(conn, "SELECT count(*) FROM document")?;
-    let checkpoints = one(conn, "SELECT count(*) FROM checkpoint")?;
-    let updates = one(conn, "SELECT count(*) FROM updates")?;
+    let history = one(conn, "SELECT count(*) FROM history")?;
+    let shares = one(conn, "SELECT count(*) FROM share")?;
     let (attachments, attachment_largest, attachment_bytes) = rows::attachment_sizes(conn)?;
-    if checkpoints != 1 {
+    if history == 0 {
         return Err(invalid("The file has no saved state; keep it for recovery"));
     }
     let kind = if documents == 0 {
-        if updates + attachments > 0 {
+        if history > 1 || attachments > 0 || shares > 0 {
             return Err(invalid("A template holds no document edits"));
         }
         Kind::Template

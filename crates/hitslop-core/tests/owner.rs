@@ -500,3 +500,113 @@ fn a_busy_database_fails_a_flush_or_theme_export_that_a_retry_completes() {
         }
     });
 }
+
+/// A connection's sink, and what the owner tells it.
+fn sync_sink() -> (hitslop_core::owner::SyncSink, mpsc::Receiver<hitslop_core::owner::SyncEvent>) {
+    let (tx, rx) = mpsc::channel();
+    (
+        Arc::new(move |event| {
+            let _ = tx.send(event);
+        }),
+        rx,
+    )
+}
+
+/// Drains both connections: each frame an owner sends goes to the relay, whose replies go
+/// back to it and whose stored records go to the other joined owner. Returns once `done`
+/// holds of the owners' latest sync statuses (and whatever else it reads).
+fn pump(
+    relay: &mut support::relay::Relay,
+    owners: [(&Owner, &mpsc::Receiver<hitslop_core::owner::SyncEvent>); 2],
+    joined: &mut [bool; 2],
+    status: &mut [Option<hitslop_core::sync::Status>; 2],
+    done: impl Fn(&[Option<hitslop_core::sync::Status>; 2]) -> bool,
+) {
+    use hitslop_core::owner::SyncEvent;
+    use hitslop_core::sync::Frame;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        for i in 0..2 {
+            while let Ok(event) = owners[i].1.try_recv() {
+                match event {
+                    SyncEvent::Send { bytes } => {
+                        let (replies, stored) = relay.reply(&bytes);
+                        for reply in replies {
+                            joined[i] |= matches!(reply, Frame::Welcome { .. });
+                            owners[i].0.sync_frame(reply.encode());
+                        }
+                        if !stored.is_empty() && joined[1 - i] {
+                            owners[1 - i].0.sync_frame(Frame::Records(stored).encode());
+                        }
+                    }
+                    SyncEvent::Status { status: s } => status[i] = Some(s),
+                }
+            }
+        }
+        if done(status) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "sync did not settle: {status:?}");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// Two owners of one shared document, each opened from its own file, sync through their
+/// hooks alone: a host only moves frames between a connection's sink and the relay. An
+/// unshared document refuses to attach, and a shared one refuses to discard (other copies
+/// may already hold its edits).
+#[test]
+fn owners_of_a_shared_document_sync_through_their_hooks() {
+    use hitslop_core::owner::SyncEvent;
+    use hitslop_core::store::Share;
+    use hitslop_core::sync::{Frame, Status};
+    let (dir, path) = fixture();
+    let (a, _a_events) = open(&path, Mode::Document);
+    let (sink, unshared) = sync_sink();
+    a.sync_attach(sink);
+    let SyncEvent::Status { status: paused } = unshared.recv_timeout(Duration::from_secs(10)).unwrap() else {
+        panic!("an unshared document sends nothing")
+    };
+    assert!(matches!(paused, Status::Paused { .. }), "{paused:?}");
+    let share = Share { room: "room-1".into(), endpoint: "wss://relay.example".into() };
+    call(&a, Request::Share { share: share.clone() }).unwrap();
+    assert_eq!(a.share().unwrap(), Some(share.clone()));
+    let refused = call(&a, Request::Discard).unwrap_err();
+    assert_eq!(refused.reason, Some(hitslop_core::Code::InvalidRequest), "{refused:?}");
+    // The seed every replica starts from: a backup, which keeps the identity and share.
+    let seed = dir.path().join("seed.slop");
+    call(&a, Request::Backup { destination: seed.clone() }).unwrap();
+    let (b, _b_events) = open(&seed, Mode::Document);
+    assert_eq!(b.share().unwrap(), Some(share));
+
+    let (a_sink, a_sync) = sync_sink();
+    a.sync_attach(a_sink);
+    let SyncEvent::Send { bytes: hello } = a_sync.recv_timeout(Duration::from_secs(10)).unwrap() else {
+        panic!("a Hello first")
+    };
+    // The relay's room admits the app A presents; B, a copy of A, presents the same.
+    let Frame::Hello { app_digest, version, .. } = Frame::decode(&hello).unwrap() else { panic!("a Hello first") };
+    let mut relay = support::relay::Relay { app: app_digest, records: vec![], heads: version };
+    let mut joined = [false; 2];
+    let mut status = [None, None];
+    // The Hello already taken from A's sink still needs its answer.
+    let (replies, _) = relay.reply(&hello);
+    for reply in replies {
+        joined[0] |= matches!(reply, Frame::Welcome { .. });
+        a.sync_frame(reply.encode());
+    }
+    let (b_sink, b_sync) = sync_sink();
+    b.sync_attach(b_sink);
+    let synced = |status: &[Option<Status>; 2]| status.iter().all(|s| s == &Some(Status::Synced));
+    let owners = [(&a, &a_sync), (&b, &b_sync)];
+    pump(&mut relay, owners, &mut joined, &mut status, synced);
+    let title = |owner: &Owner| state(owner)["value"]["title"].clone();
+    call(&a, set("From A")).unwrap();
+    pump(&mut relay, owners, &mut joined, &mut status, |_| title(&b) == "From A");
+    call(&b, set("From B")).unwrap();
+    pump(&mut relay, owners, &mut joined, &mut status, |s| synced(s) && title(&a) == "From B");
+    // What arrived is saved like an edit.
+    call(&a, Request::Close { preview: None, icon: None }).unwrap();
+    let (reopened, _) = open(&path, Mode::Document);
+    assert_eq!(title(&reopened), "From B");
+}

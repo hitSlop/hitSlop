@@ -439,7 +439,6 @@ export class OwnerDocument<N extends ObjectNode> {
           const parent = readPath(this.store.state.value, at.slice(0, -1));
           return {
             text: value === undefined && optional && parent != null ? "" : value,
-            version: this.store.state.version,
             sequence: this.store.state.sequence,
           };
         },

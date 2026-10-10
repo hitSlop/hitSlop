@@ -39,8 +39,6 @@ type Tier = {
   needs?: Build[];
   /** A native tier: macOS only, selected with --native. */
   native?: boolean;
-  /** Experimental qualification: run only when explicitly named. */
-  explicit?: boolean;
   /** Run nightly, in a release, or when named; never by a default local or PR run. */
   nightly?: boolean;
   /** Static checks run together, before the heavy tiers, with their output kept until done. */
@@ -72,6 +70,7 @@ const nightly = release || process.env.HITSLOP_NIGHTLY === "1";
 if (nightly) process.env.HITSLOP_NIGHTLY = "1";
 else {
   process.env.HITSLOP_MODEL_SEEDS ||= "4";
+  process.env.HITSLOP_MERGE_SEEDS ||= "8";
   process.env.HITSLOP_COMPAT_SEEDS ||= "1";
   process.env.HITSLOP_PUBLICATIONS_ROUNDS ||= "10";
 }
@@ -206,14 +205,6 @@ const tiers: Tier[] = [
     },
   },
   {
-    name: "dev-sync", explicit: true, inputs: tierInputs["dev-sync"],
-    run: async (args, prepare) => {
-      const sync = ["-p", "hitslop-core", "-p", "slop-engine", "--features", "dev-sync"];
-      if (!args.length) await prepare("Development sync compilation and lints", () => quiet(["cargo", "clippy", "--locked", ...sync, "--all-targets", "--", "-D", "warnings"]));
-      await sh(["cargo", "nextest", "run", "--locked", ...sync, ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
-    },
-  },
-  {
     name: "landing",
     inputs: tierInputs.landing,
     run: async () => {
@@ -257,16 +248,7 @@ const tiers: Tier[] = [
   {
     // Playwright WebKit and Chrome: `slop dev`, EditableText and the unshipped browser host.
     name: "browser", native: true, nightly: true, needs: ["browser"], inputs: tierInputs.browser,
-    run: async (args, prepare) => {
-      const filters = args.filter(arg => !arg.startsWith("-"));
-      const sync = inventory.browser.some(file => file.endsWith("live-sync.browser.test.ts") && (!filters.length || filters.some(filter => file.includes(filter))));
-      const syncEngine = join(repository, "target/dev-sync/release/slop-engine");
-      if (sync) await prepare("Development sync engine", () => quiet(["cargo", "build", "--locked", "--release", "-p", "slop-engine", "--features", "dev-sync", "--bins", "--target-dir", join(repository, "target/dev-sync")]));
-      await bunTest(inventory.browser, args, {
-        HITSLOP_TEST_EVIDENCE: runDirectory,
-        ...(sync ? { HITSLOP_DEV_SYNC_ENGINE: syncEngine } : {}),
-      });
-    },
+    run: (args) => bunTest(inventory.browser, args, { HITSLOP_TEST_EVIDENCE: runDirectory }),
   },
   {
     name: "native",
@@ -318,9 +300,9 @@ const inputsOf = (tier: Tier, files: Record<string, string>) =>
   Object.keys(files).filter((path) => [...sharedInputs, ...tier.inputs].some((pattern) => pattern.test(path))).sort();
 // A base/named listing does not consult the local pass cache. A default listing must
 // use the same toolchain identity as an actual run.
-const usesRust = (tier: Tier) => tier.name === "rust" || tier.name === "dev-sync" || tier.name === "contracts" || !!tier.needs?.length;
+const usesRust = (tier: Tier) => tier.name === "rust" || tier.name === "contracts" || !!tier.needs?.length;
 const candidates = named ? tiers.filter(tier => named.includes(tier.name))
-  : tiers.filter(tier => !tier.explicit && (!tier.nightly || nightly) && (!tier.native || flag("--native") || release));
+  : tiers.filter(tier => (!tier.nightly || nightly) && (!tier.native || flag("--native") || release));
 const listing = flag("--list") && (option("--base") || named || flag("--all") || release);
 const toolchains = {
   rust: !listing && candidates.some(usesRust) ? await run(["rustc", "--version"]).then(s => s.trim()) : null,
@@ -377,7 +359,7 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
     return { selection: chosen.map((tier) => ({ tier, reason: "named", args: tierArgs })) };
   }
   const native = flag("--native") || release;
-  const eligible = tiers.filter((tier) => !tier.explicit && (!tier.nightly || nightly) && (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))));
+  const eligible = tiers.filter((tier) => (!tier.nightly || nightly) && (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))));
   if (flag("--all") || release) return { selection: eligible.map((tier) => ({ tier, reason: release ? "release" : "--all", args: [] })) };
   if (ref) return touched(ref, eligible, []);
   // Locally: every tier whose inputs changed since it last passed on this machine.

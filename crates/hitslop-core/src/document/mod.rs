@@ -1,26 +1,22 @@
 //! A document's semantics, session history and validated Loro state.
 use crate::descriptor::{Node, descriptor};
-use crate::execute::{Rows, execute, fill};
+use crate::execute::{execute, fill};
 use crate::project::project;
-use crate::publication::{self, Events, ListState};
+use crate::publication::{self, Events};
 use crate::{
     Batch, Code, Error, Intent, Publication, Reading, Result, STORAGE_BYTES, Segment, check, encode, engine, err, json,
     lock, parse, text, theme, wire,
 };
-use loro::{Container, ContainerID, ExportMode, Frontiers, LoroDoc, ValueOrContainer, VersionVector};
+use loro::{Container, ExportMode, Frontiers, LoroDoc, ValueOrContainer};
 use serde_json::Value;
 #[cfg(feature = "storage")]
 use std::collections::HashSet;
-use std::collections::{HashMap, VecDeque};
 mod history;
-#[cfg(feature = "storage")]
-pub(crate) mod maintenance;
-mod replication;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 mod template;
 pub(crate) mod version;
-use history::{Run, Step};
-use version::{decode_version, version_token};
+use history::Run;
+use version::version_token;
 
 fn raw(doc: &LoroDoc) -> Value {
     json(doc.get_map("data").get_deep_value())
@@ -34,7 +30,7 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
 fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
     doc.set_next_commit_message("create");
     doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
-    fill(&doc.get_map("data"), schema, value, &mut Rows::new(&HashMap::new()))?;
+    fill(&doc.get_map("data"), schema, value)?;
     doc.commit();
     Ok(doc)
 }
@@ -110,21 +106,15 @@ impl AppSpec {
     pub(crate) fn of(schema: Node, slug: &str, tokens: Vec<(String, String)>) -> Self {
         Self { schema, theme: theme::Theme::new(slug, tokens) }
     }
-    /// The template's slug, which names it in theme files.
-    pub fn slug(&self) -> &str {
-        self.theme.template()
-    }
     /// The declared colors, in the order the author wrote them.
     pub fn theme_tokens(&self) -> &[(String, String)] {
         self.theme.tokens()
     }
 }
-/// The page's text edit, a batch whose set carries `selection`. `authored` is the version
-/// right after the edit on its own branch; the page sends it as the next `base`. The
-/// selection is in UTF-16 offsets of the merged text.
+/// The page's text edit, a batch whose set carries `selection`: the selection in UTF-16
+/// offsets of the merged text.
 #[derive(Debug)]
 pub struct TextEdit {
-    pub authored: String,
     pub selection: [usize; 2],
 }
 
@@ -133,15 +123,11 @@ pub struct Document {
     pub(crate) doc: LoroDoc,
     app: AppSpec,
     sequence: u64,
-    /// Every movable list's order and row identities as of the last publication.
-    lists: HashMap<ContainerID, ListState>,
+    /// Every row list's rows as of the last publication.
+    lists: publication::Lists,
     events: Events,
-    /// Where the saved history starts once the latest checkpoint is written. A
-    /// concurrent edit must not branch from before it: its saved operations would depend
-    /// on history the checkpoint drops, and the document could not open again.
-    floor: VersionVector,
-    undo: VecDeque<Step>,
-    redo: Vec<Step>,
+    /// Loro's undo of this session's own changes.
+    undo: loro::UndoManager,
     /// Consecutive edits at the caret of one text field, consecutive agent batches, or
     /// consecutive window changes to one color are one undo step.
     run: Option<Run>,
@@ -154,23 +140,20 @@ impl Document {
     /// is checked against its app before anything reads it.
     fn from_doc(doc: LoroDoc, app: AppSpec, check: bool) -> Result<Self> {
         if check {
-            check::stored(&app.schema, Some(ValueOrContainer::Container(Container::Map(doc.get_map("data")))))?;
-            app.theme.check_stored(&doc.get_map(theme::ROOT))?;
+            acceptable(&doc, &app)?;
         }
         doc.set_record_timestamp(true);
         let events = Events::default();
         subscribe(&doc, &events);
         let this = Self {
-            lists: publication::index_all(&doc),
-            undo: VecDeque::new(),
-            redo: vec![],
+            lists: publication::index_all(&doc, &app.schema),
+            undo: history::manager(&doc),
             run: None,
             broken: false,
             doc,
             app,
             sequence: 0,
             events,
-            floor: VersionVector::default(),
         };
         Ok(this)
     }
@@ -204,8 +187,14 @@ impl Document {
         core: impl Fn(Error) -> E,
         updates: impl FnOnce(&mut dyn FnMut(&[u8]) -> std::result::Result<(), E>) -> std::result::Result<(), E>,
     ) -> std::result::Result<Self, E> {
+        // A saved history starts with a snapshot, which alone may start it late; the updates
+        // after it never move that start.
+        let first =
+            LoroDoc::decode_import_blob_meta(checkpoint, false).map_err(|e| core(err(Code::InvalidBytes, e)))?;
+        if !matches!(first.mode, loro::EncodedBlobMode::Snapshot | loro::EncodedBlobMode::ShallowSnapshot) {
+            return Err(core(err(Code::InvalidBytes, "The saved history has no snapshot; keep it for recovery")));
+        }
         let doc = LoroDoc::new();
-        // A checkpoint may start its history late; the updates after it never move that start.
         imported(doc.import(checkpoint)).map_err(&core)?;
         let trimmed = doc.shallow_since_vv();
         // One import per update measured faster than Loro's `import_batch` here.
@@ -254,16 +243,22 @@ impl Document {
         }
         self.rebuild_at(before)
     }
-    /// Replaces the Loro document with one replayed to `before`, under a new peer.
-    /// Unconditional: an import Loro refused can keep operations whose dependencies are
-    /// missing without moving its frontiers.
+    /// Replaces the Loro document with one replayed to `before`, under the same peer: one
+    /// session writes as one peer. The refused operations were never committed to a save
+    /// or sent anywhere, so the peer may reuse their counters.
     fn rebuild_at(&mut self, before: &loro::Frontiers) -> Result<()> {
-        let fresh = replica_at(&self.doc, before).inspect_err(|_| self.broken = true)?;
+        let fresh = replica_at(&self.doc, before)
+            .and_then(|fresh| fresh.set_peer_id(self.doc.peer_id()).map(|()| fresh).map_err(engine))
+            .inspect_err(|_| self.broken = true)?;
         lock(&self.events).clear();
         subscribe(&fresh, &self.events);
+        // The undo manager belongs to the replaced document: this session's undo starts
+        // over. Rehearsal (`apply`) keeps refusals from reaching here.
+        self.undo = history::manager(&fresh);
+        self.run = None;
         self.doc = fresh;
         // Publication may have failed after updating indexes; rebuild those too.
-        self.lists = publication::index_all(&self.doc);
+        self.lists = publication::index_all(&self.doc, &self.app.schema);
         Ok(())
     }
     /// Whether a failed rollback left this replica unusable; see `broken`.
@@ -314,54 +309,34 @@ impl Document {
         {
             return Err(err(Code::InvalidRequest, "A text edit with a selection is its own batch"));
         }
-        // Every path validates the base first: an unknown operation must never reach Loro.
-        let base = match batch.base {
-            Some(token) => {
-                let (at, vv) = decode_version(&self.doc, &token)?;
-                Some(text::Base { token, at, vv })
-            }
-            None => None,
-        };
+        // A batch that could fail after its first change runs on a copy of the current state
+        // first. A refusal then leaves the live document, its peer and its undo untouched.
+        // A single intent other than `replace` checks everything before it changes anything.
+        if batch.intents.len() > 1 || batch.intents.iter().any(|op| matches!(op, Intent::Replace { .. })) {
+            let copy = LoroDoc::new();
+            copy.import(&self.doc.export(ExportMode::state_only(None)).map_err(engine)?).map_err(engine)?;
+            self.run_intents(&copy, &batch, origin)?;
+        }
         let before = self.doc.state_frontiers();
-        let mut ids = vec![];
-        let mut failure = None;
         let message = command.map_or_else(|| origin.message().to_owned(), |name| format!("command:{name}"));
         self.doc.set_next_commit_message(&message);
-        let typed = {
-            let mut rows = Rows::new(&self.lists);
-            let mut texts = text::Texts { base: base.as_ref(), floor: &self.floor, message: &message, typed: None };
-            for (index, op) in batch.intents.iter().enumerate() {
-                let result =
-                    if origin == Origin::Page && matches!(op, Intent::SetTheme { .. } | Intent::ImportTheme { .. }) {
-                        Err(err(Code::InvalidRequest, "The page cannot change the palette"))
-                    } else {
-                        execute(&self.doc, &self.app, op, &mut ids, &mut rows, &mut texts)
-                    };
-                if let Err(mut e) = result {
-                    e.op_index = Some(index);
-                    failure = Some(e);
-                    break;
-                }
+        let (ids, typed) = match self.run_intents(&self.doc, &batch, origin) {
+            Ok(done) => done,
+            Err(error) => {
+                self.abort(&before)?;
+                return Err(error);
             }
-            texts.typed
         };
-        if let Some(e) = failure {
-            self.abort(&before)?;
-            return Err(e);
-        }
-        // Text merges can commit earlier intents while importing a branch. Restore the
-        // label for any later intents still pending in the final transaction.
-        self.doc.set_next_commit_message(&message);
-        self.doc.commit();
-        let published = self.publish_or_abort(&before)?;
-        if published.is_some() {
-            match &typed {
-                _ if command.is_some() => self.record(before, None, false),
+        // An edit (not a no-op) joins or starts its undo step before it commits.
+        if self.doc.get_pending_txn_len() > 0 {
+            let (run, continues) = match &typed {
+                _ if command.is_some() => (None, false),
                 // A merged edit ends the typing run and is its own undo step.
-                Some(typed) if origin != Origin::Agent && typed.merged => self.record(before, None, false),
-                Some(typed) if origin != Origin::Agent => {
-                    self.record_typing(before, &typed.path, &typed.from, &typed.to, typed.caret)
-                }
+                Some(typed) if origin != Origin::Agent && typed.merged => (None, false),
+                Some(typed) if origin != Origin::Agent => (
+                    Some(Run::Typing { path: typed.path.clone(), text: typed.to.clone(), caret: typed.caret }),
+                    self.continues_typing(&typed.path, &typed.from, &typed.to),
+                ),
                 _ => {
                     let run = match (origin, batch.intents.as_slice()) {
                         (Origin::Agent, _) => Some(Run::Agent),
@@ -375,16 +350,33 @@ impl Document {
                         _ => None,
                     };
                     let continues = run.is_some() && run == self.run;
-                    self.record(before, run, continues);
+                    (run, continues)
                 }
-            }
+            };
+            self.group(run, continues);
         }
-        // An edit applied to the live text has the batch's version as its own.
-        let text = typed.map(|typed| TextEdit {
-            authored: typed.authored.unwrap_or_else(|| self.version()),
-            selection: typed.selection,
-        });
+        self.doc.commit();
+        let published = self.publish_or_abort(&before)?;
+        let text = typed.map(|typed| TextEdit { selection: typed.selection });
         Ok(Self::applied(self.sequence, ids, published, text))
+    }
+    /// Runs a batch's intents on `doc` (the live document, or a rehearsal copy of its
+    /// state): the inserted row IDs and the page's text edit, or the first refusal.
+    fn run_intents(&self, doc: &LoroDoc, batch: &Batch, origin: Origin) -> Result<(Vec<String>, Option<text::Typed>)> {
+        let (mut ids, mut typed) = (vec![], None);
+        for (index, op) in batch.intents.iter().enumerate() {
+            let result = if origin == Origin::Page && matches!(op, Intent::SetTheme { .. } | Intent::ImportTheme { .. })
+            {
+                Err(err(Code::InvalidRequest, "The page cannot change the palette"))
+            } else {
+                execute(doc, &self.app, op, &mut ids, &mut typed)
+            };
+            result.map_err(|mut e| {
+                e.op_index = Some(index);
+                e
+            })?;
+        }
+        Ok((ids, typed))
     }
     fn applied(sequence: u64, ids: Vec<String>, published: Option<Published>, text: Option<TextEdit>) -> Applied {
         let theme_changed = published.as_ref().is_some_and(|p| p.theme);
@@ -430,11 +422,6 @@ impl Document {
         self.sequence = next;
         Ok(Some(Published { json, theme: themed }))
     }
-    /// Storage calls this when a checkpoint keeps only the history since `start`.
-    #[cfg(feature = "storage")]
-    pub(crate) fn retain_from(&mut self, start: &Frontiers) {
-        self.floor = self.doc.frontiers_to_vv(start).unwrap_or_else(|| self.doc.oplog_vv());
-    }
     /// The `stored` attachment IDs this state names: each one that appears in a string, a
     /// text or a map key, alone or inside longer text such as markdown. A false match only
     /// keeps a blob, so a blob the state references is never left out.
@@ -471,12 +458,59 @@ impl Document {
     pub fn checkpoint(&self) -> Result<Vec<u8>> {
         self.doc.export(ExportMode::Snapshot).map_err(engine)
     }
+
+    /// Every operation this replica holds, by peer.
+    pub(crate) fn version_vector(&self) -> loro::VersionVector {
+        self.doc.oplog_vv()
+    }
+    /// The operations this replica holds past `version`, as one Loro update.
+    pub(crate) fn updates_since(&self, version: &loro::VersionVector) -> Result<Vec<u8>> {
+        self.doc.export(ExportMode::updates(version)).map_err(engine)
+    }
+    /// Changes other replicas made, as Loro updates from a relay: imported, checked
+    /// against the app as a saved document is, and published like an edit. An update
+    /// whose dependencies have not arrived waits inside Loro until they do. A change the
+    /// app cannot accept is refused and leaves the document as it was, though this
+    /// session's undo starts over. `None` when the updates held nothing new.
+    pub fn import_remote(&mut self, updates: &[&[u8]]) -> Result<Option<Applied>> {
+        self.intact()?;
+        let before = self.doc.state_frontiers();
+        let version = self.doc.oplog_vv();
+        let imported = updates
+            .iter()
+            .try_for_each(|bytes| self.doc.import(bytes).map(drop))
+            .map_err(|e| err(Code::InvalidBytes, e))
+            .and_then(|()| check_layout(&self.doc))
+            .and_then(|()| acceptable(&self.doc, &self.app));
+        if let Err(error) = imported {
+            self.abort(&before)?;
+            return Err(error);
+        }
+        if self.doc.oplog_vv() == version {
+            return Ok(None);
+        }
+        // Published even when nothing visible changed, so the page's version moves on.
+        let published = match self.publish_with(true) {
+            Ok(published) => published,
+            Err(error) => {
+                self.abort(&before)?;
+                return Err(error);
+            }
+        };
+        Ok(Some(Self::applied(self.sequence, vec![], published, None)))
+    }
 }
-/// A new long-lived replica holding exactly the history up to `frontiers`, with its own
-/// peer. Built by replaying the operations from where `doc`'s history starts (a trimmed
+/// Whether `doc` holds what `app` accepts: checked whenever state arrives from outside
+/// this session, a saved file or another replica.
+fn acceptable(doc: &LoroDoc, app: &AppSpec) -> Result<()> {
+    check::stored(&app.schema, Some(ValueOrContainer::Container(Container::Map(doc.get_map("data")))))?;
+    app.theme.check_stored(&doc.get_map(theme::ROOT))
+}
+/// A new long-lived replica holding exactly the history up to `frontiers`. Built by
+/// replaying the operations from where `doc`'s history starts (a trimmed
 /// document's starting state, else nothing), because Loro does not implement
 /// `LoroDoc::fork_at` for trimmed documents.
-pub(crate) fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc> {
+fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc> {
     // Measured before any export commits pending operations; those lie outside `vv`.
     let vv = doc.frontiers_to_vv(frontiers).ok_or_else(|| engine("Version is not in history"))?;
     let start = doc.shallow_since_vv().to_vv();

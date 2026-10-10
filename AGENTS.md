@@ -98,14 +98,10 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Deferred
 
-Development exception: an opt-in `dev-sync` native loopback proof (the `slop-room`
-development binary and the owner's shared session, `owner/sync.rs`) may use one authority
-and two temporary replica owners. Loro bytes stay in Rust; shared undo and attachment
-imports are disabled. The harness adds no released format or production endpoint.
-Shared-session fencing applies while its owners hold their locks; restart-safe sharing
-and durable request recovery remain deferred.
-
-Collaboration, a document history UI, schema evolution, synced folders, hosted
-catalog/publishing, accounts/auth and sharing. `archive/`, `spikes/`, `plans/`,
-`SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay local and are not active
-contracts. Shared decisions belong in the architecture, roadmap and ideas pages.
+Collaboration (the core and its relay protocol are proven: local owners exchanging Loro
+updates through a Durable Object byte relay; the production relay and clients are deferred,
+see the [roadmap](docs/roadmap.md)), a document history UI, schema evolution,
+synced folders, hosted catalog/publishing, accounts/auth and sharing. `archive/`,
+`spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
+local and are not active contracts. Shared decisions belong in the architecture, roadmap
+and ideas pages.

@@ -3,13 +3,31 @@
 //! document operations to the live owner or acquires its lock and runs the same owner.
 //! AppKit operations forward the original JSON to the native helper. Only build/protocol
 //! queries and the exact restricted evaluator entry point are outside the JSON wire.
+use hitslop_core::owner::{Failure, FailureKind};
 use hitslop_core::{Code, EngineRequest, EngineSuccess, command, engine::True, file, native::NativeReply, registry};
-use slop_engine::{evaluator, preview, rejected};
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
+
+mod preview;
+
+/// A classified refusal, as every engine reply spells one.
+fn rejected(reason: Code, error: impl std::fmt::Display) -> String {
+    command::failure(
+        Failure { kind: FailureKind::Rejected, message: error.to_string(), reason: Some(reason), op_index: None },
+        false,
+        false,
+    )
+}
+/// The restricted evaluator: this same executable, run with `--evaluate-command`.
+fn evaluator() -> Result<hitslop_runner::Evaluator, String> {
+    hitslop_runner::Evaluator::new(
+        std::env::current_exe().map_err(|e| e.to_string())?,
+        vec!["--evaluate-command".into()],
+    )
+}
 
 /// The app's helper. `HITSLOP_NATIVE_CLI` names one; otherwise the installed app's.
 fn helper() -> Result<PathBuf, String> {

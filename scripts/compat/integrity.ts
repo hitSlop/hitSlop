@@ -12,7 +12,7 @@ export async function sourceFingerprint(root = repository): Promise<string> {
   assert.equal(code, 0, error);
   const inputs = [...new Set(out.split("\0"))].filter(path =>
     /^(Cargo\.(toml|lock)|rust-toolchain\.toml|bun\.lock|package\.json|tsconfig[^/]*\.json)$/.test(path) ||
-    /^(crates|scripts|apps\/apple|examples\/slops|tests\/abi|tests\/fixtures|tests\/apps|tests\/presentation)\//.test(path) ||
+    /^(crates|scripts|apps\/apple|tests\/abi|tests\/apps|tests\/presentation)\//.test(path) ||
     /^packages\/(?:hitslop)\/(?:src\/|generated\/|acceptance\/|templates\/|skills\/|package\.json$)/.test(path),
   ).sort();
   const hash = createHash("sha256");
@@ -60,7 +60,7 @@ export async function verifyCorpus(root: string, release: Release) {
     // A document a page saved (`NAME.page`) was the result of NAME's page scenario.
     if (!name.endsWith(".page")) assert.ok(release.files[`pages/${name}.json`], `Missing page scenario: ${name}`);
   }
-  for (const name of ["conformance", "conformance-compacted", "fixture-checklist", "fixture-scalars", "fixture-collections"])
+  for (const name of ["conformance", "conformance-compacted"])
     assert.ok(release.storage[name], `Missing required conformance case: ${name}`);
   const writer = "engine/darwin-arm64/slop-engine";
   assert.ok(release.writer && release.files[writer], `${release.release}: no candidate writer`);
@@ -74,10 +74,8 @@ export async function verifyCorpus(root: string, release: Release) {
 export async function verifyCandidate(root: string, release: Pick<Release, "inputs" | "templates">, candidateRoot = repository) {
   assert.equal(await sourceFingerprint(candidateRoot), release.inputs, "Release inputs changed after compatibility capture; capture a new candidate");
   for (const [slug, hash] of Object.entries(release.templates)) {
-    if (slug === "conformance" || slug.startsWith("fixture-")) continue;
-    const file = slug.startsWith("presentation-")
-      ? join(candidateRoot, "generated/presentation", `${slug.slice("presentation-".length)}.slop`)
-      : join(candidateRoot, "generated/templates", `${slug}.slop`);
+    if (slug === "conformance") continue;
+    const file = join(candidateRoot, "generated/presentation", `${slug.slice("presentation-".length)}.slop`);
     assert.equal(await fileDigest(file), hash, `Captured template differs from candidate: ${slug}`);
   }
 }

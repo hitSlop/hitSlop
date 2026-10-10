@@ -194,54 +194,25 @@ a person and their agent edit the same live document. What's missing is the slop
 ### Sync between your own devices
 
 A Mac and an iPhone editing one document can use the same room model as people
-collaborating. Each keeps a `.slop` replica and its local writer lease. Shared edits
-require a connection to the authority; ordinary unshared documents continue offline.
-Replicate accepted Loro updates, not SQL rows or a second JSON document. Attachments
+collaborating. Each keeps a `.slop` replica and its local writer lease, edits offline and
+merges through the relay when it reconnects. Replicate Loro updates, not SQL rows or a
+second JSON document. Attachments
 travel separately by hash, so installed data and a complete exportable file are distinct
 states until its blobs arrive.
 
 ### Realtime collaboration on Durable Objects
 
-The selected direction (2026-10-07) is **one semantic writer per room**. It supersedes
-the earlier raw-update relay and independently writable replicas. A Durable Object is
-one possible future host; a native loopback proof must qualify the model first.
+The selected direction is local owners and a byte relay;
+[architecture](architecture.md#sync) describes it, and the [roadmap](roadmap.md#later)
+tracks what remains. What stays open:
 
-- **Authority:** the existing Rust owner validates and orders the same batches and named
-  commands as local documents. Commands evaluate against authority state; text uses its
-  existing version-aware merge. Clients do not author disconnected shared changes.
-- **Replicas:** each Rust owner keeps its file lock, installs validated accepted updates,
-  publishes immutable snapshots and persists them normally. Loro bytes stay in Rust.
-  Disconnection fences all shared mutation paths while preserving unsent drafts.
-- **Identity:** one document UUID and matching app digest/layout in the handshake.
-  Explicit Duplicate is independent and gets a fresh UUID. Bootstrap preserves the room
-  document identity. UUIDs are never Loro peer IDs.
-- **Transport:** a separate sync envelope around the existing mutation vocabulary,
-  with bounded requests, updates and snapshot transfer. It never borrows the command
-  protocol's number. Loro's framing and adapters may be useful for the hosted transport;
-  a raw update relay does not implement command authority.
-- **Local proof:** two editable development pages and CLI requests through one room,
-  accepted-update equality, ordered publications, reconnect/snapshot fallback and
-  identity refusals. No attachment imports or shared undo in this first proof. It
-  changes no production endpoint and writes no sync metadata.
-- **Durability track:** storage 2 adds atomic request receipts, client pending requests,
-  durable replica progress and epochs. Reuse the same request ID after an uncertain
-  reply; a changed payload under that ID refuses. Expired receipts do not prove an
-  operation was never accepted. Resolve pending outcomes before replacing replica state.
-- **Retention:** an authority can publish a new retained checkpoint and fence old bases.
-  Slow clients resync rather than merge offline edits; stale text bases preserve drafts
-  for recovery. Attachment transfer/reclamation and interrupted snapshot installation
-  need explicit tests before production sharing.
-- **Undo and presence:** whole-document `revert_to` is not personal undo. Authority
-  peers and temporary text peers need actor mapping before selective shared undo.
-  `EphemeralStore` remains a candidate for nondurable cursors and presence.
-- **Hosting gates:** qualify native-owner-to-WASM portability, restricted commands,
-  authentication, limits, Cloudflare execution and personal undo separately. Neither
-  the local proof nor schema identity proves these work.
+- **Presence:** cursors and who is here, probably through Loro's `EphemeralStore`, never
+  saved.
 
 Per-person persistent preferences remain a separate `s.local(node)` proposal. Today,
 keep temporary view state in Svelte and document content in fields. A new local-field
 kind would need Rust, SDK, fixtures, export semantics and a compatibility decision;
-it is not implied by the authority model.
+it is not implied by the relay.
 
 The archived examples still supply useful cases: Slide Deck's selected slide; volume
 and mute in Alien Radio, Metronome and Pocket Pod; Pocket Pod's playback and repeat;
@@ -257,8 +228,8 @@ field's intended scope before introducing locality.
 
 Potential SDK additions remain presence, actor-aware attribution and selective undo.
 Index-addressed scalar-list edits need an explicit stale-base rule so another person's
-insertion cannot silently redirect an edit. These are separate design tasks; the local
-proof does not freeze their API or promise that every future addition is compatible.
+insertion cannot silently redirect an edit. These are separate design tasks; the relay
+does not freeze their API or promise that every future addition is compatible.
 
 ## What we won't take
 

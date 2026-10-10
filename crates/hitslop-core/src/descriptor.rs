@@ -15,7 +15,7 @@ pub enum Node {
         #[serde(default, deserialize_with = "present")]
         default: Option<bool>,
     },
-    /// An exact safe-integer total; increments serialize through the single writer.
+    /// A safe-integer total; concurrent increments add up (a Loro counter).
     Counter {},
     /// Last writer wins. Length bounds count Unicode code points.
     String {
@@ -107,15 +107,6 @@ fn declared_default(node: &Node) -> Option<Value> {
     }
 }
 pub(super) const MAX_SCALAR_LIST: usize = 100_000;
-/// Whether replacing a value of this kind would discard identity-bearing collections.
-pub(super) fn holds_collections(node: &Node) -> bool {
-    match node {
-        Node::Text {} | Node::Counter {} | Node::List { .. } | Node::Record { .. } => true,
-        Node::Object { properties } => properties.values().any(holds_collections),
-        Node::Optional { inner } => holds_collections(inner),
-        _ => false,
-    }
-}
 impl Node {
     pub(super) fn check(&self, depth: usize) -> Result<()> {
         if depth > 16 {

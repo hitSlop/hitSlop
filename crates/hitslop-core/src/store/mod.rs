@@ -1,15 +1,14 @@
 //! Durable storage for native and browser hosts. A document is one SQLite file (`file` owns its
-//! format); this module saves its state: one checkpoint (a Loro snapshot), the updates saved
-//! after it, its attachments
-//! and its artwork. The writer lock lives in the registry, outside the file. SQLite never
+//! format); this module saves its state: a history (a Loro snapshot, then the updates saved
+//! after it), its attachments and its artwork. The writer lock lives in the registry, outside the file. SQLite never
 //! sees anything but opaque Loro bytes.
 //!
 //! History is trimmed when nothing is editing: a session that edited a document larger
-//! than the budget's `trim_bytes` closes with no history. While open, retained history past the
-//! budget's `session_bytes` is bounded: a live owner rebuilds its document from a shallow
-//! checkpoint (`owner::maintenance`), and a direct `Store` user trims the checkpoint,
-//! keeping the session's history when that fits, so a concurrent text edit can still
-//! branch from where the session opened. Compaction keeps no history.
+//! than `TRIM_BYTES` closes with no history. While open, a checkpoint keeps the
+//! whole history when it fits the storage limits, else only the current state; the live
+//! document keeps its own history either way. Compaction keeps no history. A shared
+//! document never trims and never reclaims an attachment: another replica's edits can depend
+//! on any of its history and still reference any blob.
 //!
 //! A host keeps two serial queues: edits and `Store::job` on one, every other
 //! `Store` call on the other, so a slow write never blocks edits.
@@ -31,7 +30,6 @@ pub use attachments::Attachment;
 use attachments::delete_unreferenced;
 use loro::{ExportMode, Frontiers, VersionVector};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
-pub(crate) use save::Budget;
 pub use save::SaveJob;
 use save::{Metadata, Rows, bounds, checked_bounds, checkpoint_row, within};
 use sha2::{Digest, Sha256};
@@ -58,32 +56,26 @@ struct Account {
     meta: Metadata,
     /// The version the durable state covers.
     saved: VersionVector,
-    /// Where a checkpoint trimmed while open keeps history from: the version this session
-    /// opened at, or the start of the history its last rebuild kept.
-    opened: Frontiers,
     /// Whether this session saved an edit or stored an attachment: only then can a blob
     /// have lost its last reference, and only then does close trim history.
     changed: bool,
-    /// Retained size after the last rebuild, or the size a failed rebuild could not
-    /// shrink. A document whose live value is that large rebuilds again only after
-    /// another checkpoint's worth of history.
-    rebuilt_size: usize,
-    budget: Budget,
+    /// Whether the document syncs through a room. A shared document keeps its whole
+    /// history (another replica's edits can depend on any of it) and every attachment
+    /// (another replica can still reference it).
+    shared: bool,
 }
 impl Account {
-    fn new(budget: Budget) -> Self {
-        Self {
-            meta: Metadata::default(),
-            saved: VersionVector::default(),
-            opened: Frontiers::default(),
-            changed: false,
-            rebuilt_size: 0,
-            budget,
-        }
+    fn new() -> Self {
+        Self { meta: Metadata::default(), saved: VersionVector::default(), changed: false, shared: false }
     }
 }
-#[cfg(test)]
-type RebuildHook = Box<dyn Fn(bool) -> std::result::Result<(), crate::owner::Failure> + Send>;
+/// The room a shared document syncs through: its ID and the relay's endpoint. The room's
+/// key is a credential the host keeps outside the document.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Share {
+    pub room: String,
+    pub endpoint: String,
+}
 
 /// One document's storage. `Document` mode owns the file: it holds the writer lock and
 /// persists writes. `Snapshot` mode reads the saved state without the lock and writes
@@ -106,8 +98,6 @@ pub struct Store {
     /// for its whole transaction, so checking ownership never waits for a save.
     owned: AtomicBool,
     account: Mutex<Account>,
-    #[cfg(test)]
-    pub(crate) rebuild_hook: Mutex<Option<RebuildHook>>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -116,13 +106,13 @@ pub enum Mode {
 }
 
 /// Opens the saved document under the descriptor of the app it is stored with. The
-/// checkpoint and every update are imported straight from SQLite's buffers, without
-/// copying them.
+/// history's snapshot and every update after it are imported straight from SQLite's
+/// buffers, without copying them.
 fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)> {
     let meta = checked_bounds(conn)?;
-    let mut saved = conn.prepare_cached(rows::CHECKPOINT).map_err(sqlite("read"))?;
+    let mut saved = conn.prepare_cached(rows::SNAPSHOT).map_err(sqlite("read"))?;
     let mut saved = saved.query([]).map_err(sqlite("read"))?;
-    // Every open checked the file holds exactly one checkpoint (`file::check`).
+    // Every open checked the file holds a history (`file::check`).
     let row = saved
         .next()
         .map_err(sqlite("read"))?
@@ -154,8 +144,9 @@ pub(crate) fn validate_saved(conn: &Connection, app: &crate::AppSpec) -> Result<
 impl Store {
     /// A digest of the app this file holds: its whole `app` row and assets, typed and
     /// length-delimited. Two files hold the same app exactly when their digests match;
-    /// document state and artwork are not part of it.
-    pub fn app_digest(&self) -> Result<String> {
+    /// document state and artwork are not part of it. A shared document's relay admits only
+    /// replicas whose digest matches its room's.
+    pub fn app_digest(&self) -> Result<[u8; 32]> {
         self.check(false)?;
         self.read(rows::app_digest)
     }
@@ -198,9 +189,7 @@ impl Store {
             app,
             owned: AtomicBool::new(lease.is_some()),
             backing: Mutex::new(Backing { conn: Some(conn), lease }),
-            account: Mutex::new(Account::new(Budget::DEFAULT)),
-            #[cfg(test)]
-            rebuild_hook: Mutex::new(None),
+            account: Mutex::new(Account::new()),
         })
     }
 
@@ -238,20 +227,38 @@ impl Store {
     /// data and theme together.
     pub fn document(&self) -> Result<Document> {
         self.check(false)?;
-        let (doc, meta) = self.connected(&mut lock(&self.backing).conn, |conn| {
+        let (doc, meta, shared) = self.connected(&mut lock(&self.backing).conn, |conn| {
             let read = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
-            load(&read, self.app.app.spec())
+            let (doc, meta) = load(&read, self.app.app.spec())?;
+            Ok((doc, meta, rows::read_share(&read)?.is_some()))
         })?;
         let mut account = lock(&self.account);
-        *account = Account {
-            meta,
-            saved: doc.doc.oplog_vv(),
-            opened: doc.doc.oplog_frontiers(),
-            changed: account.changed,
-            rebuilt_size: 0,
-            budget: account.budget,
-        };
+        *account = Account { meta, saved: doc.doc.oplog_vv(), changed: account.changed, shared };
         Ok(doc)
+    }
+
+    /// The room this document syncs through, when it is shared.
+    pub fn share(&self) -> Result<Option<Share>> {
+        self.check(false)?;
+        Ok(self.read(rows::read_share)?.map(|(room, endpoint)| Share { room, endpoint }))
+    }
+    /// Shares the document through `share`'s room: from now on it keeps its whole history
+    /// and every attachment.
+    pub fn set_share(&self, share: &Share) -> Result<()> {
+        self.check(true)?;
+        if !(1..=128).contains(&share.room.len()) || !(1..=2048).contains(&share.endpoint.len()) {
+            return Err(rejected(crate::Code::InvalidRequest, "Invalid room or endpoint"));
+        }
+        self.connected(&mut lock(&self.backing).conn, |conn| {
+            let tx = file::begin_write(conn, "share")?;
+            rows::put_share(&tx, &share.room, &share.endpoint)?;
+            tx.commit()
+        })?;
+        lock(&self.account).shared = true;
+        Ok(())
+    }
+    pub(crate) fn is_shared(&self) -> bool {
+        lock(&self.account).shared
     }
 
     /// Writes a job in one transaction. An error may follow the commit, so the durable
@@ -271,10 +278,6 @@ impl Store {
         let mut account = lock(&self.account);
         account.meta = meta;
         account.saved = job.version.clone();
-        if let Some(rebuilt) = &job.rebuilt {
-            account.opened = rebuilt.opened.clone();
-            account.rebuilt_size = rebuilt.size;
-        }
         account.changed = true;
         Ok(())
     }
@@ -326,8 +329,7 @@ impl Store {
                 if !within(0, checkpoint_row(bytes.len())) {
                     return Err(Error::Full);
                 }
-                rows::put_checkpoint(&tx, bytes)?;
-                rows::clear_updates(&tx)?;
+                rows::replace_history(&tx, bytes)?;
                 Metadata { rows: 0, update_bytes: 0, checkpoint_bytes: bytes.len() as i64 }
             }
             Rows::Append(bytes) => {
@@ -337,7 +339,7 @@ impl Store {
                 if !within(meta.rows + 1, meta.stored() + size) {
                     return Err(Error::Full);
                 }
-                rows::append_update(&tx, bytes)?;
+                rows::append_history(&tx, bytes)?;
                 Metadata { rows: meta.rows + 1, update_bytes: meta.update_bytes + size, ..meta }
             }
         };

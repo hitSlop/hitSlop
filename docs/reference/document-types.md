@@ -141,8 +141,7 @@ not match (`invalid_bytes`) and changes nothing in it.
 | `invalid_request` | a malformed request, rows addressed by index, or scalar elements by id |
 | `invalid_id` | a row `id` outside 1–64 characters of `A–Z a–z 0–9 _ -` |
 | `invalid_path` | a command path longer than 64 segments |
-| `stale_base` | a text edit whose `from` no longer matches the field at its version, a version before the document's retained history, or one from another history |
-| `invalid_version` | a version token that is not one the core issued |
+| `stale_base` | a command's `ifVersion` that no longer matches the document (the owner retries once) |
 | `too_large` | a batch over 1,000 intents, a request over 4 MiB, or a list or descriptor over its limit |
 | `refused` | a command called `refuse(message)`, or a row argument names a row that no longer exists; the message is for the person |
 
@@ -179,9 +178,9 @@ neither side's typing is lost.
 - **`text.set(value)`** replaces the whole field as the owner holds it when it applies
   the set. It uses a minimal edit script, so typing still on its way from a binding
   merges with it; typing the owner already accepted is replaced unless `value` keeps it.
-- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`. With `--base VERSION`
-  (the `version` of the `get --snapshot` you read the text with), the set changes the
-  field from its text at that version, so typing done since is kept.
+- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`. With `"from"`, the field's
+  text as you read it with `get --snapshot`, the set changes the field from that text, so
+  typing done since is kept.
 
 ## Scalars
 
@@ -220,7 +219,9 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 
 - **Handle:** `increment(by = 1)`; a negative `by` subtracts. There is no reset.
 - **Snapshot:** a safe integer. An increment that would leave the safe range is refused
-  (`out_of_range`).
+  (`out_of_range`). Concurrent increments from several devices add up. The total is kept
+  as a Loro counter, exact for any realistic count (until increments summed as absolute
+  values reach about 9×10^15, as with a JavaScript number).
 - **CLI:** `{"type":"increment","path":["visits"],"by":1}`.
 
 ## Optional
@@ -240,8 +241,9 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
 - `set` on an object that is already set writes only the fields that differ.
-- Clearing and then setting creates a fresh incarnation. A text edit based on the old
-  incarnation is `path_not_found`, even when the new text happens to be identical.
+- Clearing and then setting writes the new value over the field's earlier content. A
+  text edit from the old text merges into the field that is there now; while the field is
+  cleared it is `path_not_found`.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
@@ -307,7 +309,8 @@ widths by column. Values are scalars or objects.
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
 - **Entries behave like optional fields.** A new object entry receives creation
   defaults; replacing an existing entry requires a complete value and reconciles its
-  surviving children. Delete followed by put creates a fresh incarnation.
+  surviving children. Delete followed by put writes the new value over the entry's
+  earlier content.
 - **Fields:** edits to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
@@ -341,16 +344,16 @@ Layout 1:
 |---|---|
 | the authored document data | the root map `data`, one entry per field |
 | document theme overrides | the root map `theme`, declared color token → canonical color string |
-| `s.text()` | a `LoroText` |
+| `s.text()` | a mergeable `LoroText` |
 | `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
 | `s.number()` | an f64 value; integral values project as integers |
 | `s.integer()` | an i64 value |
-| `s.counter()` | an i64 value, the total |
+| `s.counter()` | a mergeable `LoroCounter`; the total projects as an integer |
 | `s.optional(inner)` | the inner kind's representation, or no entry when unset |
-| `s.object({...})` | a `LoroMap` |
-| `s.list(s.object({...}))` | a `LoroMovableList` of `LoroMap` rows, each with a `$id` string entry |
-| `s.list(scalar)` | a `LoroMovableList` of values |
-| `s.record(value)` | a `LoroMap` of key to the value's representation |
+| `s.object({...})` | a mergeable `LoroMap` |
+| `s.list(s.object({...}))` | a mergeable `LoroMap` of `rows` (a mergeable `LoroMap` of `$id` → mergeable `LoroMap` row) and `order` (a mergeable `LoroMovableList` of `$id` strings) |
+| `s.list(scalar)` | a mergeable `LoroMovableList` of values |
+| `s.record(value)` | a mergeable `LoroMap` of key to the value's representation |
 
 The theme map is host-owned and outside the authored descriptor. Defaults remain in the
 immutable app row; the effective palette combines them with these overrides. Per-color
@@ -359,24 +362,28 @@ advance the same publication sequence. JSON replacement targets `data`, so it ne
 replaces the theme. State carries the effective `theme`; publications include it when
 it changes, including on a theme-only edit.
 
-Every container is created with its value by `insert_container` and goes with it.
-Stored state always matches the descriptor: every row is a map with a unique `$id`
-string, and a map holds only declared fields (and a row's `$id`). Opening checks this.
+Every container a field holds is a mergeable child of its parent map
+(`ensure_mergeable_*`): its identity follows from its place, so two devices that create
+the same field, entry or row converge on one container instead of one hiding the
+other. Clearing a field or removing a row hides its container; writing it again, or an
+undo, revives the same container and writes the new value over its earlier content.
 
-Complete replacements retain surviving containers. Ordinary delete/clear followed by
-creation makes new containers. Undo of deletion restores the content with fresh map and
-text containers too, including a removed row; the restored row keeps its public `$id`.
-Text edits based on the deleted incarnation refuse with `path_not_found`; a binding
-opened on the restored version edits normally. Moving a surviving row keeps its
-containers and `$id`.
+A row list's application order is `order` read once per row at its first place, then
+rows `order` misses, by `$id`. Merging valid edits from several devices can leave `order`
+naming a row twice (two restores of one row), naming a removed row, or missing a row;
+every reading resolves those the same way, and `replace` writes a clean order.
+
+Stored state always matches the descriptor, and opening checks it: container kinds,
+scalar rules, valid row IDs and record keys, finite counters, and maps holding only
+declared fields. Any merge of valid edits passes this check (`tests/merge.rs`).
+
+Complete replacements retain surviving containers. A text edit addresses the field at
+its path and merges from the text it started from, so a binding edits a restored row
+normally. Moving a row keeps its containers and `$id`.
 
 Live commits record timestamps and an origin message: `page`, `agent` (CLI and socket),
-`command:<name>`, `window`, `undo`, `redo` or `create`. Retained history is bounded;
-these messages are attribution for the retained changes, not a durable audit log.
-Local history maintenance retains supported undo/redo while it fits the history budget.
-When it cannot fit, redo and older undo steps expire; a text edit needing a version before
-the retained floor refuses with `stale_base`. The rebuild preserves current row/text
-identities and the publication sequence. Undo remains session-only.
+`command:<name>`, `window`, `undo`, `redo` or `create`. These messages are attribution
+for the retained changes, not a durable audit log. Undo is session-only.
 Template creation uses the deterministic message `create` and timestamp zero. Rows in
 an app's initial value without a `$id` get one derived from their position by a frozen
 function (`identity.rs`), so packing the same app writes the same template.

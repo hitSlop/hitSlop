@@ -5,7 +5,7 @@ use hitslop_core::Document;
 use hitslop_core::Origin;
 use hitslop_core::file;
 use hitslop_core::registry::Lease;
-use hitslop_core::store::{Error, Mode, Store};
+use hitslop_core::store::{Error, Mode, Share, Store};
 use hitslop_core::{STORAGE_BYTES, STORAGE_ROWS};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 mod support;
 use support::ApplyJson;
-use support::{App, app, isolate_registry, type_text, write_app};
+use support::{App, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -56,9 +56,12 @@ struct Stored {
 fn stored(path: &Path) -> Stored {
     sql(path)
         .query_row(
-            "SELECT (SELECT count(*) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM checkpoint)",
+            "SELECT max(count(*)-1,0), coalesce(sum(length(bytes)),0), coalesce((SELECT length(bytes) FROM history ORDER BY seq LIMIT 1),0) FROM history",
             [],
-            |r| Ok(Stored { rows: r.get(0)?, update_bytes: r.get(1)?, checkpoint_bytes: r.get(2)? }),
+            |r| {
+                let (rows, total, checkpoint_bytes): (i64, i64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
+                Ok(Stored { rows, update_bytes: total - checkpoint_bytes, checkpoint_bytes })
+            },
         )
         .unwrap()
 }
@@ -83,8 +86,8 @@ fn save(store: &Store, doc: &mut Document) -> Option<bool> {
     Some(job.is_checkpoint())
 }
 
-// Failure: an absent checkpoint was treated as initial state even with saved updates,
-// and opening then deleted those updates. Every open refuses the file and preserves it.
+// Failure: an absent snapshot was treated as initial state even with saved updates, and
+// opening then deleted those updates. Every open refuses the file and preserves it.
 fn missing_checkpoint_is_refused(mode: Mode, saved_edits: bool) {
     let (_dir, path) = document();
     if saved_edits {
@@ -95,9 +98,13 @@ fn missing_checkpoint_is_refused(mode: Mode, saved_edits: bool) {
         }
         store.close().unwrap();
     }
-    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
+    sql(&path).execute("DELETE FROM history WHERE seq=(SELECT min(seq) FROM history)", []).unwrap();
     let before = std::fs::read(&path).unwrap();
-    let error = Store::open(&path, mode).err().expect("a document without saved state is refused");
+    // The file's tables are checked on open, its history when the store loads it; hosts
+    // always load what they open.
+    let error = Store::open(&path, mode)
+        .and_then(|store| store.document().map(drop))
+        .expect_err("a document without saved state is refused");
     assert!(error.to_string().contains("keep it for recovery"), "{error}");
     assert_eq!(std::fs::read(&path).unwrap(), before, "nothing is written");
 }
@@ -169,10 +176,18 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     assert_eq!(title(&open(&path).1), format!("Edit {appended}"));
 }
 
-/// Whether `doc` refuses `version` as a text base, as history before its retained start.
+/// Whether `doc`'s history starts after `version`: a checkpoint trimmed it away. A version
+/// token is the frontier IDs as 12-byte big-endian (peer, counter) records.
 fn stale(doc: &Document, version: &str) -> bool {
-    let mut scratch = Document::open(&app(SCHEMA), &doc.checkpoint().unwrap(), &[]).unwrap();
-    matches!(type_text(&mut scratch, version, json!(["title"]), "", "", 0), Err(e) if e.code.as_str() == "stale_base")
+    let saved = loro::LoroDoc::new();
+    saved.import(&doc.checkpoint().unwrap()).unwrap();
+    let trimmed = saved.shallow_since_vv().to_vv();
+    let bytes: Vec<u8> =
+        (0..version.len()).step_by(2).map(|i| u8::from_str_radix(&version[i..i + 2], 16).unwrap()).collect();
+    bytes.chunks_exact(12).any(|record| {
+        let peer = u64::from_be_bytes(record[..8].try_into().unwrap());
+        trimmed.includes_id(loro::ID::new(peer, i32::from_be_bytes(record[8..].try_into().unwrap())))
+    })
 }
 
 /// Incompressible text of `len` letters.
@@ -363,26 +378,25 @@ fn redo_across_compaction_survives_reopen() {
 }
 
 // Failure: a concurrent text edit branched from a version a checkpoint had just trimmed,
-// and saved an update that depends on it; the document could never be opened again.
+// and saved an update that depends on it; the document could never be opened again. Text
+// edits now merge from strings, so an edit from before the trim merges and saves.
 #[test]
-fn a_stale_text_base_cannot_make_the_document_unopenable() {
+fn a_text_edit_from_before_a_trimming_checkpoint_saves_and_reopens() {
     let schema = r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#;
     let initial = r#"{"title":"abc"}"#;
     let (_dir, path) = document_with(schema, initial);
     let store = Store::open(&path, Mode::Document).unwrap();
     let mut doc = store.document().unwrap();
-    let base = doc.version();
     doc.apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
         .unwrap();
     store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
-    let result = type_text(&mut doc, &base, json!(["title"]), "abc", "abcX", 4).map(|_| ());
+    type_text(&mut doc, json!(["title"]), "abc", "abcX", 4).unwrap();
     save(&store, &mut doc);
     store.close().unwrap();
     let store = Store::open(&path, Mode::Document).unwrap();
     let reopened = store.document().expect("the document opens");
-    assert_eq!(result.unwrap_err().code.as_str(), "stale_base");
     let value: Value = serde_json::from_str(&reopened.value()).unwrap();
-    assert_eq!(value["title"], "Rabc");
+    assert_eq!(value["title"], "RabcX");
 }
 
 // Failure: a drawing app that saves large strokes and erases them reached the storage
@@ -455,7 +469,7 @@ fn oversized_documents_are_refused_before_any_blob_is_read() {
     let (store, _) = open(&path);
     store.close().unwrap();
     sql(&path)
-        .execute_batch(&format!("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<{}) INSERT INTO updates(bytes) SELECT x'00' FROM n;", STORAGE_ROWS + 1))
+        .execute_batch(&format!("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<{}) INSERT INTO history(bytes) SELECT x'00' FROM n;", STORAGE_ROWS + 1))
         .unwrap();
     for mode in [Mode::Document, Mode::Snapshot] {
         let error = Store::open(&path, mode).unwrap().document().err().expect("refused");
@@ -591,7 +605,7 @@ fn a_full_document_refuses_appends_and_keeps_saved_state() {
     let (store, mut doc) = open(&path);
     // Pad the log past the byte limit from outside, as an old save would have.
     let room = STORAGE_BYTES as i64 - stored(&path).checkpoint_bytes;
-    sql(&path).execute("INSERT INTO updates(bytes) VALUES(zeroblob(?))", [room - 8]).unwrap();
+    sql(&path).execute("INSERT INTO history(bytes) VALUES(zeroblob(?))", [room - 8]).unwrap();
     set_title(&mut doc, "Too much");
     let job = store.job(&mut doc, false).unwrap().unwrap();
     let result = store.write(&job);
@@ -642,6 +656,34 @@ fn a_copy_has_the_same_state_version_and_theme() {
     assert_eq!(title(&copied), "Copied");
     assert_eq!(accent(&copied), "#123456");
     assert_eq!(copied.version(), doc.version());
+}
+
+// A shared document syncs with replicas whose edits can depend on any of its history and
+// still reference any attachment: compaction keeps the whole history, reclaiming keeps every
+// blob, and the room survives reopening. A clean copy is a new document, shared with no one.
+#[test]
+fn a_shared_document_keeps_its_history_and_blobs_and_a_clean_copy_is_unshared() {
+    let (dir, path) = document();
+    let (store, mut doc) = open(&path);
+    assert_eq!(store.share().unwrap(), None);
+    let share = Share { room: "room-1".into(), endpoint: "wss://relay.example".into() };
+    store.set_share(&share).unwrap();
+    let unreferenced = store.put_attachment(b"no field names this").unwrap().id;
+    set_title(&mut doc, "Edited");
+    let edited = doc.version();
+    set_title(&mut doc, "Compacted");
+    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    assert_eq!(store.reclaim_attachments().unwrap(), 0, "a shared document reclaims no blob");
+    store.close().unwrap();
+    let (store, doc) = open(&path);
+    assert_eq!(store.share().unwrap(), Some(share));
+    assert!(!stale(&doc, &edited), "compaction keeps a shared document's history");
+    assert!(store.attachments().unwrap().iter().any(|a| a.id == unreferenced));
+    let copy = dir.path().join("Copy.slop");
+    store.copy_clean(&copy, &[]).unwrap();
+    let copied = Store::open(&copy, Mode::Document).unwrap();
+    assert_eq!(copied.share().unwrap(), None, "a clean copy is shared with no one");
+    assert_ne!(copied.app().document_uuid, store.app().document_uuid);
 }
 
 /// A copy is a document of its own: the current state without history (a title replaced

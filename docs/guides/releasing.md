@@ -76,9 +76,10 @@ npm bootstrap/deprecations and public release changes are separate release work.
    `scripts/build/platforms.json`: darwin-arm64, linux-x64 and linux-arm64. Download
    the artifacts into `generated/engines/<platform>/`. Each records its commit and core
    build; packing refuses mixed candidates.
-3. Capture `bun run compat:capture VERSION --frozen` from the clean candidate. The
-   default covers every bundled template, plus conformance fixtures, saved updates,
-   attachments, page actions and stored commands. The entry records acceptance-rule
+3. Capture `bun run compat:capture VERSION --frozen` from the clean candidate. It
+   covers the runtime: the conformance app's documents (saved updates, a compacted
+   snapshot, attachments, its page scenario and a stored command) and a template per
+   window kind. The entry records acceptance-rule
    hashes and producing inputs. Commit only the corpus. Frozen entries are permanent;
    the prelaunch `dev` entry may be replaced and is never frozen. Each public version
    gets its own entry even when all format markers remain at 1. Keep the original

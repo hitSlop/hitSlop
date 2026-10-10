@@ -27,13 +27,12 @@ mod test_adapter {
     }
 
     /// A committed batch, as the page's `apply` reply carries it, with its publication. A text
-    /// edit (a set carrying `selection`) also has `authored` and its merged selection.
+    /// edit (a set carrying `selection`) also has its merged selection.
     #[wasm_bindgen(getter_with_clone)]
     pub struct ApplyResult {
         pub sequence: f64,
         pub ids: Vec<String>,
         pub publication: Option<String>,
-        pub authored: Option<String>,
         #[wasm_bindgen(js_name = selectionStart)]
         pub selection_start: Option<u32>,
         #[wasm_bindgen(js_name = selectionEnd)]
@@ -46,7 +45,6 @@ mod test_adapter {
             sequence: applied.sequence as f64,
             ids: applied.ids,
             publication: applied.publication,
-            authored: applied.text.map(|text| text.authored),
             selection_start: selection.map(|s| s[0]),
             selection_end: selection.map(|s| s[1]),
         }

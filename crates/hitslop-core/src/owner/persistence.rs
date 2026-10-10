@@ -2,11 +2,6 @@
 use super::*;
 
 pub(super) enum Work {
-    Maintain {
-        generation: u64,
-        seed: crate::document::maintenance::Seed,
-        budget: usize,
-    },
     Save {
         generation: u64,
         target: u64,
@@ -49,6 +44,7 @@ pub(super) enum StorageAction {
     Attachments,
     ReadAttachment(String),
     PutAttachment(Vec<u8>),
+    Share(store::Share),
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
@@ -64,32 +60,9 @@ pub(super) fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, 
 /// One serial storage effect, driven by a native thread or a browser worker.
 pub(super) fn perform(store: &store::Store, work: Work) -> Message {
     match work {
-        Work::Maintain { generation, seed, budget } => {
-            let result = contained(|| {
-                #[cfg(test)]
-                if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
-                    hook(false)?;
-                }
-                let (rebuilt, bytes) = seed.build(budget)?;
-                let job = store.replacement_job(&rebuilt, bytes)?;
-                let written = contained(|| {
-                    store.write(&job).map_err(Failure::from)?;
-                    #[cfg(test)]
-                    if let Some(hook) = crate::lock(&store.rebuild_hook).as_ref() {
-                        hook(true)?;
-                    }
-                    Ok(())
-                });
-                Ok((Box::new(rebuilt), written))
-            });
-            Message::Maintained { generation, result }
+        Work::Save { generation, target, job } => {
+            Message::Saved { generation, target, result: contained(|| store.write(&job).map_err(Failure::from)) }
         }
-        Work::Save { generation, target, job } => Message::Saved {
-            generation,
-            target,
-            rebuild: job.rebuild_due(),
-            result: contained(|| store.write(&job).map_err(Failure::from)),
-        },
         Work::Restore { generation, callback } => Message::Restored {
             generation,
             callback,
@@ -124,6 +97,10 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                     StorageAction::Attachments => Reply::Attachments { items: store.attachments()? },
                     StorageAction::ReadAttachment(id) => Reply::Bytes { bytes: Some(store.attachment(&id)?) },
                     StorageAction::PutAttachment(bytes) => Reply::Attachment { item: store.put_attachment(&bytes)? },
+                    StorageAction::Share(share) => {
+                        store.set_share(&share)?;
+                        Reply::Unit
+                    }
                 })
             });
             Message::Stored { generation, result, callback, closing: false }

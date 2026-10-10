@@ -1,7 +1,7 @@
 //! The rows a template or document holds beside its app, and every write to them: the saved
-//! state (one checkpoint and the updates saved after it), attachments, artwork, and what
-//! `pack` writes. The store saves and loads through these; the checks every open runs,
-//! `inspect` and the asset reader read the tables directly.
+//! state (its history: a snapshot, then the updates saved after it), attachments, artwork,
+//! and what `pack` writes. The store saves and loads through these; the checks every open
+//! runs, `inspect` and the asset reader read the tables directly.
 
 use super::Artwork;
 #[cfg(not(target_arch = "wasm32"))]
@@ -11,38 +11,40 @@ use crate::app::AppDefinition;
 use crate::error::{Result, sqlite};
 use rusqlite::{Connection, OptionalExtension, params};
 
-/// The saved checkpoint, and the updates saved since, in order: streamed straight from
-/// SQLite's buffers by the store's load.
-pub(crate) const CHECKPOINT: &str = "SELECT bytes FROM checkpoint WHERE id=1";
-pub(crate) const UPDATES: &str = "SELECT bytes FROM updates ORDER BY seq";
+/// The history's first row, a snapshot, and the updates saved after it, in order: streamed
+/// straight from SQLite's buffers by the store's load.
+pub(crate) const SNAPSHOT: &str = "SELECT bytes FROM history ORDER BY seq LIMIT 1";
+pub(crate) const UPDATES: &str = "SELECT bytes FROM history ORDER BY seq LIMIT -1 OFFSET 1";
 
-/// The saved state's sizes: update rows, update bytes and checkpoint bytes.
+/// The saved state's sizes: update rows (after the snapshot), update bytes and snapshot
+/// bytes.
 pub(crate) fn state_sizes(conn: &Connection) -> Result<(i64, i64, i64)> {
     conn.prepare_cached(
-        "SELECT (SELECT count(*) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM checkpoint)",
+        "SELECT max(count(*)-1,0), coalesce(sum(length(bytes)),0), (SELECT coalesce(length(bytes),0) FROM history ORDER BY seq LIMIT 1) FROM history",
     )
-    .and_then(|mut s| s.query_row([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))
+    .and_then(|mut s| {
+        s.query_row([], |r| {
+            let (updates, total, snapshot): (i64, i64, Option<i64>) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            let snapshot = snapshot.unwrap_or(0);
+            Ok((updates, total - snapshot, snapshot))
+        })
+    })
     .map_err(sqlite("read state sizes"))
 }
-/// Writes the one checkpoint, in place of any before it.
-pub(crate) fn put_checkpoint(conn: &Connection, bytes: &[u8]) -> Result<()> {
-    conn.prepare_cached(
-        "INSERT INTO checkpoint(id, bytes) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET bytes=excluded.bytes",
-    )
-    .and_then(|mut s| s.execute([bytes]))
-    .map(|_| ())
-    .map_err(sqlite("write checkpoint"))
+/// Makes `bytes` the whole history: a snapshot that covers everything saved before it.
+pub(crate) fn replace_history(conn: &Connection, bytes: &[u8]) -> Result<()> {
+    conn.execute_batch("DELETE FROM history").map_err(sqlite("write snapshot"))?;
+    conn.prepare_cached("INSERT INTO history(bytes) VALUES(?)")
+        .and_then(|mut s| s.execute([bytes]))
+        .map(|_| ())
+        .map_err(sqlite("write snapshot"))
 }
-/// Appends one saved update after the others.
-pub(crate) fn append_update(conn: &Connection, bytes: &[u8]) -> Result<()> {
-    conn.prepare_cached("INSERT INTO updates(bytes) VALUES(?)")
+/// Appends one saved update to the history.
+pub(crate) fn append_history(conn: &Connection, bytes: &[u8]) -> Result<()> {
+    conn.prepare_cached("INSERT INTO history(bytes) VALUES(?)")
         .and_then(|mut s| s.execute([bytes]))
         .map(|_| ())
         .map_err(sqlite("append update"))
-}
-/// Deletes every saved update: a new checkpoint covers them.
-pub(crate) fn clear_updates(conn: &Connection) -> Result<()> {
-    conn.execute_batch("DELETE FROM updates").map_err(sqlite("clear updates"))
 }
 /// The document row that makes a copy of a template a document.
 pub(crate) fn add_document(conn: &Connection) -> Result<()> {
@@ -54,9 +56,10 @@ pub(crate) fn add_document(conn: &Connection) -> Result<()> {
     let uuid = format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..]);
     conn.execute("INSERT INTO document(id,uuid) VALUES(1,?)", [uuid]).map(|_| ()).map_err(sqlite("create the document"))
 }
-/// An independent copy is a new document. Only its unpublished staged file replaces the
-/// singleton; the original file's identity is immutable and never updated.
+/// An independent copy is a new document, shared with no one. Only its unpublished staged
+/// file replaces the singleton; the original file's identity is immutable and never updated.
 pub(crate) fn renew_document(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM share", []).map_err(sqlite("create the copy's identity"))?;
     conn.execute("DELETE FROM document", []).map_err(sqlite("create the copy's identity"))?;
     add_document(conn)
 }
@@ -66,6 +69,22 @@ pub(crate) fn document_uuid(conn: &Connection) -> Result<Option<String>> {
     conn.query_row("SELECT uuid FROM document WHERE id=1", [], |row| row.get(0))
         .optional()
         .map_err(sqlite("read the document identity"))
+}
+
+/// The room a shared document syncs through and its endpoint, absent when it is not shared.
+pub(crate) fn read_share(conn: &Connection) -> Result<Option<(String, String)>> {
+    conn.query_row("SELECT room, endpoint FROM share WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()
+        .map_err(sqlite("read the share"))
+}
+/// Shares the document through `room`, in place of any room before.
+pub(crate) fn put_share(conn: &Connection, room: &str, endpoint: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO share(id, room, endpoint) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET room=excluded.room, endpoint=excluded.endpoint",
+        params![room, endpoint],
+    )
+    .map(|_| ())
+    .map_err(sqlite("write the share"))
 }
 
 /// The stored attachments' count, largest size and total size.
@@ -168,7 +187,7 @@ pub(super) fn put_asset(
 }
 
 /// The immutable app digest. Query text, row order and typed bytes are part of its encoding.
-pub(crate) fn app_digest(conn: &Connection) -> Result<String> {
+pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
     digest.update(b"hitslop-app-1");
@@ -194,7 +213,7 @@ pub(crate) fn app_digest(conn: &Connection) -> Result<String> {
             }
         }
     }
-    Ok(crate::hex(digest.finalize().as_slice()))
+    Ok(digest.finalize().into())
 }
 
 /// Streams pages from the caller's read transaction without retaining the file in memory.

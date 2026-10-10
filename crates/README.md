@@ -50,8 +50,8 @@ native consumer (the Swift package), rather than the locally installed SDK.
 
 The core's `file` owns the `.slop` file (one SQLite database holding the app and its
 saved state), every statement on its tables (every write in `file::rows`) and the checks
-every open runs; its `store` decides what a save writes (the checkpoint, the update log, theme
-overrides and attachments), its `owner` schedules saves, and its `registry` owns the
+every open runs; its `store` decides what a save writes (a snapshot or the updates since the last save, in `history`,
+with theme overrides and attachments), its `owner` schedules saves, and its `registry` owns the
 writer lock. Swift's `DocumentOwner` is the owner's façade.
 See [the architecture](../docs/architecture.md).
 

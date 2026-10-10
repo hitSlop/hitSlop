@@ -50,13 +50,13 @@ export function wasmTransport(core: any): OwnerTransport {
     runCommand: async () => { throw new DocumentError("rejected", "Commands require the native owner"); },
     open: async () => JSON.parse(core.state()),
     apply: async (batch) => {
-      const { sequence, ids, authored, selectionStart, selectionEnd } = execute(() =>
+      const { sequence, ids, selectionStart, selectionEnd } = execute(() =>
         core.applyBatch(JSON.stringify(batch)),
       );
-      // A text edit's reply also carries what the page continues from.
-      return authored === undefined
+      // A text edit's reply also carries its merged selection.
+      return selectionStart === undefined
         ? { sequence, ids: [...ids] }
-        : { sequence, ids: [...ids], authored, selectionStart, selectionEnd };
+        : { sequence, ids: [...ids], selectionStart, selectionEnd };
     },
     flush: async () => {},
     undo: async () => {

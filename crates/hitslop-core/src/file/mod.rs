@@ -45,9 +45,11 @@ pub(crate) const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
 /// newer one with `requires_update`.
 pub(crate) const STORAGE_VERSION: i64 = 1;
 /// `app` is what the author built, written once by `pack` and identical in a template and
-/// its documents, so saved state always belongs to its descriptor. A template's
-/// `checkpoint` holds its initial state; a document starts as a copy and adds its
-/// `document` row, then `updates` and `attachments`. An asset's `size` is its length;
+/// its documents, so saved state always belongs to its descriptor. `history` holds the saved
+/// Loro state in order: its first row a snapshot (a template's is its initial state, and
+/// only that row may start history late), the rest updates saved after it. A document
+/// starts as a copy of a template and adds its `document` row, then history rows and
+/// `attachments`. A `share` row names the room a shared document syncs through. An asset's `size` is its length;
 /// `encoding` is how `bytes` holds it (`encode`). The tables are STRICT: SQLite refuses a
 /// mistyped write and the quick check finds a mistyped row, but a file is untrusted bytes,
 /// so every open still checks what it reads.

@@ -322,7 +322,7 @@ public enum Fixtures {
       sqlite3_close(connection)
     }
     let sql =
-      "SELECT (SELECT coalesce(sum(length(bytes)),0) FROM checkpoint), (SELECT coalesce(sum(length(bytes)),0) FROM updates), (SELECT count(*) FROM updates)"
+      "SELECT coalesce((SELECT length(bytes) FROM history ORDER BY seq LIMIT 1),0), coalesce(sum(length(bytes)),0) - coalesce((SELECT length(bytes) FROM history ORDER BY seq LIMIT 1),0), max(count(*)-1,0) FROM history"
     guard sqlite3_open_v2(document.path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
       sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW
     else { throw SlopFailure("Cannot read \(document.lastPathComponent)") }

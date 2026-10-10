@@ -41,7 +41,6 @@ fn request_constraints_survive_the_schema_removal() {
         ("documentPath", vec![json!(""), json!("x".repeat(4097)), Value::Null]),
         ("batch", vec![json!(""), json!("x".repeat(1_048_577)), json!({}), Value::Null]),
         ("command", vec![json!("rename")]),
-        ("base", vec![Value::Null, json!(true)]),
         ("ifVersion", vec![Value::Null, json!(true)]),
         (
             "attachments",
@@ -50,7 +49,7 @@ fn request_constraints_survive_the_schema_removal() {
     ] {
         for value in values {
             let mut request = batch();
-            if matches!(field, "base" | "ifVersion") {
+            if field == "ifVersion" {
                 request["batch"][field] = value;
             } else {
                 request[field] = value;
