@@ -203,7 +203,7 @@ private struct UpdateSettingsView: View {
     file.addItem(recentItem)
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
-    item(file, "Share a Copy…", .share)
+    item(file, "Share…", .share)
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
     export.submenu = exportMenu

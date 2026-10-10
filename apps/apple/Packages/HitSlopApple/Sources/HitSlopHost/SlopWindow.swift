@@ -151,6 +151,10 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// The theme panel beside the window, while shown.
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
+  lazy var sharePopover = SlopSharePopover(
+    filename: url.lastPathComponent,
+    holdToolbar: { [weak self] in self?.toolbar.holdForSharing($0) },
+    select: { [weak self] in self?.request($0) })
   var fullscreenRestore: SlopFullscreenRestore?
   var fullscreenTransition = false
   var commandsEnabled = true
@@ -345,12 +349,14 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public func owns(_ candidate: NSWindow?) -> Bool {
     guard let candidate else { return false }
     return candidate === window || candidate === toolbar.panel || candidate === themePanel
+      || candidate === sharePopover.window
       || candidate === openingProgress?.panel
   }
   /// Whether the coordinator accepts commands now; the toolbar follows it.
   public func setCommandsEnabled(_ enabled: Bool) {
     guard commandsEnabled != enabled else { return }
     commandsEnabled = enabled
+    sharePopover.commandsEnabled = enabled
     toolbar.update()
   }
   public func revealFromDock() { showWindow(nil) }
@@ -434,6 +440,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     super.close()
   }
   public func prepareToClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
+    sharePopover.dismiss()
     switch closeState {
     case .prepared, .closing, .closed: return
     case .preparing: throw SlopFailure("Document is already preparing to close")

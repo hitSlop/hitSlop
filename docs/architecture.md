@@ -310,7 +310,12 @@ removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its
 after the path, and Apple's SQLite never writes again through a connection whose file
 was renamed. When the file is back where it was opened, the store reconnects and saves.
 
-Duplicate and Share a Copy flush what the page accepted and acquire a temporary saved
+The native Share popover offers PDF, PNG image and editable slop-file copies before
+opening the macOS sharing picker. Opening the chooser creates no output; selecting a
+format runs through the document command queue. PDF and PNG use the saved-state export
+renderer. Share URL and live collaboration are disabled coming-soon controls.
+
+Duplicate and Share Slop File flush what the page accepted and acquire a temporary saved
 source through the owner. Both artwork and the new document come from that source, so
 edits accepted while rendering cannot make the preview disagree with the copy. After
 rendering, a temporary native owner takes the source's lock and performs the clean copy;

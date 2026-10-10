@@ -41,7 +41,14 @@ extension SlopDocumentWindowController {
         url.deletingPathExtension().lastPathComponent + " copy.slop"
       panel.startOnDesktop()
       return try await duplicateDocument(to: await runSheet(panel))
-    case .share: try await shareCopy()
+    case .share:
+      toolbar.willHide = { [weak self] in self?.sharePopover.dismiss() }
+      toolbar.show()
+      toolbar.panel?.contentView?.layoutSubtreeIfNeeded()
+      if let anchor = toolbar.shareAnchor { sharePopover.toggle(at: anchor) }
+    case .sharePDF: try await share(format: .pdf)
+    case .sharePNG: try await share(format: .png)
+    case .shareSlop: try await share(format: nil)
 
     case .exportPNG: try await export(.png)
     case .exportPDF: try await export(.pdf)
@@ -92,18 +99,42 @@ extension SlopDocumentWindowController {
     }
   }
 
-  /// Shares a copy of the document as a new logical document: everything the page has
-  /// accepted, saved and copied through the owner, never the live file.
-  func shareCopy() async throws {
-    telemetry.send(.breadcrumb(.share, .started))
-    do {
-      let operation = try await SlopShareOperation.prepare(filename: url.lastPathComponent, telemetry: telemetry) {
-        target in
+  /// Prepares a saved-state export, or an independently editable slop, in staging owned
+  /// by the share service. Neither path shares the live database.
+  func prepareShare(format: ExportFormat?) async throws -> SlopShareOperation {
+    let filename =
+      format.map { url.deletingPathExtension().lastPathComponent + "." + $0.fileExtension }
+      ?? url.lastPathComponent
+    return try await SlopShareOperation.prepare(filename: filename, telemetry: telemetry) { target in
+      if let format {
+        await self.waitForPresentation()
+        guard self.isContentReady, self.session.isReady, self.presentedPageError == nil else {
+          throw SlopFailure("The document is not ready to share")
+        }
+        try await SlopRenderer.exportDocument(session: self.session, format: format, output: target)
+      } else {
         _ = try await self.copyDocument(to: target)
       }
-      try operation.present(in: isHiddenForClose ? nil : window?.contentView)
+    }
+  }
+
+  private func share(format: ExportFormat?) async throws {
+    telemetry.send(.breadcrumb(.share, .started))
+    sharePopover.beginPreparing(
+      format == .pdf ? "Preparing PDF…" : format == .png ? "Preparing image…" : "Preparing copy…")
+    do {
+      let operation = try await prepareShare(format: format)
+      guard sharePopover.isShown, !isHiddenForClose, window?.isVisible == true else { throw CancellationError() }
+      sharePopover.handOffToPicker()
+      try operation.present(
+        in: toolbar.shareAnchor,
+        pickerDismissed: { [weak self] in
+          self?.sharePopover.pickerDismissed()
+        })
     } catch {
-      reportLifecycleFailure(.share, error: error)
+      sharePopover.dismiss()
+      sharePopover.pickerDismissed()
+      reportLifecycleFailure(.share, error: error, format: format)
       throw error
     }
   }

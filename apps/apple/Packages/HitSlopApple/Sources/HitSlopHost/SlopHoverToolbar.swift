@@ -19,6 +19,9 @@ import WebKit
   private var host: NSHostingView<SlopToolbar>?
   private var menuTracking = false
   private var interacting = false
+  private var sharing = false
+  weak var shareAnchor: NSView?
+  var willHide: () -> Void = {}
   private var visibility = SlopToolbarVisibility()
   private weak var controlsWebView: WKWebView?
   private var publishedControlsVisible: Bool?
@@ -42,6 +45,13 @@ import WebKit
 
   var isVisible: Bool { panel?.isVisible == true }
 
+  func holdForSharing(_ held: Bool) {
+    guard sharing != held else { return }
+    sharing = held
+    if held { show() }
+    refresh()
+  }
+
   /// The controls changed: shows them as they are now.
   func update() { host?.rootView = view() }
 
@@ -58,6 +68,7 @@ import WebKit
   }
 
   func hide() {
+    willHide()
     if isVisible { panel?.orderOut(nil) }
     publishControls(false)
   }
@@ -124,7 +135,7 @@ import WebKit
     // period orders it front again.
     let returning = visibility.outsideSince != nil
     let show = visibility.shouldShow(
-      inside: overDocument || overToolbar || nearToolbar, interacting: menuTracking || interacting,
+      inside: overDocument || overToolbar || nearToolbar, interacting: menuTracking || interacting || sharing,
       visible: isVisible, now: now)
     if show {
       if !isVisible || (returning && visibility.outsideSince == nil) { self.show() }
@@ -181,7 +192,8 @@ import WebKit
           act(action)
         }
       },
-      editors: SlopEditors.installed)
+      editors: SlopEditors.installed,
+      shareAnchor: { [weak self] in self?.shareAnchor = $0 })
   }
 
   private func drag(with event: NSEvent) {
