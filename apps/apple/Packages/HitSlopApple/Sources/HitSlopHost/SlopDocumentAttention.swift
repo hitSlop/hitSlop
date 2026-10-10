@@ -89,6 +89,7 @@ extension SlopDocumentWindowController {
   }
   private func present(_ content: SaveAttention.Alert) {
     guard let window else { return }
+    sharePopover.dismiss()
     let alert = NSAlert()
     alert.messageText = content.title
     alert.informativeText = content.message
@@ -119,6 +120,7 @@ extension SlopDocumentWindowController {
     failedOverlay?.removeFromSuperview()
     failedOverlay = nil
     guard let message, let content = documentComposition else { return }
+    sharePopover.dismiss()
     stopLoading()
     if session.rendererDead { apply(saveAttention.clear()) }
     let overlay = NSHostingView(

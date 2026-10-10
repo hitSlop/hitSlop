@@ -5,8 +5,9 @@ import Foundation
 /// Reveal) is the window's own.
 public enum SlopDocumentCommand: Equatable, Sendable {
   case exportPNG, exportPDF, duplicate, retry, close
-  /// Shares a consistent copy of the document as a new logical document.
+  /// Opens the share chooser. Preparing a selected format is a separate operation.
   case share
+  case sharePDF, sharePNG, shareSlop
   /// Imports or exports a theme file.
   case importTheme, exportTheme
   /// The save-failure sheet's choices: save again, or discard unsaved edits and reload
