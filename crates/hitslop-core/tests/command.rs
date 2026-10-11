@@ -653,7 +653,7 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
 
 // Speech reaches the host only for an owner's page whose stored app declared it; every
 // other page learns why it is unavailable without a host being asked. The host then reads
-// the recording through the owner's reader, which decides what a provider may decode.
+// the verified recording through the owner's reader and decides what it can decode.
 #[test]
 fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     use command::PageDispatch;
@@ -681,6 +681,13 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
         _ => panic!("a declared app's page asks the host"),
     }
     let without_locale = json!({"method":"speech.transcribe","attachment":id}).to_string();
+    let underscored = json!({"method":"speech.transcribe","attachment":id,"locale":"zh_Hant_TW"}).to_string();
+    match page(&owner, "page", &underscored) {
+        PageDispatch::Host { action: HostAction::SpeechTranscribe { locale, .. } } => {
+            assert_eq!(locale.as_deref(), Some("zh-Hant-TW"));
+        }
+        _ => panic!("a declared app's page asks the host"),
+    }
     assert!(matches!(
         page(&owner, "page", &without_locale),
         PageDispatch::Host { action: HostAction::SpeechTranscribe { locale: None, .. } }
@@ -689,16 +696,6 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     assert_eq!(page_json(&malformed)["reason"], "invalid_request");
     assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
 
-    // The reader hands over a verified recording with the extension its container decodes
-    // by, and refuses media no provider reads and attachments the document lacks.
-    let wav = page_json(&page(&owner, "page", r#"{"method":"attachments.put","bytes":"UklGRiQAAABXQVZFZm10IA=="}"#));
-    let png = page_json(&page(&owner, "page", r#"{"method":"attachments.put","bytes":"iVBORw0KGgo="}"#));
-    let reader = owner.resource_reader().unwrap();
-    let clip = reader.speech_clip(wav["id"].as_str().unwrap()).unwrap();
-    assert_eq!((clip.bytes.len(), clip.file_extension.as_str()), (16, "wav"));
-    let refused = reader.speech_clip(png["id"].as_str().unwrap()).unwrap_err().to_string();
-    assert!(refused.contains("image/png") && refused.contains("m4a"), "{refused}");
-    assert!(reader.speech_clip(&id).unwrap_err().to_string().contains("attachments.import"));
     close(&owner);
 
     // A background renderer of the same document never transcribes.

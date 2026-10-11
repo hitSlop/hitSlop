@@ -5,7 +5,7 @@ import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { png } from "./png-fixture";
 import { execute } from "../../src/cli/engine";
-import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, symlink } from "node:fs/promises";
+import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { overrideSlop } from "./source-fixture";
 import { PackageFormat, RuntimeABI } from "../../src/schema/constants";

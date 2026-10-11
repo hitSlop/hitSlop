@@ -70,18 +70,6 @@ pub fn asset_key(key: &str) -> Option<&'static AssetType> {
     }
 }
 
-/// The recordings a speech provider decodes (AVFoundation reads these containers), by
-/// verified attachment type, with the extension that names the container to a decoder.
-/// Ogg and WebM recordings are stored like any attachment but are not transcribed.
-pub const SPEECH_TYPES: &[(&str, &str)] = &[
-    ("audio/mp4", "m4a"),
-    ("audio/mpeg", "mp3"),
-    ("audio/wav", "wav"),
-    ("audio/flac", "flac"),
-    ("video/mp4", "mp4"),
-    ("video/quicktime", "mov"),
-];
-
 /// Recognizes passive signatures, not complete valid files. Decoders still validate
 /// the media they consume; skins/artwork additionally require a complete PNG decode.
 pub fn attachment_type(bytes: &[u8]) -> &'static str {

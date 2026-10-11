@@ -3,7 +3,7 @@ import { defineSlop } from "hitslop";
 export default defineSlop({
   slug: "voice-note",
   title: "Voice Note",
-  description: "A pocket dictation recorder: talk, keep the clip, and get an editable transcript made on this Mac.",
+  description: "A pocket dictation recorder: talk, keep the clip, and get an editable transcript made on-device.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
   categories: ["productivity", "media"],
   window: { kind: "standard", resizable: true, width: 460, height: 720 },

@@ -5,7 +5,7 @@ export default defineDocument({
   locale: s.string({
     default: "",
     maxLength: 35,
-    description: "Speech locale for transcription, such as en-US. Empty uses the Mac's own language.",
+    description: "Speech locale for transcription, such as en-US. Empty uses the device's own language.",
   }),
   notes: s.list(s.object({
     recordedAt: s.string({ description: "When the note was made, as an ISO 8601 instant." }),
@@ -36,7 +36,7 @@ export default defineDocument({
       },
       {
         recordedAt: "2026-10-07T17:00:00.000Z",
-        transcript: "How this pad works: press the red button and talk. Stop and keep saves the recording here and transcribes it on this Mac. Click any text to fix a word. These first notes were typed, so they have no recording.",
+        transcript: "How this pad works: press the red button and talk. Stop and keep saves the recording here and transcribes it on-device. Click any text to fix a word. These first notes were typed, so they have no recording.",
       },
     ],
   },

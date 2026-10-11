@@ -211,11 +211,14 @@ try {
 ```
 
 `locale` is optional (the person's own when absent) and returns as the locale used.
-Transcribable recordings are m4a, mp3, wav, flac, mp4 and mov (WebKit's `MediaRecorder`
-records mp4); Ogg and WebM are stored but not transcribed. A transcript holds at most
+Rust normalizes `_` separators to `-` before dispatch. The Mac provider transcribes
+m4a, mp3, wav, flac, mp4 and mov. It returns `unavailable` with reason `format` for
+other formats, including Ogg and WebM, before asking for permission. Let the provider
+decide format support rather than keeping a format list in authored code. A transcript holds at most
 1 MiB of text. `unavailable` carries a `reason`: `notDeclared` (no `"speech"` in
 `capabilities`), `host` (`slop dev`, a browser copy, an export, or an older hitSlop),
 `system` (the Mac cannot recognize speech now), `locale` (no on-device recognizer for the
-locale) or `permission` (the person declined speech recognition for hitSlop). `cancelled`
+locale), `permission` (the person declined speech recognition for hitSlop), or
+`format` (this provider cannot transcribe the recording format). `cancelled`
 means the window closed, the interface reloaded or an export began first; `failed` means
 the recording could not be read or recognized. Keep a usable path without a transcript.

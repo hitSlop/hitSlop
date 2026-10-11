@@ -48,6 +48,7 @@ pub enum SpeechUnavailable {
     System,
     Locale,
     Permission,
+    Format,
 }
 #[uniffi::remote(Enum)]
 pub enum HostRequest {

@@ -99,8 +99,9 @@ its markers together; reads that only display it (Quick Look, the catalog, `get`
 export) never migrate it. Public boundaries grow additively: `ctx` and handle
 methods (new object-handle members start with `$`; reserved field names never grow),
 error and issue codes (apps treat unfamiliar ones as outcomes), `--slop-*`,
-`data-slop-root` and the embed relay. The engine, rendering helper and live owner ship in one
-Mac app bundle and keep an exact core build check. Loro is pinned exactly and upgraded only
+`data-slop-root` and the embed relay. The npm package ships the document engine; the Mac app contains its linked core,
+restricted evaluator and rendering helper. Release acceptance checks that the engine,
+app and helper contain the same core build. Loro is pinned exactly and upgraded only
 with the corpus passing.
 
 The [compatibility corpus](testing.md#compatibility-corpus) is the evidence: every
@@ -134,7 +135,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   sizes after a failure; it advances the saved version only on confirmed success.
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
 - Flush unsent text and pending writes before close or export. Captures render saved
-  state in a fresh read-only page; the optional explicitly imported export view supplies the layout, otherwise
+  state in a fresh read-only page; the optional root `Export.svelte` supplies the layout, otherwise
   a fresh App uses its default local UI state. Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`. The stored descriptor is not JSON Schema.
   Initial values are read only when a document is created. Descriptor kinds exist only once Rust,

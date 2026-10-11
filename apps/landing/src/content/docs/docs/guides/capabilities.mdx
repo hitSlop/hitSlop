@@ -140,13 +140,16 @@ Use `attachments.url(id)` for playback. The same API also accepts the attachment
 reference returned by `attachments.import` instead of its ID.
 
 Omit `locale` to use the person's default recognition language. The result includes
-`text` and the locale used. Recognition runs on the Mac, with no server fallback. If the
+`text` and the locale used. Locale separators are normalized from `_` to `-` before
+the host receives the request. Recognition runs on the Mac, with no server fallback. If the
 language cannot be recognized on-device, hitSlop reports it as unavailable before asking
 for speech permission. Adding a Dictation language in System Settings may help, but
 availability depends on the Mac and its installed language support.
 
-The native service accepts m4a, mp3, wav, flac, mp4, and mov recordings. Ogg and WebM can
-be stored and played where supported, but are not accepted for transcription. Renaming a
+The Mac provider accepts m4a, mp3, wav, flac, mp4, and mov recordings. Other formats,
+including Ogg and WebM, return `unavailable` with reason `format` without asking for
+speech permission. They can still be stored and played where supported. Let the host
+report format support instead of maintaining a format list in your app. Renaming a
 file does not convert it: hitSlop checks its bytes. A transcript is limited to 1 MiB.
 
 ### Handle speech outcomes
@@ -156,7 +159,7 @@ separate bundles.
 
 | Code | Meaning and response |
 | --- | --- |
-| `unavailable` | Inspect `reason`: `notDeclared`, `host`, `system`, `locale`, or `permission`. Explain the limit and keep recording/playback usable. |
+| `unavailable` | Inspect `reason`: `notDeclared`, `host`, `system`, `locale`, `permission`, or `format`. Explain the limit and keep recording/playback usable. |
 | `cancelled` | The page was replaced, reloaded, or closed, or an export/copy began. Keep the recording; the person can retry. |
 | `failed` | The recording could not be read or recognized. Preserve it and show the message. |
 

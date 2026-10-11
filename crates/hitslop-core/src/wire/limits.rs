@@ -14,6 +14,10 @@ pub(crate) const ATTACHMENT_ID_CHARACTERS: &str = "0123456789abcdef";
 /// The platform level this build runs; a template or document above it needs a newer app.
 pub const PACKAGE_FORMAT: u64 = 1;
 pub const RUNTIME_ABI: u64 = 1;
+// The native evaluator and core must admit the same app ABI. The WASM core has no
+// runner dependency; its command workers use the generated ABI prelude.
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+const _: () = assert!(RUNTIME_ABI == hitslop_runner::RUNTIME_ABI, "core and runner runtime ABIs must agree");
 #[cfg(feature = "storage")]
 pub const HELPER_PROTOCOL: u64 = 1;
 /// The CSS `border-radius` of a window that names no shape. Package format 1 means this

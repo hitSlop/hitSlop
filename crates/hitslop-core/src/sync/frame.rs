@@ -1,5 +1,5 @@
 //! The relay wire: binary frames, one room per socket. The relay reads only the span
-//! headers; the Loro bytes they index are opaque to it (plans/sync-simplification.md §7.1).
+//! headers; the Loro bytes they index are opaque to it (docs/architecture.md#sync).
 //!
 //! ```text
 //! vv      := varuint n, n × (peer u64 BE, counter varuint)       sorted by peer
