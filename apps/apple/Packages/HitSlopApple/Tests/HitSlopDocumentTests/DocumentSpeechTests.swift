@@ -13,6 +13,7 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
   private struct State {
     var support = SpeechSupport.onDevice(Locale(identifier: "en-US"))
     var authorization = SpeechAuthorization.authorized
+    var formats = ["audio/wav": "wav"]
     var waits = false
     var prompts = 0
     var recordings: [(bytes: Data, name: String)] = []
@@ -27,18 +28,20 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
   }
   func script(
     support: SpeechSupport = .onDevice(Locale(identifier: "en-US")), authorization: SpeechAuthorization = .authorized,
-    waits: Bool = false
+    waits: Bool = false, formats: [String: String] = ["audio/wav": "wav"]
   ) {
     locked {
       $0.support = support
       $0.authorization = authorization
       $0.waits = waits
+      $0.formats = formats
     }
   }
   var prompts: Int { locked { $0.prompts } }
   var recordings: [(bytes: Data, name: String)] { locked { $0.recordings } }
   var cancelled: Int { locked { $0.cancelled } }
 
+  func fileExtension(for mediaType: String) -> String? { locked { $0.formats[mediaType] } }
   func support(for locale: Locale?) async -> SpeechSupport { locked { $0.support } }
   func authorize() async -> SpeechAuthorization {
     locked {
@@ -135,12 +138,38 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
       }
       #expect(speech.recordings.count == 1)
 
-      // Rust decides which media a recognizer may read; a photo is not a recording.
+      // An unsupported format never asks for permission or reaches recognition.
       speech.script()
+      let promptsBeforeFormat = speech.prompts
       let photo = try await Self.store(Self.png, in: session)
       let refused = (try await Self.transcribe(photo, in: session))
-      #expect(refused["status"] == "failed" && refused["message"]?.contains("image/png") == true)
+      #expect(refused["status"] == "unavailable" && refused["reason"] == "format")
+      #expect(refused["message"]?.contains("image/png") == true)
+      #expect(speech.prompts == promptsBeforeFormat)
       #expect(speech.recordings.count == 1)
+
+      // A different provider can accept Ogg without changing the core or page ABI.
+      let ogg = Data("OggS".utf8) + Data(repeating: 0, count: 32)
+      let imported = try await Self.store(ogg, in: session)
+      #expect((try await Self.transcribe(imported, in: session))["reason"] == "format")
+      #expect(speech.prompts == promptsBeforeFormat)
+      speech.script(formats: ["audio/ogg": "ogg"])
+      #expect((try await Self.transcribe(imported, in: session))["status"] == "transcribed")
+      #expect(speech.recordings.last?.bytes == ogg)
+      #expect(speech.recordings.last?.name == "recording.ogg")
+
+      // Missing or damaged attachments fail before format support or permission is asked.
+      let promptsBeforeMissing = speech.prompts
+      let missing = try await Self.transcribe(String(repeating: "a", count: 64), in: session)
+      #expect(missing["status"] == "failed")
+      #expect(missing["message"]?.contains("not in this document") == true)
+      let damaged = try await Self.store(Self.wav + Data([1]), in: session)
+      try Fixtures.sql(root, "UPDATE attachments SET bytes=zeroblob(length(bytes)) WHERE id='\(damaged)'")
+      let corrupt = try await Self.transcribe(damaged, in: session)
+      #expect(corrupt["status"] == "failed")
+      #expect(corrupt["message"]?.contains("damaged") == true)
+      #expect(speech.prompts == promptsBeforeMissing)
+      #expect(speech.recordings.count == 2)
       try await session.close()
     } catch {
       try? await session.close()

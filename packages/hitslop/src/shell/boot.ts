@@ -14,7 +14,6 @@ import { applyTheme } from "./theme-runtime";
 import { mountViewLifecycle } from "./view-lifecycle";
 import { checkedApp } from "./app-module";
 import { isDocumentError } from "../sdk/errors";
-import type { PageResult } from "../wire/page";
 import type {} from "./page-handle";
 import { hostDispatcher } from "./host-dispatch";
 import { ErrorTextLimit, RuntimeABI } from "../schema/constants";

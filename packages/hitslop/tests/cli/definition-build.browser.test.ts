@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { webkit } from "playwright";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { buildDefinition } from "../../src/cli/definition-build";
 import { definitionFixture } from "./definition-fixture";

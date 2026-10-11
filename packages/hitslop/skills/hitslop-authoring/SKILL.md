@@ -96,10 +96,11 @@ never request devices. Playback and ordinary file import need no capability.
 `speech.transcribe(refOrId, { locale: "en-US" })` from `hitslop/svelte` transcribes a stored
 recording on-device in the Mac app; omit locale for the person's default. Declare `speech`;
 microphone is separate. Save returned `text` through document handles. Use `isSpeechError`
-for `unavailable` (reason `notDeclared`, `host`, `system`, `locale`, `permission`), `cancelled`
+for `unavailable` (reason `notDeclared`, `host`, `system`, `locale`, `permission`, `format`), `cancelled`
 or `failed`. Previews and browser copies return `unavailable`/`host`; native recognition never
-falls back to uploading a clip. Supported recordings: m4a, mp3, wav, flac, mp4, mov; not
-Ogg/WebM. Keep recording/playback useful when transcription is unavailable. A capability
+falls back to uploading a clip. The Mac provider transcribes m4a, mp3, wav, flac, mp4 and mov;
+other formats return `unavailable`/`format` before permission is requested. Let the host
+report support instead of copying its format list. Locale separators normalize from `_` to `-`. Keep recording/playback useful when transcription is unavailable. A capability
 change needs a rebuilt template and new document; existing documents keep their app.
 
 ## Named commands

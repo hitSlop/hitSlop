@@ -43,7 +43,7 @@ export function negotiate(binary: string): string[] {
 }
 
 /** The command that updates this copy of the CLI: the global install, a project's, or bunx. */
-export function cliUpdate(): string {
+function cliUpdate(): string {
   if (isGlobalInstall) return `bun install -g ${cliPackage}@latest`;
   if (
     /[\\/]node_modules[\\/]/.test(cliRoot) &&
@@ -53,7 +53,7 @@ export function cliUpdate(): string {
   return `bunx ${cliPackage}@latest`;
 }
 /** A refusal that tells the CLI to update says how, for the copy that ran. */
-export function withRemedy(message: string): string {
+function withRemedy(message: string): string {
   return message.replace("update the hitSlop CLI", `update the hitSlop CLI (${cliUpdate()})`);
 }
 

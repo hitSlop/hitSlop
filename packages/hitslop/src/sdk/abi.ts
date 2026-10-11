@@ -4,7 +4,7 @@ import type { LiveDocument } from "./schema";
  * default-exports a `SlopApp`; the shell opens the document, then calls
  * `mount(ctx, target)`. Apps reach the host only through `ctx`.
  *
- * Every released app.js keeps running against later shells. `ctx` grows additively;
+ * Every released ui.js keeps running against later shells. `ctx` grows additively;
  * a change an older app cannot run raises `RuntimeABI`, and the shell keeps the older
  * behavior for packages built at the lower level. New members of object-like handles
  * start with `$`, which no field name can, so they never shadow an author's fields.
@@ -141,7 +141,7 @@ export interface CaptureTarget {
 }
 
 export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {
-  /** A named synchronous action; the host applies one guarded undo step. */
+  /** Observes accepted snapshot updates; returns an idempotent disposer. */
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
    * record the dependency (Svelte reads its own signal here). Replaces the active

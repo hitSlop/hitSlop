@@ -49,7 +49,8 @@ export function refuse(message: string): never {
 const speechBrand = Symbol.for(SpeechErrorBrand);
 /** Why speech is unavailable: the app did not declare `speech` (`notDeclared`); this host
  * has no speech service, as in `slop dev`, a browser copy or an export (`host`); the OS
- * cannot transcribe now (`system`); the locale has no on-device recognizer, and hitSlop
+ * cannot transcribe now (`system`); the provider cannot decode the recording's format
+ * (`format`); the locale has no on-device recognizer, and hitSlop
  * never sends a recording off the device instead (`locale`); or the person declined
  * speech recognition for hitSlop (`permission`). Reasons may grow. */
 export type SpeechUnavailableReason = SpeechUnavailable;

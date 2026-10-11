@@ -1,5 +1,5 @@
 import { createServer, type Plugin, type ViteDevServer } from "vite";
-import { readFile, mkdtemp, rm, realpath, mkdir } from "node:fs/promises";
+import { readFile, mkdtemp, rm, realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";

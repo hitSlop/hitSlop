@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { cliRoot } from "./paths";
 import metadata from "../../package.json";
 
-export function projectPackage(directory: string): string {
+function projectPackage(directory: string): string {
   try {
     return Bun.resolveSync("hitslop/package.json", resolve(directory));
   } catch {

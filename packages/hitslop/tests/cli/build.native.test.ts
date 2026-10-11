@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { buildTemplate } from "../../src/cli/template";
 import { execute, request } from "../../src/cli/engine";
 

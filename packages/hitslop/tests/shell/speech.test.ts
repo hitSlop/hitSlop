@@ -39,7 +39,7 @@ test("a stored recording is transcribed by its attachment ID, never its bytes", 
 });
 
 test("unavailable speech says why, including an app that did not declare it", async () => {
-  for (const reason of ["notDeclared", "locale", "permission", "host"]) {
+  for (const reason of ["notDeclared", "locale", "permission", "host", "system", "format", "futureReason"]) {
     host(() => answer({ status: "unavailable", reason, message: `Unavailable: ${reason}` }));
     const error = await failure(ownerSpeech().transcribe(id));
     expect(isSpeechError(error)).toBe(true);

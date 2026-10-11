@@ -1,5 +1,5 @@
 //! Sync through a relay, without IO: a host moves frames between a socket and its owner,
-//! and this session decides what they mean (plans/sync-simplification.md §7.3).
+//! and this session decides what they mean (docs/architecture.md#sync).
 //!
 //! Every replica is a local owner with its own session peer. The relay stores the Loro
 //! updates each replica pushes, indexed by the spans they hold, and serves each replica

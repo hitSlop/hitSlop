@@ -10,7 +10,7 @@ const roleNames = [
   "Icon.svelte",
   "commands.ts",
 ] as const;
-export type AppRoles = {
+type AppRoles = {
   metadata: string;
   schema: string;
   view: string;
@@ -46,7 +46,7 @@ export async function discoverRoles(source: string): Promise<AppRoles> {
   };
 }
 /** Host runtime an app may not import: the page shell and the document engine. */
-export function refuseHostImport(id: string, error: (message: string) => never) {
+function refuseHostImport(id: string, error: (message: string) => never) {
   if (/^(?:loro-crdt|@hitslop\/shell)(\/|$)|^\/__shell__\//.test(id))
     error(`App code cannot import ${id}; use the document SDK`);
 }

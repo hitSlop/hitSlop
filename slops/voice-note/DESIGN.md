@@ -2,7 +2,7 @@
 
 ## Job
 Say something now, read it later: record a short voice note, keep the clip, and get its text
-transcribed on this Mac, then fix any word by hand.
+transcribed on-device, then fix any word by hand.
 
 ## Readout and action
 One dominant action, the red Record key, beside an amber display showing state (READY, REC,
@@ -29,8 +29,8 @@ Condensed SemiBold for labels and keys. All bundled through Vite under the SIL O
 ## Capture rules
 - The microphone starts only from the Record key (or Space/Enter on it). The display reads REC with
   a blinking dot while it is on, and the key becomes Stop & keep.
-- Stop & keep imports the clip as an attachment and, when the format is transcribable, starts an
-  on-device transcription at once. Discard drops the recording; "Not saved until you stop" says so
+- Stop & keep imports the clip as an attachment and asks the host for an on-device
+  transcription at once. Discard drops the recording; "Not saved until you stop" says so
   while recording.
 - Every track stops on keep, discard, unmount and when the window is hidden (minimised, hidden or
   ordered out): hiding keeps what was recorded and says so.
@@ -41,12 +41,12 @@ Condensed SemiBold for labels and keys. All bundled through Vite under the SIL O
   no microphone (`NotFoundError`), microphone busy (`NotReadableError`), recording not available
   in this window, nothing recorded, could not save.
 - Speech: `unavailable` for host, system, permission, locale and notDeclared shows one notice on the
-  pad with what to do; cancelled and failed show under the note. A WebM or Ogg clip has no
-  Transcribe key and says plainly why it cannot be transcribed. Silence leaves the text alone.
+  pad with what to do; format, cancelled and failed show under the note. Every clip has a
+  Transcribe key; the host decides which formats it supports and supplies the message. Silence leaves the text alone.
   Retranscribing a note with text asks first, because it replaces hand corrections.
 
 ## Document state
-`title`, `locale` (empty is the Mac's language) and `notes: list({recordedAt, durationMs, clip?,
+`title`, `locale` (empty is the device's language) and `notes: list({recordedAt, durationMs, clip?,
 transcript, transcribed?})`. `clip` is the attachment reference exactly as `attachments ref`
 prints it, so `batch --attach` can add a recording. `transcribed` records the locale and time of
 the last on-device transcription. Deleting a note removes the reference; the host drops the blob at

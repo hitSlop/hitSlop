@@ -90,7 +90,7 @@ pub enum HostAction {
         height: u32,
     },
     /// The app declared `speech` and this page may use it. The host reads the recording
-    /// through the owner's resource reader (`ResourceReader::speech_clip`).
+    /// through the owner's resource reader, which verifies it before the provider decodes it.
     SpeechTranscribe {
         attachment: String,
         locale: Option<String>,
@@ -201,7 +201,8 @@ pub enum SpeechOutcome {
 /// Why this host cannot transcribe: the app did not declare `speech`; this host has no
 /// speech service (`slop dev`, a browser copy, a background renderer); the OS cannot
 /// (too old, or recognition is off); this locale has no on-device recognizer, and the
-/// host never sends a recording off the device instead; or the person declined.
+/// host never sends a recording off the device instead; the person declined; or the
+/// provider cannot decode this recording's format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
@@ -211,14 +212,12 @@ pub enum SpeechUnavailable {
     System,
     Locale,
     Permission,
+    Format,
 }
 impl SpeechOutcome {
     /// The answer of every host without a speech service.
     pub fn unsupported_host() -> Self {
-        Self::Unavailable {
-            reason: SpeechUnavailable::Host,
-            message: "Speech transcription runs in the hitSlop Mac app; this host cannot transcribe".into(),
-        }
+        Self::Unavailable { reason: SpeechUnavailable::Host, message: "This host cannot transcribe speech".into() }
     }
     /// The provider's outcome as the page may receive it: messages shortened to the
     /// diagnostic limit, and a transcript or locale beyond its limit refused.

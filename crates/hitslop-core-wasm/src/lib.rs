@@ -5,11 +5,6 @@ mod test_adapter {
     use hitslop_core::{AppSpec, Applied, Document as Core, Origin};
     use wasm_bindgen::prelude::*;
 
-    #[wasm_bindgen(js_name = coreBuildId)]
-    pub fn core_build_id() -> String {
-        hitslop_core::BUILD_ID.into()
-    }
-
     fn error(e: hitslop_core::Error) -> JsValue {
         let value = js_sys::Object::new();
         js_sys::Reflect::set(&value, &"code".into(), &e.code.as_str().into()).expect("plain error object");
@@ -19,11 +14,6 @@ mod test_adapter {
                 .expect("plain error object");
         }
         value.into()
-    }
-
-    #[wasm_bindgen]
-    pub fn validate(schema_json: &str, initial_json: &str) -> Result<(), JsValue> {
-        hitslop_core::validate(schema_json, initial_json).map_err(error)
     }
 
     /// A committed batch, as the page's `apply` reply carries it, with its publication. A text

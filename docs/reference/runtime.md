@@ -8,8 +8,8 @@ limits, security, capture and telemetry.
 
 The page shell owns the page and the whole lifecycle: it opens the document, then
 imports the app's `assets/ui.js` and calls `default.mount(ctx, target)`
-([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell package supplies the runtime; `hitslop`
-contains only the author SDK. `ctx` is the only thing an app may rely
+([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell supplies the runtime. The single `hitslop` npm package ships
+the CLI, author SDK, contracts, templates, skills and locally served runtime. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
 `bind.text`, capture hooks, attachments, `speech.transcribe`, `window.resize` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view may supply `rendered()` (wait for
@@ -35,9 +35,10 @@ lists the host-internal names apps never read (`slop:render-error`, `data-slop-h
 `__slop`, `__slopPreview` and the preview transport's `slop:*` messages).
 
 `hitslop/svelte` is the Svelte adapter compiled into each app:
-the builder emits `svelteApp` from the declaration's explicit `view`, `document`,
-`export`, `icon` and `commands` references. Authors import styles themselves; filenames
-have no special role. Once mounted, the schema's definition is the live document
+the builder emits `svelteApp` from required root `schema.ts` and `App.svelte`, plus
+optional `Export.svelte` and `Icon.svelte`. These filenames are fixed and case-sensitive.
+Metadata in `slop.ts` and agent-only `commands.ts` stay outside the UI graph. Authors
+import styles from their components. Once mounted, the schema's definition is the live document
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
 `ctx.document.observe`). `bindText`, `EditableText`, `capture`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
 
@@ -49,8 +50,9 @@ The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Rec
 
 A `.slop` file is one SQLite database (application ID `0x48534C50`, "HSLP"; storage version in
 `user_version`). Rust defines internal wires and package-format acceptance. `slop.ts`
-explicitly declares identity, window, ordered theme, document descriptor, initial values,
-views and commands. The build writes `packageFormat` and `runtimeABI`; readers check
+declares identity, window, ordered theme, capabilities and optional artwork. `schema.ts`
+supplies the descriptor and initial values; fixed root component and command files
+supply the views and agent commands. The build writes `packageFormat` and `runtimeABI`; readers check
 these markers before interpreting current-format fields. Swift receives typed UniFFI
 metadata/window/theme values and never decodes the stored definition itself.
 
@@ -124,12 +126,12 @@ it is not consent. Code-bound permissions remain a [proposal](../ideas.md#permis
 
 Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The native host's WebKit media delegate grants a request only for the current, ready, owned document page (never a snapshot, export or icon renderer, or a page being captured), from the main frame at `slop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for hitSlop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-slop prompt yet. WebKit exposes `navigator.mediaDevices` at `slop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
 
-Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`) or the owner is a snapshot renderer (`host`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document that is not being captured, reads the recording through the owner's resource reader (`speech_clip`, which verifies the attachment and accepts only m4a, mp3, wav, flac, mp4 and mov), and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. It checks on-device support before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: replacing or closing it, reloading its interface or starting an export or copy cancels it, and the page receives `cancelled`. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
+Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, normalizes locale separators from `_` to `-`, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`) or the owner is a snapshot renderer (`host`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document that is not being captured, reads and verifies the recording through the owner's resource reader, checks the provider's format support, and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. The Mac provider accepts m4a, mp3, wav, flac, mp4 and mov; other formats return `unavailable` (`format`). Missing or damaged attachments return `failed`. Format and on-device locale support are checked before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: replacing or closing it, reloading its interface or starting an export or copy cancels it, and the page receives `cancelled`. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
 
 Transcripts are returned without being saved; authors write them through document handles
 and guard against the recording changing during recognition. `isSpeechError` recognizes
 cross-bundle `unavailable`, `cancelled` and `failed` errors, with unavailability reasons
-`notDeclared`, `host`, `system`, `locale` and `permission`. Ogg/WebM storage does not imply
+`notDeclared`, `host`, `system`, `locale`, `permission` and `format`. Ogg/WebM storage does not imply
 native transcription support. `SpeechAnalyzer` and browser speech remain deferred.
 
 Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.

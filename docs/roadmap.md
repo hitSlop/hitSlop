@@ -102,8 +102,9 @@ In order, with the reasoning in [ideas](ideas.md):
   unavailable in previews and browser copies. There is no per-slop permission UI or
   server fallback. [Capabilities](reference/runtime.md#security-boundaries) records the boundary.
 - Active templates are discovered under `slops/`; `bundled.json` chooses the starters.
-  The template build and Mac app build are separate: prepare `generated/templates/`
-  before Xcode embeds it. See [the rebuild order](guides/development.md#rebuild-templates-before-the-app).
+  Xcode's embedding phase refreshes `generated/templates/` through the template cache
+  before copying selected starters into the app. Prepare changed tooling first; see
+  [the build workflow](guides/development.md#build-current-templates-with-the-app).
 - Rust owns edit admission, save scheduling, discard, close, command dispatch and the
   live socket. Swift delivers events and provides native UI and rendering.
 - The CLI's engine creates, edits and validates documents on macOS and Linux. The Mac
@@ -122,8 +123,9 @@ In order, with the reasoning in [ideas](ideas.md):
   Cloudflare's runtime ([evidence](evidence/sync-spikes-2026-10.md)). The experiment's
   relay source is outside this repository. The production relay and clients are
   [later](#later).
-- `slop.ts` declares the app: `view`, optional `export` and `icon` views, commands and
-  artwork. Captures use fresh saved-state pages, with a fresh `view` as the export
+- `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
+  `App.svelte` the editor, and optional root `Export.svelte`, `Icon.svelte` and
+  `commands.ts` the other roles. Captures use fresh saved-state pages, with a fresh `App` as the export
   fallback. `slop dev` runs the native owner on a disposable copy per preview page.
 
 A historical summary of the ownership decisions and integration findings is retained in

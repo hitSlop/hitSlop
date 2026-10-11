@@ -90,7 +90,9 @@ fn speech(owner: &Owner, attachment: String, locale: Option<String>) -> PageDisp
             r#"This app does not declare speech; add "speech" to capabilities in slop.ts"#,
         )
     } else {
-        PageDispatch::Host { action: HostAction::SpeechTranscribe { attachment, locale } }
+        PageDispatch::Host {
+            action: HostAction::SpeechTranscribe { attachment, locale: locale.map(|locale| locale.replace('_', "-")) },
+        }
     }
 }
 /// Runs one validated request from `view`. Edits answer on acceptance; flush waits for

@@ -13,12 +13,6 @@ export const MAX_RECORDING_MS = 5 * 60 * 1000;
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 export const AUDIO_BITS_PER_SECOND = 64_000;
 
-/** The formats the Mac's on-device recognizer reads (m4a, mp3, wav, flac, mp4, mov). */
-const transcribableTypes = new Set([
-  "audio/mp4", "audio/x-m4a", "audio/m4a", "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
-  "audio/wave", "audio/vnd.wave", "audio/flac", "audio/x-flac", "video/mp4", "video/quicktime",
-]);
-const transcribableExtensions = new Set(["m4a", "mp3", "wav", "flac", "mp4", "mov"]);
 const formatNames: Record<string, string> = {
   "audio/mp4": "M4A", "audio/x-m4a": "M4A", "audio/m4a": "M4A", "audio/mpeg": "MP3", "audio/mp3": "MP3",
   "audio/wav": "WAV", "audio/x-wav": "WAV", "audio/wave": "WAV", "audio/vnd.wave": "WAV",
@@ -45,12 +39,6 @@ export function extensionFor(mimeType: string) {
 }
 export function formatName(clip: Clip) {
   return formatNames[baseType(clip.mimeType)] ?? (extension(clip.name).toUpperCase() || "Audio");
-}
-export function canTranscribe(clip: Clip) {
-  const type = baseType(clip.mimeType);
-  if (transcribableTypes.has(type)) return true;
-  // Some hosts report a generic type; trust the extension only then.
-  return (type === "" || type === "application/octet-stream") && transcribableExtensions.has(extension(clip.name));
 }
 
 export function durationLabel(ms: number) {
@@ -126,7 +114,7 @@ export function removeNote(tx: Edit, note: RowRef) {
 }
 export function setLocale(tx: Edit, locale: string) {
   const value = locale.trim();
-  if (!/^[A-Za-z0-9_-]{0,35}$/.test(value)) refuse("Use a locale identifier such as en-US, or leave it empty for the Mac's language.");
+  if (!/^[A-Za-z0-9_-]{0,35}$/.test(value)) refuse("Use a locale identifier such as en-US, or leave it empty for the device's language.");
   tx.fields.locale.set(value);
 }
 export function renamePad(tx: Edit, title: string) {
@@ -135,7 +123,7 @@ export function renamePad(tx: Edit, title: string) {
 
 /** Languages offered in the picker; the document may hold any valid identifier. */
 export const languages: { value: string; label: string }[] = [
-  { value: "", label: "The Mac's language" },
+  { value: "", label: "Device language" },
   { value: "en-US", label: "English (US)" },
   { value: "en-GB", label: "English (UK)" },
   { value: "en-AU", label: "English (Australia)" },

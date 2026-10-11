@@ -134,6 +134,13 @@ fn speech_outcomes_are_bounded_before_they_reach_the_page() {
         json!({"status":"unavailable","reason":"notDeclared","message":"no"})
     );
     assert_eq!(reply(SpeechOutcome::unsupported_host())["outcome"]["reason"], "host");
+    assert_eq!(
+        reply(SpeechOutcome::Unavailable {
+            reason: SpeechUnavailable::Format,
+            message: "Unsupported audio/ogg".into()
+        })["outcome"],
+        json!({"status":"unavailable","reason":"format","message":"Unsupported audio/ogg"})
+    );
     let limit = 1024 * 1024;
     let at_limit = reply(SpeechOutcome::Transcribed { text: "x".repeat(limit), locale: "en".into() });
     assert_eq!(at_limit["outcome"]["text"].as_str().unwrap().len(), limit);

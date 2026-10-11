@@ -29,7 +29,7 @@ export default defineCommands(doc, {
     run: ({ tx }, { note }) => removeNote(tx, note),
   },
   setLanguage: {
-    description: "Set the speech locale used for transcription, such as en-US; an empty string uses the Mac's language.",
+    description: "Set the speech locale used for transcription, such as en-US; an empty string uses the device's language.",
     args: { locale: s.string() },
     run: ({ tx }, { locale }) => setLocale(tx, locale),
   },

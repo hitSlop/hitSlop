@@ -13,7 +13,7 @@
   import X from "@lucide/svelte/icons/x";
   import doc from "./schema";
   import {
-    addRecording, addTypedNote, baseType, canTranscribe, durationLabel, extensionFor, formatName, languages,
+    addRecording, addTypedNote, baseType, durationLabel, extensionFor, languages,
     MAX_ATTACHMENT_BYTES, MAX_RECORDING_MS, padView, removeNote, saveTranscription, setLocale, sizeLabel, type Clip, type Note,
   } from "./notes";
   import { describeProblem, Recording, recordingType, type CaptureProblem } from "./recorder";
@@ -36,7 +36,7 @@
 
   type Status = { kind: "working" } | { kind: "problem"; tone: "unavailable" | "cancelled" | "failed"; text: string };
   let statuses = $state<Record<string, Status>>({});
-  /** A reason that applies to every note (this host, the Mac, the permission). */
+  /** A reason that applies to every note (this host, the device, the permission). */
   let speechNotice = $state<string | null>(null);
 
   let player = $state<HTMLAudioElement>();
@@ -152,17 +152,13 @@
     phase = "idle";
     elapsed = 0;
     notify(reason ?? `Recording kept (${durationLabel(durationMs)}).`);
-    // A clip the Mac can't read (WebM, Ogg) shows why under the note instead.
-    if (id && clip && canTranscribe(clip)) void transcribe(id);
+    if (id && clip) void transcribe(id);
   }
   function toggleRecording() {
     if (phase === "idle") void startRecording();
     else if (phase === "recording") void keep();
   }
 
-  function formatUnavailable(clip: Clip) {
-    return `Transcription unavailable: this ${formatName(clip)} recording (${sizeLabel(clip.byteLength)}) came from a recorder the Mac can't transcribe; it reads m4a, mp3, wav, flac, mp4 and mov. The clip still plays; type its text instead.`;
-  }
   function speechMessage(error: SpeechError): { global: boolean; tone: "unavailable" | "cancelled" | "failed"; text: string } {
     if (error.code === "cancelled")
       return { global: false, tone: "cancelled", text: "Transcription stopped because the window reloaded or an export started. Try again." };
@@ -170,15 +166,14 @@
       return { global: false, tone: "failed", text: `The recording couldn't be recognized. ${error.message}` };
     switch (error.reason) {
       case "host":
-        return { global: true, tone: "unavailable", text: "Transcription unavailable here. It runs on the Mac in the hitSlop app; this preview, browser copy or export can't transcribe. Recordings still save, and you can type their text." };
+        return { global: true, tone: "unavailable", text: `${error.message}. Recordings still save, and you can type their text.` };
       case "system":
-        return { global: true, tone: "unavailable", text: "Transcription unavailable: this Mac can't recognize speech right now. Try again later, or type the text." };
       case "permission":
-        return { global: true, tone: "unavailable", text: "Transcription unavailable: speech recognition is turned off for hitSlop. Allow it in System Settings › Privacy & Security › Speech Recognition, then try again." };
       case "locale":
-        return { global: true, tone: "unavailable", text: `Transcription unavailable for ${languageLabel}: this Mac has no on-device recognizer for it, and nothing is sent to a server. Choose another language, or type the text.` };
       case "notDeclared":
-        return { global: true, tone: "unavailable", text: "Transcription unavailable: this pad does not have speech access." };
+        return { global: true, tone: "unavailable", text: error.message };
+      case "format":
+        return { global: false, tone: "unavailable", text: error.message };
       default:
         return { global: false, tone: "unavailable", text: `Transcription unavailable. ${error.message}` };
     }
@@ -191,7 +186,6 @@
   async function transcribe(id: string) {
     const note = doc.current.notes.find(row => row.$id === id);
     if (!note?.clip || statuses[id]?.kind === "working") return;
-    if (!canTranscribe(note.clip)) return;
     statuses[id] = { kind: "working" };
     try {
       const locale = doc.current.locale;
@@ -203,14 +197,14 @@
       }
       await doc.change(tx => saveTranscription(tx, id, { text: result.text, locale: result.locale, at: new Date().toISOString() }));
       delete statuses[id];
-      notify("Transcribed on this Mac.");
+      notify("Transcribed on-device.");
     } catch (error) {
       if (isSpeechError(error)) {
         const message = speechMessage(error);
         if (message.global) speechNotice = message.text;
         statuses[id] = { kind: "problem", tone: message.tone, text: message.global ? `Recording kept · ${sizeLabel(note.clip.byteLength)} · not transcribed` : message.text };
       } else if (isDocumentError(error) && !doc.current.notes.some(row => row.$id === id)) {
-        delete statuses[id]; // The note was deleted while the Mac was listening.
+        delete statuses[id]; // The note was deleted during transcription.
       } else {
         statuses[id] = { kind: "problem", tone: "failed", text: error instanceof Error ? error.message : "Transcription failed." };
       }
@@ -379,7 +373,7 @@
               <div class="vn-note-head">
                 <NoteMeta {note} />
                 <div class="vn-actions">
-                  {#if note.clip && canTranscribe(note.clip)}
+                  {#if note.clip}
                     <button
                       class="vn-act"
                       onclick={() => ask(note)}
@@ -401,13 +395,11 @@
                 placeholder={note.clip ? "No transcript yet. Click to type what was said." : "Click to write this note."}
               />
               {#if status?.kind === "working"}
-                <p class="vn-status vn-status-working" role="status"><i aria-hidden="true"></i> Transcribing on this Mac…</p>
+                <p class="vn-status vn-status-working" role="status"><i aria-hidden="true"></i> Transcribing on-device…</p>
               {:else if status?.kind === "problem"}
                 <p class="vn-status" data-tone={status.tone} role="status">{status.text}</p>
               {:else if note.transcribed}
                 <p class="vn-status vn-status-quiet">Transcribed on-device · {note.transcribed.locale}{note.clip ? ` · ${sizeLabel(note.clip.byteLength)}` : ""}</p>
-              {:else if note.clip && !canTranscribe(note.clip)}
-                <p class="vn-status" data-tone="unavailable">{formatUnavailable(note.clip)}</p>
               {:else if note.clip}
                 <p class="vn-status vn-status-quiet">Recording kept · {sizeLabel(note.clip.byteLength)}</p>
               {/if}

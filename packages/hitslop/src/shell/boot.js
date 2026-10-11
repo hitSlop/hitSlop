@@ -1,4 +1,4 @@
-// Visible sessions. The runtime opens the document, then mounts assets/app.js.
+// Visible sessions. The runtime opens the document, then mounts assets/ui.js.
 try {
   const { boot } = await import("./index.js");
   await boot();

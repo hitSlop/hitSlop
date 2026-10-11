@@ -6,7 +6,6 @@ import { OwnerDocument } from "../../src/shell/owner/document";
 import type { OwnerTransport } from "../../src/shell/owner/transport";
 import { wasmTransport } from "./wasm-transport";
 import { defineDocument, s, type Destination } from "hitslop";
-import { DocumentError } from "../../src/sdk/errors";
 import type { Batch } from "../../src/schema/core";
 import type { PagePush } from "../../src/wire/page";
 /** Wraps the transport's text edits (batches whose set carries a selection); other
