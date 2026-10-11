@@ -158,16 +158,27 @@
   .detail-copy p { margin: 10px 0 0; color: var(--muted); font-size: 1.05rem; line-height: 1.55; }
   .detail-copy .meta { font-size: .9rem; font-weight: 700; }
   .detail-copy .hint { padding: 12px 14px; border-radius: 14px; background: #f6f2ff; font-size: .95rem; }
-  @media (max-width: 560px) {
-    .controls { display: grid; }
-    .chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -20px; padding: 4px 20px 8px; scrollbar-width: none; }
-    .chips button { flex: none; }
+  @media (max-width: 779px) {
+    .controls { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    .chips { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding: 4px 16px 8px; scrollbar-width: none; }
+    .chips button { flex: none; min-height: 44px; }
     .surprise { justify-self: start; }
-    .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+    .tiles { margin-top: 24px; gap: 14px; }
+    li { rotate: 0deg; }
     .tile { padding: 12px 11px 11px; border-radius: 18px; }
     .emoji { width: 52px; height: 52px; font-size: 28px; border-radius: 15px; }
     .name { font-size: 1rem; }
     .file { font-size: .68rem; }
+    .more { margin-top: 24px; }
+    .more button { width: 100%; padding-inline: 12px; font-size: 1rem; }
+    .detail { max-height: calc(100dvh - 24px); overflow-y: auto; border-radius: 18px; }
+    .detail-bar { height: 48px; padding-left: 4px; padding-right: 12px; }
+    .detail-bar .light { width: 44px; height: 44px; background: transparent; }
+    .detail-bar > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .detail-art { min-height: 160px; }
+    .detail-art img { max-height: 240px; }
+    .detail-copy { padding: 18px 16px; }
   }
+  @media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (prefers-reduced-motion: reduce) { .tile, .emoji, li { transition: none; rotate: 0deg; } }
 </style>

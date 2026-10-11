@@ -477,6 +477,7 @@ let passed = true;
 try {
   // Everything a release ships is built first, so tiers test the shipped artifacts.
   if (release) {
+    await sh([process.execPath, "scripts/release/notes.ts", "--check"]);
     await build("native");
     await build("templates");
   }

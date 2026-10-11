@@ -26,6 +26,7 @@
     "landing:build": "bun run --cwd apps/landing build",
     "test:native": "bun scripts/verify.ts native",
     "release:check": "bun scripts/verify.ts --release",
+    "release:notes": "bun scripts/release/notes.ts",
     "build:templates": "bun scripts/templates/build.ts",
     "compat:capture": "bun scripts/compat/capture.ts",
     "core:build:wasm": "bun scripts/build/core.ts --wasm",

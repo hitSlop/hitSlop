@@ -215,7 +215,8 @@
   }
   .bubble span { display: grid; gap: 1px; font-size: .68rem; line-height: 1.35; }
   .bubble strong { color: oklch(38% .12 var(--hue)); font-size: .58rem; }
-  @media (max-width: 720px) {
+  @media (max-width: 779px) {
+    .board, .bubble { transform: none; }
     .together { padding-right: 0; padding-bottom: 36px; }
     .bubble { right: 8px; top: auto; bottom: -4px; }
   }

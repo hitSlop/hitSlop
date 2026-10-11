@@ -145,6 +145,30 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 @media (hover: hover) { .site-footer nav a:hover { color: var(--accent); } }
 @media (min-width: 780px) { .site-footer { grid-template-columns: auto 1fr auto; } .site-footer p { text-align: center; } }
 
+/* The home page has a compact phone layout; merch and docs keep their own rhythm. */
+@media (max-width: 779px) {
+  .landing-home { --radius: 22px; }
+  .landing-home .masthead { top: 8px; min-height: 56px; margin-top: 8px; padding: 0 6px 0 12px; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; border-radius: 22px; }
+  .landing-home .masthead .wordmark { gap: 8px; font-size: 1.4rem; }
+  .landing-home .masthead .brand-mark { width: 32px; height: 32px; border-radius: 9px; }
+  .landing-home .masthead-social { display: none; }
+  .landing-home .masthead-actions { gap: 4px; }
+  .landing-home .nav-download { width: 44px; min-height: 44px; padding: 0; border-radius: 14px; }
+  .landing-home .nav-download > span { display: none; }
+  .landing-home .menu-button { width: 44px; height: 44px; }
+  .landing-home .section { padding: 40px 16px; scroll-margin-top: 80px; }
+  .landing-home .section + .section { margin-top: 12px; }
+  .landing-home .split { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .landing-home .split > * { min-width: 0; }
+  .landing-home .headline { font-size: clamp(2rem, 8.5vw, 3.25rem); line-height: 1.03; }
+  .landing-home .kicker { margin-bottom: 12px; font-size: .8rem; letter-spacing: .08em; }
+  .landing-home .lede { margin-top: 16px; font-size: 1rem; line-height: 1.55; }
+  .landing-home .button { min-height: 48px; padding: 10px 16px; border-radius: 16px; font-size: 1rem; white-space: normal; text-align: center; }
+  .landing-home .site-footer { padding: 28px 16px max(28px, env(safe-area-inset-bottom)); gap: 16px; }
+  .landing-home .site-footer nav { gap: 4px 18px; }
+  .landing-home .site-footer nav a { min-height: 44px; display: inline-flex; align-items: center; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

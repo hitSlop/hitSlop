@@ -19,7 +19,7 @@ export_options="$project_dir/App/macOS/ExportOptions.plist"
 team_id=${HITSLOP_DEVELOPMENT_TEAM:-78UAXU8QG8}
 identity=${HITSLOP_CODESIGN_IDENTITY:-"Developer ID Application: Mushroom DAO Holdings Corp. ($team_id)"}
 output_dir=${HITSLOP_OUTPUT_DIR:-"$repo_root/dist/macos"}
-sparkle_version=${SPARKLE_VERSION:-2.9.6}
+sparkle_version=$(bun "$script_dir/notes.ts" --sparkle-version)
 feed_prefix=${HITSLOP_DOWNLOAD_URL_PREFIX:-}
 
 # The project-wide build settings own the version the app and its extensions share.
@@ -38,6 +38,8 @@ if [ -z "$marketing_version" ] || [ -z "$build_version" ]; then
   exit 78
 fi
 
+bun "$script_dir/notes.ts" --check
+
 if [ -n "${GITHUB_REF_NAME:-}" ]; then
   expected="v$marketing_version"
   if [ "$GITHUB_REF_NAME" != "$expected" ]; then
@@ -49,6 +51,7 @@ fi
 if [ -z "$feed_prefix" ]; then
   feed_prefix="https://github.com/hitSlop/hitslop/releases/download/v${marketing_version}/"
 fi
+feed_prefix="${feed_prefix%/}/"
 
 if ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -F "$identity" >/dev/null; then
   resolved=$(/usr/bin/security find-identity -v -p codesigning \
@@ -228,6 +231,8 @@ staple "$dmg"
 /bin/cp "$app_zip" "$output_dir/hitSlop.zip"
 
 /bin/cp "$dmg" "$appcast_dir/${versioned}.dmg"
+bun "$script_dir/notes.ts" --write "$output_dir"
+/bin/cp "$output_dir/${versioned}.md" "$appcast_dir/${versioned}.md"
 sparkle_private=${SPARKLE_PRIVATE_KEY_FILE:-}
 if [ -z "$sparkle_private" ] && [ -n "${SPARKLE_PRIVATE_KEY:-}" ]; then
   sparkle_private="$stage_dir/sparkle.key"
@@ -251,6 +256,7 @@ if [ -n "$sparkle_private" ]; then
   "$tools/bin/generate_appcast" \
     --ed-key-file "$sparkle_private" \
     --download-url-prefix "$feed_prefix" \
+    --release-notes-url-prefix "$feed_prefix" \
     -o "$output_dir/appcast.xml" \
     "$appcast_dir"
 else
@@ -259,9 +265,17 @@ else
   exit 69
 fi
 
+# Retain the exact file processed by Sparkle (including any signing metadata).
+/bin/cp "$appcast_dir/${versioned}.md" "$output_dir/${versioned}.md"
+notes_url=$(/usr/bin/xmllint --xpath 'string(/rss/channel/item/*[local-name()="releaseNotesLink"])' "$output_dir/appcast.xml")
+if [ "$notes_url" != "${feed_prefix}${versioned}.md" ]; then
+  echo "Appcast release notes URL differs from the versioned Markdown asset: $notes_url" >&2
+  exit 65
+fi
+
 (
   cd "$output_dir"
-  /usr/bin/shasum -a 256 "${versioned}.dmg" "${versioned}.zip" hitSlop.dmg hitSlop.zip appcast.xml > SHA256SUMS
+  /usr/bin/shasum -a 256 "${versioned}.dmg" "${versioned}.zip" hitSlop.dmg hitSlop.zip appcast.xml "${versioned}.md" release-notes.md > SHA256SUMS
 )
 
 echo "Packaged $marketing_version ($build_version)"

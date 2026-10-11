@@ -46,6 +46,21 @@ export async function call(document: string, command: string, args: string) {
   const reply = await send({ method: "call", ...input });
   print({ result: reply.result, ids: reply.ids });
 }
+/** Format the core's command schema for people; machine output keeps the full projection. */
+function argumentLines(schema: Record<string, unknown>): string[] {
+  const properties = Object.entries(schema.properties as Record<string, Record<string, unknown>>);
+  if (!properties.length) return ["    No arguments. Pass --args '{}'."];
+  const required = new Set(schema.required as string[] | undefined);
+  return properties.map(([name, argument]) => {
+    const details = [required.has(name) ? "required" : "optional"];
+    if (Object.hasOwn(argument, "default")) details.push(`default: ${JSON.stringify(argument.default)}`);
+    if (Array.isArray(argument.enum)) details.push(`choices: ${argument.enum.map(value => JSON.stringify(value)).join(", ")}`);
+    for (const [key, label] of [["minimum", "min"], ["maximum", "max"], ["minLength", "min length"], ["maxLength", "max length"]] as const)
+      if (argument[key] !== undefined) details.push(`${label}: ${argument[key]}`);
+    return `    ${name}: ${argument.type} (${details.join("; ")})${argument.description ? " — " + argument.description : ""}`;
+  });
+}
+
 export async function describe(document: string, machine = false) {
   const { state } = await send({ method: "describe", ...at(document) });
   if (machine) return print(state);
@@ -53,8 +68,9 @@ export async function describe(document: string, machine = false) {
   for (const field of state.fields)
     lines.push(`  ${JSON.stringify(field.path)}: ${field.kind} (${field.operations.join(", ")})${field.description ? " — " + field.description : ""}`);
   lines.push("", "Commands (slop call PATH NAME --args JSON)");
-  for (const [name, spec] of Object.entries(state.commands) as [string, { description: string; args: unknown }][]) {
-    lines.push(`  ${name} — ${spec.description}`, `    args: ${JSON.stringify(spec.args)}`);
+  if (Object.keys(state.commands).length) lines.push("  Arguments accept only the listed fields.");
+  for (const [name, spec] of Object.entries(state.commands)) {
+    lines.push("", `  ${name} — ${spec.description}`, ...argumentLines(spec.args));
   }
   if (!Object.keys(state.commands).length) lines.push("  None. Use slop apply or slop batch.");
   lines.push("", "Value (rows retain their $id)", JSON.stringify(state.value, null, 2));
