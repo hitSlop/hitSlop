@@ -7,6 +7,6 @@ try {
   const message = String(error).slice(0, 4096);
   document.body.textContent = `Could not open this document: ${message}`;
   await globalThis.webkit?.messageHandlers?.hitslop
-    .postMessage(JSON.stringify({ method: "failed", error: message }))
+    ?.postMessage(JSON.stringify({ method: "failed", error: message }))
     .catch(() => {});
 }
