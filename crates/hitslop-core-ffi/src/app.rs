@@ -8,6 +8,7 @@ use hitslop_core::shape::Silhouette;
 
 #[uniffi::remote(Enum)]
 pub enum Category {
+    Popular,
     Productivity,
     Utilities,
     Finance,

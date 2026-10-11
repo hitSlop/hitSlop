@@ -251,6 +251,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     let before = fs::read(&doc).unwrap();
     assert_eq!(code(support::pack(&stage, &doc).unwrap_err()), Code::Exists);
     assert_eq!(fs::read(&doc).unwrap(), before);
+    assert_eq!(file::inspect(&doc).unwrap().app_digest, summary.app_digest, "a document carries its template's app");
     assert!(temporaries(dir.path()).is_empty());
 }
 

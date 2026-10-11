@@ -123,7 +123,8 @@ new-project metadata, and `pack` writes an immutable template from a build stage
 `create` takes `from` and `output`, creates parent folders and returns `documentPath`.
 A bare template slug resolves installed templates before bundled ones.
 
-`inspect` returns file kind, requirements, metadata, window and resource/state sizes;
+`inspect` returns file kind, requirements, metadata, window, resource/state sizes and
+the app digest (equal digests mean the same app);
 `schema` reads its stored descriptor. `get`, `describe`, `batch` and `call` route through
 the live or in-process owner and wait for persistence as required. `copy` makes a saved
 copy; `artwork.export` exports stored artwork. `attachments.ref` reads a local regular

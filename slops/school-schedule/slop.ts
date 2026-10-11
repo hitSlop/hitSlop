@@ -5,7 +5,7 @@ export default defineSlop({
   title: "School Schedule",
   description: "Your week in color: classes, rooms, bell times, and after-class plans with a live now and next readout.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["education", "productivity"],
+  categories: ["education", "popular"],
   window: { kind: "standard", width: 880, height: 640 },
   theme: {
     surface: "#f7faff",

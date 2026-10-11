@@ -243,6 +243,7 @@ pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
             conn.query_row("SELECT coalesce(sum(length(bytes)),0) FROM assets", [], |r| r.get(0))
                 .map_err(sqlite("inspect"))?,
         )?,
+        app_digest: crate::document::version::hex(&rows::app_digest(&conn)?),
         live: crate::registry::discovery(path)?.is_some(),
     })
 }

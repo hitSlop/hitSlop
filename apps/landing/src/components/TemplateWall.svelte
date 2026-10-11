@@ -8,6 +8,7 @@
   let { templates }: { templates: Template[] } = $props();
 
   const labels: Record<string, string> = {
+    popular: "🔥 Popular",
     productivity: "✅ Get things done", personal: "🌱 Just for you", education: "🎓 School",
     finance: "💰 Money", utilities: "🧰 Handy tools", business: "💼 Work", media: "🎧 Media",
     games: "🎮 Games", health: "🫀 Health", creative: "🎨 Creative", music: "🎵 Music", "developer-tools": "🛠️ For developers", other: "✨ Other",
@@ -15,7 +16,8 @@
   const categories = $derived(
     [...new Set(templates.flatMap((template) => template.categories))]
       .filter((category) => labels[category])
-      .sort((a, b) => templates.filter((t) => t.categories.includes(b)).length - templates.filter((t) => t.categories.includes(a)).length),
+      .sort((a, b) => Number(b === "popular") - Number(a === "popular")
+        || templates.filter((t) => t.categories.includes(b)).length - templates.filter((t) => t.categories.includes(a)).length),
   );
   let filter = $state<string | null>(null);
   let spinning = $state<string | null>(null);

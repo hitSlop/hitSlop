@@ -177,6 +177,27 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** the no-code rung, on the Mac's own automation, with Siri and Spotlight for free.
 - **Builds on:** closed editing, which runs the owner without WebKit or authored code.
 
+### Query a document with SQL
+
+- **What:** `slop query DOC 'SELECT …'`, read-only SQL over a snapshot. The engine
+  registers virtual tables generated from the descriptor (a list of `$id` rows becomes a
+  table, as sqlelf does over ELF), computes them from Loro and stores nothing. Today the
+  same works without new code: `slop get DOC > doc.json`, then
+  `sqlite3 :memory: "SELECT … FROM json_each(readfile('doc.json'), '$.items')"`.
+- **Why:** Farid Zakaria's [SELF](https://fzakaria.com/2026/08/23/your-executable-is-a-sqlite-database)
+  posts, which inspired the `.slop` file, show how much tooling collapses into SQL once the
+  program and its state are one database. A `.slop` already answers `SELECT` for its app,
+  assets and artwork, but not for its saved values, which are Loro bytes.
+- **Builds on:** `get`'s snapshot. A stored SQL copy of the data would be a mirror, so
+  the tables exist only for the query.
+- **Open questions:** table naming freezes into a public boundary at launch, so wait for
+  a request a JSON read can't answer.
+- **Nearby:** a semantic `slop diff` of two files' apps and data, which pairs with
+  [additive app upgrades](#additive-app-upgrades) and starts from `inspect`'s
+  `appDigest`; a Spotlight importer that indexes saved text through the core, as Quick
+  Look reads artwork; and registering the `HSLP` application ID in SQLite's `magic.txt`
+  so `file` names a `.slop`.
+
 ### Export data
 
 - **What:** "Export data…" as JSON, CSV or Markdown, next to PNG and PDF.

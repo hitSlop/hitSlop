@@ -26,7 +26,7 @@ export type BuildRoles = { ui: string, style?: string, commands?: string, skin?:
  */
 export type Capability = "camera" | "microphone" | "speech";
 
-export type Category = "productivity" | "utilities" | "finance" | "media" | "games" | "developer-tools" | "education" | "business" | "personal" | "health" | "creative" | "music" | "other";
+export type Category = "popular" | "productivity" | "utilities" | "finance" | "media" | "games" | "developer-tools" | "education" | "business" | "personal" | "health" | "creative" | "music" | "other";
 
 export type CommandInput = { name: string, description: string, args: unknown, };
 

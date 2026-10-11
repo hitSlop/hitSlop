@@ -5,7 +5,7 @@ export default defineSlop({
   title: "Personal Budget",
   description: "A graphite pocket calculator fused with a dark paper ledger for monthly income, allocations, spending, and remaining funds.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["finance", "utilities"],
+  categories: ["finance", "popular"],
   window: { kind: "standard", width: 780, height: 530 },
   theme: {
     surface: "#16171b",

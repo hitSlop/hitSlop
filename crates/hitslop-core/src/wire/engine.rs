@@ -364,6 +364,8 @@ pub struct InspectInfo {
     pub bytes: u64,
 
     pub stored_asset_bytes: u64,
+    /// SHA-256 of the app row and its assets, lowercase hex: files with equal digests carry the same app.
+    pub app_digest: String,
     pub live: bool,
 }
 #[derive(Debug, Serialize, Deserialize)]

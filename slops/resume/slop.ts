@@ -5,7 +5,7 @@ export default defineSlop({
   title: "Resume",
   description: "An editorial paper resume with direct editing, strong typography, and clean export.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["personal", "business"],
+  categories: ["personal", "popular"],
   window: { kind: "standard", width: 680, height: 780 },
   theme: {
     surface: "#fbfaf5",

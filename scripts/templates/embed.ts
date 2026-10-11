@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { exists } from "../../packages/hitslop/src/cli/fs";
 import { builtTemplates, type TemplateInventory } from "./discover";
 import { validateTemplate } from "./cache";
+import { buildTemplates } from "./build";
 
 /** Starter templates ship read-only: the folder and each template file in it. */
 async function setWritable(folder: string, writable: boolean) {
@@ -34,6 +35,9 @@ export async function embedTemplates(
 if (import.meta.main) {
   const app = process.argv[2];
   if (!app) throw new Error("App bundle path required");
+  // Xcode Run must reflect current source, even when the prepared inventory has
+  // the same slugs. The template cache reuses unchanged files and artwork.
+  await buildTemplates();
   await embedTemplates(
     join(repository, "generated/templates"),
     join(resolve(app), "Contents/Resources/StarterTemplates"),
