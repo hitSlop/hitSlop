@@ -183,7 +183,7 @@ a person and their agent edit the same live document. What's missing is the slop
   registers virtual tables generated from the descriptor (a list of `$id` rows becomes a
   table, as sqlelf does over ELF), computes them from Loro and stores nothing. Today the
   same works without new code: `slop get DOC > doc.json`, then
-  `sqlite3 :memory: "SELECT … FROM json_each(readfile('doc.json'), '$.items')"`.
+  `sqlite3 :memory: "SELECT … FROM json_each(CAST(readfile('doc.json') AS TEXT), '$.items')"`.
 - **Why:** Farid Zakaria's [SELF](https://fzakaria.com/2026/08/23/your-executable-is-a-sqlite-database)
   posts, which inspired the `.slop` file, show how much tooling collapses into SQL once the
   program and its state are one database. A `.slop` already answers `SELECT` for its app,
