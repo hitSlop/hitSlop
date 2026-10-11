@@ -46,7 +46,7 @@ pub fn serve(path: &Path) -> ExitCode {
         let evaluator = crate::evaluator()?;
         let owner = Arc::new(Owner::open_with_evaluator(path, Mode::Document, Arc::new(move |event| {
             let message = match event {
-                Event::Publication { json: publication } => json!({"type":"push","pushes":[{"type":"publication","publication":serde_json::from_str::<Value>(&publication).expect("publication")}]}),
+                Event::Publication { json: publication } => json!({"type":"push","pushes":[serde_json::from_str::<Value>(&publication).expect("page push")]}),
                 Event::SaveStatus { status, failure } => json!({"type":"save","status":format!("{status:?}"),"error":failure.map(|f| f.message)}),
                 _ => return,
             };
@@ -73,6 +73,12 @@ pub fn serve(path: &Path) -> ExitCode {
                     }
                 };
                 match request {
+                    PreviewRequest::ResourcePlan { id, attachment_id, range } => {
+                        let resource = resources.info(ResourceRoute::Attachment, &attachment_id)
+                            .map(|info| json!({"type":"resource","id":id,"plan":info.map(|info| hitslop_core::file::resource_response(&info, ResourceRoute::Attachment, range.as_deref()))}))
+                            .unwrap_or_else(|e| json!({"type":"resource","id":id,"error":e.to_string()}));
+                        send.send(resource);
+                    }
                     PreviewRequest::Resource { id, attachment_id, offset, length } => {
                         let resource = (|| {
                             let info = resources.info(ResourceRoute::Attachment, &attachment_id)?;

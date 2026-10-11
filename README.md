@@ -15,7 +15,7 @@
 
 Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
-Each one is a document you and your agent share. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Everything stays on your Mac, in one `.slop` file (a SQLite database) you can keep, copy and send to a friend.
+Each one is a document you and your agent share, powered by Loro CRDTs (conflict-free replicated data types) that merge edits to text, lists and counters. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Everything stays on your Mac, in one `.slop` file (a SQLite database) you can keep, copy and send to a friend.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 

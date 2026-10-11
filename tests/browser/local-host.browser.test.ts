@@ -91,8 +91,13 @@ for (const [name, engine] of [["Chrome", chromium]] as const) {
           (tx: any, ref: any) => tx.fields.tasks.insert({ text: ref.id }));
         await doc.flush();
         const response = await fetch(attachments.url(ref.id), { headers: { Range: "bytes=0-7" } });
-        return { id: ref.id, range: await response.text(), status: response.status, sandbox: response.headers.get("Content-Security-Policy") };
+        const suffix = await fetch(attachments.url(ref.id), { headers: { Range: "bytes=-10" } });
+        const head = await fetch(attachments.url(ref.id), { method: "HEAD", headers: { Range: "bytes=0-7" } });
+        return { id: ref.id, range: await response.text(), status: response.status, sandbox: response.headers.get("Content-Security-Policy"),
+          suffix: await suffix.text(), head: [head.status, head.headers.get("Content-Length"), await head.text()] };
+
       });
+      expect(attachment.suffix).toBe("attachment"); expect(attachment.head).toEqual([206, "8", ""]);
       expect(attachment.range).toBe("portable"); expect(attachment.status).toBe(206); expect(attachment.sandbox).toBe("sandbox");
       const cdp = await context.newCDPSession(page);
       await cdp.send("ServiceWorker.enable"); await cdp.send("ServiceWorker.stopAllWorkers");

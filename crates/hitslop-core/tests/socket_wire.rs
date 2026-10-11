@@ -6,8 +6,13 @@ use hitslop_core::{
 };
 use serde_json::{Value, json};
 
-fn decode(value: Value) -> Result<SocketRequest, hitslop_core::Error> {
-    SocketRequest::decode(&value.to_string())
+fn decode(mut value: Value) -> Result<SocketRequest, hitslop_core::Error> {
+    let protocol = value.as_object_mut().unwrap().remove("protocol");
+    let mut envelope = json!({"request":value});
+    if let Some(protocol) = protocol {
+        envelope["protocol"] = protocol;
+    }
+    SocketRequest::decode(&envelope.to_string())
 }
 fn batch() -> Value {
     json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"batch","documentPath":"/tmp/doc.slop","batch":{"intents":[]}})
@@ -15,6 +20,18 @@ fn batch() -> Value {
 
 #[test]
 fn requests_check_routing_but_leave_intents_to_the_owner() {
+    let flat = json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"get","documentPath":"/tmp/doc.slop"});
+    assert_eq!(SocketRequest::decode(&flat.to_string()).unwrap_err().code, Code::InvalidRequest);
+    for request in [
+        json!({"method":"templates"}),
+        json!({"method":"open","documentPath":"/tmp/doc.slop"}),
+        json!({"method":"screenshot","documentPath":"/tmp/doc.slop","output":"/tmp/a.png","target":"icon","ifPresent":true}),
+    ] {
+        assert!(
+            SocketRequest::decode(&json!({"protocol":hitslop_core::HELPER_PROTOCOL,"request":request}).to_string())
+                .is_err()
+        );
+    }
     for method in ["get", "attachments.list", "theme.export"] {
         assert!(
             decode(json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":method,"documentPath":"/tmp/doc.slop"}))
@@ -67,6 +84,10 @@ fn request_constraints_survive_the_schema_removal() {
     let mut request = batch();
     request["attachments"] = json!(["YWJj"]);
     assert!(decode(request).is_ok());
+    assert!(decode(json!({"protocol":hitslop_core::HELPER_PROTOCOL,"method":"call","documentPath":"/tmp/doc.slop","command":"large","args":"x".repeat(1_048_576)})).is_err());
+    let mut large_attachment = batch();
+    large_attachment["attachments"] = json!(["x".repeat(1_048_576)]);
+    assert!(decode(large_attachment).is_ok());
     assert_eq!(SocketRequest::decode(&" ".repeat(16_777_217)).unwrap_err().code, Code::InvalidRequest);
 }
 

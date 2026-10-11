@@ -161,9 +161,16 @@
   @media (hover: hover) and (pointer: fine) {
     .presets button:hover { background: color-mix(in oklch, var(--theme-paper), var(--theme-ink) 5%); }
   }
-  @media (max-width: 430px) {
-    .preview-stage { min-height: 430px; padding: 27px 17px; }
-    .checklist { padding-inline: 20px; }
+  @media (max-width: 779px) {
+    .theme-switcher { box-shadow: 0 5px 0 color-mix(in oklch, var(--theme-ink), transparent 87%), 0 14px 28px oklch(18% .04 320 / .12); }
+    .preset-bar { grid-template-columns: minmax(0, 1fr); padding: 14px 12px; gap: 10px; }
+    .presets { gap: 4px; }
+    .presets button { padding-inline: 3px; }
+    .presets b { white-space: normal; line-height: 1.2; text-wrap: balance; }
+    .preview-stage { min-height: 0; padding: 28px 12px 20px; }
+    .checklist { padding: 24px 14px 18px; transform: none; box-shadow: 0 4px 0 color-mix(in oklch, var(--theme-ink), transparent 82%); }
+    .task { grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; padding-block: 10px; }
+    .theme-file { padding: 14px 12px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .theme-switcher, .preset-bar, .preview-stage, .checklist { transition: none; }

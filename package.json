@@ -26,6 +26,7 @@
     "landing:build": "bun run --cwd apps/landing build",
     "test:native": "bun scripts/verify.ts native",
     "release:check": "bun scripts/verify.ts --release",
+    "release:notes": "bun scripts/release/notes.ts",
     "build:templates": "bun scripts/templates/build.ts",
     "compat:capture": "bun scripts/compat/capture.ts",
     "core:build:wasm": "bun scripts/build/core.ts --wasm",
@@ -37,12 +38,13 @@
     "@lucide/svelte": "1.52.0",
     "@types/bun": "1.4.2",
     "bits-ui": "^2.19.5",
+    "hitslop": "workspace:*",
     "playwright": "1.64.0",
+    "prettier": "3.9.6",
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",
     "typescript": "5.9.2",
-    "vite": "8.3.3",
-    "hitslop": "workspace:*"
+    "vite": "8.3.3"
   },
   "version": "1.0.0"
 }

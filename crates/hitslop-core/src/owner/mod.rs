@@ -140,9 +140,18 @@ pub enum SaveStatus {
 /// the owner states its undo state and save status when it starts, then each change.
 #[derive(Debug)]
 pub enum Event {
-    Publication { json: String },
-    SaveStatus { status: SaveStatus, failure: Option<Failure> },
-    UndoState { can_undo: bool, can_redo: bool },
+    /// An encoded PagePush publication item, ready for the page queue.
+    Publication {
+        json: String,
+    },
+    SaveStatus {
+        status: SaveStatus,
+        failure: Option<Failure>,
+    },
+    UndoState {
+        can_undo: bool,
+        can_redo: bool,
+    },
     ThemeChanged,
 }
 pub type Completion = Box<dyn FnOnce(Result<Reply>) + Send>;

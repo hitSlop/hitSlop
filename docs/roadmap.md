@@ -100,7 +100,7 @@ In order, with the reasoning in [ideas](ideas.md):
   development previews and local browser copies, with OS/browser consent still required.
   Declared `speech` enables native on-device transcription of stored recordings; it is
   unavailable in previews and browser copies. There is no per-slop permission UI or
-  server fallback. [Capabilities](guides/capabilities.md) records the boundary.
+  server fallback. [Capabilities](reference/runtime.md#security-boundaries) records the boundary.
 - Active templates are discovered under `slops/`; `bundled.json` chooses the starters.
   The template build and Mac app build are separate: prepare `generated/templates/`
   before Xcode embeds it. See [the rebuild order](guides/development.md#rebuild-templates-before-the-app).

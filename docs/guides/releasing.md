@@ -71,7 +71,8 @@ npm bootstrap/deprecations and public release changes are separate release work.
 
 1. Set the same version in root `package.json`, `packages/hitslop/package.json` and
    `apps/apple/project.yml`; increase `CURRENT_PROJECT_VERSION`. Update starter pins,
-   public examples and the lockfile. Commit the candidate.
+   public examples and the lockfile. Prepare and review the [release notes](#release-notes)
+   for that version. Commit the candidate, including its notes.
 2. Run the Engines workflow on that commit. Its platform table is
    `scripts/build/platforms.json`: darwin-arm64, linux-x64 and linux-arm64. Download
    the artifacts into `generated/engines/<platform>/`. Each records its commit and core
@@ -95,6 +96,60 @@ npm bootstrap/deprecations and public release changes are separate release work.
    Before tagging, run Release hitSlop manually on the final candidate. It checks the
    gate but skips signing, notarization, publication and deployment; it cannot validate
    their credentials or npm permissions.
+
+## Release notes
+
+Draft locally with your coding agent; CI publishes reviewed text and never calls an AI
+provider. After the code changes are committed, collect the release's evidence:
+
+```sh
+bun run release:notes --from v1.0.0 --to HEAD
+# First supported release: summarize current capabilities, not prelaunch history.
+bun run release:notes --initial --to HEAD
+```
+
+The command prints agent instructions, resolved commit IDs, commit messages, changed
+paths and a diff summary. `--to` defaults to `HEAD`. Supply the previous published
+release explicitly: old local prelaunch tags are not a release baseline. The diff compares
+the two snapshots directly, including releases on different branches. Initial mode includes product and
+authoring sources from the candidate commit. Collection only reads committed content;
+it does not generate prose or modify files itself.
+
+Ask the agent to inspect relevant diffs and referenced PRs, then draft
+`docs/releases/<version>.md`. Every claim should describe an observable, supported
+capability or change; omit internal refactors and deferred work. Use this structure:
+
+```markdown
+# hitSlop 1.0.1
+
+## Mac app
+
+### Fixed
+
+- Describe the change a person using the app will notice.
+
+## Authoring
+
+- Describe CLI or SDK changes for app authors.
+```
+
+`Mac app` is required and must contain text; omit `Authoring` if there are no authoring
+changes. Use optional third-level New, Improved and Fixed headings when useful. For an
+authoring-only release, write “No Mac app changes in this release.” in the Mac section.
+Keep links absolute so they work outside GitHub. Review and edit the draft, run
+`bun run release:notes --check`, then commit it before freezing the candidate and running
+the final release dry run. `bun run release:check` also validates the current notes
+before building. Regenerate or amend the draft if later code changes affect its claims.
+
+Packaging writes `hitSlop-<version>.md` for Sparkle with only the Mac app section and
+`release-notes.md` for GitHub with both sections, installation requirements and the
+first-release compatibility notice when applicable. Both files are checksummed and
+retained with the candidate. The appcast links to the versioned Markdown asset on
+GitHub; the release body uses the retained GitHub notes. Change the committed source
+before release, not a generated or published artifact.
+
+The Sparkle package's `exactVersion` in `apps/apple/project.yml` also selects the
+`generate_appcast` tool. There is no separate packaging version override.
 
 ## Publication and recovery
 
@@ -172,5 +227,7 @@ Record commit, version/build, OS, and results. Test macOS 15.2 and the current s
 - GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite.
 - Gatekeeper launch from downloaded DMG and ZIP; installed helper works without Node/Bun.
 - Sparkle update from the previous signed release, verifying publisher and resulting version.
+  With an isolated reachable appcast, confirm the versioned Markdown loads in the update
+  dialog, headings and bullets render correctly, and authoring notes stay on GitHub.
 
 Use a disposable Release validation build to verify representative Analytics events and a symbolicated Crashlytics test crash outside the debugger. Relaunch after the crash for upload. Debug/tests do not upload telemetry. Do not ship a crash trigger. Retain the Release dSYM upload phase and verify reported version/build. Unit tests do not prove Firebase delivery.

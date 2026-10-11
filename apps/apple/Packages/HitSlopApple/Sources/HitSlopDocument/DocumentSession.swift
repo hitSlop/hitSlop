@@ -159,7 +159,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     owner.listener = { [weak self] event in
       switch event {
       case .publication(let publication):
-        self?.push(#"{"type":"publication","publication":"# + publication + "}")
+        self?.push(publication)
       case .themeChanged:
         // The ordered document publications restyle the page. This only refreshes the panel.
         Task { @MainActor [weak self] in
@@ -457,23 +457,25 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     to destination: URL, renderArtwork: @MainActor (URL) async -> SlopRenderedArtwork? = { _ in nil }
   ) async throws -> URL {
     guard !closed, !closing else { throw SlopFailure("Document is closing") }
-    return try await withSavedSource(prepare: { try await self.saveAccepted() }) { source in
-      let artwork = await renderArtwork(source)
-      try Task.checkCancellation()
-      // A native owner gives the private source a writer lease for the clean copy.
-      // It has no page and never consults the original document again.
-      let frozen = try await SlopPreparation.run { try DocumentOwner(url: source) }
-      do {
-        try await frozen.copy(to: destination, artwork: artwork)
-      } catch {
-        try? await frozen.close()
-        throw error
-      }
-      try await frozen.close()
-      let copied = try SlopFile.resolvedRoot(destination)
-      SlopFinderIcon.refresh(copied)
-      return copied
-    }
+    return try await withSavedSource(
+      prepare: { try await self.saveAccepted() },
+      { source in
+        let artwork = await renderArtwork(source)
+        try Task.checkCancellation()
+        // A native owner gives the private source a writer lease for the clean copy.
+        // It has no page and never consults the original document again.
+        let frozen = try await SlopPreparation.run { try DocumentOwner(url: source) }
+        do {
+          try await frozen.copy(to: destination, artwork: artwork)
+        } catch {
+          try? await frozen.close()
+          throw error
+        }
+        try await frozen.close()
+        let copied = try SlopFile.resolvedRoot(destination)
+        SlopFinderIcon.refresh(copied)
+        return copied
+      })
   }
 
   /// Freeze saved state and all owned blobs before rendering. Only acquisition holds the

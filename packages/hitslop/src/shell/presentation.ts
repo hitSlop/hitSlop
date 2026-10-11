@@ -44,7 +44,9 @@ function presentationStageCSS(stage: PresentationStage): string {
     `:where(${root} body){-webkit-user-select:none;user-select:none}` +
     `:where(${root} input,${root} textarea,${root} [contenteditable=""],${root} [contenteditable="true"],${root} [contenteditable="plaintext-only"]){-webkit-user-select:text;user-select:text}` +
     `:where(${root} [data-slop-root],${root} body *:has([data-slop-root])){height:100%;min-height:0}` +
-    (stage.mode === "transparent" || stage.mode === "skin" ? `${root},${root} body{background:transparent}` : "") +
+    (stage.mode === "transparent" || stage.mode === "skin"
+      ? `${root},${root} body{background:transparent}`
+      : "") +
     (stage.mode === "skin" ? `:where(${root},${root} body){overflow:hidden}` : "")
   );
 }

@@ -1,6 +1,13 @@
 import { json } from "./json";
 import { HelperProtocol, OutcomeCodes, SocketLimits } from "../schema/constants";
-import type { EngineRequest, EngineRequestFor, EngineMethod, EngineReply, EngineReplyFor, EngineSuccess } from "../wire/engine";
+import type {
+  EngineRequest,
+  EngineRequestFor,
+  EngineMethod,
+  EngineReply,
+  EngineReplyFor,
+  EngineSuccess,
+} from "../wire/engine";
 import { join } from "node:path";
 import { cliRoot, cliPackage, isGlobalInstall } from "./paths";
 import { findExecutable, exec } from "./process";
@@ -11,14 +18,20 @@ import { findExecutable, exec } from "./process";
 export function findEngine(): Promise<string> {
   return findExecutable(
     "HITSLOP_ENGINE",
-    [join(cliRoot, "engine", `${process.platform}-${process.arch}`, "slop-engine"), join(cliRoot, "../../target", process.env.HITSLOP_CARGO_PROFILE || "release", "slop-engine")],
+    [
+      join(cliRoot, "engine", `${process.platform}-${process.arch}`, "slop-engine"),
+      join(cliRoot, "../../target", process.env.HITSLOP_CARGO_PROFILE || "release", "slop-engine"),
+    ],
     `hitslop has no file engine for ${process.platform}-${process.arch}. Reinstall hitslop.`,
   );
 }
 
 /** The permanent engine preflight refusal: exit 2, before touching a document. */
 export class ExitStatus extends Error {
-  constructor(readonly code: number, message = "") {
+  constructor(
+    readonly code: number,
+    message = "",
+  ) {
     super(message);
   }
 }
@@ -32,7 +45,10 @@ export function negotiate(binary: string): string[] {
 /** The command that updates this copy of the CLI: the global install, a project's, or bunx. */
 export function cliUpdate(): string {
   if (isGlobalInstall) return `bun install -g ${cliPackage}@latest`;
-  if (/[\\/]node_modules[\\/]/.test(cliRoot) && !/[\\/]install[\\/]cache[\\/]|[\\/]bunx-/.test(cliRoot))
+  if (
+    /[\\/]node_modules[\\/]/.test(cliRoot) &&
+    !/[\\/]install[\\/]cache[\\/]|[\\/]bunx-/.test(cliRoot)
+  )
     return `bun add -d ${cliPackage}@latest`;
   return `bunx ${cliPackage}@latest`;
 }
@@ -41,22 +57,38 @@ export function withRemedy(message: string): string {
   return message.replace("update the hitSlop CLI", `update the hitSlop CLI (${cliUpdate()})`);
 }
 
-export type EngineOptions = { binary?: string; cwd?: string; env?: Record<string, string | undefined>; timeout?: number };
+export type EngineOptions = {
+  binary?: string;
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  timeout?: number;
+};
 /** A completed invocation has exactly one matching acknowledgement. The same-build
  * peer owns payload validation; malformed transport never becomes a successful edit. */
-export function request<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, options?: EngineOptions): Promise<EngineReplyFor<M>>;
-export async function request(body: EngineRequest, { binary, ...options }: EngineOptions = {}): Promise<EngineReply> {
+export function request<M extends EngineMethod>(
+  body: EngineRequestFor<M> & { method: M },
+  options?: EngineOptions,
+): Promise<EngineReplyFor<M>>;
+export async function request(
+  body: EngineRequest,
+  { binary, ...options }: EngineOptions = {},
+): Promise<EngineReply> {
   const stdin = JSON.stringify(body);
-  if (Buffer.byteLength(stdin) > SocketLimits.attachment) throw new Error("Engine request is too large");
-  const command = negotiate(binary ?? await findEngine());
-  const unknown = body.method === "batch" || body.method === "call"
-    ? "Outcome unknown. Run slop get before issuing another edit."
-    : "Outcome unknown. Inspect the document and output before retrying.";
-  const { stdout, stderr, code } = await exec(command, { ...options, stdin }).catch((error: Error) => {
-    throw new Error(`${error.message}\n${unknown}`, { cause: error });
-  });
+  if (Buffer.byteLength(stdin) > SocketLimits.attachment)
+    throw new Error("Engine request is too large");
+  const command = negotiate(binary ?? (await findEngine()));
+  const unknown =
+    body.method === "batch" || body.method === "call"
+      ? "Outcome unknown. Run slop get before issuing another edit."
+      : "Outcome unknown. Inspect the document and output before retrying.";
+  const { stdout, stderr, code } = await exec(command, { ...options, stdin }).catch(
+    (error: Error) => {
+      throw new Error(`${error.message}\n${unknown}`, { cause: error });
+    },
+  );
   if (code === 2) throw new ExitStatus(2, withRemedy(stderr.trim()));
-  if (code) throw new Error([stderr.trim() || `Engine exited with status ${code}`, unknown].join("\n"));
+  if (code)
+    throw new Error([stderr.trim() || `Engine exited with status ${code}`, unknown].join("\n"));
   const reply = json(stdout);
   const message = `Invalid engine reply. ${unknown}`;
   if (!acknowledged(reply, body.method)) throw new Error(message);
@@ -64,27 +96,53 @@ export async function request(body: EngineRequest, { binary, ...options }: Engin
 }
 
 const replyFields = {
-  copy: ["output"], get: ["state"], batch: ["ids"], export: ["output"], "theme.export": ["state"],
-  "attachments.ref": ["reference"], "attachments.list": ["state"], "attachments.read": ["state"], call: ["result", "ids"],
-  "artwork.export": ["output"], templates: ["catalog"], create: ["documentPath"], inspect: ["info"], schema: ["schema"],
-  pack: [], validateApp: ["window", "capabilities"], validateMetadata: [], describe: ["state"], open: ["documentPath"], screenshot: ["output"],
+  copy: ["output"],
+  get: ["state"],
+  batch: ["ids"],
+  export: ["output"],
+  "theme.export": ["state"],
+  "attachments.ref": ["reference"],
+  "attachments.list": ["state"],
+  "attachments.read": ["state"],
+  call: ["result", "ids"],
+  "artwork.export": ["output"],
+  templates: ["catalog"],
+  create: ["documentPath"],
+  inspect: ["info"],
+  schema: ["schema"],
+  pack: [],
+  validateApp: ["window", "capabilities"],
+  validateMetadata: [],
+  describe: ["state"],
+  open: ["documentPath"],
+  screenshot: ["output"],
 } satisfies Record<EngineMethod, readonly string[]>;
 function acknowledged(value: unknown, method: EngineMethod): value is EngineReply {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const reply = value as Record<string, unknown>;
   if (reply.ok === false) {
-    return typeof reply.error === "string" && typeof reply.code === "string"
-      && (OutcomeCodes as readonly string[]).includes(reply.code)
-      && (reply.reason === undefined || typeof reply.reason === "string")
-      && (reply.opIndex === undefined || (Number.isSafeInteger(reply.opIndex) && (reply.opIndex as number) >= 0))
-      && Object.keys(reply).every(key => ["ok", "error", "code", "reason", "opIndex"].includes(key));
+    return (
+      typeof reply.error === "string" &&
+      typeof reply.code === "string" &&
+      (OutcomeCodes as readonly string[]).includes(reply.code) &&
+      (reply.reason === undefined || typeof reply.reason === "string") &&
+      (reply.opIndex === undefined ||
+        (Number.isSafeInteger(reply.opIndex) && (reply.opIndex as number) >= 0)) &&
+      Object.keys(reply).every((key) => ["ok", "error", "code", "reason", "opIndex"].includes(key))
+    );
   }
   if (reply.ok !== true || reply.method !== method) return false;
   const fields = ["ok", "method", ...replyFields[method]];
-  if (fields.some(key => !Object.hasOwn(reply, key)) || Object.keys(reply).some(key => !fields.includes(key))) return false;
-  if (method === "batch" || method === "call") return Array.isArray(reply.ids) && reply.ids.every(id => typeof id === "string");
+  if (
+    fields.some((key) => !Object.hasOwn(reply, key)) ||
+    Object.keys(reply).some((key) => !fields.includes(key))
+  )
+    return false;
+  if (method === "batch" || method === "call")
+    return Array.isArray(reply.ids) && reply.ids.every((id) => typeof id === "string");
   if (method === "export" || method === "copy") return typeof reply.output === "string";
-  if (method === "screenshot" || method === "artwork.export") return reply.output === null || typeof reply.output === "string";
+  if (method === "screenshot" || method === "artwork.export")
+    return reply.output === null || typeof reply.output === "string";
   if (method === "create" || method === "open") return typeof reply.documentPath === "string";
   return true;
 }
@@ -99,19 +157,32 @@ const outcomes = {
 } satisfies Record<import("../schema/values").OutcomeCode, string>;
 
 /** One refusal format for authoring and document commands; transport validation stays above. */
-export function unwrap<M extends EngineMethod>(reply: EngineReplyFor<M>, method: M): Extract<EngineSuccess, { method: M }> {
+export function unwrap<M extends EngineMethod>(
+  reply: EngineReplyFor<M>,
+  method: M,
+): Extract<EngineSuccess, { method: M }> {
   if (!reply.ok) {
     const error = reply.reason === "requires_update" ? withRemedy(reply.error) : reply.error;
     const reason = reply.reason ? ` (${reply.reason})` : "";
-    const message = reply.opIndex === undefined ? `${error}${reason}` : `Refused ops[${reply.opIndex}]${reason}: ${error}`;
-    const outcome = method === "batch" || method === "call" ? outcomes[reply.code]
-      : reply.code === "unknown_outcome" ? "Outcome unknown. Inspect the document and output before retrying." : undefined;
+    const message =
+      reply.opIndex === undefined
+        ? `${error}${reason}`
+        : `Refused ops[${reply.opIndex}]${reason}: ${error}`;
+    const outcome =
+      method === "batch" || method === "call"
+        ? outcomes[reply.code]
+        : reply.code === "unknown_outcome"
+          ? "Outcome unknown. Inspect the document and output before retrying."
+          : undefined;
     throw new Error([message, outcome].filter(Boolean).join("\n"));
   }
   return reply as Extract<EngineSuccess, { method: M }>;
 }
 
 /** Invoke once and unwrap the method's acknowledged result. */
-export async function execute<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, options?: EngineOptions): Promise<Extract<EngineSuccess, { method: M }>> {
+export async function execute<M extends EngineMethod>(
+  body: EngineRequestFor<M> & { method: M },
+  options?: EngineOptions,
+): Promise<Extract<EngineSuccess, { method: M }>> {
   return unwrap<M>(await request<M>(body, options), body.method);
 }

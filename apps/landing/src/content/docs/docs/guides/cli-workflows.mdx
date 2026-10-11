@@ -173,12 +173,16 @@ Example excerpt from a Checklist response:
 
 ```text
 Commands (slop call PATH NAME --args JSON)
+  Arguments accept only the listed fields.
+
   addTask — Add an unfinished task and return its stable row ID.
-    args: {"additionalProperties":false,"properties":{"text":{"type":"string"}},"required":["text"],"type":"object"}
+    text: string (required)
 ```
 
-`describe` also prints fields, operations, a version, and current values. Add `--json`
-for a structured description. Run an action that it lists:
+`describe` marks arguments as required or optional and shows their defaults, choices,
+bounds and descriptions when present. It also prints fields, operations, a version,
+and current values. Add `--json` for a structured description with full argument
+JSON Schemas. Run an action that it lists:
 
 ```sh
 bunx hitslop call My.slop addTask --args '{"text":"Buy coffee"}'

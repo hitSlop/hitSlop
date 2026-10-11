@@ -64,8 +64,14 @@ export class Previews {
       for (const intent of intents) {
         if (intent.type === "move" || intent.type === "increment") continue;
         if (intent.type === "insert" && intent.id !== undefined) continue;
-        const scope = intent.type === "remove" && intent.id !== undefined ? [...intent.path, { id: intent.id }] : intent.path;
-        if (atOrBeneath(key, pathKey(scope))) { covered.set(key, preview); break; }
+        const scope =
+          intent.type === "remove" && intent.id !== undefined
+            ? [...intent.path, { id: intent.id }]
+            : intent.path;
+        if (atOrBeneath(key, pathKey(scope))) {
+          covered.set(key, preview);
+          break;
+        }
       }
     return covered;
   }
@@ -74,7 +80,10 @@ export class Previews {
   settle(covered: ReadonlyMap<string, Preview>): Set<string> {
     const settled = new Set<string>();
     for (const [key, preview] of covered)
-      if (this.entries.get(key) === preview) { this.entries.delete(key); settled.add(key); }
+      if (this.entries.get(key) === preview) {
+        this.entries.delete(key);
+        settled.add(key);
+      }
     return settled;
   }
 }

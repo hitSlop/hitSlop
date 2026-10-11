@@ -50,6 +50,10 @@ fn checked(text: String) -> Value {
     assert!(serde_json::from_str::<hitslop_core::EngineReply>(&text).is_ok(), "invalid reply: {text}");
     serde_json::from_str(&text).unwrap()
 }
+fn socket_request(mut value: Value) -> String {
+    let protocol = value.as_object_mut().unwrap().remove("protocol").unwrap();
+    json!({"protocol":protocol,"request":value}).to_string()
+}
 fn run(mut value: Value) -> Value {
     value.as_object_mut().unwrap().remove("protocol");
     checked(command::request(&value.to_string(), PROTOCOL, None))
@@ -240,7 +244,7 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
         for mut other in [batch(&path), json!({"documentPath": path, "method": "a-later-method"})] {
             other["protocol"] = protocol.into();
             other["surprise"] = "a field of another protocol".into();
-            let refused = checked(socket::call(server.path(), &other.to_string()).unwrap());
+            let refused = checked(socket::call(server.path(), &socket_request(other)).unwrap());
             let mut keys: Vec<_> = refused.as_object().unwrap().keys().map(String::as_str).collect();
             keys.sort_unstable();
             assert_eq!(keys, ["code", "error", "ok", "reason"], "{refused}");
@@ -252,7 +256,8 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
         }
     }
     assert_eq!(
-        checked(command::serve(&owner, &batch(&path).to_string(), None, Instant::now() - Duration::from_millis(1)))["code"],
+        checked(command::serve(&owner, &socket_request(batch(&path)), None, Instant::now() - Duration::from_millis(1)))
+            ["code"],
         "closing"
     );
     assert_eq!(run(request(&path, "get"))["state"]["value"]["hits"], 0);
@@ -265,7 +270,7 @@ fn partial_frames_and_oversized_requests_are_bounded() {
     let (_dir, path) = document();
     let owner = open(&path);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
-    let get = request(&path, "get").to_string();
+    let get = socket_request(request(&path, "get"));
     let mut stream = UnixStream::connect(server.path()).unwrap();
     for byte in get.bytes().chain([b'\n']) {
         stream.write_all(&[byte]).unwrap();
@@ -275,7 +280,7 @@ fn partial_frames_and_oversized_requests_are_bounded() {
     assert_eq!(checked(reply)["method"], "get");
     let mut huge = batch(&path);
     huge["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":"x".repeat(1024 * 1024 + 1)}]});
-    assert_eq!(checked(socket::call(server.path(), &huge.to_string()).unwrap())["code"], "rejected");
+    assert_eq!(checked(socket::call(server.path(), &socket_request(huge)).unwrap())["code"], "rejected");
     close(&owner);
     server.stop();
 }
@@ -287,7 +292,7 @@ fn the_socket_client_limit_is_bounded() {
     // A reply can arrive before its worker releases its slot. Start with no previous
     // clients, so none of these partial frames is rejected by a finishing worker.
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
-    let get = request(&path, "get").to_string();
+    let get = socket_request(request(&path, "get"));
     let mut partial = Vec::new();
     for _ in 0..16 {
         let mut client = UnixStream::connect(server.path()).unwrap();
@@ -551,7 +556,7 @@ fn stopping_server_and_closing_owner_preserves_an_admitted_export_reply() {
     export["format"] = "png".into();
     export["output"] = "/tmp/result.png".into();
     let socket = server.path().to_owned();
-    let client = std::thread::spawn(move || checked(socket::call(&socket, &export.to_string()).unwrap()));
+    let client = std::thread::spawn(move || checked(socket::call(&socket, &socket_request(export.clone())).unwrap()));
     let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
     assert!(completion.is_active());
     close(&owner);
@@ -573,7 +578,12 @@ fn an_expired_export_callback_cannot_publish_late() {
     export["output"] = "/tmp/result.png".into();
     let actor = owner.clone();
     let worker = std::thread::spawn(move || {
-        command::serve(&actor, &export.to_string(), Some(&exporter), Instant::now() + Duration::from_millis(100))
+        command::serve(
+            &actor,
+            &socket_request(export.clone()),
+            Some(&exporter),
+            Instant::now() + Duration::from_millis(100),
+        )
     });
     let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
     let answer = checked(worker.join().unwrap());
@@ -599,9 +609,12 @@ fn a_client_that_panics_frees_its_place() {
     export["format"] = "png".into();
     export["output"] = "/tmp/result.png".into();
     for _ in 0..16 {
-        assert!(socket::call(server.path(), &export.to_string()).is_err(), "a panicked request has no reply");
+        assert!(
+            socket::call(server.path(), &socket_request(export.clone())).is_err(),
+            "a panicked request has no reply"
+        );
     }
-    let answer = socket::call(server.path(), &request(&path, "get").to_string());
+    let answer = socket::call(server.path(), &socket_request(request(&path, "get")));
     assert_eq!(checked(answer.expect("a place is free"))["method"], "get");
     close(&owner);
     server.stop();

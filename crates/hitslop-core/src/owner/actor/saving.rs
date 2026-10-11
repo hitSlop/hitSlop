@@ -11,7 +11,7 @@ impl Actor {
         let was_saved = self.revision <= self.saved;
         self.revision += 1;
         self.sequence = sequence;
-        self.emit(Event::Publication { json });
+        self.emit(Event::Publication { json: crate::wire::page::PagePush::publication_json(json) });
         if themed {
             self.emit(Event::ThemeChanged);
         }
@@ -54,7 +54,7 @@ impl Actor {
         self.requested = false;
         self.unsaved_since = None;
         self.deadline = None;
-        let job = catch_unwind(AssertUnwindSafe(|| self.store.job(&mut self.core, false).map_err(Failure::from)))
+        let job = catch_unwind(AssertUnwindSafe(|| self.store.job(&mut self.core).map_err(Failure::from)))
             .unwrap_or_else(|_| {
                 self.invalidated = true;
                 Err(poisoned())

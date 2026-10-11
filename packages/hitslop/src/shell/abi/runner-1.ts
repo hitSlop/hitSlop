@@ -8,7 +8,9 @@ declare global {
   var __slopCommands: unknown;
 }
 
-const refuse = () => { throw new Error("Use the host-provided ctx.now and ctx.random()"); };
+const refuse = () => {
+  throw new Error("Use the host-provided ctx.now and ctx.random()");
+};
 const OriginalDate = Date;
 // Explicit dates remain useful for formatting. Reading the ambient clock is forbidden.
 const RestrictedDate = new Proxy(OriginalDate, {
@@ -17,7 +19,9 @@ const RestrictedDate = new Proxy(OriginalDate, {
     return Reflect.construct(target, args, newTarget);
   },
   apply: refuse,
-  get(target, key, receiver) { return key === "now" ? refuse : Reflect.get(target, key, receiver); },
+  get(target, key, receiver) {
+    return key === "now" ? refuse : Reflect.get(target, key, receiver);
+  },
 });
 globalThis.Date = RestrictedDate;
 // Every date reaches the constructor through its prototype; that path is restricted too.
@@ -27,11 +31,16 @@ globalThis.__slopRun = (input: string): string => {
   try {
     const request = JSON.parse(input) as CommandInput & { name: string };
     const set = commandSet(globalThis.__slopCommands);
-    const spec = set && Object.hasOwn(set.specs, request.name) ? set.specs[request.name] : undefined;
+    const spec =
+      set && Object.hasOwn(set.specs, request.name) ? set.specs[request.name] : undefined;
     if (!spec) throw new Error(`No command named ${request.name}`);
     return JSON.stringify({ ok: true, ...evaluate(request, spec.run) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return JSON.stringify({ ok: false, error: message, ...(isRefused(error) ? { refused: true } : {}) });
+    return JSON.stringify({
+      ok: false,
+      error: message,
+      ...(isRefused(error) ? { refused: true } : {}),
+    });
   }
 };

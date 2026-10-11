@@ -9,7 +9,7 @@ test("resumed candidates require their original identity and complete, unchanged
   const folder = await mkdtemp(join(tmpdir(), "hitslop-release-record-"));
   const saved: ReleaseRecord = { tag: "v7.2.0", macVersion: "7.2.0", macBuild: "42", commit: "candidate", run: "123", artifacts: {} };
   try {
-    for (const name of ["hitslop-7.2.0.tgz", "hitSlop.dmg", "hitSlop.zip", "appcast.xml"]) {
+    for (const name of ["hitslop-7.2.0.tgz", "hitSlop.dmg", "hitSlop.zip", "appcast.xml", "hitSlop-7.2.0.md", "release-notes.md"]) {
       await writeFile(join(folder, name), name);
       saved.artifacts[name] = sha256(Buffer.from(name));
     }
@@ -17,6 +17,14 @@ test("resumed candidates require their original identity and complete, unchanged
     await verifyArtifacts(saved, folder);
     expect(() => validateRecord(saved, saved.tag, "another-commit")).toThrow("different tag or commit");
     expect(() => validateRecord({ ...saved, artifacts: {} }, saved.tag, saved.commit)).toThrow("missing");
+    for (const name of ["hitSlop-7.2.0.md", "release-notes.md"]) {
+      const artifacts = { ...saved.artifacts };
+      delete artifacts[name];
+      expect(() => validateRecord({ ...saved, artifacts }, saved.tag, saved.commit)).toThrow(`missing ${name}`);
+      await writeFile(join(folder, name), "regenerated notes");
+      await expect(verifyArtifacts(saved, folder)).rejects.toThrow(`Artifact differs from release record: ${name}`);
+      await writeFile(join(folder, name), name);
+    }
     expect(() => validateRecord({ ...saved, artifacts: { ...saved.artifacts, "../outside": "a".repeat(64) } }, saved.tag, saved.commit)).toThrow("Invalid artifact");
     await writeFile(join(folder, "hitSlop.dmg"), "rebuilt");
     await expect(verifyArtifacts(saved, folder)).rejects.toThrow("Artifact differs");

@@ -74,8 +74,11 @@ those creation defaults. There is no JSON mirror of saved document state.
 Markers are checked before interpreting fields or comparing the layout. The format-1
 acceptance module is Rust serde plus explicit checks, including the descriptor validator
 and streamed PNG decoding. Skins are RGBA PNGs at exactly 1× or 2× the logical window.
-SVG paths use `svgtypes` and `kurbo` with bounded commands and segments. Full acceptance
-checks resources and saved state, and the owner keeps its accepted app. Catalog and
+SVG paths use `svgtypes` and `kurbo` with bounded commands and segments. Open-time acceptance
+checks resource inventory, encodings and size bounds, the private command program, window
+skin and saved state. UI resources decode when loaded. `pack` verifies media content
+addresses and the app row seals them, so serving never re-hashes app media. Damaged ordinary resources
+fail their load rather than refusing the document. The owner keeps its accepted app. Catalog and
 Quick Look summaries read only bounded scalar columns and artwork; a summary is not a
 certificate that the whole file is valid. Neither display path migrates the file.
 
@@ -96,12 +99,15 @@ context and runner prelude have explicit ABI-1 arms.
 
 Attachments load through same-origin URLs, with range requests, sniffed passive media
 types, `nosniff` and a sandbox policy. The resource reader verifies the complete attachment
-hash on first touch. Script sources are restricted to shell and app-asset paths;
+hash on first touch. Compressed app assets share a bounded decoded cache. Rust plans range status and headers for native,
+browser and preview resource adapters, which retain their transport and origin checks. Script sources are restricted to shell and app-asset paths;
 attachment and command-program paths cannot become script sources.
 
 The CLI's engine forwards to a live owner or acquires the writer lock. Native exports,
 windows and artwork use the app helper. Their command protocol is exact, with no old
-CLI adapters. Stored `packageFormat`, `runtimeABI`, SQLite storage version and Loro layout
+CLI adapters. Owner socket operations carry `{protocol, request}` around the engine
+request type and return the same typed successes and failures. Protocol refusal precedes
+payload interpretation; hello preflight and transport limits still apply. Stored `packageFormat`, `runtimeABI`, SQLite storage version and Loro layout
 remain independent; [compatibility](engineering-contract.md#compatibility) and the
 [corpus](testing.md#compatibility-corpus) define the released-file guarantee.
 

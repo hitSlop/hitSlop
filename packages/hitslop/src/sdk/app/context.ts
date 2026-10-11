@@ -16,10 +16,15 @@ let inCommand = false;
 export function withCommand<T>(run: () => T): T {
   const previous = inCommand;
   inCommand = true;
-  try { return run(); } finally { inCommand = previous; }
+  try {
+    return run();
+  } finally {
+    inCommand = previous;
+  }
 }
 function mounted() {
-  if (!active) throw new Error("Requires a mounted hitSlop app; import the schema.ts document in App.svelte");
+  if (!active)
+    throw new Error("Requires a mounted hitSlop app; import the schema.ts document in App.svelte");
   return active;
 }
 export function current(): SlopContext {
@@ -29,6 +34,7 @@ export function current(): SlopContext {
 export function documentFor(definition: object): unknown {
   if (inCommand) throw new Error("Inside a command, use ctx.current and ctx.tx");
   const { definition: mountedWith, document } = mounted();
-  if (mountedWith !== definition) throw new Error("This document definition is not the one the app mounted");
+  if (mountedWith !== definition)
+    throw new Error("This document definition is not the one the app mounted");
   return document;
 }

@@ -62,6 +62,10 @@ pub(crate) const SHAPE_VIEW_BOX: f64 = 16384.0;
 pub(crate) const BATCH_INTENTS: usize = 1000;
 pub(crate) const PATH_SEGMENTS: usize = 64;
 pub(crate) const PAGE_PAYLOAD: usize = 4194304;
+#[cfg(feature = "storage")]
+pub(crate) const PUSH_ITEMS: usize = 256;
+#[cfg(feature = "storage")]
+pub(crate) const PUSH_BYTES: usize = PAGE_PAYLOAD;
 /// The largest socket request, an attachment upload; no envelope the core checks is larger.
 #[cfg(feature = "storage")]
 pub const SOCKET_ATTACHMENT: usize = 16777216;
@@ -124,8 +128,8 @@ pub fn host_limits() -> HostLimits {
         download_bytes: DOWNLOAD_BYTES,
         storage_bytes: STORAGE_BYTES as u64,
         theme_file: THEME_FILE_LIMIT as u64,
-        push_items: 256,
-        push_bytes: PAGE_PAYLOAD as u64,
+        push_items: PUSH_ITEMS as u64,
+        push_bytes: PUSH_BYTES as u64,
         socket_request: SOCKET_REQUEST as u64,
         socket_attachment: SOCKET_ATTACHMENT as u64,
         image_side: IMAGE_SIDE as u64,

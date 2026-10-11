@@ -2,7 +2,7 @@ import type { Anchor, OwnerIntent, OwnerPath as Path } from "../../schema/core";
 import type { Destination, Node, RowRef } from "../../sdk/schema";
 import { isScalar } from "../../sdk/internal";
 import { newID } from "../identity";
-const rowID = (row: RowRef): string => typeof row === "string" ? row : row.$id;
+const rowID = (row: RowRef): string => (typeof row === "string" ? row : row.$id);
 // Keep extra fields so normalization cannot turn a malformed anchor into an accepted one.
 const destination = (at: Destination): Anchor => ({
   ...at,
@@ -52,12 +52,17 @@ export function handleFactory(host: HandleHost, mint: () => string = newID) {
     const text = <T extends object>(handle: T) =>
       collect
         ? handle
-        : Object.defineProperty(handle, "value", { enumerable: true, get: () => host.read(path) ?? "" });
+        : Object.defineProperty(handle, "value", {
+            enumerable: true,
+            get: () => host.read(path) ?? "",
+          });
     if (node.kind === "optional") {
       const clear = () => shown({ type: "clear", path });
       if (isScalar(node.inner)) return Object.freeze(bindable({ ...scalar(), clear }, true));
       if (node.inner.kind === "text")
-        return Object.freeze(text({ set: (value: string) => send({ type: "set", path, value }), clear }));
+        return Object.freeze(
+          text({ set: (value: string) => send({ type: "set", path, value }), clear }),
+        );
       // An optional object: its fields, plus `set` to create or replace it and `clear`.
       const fields = make(node.inner, path, collect);
       const handle = Object.create(null);

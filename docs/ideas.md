@@ -137,7 +137,7 @@ a person and their agent edit the same live document. What's missing is the slop
 
 - **Today:** apps declare camera, microphone and on-device speech use; the host gates
   requests and macOS consent belongs to hitSlop. There is no per-slop decision or
-  code-bound permission store. See [capabilities](guides/capabilities.md).
+  code-bound permission store. See [capabilities](reference/runtime.md#security-boundaries).
 - **What:** grant a permission (microphone, camera, MIDI) to one app's code: the hash of
   its `app` row and assets, which in a single file are all the code there is. A remix
   or an upgrade asks again.

@@ -3,7 +3,7 @@ use hitslop_core::app::{
     self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WindowDefinition,
     WindowFrame,
 };
-use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, SpeechClip, Summary};
+use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, SpeechClip, Summary};
 use hitslop_core::shape::Silhouette;
 
 #[uniffi::remote(Enum)]
@@ -95,6 +95,21 @@ pub enum ResourceRoute {
 pub struct ResourceInfo {
     pub size: u64,
     pub media_type: String,
+}
+#[uniffi::remote(Record)]
+pub struct ResourceSpan {
+    pub offset: u64,
+    pub length: u64,
+}
+#[uniffi::remote(Record)]
+pub struct ResponsePlan {
+    pub status: u16,
+    pub headers: std::collections::HashMap<String, String>,
+    pub span: Option<ResourceSpan>,
+}
+#[uniffi::export]
+pub fn resource_response(info: ResourceInfo, route: ResourceRoute, range: Option<String>) -> ResponsePlan {
+    hitslop_core::file::resource_response(&info, route, range.as_deref())
 }
 #[uniffi::remote(Record)]
 pub struct SpeechClip {

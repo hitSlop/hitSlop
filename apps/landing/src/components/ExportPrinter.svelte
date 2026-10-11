@@ -69,5 +69,13 @@
   .file { position: absolute; z-index: 3; right: -12px; bottom: 16px; display: grid; gap: 3px; animation: land 520ms var(--spring); }
   .file small { color: var(--muted); font-family: "HitSlop Sans", sans-serif; font-size: .8rem; font-weight: 700; }
   @keyframes land { from { opacity: 0; transform: translateY(-40px) scale(.6) rotate(-20deg); } }
+  @media (max-width: 779px) {
+    .buttons { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .paper { width: 82%; padding: 22px 14px 18px; }
+    .paper[data-state="idle"], .paper[data-state="done"] { transform: translateX(-50%); }
+    .paper div, .paper footer { gap: 8px; }
+    .file { right: 0; max-width: 100%; padding: 10px; rotate: 0deg; font-size: .95rem; }
+    .file small { font-size: .75rem; }
+  }
   @media (prefers-reduced-motion: reduce) { .paper[data-state="printing"], .file { animation: none; } }
 </style>

@@ -18,7 +18,13 @@ export type CommandArgs<A extends Arguments> = {
 } & {
   readonly [K in keyof A as A[K] extends OptionalNode ? K : never]?: Value<A[K]>;
 };
-export type CommandResult = null | boolean | number | string | readonly CommandResult[] | { readonly [key: string]: CommandResult };
+export type CommandResult =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly CommandResult[]
+  | { readonly [key: string]: CommandResult };
 export type CommandSpec<N extends ObjectNode, A extends Arguments> = {
   description: string;
   args: A;
@@ -29,12 +35,23 @@ export function defineCommands<N extends ObjectNode, A extends Record<string, Ar
   document: Definition<N>,
   specs: { [K in keyof A]: CommandSpec<N, A[K]> },
 ): CommandSet {
-  const checked = Object.fromEntries(Object.entries(specs).map(([name, spec]) => {
-    const run = spec?.run;
-    if (typeof run !== "function") throw new Error(`commands.${name} needs run(ctx, args)`);
-    if (Object.prototype.toString.call(run) !== "[object Function]")
-      throw new Error(`commands.${name} must be synchronous (no async or generator functions)`);
-    return [name, Object.freeze({ ...spec, run: (ctx: CommandContext<N>, args: CommandArgs<Arguments>) => withCommand(() => run(ctx, args)) })];
-  }));
-  return Object.freeze({ [commandBrand]: Object.freeze({ document, specs: Object.freeze(checked) }) });
+  const checked = Object.fromEntries(
+    Object.entries(specs).map(([name, spec]) => {
+      const run = spec?.run;
+      if (typeof run !== "function") throw new Error(`commands.${name} needs run(ctx, args)`);
+      if (Object.prototype.toString.call(run) !== "[object Function]")
+        throw new Error(`commands.${name} must be synchronous (no async or generator functions)`);
+      return [
+        name,
+        Object.freeze({
+          ...spec,
+          run: (ctx: CommandContext<N>, args: CommandArgs<Arguments>) =>
+            withCommand(() => run(ctx, args)),
+        }),
+      ];
+    }),
+  );
+  return Object.freeze({
+    [commandBrand]: Object.freeze({ document, specs: Object.freeze(checked) }),
+  });
 }

@@ -9,12 +9,17 @@ import { current as context } from "./context";
  * motion, and settles before a capture. Call it while a component
  * initializes.
  */
-export function motion(target: () => number, options: { duration?: number; easing?: (t: number) => number } = {}) {
+export function motion(
+  target: () => number,
+  options: { duration?: number; easing?: (t: number) => number } = {},
+) {
   const duration = options.duration ?? 280;
   const tween = new Tween(untrack(target), { duration, easing: options.easing ?? cubicOut });
   // Tween has no public cancel method. A zero-duration write of the current value
   // aborts its animation task without finishing an invisible animation on teardown.
-  onDestroy(() => { void tween.set(tween.current, { duration: 0 }); });
+  onDestroy(() => {
+    void tween.set(tween.current, { duration: 0 });
+  });
   const settle = () => tween.set(tween.target, { duration: 0 });
   $effect(() => {
     const next = target();

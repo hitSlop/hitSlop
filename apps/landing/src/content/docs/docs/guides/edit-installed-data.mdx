@@ -57,14 +57,19 @@ Fields
   ["title"]: text (set) — The title shown in the window.
 
 Commands (slop call PATH NAME --args JSON)
+  Arguments accept only the listed fields.
+
   addTask — Add an unfinished task and return its stable row ID.
-    args: {"additionalProperties":false,"properties":{"text":{"type":"string"}},"required":["text"],"type":"object"}
+    text: string (required)
+
   archiveFinished — File every completed task and return the number filed.
-    args: {"additionalProperties":false,"properties":{},"type":"object"}
+    No arguments. Pass --args '{}'.
+
   removeTask — Remove a task from the checklist.
-    args: {"additionalProperties":false,"properties":{"task":{"description":"The task's $id.","type":"string"}},"required":["task"],"type":"object"}
+    task: string (required) — The task's $id.
+
   restoreTask — Return a filed task to the active list, unfinished.
-    args: {"additionalProperties":false,"properties":{"task":{"description":"The task's $id.","type":"string"}},"required":["task"],"type":"object"}
+    task: string (required) — The task's $id.
 
 Value (rows retain their $id)
 {

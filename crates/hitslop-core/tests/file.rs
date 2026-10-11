@@ -152,7 +152,7 @@ fn document_uuid_survives_reopen_and_capture_but_independent_copies_get_new_uuid
     let store = Store::open(&first, Mode::Document).unwrap();
     let mut document = store.document().unwrap();
     document.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Saved"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut document, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut document).unwrap().unwrap()).unwrap();
     assert_eq!(uuid(&first), original);
     let capture = dir.path().join("Capture.slop");
     store.capture_source(&capture).unwrap();
@@ -404,6 +404,12 @@ fn a_skin_must_be_an_rgba_asset_at_one_or_two_times_the_window_size() {
         assert_eq!(support::pack(&stage, &out).is_ok(), accept, "{width}×{height} color {color}");
         if accept {
             assert_eq!(file::open(&out, true).unwrap().skin, Some(bytes));
+            raw(&out)
+                .execute("UPDATE assets SET bytes=CAST(x'00' || substr(bytes,2) AS BLOB) WHERE key=?", [&key])
+                .unwrap();
+            for integrity in [false, true] {
+                assert!(file::open(&out, integrity).is_err());
+            }
         }
     }
 }
@@ -933,17 +939,17 @@ fn an_open_document_copies_through_its_owner() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     let mut state = store.document().unwrap();
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Shared"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let photo = store.put_attachment(b"photo").unwrap().id;
     let reference = format!(r#"{{"intents":[{{"type":"set","path":["title"],"value":"Shared {photo}"}}]}}"#);
     state.apply_json(&reference, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let copy = dir.path().join("Copy.slop");
     store.copy_clean(&copy, &[(Artwork::Preview, &png(640, 480, 6))]).unwrap();
     assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::Exists);
     // The owner keeps saving after the copy.
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
     assert!(copied.document().unwrap().value().contains("Shared"));
     assert_eq!(copied.attachments().unwrap().len(), 1);
@@ -995,6 +1001,63 @@ fn commands_are_checked_definitions_and_private_programs() {
         assert!(reader.info(file::ResourceRoute::App, key).unwrap().is_none());
         assert!(reader.read_range(file::ResourceRoute::App, key, 0, u64::MAX).unwrap().is_none());
     }
+    raw(&template)
+        .execute("UPDATE assets SET bytes=x'ff',size=1,encoding='identity' WHERE key='commands.js'", [])
+        .unwrap();
+    for integrity in [false, true] {
+        assert!(file::open(&template, integrity).is_err());
+    }
+}
+
+#[test]
+fn resource_responses_share_range_and_header_policy() {
+    use file::{ResourceInfo, ResourceRoute, resource_response};
+    for (range, status, span) in [
+        (None, 200, Some((0, 10))),
+        (Some("bytes=0-1"), 206, Some((0, 2))),
+        (Some("bytes=4-"), 206, Some((4, 6))),
+        (Some("bytes=-3"), 206, Some((7, 3))),
+        (Some("bytes=-30"), 206, Some((0, 10))),
+        (Some("bytes=8-99"), 206, Some((8, 2))),
+        (Some(" bytes= 1 - 3 "), 206, Some((1, 3))),
+        (Some("bytes=10-"), 416, None),
+        (Some("bytes=5-4"), 416, None),
+        (Some("bytes=-0"), 416, None),
+        (Some("bytes=0-1,4-5"), 200, Some((0, 10))),
+        (Some("items=0-1"), 200, Some((0, 10))),
+        (Some("bytes=a-b"), 200, Some((0, 10))),
+        (Some("bytes=-"), 200, Some((0, 10))),
+        (Some("bytes=0-18446744073709551615"), 206, Some((0, 10))),
+        (Some("bytes=18446744073709551615-"), 416, None),
+        (Some("bytes=0-18446744073709551616"), 200, Some((0, 10))),
+    ] {
+        for route in [ResourceRoute::App, ResourceRoute::Attachment] {
+            let plan = resource_response(&ResourceInfo { size: 10, media_type: "audio/mpeg".into() }, route, range);
+            assert_eq!(plan.status, status, "{range:?}");
+            assert_eq!(plan.span.as_ref().map(|s| (s.offset, s.length)), span, "{range:?}");
+            assert_eq!(plan.headers["Content-Length"], span.map_or(0, |(_, n)| n).to_string());
+            assert_eq!(plan.headers["Accept-Ranges"], "bytes");
+            assert_eq!(plan.headers["Content-Type"], "audio/mpeg");
+            assert_eq!(plan.headers["X-Content-Type-Options"], "nosniff");
+            assert_eq!(plan.headers["Cache-Control"], "no-store");
+            assert_eq!(
+                plan.headers.get("Content-Security-Policy").map(String::as_str),
+                if route == ResourceRoute::Attachment { Some("sandbox") } else { None }
+            );
+            if status == 416 {
+                assert_eq!(plan.headers["Content-Range"], "bytes */10");
+            } else if let Some((start, length)) = span.filter(|_| status == 206) {
+                assert_eq!(plan.headers["Content-Range"], format!("bytes {start}-{}/10", start + length - 1));
+            } else {
+                assert!(!plan.headers.contains_key("Content-Range"));
+            }
+        }
+    }
+    let empty = ResourceInfo { size: 0, media_type: "application/octet-stream".into() };
+    assert_eq!(resource_response(&empty, ResourceRoute::App, None).status, 200);
+    for range in ["bytes=0-", "bytes=-1", "bytes=0-0"] {
+        assert_eq!(resource_response(&empty, ResourceRoute::App, Some(range)).status, 416);
+    }
 }
 
 #[test]
@@ -1024,7 +1087,9 @@ fn resources_are_served_whole_or_in_ranges_with_checked_types() {
     assert_eq!(file::descriptor(&doc).unwrap(), SCHEMA);
     raw(&doc).execute("UPDATE assets SET bytes=CAST(x'00' || substr(bytes,2) AS BLOB) WHERE key='ui.js'", []).unwrap();
     // A fresh reader sees corruption; already decoded immutable resources may be cached.
-    assert!(file::open(&doc, false).is_err());
+    file::open(&doc, false).unwrap();
+    let fresh = Store::open(&doc, Mode::Snapshot).unwrap().resource_reader().unwrap();
+    assert!(fresh.read_range(App, "ui.js", 100, 50).is_err());
 }
 
 #[test]
@@ -1305,7 +1370,7 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
     assert_eq!(store.artwork(Artwork::Preview).unwrap(), None);
     let mut state = store.document().unwrap();
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Edited"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     store.close().unwrap();
     let reopened = Store::open(&doc, Mode::Snapshot).unwrap();
     assert!(reopened.document().unwrap().value().contains("Edited"));

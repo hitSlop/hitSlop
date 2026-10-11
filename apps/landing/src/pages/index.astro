@@ -40,7 +40,7 @@ const faqs = [
   <head>
     <SiteHead title="hitSlop · Tiny apps. Big personality." description={`Tiny apps and living documents for your Mac. ${count} included templates, each one a single SQLite file you keep. Make your own with your AI agent.`} preloadHeadline />
   </head>
-  <body>
+  <body class="landing-home">
     <a class="skip-link" href="#main-content">Skip to content</a>
     <Masthead current="home" />
 
@@ -275,6 +275,32 @@ const faqs = [
   @media (prefers-reduced-motion: no-preference) { .final-dock .app { animation: dock-bounce 2.8s var(--ease-out) infinite; } }
   @keyframes dock-bounce { 0%, 55%, 100% { translate: 0 0; } 10%, 30% { translate: 0 -34px; } 20%, 40% { translate: 0 0; } }
   @media (max-width: 520px) { .final-dock span { width: 48px; height: 48px; font-size: 26px; } .final-dock .app { width: 72px; height: 72px; } }
+
+  @media (max-width: 779px) {
+    .headline.small { font-size: clamp(2rem, 8vw, 3rem); }
+    .templates { padding-top: 48px; }
+    .wall-wrap, .unfold-wrap { margin-top: 24px; }
+    .make-actions { margin-top: 20px; gap: 16px; }
+    .make-actions .button { width: 100%; }
+    .agent-intro { margin-bottom: 24px; }
+    .section.file { padding-block: 40px; }
+    .verbs { margin-top: 20px; gap: 8px; }
+    .verbs .sticker { padding: 7px 10px; border-width: 2px; border-radius: 10px; box-shadow: none; font-size: .9rem; rotate: 0deg; }
+    .themes .theme-note { margin-top: 16px; font-size: 1rem; rotate: 0deg; }
+    .stamps { gap: 12px; }
+    .stamps li { padding: 16px; rotate: 0deg; box-shadow: 0 4px 10px #6b3c0014; }
+    .stamps b { font-size: 1.35rem; }
+    .faq { gap: 24px; }
+    .faq-list summary { min-height: 64px; gap: 12px; font-size: 1.05rem; }
+    .faq-list details p { font-size: 1rem; }
+    .final { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+    .final .headline { max-width: 15ch; }
+    .final-download { width: 100%; margin-top: 24px; }
+    .final .small-print { font-size: .85rem; line-height: 1.5; }
+    .final-dock { width: min(100%, 340px); padding: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); gap: 8px; border-radius: 20px; box-shadow: 0 12px 24px #6b1f3a1a; }
+    .final-dock span, .final-dock .app { width: 100%; height: auto; aspect-ratio: 1; border-radius: 14px; font-size: clamp(20px, 6vw, 30px); }
+    .final-dock .app { animation: none; }
+  }
 
   :global(.burst-bit) { position: fixed; z-index: 999; font-size: 30px; pointer-events: none; translate: -50% -50%; animation: burst-fly 1100ms cubic-bezier(.2, .8, .3, 1) forwards; }
   @keyframes burst-fly { to { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)) scale(.7); opacity: 0; } }

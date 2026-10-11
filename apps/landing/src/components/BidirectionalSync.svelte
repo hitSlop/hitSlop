@@ -18,8 +18,10 @@
   ["tasks",{"id":"$id"},"done"]: boolean (set)
 
 Commands (slop call PATH NAME --args JSON)
+  Arguments accept only the listed fields.
+
   addTask — Add an unfinished task and return its stable row ID.
-    args: {"additionalProperties":false,"properties":{"text":{"type":"string"}},"required":["text"],"type":"object"}`;
+    text: string (required)`;
   const callResponse = JSON.stringify({ result: { id: "train" }, ids: ["train"] });
   const editResponse = JSON.stringify({ ids: [] });
   let applied = $state(false);
@@ -150,6 +152,14 @@ Commands (slop call PATH NAME --args JSON)
   @media (min-width: 620px) {
     .sync-demo { grid-template-columns: minmax(0, .8fr) auto minmax(0, 1.4fr); gap: 22px; }
     .sync-arrows { flex-direction: column; }
+  }
+  @media (max-width: 779px) {
+    .sync-demo { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+    .sync-window, .sync-code { transform: none; }
+    .sync-arrows { flex-direction: row; gap: 8px; }
+    .sync-arrows span { font-size: .7rem; letter-spacing: .03em; }
+    .sync-code header { padding-inline: 12px; font-size: .85rem; }
+    .sync-window > p { flex-wrap: wrap; }
   }
   @media (prefers-reduced-motion: reduce) { .sync-arrows b, .sync-arrows span { transition: none; } }
   .command-example { margin: 0; padding: 18px 18px 0 40px; color: oklch(88% .025 320); }

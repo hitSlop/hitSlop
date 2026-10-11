@@ -15,7 +15,8 @@ private final class PublicationTimes: @unchecked Sendable {
   func record(_ publication: String) {
     let now = Date().timeIntervalSince1970 * 1000
     guard let frame = try? JSONSerialization.jsonObject(with: Data(publication.utf8)) as? [String: Any],
-      let sequence = frame["sequence"] as? Int
+      let payload = frame["publication"] as? [String: Any],
+      let sequence = payload["sequence"] as? Int
     else { return }
     lock.withLock { values[sequence] = now }
   }

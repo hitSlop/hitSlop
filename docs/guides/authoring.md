@@ -178,7 +178,7 @@ reference, and render `attachments.url(ref.id)` in an image or media element. `r
 code needs bytes. The host supplies the media type and serves ranges without a base64
 read bridge. Attachments stay with the document when it is copied or shared.
 
-The [capability guide](capabilities.md) records the permission boundary and links to
+The [capability guide](../reference/runtime.md#security-boundaries) records the permission boundary and links to
 complete public examples. A slop that uses the camera or microphone declares it: `capabilities: ["camera",
 "microphone"]`. Then use the web APIs directly (`navigator.mediaDevices.getUserMedia`,
 `MediaRecorder`, canvas). The host refuses a device the slop did not declare, and macOS asks

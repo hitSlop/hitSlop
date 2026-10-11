@@ -58,7 +58,7 @@ pub enum ArtworkTarget {
 }
 
 /// One request on the engine's standard input. Protocol negotiation stays outside it.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields, rename_all_fields = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields))]
 #[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
@@ -128,7 +128,74 @@ pub enum EngineRequest {
     Screenshot { document_path: String, output: String, target: ArtworkTarget, if_present: bool },
 }
 
+/// Which engine dispatcher owns a request. Native exports may still reach an owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Route {
+    Document,
+    Native,
+    File,
+}
+
+/// The document a request names, by reference or mutably; one list for both accessors.
+macro_rules! document_path {
+    ($request:expr) => {
+        match $request {
+            EngineRequest::Get { document_path }
+            | EngineRequest::Batch { document_path, .. }
+            | EngineRequest::Copy { document_path, .. }
+            | EngineRequest::ThemeExport { document_path }
+            | EngineRequest::AttachmentsList { document_path }
+            | EngineRequest::AttachmentsRead { document_path, .. }
+            | EngineRequest::Describe { document_path }
+            | EngineRequest::Call { document_path, .. }
+            | EngineRequest::Open { document_path }
+            | EngineRequest::Screenshot { document_path, .. }
+            | EngineRequest::Export { document_path, .. } => Some(document_path),
+            _ => None,
+        }
+    };
+}
+
 impl EngineRequest {
+    pub fn route(&self) -> Route {
+        match self {
+            Self::Open { .. } | Self::Screenshot { .. } | Self::Export { .. } => Route::Native,
+            Self::Get { .. }
+            | Self::Batch { .. }
+            | Self::Copy { .. }
+            | Self::ThemeExport { .. }
+            | Self::AttachmentsList { .. }
+            | Self::AttachmentsRead { .. }
+            | Self::Describe { .. }
+            | Self::Call { .. } => Route::Document,
+            Self::AttachmentRef { .. }
+            | Self::Templates { .. }
+            | Self::Create { .. }
+            | Self::Inspect { .. }
+            | Self::ArtworkExport { .. }
+            | Self::Schema { .. }
+            | Self::Pack { .. }
+            | Self::ValidateApp { .. }
+            | Self::ValidateMetadata { .. } => Route::File,
+        }
+    }
+    pub fn is_document(&self) -> bool {
+        self.route() == Route::Document || matches!(self, Self::Export { .. })
+    }
+    pub fn document_path(&self) -> Option<&str> {
+        document_path!(self).map(String::as_str)
+    }
+    pub fn document_path_mut(&mut self) -> Option<&mut String> {
+        document_path!(self)
+    }
+    pub(crate) fn socket_limit(&self) -> usize {
+        if matches!(self, Self::Batch { attachments: Some(_), .. }) {
+            super::SOCKET_ATTACHMENT
+        } else {
+            super::SOCKET_REQUEST
+        }
+    }
+
     /// Decode and check one bounded request. A future app must reach its marker
     /// check before any JSON value inside it is interpreted; serde's tagged-enum
     /// buffering cannot retain RawValue, so only that variant needs a raw path.

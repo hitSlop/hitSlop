@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 
 @main enum HitSlopApp {
   @MainActor static func main() {
-    if CommandLine.arguments.contains("--core-build") {
+    if CommandLine.arguments.contains("--build-id") {
       print(DocumentOwner.coreBuildID)
       return
     }

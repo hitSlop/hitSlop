@@ -39,7 +39,7 @@ const shelf = [
         <span class="line">Tiny apps.<svg class="smiley wiggle" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" /><path d="M16 29c5 6 12 6 17-1" /><path class="dot" d="M17 18v2M31 18v2" /></svg><svg class="doodle title-star wiggle wide" viewBox="0 0 40 40" aria-hidden="true"><path d="m20 3 5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1Z" /></svg></span>
         <span class="line"><span class="big">Big</span> <span class="underlined">personality.<svg class="underline draw" viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden="true" style="--len: 330"><path d="M4 12C70 4 170 3 296 9" /></svg></span></span>
       </h1>
-      <p class="hero-sub">A packing list for one trip. A timer shaped like a tomato. A weird little desktop experiment you’ve been meaning to try. Each one is <strong>a single SQLite file you keep</strong>, and your AI can edit it too.</p>
+      <p class="hero-sub">A packing list for one trip. A timer shaped like a tomato. A weird little desktop experiment you’ve been meaning to try. Each one is <strong>a single file that lives on your desktop</strong>, and your AI can edit it too.</p>
       <div class="hero-actions">
         <a class="button button-primary" href={SITE_LINKS.download}><AppleIcon /> Download for Mac</a>
         <button class="button button-secondary" type="button" data-make-slop aria-haspopup="dialog" aria-controls="make-slop-modal">Make my own slop <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12" /></svg></button>
@@ -181,7 +181,20 @@ const shelf = [
     .hero-stickers { margin-top: 18px; }
   }
   @media (max-width: 779px) {
-    .hero-title { font-size: clamp(2.2rem, 10.6vw, 4.2rem); }
+    .hero { padding: 28px 16px 24px; }
+    .hero-grid { padding: 0; gap: 24px; }
+    .hero-title { font-size: clamp(1.9rem, 12cqw, 4.2rem); }
+    .hero-sub { margin-top: 18px; font-size: 1rem; line-height: 1.5; }
+    .hero-actions { margin-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    .hero-meta { margin-top: 14px; gap: 3px 12px; font-size: .8rem; }
+    .hero-meta span + span::before { content: none; }
+    .hero-soon { margin-top: 10px; }
+    .soon-pill { padding: 0; border: 0; border-radius: 0; background: transparent; font-family: "HitSlop Sans", sans-serif; font-size: .8rem; font-weight: 700; line-height: 1.45; }
+    .soon-pill i { width: 6px; height: 6px; animation: none; }
+    .hero-stickers { margin-top: 18px; padding: 0; gap: 7px; }
+    .hero-stickers .sticker { padding: 6px 9px; border: 1px solid #10132c26; border-radius: 9px; box-shadow: none; font-size: .8rem; line-height: 1.2; rotate: 0deg; scale: 1; animation: none; }
+    .playground-caption { margin-top: 12px; font-size: .8rem; text-align: left; }
+    .shelf { margin: 24px 0 0; }
   }
   @media (max-width: 480px) {
     .hero-actions { display: grid; }

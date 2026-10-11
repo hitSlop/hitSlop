@@ -93,7 +93,7 @@ export function createCaptureController() {
         // Stable once three ticks in a row measure what the previous one did.
         let current = measure(state);
         let previous = JSON.stringify(current);
-        for (let stable = 0; stable < 3; ) {
+        for (let stable = 0; stable < 3;) {
           await new Promise((resolve) => setTimeout(resolve, 40));
           state.controller.signal.throwIfAborted();
           current = measure(state);
@@ -198,7 +198,12 @@ export function createCaptureController() {
             replacement.style.display = "block";
             replacement.style.height = "auto";
             input.after(replacement);
-            state.inputs.push({ input, replacement, display: input.style.getPropertyValue("display"), priority: input.style.getPropertyPriority("display") });
+            state.inputs.push({
+              input,
+              replacement,
+              display: input.style.getPropertyValue("display"),
+              priority: input.style.getPropertyPriority("display"),
+            });
             input.style.display = "none";
           }
         return await settle(token);

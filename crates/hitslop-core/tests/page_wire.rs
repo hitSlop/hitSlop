@@ -122,7 +122,9 @@ fn speech_requests_name_a_stored_recording_and_a_bounded_locale() {
 #[test]
 fn speech_outcomes_are_bounded_before_they_reach_the_page() {
     use hitslop_core::page_wire::{SpeechOutcome, SpeechUnavailable};
-    let reply = |outcome| serde_json::from_str::<serde_json::Value>(&HostReply::SpeechTranscribe { outcome }.to_json()).unwrap();
+    let reply = |outcome| {
+        serde_json::from_str::<serde_json::Value>(&HostReply::SpeechTranscribe { outcome }.to_json()).unwrap()
+    };
     assert_eq!(
         reply(SpeechOutcome::Transcribed { text: "Hello there.".into(), locale: "en-US".into() }),
         json!({"ok":true,"method":"speech.transcribe","outcome":{"status":"transcribed","text":"Hello there.","locale":"en-US"}})

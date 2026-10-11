@@ -105,13 +105,16 @@ fn ordered_publications_flush_and_reopen_include_theme() {
         .collect();
     assert_eq!(sequences, vec![1, 2, 3]);
     call(&owner, Request::Flush).unwrap();
-    let published: Vec<Value> =
-        events
-            .try_iter()
-            .filter_map(|e| {
-                if let Event::Publication { json } = e { Some(serde_json::from_str(&json).unwrap()) } else { None }
-            })
-            .collect();
+    let published: Vec<Value> = events
+        .try_iter()
+        .filter_map(|e| {
+            if let Event::Publication { json } = e {
+                Some(serde_json::from_str::<Value>(&json).unwrap()["publication"].clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(published.iter().map(|p| p["sequence"].as_u64().unwrap()).collect::<Vec<_>>(), sequences);
     assert_eq!(published[1]["ops"], json!([]));
     assert_eq!(published[1]["theme"]["accent"], "#123456");

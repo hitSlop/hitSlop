@@ -3,7 +3,11 @@ import { silhouettePath } from "../schema/presentation";
 import { capabilityFeatures } from "../schema/policy";
 
 /** Stands in for the native window: manifest size, shape mask, and backing or skin chrome. */
-export function previewFrame(app: { title: string; window: WindowDefinition; capabilities: readonly Capability[] }) {
+export function previewFrame(app: {
+  title: string;
+  window: WindowDefinition;
+  capabilities: readonly Capability[];
+}) {
   const presentation = app.window;
   const { width, height, frame } = presentation;
   const escape = (value: string) => value.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);

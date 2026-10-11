@@ -75,7 +75,9 @@ const describe = (error: unknown) => {
 
 /** Offers a refusal's message to the app; true when the app showed it. */
 const claimed = (message: string) =>
-  !globalThis.document.dispatchEvent(new CustomEvent("slop:refused", { detail: message, cancelable: true }));
+  !globalThis.document.dispatchEvent(
+    new CustomEvent("slop:refused", { detail: message, cancelable: true }),
+  );
 
 /** Visible sessions: open the document, then mount the package's app module. */
 export async function boot() {

@@ -227,6 +227,18 @@ test("Swift shard assignment is exhaustive, nonempty and rejects incomplete exec
   assertShardComplete(ids, 3, 0);
 });
 
+test("formatter policy changes select the tier that enforces formatting", () => {
+  for (const path of [".prettierrc.json", ".prettierignore"])
+    expect(affected(path)).toEqual(["types"]);
+  for (const path of ["sdk/base.css", "shell/boot.js", "browser/index.html"])
+    expect(affected(`packages/hitslop/src/${path}`)).toContain("types");
+  expect(affected("rustfmt.toml")).toContain("rust");
+  for (const path of ["apps/apple/.swift-format", "scripts/lib/swift-format.ts"]) {
+    expect(affected(path)).toContain("swift");
+    expect(touchesNativeGate([path])).toBe(true);
+  }
+});
+
 // Ordinary slop changes never select infrastructure suites through a borrowed example.
 test("example changes select authoring checks; infrastructure fixtures select their consumers", () => {
   for (const path of ["slops/one/App.svelte", "slops/one/styles.css", "slops/one/slop.ts"])

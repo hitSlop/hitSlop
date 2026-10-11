@@ -102,7 +102,7 @@ Application-render errors and save failures have separate recovery paths. Render
 
 ## Security boundaries
 
-For author examples and platform availability, see [capabilities](../guides/capabilities.md).
+For author examples and platform availability, see [the public capability guide](../../apps/landing/src/content/docs/docs/guides/capabilities.mdx).
 The declaration and host enforcement described below do not create a per-slop OS grant.
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates the file, bridge envelopes, and resource sizes. Credentials never belong in authored code.
@@ -112,9 +112,25 @@ The page shell synthesizes the page. The resource scheme exposes the app's page 
 The native, browser and development-preview CSPs are defined in Rust
 (`crates/hitslop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
 
+| Capability | Boundary | Availability |
+| --- | --- | --- |
+| `camera`, `microphone` | Web APIs, admitted by the native WebKit delegate or browser permission policy. | Interactive documents with the declared devices and OS/browser permission. |
+| `speech` | Typed `speech.transcribe` host request carrying an attachment ID and optional locale, never audio bytes. | Owned native document page with on-device recognition support and speech permission. |
+
+Omitting `capabilities` declares none. Changing declarations requires a rebuilt template
+and a new document, never a data edit. Playback, file selection, attachments and allowed
+HTTPS requests do not acquire a capability requirement. A declaration restricts admission;
+it is not consent. Code-bound permissions remain a [proposal](../ideas.md#permissions-bound-to-the-apps-code).
+
 Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The native host's WebKit media delegate grants a request only for the current, ready, owned document page (never a snapshot, export or icon renderer, or a page being captured), from the main frame at `slop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for hitSlop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-slop prompt yet. WebKit exposes `navigator.mediaDevices` at `slop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
 
 Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`) or the owner is a snapshot renderer (`host`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document that is not being captured, reads the recording through the owner's resource reader (`speech_clip`, which verifies the attachment and accepts only m4a, mp3, wav, flac, mp4 and mov), and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. It checks on-device support before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: replacing or closing it, reloading its interface or starting an export or copy cancels it, and the page receives `cancelled`. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
+
+Transcripts are returned without being saved; authors write them through document handles
+and guard against the recording changing during recognition. `isSpeechError` recognizes
+cross-bundle `unavailable`, `cancelled` and `failed` errors, with unavailability reasons
+`notDeclared`, `host`, `system`, `locale` and `permission`. Ogg/WebM storage does not imply
+native transcription support. `SpeechAnalyzer` and browser speech remain deferred.
 
 Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.
 
@@ -195,3 +211,20 @@ Apps use the restricted `ctx.document` facade and its explicit durability barrie
 them when they change (defaults come from `slop.ts`'s `theme`). Authored layout stays in CSS.
 
 Rust decodes page messages once, routes them to owner replies or typed native host actions, and encodes replies. The shell checks the outcome envelope. Agent commands use the restricted native child evaluator; arguments and resulting intents are checked by Rust. Pages edit through handles. The page context and evaluator prelude are dispatched by the stored runtime ABI.
+
+## Resource integrity and responses
+
+Opening checks the app resource inventory, encoding and size bounds, required entrypoints,
+private command program and window skin. Other UI resources decode on demand. App media
+is served without re-hashing: `pack` verified each content address and the app row seals
+it. Attachments retain first-touch hash and media-type verification, cached per resource
+reader; compressed assets reuse a bounded decoded cache. A damaged ordinary resource fails to load without
+preventing document state from opening. A damaged command program or skin still refuses
+at open under its existing checks.
+
+Rust supplies resource response status, headers and byte spans to native, browser-copy
+and preview attachment transports. Single closed, open-ended and suffix ranges are
+supported; malformed, unsupported-unit or multiple ranges are ignored. Unsatisfiable
+ranges return 416 with `Content-Range: bytes */size`. Responses carry `nosniff`, `no-store`
+and `Accept-Ranges: bytes`; attachments also carry sandbox CSP. HEAD has the same response
+metadata without a body. Browser delivery keeps bounded chunks and cancellation.

@@ -48,31 +48,56 @@ const engine = () => import("./engine");
 const documents = () => import("./documents");
 
 const theme = {
-  get: defineCommand("get", { description: "Print the palette: template colors, overrides and effective colors" }, (c) =>
-    c.args(document).action(async ({ args }) => (await documents()).themeGet(args.document)),
+  get: defineCommand(
+    "get",
+    { description: "Print the palette: template colors, overrides and effective colors" },
+    (c) => c.args(document).action(async ({ args }) => (await documents()).themeGet(args.document)),
   ),
   set: defineCommand("set", { description: "Override declared theme colors" }, (c) =>
     c
       .args(document)
-      .flags({ name: "values", type: "string", required: true, description: 'Colors as JSON, such as {"accent":"#335577"}' })
+      .flags({
+        name: "values",
+        type: "string",
+        required: true,
+        description: 'Colors as JSON, such as {"accent":"#335577"}',
+      })
       .action(async ({ args, flags }) => (await documents()).themeSet(args.document, flags.values)),
   ),
-  reset: defineCommand("reset", { description: "Return one color, or every color, to the template's" }, (c) =>
-    c
-      .args(document)
-      .flags({ name: "token", type: "string", description: "Color to reset; omit to reset all" })
-      .action(async ({ args, flags }) => (await documents()).themeReset(args.document, flags.token)),
+  reset: defineCommand(
+    "reset",
+    { description: "Return one color, or every color, to the template's" },
+    (c) =>
+      c
+        .args(document)
+        .flags({ name: "token", type: "string", description: "Color to reset; omit to reset all" })
+        .action(async ({ args, flags }) =>
+          (await documents()).themeReset(args.document, flags.token),
+        ),
   ),
-  export: defineCommand("export", { description: "Print or write the full palette as a theme file" }, (c) =>
-    c
-      .args(document)
-      .flags({ name: "output", type: "string", description: "File to write; omit to print" })
-      .action(async ({ args, flags }) => (await documents()).themeExport(args.document, flags.output)),
+  export: defineCommand(
+    "export",
+    { description: "Print or write the full palette as a theme file" },
+    (c) =>
+      c
+        .args(document)
+        .flags({ name: "output", type: "string", description: "File to write; omit to print" })
+        .action(async ({ args, flags }) =>
+          (await documents()).themeExport(args.document, flags.output),
+        ),
   ),
-  import: defineCommand("import", { description: "Replace the palette with a theme file made for this template" }, (c) =>
-    c
-      .args(document, { name: "file", type: "string", required: true, description: "Theme file to import" })
-      .action(async ({ args }) => (await documents()).themeImport(args.document, args.file)),
+  import: defineCommand(
+    "import",
+    { description: "Replace the palette with a theme file made for this template" },
+    (c) =>
+      c
+        .args(document, {
+          name: "file",
+          type: "string",
+          required: true,
+          description: "Theme file to import",
+        })
+        .action(async ({ args }) => (await documents()).themeImport(args.document, args.file)),
   ),
 };
 
@@ -97,13 +122,18 @@ export const app = new Crust("slop", {
         c
           .add(
             defineCommand("list", { description: "List attachment IDs and sizes" }, (c) =>
-              c.args(document).action(async ({ args }) => (await documents()).attachmentsList(args.document)),
+              c
+                .args(document)
+                .action(async ({ args }) => (await documents()).attachmentsList(args.document)),
             ),
           )
           .add(
             defineCommand(
               "ref",
-              { description: "Print a file's reference as JSON, for operations that store it with --attach" },
+              {
+                description:
+                  "Print a file's reference as JSON, for operations that store it with --attach",
+              },
               (c) =>
                 c
                   .args({ name: "file", type: "string", required: true })
@@ -182,17 +212,28 @@ export const app = new Crust("slop", {
     ),
   )
   .add(
-    defineCommand("check", { description: "Check Svelte and TypeScript authoring source, and slop.ts as a build does" }, (c) =>
-      c.args(source).action(async ({ args }) => {
-        const { createRequire } = await import("node:module");
-        const require = createRequire(import.meta.url);
-        const { exec } = await import("./process");
-        const svelte = await exec([process.execPath, require.resolve("svelte-check/bin/svelte-check"), "--workspace", args.source], {
-          inherit: ["stdout", "stderr"],
-        });
-        await (await import("./build")).checkProject(args.source);
-        if (svelte.code) throw new Error("Authoring checks failed");
-      }),
+    defineCommand(
+      "check",
+      { description: "Check Svelte and TypeScript authoring source, and slop.ts as a build does" },
+      (c) =>
+        c.args(source).action(async ({ args }) => {
+          const { createRequire } = await import("node:module");
+          const require = createRequire(import.meta.url);
+          const { exec } = await import("./process");
+          const svelte = await exec(
+            [
+              process.execPath,
+              require.resolve("svelte-check/bin/svelte-check"),
+              "--workspace",
+              args.source,
+            ],
+            {
+              inherit: ["stdout", "stderr"],
+            },
+          );
+          await (await import("./build")).checkProject(args.source);
+          if (svelte.code) throw new Error("Authoring checks failed");
+        }),
     ),
   )
   .add(
@@ -207,7 +248,9 @@ export const app = new Crust("slop", {
         })
         .action(async ({ args, flags }) => {
           if (!Number.isInteger(flags.port) || flags.port < 0 || flags.port > 65535)
-            throw new Error("Port must be an integer from 0 to 65535 (0 chooses an available port)");
+            throw new Error(
+              "Port must be an integer from 0 to 65535 (0 chooses an available port)",
+            );
           await (await import("./authoring")).dev(args.source, flags.port);
         }),
     ),
@@ -240,69 +283,127 @@ export const app = new Crust("slop", {
     defineCommand(
       "templates",
       { description: "List the templates the app's catalog shows, bundled and installed, as JSON" },
-      (c) => c.action(async () => print((await (await engine()).execute({ method: "templates" })).catalog)),
+      (c) =>
+        c.action(async () =>
+          print((await (await engine()).execute({ method: "templates" })).catalog),
+        ),
+    ),
+  )
+  .add(
+    defineCommand("create", { description: "Create a writable document from a template" }, (c) =>
+      c
+        .flags(
+          {
+            name: "from",
+            type: "string",
+            required: true,
+            description: "Template to copy: a slug from slop templates, or a template .slop path",
+          },
+          {
+            name: "output",
+            type: "string",
+            required: true,
+            description: "Path for the new writable document; .slop is added if it is missing",
+          },
+        )
+        // As the app's save panel does: a document's name ends in .slop.
+        .action(async ({ flags }) =>
+          console.log(
+            (
+              await (
+                await engine()
+              ).execute({
+                method: "create",
+                from: flags.from,
+                output: flags.output.endsWith(".slop") ? flags.output : `${flags.output}.slop`,
+              })
+            ).documentPath,
+          ),
+        ),
     ),
   )
   .add(
     defineCommand(
-      "create",
-      { description: "Create a writable document from a template" },
+      "open",
+      { description: "Open a document in hitSlop, or a local browser copy (beta)" },
       (c) =>
         c
-          .flags(
-            {
-              name: "from",
-              type: "string",
-              required: true,
-              description: "Template to copy: a slug from slop templates, or a template .slop path",
-            },
-            {
-              name: "output",
-              type: "string",
-              required: true,
-              description: "Path for the new writable document; .slop is added if it is missing",
-            },
-          )
-          // As the app's save panel does: a document's name ends in .slop.
-          .action(async ({ flags }) =>
-            console.log((await (await engine()).execute({ method: "create", from: flags.from, output: flags.output.endsWith(".slop") ? flags.output : `${flags.output}.slop` })).documentPath),
+          .args({ name: "document", type: "string", description: "Path to a .slop document" })
+          .flags({
+            name: "browser",
+            type: "boolean",
+            description:
+              "Open an independent browser copy with local autosave (beta); omit the file to list copies",
+          })
+          .action(async ({ args, flags }) => {
+            if (flags.browser) return (await import("./browser")).openBrowser(args.document);
+            if (!args.document)
+              throw new Error("Provide a .slop document, or use --browser to open browser copies");
+            console.log(
+              (await (await engine()).execute({ method: "open", documentPath: args.document }))
+                .documentPath,
+            );
+          }),
+    ),
+  )
+  .add(
+    defineCommand(
+      "describe",
+      { description: "Describe fields, operations, commands and the current snapshot" },
+      (c) =>
+        c
+          .args(document)
+          .flags({
+            name: "json",
+            type: "boolean",
+            description: "Print the complete machine-readable description",
+          })
+          .action(async ({ args, flags }) =>
+            (await documents()).describe(args.document, flags.json === true),
           ),
     ),
   )
   .add(
-    defineCommand("open", { description: "Open a document in hitSlop, or a local browser copy (beta)" }, (c) =>
-      c.args({ name: "document", type: "string", description: "Path to a .slop document" })
-        .flags({ name: "browser", type: "boolean", description: "Open an independent browser copy with local autosave (beta); omit the file to list copies" })
-        .action(async ({ args, flags }) => {
-          if (flags.browser) return (await import("./browser")).openBrowser(args.document);
-          if (!args.document) throw new Error("Provide a .slop document, or use --browser to open browser copies");
-          console.log((await (await engine()).execute({ method: "open", documentPath: args.document })).documentPath);
-        }),
-    ),
-  )
-  .add(
-    defineCommand("describe", { description: "Describe fields, operations, commands and the current snapshot" }, (c) =>
-      c.args(document).flags({ name: "json", type: "boolean", description: "Print the complete machine-readable description" })
-        .action(async ({ args, flags }) => (await documents()).describe(args.document, flags.json === true)),
-    ),
-  )
-  .add(
     defineCommand("call", { description: "Run a named command stored in this document" }, (c) =>
-      c.args(document, { name: "command", type: "string", required: true, description: "Command name from slop describe" })
-        .flags({ name: "args", type: "string", description: "Command arguments as a JSON object (default {})" })
-        .action(async ({ args, flags }) => (await documents()).call(args.document, args.command, flags.args ?? "{}")),
+      c
+        .args(document, {
+          name: "command",
+          type: "string",
+          required: true,
+          description: "Command name from slop describe",
+        })
+        .flags({
+          name: "args",
+          type: "string",
+          description: "Command arguments as a JSON object (default {})",
+        })
+        .action(async ({ args, flags }) =>
+          (await documents()).call(args.document, args.command, flags.args ?? "{}"),
+        ),
     ),
   )
   .add(
     defineCommand("schema", { description: "Print the document schema descriptor" }, (c) =>
-      c.args(document).action(async ({ args }) => print((await (await engine()).execute({ method: "schema", file: args.document })).schema)),
+      c
+        .args(document)
+        .action(async ({ args }) =>
+          print((await (await engine()).execute({ method: "schema", file: args.document })).schema),
+        ),
     ),
   )
   .add(
     defineCommand(
       "inspect",
-      { description: "Print what a .slop file holds: its kind, app, artwork, attachments and saved state sizes" },
-      (c) => c.args(slopFile).action(async ({ args }) => print((await (await engine()).execute({ method: "inspect", file: args.file })).info)),
+      {
+        description:
+          "Print what a .slop file holds: its kind, app, artwork, attachments and saved state sizes",
+      },
+      (c) =>
+        c
+          .args(slopFile)
+          .action(async ({ args }) =>
+            print((await (await engine()).execute({ method: "inspect", file: args.file })).info),
+          ),
     ),
   )
   .add(
@@ -312,9 +413,12 @@ export const app = new Crust("slop", {
         .flags({
           name: "snapshot",
           type: "boolean",
-          description: "Print the schema, version, value and colors ({schema, defaults, version, value, theme})",
+          description:
+            "Print the schema, version, value and colors ({schema, defaults, version, value, theme})",
         })
-        .action(async ({ args, flags }) => (await documents()).get(args.document, flags.snapshot === true)),
+        .action(async ({ args, flags }) =>
+          (await documents()).get(args.document, flags.snapshot === true),
+        ),
     ),
   )
   .add(
@@ -334,7 +438,9 @@ export const app = new Crust("slop", {
             },
             attachFlag,
           )
-          .action(async ({ args, flags }) => (await documents()).apply(args.document, flags.op, flags.attach)),
+          .action(async ({ args, flags }) =>
+            (await documents()).apply(args.document, flags.op, flags.attach),
+          ),
     ),
   )
   .add(
@@ -353,7 +459,9 @@ export const app = new Crust("slop", {
             },
             attachFlag,
           )
-          .action(async ({ args, flags }) => (await documents()).batch(args.document, flags.ops, flags.attach)),
+          .action(async ({ args, flags }) =>
+            (await documents()).batch(args.document, flags.ops, flags.attach),
+          ),
     ),
   )
   .add(
@@ -365,13 +473,21 @@ export const app = new Crust("slop", {
       },
       (c) =>
         c
-          .args(document, { name: "file", type: "string", required: true, description: "JSON file holding the new value" })
+          .args(document, {
+            name: "file",
+            type: "string",
+            required: true,
+            description: "JSON file holding the new value",
+          })
           .flags({
             name: "path",
             type: "string",
-            description: 'Where to replace, as a JSON path (default: the whole document), e.g. \'["rows"]\'',
+            description:
+              "Where to replace, as a JSON path (default: the whole document), e.g. '[\"rows\"]'",
           })
-          .action(async ({ args, flags }) => (await documents()).importValue(args.document, args.file, flags.path)),
+          .action(async ({ args, flags }) =>
+            (await documents()).importValue(args.document, args.file, flags.path),
+          ),
     ),
   )
   .add(
@@ -404,12 +520,18 @@ export const app = new Crust("slop", {
               description: "Destination file",
             },
           )
-          .action(async ({ args, flags }) => (await documents()).exportDocument(args.document, flags.format, flags.output)),
+          .action(async ({ args, flags }) =>
+            (await documents()).exportDocument(args.document, flags.format, flags.output),
+          ),
     ),
   )
   .add(
-    defineCommand("theme", { description: "Inspect, override and share a document's palette" }, (c) =>
-      c.add(theme.get).add(theme.set).add(theme.reset).add(theme.export).add(theme.import),
+    defineCommand(
+      "theme",
+      { description: "Inspect, override and share a document's palette" },
+      (c) => c.add(theme.get).add(theme.set).add(theme.reset).add(theme.export).add(theme.import),
     ),
   )
-  .extend(skill({ name: skillName, extras: skillExtras, defaultScope: "global", autoUpdate: false }));
+  .extend(
+    skill({ name: skillName, extras: skillExtras, defaultScope: "global", autoUpdate: false }),
+  );

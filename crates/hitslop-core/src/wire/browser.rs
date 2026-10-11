@@ -16,6 +16,7 @@ pub enum BrowserRequest {
     Page { id: String, request: String },
     Flush { id: String },
     Export { id: String },
+    ResourcePlan { id: String, route: ResourceRoute, key: String, range: Option<String> },
     Resource { id: String, route: ResourceRoute, key: String, offset: Option<u32>, length: Option<u32> },
 }
 
@@ -36,6 +37,7 @@ pub enum BrowserEvent {
     Publication { json: String },
     Save { status: BrowserSaveStatus, error: Option<String> },
     Exported { id: String, file: String },
+    ResourcePlan { id: String, size: u64, plan: crate::file::ResponsePlan },
     Resource { id: String, size: u64, media_type: String, offset: u32 },
     Error { id: Option<String>, error: String },
 }
@@ -65,6 +67,9 @@ impl BrowserRequest {
             }
             Self::Page { id, request } => valid_id(id) && request.len() <= super::SOCKET_ATTACHMENT,
             Self::Flush { id } | Self::Export { id } => valid_id(id),
+            Self::ResourcePlan { id, key, range, .. } => {
+                valid_id(id) && key.len() <= super::ASSET_PATH_BYTES && range.as_ref().is_none_or(|r| r.len() <= 8192)
+            }
             Self::Resource { id, key, offset, length, .. } => {
                 valid_id(id)
                     && key.len() <= super::ASSET_PATH_BYTES
