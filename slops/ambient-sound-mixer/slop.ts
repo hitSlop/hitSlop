@@ -1,0 +1,31 @@
+import { defineSlop } from "hitslop";
+
+export default defineSlop({
+  slug: "ambient-sound-mixer",
+  title: "Ambient Sound Mixer",
+  description: "A smoked-glass hi-fi mixer for balancing rain, thunder, wind, birds, and night with physical faders, mute, and solo.",
+  author: { name: "hitSlop", url: "https://hitslop.com" },
+  categories: ["music", "utilities"],
+  window: { kind: "standard", width: 560, height: 480 },
+  theme: {
+    chassis: "#13151b",
+    chassisHi: "#1c1f2a",
+    well: "#0c0d12",
+    panel: "#171922",
+    track: "#08090c",
+    border: "#2a2e3b",
+    glass: "#ffffff14",
+    ink: "#f1f5f9",
+    muted: "#94a3b8",
+    dim: "#5a6275",
+    accent: "#38bdf8",
+    faderCap: "#e2e8f0",
+    faderRim: "#94a3b8",
+    vuGreen: "#22c55e",
+    vuAmber: "#f59e0b",
+    vuRed: "#ef4444",
+    mute: "#ef4444",
+    solo: "#f59e0b",
+    power: "#22c55e",
+  },
+});

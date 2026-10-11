@@ -5,7 +5,7 @@ use crate::shape::Shape;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub use crate::app::{AppMetadata, Author, Background, Category, CommandInput, ThemeInput, Views};
+pub use crate::app::{AppMetadata, Author, Background, Capability, Category, CommandInput, ThemeInput, Views};
 
 /// A source declaration: the skin image is an imported URL. Acceptance resolves it
 /// to a resource key; the stored window never keeps a source URL.
@@ -49,6 +49,10 @@ pub struct BuildDeclaration {
     pub initial: Value,
     pub commands: Vec<CommandInput>,
     pub views: Views,
+    /// Devices and host services the app uses; absent means none. Unknown values are
+    /// refused here, at authoring, because only implemented capabilities are variants.
+    #[serde(default)]
+    pub capabilities: Vec<Capability>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

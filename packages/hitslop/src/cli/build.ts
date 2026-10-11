@@ -39,10 +39,10 @@ export async function stageProjectInBun(source: string, stage: string) {
   const ready = await mkdtemp(stage + ".building-");
   try {
     const result = await (await import("./definition-build")).buildDefinition(source, ready);
-    const { window } = await execute({method:"validateApp", stage:ready, app:result.input});
+    const { window, capabilities } = await execute({method:"validateApp", stage:ready, app:result.input});
     await rm(stage, {recursive:true, force:true});
     await rename(ready, stage);
-    return { ...result, window };
+    return { ...result, window, capabilities };
   } catch (error) {
     await rm(ready, {recursive:true, force:true});
     throw error;

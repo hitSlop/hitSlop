@@ -8,11 +8,23 @@ export type Author = { name: string, url?: string, };
 
 export type Background = "transparent" | "glass";
 
-export type BuildDeclaration = { metadata: AppMetadata, window: WindowInput, theme: Array<ThemeInput>, document: unknown, initial: unknown, commands: Array<CommandInput>, views: Views, };
+export type BuildDeclaration = { metadata: AppMetadata, window: WindowInput, theme: Array<ThemeInput>, document: unknown, initial: unknown, commands: Array<CommandInput>, views: Views,
+/**
+ * Devices and host services the app uses; absent means none. Unknown values are
+ * refused here, at authoring, because only implemented capabilities are variants.
+ */
+capabilities: Array<Capability>, };
 
 export type BuildInput = { packageFormat: number, runtimeABI: number, declaration: BuildDeclaration, roles: BuildRoles, resources: Array<ResourceInput>, artwork: ArtworkInput, };
 
 export type BuildRoles = { ui: string, style?: string, commands?: string, skin?: string, };
+
+/**
+ * A device or host service an app declares it uses. The host admits a request only for a
+ * declared capability; the OS or browser permission still applies. Authoring refuses any
+ * value not listed here.
+ */
+export type Capability = "camera" | "microphone" | "speech";
 
 export type Category = "productivity" | "utilities" | "finance" | "media" | "games" | "developer-tools" | "education" | "business" | "personal" | "health" | "creative" | "music" | "other";
 

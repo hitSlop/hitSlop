@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
@@ -278,6 +279,73 @@ import WebKit
       }
       #expect(duringCapture as? Bool == false)
       #expect(!resized)
+      try await session.close()
+    } catch {
+      try? await session.close()
+      throw error
+    }
+  }
+
+  // Camera and microphone reach only the interactive page of an owned document, in a visible
+  // window, and only for what its app declared. WebKit exposes `navigator.mediaDevices` only
+  // to an app whose Info.plist has the usage descriptions, which the test host lacks, and real
+  // capture needs the person's consent, so this checks the decision against real session state.
+  @Test @MainActor func mediaCaptureIsAdmittedOnlyForDeclaredDevicesOnTheInteractivePage() async throws {
+    _ = NSApplication.shared
+    let stage = try Fixtures.stage()
+    try Fixtures.updateApp(stage) { $0["capabilities"] = ["camera"] }
+    let root = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    #expect(session.file.capabilities == [.camera])
+    // WebKit asks this delegate method; a near-miss signature would never be called.
+    #expect(
+      session.responds(
+        to: #selector(WKUIDelegate.webView(_:requestMediaCapturePermissionFor:initiatedByFrame:type:decisionHandler:))))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
+      defer: false)
+    // Borderless: AppKit pulls a titled window back on screen when it is ordered front.
+    window.moveOffScreen()
+    window.contentView = session.webView
+    defer {
+      window.contentView = nil
+      window.orderOut(nil)
+    }
+    let app = [(protocol: "slop", host: "app")]
+    func admits(
+      _ type: WKMediaCaptureType, _ session: DocumentSession, main: Bool = true,
+      origins: [(protocol: String, host: String)] = app
+    ) -> Bool {
+      session.admitsMediaCapture(type, isMainFrame: main, origins: origins, in: session.webView)
+    }
+    #expect(!admits(.camera, session), "an opening page captures nothing")
+    session.load()
+    do {
+      try await session.waitUntilReady()
+      #expect(!admits(.camera, session), "a hidden window captures nothing")
+      window.orderFront(nil)
+      #expect(admits(.camera, session))
+      #expect(!admits(.microphone, session), "the app did not declare the microphone")
+      #expect(!admits(.cameraAndMicrophone, session), "a combined request needs both declared")
+      #expect(!admits(.camera, session, main: false), "embedded frames never capture")
+      #expect(!admits(.camera, session, origins: app + [(protocol: "https", host: "example.com")]))
+      #expect(await session.withCapture { admits(.camera, session) } == false, "not while a capture reads the page")
+      // A background renderer of the same document runs the app but never captures.
+      let snapshot = try await DocumentSession.open(url: root, storage: .snapshot)
+      let hidden = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
+        defer: false)
+      hidden.moveOffScreen()
+      hidden.contentView = snapshot.webView
+      hidden.orderFront(nil)
+      snapshot.load()
+      try await snapshot.waitUntilReady()
+      #expect(snapshot.file.capabilities == [.camera])
+      #expect(!admits(.camera, snapshot), "snapshot, export and icon renderers never capture")
+      hidden.contentView = nil
+      hidden.orderOut(nil)
+      try await snapshot.close()
       try await session.close()
     } catch {
       try? await session.close()

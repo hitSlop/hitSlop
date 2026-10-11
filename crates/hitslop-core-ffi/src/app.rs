@@ -1,8 +1,9 @@
 //! Typed app and catalog projections. Only core's format module decodes stored JSON.
 use hitslop_core::app::{
-    self, AppMetadata, Author, Background, Category, StandardFrame, ThemeInput, Views, WindowDefinition, WindowFrame,
+    self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WindowDefinition,
+    WindowFrame,
 };
-use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, Summary};
+use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, SpeechClip, Summary};
 use hitslop_core::shape::Silhouette;
 
 #[uniffi::remote(Enum)]
@@ -33,6 +34,12 @@ pub struct AppMetadata {
     pub description: String,
     pub author: Author,
     pub categories: Vec<Category>,
+}
+#[uniffi::remote(Enum)]
+pub enum Capability {
+    Camera,
+    Microphone,
+    Speech,
 }
 #[uniffi::remote(Enum)]
 pub enum Background {
@@ -88,6 +95,11 @@ pub struct ResourceInfo {
     pub size: u64,
     pub media_type: String,
 }
+#[uniffi::remote(Record)]
+pub struct SpeechClip {
+    pub bytes: Vec<u8>,
+    pub file_extension: String,
+}
 
 /// The native view of an accepted app. The original descriptor is opaque to Swift.
 #[derive(uniffi::Record)]
@@ -96,6 +108,8 @@ pub struct AppDefinition {
     pub window: WindowDefinition,
     pub theme: Vec<ThemeInput>,
     pub views: Views,
+    /// What the app declared that this host implements; the host grants nothing else.
+    pub capabilities: Vec<Capability>,
     pub descriptor_json: String,
 }
 impl From<&app::AppDefinition> for AppDefinition {
@@ -105,6 +119,7 @@ impl From<&app::AppDefinition> for AppDefinition {
             window: app.window().clone(),
             theme: app.theme().to_vec(),
             views: app.views(),
+            capabilities: app.capabilities().to_vec(),
             descriptor_json: app.document_json().into(),
         }
     }

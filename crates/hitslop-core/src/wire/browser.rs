@@ -31,7 +31,7 @@ pub enum ResourceRoute {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "browser.generated.ts"))]
 pub enum BrowserEvent {
-    Ready { title: String, window: crate::app::WindowDefinition },
+    Ready { title: String, window: crate::app::WindowDefinition, capabilities: Vec<crate::app::Capability> },
     Reply { id: String, json: String },
     Publication { json: String },
     Save { status: BrowserSaveStatus, error: Option<String> },

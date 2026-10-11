@@ -1,4 +1,4 @@
-import type { AppMetadata, Category, WindowInput } from "../wire/app.generated";
+import type { AppMetadata, Capability, Category, WindowInput } from "../wire/app.generated";
 
 /** `A`, refusing every key only `B` has: the two window forms never mix. */
 type Only<A, B> = A & { [K in Exclude<keyof B, keyof A>]?: never };
@@ -11,6 +11,9 @@ export type AppDeclaration = Omit<AppMetadata, "categories"> & {
   window: Only<StandardWindowInput, SkinWindowInput> | Only<SkinWindowInput, StandardWindowInput>;
   theme: Readonly<Record<string, `#${string}`>>;
   artwork?: { preview?: string; icon?: string };
+  /** Devices and host services the app uses. The host admits a camera or microphone
+   * request only when it is declared; the person's OS or browser permission still applies. */
+  capabilities?: readonly Capability[];
 };
 export function defineSlop(slop: AppDeclaration): AppDeclaration {
   return slop;

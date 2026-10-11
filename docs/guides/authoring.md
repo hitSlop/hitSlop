@@ -17,7 +17,7 @@ rules and standards for templates in this repository.
 
 ## Work in this checkout
 
-Use `bun slop dev examples/slops/SLUG`, `bun slop build SOURCE` and
+Use `bun slop dev slops/SLUG`, `bun slop build SOURCE` and
 `bun slop register SOURCE`. [Development](development.md) covers preparing the helper,
 adding a template and choosing which templates ship.
 
@@ -48,7 +48,7 @@ adding a template and choosing which templates ship.
 The examples are references, not a limit or a default visual
 style. Start each template from its own purpose. Paper, Instrument and Skin are optional
 directions. `_vibe/` is inspiration only; never ship its images. Record product context in
-[PRODUCT.md](../../examples/slops/PRODUCT.md) and each object's actual palette, typography,
+[PRODUCT.md](../../slops/PRODUCT.md) and each object's actual palette, typography,
 layout, state language and motion in its `DESIGN.md`.
 
 Make the purpose visible in the first viewport. Keep controls familiar, state readable
@@ -146,7 +146,7 @@ Installing hitSlop does not replace a document's embedded app.
 ## Entry and media
 
 `slop.ts` exports metadata through `defineSlop({ slug, title, description, author,
-categories, window, theme, artwork? })`. Required `schema.ts` default-exports
+categories, window, theme, artwork?, capabilities? })`. Required `schema.ts` default-exports
 `defineDocument(fields, { initial })`; `initial` is optional when all fields have defaults
 or may be omitted. Required `App.svelte` is the editor; `Export.svelte`, `Icon.svelte`
 and `commands.ts` are optional. These root names are case-sensitive. Import CSS from
@@ -172,8 +172,50 @@ renders it. `public/` is not copied; import those files explicitly. Supplied art
 `artwork: { preview: importedPNG, icon: importedPNG }`. A skin must be RGBA at 1× or 2×
 the logical window size; Rust validates its pixels before packing.
 
-User-imported images are attachments, separate from template assets. Import through
-`app.attachments.import(file, (tx, ref) => { ... })`, store the reference, and render
-`app.attachments.url(ref.id)` in an image or media element. `read(id)` fetches a Blob when
+User-imported images are attachments, separate from template assets. Import `attachments`
+from `hitslop/svelte`, use `attachments.import(file, (tx, ref) => { ... })`, store the
+reference, and render `attachments.url(ref.id)` in an image or media element. `read(id)` fetches a Blob when
 code needs bytes. The host supplies the media type and serves ranges without a base64
 read bridge. Attachments stay with the document when it is copied or shared.
+
+The [capability guide](capabilities.md) records the permission boundary and links to
+complete public examples. A slop that uses the camera or microphone declares it: `capabilities: ["camera",
+"microphone"]`. Then use the web APIs directly (`navigator.mediaDevices.getUserMedia`,
+`MediaRecorder`, canvas). The host refuses a device the slop did not declare, and macOS asks
+the person once for hitSlop. Start devices from a button, show that capture is on, handle
+`NotAllowedError`, and stop every track when finished. Keep live streams and unfinished
+recordings in view state; keep a finished photo or clip by importing it as an attachment,
+wrapping the Blob in a File for its name: `new File([blob], "photo.jpg", { type: blob.type })`.
+One attachment holds at most 10 MiB (about ten minutes of 128 kbit/s audio). Export and
+icon views render saved content and never request devices.
+
+To turn a kept recording into text, declare `"speech"` and pass its attachment reference
+(or ID) to `speech.transcribe` from `hitslop/svelte`; the recording is never sent again
+through the page. Recognition runs on the Mac only: a locale the Mac can recognize only
+through Apple's servers is unavailable, never uploaded. Saving the text is an ordinary
+edit.
+
+```ts
+import { attachments, isSpeechError, speech } from "hitslop/svelte";
+
+const ref = await attachments.import(new File([blob], "note.m4a", { type: blob.type }), (tx, ref) => {
+  tx.fields.notes.insert({ clip: ref.id, text: "" });
+});
+try {
+  const { text } = await speech.transcribe(ref, { locale: "en-US" });
+  // write `text` into the note with doc.change
+} catch (error) {
+  if (!isSpeechError(error)) throw error;
+  // error.code: "unavailable" (see error.reason), "cancelled" or "failed"; show error.message
+}
+```
+
+`locale` is optional (the person's own when absent) and returns as the locale used.
+Transcribable recordings are m4a, mp3, wav, flac, mp4 and mov (WebKit's `MediaRecorder`
+records mp4); Ogg and WebM are stored but not transcribed. A transcript holds at most
+1 MiB of text. `unavailable` carries a `reason`: `notDeclared` (no `"speech"` in
+`capabilities`), `host` (`slop dev`, a browser copy, an export, or an older hitSlop),
+`system` (the Mac cannot recognize speech now), `locale` (no on-device recognizer for the
+locale) or `permission` (the person declined speech recognition for hitSlop). `cancelled`
+means the window closed, the interface reloaded or an export began first; `failed` means
+the recording could not be read or recognized. Keep a usable path without a transcript.

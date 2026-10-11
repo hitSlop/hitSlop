@@ -17,7 +17,7 @@ export type TestTier = "tooling" | "bun" | "cli" | "browser" | "native" | "packe
 export function testInventory(files: string[]): Record<TestTier, string[]> {
   const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], browser: [], native: [], packed: [] };
   for (const file of files.sort()) {
-    if (file.startsWith("tests/examples/") || file.startsWith("examples/"))
+    if (file.startsWith("tests/examples/") || file.startsWith("slops/"))
       throw new Error(`Per-example tests are not allowed: ${file}`);
     const tier = file.startsWith("tests/packed/") ? "packed"
       : file.endsWith(".browser.test.ts") ? "browser"

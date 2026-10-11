@@ -10,11 +10,11 @@ export async function appConfig(source: string): Promise<InlineConfig> {
   const roles = await discoverRoles(source);
   const app: Plugin = {
     name: "hitslop-app", enforce: "pre",
-    async resolveId(id, importer) {
+    async resolveId(id, importer, resolveOptions) {
       if (id === "/assets/ui.js" || id === virtualEntry) return virtualEntry;
       refuseRoleImport(id, importer, roles, false, message => this.error(message));
       if (importer && importer !== virtualEntry) {
-        const found = await this.resolve(id, importer, {skipSelf:true});
+        const found = await this.resolve(id, importer, {...resolveOptions,skipSelf:true});
         if (found) refusePageRole(found.id, roles, message => this.error(message));
         return found;
       }

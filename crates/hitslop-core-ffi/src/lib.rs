@@ -238,6 +238,11 @@ impl ResourceReader {
     ) -> Result<Option<Vec<u8>>, CoreError> {
         Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).read_range(route, &key, offset, length)?)
     }
+    /// The verified recording a transcription reads, by attachment ID; Rust decides which
+    /// media a provider may decode.
+    pub fn speech_clip(&self, attachment: String) -> Result<file::SpeechClip, CoreError> {
+        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).speech_clip(&attachment)?)
+    }
 }
 
 mod app;

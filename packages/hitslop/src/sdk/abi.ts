@@ -25,6 +25,8 @@ import type { LiveDocument } from "./schema";
  *   `{ ok: false, error, refused: true }`. The shell offers an unhandled refusal to the
  *   app as a cancelable `slop:refused` event on `document` whose `detail` is the
  *   message; an app that cancels it has shown the message, otherwise it is reported.
+ *   `Symbol.for("slop.speech-error")` brands a `SpeechError` from `ctx.speech`; its
+ *   `code` and `reason` may grow the same way.
  * - Markup the host styles: `[data-slop-root]` (the app's root, sized to the window),
  *   `[data-slop-capture-target]` and `[data-slop-active-target]` (capture targets,
  *   children of `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the
@@ -61,6 +63,17 @@ export type Scope<N extends ObjectNode> = {
 export type AttachmentInfo = import("../schema/values").AttachmentInfo;
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
 export type { CaptureMode } from "../wire/page.generated";
+/** A recording stored with `attachments.import` (its reference), or its attachment ID. */
+export type SpeechClip = string | { readonly id: string };
+export interface SpeechOptions {
+  /** A locale identifier such as `"en-US"`; the person's own locale when absent. */
+  locale?: string;
+}
+export interface SpeechTranscript {
+  text: string;
+  /** The locale the recognizer used. */
+  locale: string;
+}
 import type { CaptureMode } from "../wire/page.generated";
 
 export interface SlopApp {
@@ -102,6 +115,12 @@ export interface SlopContext {
     ): Promise<AttachmentRef>;
     url(id: string): string;
     read(id: string): Promise<Blob>;
+  };
+  readonly speech: {
+    /** Transcribes a stored recording on this device. The host reads it by attachment ID,
+     * so it never crosses the page bridge again. Rejects with a `SpeechError` (brand
+     * `slop.speech-error`) when speech is unavailable, cancelled or failed. */
+    transcribe(clip: SpeechClip, options?: SpeechOptions): Promise<SpeechTranscript>;
   };
   readonly window: {
     /** Request a window content size; ignored where the host has no window. */

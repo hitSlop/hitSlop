@@ -55,7 +55,7 @@ Bare `skills` means install; use `skills repair` to repair installed links. The
 guides linked into a new project's `.agents/skills` follow its pinned
 `node_modules/hitslop` install and update when that dependency changes.
 
-Projects are discovered under examples/slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS, slop.ts theme colors (only colors a person may change; fonts and derived values in CSS) and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
+Projects are discovered under slops and bundled selection lives in bundled.json; Quick Checklist is the reference example. Use plain CSS, slop.ts theme colors (only colors a person may change; fonts and derived values in CSS) and each app's own visual identity. Read the bundled hitslop-design references for CSS, presentation, and capture. PNG/PDF export is supported; hosted publishing and catalog are deferred.
 
 Use `App.svelte` for the editor and optional `Export.svelte` and `Icon.svelte` for captures. Captures render saved state in a fresh read-only page. A dedicated export or icon mounts without the editor; it reads `doc.current`, never mutable editor state. Use a thin dedicated export with natural height for growing content such as a checklist, and keep its markup, title and theme recognizable. The export receives `mode: "preview" | "export"`. Without an export component, the editor supplies preview/export with its default local state; mark editing controls `data-slop-export="hide"` and own any static layout changes. The default Quick Look preview preserves the window silhouette. Supply imported PNGs with `artwork: { preview, icon }` or capture them with register / `build --artwork native`. Register replaces a master only after a successful build. Optional `import "hitslop/base.css"` in App.svelte, before app styles, supplies low-specificity form, focus and reduced-motion defaults.
 
@@ -83,6 +83,24 @@ Catch semantic refusals with `isRejected(error)`, a command's `refuse()` with
 `instanceof`. Transaction handles collect writes only;
 use live handles for previews and bound `.value` assignments. Explicit `flush()`
 remains available.
+
+## Devices and speech
+
+Declare only the capabilities the app uses in `slop.ts`: `capabilities: ["camera", "microphone", "speech"]`.
+Camera and microphone use `navigator.mediaDevices.getUserMedia`, `MediaRecorder` and canvas;
+start from a button, show capture state, handle denied permission, and stop tracks on stop,
+hide and teardown. Keep streams/chunks in view state and import finished named Files through
+`attachments.import`. macOS consent belongs to hitSlop, not each document. Capture renderers
+never request devices. Playback and ordinary file import need no capability.
+
+`speech.transcribe(refOrId, { locale: "en-US" })` from `hitslop/svelte` transcribes a stored
+recording on-device in the Mac app; omit locale for the person's default. Declare `speech`;
+microphone is separate. Save returned `text` through document handles. Use `isSpeechError`
+for `unavailable` (reason `notDeclared`, `host`, `system`, `locale`, `permission`), `cancelled`
+or `failed`. Previews and browser copies return `unavailable`/`host`; native recognition never
+falls back to uploading a clip. Supported recordings: m4a, mp3, wav, flac, mp4, mov; not
+Ogg/WebM. Keep recording/playback useful when transcription is unavailable. A capability
+change needs a rebuilt template and new document; existing documents keep their app.
 
 ## Named commands
 

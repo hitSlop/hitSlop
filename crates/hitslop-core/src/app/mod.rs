@@ -75,6 +75,21 @@ pub struct AppMetadata {
     pub categories: Vec<Category>,
 }
 
+/// A device or host service an app declares it uses. The host admits a request only for a
+/// declared capability; the OS or browser permission still applies. Authoring refuses any
+/// value not listed here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub enum Capability {
+    Camera,
+    Microphone,
+    Speech,
+}
+impl Capability {
+    pub const ALL: &[Self] = &[Self::Camera, Self::Microphone, Self::Speech];
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
@@ -157,6 +172,7 @@ pub struct AppDefinition {
     theme: Vec<ThemeInput>,
     views: Views,
     commands: Vec<CommandDefinition>,
+    capabilities: Vec<Capability>,
     spec: AppSpec,
 }
 
@@ -193,6 +209,11 @@ impl AppDefinition {
     }
     pub fn commands(&self) -> &[CommandDefinition] {
         &self.commands
+    }
+    /// The declared capabilities this host knows, sorted and without repeats. A saved
+    /// value this build does not know is never granted, so it is left out here.
+    pub fn capabilities(&self) -> &[Capability] {
+        &self.capabilities
     }
     pub fn spec(&self) -> &AppSpec {
         &self.spec

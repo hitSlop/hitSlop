@@ -1,0 +1,30 @@
+import { defineSlop } from "hitslop";
+
+export default defineSlop({
+  slug: "reading-tracker",
+  title: "Reading Tracker",
+  description: "A personal reading journal for books, authors, star ratings, and reading status.",
+  author: { name: "hitSlop", url: "https://hitslop.com" },
+  categories: ["education", "personal"],
+  window: { kind: "standard", width: 560, height: 600 },
+  theme: {
+    surface: "#ffffff",
+    paper: "#ffffff",
+    control: "#f5eff4",
+    border: "#e5dce4",
+    ink: "#382337",
+    muted: "#746574",
+    dim: "#827381",
+    rule: "#ebe3e9",
+    stamp: "#642b4b",
+    stampSoft: "#f1e3ed",
+    gold: "#914467",
+    goldMuted: "#b9aab6",
+    read: "#316e5c",
+    readSoft: "#e4f1eb",
+    reading: "#6f4795",
+    readingSoft: "#eee7f8",
+    danger: "#b33655",
+    onAccent: "#ffffff",
+  },
+});

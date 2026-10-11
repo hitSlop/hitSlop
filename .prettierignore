@@ -6,7 +6,6 @@
 **/.svelte-kit/
 **/.wrangler/
 archive/
-examples/archive/
 _vibe/
 .hitslop/
 **/generated/

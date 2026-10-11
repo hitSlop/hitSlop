@@ -87,3 +87,61 @@ fn native_actions_use_the_same_serializer_and_capture_results_are_checked_in_rus
     }
     assert!(HostCaptureResult::decode(&" ".repeat(4097)).is_err());
 }
+
+// A transcription names a stored recording by its attachment ID, never its bytes, and an
+// optional locale identifier; both are checked before any host sees the request.
+#[test]
+fn speech_requests_name_a_stored_recording_and_a_bounded_locale() {
+    let id = "0123456789abcdef".repeat(4);
+    for value in [
+        json!({"method":"speech.transcribe","attachment":id}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":null}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":"en-US"}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":"zh_Hant_TW"}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":"a".repeat(35)}),
+    ] {
+        assert!(PageRequest::decode(&value.to_string()).is_ok(), "{value}");
+    }
+    for value in [
+        json!({"method":"speech.transcribe"}),
+        json!({"method":"speech.transcribe","attachment":&id[1..]}),
+        json!({"method":"speech.transcribe","attachment":id.to_uppercase()}),
+        json!({"method":"speech.transcribe","attachment":id,"bytes":"AAAA"}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":""}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":"a".repeat(36)}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":"en US"}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":"-en"}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":"en-US\u{0}"}),
+        json!({"method":"speech.transcribe","attachment":id,"locale":7}),
+    ] {
+        assert!(PageRequest::decode(&value.to_string()).is_err(), "{value}");
+    }
+}
+
+// The host's outcome is serialized by Rust and bounded before the page reads it.
+#[test]
+fn speech_outcomes_are_bounded_before_they_reach_the_page() {
+    use hitslop_core::page_wire::{SpeechOutcome, SpeechUnavailable};
+    let reply = |outcome| serde_json::from_str::<serde_json::Value>(&HostReply::SpeechTranscribe { outcome }.to_json()).unwrap();
+    assert_eq!(
+        reply(SpeechOutcome::Transcribed { text: "Hello there.".into(), locale: "en-US".into() }),
+        json!({"ok":true,"method":"speech.transcribe","outcome":{"status":"transcribed","text":"Hello there.","locale":"en-US"}})
+    );
+    assert_eq!(
+        reply(SpeechOutcome::Unavailable { reason: SpeechUnavailable::NotDeclared, message: "no".into() })["outcome"],
+        json!({"status":"unavailable","reason":"notDeclared","message":"no"})
+    );
+    assert_eq!(reply(SpeechOutcome::unsupported_host())["outcome"]["reason"], "host");
+    let limit = 1024 * 1024;
+    let at_limit = reply(SpeechOutcome::Transcribed { text: "x".repeat(limit), locale: "en".into() });
+    assert_eq!(at_limit["outcome"]["text"].as_str().unwrap().len(), limit);
+    let over = reply(SpeechOutcome::Transcribed { text: "x".repeat(limit + 1), locale: "en".into() });
+    assert_eq!(over["outcome"]["status"], "failed");
+    let odd = reply(SpeechOutcome::Transcribed { text: "hi".into(), locale: "en US".into() });
+    assert_eq!(odd["outcome"]["status"], "failed");
+    // Diagnostic text is shortened, never refused, in the page's UTF-16 units.
+    let long = reply(SpeechOutcome::Failed { message: "😀".repeat(3000) });
+    assert_eq!(long["outcome"]["message"].as_str().unwrap().encode_utf16().count(), 4096);
+    let cancelled = reply(SpeechOutcome::Cancelled { message: "x".repeat(5000) });
+    assert_eq!(cancelled["outcome"]["message"].as_str().unwrap().len(), 4096);
+}

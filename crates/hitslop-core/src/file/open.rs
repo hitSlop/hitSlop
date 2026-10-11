@@ -228,6 +228,7 @@ pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
         metadata: opened.app.metadata().clone(),
         window: opened.app.page_window(),
         views: opened.app.views(),
+        capabilities: opened.app.capabilities().to_vec(),
         assets: list("SELECT key, size FROM assets ORDER BY key")?,
         artwork: list("SELECT name, length(png) FROM artwork ORDER BY name")?,
         defaults: opened.app.spec().theme_tokens().iter().cloned().collect(),

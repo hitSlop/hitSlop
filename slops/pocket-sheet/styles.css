@@ -1,0 +1,112 @@
+* { box-sizing: border-box; }
+body { font-family: "Avenir Next", Avenir, system-ui, sans-serif; color: var(--slop-ink); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .55; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--slop-focus); outline-offset: 2px; }
+
+.pocket-desk { height: 100%; padding: 14px; background: var(--slop-desk); overflow: hidden; container-type: inline-size; }
+.pocket-paper { height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 12px 20px; border-radius: 10px;
+  background: linear-gradient(90deg, transparent 8px, var(--slop-margin) 8px 10px, transparent 10px), var(--slop-paper);
+  box-shadow: 0 1px 0 #fff inset, 0 2px 0 #2f3a4a14, 0 10px 24px -10px #2f3a4a40; }
+
+.pocket-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-left: 8px; }
+.pocket-heading { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.pocket-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--slop-accent); margin: 0; }
+.pocket-title { width: 100%; padding: 0 2px; border: 0; border-bottom: 2px dashed transparent; background: transparent; font-family: "Marker Felt", "Chalkboard SE", "Comic Sans MS", cursive; font-size: 26px; line-height: 1.2; }
+.pocket-title:hover, .pocket-title:focus { border-bottom-color: var(--slop-grid); outline: none; }
+.pocket-title:focus-visible { border-bottom-color: var(--slop-focus); }
+.pocket-export { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 8px 14px; border: 2px solid var(--slop-ink); border-radius: 10px; background: var(--slop-butter); font-size: 14px; font-weight: 650; box-shadow: 0 3px 0 var(--slop-ink); transition: transform 120ms ease-out, box-shadow 120ms ease-out; white-space: nowrap; }
+.pocket-export:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 4px 0 var(--slop-ink); }
+.pocket-export:not(:disabled):active { transform: translateY(2px); box-shadow: 0 1px 0 var(--slop-ink); }
+
+.pocket-bar { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 4px 6px 4px 8px; border: 1.5px solid var(--slop-grid); border-radius: 8px; background: #fff; }
+.pocket-address { min-width: 54px; padding: 3px 7px; border-radius: 6px; background: var(--slop-sky); font: 600 13px/1.3 "SF Mono", Menlo, monospace; text-align: center; }
+.pocket-fx { font-family: Georgia, serif; font-style: italic; font-weight: 700; color: var(--slop-accent); }
+.pocket-bar-input { flex: 1; min-width: 0; min-height: 32px; border: 0; background: transparent; font: 14px/1.3 "SF Mono", Menlo, monospace; }
+.pocket-bar-input:focus-visible { outline: none; }
+.pocket-bar:focus-within { border-color: var(--slop-focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--slop-focus) 25%, transparent); }
+.pocket-bar-input::placeholder { color: var(--slop-pencil); opacity: .8; }
+
+.pocket-scroll { flex: 1; min-height: 0; overflow: auto; }
+.pocket-grid { display: grid; width: max-content; min-width: 100%; grid-auto-rows: 28px; outline: none; border-radius: 4px; }
+.pocket-grid:focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--slop-focus) 35%, transparent); }
+.pocket-row { display: contents; }
+.pocket-corner, .pocket-colhead, .pocket-rowhead { position: relative; display: grid; place-items: center; font: 600 12px/1 "Avenir Next", Avenir, sans-serif; color: var(--slop-pencil); user-select: none; }
+.pocket-colhead { border-bottom: 1.5px solid var(--slop-grid); }
+.pocket-rowhead { border-right: 1.5px solid var(--slop-grid); }
+.pocket-colhead[data-active], .pocket-rowhead[data-active] { color: var(--slop-focus); font-weight: 800; }
+.pocket-resize { position: absolute; top: 4px; bottom: 4px; right: -4px; width: 8px; cursor: col-resize; z-index: 2; touch-action: none; }
+.pocket-resize::after { content: ""; position: absolute; inset: 0 3px; border-radius: 2px; }
+.pocket-resize:hover::after { background: var(--slop-focus); }
+
+.pocket-cell { position: relative; display: flex; align-items: center; gap: 4px; min-width: 0; padding: 0 7px; border-right: 1px solid var(--slop-grid); border-bottom: 1px solid var(--slop-grid); font-size: 14px; cursor: cell; user-select: none; }
+.pocket-cell[data-tint] { background: var(--tint); }
+.pocket-cell[data-tint="butter"] { --tint: var(--slop-butter); }
+.pocket-cell[data-tint="mint"] { --tint: var(--slop-mint); }
+.pocket-cell[data-tint="sky"] { --tint: var(--slop-sky); }
+.pocket-cell[data-tint="rose"] { --tint: var(--slop-rose); }
+.pocket-cell[data-tint="lilac"] { --tint: var(--slop-lilac); }
+.pocket-cell[data-selected] { background: linear-gradient(color-mix(in srgb, var(--slop-focus) 10%, transparent) 0 0), var(--tint, transparent); }
+.pocket-cell[data-active] { box-shadow: inset 0 0 0 2px var(--slop-focus); z-index: 1; }
+.pocket-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pocket-cell[data-kind="number"] .pocket-value { text-align: right; font-family: "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+.pocket-cell[data-kind="error"] .pocket-value { text-align: right; color: var(--slop-accent); font: 700 12px/1 "SF Mono", Menlo, monospace; }
+.pocket-cell[data-formula] .pocket-value { font-weight: 650; }
+.pocket-cell[data-formula]::before { content: ""; position: absolute; top: 0; left: 0; border: 4px solid transparent; border-top-color: var(--slop-accent); border-left-color: var(--slop-accent); opacity: .75; }
+.pocket-stamp { flex: none; font-size: 14px; line-height: 1; }
+.pocket-cell[data-bounce] .pocket-value { animation: pocket-hop 520ms cubic-bezier(.3, 1.6, .5, 1); }
+.pocket-sparkle { position: absolute; right: -5px; top: -9px; font-size: 13px; pointer-events: none; animation: pocket-twinkle 700ms ease-out forwards; z-index: 3; }
+.pocket-cell-input { position: absolute; inset: -1px; width: calc(100% + 2px); min-width: 140px; padding: 0 7px; border: 2px solid var(--slop-focus); border-radius: 2px; background: #fff; font: 13.5px/1 "SF Mono", Menlo, monospace; z-index: 4; box-shadow: 0 4px 12px #2f3a4a26; }
+.pocket-cell-input:focus-visible { outline: none; }
+@keyframes pocket-hop { 0% { transform: translateY(0) scale(1); } 35% { transform: translateY(-5px) scale(1.08); } 100% { transform: none; } }
+@keyframes pocket-twinkle { 0% { opacity: 0; transform: scale(.4) rotate(-20deg); } 30% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0; transform: translateY(-6px) scale(.9) rotate(15deg); } }
+
+.pocket-tray { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 2px; }
+.pocket-crayons { display: flex; align-items: center; gap: 4px; }
+.pocket-crayon { display: grid; place-items: center; width: 36px; height: 44px; padding: 0; border: 0; background: transparent; }
+.pocket-crayon i { display: block; width: 18px; height: 34px; border: 1.5px solid #2f3a4a55; border-radius: 3px 3px 6px 6px; background: var(--tint); transform: translateY(4px) rotate(-6deg); transition: transform 140ms ease-out; clip-path: polygon(20% 12%, 50% 0, 80% 12%, 100% 22%, 100% 100%, 0 100%, 0 22%); }
+.pocket-crayon[data-tint="butter"] { --tint: var(--slop-butter); }
+.pocket-crayon[data-tint="mint"] { --tint: var(--slop-mint); }
+.pocket-crayon[data-tint="sky"] { --tint: var(--slop-sky); }
+.pocket-crayon[data-tint="rose"] { --tint: var(--slop-rose); }
+.pocket-crayon[data-tint="lilac"] { --tint: var(--slop-lilac); }
+.pocket-crayon:hover i { transform: translateY(0) rotate(-3deg); }
+.pocket-crayon[aria-pressed="true"] i { transform: translateY(-3px) rotate(0); border-color: var(--slop-ink); border-width: 2px; }
+.pocket-eraser { width: 40px; color: var(--slop-pencil); border-radius: 8px; }
+.pocket-eraser:hover { color: var(--slop-ink); background: color-mix(in srgb, var(--slop-grid) 35%, transparent); }
+.pocket-stamp-trigger { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 12px; border: 1.5px dashed var(--slop-pencil); border-radius: 10px; background: transparent; font-size: 14px; font-weight: 600; }
+.pocket-stamp-trigger[data-state="open"], .pocket-stamp-trigger:hover { border-style: solid; background: #fff; }
+.pocket-sum { margin-left: auto; display: flex; gap: 12px; font-size: 13px; color: var(--slop-pencil); white-space: nowrap; }
+.pocket-sum b { color: var(--slop-ink); font: 650 13.5px/1 "SF Mono", Menlo, monospace; }
+
+.pocket-stamp-pad { width: 216px; padding: 10px; border: 2px solid var(--slop-ink); border-radius: 12px; background: var(--slop-paper); box-shadow: 0 4px 0 var(--slop-ink); font-family: "Avenir Next", Avenir, sans-serif; color: var(--slop-ink); z-index: 20; }
+.pocket-stamp-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.pocket-stamp-grid button { height: 44px; border: 0; border-radius: 8px; background: transparent; font-size: 22px; transition: transform 120ms ease-out; }
+.pocket-stamp-grid button:hover { background: var(--slop-butter); transform: rotate(-8deg) scale(1.1); }
+.pocket-unstamp { width: 100%; min-height: 36px; margin-top: 6px; border: 0; border-top: 1px dashed var(--slop-grid); background: transparent; font-size: 13px; color: var(--slop-pencil); }
+.pocket-unstamp:hover { color: var(--slop-ink); }
+.pocket-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+
+.pocket-export-view { width: 720px; padding: 32px 36px; background: var(--slop-paper); }
+.pocket-export-view h1 { margin: 2px 0 18px; font: 30px/1.2 "Marker Felt", "Chalkboard SE", cursive; }
+.pocket-export-view .pocket-cell { cursor: default; }
+
+.pocket-icon { position: relative; width: 400px; height: 400px; padding: 44px; border-radius: 72px; background: var(--slop-desk); }
+.pocket-icon-sheet { display: grid; grid-template-columns: 56px 1fr 1fr; grid-template-rows: 56px 1fr 1fr; height: 100%; border-radius: 26px; overflow: hidden; background: linear-gradient(90deg, transparent 14px, var(--slop-margin) 14px 19px, transparent 19px), var(--slop-paper); box-shadow: 0 8px 0 #2f3a4a26; }
+.pocket-icon-sheet > * { display: grid; place-items: center; border-right: 3px solid var(--slop-grid); border-bottom: 3px solid var(--slop-grid); font-style: normal; }
+.pocket-icon-sheet b { font: 800 26px/1 "Avenir Next", sans-serif; color: var(--slop-pencil); }
+.pocket-icon-sheet i { font-size: 64px; }
+.pocket-icon-sheet em { font: 700 48px/1 "SF Mono", Menlo, monospace; color: var(--slop-ink); }
+.pocket-icon-hi { background: var(--slop-butter); }
+.pocket-icon-spark { position: absolute; right: 14px; top: 14px; font-size: 72px; transform: rotate(12deg); }
+
+@container (max-width: 560px) {
+  .pocket-export { padding-inline: 10px; }
+  .pocket-sum span:not(:first-child) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pocket-cell[data-bounce] .pocket-value, .pocket-sparkle { animation: none; }
+  .pocket-sparkle { opacity: 0; }
+  .pocket-export, .pocket-crayon i, .pocket-stamp-grid button { transition: none; }
+}

@@ -1,7 +1,7 @@
 import { defineDocument, defineSlop, s } from "../../src/sdk/schema";
 import type { Component } from "svelte";
 import { attachments } from "../../src/sdk/app/attachments";
-import { svelteApp } from "../../src/sdk/app/store.svelte";
+import { isSpeechError, speech, svelteApp, type SpeechTranscript } from "../../src/sdk/app/store.svelte";
 
 function declarations(view: Component) {
   const fields = {
@@ -24,6 +24,9 @@ function declarations(view: Component) {
   defineSlop({ ...fields, window, commands: {} });
   // @ts-expect-error Catalog categories come from the Rust enum.
   defineSlop({ ...fields, categories: ["unknown"], window });
+  defineSlop({ ...fields, window, capabilities: ["camera", "microphone", "speech"] });
+  // @ts-expect-error Capabilities come from the Rust enum; only implemented ones exist.
+  defineSlop({ ...fields, window, capabilities: ["location"] });
   defineDocument({ title: s.string() }, { initial: { title: "Initial" } });
   defineDocument({ title: s.text(), count: s.counter(), note: s.optional(s.string()), done: s.boolean({default:false}) });
   // @ts-expect-error Required fields need initial values.
@@ -55,3 +58,18 @@ function exportRoles(plain: Component<Record<string, never>>, capture: Component
   svelteApp(plain, {schema, export:needy});
 }
 void exportRoles;
+
+async function transcription(ref: Awaited<ReturnType<typeof attachments.import>>, error: unknown) {
+  const transcript: SpeechTranscript = await speech.transcribe(ref, { locale: "en-US" });
+  const text: string = (await speech.transcribe(ref.id)).text;
+  // @ts-expect-error A recording is passed by its stored reference or ID, never its bytes.
+  await speech.transcribe(new Blob());
+  // @ts-expect-error A locale is an identifier string.
+  await speech.transcribe(ref, { locale: 7 });
+  if (isSpeechError(error)) {
+    const code: string = error.code;
+    if (error.code === "unavailable" && error.reason === "notDeclared") void code;
+  }
+  return [transcript.locale, text];
+}
+void transcription;

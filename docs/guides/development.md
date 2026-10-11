@@ -15,6 +15,37 @@ bun run verify --all --native
 
 Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`.
 
+### Rebuild templates before the app
+
+Xcode's **Embed starter templates** phase copies prepared files from
+`generated/templates/`; it does not compile `slops/` source. After changing a slop,
+its dependencies, the SDK or the template compiler, use this order:
+
+```sh
+bun run build
+bun run build:templates
+bun run apple:build
+```
+
+For Xcode Run, use the first two commands, then build/run the project in Xcode instead
+of running `apple:build`. Create a fresh document from the rebuilt starter to verify it.
+The template cache fingerprints the compiler and shared dependencies as well as each
+slop's source; let it rebuild affected entries rather than deleting the cache.
+
+| Operation | Output it updates |
+| --- | --- |
+| `bun slop build slops/beat-pad` | That project's `dist/beat-pad.slop`. |
+| `bun slop register slops/beat-pad` | A rebuilt local master in `~/.hitslop/templates`. |
+| `bun run build:templates` | `generated/templates/`, its inventory and native artwork. |
+| Xcode build / `bun run apple:build` | The app, embedding the prepared `generated/templates/` starters. |
+
+Updating one output does not update the others. Rebuilding the Mac app alone can embed
+an old prepared starter; rebuilding a project's `dist` alone cannot fix new documents
+created from that starter. A separately registered local template also needs to be
+re-registered. Existing `.slop` documents always keep their embedded app: neither an
+app rebuild nor a template replacement upgrades them. Never replace a document's app
+or saved data by copying a template over it.
+
 Every Xcode app configuration builds, embeds and signs `hitslop-evaluator`, which runs
 named commands such as Quick Checklist's add, file, restore and remove actions. Debug
 Run does not require `HITSLOP_EVALUATOR`; that override is for isolated tests. The native
@@ -31,11 +62,11 @@ renderer is embedded for Release and the packaged development artifact separatel
 | `packages/hitslop/src/shell` | Page shell (private): snapshot store, typed handles, bindings, themes, and capture (no CRDT) |
 | `crates/hitslop-core/src/wire`, `src/app` | Serde wire types and package-format acceptance, exported with ts-rs and UniFFI |
 | `packages/hitslop/src/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
-| `examples/slops` | Active authored templates and the bundled selection |
+| `slops` | Active authored templates and the bundled selection |
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
 | `scripts` | Build, verification, packaging, and release tooling |
 
-The `hitslop` npm package is publishable. The repository root, examples workspace, and landing application are private. The package exports TypeScript source, consumed by Bun and the supported Vite/Svelte
+The `hitslop` npm package is publishable. The repository root, slops workspace, and landing application are private. The package exports TypeScript source, consumed by Bun and the supported Vite/Svelte
 authoring build; it does not ship a precompiled Node.js entry point. The installed-package
 tests check SDK types outside the workspace. Apple implementation belongs in the app-local Swift package.
 
@@ -43,15 +74,15 @@ tests check SDK types outside the workspace. Apple implementation belongs in the
 
 ## Add a template
 
-Add one authored project directly under `examples/slops/`, in a folder named by its slug, including `slop.ts`, `schema.ts`, `App.svelte`, `styles.css`, and `tsconfig.json` (no `main.ts`). Use the current examples and [authoring guide](authoring.md). The examples workspace supplies shared dependencies; add a project package manifest if it needs its own dependencies.
+Add one authored project directly under `slops/`, in a folder named by its slug, including `slop.ts`, `schema.ts`, `App.svelte`, `styles.css`, and `tsconfig.json` (no `main.ts`). Use the current examples and [authoring guide](authoring.md). The slops workspace supplies shared dependencies; add a project package manifest if it needs its own dependencies.
 
-Discovery scans immediate project directories with a `slop.ts`, without running it: a folder's name is its slug. Hidden directories, `archive`, `dist`, and `node_modules` are excluded. A folder name that is not a slug fails; the build checks the rest of `slop.ts`. Each project must pass its own Svelte/TypeScript check. A typical `tsconfig.json` extends `../../../tsconfig.json`, includes local TypeScript/Svelte files, and excludes `dist` and `node_modules`.
+Discovery scans immediate project directories with a `slop.ts`, without running it: a folder's name is its slug. Hidden directories, `archive`, `dist`, and `node_modules` are excluded. A folder name that is not a slug fails; the build checks the rest of `slop.ts`. Each project must pass its own Svelte/TypeScript check. A typical `tsconfig.json` extends `hitslop/tsconfig.json`, includes local TypeScript/Svelte files, and excludes `dist` and `node_modules`.
 
-`bun run build:templates` produces `generated/templates/<slug>.slop` for every discovered project. Add its slug to `examples/slops/bundled.json` only when it should ship with the Mac app. This list is the sole bundled selection; duplicate or unknown selections fail. The generated inventory connects the build to app embedding and release verification. Rebuild after changing sources or selection.
+`bun run build:templates` produces `generated/templates/<slug>.slop` for every discovered project. Add its slug to `slops/bundled.json` only when it should ship with the Mac app. This list is the sole bundled selection; duplicate or unknown selections fail. The generated inventory connects the build to app embedding and release verification. Rebuild after changing sources or selection.
 
 Embedding replaces the entire generated StarterTemplates directory, so deselected templates disappear from the next app build. It never edits a user's installed templates or documents. The native catalog already discovers any valid local template and reads its categories from its app metadata.
 
-Quick Checklist is the reference example. Active projects under `examples/slops` declare `slop.ts`; projects in `examples/archive` are inactive. New templates need no edits to build loops. Do not add a test suite for each slop. Infrastructure tests use deliberate fixtures; generic release checks cannot assume fields such as `title`.
+Quick Checklist is the reference example. Active projects under `slops` declare `slop.ts`; restored-from-archive slops live in `slops` like any other, and the local `archive/` folder is inactive. New templates need no edits to build loops. Do not add a test suite for each slop. Infrastructure tests use deliberate fixtures; generic release checks cannot assume fields such as `title`.
 
 ## Focused checks
 
@@ -85,7 +116,7 @@ Test locations, including `tests/release`, `tests/presentation`, `tests/verifica
 Read AGENTS and the template's `slop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter historical compatibility fixtures or release hashes to make a check pass.
 
 `archive/`, `spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`,
-`examples/archive/`, `_docs/`, `_vibe/` and `deferred/` stay local and are ignored by
+`_docs/`, `_vibe/` and `deferred/` stay local and are ignored by
 Git. They are not active contracts. Keep shared decisions in the architecture, roadmap
 and ideas pages. Restore an old project only after updating its source to the current
 document API; there is no legacy document migration.

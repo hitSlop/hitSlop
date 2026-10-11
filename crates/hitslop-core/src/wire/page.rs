@@ -24,6 +24,16 @@ pub enum PageRequest {
         width: u32,
         height: u32,
     },
+    /// Transcribes a recording the page already stored as an attachment, by its ID, so the
+    /// recording never travels through the page request again. Absent `locale` means the
+    /// person's own.
+    #[serde(rename = "speech.transcribe")]
+    SpeechTranscribe {
+        attachment: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        locale: Option<String>,
+    },
     Ready {},
     PageRecovered {},
     Failed {
@@ -63,6 +73,9 @@ impl PageRequest {
                     && (super::WINDOW_MIN_HEIGHT..=super::WINDOW_MAX).contains(height)
             }
             Self::Failed { error } | Self::PageError { error, .. } => error.encode_utf16().count() <= super::ERROR_TEXT,
+            Self::SpeechTranscribe { attachment, locale } => {
+                super::valid_attachment_id(attachment) && locale.as_deref().is_none_or(super::valid_speech_locale)
+            }
             _ => true,
         };
         if valid { Ok(()) } else { Err(err(Code::InvalidRequest, "Invalid page request")) }
@@ -73,6 +86,9 @@ impl PageRequest {
 #[derive(Debug)]
 pub enum HostAction {
     WindowResize { width: u32, height: u32 },
+    /// The app declared `speech` and this page may use it. The host reads the recording
+    /// through the owner's resource reader (`ResourceReader::speech_clip`).
+    SpeechTranscribe { attachment: String, locale: Option<String> },
     Ready,
     PageRecovered,
     Failed { error: String },
@@ -130,6 +146,11 @@ pub enum PageSuccess {
         width: f64,
         height: f64,
     },
+    #[serde(rename = "speech.transcribe")]
+    SpeechTranscribe {
+        ok: True,
+        outcome: SpeechOutcome,
+    },
     Ready {
         ok: True,
     },
@@ -143,9 +164,71 @@ pub enum PageSuccess {
         ok: True,
     },
 }
+/// What a transcription came to. Everything but `transcribed` reaches the author as a
+/// `SpeechError` with the same `code`; the page request itself still succeeded.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum SpeechOutcome {
+    /// `locale` is the one the recognizer used.
+    Transcribed { text: String, locale: String },
+    Unavailable { reason: SpeechUnavailable, message: String },
+    /// The page was replaced or closed, or an export began, before the transcript was ready.
+    Cancelled { message: String },
+    Failed { message: String },
+}
+/// Why this host cannot transcribe: the app did not declare `speech`; this host has no
+/// speech service (`slop dev`, a browser copy, a background renderer); the OS cannot
+/// (too old, or recognition is off); this locale has no on-device recognizer, and the
+/// host never sends a recording off the device instead; or the person declined.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum SpeechUnavailable {
+    NotDeclared,
+    Host,
+    System,
+    Locale,
+    Permission,
+}
+impl SpeechOutcome {
+    /// The answer of every host without a speech service.
+    pub fn unsupported_host() -> Self {
+        Self::Unavailable {
+            reason: SpeechUnavailable::Host,
+            message: "Speech transcription runs in the hitSlop Mac app; this host cannot transcribe".into(),
+        }
+    }
+    /// The provider's outcome as the page may receive it: messages shortened to the
+    /// diagnostic limit, and a transcript or locale beyond its limit refused.
+    fn bounded(self) -> Self {
+        let message = |text: String| -> String {
+            let mut units = 0;
+            text.chars()
+                .take_while(|c| {
+                    units += c.len_utf16();
+                    units <= super::ERROR_TEXT
+                })
+                .collect()
+        };
+        match self {
+            Self::Transcribed { text, .. } if text.len() > super::SPEECH_TEXT_BYTES => Self::Failed {
+                message: format!("The transcript is longer than {} MiB", super::SPEECH_TEXT_BYTES >> 20),
+            },
+            Self::Transcribed { locale, .. } if !super::valid_speech_locale(&locale) => {
+                Self::Failed { message: "The recognizer named an invalid locale".into() }
+            }
+            Self::Transcribed { .. } => self,
+            Self::Unavailable { reason, message: text } => Self::Unavailable { reason, message: message(text) },
+            Self::Cancelled { message: text } => Self::Cancelled { message: message(text) },
+            Self::Failed { message: text } => Self::Failed { message: message(text) },
+        }
+    }
+}
 /// Native results use the same serializer as owner results.
 pub enum HostReply {
     WindowResize { width: f64, height: f64 },
+    SpeechTranscribe { outcome: SpeechOutcome },
     Ready,
     PageRecovered,
     Failed,
@@ -165,6 +248,7 @@ impl HostReply {
                     false,
                 );
             }
+            Self::SpeechTranscribe { outcome } => PageSuccess::SpeechTranscribe { ok, outcome: outcome.bounded() },
             Self::Ready => PageSuccess::Ready { ok },
             Self::PageRecovered => PageSuccess::PageRecovered { ok },
             Self::Failed => PageSuccess::Failed { ok },

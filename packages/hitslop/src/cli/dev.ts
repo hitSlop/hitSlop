@@ -12,8 +12,8 @@ import { stageWorker } from "./build";
 import { execute } from "./engine";
 import { PreviewOwners } from "./preview-owner";
 import { previewClient } from "./preview-client";
-import type { BuildInput, WindowDefinition } from "../wire/app.generated";
-import { appContentSecurityPolicy, previewHostPolicy } from "../schema/policy";
+import type { BuildInput, Capability, WindowDefinition } from "../wire/app.generated";
+import { appContentSecurityPolicy, capabilityPermissionsPolicy, previewHostPolicy } from "../schema/policy";
 import { AttachmentIdPattern } from "../schema/constants";
 
 /** Single byte ranges; malformed/multiple ranges are ignored, an empty range is 416. */
@@ -33,7 +33,7 @@ export function byteRange(header: string | undefined, size: number): [number, nu
 export async function startDev(source: string, port = 0, signal?: AbortSignal) {
   source = await realpath(resolve(source));
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-preview-"));
-  let stage = "", template = "", input: BuildInput, window: WindowDefinition;
+  let stage = "", template = "", input: BuildInput, window: WindowDefinition, capabilities: Capability[] = [];
   const hosts = new PreviewOwners(temporary, () => template);
   let dependencies = new Set([join(source,"slop.ts")]);
   let closed = false, failed = false;
@@ -48,7 +48,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
       const built = await worker.done;
       await execute({method:"pack",app:built.input,stage:join(next,"stage"),file:join(next,"preview.slop")});
       const old = stage;
-      input = built.input; window = built.window; stage = next; template = join(next,"preview.slop");
+      input = built.input; window = built.window; capabilities = built.capabilities; stage = next; template = join(next,"preview.slop");
       dependencies = new Set(built.dependencies.definition.filter(path => !/\.(?:svelte|css)$/.test(path)));
       server?.watcher.add([...dependencies]);
       failed = false; hosts.activate();
@@ -97,7 +97,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
             path = decodeURIComponent(new URL(req.url!,"http://localhost").pathname);
             const origin = new URL(current.resolvedUrls!.local[0]!).origin;
             let content: string | Buffer | undefined, type = "text/javascript";
-            if (path === "/") { content = previewFrame({title:input.declaration.metadata.title,window}); type="text/html"; }
+            if (path === "/") { content = previewFrame({title:input.declaration.metadata.title,window,capabilities}); type="text/html"; }
             else if (path === "/app.html") {
               type="text/html";
               content=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}"></script></body></html>`;
@@ -137,6 +137,8 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
             if (content===undefined) {next();return;}
             res.setHeader("Content-Type",type);res.setHeader("Cache-Control","no-store");res.setHeader("X-Content-Type-Options","nosniff");
             res.setHeader("Content-Security-Policy",path==="/" ? previewHostPolicy(origin) : appContentSecurityPolicy("browser",origin));
+            // Devices follow the declaration, as the native host admits them.
+            if (path==="/" || path==="/app.html") res.setHeader("Permissions-Policy",capabilityPermissionsPolicy(capabilities));
             res.end(content);
           } catch(error) {
             if (path.startsWith("/attachments/")) { res.statusCode=404; res.end(); }

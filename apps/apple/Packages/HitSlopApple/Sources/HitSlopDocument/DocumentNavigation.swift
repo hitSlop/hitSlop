@@ -1,5 +1,6 @@
 import AppKit
 import HitSlopCore
+import HitSlopCoreBinding
 @preconcurrency import WebKit
 
 /// WebKit navigation, download and file-selection policy for the current page.
@@ -31,6 +32,52 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     filePicker.present(
       in: window, multiple: parameters.allowsMultipleSelection,
       directories: parameters.allowsDirectories, completion: completionHandler)
+  }
+
+  /// Camera and microphone requests (`getUserMedia`). macOS still asks the person once for
+  /// hitSlop; this decides which pages may ask at all.
+  public func webView(
+    _ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+    initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType,
+    decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
+  ) {
+    let admitted = admitsMediaCapture(
+      type, isMainFrame: frame.isMainFrame,
+      origins: [(origin.protocol, origin.host), (frame.securityOrigin.protocol, frame.securityOrigin.host)],
+      in: webView)
+    decisionHandler(admitted ? .grant : .deny)
+  }
+
+  /// The interactive page of an owned document, shown in a visible window, may capture what
+  /// its app declared. Snapshot, export and icon renderers, embedded frames, a page being
+  /// captured or replaced, and any device the app did not declare are refused.
+  func admitsMediaCapture(
+    _ type: WKMediaCaptureType, isMainFrame: Bool, origins: [(protocol: String, host: String)],
+    in webView: WKWebView
+  ) -> Bool {
+    guard isCurrent(webView), admitsPageServices, isMainFrame,
+      origins.allSatisfy({ $0.protocol == "slop" && $0.host == "app" }),
+      webView.window?.isVisible == true,
+      let required = Self.capabilities(capturing: type)
+    else { return false }
+    return required.isSubset(of: file.capabilities)
+  }
+
+  /// Device and host services (capture, speech) serve only the ready page of an owned
+  /// document: never a snapshot, export or icon renderer, a page being captured, or one
+  /// that is opening, closing or retired.
+  var admitsPageServices: Bool {
+    acceptsPageWork && !capturing && owner.mode == .document
+  }
+
+  /// The declaration a capture needs: both devices for a combined request.
+  static func capabilities(capturing type: WKMediaCaptureType) -> Set<Capability>? {
+    switch type {
+    case .camera: [.camera]
+    case .microphone: [.microphone]
+    case .cameraAndMicrophone: [.camera, .microphone]
+    @unknown default: nil
+    }
   }
 
   public func webView(

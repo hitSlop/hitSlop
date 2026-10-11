@@ -5,7 +5,7 @@ use hitslop_core::{
     command::{self, PageDispatch},
     file::ResourceRoute,
     owner::{Event, Owner, Reply, Request},
-    page_wire::{HostAction, HostReply},
+    page_wire::{HostAction, HostReply, SpeechOutcome},
     preview::PreviewRequest,
     store::Mode,
 };
@@ -103,6 +103,10 @@ pub fn serve(path: &Path) -> ExitCode {
                                         HostAction::PageRecovered => HostReply::PageRecovered,
                                         HostAction::Failed { .. } => HostReply::Failed,
                                         HostAction::PageError { .. } => HostReply::PageError,
+                                        // The preview has no speech service; the page says so.
+                                        HostAction::SpeechTranscribe { .. } => {
+                                            HostReply::SpeechTranscribe { outcome: SpeechOutcome::unsupported_host() }
+                                        }
                                     }
                                     .to_json(),
                                 };

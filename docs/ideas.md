@@ -135,6 +135,9 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ### Permissions bound to the app's code
 
+- **Today:** apps declare camera, microphone and on-device speech use; the host gates
+  requests and macOS consent belongs to hitSlop. There is no per-slop decision or
+  code-bound permission store. See [capabilities](guides/capabilities.md).
 - **What:** grant a permission (microphone, camera, MIDI) to one app's code: the hash of
   its `app` row and assets, which in a single file are all the code there is. A remix
   or an upgrade asks again.
@@ -214,7 +217,7 @@ keep temporary view state in Svelte and document content in fields. A new local-
 kind would need Rust, SDK, fixtures, export semantics and a compatibility decision;
 it is not implied by the relay.
 
-The archived examples still supply useful cases: Slide Deck's selected slide; volume
+The restored slops supply useful cases: Slide Deck's selected slide; volume
 and mute in Alien Radio, Metronome and Pocket Pod; Pocket Pod's playback and repeat;
 Pixel Art's selected color; Morning Pages' current key; and Wordle's mode. Decide each
 field's intended scope before introducing locality.

@@ -16,6 +16,20 @@ export type PageErrorKind = "operation" | "application";
 
 export type PagePush = { "type": "publication", publication: Publication, } | { "type": "resync" };
 
-export type PageRequest = { "method": "open", } | { "method": "apply", batch: Batch, } | { "method": "flush", } | { "method": "undo", } | { "method": "redo", } | { "method": "config", } | { "method": "attachments.put", bytes: string, } | { "method": "window.resize", width: number, height: number, } | { "method": "ready", } | { "method": "pageRecovered", } | { "method": "failed", error: string, } | { "method": "pageError", kind: PageErrorKind, error: string, };
+export type PageRequest = { "method": "open", } | { "method": "apply", batch: Batch, } | { "method": "flush", } | { "method": "undo", } | { "method": "redo", } | { "method": "config", } | { "method": "attachments.put", bytes: string, } | { "method": "window.resize", width: number, height: number, } | { "method": "speech.transcribe", attachment: string, locale?: string, } | { "method": "ready", } | { "method": "pageRecovered", } | { "method": "failed", error: string, } | { "method": "pageError", kind: PageErrorKind, error: string, };
 
-export type PageSuccess = { "method": "open", ok: True, state: string, } | { "method": "apply", ok: True, sequence: number, ids: Array<string>, selectionStart?: number, selectionEnd?: number, } | { "method": "flush", ok: True, } | { "method": "undo", ok: True, sequence: number, } | { "method": "redo", ok: True, sequence: number, } | { "method": "config", ok: True, readOnly: boolean, runtimeABI: number, style: boolean, window: WindowDefinition, descriptor: object, } | { "method": "attachments.put", ok: True, id: string, byteLength: number, mimeType: string, } | { "method": "window.resize", ok: True, width: number, height: number, } | { "method": "ready", ok: True, } | { "method": "pageRecovered", ok: True, } | { "method": "failed", ok: True, } | { "method": "pageError", ok: True, };
+export type PageSuccess = { "method": "open", ok: True, state: string, } | { "method": "apply", ok: True, sequence: number, ids: Array<string>, selectionStart?: number, selectionEnd?: number, } | { "method": "flush", ok: True, } | { "method": "undo", ok: True, sequence: number, } | { "method": "redo", ok: True, sequence: number, } | { "method": "config", ok: True, readOnly: boolean, runtimeABI: number, style: boolean, window: WindowDefinition, descriptor: object, } | { "method": "attachments.put", ok: True, id: string, byteLength: number, mimeType: string, } | { "method": "window.resize", ok: True, width: number, height: number, } | { "method": "speech.transcribe", ok: True, outcome: SpeechOutcome, } | { "method": "ready", ok: True, } | { "method": "pageRecovered", ok: True, } | { "method": "failed", ok: True, } | { "method": "pageError", ok: True, };
+
+/**
+ * What a transcription came to. Everything but `transcribed` reaches the author as a
+ * `SpeechError` with the same `code`; the page request itself still succeeded.
+ */
+export type SpeechOutcome = { "status": "transcribed", text: string, locale: string, } | { "status": "unavailable", reason: SpeechUnavailable, message: string, } | { "status": "cancelled", message: string, } | { "status": "failed", message: string, };
+
+/**
+ * Why this host cannot transcribe: the app did not declare `speech`; this host has no
+ * speech service (`slop dev`, a browser copy, a background renderer); the OS cannot
+ * (too old, or recognition is off); this locale has no on-device recognizer, and the
+ * host never sends a recording off the device instead; or the person declined.
+ */
+export type SpeechUnavailable = "notDeclared" | "host" | "system" | "locale" | "permission";

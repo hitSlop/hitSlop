@@ -1,7 +1,27 @@
 ---
 title: Privacy
-description: Analytics and crash reporting in the hitSlop Mac app.
+description: Device permissions, on-device transcription, web access, analytics and crash reporting.
 ---
+
+## Documents, devices and speech
+
+Recordings, photos and transcripts saved by a slop are document content and travel
+with the `.slop` file when you send a copy. A slop must declare camera or microphone
+access before the host admits a capture request. macOS permissions are granted to
+hitSlop as an application; there is no separate per-document permission dialog yet.
+Change those decisions in System Settings → Privacy & Security.
+
+The `speech.transcribe` service recognizes stored recordings on-device on the Mac.
+If the requested language cannot be recognized locally, it reports that limitation;
+it does not fall back to sending the recording to a server. Speech Recognition has its
+own macOS permission, separate from Microphone. See
+[capabilities and permissions](/docs/guides/capabilities/) for the exact limits.
+
+Slops can make HTTPS requests and load external images, media and embedded web pages.
+Those requests reach their respective providers. Local document storage and on-device
+transcription do not mean that all authored apps work offline or never use the network.
+
+## Analytics and crash reporting
 
 Release builds of the Mac app enable Firebase Analytics and Crashlytics. They send
 launch, open, create (source), duplicate and export (format) events; operation

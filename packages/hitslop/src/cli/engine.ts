@@ -67,7 +67,7 @@ const replyFields = {
   copy: ["output"], get: ["state"], batch: ["ids"], export: ["output"], "theme.export": ["state"],
   "attachments.ref": ["reference"], "attachments.list": ["state"], "attachments.read": ["state"], call: ["result", "ids"],
   "artwork.export": ["output"], templates: ["catalog"], create: ["documentPath"], inspect: ["info"], schema: ["schema"],
-  pack: [], validateApp: ["window"], validateMetadata: [], describe: ["state"], open: ["documentPath"], screenshot: ["output"],
+  pack: [], validateApp: ["window", "capabilities"], validateMetadata: [], describe: ["state"], open: ["documentPath"], screenshot: ["output"],
 } satisfies Record<EngineMethod, readonly string[]>;
 function acknowledged(value: unknown, method: EngineMethod): value is EngineReply {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;

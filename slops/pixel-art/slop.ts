@@ -1,0 +1,31 @@
+import { defineSlop } from "hitslop";
+
+export default defineSlop({
+  slug: "pixel-art",
+  title: "Pixel Art Studio",
+  description: "A pocket-console sprite desk for 16×16 drawing, fill, palettes, undo, and PNG export.",
+  author: { name: "hitSlop", url: "https://hitslop.com" },
+  categories: ["creative", "media"],
+  window: { kind: "standard", width: 460, height: 620 },
+  theme: {
+    shell: "#8b8a86",
+    shellHi: "#b3b1ab",
+    shellDeep: "#6e6d69",
+    shellBorder: "#5c5b57",
+    ink: "#2a2926",
+    screen: "#9bbc0f",
+    screenLite: "#c4e038",
+    screenMid: "#b6d42e",
+    screenDeep: "#0f380f",
+    bezel: "#2f3a2a",
+    bezelEdge: "#1c2718",
+    purple: "#6b4aa8",
+    purpleHi: "#8d6cc4",
+    purpleDeep: "#3d2a66",
+    control: "#d8d5cc",
+    hardware: "#3f3e3a",
+    onPurple: "#f6f1ff",
+    danger: "#7b2630",
+    focus: "#5b3d96",
+  },
+});

@@ -81,8 +81,8 @@ export async function sharedTemplatePaths(repository: string, sources: string[],
     ])),
   ];
   // Shared authoring configs and directories, but not other templates, docs or local tool state.
-  for (const name of includeExamples ? await readdir(join(repository, "examples/slops")) : []) {
-    const path = join("examples/slops", name);
+  for (const name of includeExamples ? await readdir(join(repository, "slops")) : []) {
+    const path = join("slops", name);
     if (
       !ignored.has(name) &&
       !name.startsWith(".") &&

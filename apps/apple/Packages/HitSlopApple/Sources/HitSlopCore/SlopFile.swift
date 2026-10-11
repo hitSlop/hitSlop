@@ -51,6 +51,9 @@ public struct SlopFile: Sendable {
   public let metadata: AppMetadata
   public let window: WindowDefinition
   public let views: Views
+  /// The devices and host services the app declared that this build implements; the host
+  /// grants nothing else.
+  public let capabilities: Set<Capability>
   public let outline: SlopOutline
   public let lockAspect: Bool
   /// What the window shows behind the page.
@@ -78,6 +81,7 @@ public struct SlopFile: Sendable {
     metadata = opened.app.metadata
     window = opened.app.window
     views = opened.app.views
+    capabilities = Set(opened.app.capabilities)
     switch window.frame {
     case .standard(let frame):
       outline = .shape(SlopSilhouette(parsed: frame.shape))

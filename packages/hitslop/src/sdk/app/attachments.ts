@@ -7,7 +7,8 @@ export type { AttachmentInfo, AttachmentRef };
 export const attachments = {
   /** Stores `file`, then runs `reference` as a synchronous collector to write the
    * reference: `attachments.import<typeof schema.descriptor>(file, (tx, ref) => …)`.
-   * Unlike `void`, `void | undefined` refuses an async collector's promise. */
+   * Unlike `void`, `void | undefined` refuses an async collector's promise. A photo or
+   * recording Blob needs a name: `new File([blob], "clip.m4a", { type: blob.type })`. */
   import: <N extends ObjectNode = ObjectNode>(file: File, reference: (tx: Scope<N>, ref: AttachmentRef) => void | undefined) =>
     current().attachments.import(file, reference as never),
   /** A same-origin immutable URL, with the host-verified media type. */

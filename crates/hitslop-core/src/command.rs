@@ -85,6 +85,27 @@ fn page_config(owner: &Owner) -> Result<wire::page::PageSuccess> {
         descriptor: raw(app.app.document_json().into())?,
     })
 }
+/// A transcription reaches the host only for an owner's page whose stored app declared
+/// `speech`; otherwise the page learns why it is unavailable, and no host is asked.
+fn speech(owner: &Owner, attachment: String, locale: Option<String>) -> PageDispatch {
+    use wire::page::{HostAction, PageSuccess, SpeechOutcome, SpeechUnavailable};
+    let unavailable = |reason, message: &str| {
+        page_success(PageSuccess::SpeechTranscribe {
+            ok: wire::engine::True,
+            outcome: SpeechOutcome::Unavailable { reason, message: message.into() },
+        })
+    };
+    if owner.mode() == store::Mode::Snapshot {
+        unavailable(SpeechUnavailable::Host, "Exports and background renders do not transcribe speech")
+    } else if !owner.app().app.capabilities().contains(&crate::app::Capability::Speech) {
+        unavailable(
+            SpeechUnavailable::NotDeclared,
+            r#"This app does not declare speech; add "speech" to capabilities in slop.ts"#,
+        )
+    } else {
+        PageDispatch::Host { action: HostAction::SpeechTranscribe { attachment, locale } }
+    }
+}
 /// Runs one validated request from `view`. Edits answer on acceptance; flush waits for
 /// persistence. Host actions pass the same serial view/lifecycle fence before delivery.
 pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDispatch) + Send + 'static) {
@@ -164,6 +185,7 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDis
                 PageRequest::PageError { kind, error } => {
                     Ok(PageDispatch::Host { action: HostAction::PageError { kind, error } })
                 }
+                PageRequest::SpeechTranscribe { attachment, locale } => Ok(speech(owner, attachment, locale)),
                 _ => unreachable!("document requests routed above"),
             };
             owner.admit_page(

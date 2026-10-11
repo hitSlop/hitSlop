@@ -124,7 +124,7 @@ async function quiet(command: string[], options: { env?: Record<string, string |
   return output;
 }
 
-const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts", "examples/slops/**/*.test.ts"]
+const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts", "slops/**/*.test.ts"]
   .flatMap(pattern => [...new Bun.Glob(pattern).scanSync(repository)]));
 
 /** `bun test` over `files`: positional `args` narrow them by path, options pass through. */

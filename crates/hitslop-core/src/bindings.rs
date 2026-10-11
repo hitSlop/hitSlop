@@ -52,6 +52,8 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         // Shared host/SDK values also come from the Rust-owned boundary.
         ("ErrorTextLimit", json!(ERROR_TEXT)),
         ("OperationErrorBrand", json!("slop.operation-error")),
+        ("SpeechErrorBrand", json!("slop.speech-error")),
+        ("SpeechLimits", json!({"localeBytes": SPEECH_LOCALE_BYTES, "localePattern": SPEECH_LOCALE_PATTERN, "textBytes": SPEECH_TEXT_BYTES})),
         ("PushLimits", json!({"items": 256, "bytes": 4 * 1024 * 1024})),
         ("SocketLimits", json!({"request": SOCKET_REQUEST, "attachment": SOCKET_ATTACHMENT})),
         (

@@ -118,8 +118,8 @@ fn dispatch(request: EngineRequest) -> String {
                 EngineSuccess::ValidateMetadata { ok: True }
             }
             EngineRequest::ValidateApp { app, stage } => {
-                let window = file::validate_app(app.get(), Path::new(&stage))?;
-                EngineSuccess::ValidateApp { ok: True, window }
+                let (window, capabilities) = file::validate_app(app.get(), Path::new(&stage))?;
+                EngineSuccess::ValidateApp { ok: True, window, capabilities }
             }
             EngineRequest::ArtworkExport { file: path, target, output } => {
                 let name = match target {

@@ -126,6 +126,12 @@ pub struct ResourceInfo {
     pub size: u64,
     pub media_type: String,
 }
+/// A stored recording and the file extension its container is decoded by.
+#[derive(Clone, Debug)]
+pub struct SpeechClip {
+    pub bytes: Vec<u8>,
+    pub file_extension: String,
+}
 struct ResourceRow {
     id: i64,
     encoding: Encoding,
@@ -236,6 +242,26 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
     }
     pub fn info(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceInfo>> {
         Ok(self.row(route, key)?.map(|row| row.info))
+    }
+    /// The verified recording a speech provider transcribes, by attachment ID. Refuses an
+    /// attachment this document does not hold and media no provider decodes.
+    pub fn speech_clip(&self, id: &str) -> Result<SpeechClip> {
+        let info = self
+            .info(ResourceRoute::Attachment, id)?
+            .ok_or_else(|| invalid("The recording is not in this document; store it with attachments.import first"))?;
+        let Some(&(_, extension)) = crate::media::SPEECH_TYPES.iter().find(|(media, _)| *media == info.media_type)
+        else {
+            let names: Vec<_> = crate::media::SPEECH_TYPES.iter().map(|(_, extension)| *extension).collect();
+            return Err(invalid(format!(
+                "Speech transcribes {} recordings; this attachment is {}",
+                names.join(", "),
+                info.media_type
+            )));
+        };
+        let bytes = self
+            .read_range(ResourceRoute::Attachment, id, 0, info.size)?
+            .ok_or_else(|| invalid("The recording is not in this document"))?;
+        Ok(SpeechClip { bytes, file_extension: extension.into() })
     }
     pub fn read_range(&self, route: ResourceRoute, key: &str, offset: u64, length: u64) -> Result<Option<Vec<u8>>> {
         let Some(row) = self.row(route, key)? else { return Ok(None) };

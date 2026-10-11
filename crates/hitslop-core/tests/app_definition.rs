@@ -1,5 +1,5 @@
 #![cfg(feature = "storage")]
-use hitslop_core::app::{AppDefinition, StandardFrame, WindowFrame};
+use hitslop_core::app::{AppDefinition, Capability, StandardFrame, WindowFrame};
 use hitslop_core::{Code, Document, build::BuildDeclaration};
 use serde_json::{Value, json};
 
@@ -271,6 +271,62 @@ fn build_declarations_share_acceptance_and_check_initial_values() {
     assert!(AppDefinition::from_declaration(&input, None).is_err());
     assert!(AppDefinition::from_declaration(&input, Some("media/wrong.png")).is_err());
     assert!(AppDefinition::from_declaration(&input, Some(&key)).is_ok());
+}
+
+#[test]
+fn capabilities_are_declared_canonically_refused_unknown_at_authoring_and_ignored_unknown_on_open() {
+    let declaration = |capabilities: Value| {
+        let mut value = definition();
+        value["metadata"] = metadata();
+        value["initial"] = json!({"title":"Initial"});
+        if !capabilities.is_null() {
+            value["capabilities"] = capabilities;
+        }
+        value
+    };
+    let declare = |capabilities: Value| serde_json::from_value::<BuildDeclaration>(declaration(capabilities));
+    // Absent is none, and stores nothing: the definition reads as it did before the field.
+    let none = AppDefinition::from_declaration(&declare(Value::Null).unwrap(), None).unwrap();
+    assert!(none.capabilities().is_empty());
+    assert!(!none.definition_json().contains("capabilities"));
+    // Packing stores one sorted spelling per capability; the stored form reopens unchanged.
+    let app = AppDefinition::from_declaration(&declare(json!(["microphone", "camera", "microphone"])).unwrap(), None)
+        .unwrap();
+    assert_eq!(app.capabilities(), [Capability::Camera, Capability::Microphone]);
+    let stored: Value = serde_json::from_str(&app.definition_json()).unwrap();
+    assert_eq!(stored["capabilities"], json!(["camera", "microphone"]));
+    let reread = AppDefinition::decode(1, 1, &metadata().to_string(), &app.definition_json()).unwrap();
+    assert_eq!(reread.capabilities(), app.capabilities());
+    assert_eq!(reread.definition_json(), app.definition_json());
+    // Authoring refuses a capability this build does not implement, and any non-string.
+    let input = |capabilities: Value| {
+        json!({"packageFormat":1,"runtimeABI":1,"declaration":declaration(capabilities),
+            "roles":{"ui":"ui.js"},"resources":[],"artwork":{}})
+        .to_string()
+    };
+    assert!(hitslop_core::build::BuildInput::decode(&input(json!(["speech"]))).is_ok());
+    for bad in [json!(["camera", "telepathy"]), json!(["Camera"]), json!([null]), json!("camera")] {
+        assert!(declare(bad.clone()).is_err(), "{bad}");
+        let error = hitslop_core::build::BuildInput::decode(&input(bad.clone())).unwrap_err();
+        assert_eq!(error.code, Code::InvalidRequest, "{bad}");
+    }
+    let error = hitslop_core::build::BuildInput::decode(&input(json!(["telepathy"]))).unwrap_err();
+    assert!(error.message.contains("telepathy") && error.message.contains("microphone"), "{}", error.message);
+    // Opening never grants what it does not know: a later build's capability is left out,
+    // the rest are sorted and unique, and the saved spelling is kept as it was.
+    let mut value = definition();
+    value["capabilities"] = json!(["speech", "telepathy", "camera", "camera"]);
+    let opened = read(&metadata(), &value).unwrap();
+    assert_eq!(opened.capabilities(), [Capability::Camera, Capability::Speech]);
+    let saved: Value = serde_json::from_str(&opened.definition_json()).unwrap();
+    assert_eq!(saved["capabilities"], value["capabilities"]);
+    // The stored shape is still a bounded list of strings.
+    for bad in [json!([1]), json!([null]), json!("camera"), json!({"camera":true})] {
+        value["capabilities"] = bad.clone();
+        assert!(read(&metadata(), &value).is_err(), "{bad}");
+    }
+    value["capabilities"] = json!(["x".repeat(70_000)]);
+    assert_eq!(read(&metadata(), &value).unwrap_err().code, Code::TooLarge);
 }
 
 #[test]

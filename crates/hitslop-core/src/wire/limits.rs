@@ -79,6 +79,23 @@ pub(crate) fn valid_id(value: &str) -> bool {
 /// Diagnostic text, in the page's UTF-16 units.
 #[cfg(feature = "storage")]
 pub(crate) const ERROR_TEXT: usize = 4096;
+/// A speech locale identifier (`en-US`, `zh_Hant_TW`), in ASCII bytes, and a transcript,
+/// in UTF-8 bytes. A recording is an attachment, so `ATTACHMENT_FILE_BYTES` bounds it.
+#[cfg(feature = "storage")]
+pub(crate) const SPEECH_LOCALE_BYTES: usize = 35;
+#[cfg(feature = "storage")]
+pub(crate) const SPEECH_TEXT_BYTES: usize = 1048576;
+/// A locale identifier a speech request may name: a letter, then letters, digits, `-`
+/// and `_`, as the page checks it before asking (`SPEECH_LOCALE_PATTERN`). The provider
+/// decides whether it can recognize it.
+#[cfg(feature = "ts")]
+pub(crate) const SPEECH_LOCALE_PATTERN: &str = "^[A-Za-z][A-Za-z0-9_-]*$";
+#[cfg(feature = "storage")]
+pub(crate) fn valid_speech_locale(locale: &str) -> bool {
+    locale.len() <= SPEECH_LOCALE_BYTES
+        && locale.bytes().next().is_some_and(|b| b.is_ascii_alphabetic())
+        && locale.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
 
 /// Native host values from the same constants used by decoding and persistence.
 #[cfg(feature = "storage")]

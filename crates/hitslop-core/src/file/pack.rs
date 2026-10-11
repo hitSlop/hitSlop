@@ -41,8 +41,9 @@ pub fn pack(input: &str, stage: &Path, dest: &Path) -> Result<()> {
     }
     staged.publish_template(dest)
 }
-pub fn validate_app(input: &str, stage: &Path) -> Result<crate::app::WindowDefinition> {
-    accept(input, stage).map(|build| build.app.window().clone())
+/// The accepted window and declared capabilities, which the development preview applies.
+pub fn validate_app(input: &str, stage: &Path) -> Result<(crate::app::WindowDefinition, Vec<crate::app::Capability>)> {
+    accept(input, stage).map(|build| (build.app.window().clone(), build.app.capabilities().to_vec()))
 }
 
 pub(super) fn initial_checkpoint(app: &crate::AppSpec, initial: &str) -> Result<Vec<u8>> {
