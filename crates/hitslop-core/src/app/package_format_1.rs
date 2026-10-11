@@ -95,7 +95,8 @@ impl From<Background> for StoredBackground {
     }
 }
 /// The `category_primary` and `category_secondary` spellings of format 1.
-const CATEGORY_COLUMNS: [(Category, &str); 13] = [
+const CATEGORY_COLUMNS: [(Category, &str); 14] = [
+    (Category::Popular, "popular"),
     (Category::Productivity, "productivity"),
     (Category::Utilities, "utilities"),
     (Category::Finance, "finance"),

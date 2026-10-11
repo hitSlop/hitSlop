@@ -418,6 +418,7 @@ Made something wonderfully specific? Show us your slop. Share a screenshot, swap
 
 Other projects exploring personal software and interactive documents:
 
+- [Your executable is a SQLite database](https://fzakaria.com/2026/08/23/your-executable-is-a-sqlite-database) and [Actually Queryable Executables](https://fzakaria.com/2026/08/24/actually-queryable-executables): Farid Zakaria's SELF, a program and its state in one SQLite file. It inspired the `.slop` file.
 - [Hyperclay](https://hyperclay.com/): HTML files you can reshape in place, where the live document is the source of truth.
 - [Capsule](https://withcapsule.app/): documents that run like apps, shared as single SQLite files.
 - [bento](https://bento.page/): an office suite that fits in one self-contained HTML file.

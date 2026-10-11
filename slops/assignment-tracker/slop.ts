@@ -5,7 +5,7 @@ export default defineSlop({
   title: "Assignment Tracker",
   description: "A plum study pad for assignments, deadlines, course notes, and the satisfaction of checking work off.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["education", "productivity"],
+  categories: ["education", "popular"],
   window: { kind: "standard", width: 620, height: 700 },
   theme: {
     surface: "#ffffff",

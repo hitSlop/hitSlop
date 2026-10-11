@@ -15,6 +15,7 @@ use serde_json::Value;
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub enum Category {
+    Popular,
     Productivity,
     Utilities,
     Finance,
@@ -40,6 +41,7 @@ impl Category {
 
     /// Catalog order is declaration order, independent of its stored string spelling.
     pub const ALL: &[Self] = &[
+        Self::Popular,
         Self::Productivity,
         Self::Utilities,
         Self::Finance,

@@ -5,7 +5,7 @@ export default defineSlop({
   title: "Grocery List",
   description: "A playful fridge-magnet shopping pad for organizing and checking grocery essentials by aisle.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["personal", "utilities"],
+  categories: ["personal", "popular"],
   window: { kind: "standard", width: 440, height: 620 },
   theme: {
     surface: "#e9e4d8",

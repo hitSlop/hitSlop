@@ -5,7 +5,7 @@ export default defineSlop({
   title: "Quick Checklist",
   description: "A blush pocket utility for capturing, finishing, and filing short task lists.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["productivity", "personal"],
+  categories: ["productivity", "popular"],
   window: { kind: "standard", fullscreenable: true, width: 480, height: 620 },
   theme: {
     surface: "#e98996",

@@ -5,7 +5,7 @@ export default defineSlop({
   title: "Flashcards",
   description: "A tactile index-card study machine with 3D flipping cards, deck editing, and Leitner spaced repetition.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["education", "productivity"],
+  categories: ["education", "popular"],
   window: { kind: "standard", width: 540, height: 440 },
   theme: {
     wood: "#284bd8",

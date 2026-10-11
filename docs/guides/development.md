@@ -13,22 +13,21 @@ bun run verify --all --native
 
 `build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the native helper and Rust document engine. The engine stays in its Cargo output directory; `HITSLOP_ENGINE` and `HITSLOP_NATIVE_CLI` independently select development tools. Run `build` before native tests. Template artwork is a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
-Before building the complete app, run `bun run build:templates` to prepare its bundled resources. To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`.
+To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`. Both refresh bundled templates through the template cache before embedding them.
 
-### Rebuild templates before the app
+### Build current templates with the app
 
-Xcode's **Embed starter templates** phase copies prepared files from
-`generated/templates/`; it does not compile `slops/` source. After changing a slop,
-its dependencies, the SDK or the template compiler, use this order:
+Xcode's **Embed starter templates** phase refreshes `generated/templates/` from
+`slops/` source, then copies the selected templates into the app. After changing
+the SDK, native helper or template compiler, prepare the tools before building:
 
 ```sh
 bun run build
-bun run build:templates
 bun run apple:build
 ```
 
-For Xcode Run, use the first two commands, then build/run the project in Xcode instead
-of running `apple:build`. Create a fresh document from the rebuilt starter to verify it.
+For Xcode Run, run `bun run build`, then build/run the project in Xcode instead
+of running `apple:build`. Slop-only edits need just another app build. Create a fresh document from the rebuilt starter to verify it.
 The template cache fingerprints the compiler and shared dependencies as well as each
 slop's source; let it rebuild affected entries rather than deleting the cache.
 
@@ -37,11 +36,10 @@ slop's source; let it rebuild affected entries rather than deleting the cache.
 | `bun slop build slops/beat-pad` | That project's `dist/beat-pad.slop`. |
 | `bun slop register slops/beat-pad` | A rebuilt local master in `~/.hitslop/templates`. |
 | `bun run build:templates` | `generated/templates/`, its inventory and native artwork. |
-| Xcode build / `bun run apple:build` | The app, embedding the prepared `generated/templates/` starters. |
+| Xcode build / `bun run apple:build` | Refreshes `generated/templates/` through the cache and embeds the selected starters in the app. |
 
-Updating one output does not update the others. Rebuilding the Mac app alone can embed
-an old prepared starter; rebuilding a project's `dist` alone cannot fix new documents
-created from that starter. A separately registered local template also needs to be
+Rebuilding a project's `dist` alone does not update the app's bundled starter.
+A separately registered local template also needs to be
 re-registered. Existing `.slop` documents always keep their embedded app: neither an
 app rebuild nor a template replacement upgrades them. Never replace a document's app
 or saved data by copying a template over it.

@@ -68,7 +68,11 @@ export type GetState = { schema: Record<string, unknown>, defaults: { [key in st
 /**
  * A file's kind, markers, app and sizes, and whether a live owner published its socket.
  */
-export type InspectInfo = { kind: FileKind, packageFormat: number, runtimeABI: number, metadata: AppMetadata, window: WindowInput, views: Views, capabilities: Array<Capability>, assets: Array<NamedSize>, artwork: Array<NamedSize>, defaults: { [key in string]: string }, attachments: AttachmentTotals, state: StateSizes, bytes: number, storedAssetBytes: number, live: boolean, };
+export type InspectInfo = { kind: FileKind, packageFormat: number, runtimeABI: number, metadata: AppMetadata, window: WindowInput, views: Views, capabilities: Array<Capability>, assets: Array<NamedSize>, artwork: Array<NamedSize>, defaults: { [key in string]: string }, attachments: AttachmentTotals, state: StateSizes, bytes: number, storedAssetBytes: number,
+/**
+ * SHA-256 of the app row and its assets, lowercase hex: files with equal digests carry the same app.
+ */
+appDigest: string, live: boolean, };
 
 export type NamedSize = { name: string, bytes: number, };
 

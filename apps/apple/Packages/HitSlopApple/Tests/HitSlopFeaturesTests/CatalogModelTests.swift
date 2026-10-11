@@ -126,21 +126,42 @@ import Testing
   bundled.isBundled = true
   bundled.categories = [.personal, .productivity]
   var installed = entry("installed", "Installed")
-  installed.categories = [.finance, .personal]
+  installed.categories = [.popular, .personal]
   let catalog = Catalog()
   let local = AsyncStream<CatalogSnapshot>.makeStream()
   let model = await started(catalog, local: local.stream)
+  model.select(.all)
   local.continuation.yield(CatalogSnapshot(entries: [bundled, installed]))
   await until { model.local.count == 2 }
   #expect(model.selectedID == "bundled")
-  #expect(model.categories == [.productivity, .finance, .personal])
-  model.select(.category(.finance))
+  #expect(model.categories == [.popular, .productivity, .personal])
+  model.select(.category(.popular))
   #expect(model.selectedID == "installed")
   #expect(model.visibleEntries == [installed])
   local.continuation.yield(CatalogSnapshot(entries: [bundled]))
   await until { model.local.count == 1 }
   #expect(model.filter == .all && model.selectedID == "bundled")
   #expect(model.categories == [.productivity, .personal])
+}
+
+@Test @MainActor func popularIsTheDefaultAfterTemplatesLoadAndExplicitSelectionSurvivesRefresh() async {
+  let catalog = Catalog()
+  let local = AsyncStream<CatalogSnapshot>.makeStream()
+  let model = await started(catalog, local: local.stream)
+  local.continuation.yield(CatalogSnapshot())
+  var popular = entry("popular", "Popular template")
+  popular.categories = [.popular, .education]
+  let other = entry("other", "Other template")
+  local.continuation.yield(CatalogSnapshot(entries: [other, popular]))
+  await until { model.local.count == 2 }
+  #expect(model.filter == .category(.popular))
+  #expect(model.visibleEntries == [popular])
+  #expect(model.selectedID == "popular")
+  model.select(.all)
+  local.continuation.yield(CatalogSnapshot(entries: [popular, other]))
+  await until { model.local.first?.id == "popular" }
+  #expect(model.filter == .all)
+  #expect(model.visibleEntries == [popular, other])
 }
 
 @Test @MainActor func localSearchImmediatelyFiltersAndKeepsCategorySelectionConsistent() async {

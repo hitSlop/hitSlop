@@ -6,6 +6,7 @@ extension SlopCategory {
   public var label: String { self == .developerTools ? "Developer Tools" : rawValue.capitalized }
   public var emoji: String {
     switch self {
+    case .popular: "🔥"
     case .productivity: "⚡️"
     case .utilities: "🪄"
     case .finance: "🤑"
@@ -140,7 +141,7 @@ public struct CatalogClient {
 /// selection over them, and creating a document from a template.
 @MainActor @Observable public final class CatalogModel {
   public var query = "" { didSet { synchronizeSelection() } }
-  public private(set) var filter: CatalogFilter = .all
+  public private(set) var filter: CatalogFilter = .category(.popular)
   public var selectedID: String?
   public private(set) var local: [CatalogEntry] = []
   public private(set) var recents: [CatalogEntry] = []
@@ -155,6 +156,7 @@ public struct CatalogClient {
   public var creationError: String?
 
   @ObservationIgnored private let client: CatalogClient
+  @ObservationIgnored private var hasSelectedFilter = false
   @ObservationIgnored private var localTask: Task<Void, Never>?
   @ObservationIgnored private var recentsTask: Task<Void, Never>?
   @ObservationIgnored private var refreshTask: Task<Void, Never>?
@@ -220,6 +222,7 @@ public struct CatalogClient {
   }
 
   public func select(_ filter: CatalogFilter) {
+    hasSelectedFilter = true
     guard self.filter != filter else { return }
     self.filter = filter
     selectedID = nil
@@ -261,7 +264,11 @@ public struct CatalogClient {
   private func receive(_ snapshot: CatalogSnapshot) {
     local = snapshot.entries
     localIssues = snapshot.issues
-    if case .category(let category) = filter, !categories.contains(category) { filter = .all }
+    if !hasSelectedFilter {
+      filter = categories.contains(.popular) ? .category(.popular) : .all
+    } else if case .category(let category) = filter, !categories.contains(category) {
+      filter = .all
+    }
     synchronizeSelection()
   }
 
