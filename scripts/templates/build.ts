@@ -41,7 +41,7 @@ export async function buildTemplates(output = join(repository, "generated/templa
       const destination = join(stage, template.slug + ".slop");
       // Discovery names a repository template by its folder; the app declares its own slug.
       const named = (slug: string) => {
-        if (slug !== template.slug) throw new Error(`examples/slops/${template.slug} declares slug "${slug}"; rename the folder or the slug`);
+        if (slug !== template.slug) throw new Error(`slops/${template.slug} declares slug "${slug}"; rename the folder or the slug`);
         return destination;
       };
       const build = () => buildTemplate(template.source, { env: { ...process.env, HITSLOP_NATIVE_CLI: debugHelper } }, named);

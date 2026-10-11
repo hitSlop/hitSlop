@@ -7,6 +7,28 @@ import { buildDefinition } from "../../src/cli/definition-build";
 import { definitionFixture } from "./definition-fixture";
 const resourceKey = (bytes: Uint8Array, name: string) => `media/${createHash("sha256").update(bytes).digest("hex")}${extname(name)}`;
 
+test("conditional dependency exports preserve require and import semantics", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
+  try {
+    const source = join(root, "source"), stage = join(root, "stage");
+    const options = await definitionFixture(source);
+    const dependency = join(source, "node_modules", "conditional-helper");
+    await mkdir(dependency, { recursive: true });
+    await writeFile(join(dependency, "package.json"), JSON.stringify({
+      name: "conditional-helper", exports: { import: "./import.mjs", require: "./require.cjs" },
+    }));
+    await writeFile(join(dependency, "import.mjs"), "export default () => 'import';");
+    await writeFile(join(dependency, "require.cjs"), "module.exports = () => 'require';");
+    await writeFile(join(source, "legacy.cjs"), "module.exports = require('conditional-helper')();");
+    const entry = await readFile(join(source, "slop.ts"), "utf8");
+    await writeFile(join(source, "slop.ts"),
+      "import legacy from './legacy.cjs'; import modern from 'conditional-helper';\n" +
+      entry.replace("title:'Fixture'", "title:legacy + '/' + modern()"));
+    const { input } = await buildDefinition(source, stage, options);
+    expect(input.declaration.metadata.title).toBe("require/import");
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 60000);
+
 test("separate Vite graphs retain dependencies without leaking metadata or command bodies", async () => {
   const root = await mkdtemp(join(process.cwd(),".build-test-definition-"));
   try {
@@ -18,6 +40,7 @@ test("separate Vite graphs retain dependencies without leaking metadata or comma
     expect(input.declaration.theme.map(t=>t.token)).toEqual(["z","a"]);
     expect(input.declaration.commands.map(c=>c.name)).toEqual(["rename"]);
     expect(input.declaration.views).toEqual({export:true,icon:false});
+    expect(input.declaration.capabilities).toEqual([]);
     expect(input.roles.style).toBe("ui.css");
     const keys=input.resources.map(r=>r.key);
     for (const name of ["skin.png","font.woff2","lib/paper.svg","export.svg"])

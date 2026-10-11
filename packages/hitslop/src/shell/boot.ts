@@ -2,6 +2,7 @@
 // the ctx handed to SlopApp.mount is the only interface apps use.
 import { createContext as abi1 } from "./abi/1";
 import { ownerAttachments } from "./attachments";
+import { ownerSpeech } from "./speech";
 import { call, hasBrowserBridge } from "./bridge";
 import { createCaptureController } from "./capture";
 import { OwnerDocument as Document } from "./owner/document";
@@ -125,6 +126,7 @@ export async function boot() {
   const ctx = contextFor(config.runtimeABI)(doc as Document<ObjectNode>, {
     attachments,
     capture,
+    speech: ownerSpeech(),
     resize: async (size) => {
       if (native) await call({ method: "window.resize", ...size });
     },

@@ -26,7 +26,7 @@ pub use artwork::Artwork;
 pub(crate) use artwork::{check_artwork, optimize_png};
 #[cfg(target_arch = "wasm32")]
 pub(crate) use assets::ResourceCache;
-pub use assets::{ResourceInfo, ResourceReader, ResourceRoute, content_type, valid_asset_path};
+pub use assets::{ResourceInfo, ResourceReader, ResourceRoute, SpeechClip, content_type, valid_asset_path};
 #[cfg(not(target_arch = "wasm32"))]
 pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
 #[cfg(not(target_arch = "wasm32"))]

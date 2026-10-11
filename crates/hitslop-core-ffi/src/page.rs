@@ -2,7 +2,9 @@
 use crate::CoreError;
 use hitslop_core::command::PageDispatch;
 use hitslop_core::owner::Failure;
-use hitslop_core::page_wire::{CaptureMode, HostAction, HostCaptureResult, HostReply, HostRequest, PageErrorKind};
+use hitslop_core::page_wire::{
+    CaptureMode, HostAction, HostCaptureResult, HostReply, HostRequest, PageErrorKind, SpeechOutcome, SpeechUnavailable,
+};
 
 #[uniffi::remote(Enum)]
 pub enum PageErrorKind {
@@ -12,6 +14,7 @@ pub enum PageErrorKind {
 #[uniffi::remote(Enum)]
 pub enum HostAction {
     WindowResize { width: u32, height: u32 },
+    SpeechTranscribe { attachment: String, locale: Option<String> },
     Ready,
     PageRecovered,
     Failed { error: String },
@@ -25,10 +28,26 @@ pub enum PageDispatch {
 #[uniffi::remote(Enum)]
 pub enum HostReply {
     WindowResize { width: f64, height: f64 },
+    SpeechTranscribe { outcome: SpeechOutcome },
     Ready,
     PageRecovered,
     Failed,
     PageError,
+}
+#[uniffi::remote(Enum)]
+pub enum SpeechOutcome {
+    Transcribed { text: String, locale: String },
+    Unavailable { reason: SpeechUnavailable, message: String },
+    Cancelled { message: String },
+    Failed { message: String },
+}
+#[uniffi::remote(Enum)]
+pub enum SpeechUnavailable {
+    NotDeclared,
+    Host,
+    System,
+    Locale,
+    Permission,
 }
 #[uniffi::remote(Enum)]
 pub enum HostRequest {

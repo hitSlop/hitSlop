@@ -16,7 +16,7 @@ Old documents depend on a few public boundaries; everything behind them may chan
 
 | Boundary | Marker | A later build |
 |---|---|---|
-| The app in a `.slop` file: catalog fields and `definition_json` (window, descriptor, theme, commands), plus resource semantics | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
+| The app in a `.slop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
 | App behavior: `ctx`, handles, errors, the command prelude and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
@@ -160,9 +160,9 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - Preserve the macOS client: app lifecycle and quit, catalog and Recents, slop windows and
   toolbar, PNG/PDF export, Quick Look previews and Finder icons, Firebase
   Analytics/Crashlytics and Sparkle.
-- Active examples are the directories with a `slop.ts` under `examples/slops`;
+- Active examples are the directories with a `slop.ts` under `slops`;
   `bundled.json` selects shipped templates. Dedicated fixtures own platform semantics. Use plain CSS and
-  `slop.ts` theme colors; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
+  `slop.ts` theme colors; read `slops/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
 - Deferred work is tracked in the [roadmap](roadmap.md#later). Changing a descriptor
   currently makes a new document type; schema evolution is deferred.

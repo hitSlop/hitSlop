@@ -51,6 +51,31 @@ Registration builds and installs an immutable master in `~/.hitslop/templates`. 
 
 For terminal document creation, see [create and open a writable document](/docs/guides/cli-workflows/#create-and-open-a-writable-document).
 
+## When a change doesn't appear
+
+A document contains the app version it was created with. Editing source, rebuilding a
+template, or reinstalling hitSlop does not replace the app inside that document. This
+also applies to fixes in a library, new capability declarations, and changes to defaults.
+
+For your own project, run `bun run register` and create a **new** document from that
+template. A plain `bun run build` updates `dist/SLUG.slop`, not the registered master.
+Keep the old document if it contains work you want to preserve; automatic app upgrades
+and schema migration are not available.
+
+If you are developing hitSlop itself, bundled starters have another build step:
+
+```sh
+bun run build
+bun run build:templates
+bun run apple:build
+```
+
+Or run the first two commands, then rebuild/run in Xcode. `build:templates` prepares
+`generated/templates/`; the Mac app build copies those files into its bundle. Xcode does
+not recompile `slops/` source, and building just `slops/beat-pad/dist/beat-pad.slop` does
+not update the bundled Beat Pad. Create a new document from the refreshed starter after
+rebuilding. A separately installed local template still needs re-registering.
+
 ## Share a template or a document
 
 For a reusable app, distribute the freshly built `.slop` template: it is one file, so it travels by Mail, AirDrop or any file service as it is. The recipient needs the hitSlop app. Opening a template asks where to create a writable document from it; to keep it in the catalog, place it in `~/.hitslop/templates` and refresh.

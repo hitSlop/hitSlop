@@ -60,9 +60,9 @@ boundary and marker, are in the [engineering contract](docs/engineering-contract
 
 ## Authoring
 
-Directories with a `slop.ts` under `examples/slops` are active; `bundled.json` selects
+Directories with a `slop.ts` under `slops` are active; `bundled.json` selects
 shipped templates. Use plain CSS and `slop.ts` theme colors; read
-[product guidance](examples/slops/PRODUCT.md) and [authoring](docs/guides/authoring.md)
+[product guidance](slops/PRODUCT.md) and [authoring](docs/guides/authoring.md)
 for visual changes. `_vibe` is inspiration only.
 
 ## Testing

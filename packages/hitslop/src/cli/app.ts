@@ -328,6 +328,7 @@ export const app = new Crust("slop", {
             {
               name: "op",
               type: "string",
+              multiple: true,
               required: true,
               description: "Operation object as JSON",
             },

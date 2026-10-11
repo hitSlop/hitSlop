@@ -556,7 +556,9 @@ test("attachment import uses host identity and media type before writing its ref
     expect(doc.current.title).toBe(id);
     expect(attachments.url(id)).toBe(`http://localhost/attachments/${id}`);
     expect(() => attachments.url("../ui.js")).toThrow();
-    await expect(attachments.import(new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin"), () => {})).rejects.toThrow();
+    // Refusals happen before the bytes are read and say what to change.
+    await expect(attachments.import(new File([new Uint8Array(10 * 1024 * 1024 + 1)], "big.bin"), () => {})).rejects.toThrow("at most 10 MiB");
+    await expect(attachments.import(new Blob([new Uint8Array([1])], { type: "audio/mp4" }) as File, () => {})).rejects.toThrow("new File([blob]");
     expect(uploads).toBe(1);
   } finally { held.release(); preview.host = previous; core.free(); }
 });

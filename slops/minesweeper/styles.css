@@ -1,0 +1,78 @@
+:root {
+  --font: ui-rounded, "SF Pro Rounded", "Avenir Next", Avenir, "Helvetica Neue", sans-serif;
+  --serif: "New York", Georgia, "Times New Roman", serif;
+  color-scheme: light;
+  font-family: var(--font);
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; width: 100%; height: 100%; }
+body { background: var(--slop-sea); color: var(--slop-ink); overflow: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button:disabled { cursor: default; }
+button:focus-visible { outline: 3px solid var(--slop-gold); outline-offset: 2px; }
+
+.sea {
+  height: 100%; padding: 16px; overflow-y: auto;
+  background: radial-gradient(circle at 80% 0%, #1c5a70, var(--slop-sea) 70%);
+}
+.chart {
+  min-height: 100%; padding: 16px 16px 14px; background: var(--slop-chart); border-radius: 16px;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.4), inset 0 0 0 2px var(--slop-gold);
+  display: grid; align-content: start; gap: 12px;
+}
+.head { display: grid; gap: 6px; justify-items: center; text-align: center; }
+.kicker { margin: 0; font-size: 12px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; color: var(--slop-muted); }
+h1 { margin: 0; font: 700 32px/1.1 var(--serif); letter-spacing: 0.01em; }
+
+.levels { display: flex; gap: 6px; }
+.level {
+  min-height: 44px; padding: 0 16px; border: 2px solid var(--slop-ink); border-radius: 999px; background: transparent;
+  font-size: 14px; font-weight: 700; text-transform: capitalize;
+}
+.level[aria-pressed="true"] { background: var(--slop-ink); color: var(--slop-chart); }
+
+.readout { margin: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.readout b { font-size: 16px; }
+.state { font-weight: 700; text-align: center; }
+.state[data-status="won"] { color: #1b6b3f; }
+.state[data-status="lost"] { color: var(--slop-buoy); }
+
+.board {
+  display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 3px; padding: 6px;
+  background: var(--slop-ink); border-radius: 10px;
+}
+.cell {
+  aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 5px; display: grid; place-items: center;
+  background: var(--slop-water); color: var(--slop-ink); font: 800 18px/1 var(--font); font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 -3px 0 rgba(18, 38, 58, 0.22);
+}
+.cell[data-open="true"] { background: var(--slop-waterHit); box-shadow: none; }
+.cell[data-flag="true"] { background: var(--slop-buoy); color: var(--slop-onBuoy); }
+.cell[data-mine="true"] { background: var(--slop-ink); color: var(--slop-gold); box-shadow: inset 0 0 0 2px var(--slop-buoy); }
+.cell[data-n="1"] { color: #1a56a0; }
+.cell[data-n="2"] { color: #1b6b3f; }
+.cell[data-n="3"] { color: #b3261e; }
+.cell[data-n="4"] { color: #5a2a8a; }
+.cell[data-n="5"], .cell[data-n="6"], .cell[data-n="7"], .cell[data-n="8"] { color: #7a3e00; }
+.board:not([data-over="true"]) .cell[data-open="false"]:not([data-flag="true"]):hover { background: var(--slop-waterHit); }
+.chart:not([data-reduced="true"]) .cell[data-open="true"] { animation: clear 140ms ease-out; }
+@keyframes clear { from { transform: scale(0.82); } to { transform: scale(1); } }
+
+.foot { margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mode, .again {
+  min-height: 44px; padding: 0 14px; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px;
+  border: 2px solid var(--slop-ink); background: transparent; font-size: 14px; font-weight: 700;
+}
+.mode[aria-pressed="true"] { background: var(--slop-buoy); border-color: var(--slop-buoy); color: var(--slop-onBuoy); }
+.again { background: var(--slop-ink); color: var(--slop-chart); }
+.mode:disabled { opacity: 0.4; }
+.record { margin-left: auto; font-size: 13px; color: var(--slop-muted); font-variant-numeric: tabular-nums; }
+
+.export .cell { font-size: 20px; }
+
+.icon-surface { width: 100%; height: 100%; display: grid; place-items: center; background: var(--slop-sea); }
+.icon-chart { width: 78%; aspect-ratio: 1; padding: 5%; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4%; background: var(--slop-chart); border-radius: 18%; }
+.icon-cell { display: grid; place-items: center; font: 800 22cqw/1 var(--font); font-style: normal; border-radius: 12%; background: var(--slop-water); color: var(--slop-ink); }
+.icon-cell[data-open="true"] { background: var(--slop-waterHit); }
+.icon-cell[data-flag="true"] { background: var(--slop-buoy); color: var(--slop-onBuoy); }

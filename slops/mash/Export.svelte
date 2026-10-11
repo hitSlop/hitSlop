@@ -1,0 +1,26 @@
+<script lang="ts">
+  import doc from "./schema";
+  import { mashView } from "./options";
+  import Future from "./Future.svelte";
+
+  const view = $derived(mashView(doc.current));
+</script>
+
+<article class="page export" aria-label="Exported MASH">
+  <div class="coils" aria-hidden="true">{#each Array(14) as _}<i></i>{/each}</div>
+  <header class="top"><h1 class="logo">M<span>·</span>A<span>·</span>S<span>·</span>H</h1></header>
+  <Future />
+  <div class="blocks">
+    {#each view.blocks as block (block.slot)}
+      <section class="block">
+        <h3>{block.label}</h3>
+        <ul>
+          {#each block.filled as option (option.$id)}
+            {@const order = view.fate.struck.indexOf(option.$id)}
+            <li class="opt" data-struck={order >= 0 ? "" : undefined} data-pick={view.fate.picks[block.slot] === option.$id ? "" : undefined}><span>{option.text}</span></li>
+          {/each}
+        </ul>
+      </section>
+    {/each}
+  </div>
+</article>

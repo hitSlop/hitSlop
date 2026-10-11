@@ -6,6 +6,15 @@ import { activate, deactivate, current } from "./context";
 import Root from "./Root.svelte";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
 export { capture, type CaptureMode } from "./capture";
+export {
+  speech,
+  isSpeechError,
+  type SpeechError,
+  type SpeechClip,
+  type SpeechOptions,
+  type SpeechTranscript,
+  type SpeechUnavailableReason,
+} from "./speech";
 export { default as EditableText } from "./EditableText.svelte";
 export { notify } from "./notice.svelte";
 export { draft } from "./draft.svelte";

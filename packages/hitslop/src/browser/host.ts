@@ -1,8 +1,9 @@
 import { BrowserHost } from "../schema/constants";
 import type { BrowserEvent, BrowserRequest } from "../wire/browser.generated";
-import type { WindowDefinition } from "../wire/app.generated";
+import type { Capability, WindowDefinition } from "../wire/app.generated";
 import { cleanup, listCopies, lockName, putCopy, removeCopy } from "./copies";
 import { silhouettePath } from "../schema/presentation";
+import { capabilityFeatures } from "../schema/policy";
 import { PendingRequests } from "./requests";
 
 const status = document.querySelector<HTMLElement>("#status")!;
@@ -49,7 +50,7 @@ function fit() {
   } else { surface.style.width = `${width}px`; surface.style.height = `${height}px`; surface.style.transform = ""; }
 
 }
-function mount(spec: WindowDefinition) {
+function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
   windowSpec = spec;
   fullscreen.hidden = !spec.fullscreenable;
   frame = document.createElement("iframe");
@@ -57,7 +58,8 @@ function mount(spec: WindowDefinition) {
   const origin = `http://${id}.localhost:${BrowserHost.port}`;
   frame.src = `${origin}/`;
   frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms allow-downloads allow-popups");
-  frame.allow = "fullscreen";
+  // Devices are delegated to the copy's origin only when the app declared them.
+  frame.allow = ["fullscreen", ...capabilityFeatures(capabilities)].join("; ");
   const connect = (event: MessageEvent) => {
     if (event.origin !== origin || event.source !== frame!.contentWindow || event.data?.type !== "frameReady") return;
     page?.close();
@@ -154,7 +156,7 @@ async function own() {
             try { await putCopy({ id, title: data.title, created: existing?.created ?? Date.now(), state: "ready" }); }
             catch (error) { worker?.terminate(); reject(error); return; }
             history.replaceState(null, "", `/?copy=${id}`);
-            mount(data.window); download.disabled = false;
+            mount(data.window, data.capabilities); download.disabled = false;
           } else if (data.type === "save") {
             status.textContent = data.error || (data.status === "saved" ? "Saved in this browser" : "Saving…");
             retry.hidden = data.status !== "failed";

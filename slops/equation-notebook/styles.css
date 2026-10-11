@@ -1,0 +1,335 @@
+/* Equation Notebook: a sheet of green engineering paper. KaTeX Main (bundled with
+   MathLive) sets the maths and the notes; Barlow Condensed letters the title block. */
+@font-face {
+  font-family: "Barlow Condensed";
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  src: url("./assets/fonts/BarlowCondensed-SemiBold.ttf") format("truetype");
+}
+
+/* MathLive's KaTeX faces, from byte-identical copies of mathlive/fonts kept in assets/ so
+   `slop dev` can serve them (it does not serve files from node_modules). */
+@font-face { font-family: "KaTeX_AMS"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_AMS-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Caligraphic"; font-style: normal; font-weight: 700; font-display: block; src: url("./assets/fonts/katex/KaTeX_Caligraphic-Bold.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Caligraphic"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Caligraphic-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Fraktur"; font-style: normal; font-weight: 700; font-display: block; src: url("./assets/fonts/katex/KaTeX_Fraktur-Bold.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Fraktur"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Fraktur-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Main"; font-style: italic; font-weight: 700; font-display: block; src: url("./assets/fonts/katex/KaTeX_Main-BoldItalic.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Main"; font-style: normal; font-weight: 700; font-display: block; src: url("./assets/fonts/katex/KaTeX_Main-Bold.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Main"; font-style: italic; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Main-Italic.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Main"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Main-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Math"; font-style: italic; font-weight: 700; font-display: block; src: url("./assets/fonts/katex/KaTeX_Math-BoldItalic.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Math"; font-style: italic; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Math-Italic.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_SansSerif"; font-style: normal; font-weight: 700; font-display: block; src: url("./assets/fonts/katex/KaTeX_SansSerif-Bold.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_SansSerif"; font-style: italic; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_SansSerif-Italic.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_SansSerif"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_SansSerif-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Script"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Script-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Size1"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Size1-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Size2"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Size2-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Size3"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Size3-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Size4"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Size4-Regular.woff2") format("woff2"); }
+@font-face { font-family: "KaTeX_Typewriter"; font-style: normal; font-weight: 400; font-display: block; src: url("./assets/fonts/katex/KaTeX_Typewriter-Regular.woff2") format("woff2"); }
+
+:root {
+  /* The KaTeX faces are declared statically by mathlive/fonts.css, so MathLive never fetches them. */
+  --ML__static-fonts: true;
+  --lettering: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --roman: "KaTeX_Main", "Times New Roman", serif;
+  --grid-size: 20px;
+  /* Words inside maths (\text{or}) in the roman face rather than the system sans. */
+  --text-font-family: var(--roman);
+  --gutter: 52px;
+}
+
+html, body { margin: 0; height: 100%; background: var(--slop-paper); color: var(--slop-ink); }
+body { font-family: var(--roman); }
+
+.pad {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh;
+  background: var(--slop-paper);
+}
+
+/* Title block, as printed across the top of a computation pad. */
+.title-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  background: var(--slop-header);
+  border-bottom: 3px solid var(--slop-pencil);
+}
+.title-block > * { padding: 8px 14px 9px; min-width: 0; }
+.title-block > * + * { border-left: 1px solid var(--slop-pencil); }
+.block-cell { display: grid; align-content: start; justify-items: center; min-width: 64px; }
+.block-label {
+  display: block;
+  font: 600 12px/1.1 var(--lettering);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--slop-muted);
+}
+.block-value { font: 19px/1.5 var(--roman); color: var(--slop-ink); font-variant-numeric: tabular-nums; }
+.title { margin: 2px 0 0; font: 21px/1.3 var(--roman); color: var(--slop-ink); }
+.title-cell .hitslop-editable { margin-top: 2px; }
+.title-cell [role="textbox"], .title-cell textarea { border-radius: 4px; }
+.title-cell [data-placeholder] { color: var(--slop-muted); }
+
+/* The sheet scrolls with its grid and red margin rule. */
+.sheet {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 14px 0 28px;
+  background:
+    linear-gradient(90deg, transparent calc(var(--gutter) - 10px), var(--slop-margin) calc(var(--gutter) - 10px), var(--slop-margin) calc(var(--gutter) - 8px), transparent calc(var(--gutter) - 8px)),
+    linear-gradient(var(--slop-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--slop-grid) 1px, transparent 1px),
+    var(--slop-paper);
+  background-size: 100% 100%, var(--grid-size) var(--grid-size), var(--grid-size) var(--grid-size), auto;
+  background-attachment: local;
+}
+.lines { list-style: none; margin: 0; padding: 0 0 0 var(--gutter); }
+.empty { margin: 24px var(--gutter); font: 17px/1.5 var(--roman); color: var(--slop-muted); }
+
+.line {
+  container: line / inline-size;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px;
+  gap: 4px;
+  padding: 3px 0;
+}
+.line-body { display: grid; gap: 8px; min-width: 0; align-content: start; }
+.line[data-kind="graph"] { padding: 12px 0; }
+
+@container line (min-width: 500px) {
+  .line[data-kind="equation"] .line-body[data-graphed] {
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 52%);
+    column-gap: 14px;
+  }
+  .line[data-kind="equation"] .line-body[data-graphed] > .equation { grid-row: 1 / span 4; align-self: center; }
+  .line[data-kind="equation"] .line-body[data-graphed] > :not(.equation) { grid-column: 2; }
+}
+
+/* The line being worked on gets a highlighter swipe. */
+.equation, .note { border-radius: 6px; transition: background-color 160ms ease; }
+.line[data-active] .equation,
+.line[data-active] .note {
+  --swipe: color-mix(in srgb, var(--slop-highlight) 80%, transparent);
+  background: linear-gradient(transparent 14%, var(--swipe) 14%, var(--swipe) 86%, transparent 86%);
+}
+
+math-field {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--slop-ink);
+  font-size: 23px;
+  outline: none;
+  --caret-color: var(--slop-accent);
+  --selection-background-color: color-mix(in srgb, var(--slop-accent) 24%, transparent);
+  --selection-color: var(--slop-ink);
+  --contains-highlight-background-color: color-mix(in srgb, var(--slop-accent) 10%, transparent);
+  --placeholder-color: var(--slop-muted);
+  --text-font-family: var(--roman);
+}
+math-field:focus-within { outline: 1.5px solid var(--slop-accent); outline-offset: 1px; }
+math-field::part(menu-toggle) { display: none; }
+math-field::part(virtual-keyboard-toggle) { color: var(--slop-muted); transition: opacity 120ms ease; }
+math-field:not(:focus-within):not(:hover)::part(virtual-keyboard-toggle) { opacity: 0; }
+
+.note { font: 17px/1.5 var(--roman); color: var(--slop-pencil); padding: 4px 8px; }
+.note [role="textbox"], .note textarea { min-height: 30px; border-radius: 6px; }
+.note [data-placeholder] { color: var(--slop-muted); font-style: italic; }
+p.note { margin: 0; white-space: pre-wrap; }
+
+/* Right margin: the equation number and the line's menu. Left gutter: the plot toggle. */
+.line-margin { display: flex; align-items: center; justify-content: flex-end; gap: 0; height: 44px; margin-top: 2px; }
+.line[data-kind="graph"] .line-margin { margin-top: 0; }
+.eq-number { flex: 1; text-align: center; font: 17px/1 var(--roman); color: var(--slop-muted); font-variant-numeric: tabular-nums; }
+.tool {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--slop-pencil);
+  transition: opacity 120ms ease;
+}
+.tool:hover { background: var(--slop-header); }
+.line-menu { opacity: 0.35; }
+.line:hover .line-menu, .line[data-active] .line-menu, .line-menu:focus-visible, .line-menu[aria-expanded="true"] { opacity: 1; }
+.plot-toggle {
+  position: absolute;
+  top: 5px;
+  left: calc(-1 * var(--gutter) + 5px);
+  opacity: 0.45;
+}
+.line:hover .plot-toggle, .line[data-active] .plot-toggle, .plot-toggle:focus-visible { opacity: 1; }
+.plot-toggle[aria-pressed="true"] { opacity: 1; color: var(--slop-curve); background: color-mix(in srgb, var(--slop-curve) 13%, transparent); }
+
+/* Graphs: a white plotting card laid on the pad. */
+.graph {
+  position: relative;
+  height: 196px;
+  border: 1.5px solid var(--slop-grid);
+  border-radius: 4px;
+  background: var(--slop-plotPaper);
+  overflow: hidden;
+}
+.graph[data-size="large"] { height: 270px; }
+.graph-board { width: 100%; height: 100%; border-radius: 4px; }
+.graph-board:focus-visible { outline: 2px solid var(--slop-accent); outline-offset: -2px; }
+.graph-board[data-cant] { opacity: 0.35; }
+.graph-board svg text { font-family: var(--roman); }
+.cant-plot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  padding: 16px;
+  text-align: center;
+  background: color-mix(in srgb, var(--slop-plotPaper) 72%, transparent);
+  pointer-events: none;
+}
+.cant-plot strong { font: 600 16px/1.1 var(--lettering); letter-spacing: 0.1em; text-transform: uppercase; color: var(--slop-pencil); }
+.cant-plot span { font: 15px/1.4 var(--roman); color: var(--slop-muted); }
+.graph-trace {
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  margin: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--slop-plotPaper) 88%, transparent);
+  font: 14px/1.4 var(--roman);
+  color: var(--slop-pencil);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  pointer-events: none;
+}
+.graph-trace[data-show="true"] { opacity: 1; }
+.graph-trace span { margin-left: 10px; }
+.graph-zoom { position: absolute; right: 4px; top: 4px; display: flex; gap: 2px; }
+.graph-zoom button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--slop-plotPaper) 85%, transparent);
+  color: var(--slop-muted);
+}
+.graph-zoom button:hover { color: var(--slop-ink); background: var(--slop-header); }
+
+/* Parameter sliders, one per letter named in the line. */
+.params { display: grid; gap: 2px; }
+.param { display: grid; grid-template-columns: 24px minmax(0, 1fr) 52px; align-items: center; gap: 10px; min-height: 34px; }
+.param-name { font: italic 19px/1 "KaTeX_Math", var(--roman); color: var(--slop-ink); text-align: center; }
+.param-value { font: 15px/1 var(--roman); color: var(--slop-pencil); text-align: right; font-variant-numeric: tabular-nums; }
+:where(.param-slider) { position: relative; display: flex; align-items: center; width: 100%; height: 30px; touch-action: none; }
+.param-track { position: relative; flex: 1; height: 4px; border-radius: 2px; background: var(--slop-grid); overflow: hidden; }
+:where(.param-range) { position: absolute; height: 100%; background: var(--slop-curve); }
+:where(.param-thumb) {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--slop-ink);
+  border-radius: 50%;
+  background: var(--slop-plotPaper);
+  cursor: grab;
+}
+:where(.param-thumb):focus-visible { outline: 2px solid var(--slop-accent); outline-offset: 2px; }
+
+.caption { margin: 0; font: italic 14px/1.4 var(--roman); color: var(--slop-muted); }
+
+/* Footer: add a line. */
+.add-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  background: var(--slop-header);
+  border-top: 3px solid var(--slop-pencil);
+}
+.hint { font: 600 13px/1 var(--lettering); letter-spacing: 0.1em; text-transform: uppercase; color: var(--slop-muted); }
+.add-buttons { display: flex; gap: 8px; }
+.add-buttons button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 42px;
+  padding: 0 14px 0 10px;
+  border: 1.5px solid var(--slop-pencil);
+  border-radius: 7px;
+  background: var(--slop-plotPaper);
+  color: var(--slop-ink);
+  font: 600 16px/1 var(--lettering);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.add-buttons button:hover { background: var(--slop-paper); }
+.add-buttons button:active { transform: translateY(1px); }
+@media (max-width: 470px) {
+  .hint { display: none; }
+  .add-bar { justify-content: center; }
+  .add-buttons button { padding: 0 10px 0 8px; }
+}
+@media (max-width: 420px) {
+  .line { grid-template-columns: minmax(0, 1fr) 40px; }
+  .eq-number { display: none; }
+  .block-cell:last-child { display: none; }
+}
+
+/* Line menu */
+.menu {
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--slop-pencil);
+  border-radius: 8px;
+  background: var(--slop-plotPaper);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--slop-ink) 22%, transparent);
+  z-index: 20;
+}
+.menu [data-menu-item] {
+  padding: 9px 12px;
+  border-radius: 5px;
+  font: 600 15px/1.2 var(--lettering);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--slop-ink);
+  outline: none;
+  cursor: default;
+}
+.menu [data-menu-item][data-highlighted] { background: var(--slop-header); }
+.menu [data-menu-item][data-disabled] { opacity: 0.4; }
+.menu [data-menu-separator] { height: 1px; margin: 4px 6px; background: var(--slop-grid); }
+
+/* Export: the same sheet at natural height, no controls. */
+.pad-export { display: block; height: auto; }
+.pad-export .sheet { overflow: visible; }
+.pad-export .line-body { gap: 6px; }
+.static-math { display: block; padding: 6px 8px; font-size: 21px; color: var(--slop-ink); overflow-x: auto; }
+.export-graph { margin: 0; border: 1.5px solid var(--slop-grid); border-radius: 4px; background: var(--slop-plotPaper); }
+.export-params { margin: 0; font: italic 15px/1.4 var(--roman); color: var(--slop-pencil); }
+.plot-figure { display: block; width: 100%; height: auto; }
+.plot-paper { fill: var(--slop-plotPaper); }
+.plot-grid { stroke: var(--slop-grid); stroke-width: 1; }
+.plot-axis { stroke: var(--slop-ink); stroke-width: 1.2; }
+.plot-label { fill: var(--slop-muted); font: 10px var(--roman); }
+.plot-curve { fill: none; stroke: var(--slop-curve); stroke-width: 2.4; stroke-linejoin: round; }
+
+/* Icon */
+.pad-icon { display: block; width: 100%; height: 100%; }
+.pad-icon-math { font: italic 38px var(--roman); }
+.pad-icon-number { font-style: normal; font-size: 30px; }

@@ -37,6 +37,7 @@ export default defineConfig({
           items: [
             { label: "Data and schemas", slug: "docs/guides/data-and-schemas" },
             { label: "Files and the web", slug: "docs/guides/files-and-web" },
+            { label: "Capabilities and permissions", slug: "docs/guides/capabilities" },
             { label: "Manifest and windows", slug: "docs/guides/manifest-and-windows" },
             { label: "Style an app", slug: "docs/guides/styling" },
             { label: "PNG window skins", slug: "docs/guides/png-window-skins" },

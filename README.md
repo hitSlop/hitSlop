@@ -73,7 +73,13 @@ The [Tiny Wins tutorial below](#a-whole-slop-from-scratch) defines `countOne`. E
 
 Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. Those are good reasons to make software.
 
-hitSlop is built for tools with one clear job and a little character. It comes with a checklist and an hourglass timer to open and make your own. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
+hitSlop is built for tools with one clear job and a little character. Its templates include planners, music tools, photo and voice notebooks, games, and desktop companions. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
+
+Apps can declare camera and microphone capture and transcribe stored recordings on-device
+on a supported Mac. [Capabilities and permissions](apps/landing/src/content/docs/docs/guides/capabilities.mdx)
+explains the APIs, system consent, platform limits and future directions. Contributors
+should follow the [template and app rebuild order](docs/guides/development.md#rebuild-templates-before-the-app)
+so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
@@ -137,15 +143,14 @@ Next: ask your agent from the toolbar, see who changed what with a selective “
 
 ## Why Svelte?
 
-Svelte keeps a component's markup, behavior, and [scoped CSS](https://svelte.dev/docs/svelte/scoped-styles) together in a `.svelte` file. You can design a paper planner, a calculator, or a pond without adopting a prescribed set of UI components. TypeScript and `bun run check` catch type and template mistakes.
+A `.svelte` file looks like a small web page: a `<script>`, some HTML and a `<style>`. That's the shape of a slop. You write `class`, `onclick` and `{doc.current.wins}` in ordinary markup, with no JSX or hooks, and the page updates when the document does.
 
-[Svelte's compiler](https://svelte.dev/docs/svelte/svelte-compiler) turns components into JavaScript. `bun run build` bundles that code, the Svelte runtime code it needs, and the app's styles into the `.slop`. The interface keeps the Svelte version it was built with. The Mac app supplies the hitSlop document engine, the page shell and native services; it doesn't supply Svelte.
+- Styles are [scoped](https://svelte.dev/docs/svelte/scoped-styles) to their component, so a slop can be all personality in plain CSS.
+- Reactivity is part of the language. Read `doc.current` in markup and Svelte keeps it current, with no dependency arrays to get subtly wrong.
+- Transitions and [motion](https://svelte.dev/docs/svelte/svelte-motion) are built in, for the hourglass that tips and the koi that drift.
+- Mistakes are loud: `bun run check` catches type and template errors before you build.
 
-hitSlop's Svelte bindings connect document snapshots to Svelte 5's [reactive updates](https://svelte.dev/docs/svelte/lifecycle-hooks).
-
-Separate `App.svelte`, `Export.svelte`, and `Icon.svelte` components read the same document. hitSlop mounts capture views only when needed and handles saving and capture. The Tiny Wins example below shows how this works.
-
-Svelte is the supported authoring integration; other frameworks would need an adapter to the document engine.
+Svelte is compiled into the `.slop` with the app, so a document keeps the Svelte it was built with; the Mac app supplies the document engine and native services, not Svelte. Svelte is the supported integration today; other frameworks would need an adapter.
 
 ## A whole slop, from scratch
 
@@ -383,7 +388,7 @@ bun install --frozen-lockfile
 bun install --cwd apps/landing --frozen-lockfile
 bun run build
 bun run verify --all --native
-bun slop dev examples/slops/quick-checklist
+bun slop dev slops/quick-checklist
 ```
 
 [Development](docs/guides/development.md) covers setup and adding templates, and the [documentation index](docs/README.md) covers how the platform works.

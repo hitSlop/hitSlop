@@ -77,8 +77,16 @@ In order, with the reasoning in [ideas](ideas.md):
 
 ## Next
 
-- **Restore the archived examples.** Move each to `slop.ts` and the single file, check it
-  in the app, and select the ones that ship.
+- **Review the restored examples in the app.** The archived examples now live in
+  `slops/` in the current format, with model modules and commands. They have been checked
+  in the dev preview; individual native checks do not qualify the entire collection.
+  Check each in the built app and PNG/PDF export, review the bundled selection, and review the licenses of bundled libraries
+  (one example stays archived because its engine is AGPL).
+- **Third-party notices in bundles.** Minified app scripts drop library license comments.
+  Emit a notices file with each template, or keep the comments, so bundled libraries
+  keep their required notices.
+- **Preview asset serving.** `slop dev` serves only the slop folder and the CLI, so
+  assets inside packages (fonts, models) must be copied into the slop to preview.
 - **Worker and worklet assets.** The shared page CSP is defined in Rust for native and
   browser pages. Explicit worker policy and build support for worker and
   worklet entry points remain: emit them as files in `assets` so `new Worker` and
@@ -88,6 +96,14 @@ In order, with the reasoning in [ideas](ideas.md):
 
 ## Implemented foundation
 
+- Declared `camera` and `microphone` capabilities gate web capture in native documents,
+  development previews and local browser copies, with OS/browser consent still required.
+  Declared `speech` enables native on-device transcription of stored recordings; it is
+  unavailable in previews and browser copies. There is no per-slop permission UI or
+  server fallback. [Capabilities](guides/capabilities.md) records the boundary.
+- Active templates are discovered under `slops/`; `bundled.json` chooses the starters.
+  The template build and Mac app build are separate: prepare `generated/templates/`
+  before Xcode embeds it. See [the rebuild order](guides/development.md#rebuild-templates-before-the-app).
 - Rust owns edit admission, save scheduling, discard, close, command dispatch and the
   live socket. Swift delivers events and provides native UI and rendering.
 - The CLI's engine creates, edits and validates documents on macOS and Linux. The Mac
@@ -114,6 +130,12 @@ A historical summary of the ownership decisions and integration findings is reta
 the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
+
+**Permissions and device services.** Code-bound grants and per-slop consent remain a
+[proposal](ideas.md#permissions-bound-to-the-apps-code), as do additional devices such
+as MIDI. Browser transcription and a newer native speech backend are not implemented.
+New capability names require an implementation and owning-boundary tests; they are not
+authoring options today.
 
 **Hosted templates.** A publishing service may accept validated immutable template
 artifacts, expose a generated OpenAPI catalog, and download immutable cached masters.

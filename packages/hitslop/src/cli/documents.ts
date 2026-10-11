@@ -88,7 +88,10 @@ export async function batch(document: string, ops: string, attach: string[] = []
   });
   print({ ids });
 }
-export async function apply(document: string, op: string, attach: string[] = []) {
+export async function apply(document: string, ops: string[], attach: string[] = []) {
+  // The flag is repeatable only so a second --op is refused instead of silently replacing the first.
+  if (ops.length !== 1) throw new Error("slop apply takes one --op; pass several operations to slop batch --ops");
+  const [op] = ops;
   const value = json(op);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("--op must be one JSON object");
   await batch(document, `[${op}]`, attach);

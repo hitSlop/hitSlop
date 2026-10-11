@@ -4,6 +4,7 @@ import type { ObjectNode } from "../../sdk/schema";
 import type { OwnerDocument as Document } from "../owner/document";
 import type { ownerAttachments } from "../attachments";
 import type { createCaptureController } from "../capture";
+import type { ownerSpeech } from "../speech";
 
 /** The app-facing interface over this page's document and host services. The core refused
  * an app needing a newer runtime ABI before this page opened. */
@@ -12,6 +13,7 @@ export function createContext(
   options: {
     attachments: ReturnType<typeof ownerAttachments>;
     capture: ReturnType<typeof createCaptureController>;
+    speech: ReturnType<typeof ownerSpeech>;
     resize(size: { width: number; height: number }): Promise<void>;
     reportError(error: unknown): void;
   },
@@ -39,6 +41,7 @@ export function createContext(
       registerTarget: capture.registerTarget,
     }),
     attachments: Object.freeze(attachments),
+    speech: Object.freeze(options.speech),
     window: Object.freeze({ resize: options.resize }),
     reportError: options.reportError,
   });

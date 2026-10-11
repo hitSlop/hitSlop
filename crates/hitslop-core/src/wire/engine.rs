@@ -354,6 +354,7 @@ pub struct InspectInfo {
     pub metadata: crate::app::AppMetadata,
     pub window: super::build::WindowInput,
     pub views: crate::app::Views,
+    pub capabilities: Vec<crate::app::Capability>,
     pub assets: Vec<NamedSize>,
     pub artwork: Vec<NamedSize>,
     pub defaults: ThemeValues,
@@ -444,7 +445,7 @@ pub enum EngineSuccess {
     #[serde(rename = "pack")]
     Pack { ok: True },
     #[serde(rename = "validateApp")]
-    ValidateApp { ok: True, window: crate::app::WindowDefinition },
+    ValidateApp { ok: True, window: crate::app::WindowDefinition, capabilities: Vec<crate::app::Capability> },
     #[serde(rename = "validateMetadata")]
     ValidateMetadata { ok: True },
     #[serde(rename = "describe")]

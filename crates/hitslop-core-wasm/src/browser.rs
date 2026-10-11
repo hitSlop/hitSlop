@@ -135,6 +135,7 @@ impl BrowserCopy {
             Event::Ready {
                 title: driver.owner().app().app.metadata().title.clone(),
                 window: driver.owner().app().app.window().clone(),
+                capabilities: driver.owner().app().app.capabilities().to_vec(),
             },
         );
         self.fresh = false;
@@ -193,6 +194,10 @@ impl BrowserCopy {
                     page_wire::HostAction::PageError { error: message, .. } => {
                         push(&events, Event::Error { id: None, error: message });
                         page_wire::HostReply::PageError
+                    }
+                    // A browser copy has no speech service; the page says so.
+                    page_wire::HostAction::SpeechTranscribe { .. } => {
+                        page_wire::HostReply::SpeechTranscribe { outcome: page_wire::SpeechOutcome::unsupported_host() }
                     }
                 }
                 .to_json(),

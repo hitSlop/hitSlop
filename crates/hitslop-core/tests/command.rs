@@ -17,12 +17,19 @@ use std::time::{Duration, Instant};
 mod support;
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
 fn document() -> (tempfile::TempDir, PathBuf) {
+    document_declaring(&[])
+}
+/// A document whose app declares `capabilities`.
+fn document_declaring(capabilities: &[&str]) -> (tempfile::TempDir, PathBuf) {
     support::isolate_registry();
     let dir = tempfile::tempdir_in("/tmp").unwrap();
     let stage = dir.path().join("stage");
     std::fs::create_dir_all(stage.join("assets")).unwrap();
     std::fs::write(stage.join("assets/ui.js"), "export default {}").unwrap();
     support::write_app(&stage, support::App::new(SCHEMA, r#"{"title":"Initial","hits":0}"#));
+    if !capabilities.is_empty() {
+        support::edit_input(&stage, |input| input["declaration"]["capabilities"] = json!(capabilities));
+    }
     let template = dir.path().join("template.slop");
     support::pack(&stage, &template).unwrap();
     let path = dir.path().join("doc.slop");
@@ -628,6 +635,64 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
     snapshot.attach("capture".into());
     assert_eq!(page_json(&page(&snapshot, "capture", r#"{"method":"config"}"#))["readOnly"], true);
+    close(&snapshot);
+}
+
+// Speech reaches the host only for an owner's page whose stored app declared it; every
+// other page learns why it is unavailable without a host being asked. The host then reads
+// the recording through the owner's reader, which decides what a provider may decode.
+#[test]
+fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
+    use command::PageDispatch;
+    use hitslop_core::page_wire::HostAction;
+    let id = "0123456789abcdef".repeat(4);
+    let request = json!({"method":"speech.transcribe","attachment":id,"locale":"en-US"}).to_string();
+
+    let (_dir, path) = document();
+    let owner = open(&path);
+    owner.attach("page".into());
+    let undeclared = page(&owner, "page", &request);
+    assert!(matches!(undeclared, PageDispatch::Reply { failure: None, .. }), "a definite answer, not a fault");
+    let outcome = &page_json(&undeclared)["outcome"];
+    assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("notDeclared")));
+    assert!(outcome["message"].as_str().unwrap().contains("capabilities"));
+    close(&owner);
+
+    let (_dir, path) = document_declaring(&["speech"]);
+    let owner = open(&path);
+    owner.attach("page".into());
+    match page(&owner, "page", &request) {
+        PageDispatch::Host { action: HostAction::SpeechTranscribe { attachment, locale } } => {
+            assert_eq!((attachment.as_str(), locale.as_deref()), (id.as_str(), Some("en-US")));
+        }
+        _ => panic!("a declared app's page asks the host"),
+    }
+    let without_locale = json!({"method":"speech.transcribe","attachment":id}).to_string();
+    assert!(matches!(
+        page(&owner, "page", &without_locale),
+        PageDispatch::Host { action: HostAction::SpeechTranscribe { locale: None, .. } }
+    ));
+    let malformed = page(&owner, "page", &json!({"method":"speech.transcribe","attachment":"clip.m4a"}).to_string());
+    assert_eq!(page_json(&malformed)["reason"], "invalid_request");
+    assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
+
+    // The reader hands over a verified recording with the extension its container decodes
+    // by, and refuses media no provider reads and attachments the document lacks.
+    let wav = page_json(&page(&owner, "page", r#"{"method":"attachments.put","bytes":"UklGRiQAAABXQVZFZm10IA=="}"#));
+    let png = page_json(&page(&owner, "page", r#"{"method":"attachments.put","bytes":"iVBORw0KGgo="}"#));
+    let reader = owner.resource_reader().unwrap();
+    let clip = reader.speech_clip(wav["id"].as_str().unwrap()).unwrap();
+    assert_eq!((clip.bytes.len(), clip.file_extension.as_str()), (16, "wav"));
+    let refused = reader.speech_clip(png["id"].as_str().unwrap()).unwrap_err().to_string();
+    assert!(refused.contains("image/png") && refused.contains("m4a"), "{refused}");
+    assert!(reader.speech_clip(&id).unwrap_err().to_string().contains("attachments.import"));
+    close(&owner);
+
+    // A background renderer of the same document never transcribes.
+    let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
+    snapshot.attach("capture".into());
+    let outcome = page_json(&page(&snapshot, "capture", &request))["outcome"].clone();
+    assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("host")));
     close(&snapshot);
 }
 

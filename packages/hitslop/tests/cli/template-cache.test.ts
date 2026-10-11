@@ -143,7 +143,7 @@ test.each(["crates/hitslop-core/src/file/mod.rs", "bun.lock"])(
         await mkdir(dirname(path), { recursive: true });
         await writeFile(path, "export {};");
       }
-      await mkdir(join(root, "examples/slops"), { recursive: true });
+      await mkdir(join(root, "slops"), { recursive: true });
       await mkdir(join(root, "crates/hitslop-core/src/file"), { recursive: true });
       await writeFile(join(root, "crates/hitslop-core/src/file/mod.rs"), "// original format");
       await writeFile(join(root, "bun.lock"), "{}");

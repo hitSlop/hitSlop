@@ -187,7 +187,7 @@ test("test discovery assigns each boundary and refuses unclassified tests", () =
   expect(groups.browser).toEqual(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"]);
   expect(groups.tooling).toEqual(["tests/verification/runner.test.ts"]);
   expect(() => testInventory(["tests/forgotten/a.test.ts"])).toThrow("Unclassified");
-  for (const file of ["tests/examples/one.test.ts", "tests/examples/two.native.test.ts", "tests/examples/three.browser.test.ts", "examples/slops/one/ui.test.ts"])
+  for (const file of ["tests/examples/one.test.ts", "tests/examples/two.native.test.ts", "tests/examples/three.browser.test.ts", "slops/one/ui.test.ts"])
     expect(() => testInventory([file])).toThrow("Per-example tests");
 });
 
@@ -229,9 +229,9 @@ test("Swift shard assignment is exhaustive, nonempty and rejects incomplete exec
 
 // Ordinary slop changes never select infrastructure suites through a borrowed example.
 test("example changes select authoring checks; infrastructure fixtures select their consumers", () => {
-  for (const path of ["examples/slops/one/App.svelte", "examples/slops/one/styles.css", "examples/slops/one/slop.ts"])
+  for (const path of ["slops/one/App.svelte", "slops/one/styles.css", "slops/one/slop.ts"])
     expect(affected(path)).toEqual(["types"]);
-  expect(affected("examples/slops/one/README.md")).toEqual([]);
+  expect(affected("slops/one/README.md")).toEqual([]);
   expect(affected("tests/apps/document/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "swift", "native"]));
   expect(affected("packages/hitslop/tests/sdk/editable-text.browser.test.ts")).toEqual(["types", "browser"]);
   expect(affected("packages/hitslop/templates/checklist/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "packed"]));

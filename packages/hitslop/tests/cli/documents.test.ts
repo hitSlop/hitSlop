@@ -75,6 +75,11 @@ test("document CLI rejects invalid files and malformed commands before mutation"
     const before = await readFile(root);
     expect((await cli("apply", root, "--op", "null")).code).not.toBe(0);
     expect((await cli("batch", root, "--ops", "null")).code).not.toBe(0);
+    // A second --op is refused, not silently dropped: several operations belong to batch.
+    const set = (value: string) => JSON.stringify({ type: "set", path: ["title"], value });
+    const repeated = await cli("apply", root, "--op", set("First"), "--op", set("Second"));
+    expect(repeated.code).not.toBe(0);
+    expect(repeated.error).toContain("slop batch");
     expect(await readFile(root)).toEqual(before);
   } finally {
     await rm(parent, { recursive: true, force: true });

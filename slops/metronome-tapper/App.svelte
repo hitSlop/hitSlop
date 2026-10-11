@@ -1,0 +1,363 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+  import Play from "@lucide/svelte/icons/play";
+  import Square from "@lucide/svelte/icons/square";
+  import Volume2 from "@lucide/svelte/icons/volume-2";
+  import VolumeX from "@lucide/svelte/icons/volume-x";
+  import { RadioGroup, Toggle } from "bits-ui";
+  import { onDestroy, onMount } from "svelte";
+  import { Spring, prefersReducedMotion } from "svelte/motion";
+  import doc, { signatures } from "./schema";
+  import {
+    clampBpm, isSignature, metronomeView, removePreset, savePreset, setSignature, setTempo, tapTempo,
+  } from "./metronome";
+
+  const CAPTURE_ANGLE = -16;
+  const SWING_ANGLE = 22;
+
+  let isPlaying = $state(false);
+  let currentBeat = $state(0);
+  let tapTimes: number[] = [];
+  let lastTapTime = 0;
+  let tapFeedback = $state(false);
+  let tapCount = $state(0);
+  let audioCtx: AudioContext | null = null;
+  let timerId: number | null = null;
+  let nextNoteTime = 0;
+  let nextBeatNumber = 0;
+  let noiseBuffer: AudioBuffer | null = null;
+  const pendulum = new Spring(0, { stiffness: 0.18, damping: 0.52 });
+
+  const view = $derived(metronomeView(doc.current));
+  const beatsPerBar = $derived(view.beatsPerBar);
+
+  function getAudioContext(): AudioContext {
+    if (!audioCtx) {
+      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      audioCtx = new AudioCtxClass();
+    }
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    return audioCtx;
+  }
+
+  function getNoiseBuffer(ctx: AudioContext): AudioBuffer {
+    if (noiseBuffer && noiseBuffer.sampleRate === ctx.sampleRate) return noiseBuffer;
+    const length = Math.floor(ctx.sampleRate * 0.08);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i += 1) data[i] = Math.random() * 2 - 1;
+    noiseBuffer = buffer;
+    return buffer;
+  }
+
+  function playTick(time: number, isAccent: boolean): void {
+    if (doc.current.muted) return;
+    try {
+      const ctx = getAudioContext();
+      const vol = Math.max(0.02, doc.current.volume);
+      const noise = ctx.createBufferSource();
+      noise.buffer = getNoiseBuffer(ctx);
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(isAccent ? 1750 : 920, time);
+      filter.Q.setValueAtTime(isAccent ? 3.2 : 7.5, time);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(vol * (isAccent ? 0.9 : 0.55), time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + (isAccent ? 0.045 : 0.028));
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      noise.start(time);
+      noise.stop(time + 0.06);
+
+      if (isAccent) {
+        const osc = ctx.createOscillator();
+        const oscGain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(2100, time);
+        osc.frequency.exponentialRampToValueAtTime(780, time + 0.03);
+        oscGain.gain.setValueAtTime(vol * 0.35, time);
+        oscGain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+        osc.connect(oscGain);
+        oscGain.connect(ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.045);
+      }
+    } catch {
+      // Audio context may be blocked until a gesture.
+    }
+  }
+
+  function scheduler(): void {
+    const ctx = getAudioContext();
+    while (nextNoteTime < ctx.currentTime + 0.1) {
+      const beat = nextBeatNumber;
+      const accent = doc.current.signature === "6/8" ? beat === 0 || beat === 3 : beat === 0;
+      playTick(nextNoteTime, accent);
+      const delayMs = Math.max(0, (nextNoteTime - ctx.currentTime) * 1000);
+      const capturedBeat = beat;
+      setTimeout(() => {
+        if (!isPlaying) return;
+        currentBeat = capturedBeat;
+      }, delayMs);
+      const secondsPerBeat = doc.current.signature === "6/8"
+        ? 60 / doc.current.bpm / 2
+        : 60 / doc.current.bpm;
+      nextNoteTime += secondsPerBeat;
+      nextBeatNumber = (nextBeatNumber + 1) % beatsPerBar;
+    }
+  }
+
+  function start(): void {
+    const ctx = getAudioContext();
+    isPlaying = true;
+    currentBeat = 0;
+    nextBeatNumber = 0;
+    nextNoteTime = ctx.currentTime + 0.05;
+    timerId = window.setInterval(scheduler, 25);
+  }
+
+  function stop(): void {
+    isPlaying = false;
+    if (timerId !== null) {
+      clearInterval(timerId);
+      timerId = null;
+    }
+    currentBeat = 0;
+  }
+
+  function togglePlay(): void {
+    if (isPlaying) stop();
+    else start();
+  }
+
+  function setBpm(value: number): void {
+    const bpm = clampBpm(value);
+    if (bpm === doc.current.bpm) return;
+    void doc.change(tx => setTempo(tx, bpm));
+  }
+
+  function nudgeBpm(delta: number): void {
+    setBpm(doc.current.bpm + delta);
+  }
+
+  function handleTap(): void {
+    const nowTime = performance.now();
+    tapFeedback = true;
+    window.setTimeout(() => { tapFeedback = false; }, 100);
+    if (nowTime - lastTapTime > 2500) {
+      tapTimes = [];
+      tapCount = 0;
+    }
+    lastTapTime = nowTime;
+    tapTimes.push(nowTime);
+    tapCount = tapTimes.length;
+    if (tapTimes.length > 6) tapTimes.shift();
+    const bpm = tapTempo(tapTimes);
+    if (bpm !== null) setBpm(bpm);
+  }
+
+  function addPreset(): void {
+    if (doc.current.presets.includes(doc.current.bpm)) return;
+    void doc.change(tx => savePreset(tx, doc.current));
+  }
+
+  function dropPreset(bpm: number): void {
+    if (doc.current.presets.length <= 1) return;
+    void doc.change(tx => removePreset(tx, doc.current, bpm));
+  }
+
+  function handleKeyDown(event: KeyboardEvent): void {
+    if (event.target instanceof HTMLInputElement) return;
+    if (event.code === "Space") {
+      event.preventDefault();
+      togglePlay();
+    } else if (event.code === "KeyT") {
+      event.preventDefault();
+      handleTap();
+    } else if (event.code === "ArrowUp") {
+      event.preventDefault();
+      nudgeBpm(event.shiftKey ? 5 : 1);
+    } else if (event.code === "ArrowDown") {
+      event.preventDefault();
+      nudgeBpm(event.shiftKey ? -5 : -1);
+    }
+  }
+
+  $effect(() => {
+    const playing = isPlaying;
+    const reduced = prefersReducedMotion.current;
+    if (reduced || !playing) {
+      void pendulum.set(0, { instant: true });
+      return;
+    }
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let dir = 1;
+    const beat = () => {
+      if (cancelled) return;
+      dir *= -1;
+      const bpm = Math.max(40, doc.current.bpm);
+      pendulum.stiffness = Math.min(0.42, Math.max(0.1, bpm / 420));
+      pendulum.damping = 0.52;
+      void pendulum.set(dir * SWING_ANGLE);
+      timer = setTimeout(beat, (60 / bpm) * 1000);
+    };
+    beat();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  });
+
+  onMount(() => {
+    window.addEventListener("keydown", handleKeyDown);
+  });
+
+  onDestroy(() => {
+    window.removeEventListener("keydown", handleKeyDown);
+    stop();
+    void pendulum.set(pendulum.target, { instant: true });
+    if (audioCtx) void audioCtx.close();
+  });
+</script>
+
+
+<main class="metronome-shell" aria-label="Metronome">
+  <header class="chassis-head">
+    <span class="screw" aria-hidden="true"></span>
+    <p>PRECISION TEMPO</p>
+    <span class="screw" aria-hidden="true"></span>
+  </header>
+
+  <section class="display-card">
+    <div class="display-readout">
+      <strong class="bpm-digits">{doc.current.bpm}</strong>
+      <span class="bpm-unit">BPM</span>
+    </div>
+    <p class="tempo-descriptor">{view.tempoName}</p>
+    <div class="beat-lights" aria-label={`Beat ${currentBeat + 1} of ${beatsPerBar}`}>
+      {#each Array(beatsPerBar) as _, index}
+        <span class="beat-dot" class:active={isPlaying && currentBeat === index} class:accent={index === 0}></span>
+      {/each}
+    </div>
+  </section>
+
+  <section class="pendulum-chamber" aria-hidden="true">
+    <div class="scale-grooves">
+      <span>200</span>
+      <span>160</span>
+      <span>120</span>
+      <span>90</span>
+      <span>60</span>
+    </div>
+    <div
+      class="pendulum-arm"
+      style:transform="rotate({pendulum.current}deg)"
+      style:--weight={view.weight}
+    >
+      <div class="brass-rod"></div>
+      <div class="brass-weight"><i></i></div>
+      <div class="pendulum-pivot"></div>
+    </div>
+  </section>
+
+  <section class="controls-panel">
+    <div class="preset-row" data-slop-export="hide">
+      {#each doc.current.presets as preset, index (index)}
+        <button
+          type="button"
+          class="preset-btn"
+          class:selected={doc.current.bpm === preset}
+          onclick={() => setBpm(preset)}
+          ondblclick={() => dropPreset(preset)}
+        >
+          {preset}
+        </button>
+      {/each}
+      <button type="button" class="preset-save" onclick={addPreset} aria-label="Save current tempo">Save</button>
+    </div>
+
+    <div class="tempo-nudge-row" data-slop-export="hide">
+      <button type="button" class="nudge-btn" onclick={() => nudgeBpm(-5)} aria-label="Subtract 5 BPM">-5</button>
+      <button type="button" class="nudge-btn" onclick={() => nudgeBpm(-1)} aria-label="Subtract 1 BPM">-1</button>
+      <input
+        class="bpm-slider"
+        type="range"
+        min="40"
+        max="240"
+        step="1"
+        aria-label="Tempo"
+        style:--bpm={doc.current.bpm}
+        bind:value={doc.fields.bpm.value}
+      />
+      <button type="button" class="nudge-btn" onclick={() => nudgeBpm(1)} aria-label="Add 1 BPM">+1</button>
+      <button type="button" class="nudge-btn" onclick={() => nudgeBpm(5)} aria-label="Add 5 BPM">+5</button>
+    </div>
+
+    <div class="settings-row">
+      <RadioGroup.Root
+        value={doc.current.signature}
+        onValueChange={(value) => { if (value && isSignature(value)) { void doc.change(tx => setSignature(tx, value)); currentBeat = 0; nextBeatNumber = 0; } }}
+        class="time-sig-selector"
+        aria-label="Time signature"
+      >
+        {#each signatures as signature}
+          <RadioGroup.Item value={signature} class="sig-btn">{signature}</RadioGroup.Item>
+        {/each}
+      </RadioGroup.Root>
+      <label class="volume-field" data-slop-export="hide">
+        {#if doc.current.muted}
+          <VolumeX size={15} />
+        {:else}
+          <Volume2 size={15} />
+        {/if}
+        <input
+          class="volume-slider"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          aria-label="Click volume"
+          style:--volume={doc.current.volume}
+          bind:value={doc.fields.volume.value}
+        />
+      </label>
+      <Toggle.Root
+        bind:pressed={doc.fields.muted.value}
+        class="mute-toggle"
+        aria-label={doc.current.muted ? "Unmute click" : "Mute click"}
+      >
+        {doc.current.muted ? "MUTE" : "CLICK"}
+      </Toggle.Root>
+    </div>
+
+    <div class="primary-actions" data-slop-export="hide">
+      <button
+        type="button"
+        class="tap-tempo-btn"
+        class:tap-active={tapFeedback}
+        onclick={handleTap}
+        aria-label="Tap tempo four times"
+      >
+        <span>TAP TEMPO</span>
+        <strong>TAP 4×</strong>
+        <em>{tapCount > 0 ? `${Math.min(tapCount, 4)} / 4` : "listen"}</em>
+      </button>
+      <button
+        type="button"
+        class="play-toggle-btn"
+        class:playing={isPlaying}
+        onclick={togglePlay}
+        aria-label={isPlaying ? "Stop metronome" : "Start metronome"}
+      >
+        {#if isPlaying}
+          <Square size={22} fill="currentColor" />
+        {:else}
+          <Play size={24} fill="currentColor" class="play-icon-offset" />
+        {/if}
+      </button>
+    </div>
+  </section>
+</main>

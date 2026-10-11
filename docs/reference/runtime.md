@@ -11,7 +11,7 @@ imports the app's `assets/ui.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell package supplies the runtime; `hitslop`
 contains only the author SDK. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
-`bind.text`, capture hooks, attachments, `window.resize` and
+`bind.text`, capture hooks, attachments, `speech.transcribe`, `window.resize` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view may supply `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes, attachments and capture coordination stay in the page shell.
@@ -26,7 +26,9 @@ The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture/rend
 controls attributes, the notice region, `--slop-*` variables, `__slopCommands`,
 `__slopDescribe` and `__slopRun`. Command sets use `Symbol.for("slop.command-set")` with `{ document, specs }`. A
 `slop.operation-error` branded `DocumentError` carries document outcomes across bundles;
-`refuse(message)` uses code `rejected` and reason `refused`. Unhandled refusals dispatch
+`refuse(message)` uses code `rejected` and reason `refused`. A `slop.speech-error`
+branded `SpeechError` carries `ctx.speech` failures (code `unavailable`, `cancelled` or
+`failed`; `reason` for `unavailable`). Unhandled refusals dispatch
 the cancelable `slop:refused` event with the message as its detail. An app that cancels
 it has displayed the message; other faults go to the host's issue path. The same file
 lists the host-internal names apps never read (`slop:render-error`, `data-slop-host`,
@@ -37,7 +39,7 @@ the builder emits `svelteApp` from the declaration's explicit `view`, `document`
 `export`, `icon` and `commands` references. Authors import styles themselves; filenames
 have no special role. Once mounted, the schema's definition is the live document
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
-`ctx.document.observe`). `bindText`, `EditableText`, `capture` and `attachments` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
+`ctx.document.observe`). `bindText`, `EditableText`, `capture`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
@@ -100,18 +102,25 @@ Application-render errors and save failures have separate recovery paths. Render
 
 ## Security boundaries
 
+For author examples and platform availability, see [capabilities](../guides/capabilities.md).
+The declaration and host enforcement described below do not create a per-slop OS grant.
+
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates the file, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
 The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
 The native, browser and development-preview CSPs are defined in Rust
-(`crates/hitslop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser. Camera/microphone grants are not part of this release.
+(`crates/hitslop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
+
+Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The native host's WebKit media delegate grants a request only for the current, ready, owned document page (never a snapshot, export or icon renderer, or a page being captured), from the main frame at `slop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for hitSlop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-slop prompt yet. WebKit exposes `navigator.mediaDevices` at `slop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
+
+Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`) or the owner is a snapshot renderer (`host`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document that is not being captured, reads the recording through the owner's resource reader (`speech_clip`, which verifies the attachment and accepts only m4a, mp3, wav, flac, mp4 and mov), and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. It checks on-device support before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: replacing or closing it, reloading its interface or starting an export or copy cancels it, and the page receives `cancelled`. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
 
 Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.
 
 A slop's page, `slop://app`, has no HTTP(S) referrer, and some providers refuse to embed without one (YouTube reports error 153; a `127.0.0.1` origin gets error 150). The SDK's `hitslop/embed` embeds YouTube through a static relay page, `https://hitslop.com/embed/youtube.html`, served from `apps/landing/public/embed/`. It takes the video from the URL fragment, so the server never sees it, and relays only the player's allowlisted `postMessage` commands. YouTube playback therefore needs that page to be reachable; each additional referrer-gated provider needs its own relay and helper.
 
-Bridge calls must originate in the main frame at `slop://app` and decode into the Rust serde request types. Serialized requests are bounded to 48 MiB, with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket requests are bounded to 1 MiB (16 MiB for a batch carrying attachments), one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
+Bridge calls must originate in the main frame at `slop://app` and decode into the Rust serde request types. Page requests are bounded to 16 MiB, which holds the largest attachment upload (10 MiB, base64-encoded to about 13.3 MiB), with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket requests are bounded to 1 MiB (16 MiB for a batch carrying attachments), one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
 
 An export never replaces the document it renders. Capture stages output and publishes by atomic rename before its deadline. Failures do not replace existing output. A lost acknowledgement leaves an uncertain outcome; inspect the destination before retrying.
 

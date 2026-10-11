@@ -435,11 +435,8 @@ fn a_gap_says_hello_again() {
     assert!(broadcast.applied.is_none() && broadcast.send.is_empty());
     assert_eq!(support::value(&doc), before);
 
-    let mut relay = Relay {
-        app: APP,
-        records: vec![record],
-        heads: remote.iter().map(|(p, c)| (*p, *c as u32)).collect(),
-    };
+    let mut relay =
+        Relay { app: APP, records: vec![record], heads: remote.iter().map(|(p, c)| (*p, *c as u32)).collect() };
     let (backfill, _) = relay.reply(hello);
     let mut pushes = vec![];
     for frame in backfill {

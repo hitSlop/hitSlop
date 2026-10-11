@@ -10,7 +10,7 @@ export type TemplateSource = { slug: string; source: string; bundled: boolean };
  * build outputs are not scanned. Discovery never runs author code: a folder's name is its
  * slug, and building it refuses an app that declares another. */
 export async function discoverTemplates(
-  root = join(repository, "examples/slops"),
+  root = join(repository, "slops"),
 ): Promise<TemplateSource[]> {
   const selected: unknown = JSON.parse(await readFile(join(root, "bundled.json"), "utf8"));
   if (

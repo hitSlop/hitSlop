@@ -5,8 +5,8 @@
 //! 1 releases and may only loosen. `authoring` is what `pack` and `init` require of a new
 //! app; it may tighten at any time, because it never runs on a saved file.
 use super::{
-    AppDefinition, AppMetadata, Background, Category, CommandDefinition, CommandInput, StandardFrame, ThemeInput,
-    Views, WindowDefinition, WindowFrame,
+    AppDefinition, AppMetadata, Background, Capability, Category, CommandDefinition, CommandInput, StandardFrame,
+    ThemeInput, Views, WindowDefinition, WindowFrame,
 };
 use crate::arguments::Arguments;
 use crate::build::{BuildDeclaration, WindowInput};
@@ -48,6 +48,10 @@ pub(super) struct Definition {
     theme: Vec<Token>,
     commands: Vec<Command>,
     views: StoredViews,
+    /// Stored spellings (`capability_name`), sorted and unique when packed. Absent means
+    /// none, so an app without capabilities stores exactly what it did before they existed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    capabilities: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -106,6 +110,20 @@ const CATEGORY_COLUMNS: [(Category, &str); 13] = [
     (Category::Music, "music"),
     (Category::Other, "other"),
 ];
+/// The `capabilities` spellings of format 1. Opening ignores any other string: it can only
+/// name a capability a later build added, which this host does not implement and so never
+/// grants. That lets a later build add a capability without a new package format; one that
+/// needs new app-facing API raises `runtimeABI` instead. Authoring refuses unknown values.
+fn capability_name(capability: Capability) -> &'static str {
+    match capability {
+        Capability::Camera => "camera",
+        Capability::Microphone => "microphone",
+        Capability::Speech => "speech",
+    }
+}
+fn stored_capability(name: &str) -> Option<Capability> {
+    Capability::ALL.iter().copied().find(|&capability| capability_name(capability) == name)
+}
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn category_column(category: Category) -> &'static str {
     CATEGORY_COLUMNS.iter().find(|(c, _)| *c == category).map(|(_, name)| *name).expect("every category has a column")
@@ -190,6 +208,12 @@ pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> 
             .map(|c| Command { name: c.name.clone(), description: c.description.clone(), args: c.args.clone() })
             .collect(),
         views: StoredViews { export: input.views.export, icon: input.views.icon },
+        capabilities: {
+            let mut declared = input.capabilities.clone();
+            declared.sort();
+            declared.dedup();
+            declared.into_iter().map(|c| capability_name(c).into()).collect()
+        },
     };
     checked(input.metadata.clone(), definition)
 }
@@ -202,6 +226,7 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     bound(encode(&stored.window).len(), MANIFEST_BYTES, "window")?;
     bound(encode(&stored.theme).len(), THEME_LIMIT, "theme")?;
     bound(encode(&stored.commands).len(), ASSET_FILE_BYTES, "commands")?;
+    bound(encode(&stored.capabilities).len(), MANIFEST_BYTES, "capabilities")?;
     let window = window(&stored.window).map_err(|e| e.at("window"))?;
     let node = descriptor::descriptor(stored.document.get()).map_err(|e| e.at("document"))?;
     let tokens: Vec<_> = stored.theme.iter().map(|t| (t.token.clone(), t.color.clone())).collect();
@@ -234,7 +259,10 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     let spec = AppSpec::of(node, &metadata_value.slug, tokens);
     let theme = stored.theme.iter().map(|t| ThemeInput { token: t.token.clone(), color: t.color.clone() }).collect();
     let views = Views { export: stored.views.export, icon: stored.views.icon };
-    Ok(AppDefinition { metadata: metadata_value, stored, window, theme, views, commands, spec })
+    let mut capabilities: Vec<_> = stored.capabilities.iter().filter_map(|name| stored_capability(name)).collect();
+    capabilities.sort();
+    capabilities.dedup();
+    Ok(AppDefinition { metadata: metadata_value, stored, window, theme, views, commands, capabilities, spec })
 }
 
 /// The stored metadata's shape: bounded, with the one or two different categories its
@@ -367,5 +395,14 @@ mod tests {
             assert_eq!(column_category(category_column(category)).unwrap(), category);
         }
         assert_eq!(CATEGORY_COLUMNS.len(), Category::ALL.len());
+    }
+    /// A capability reads back from the spelling packing stores, and `ALL` lists every one.
+    #[test]
+    fn every_capability_has_one_stored_spelling() {
+        for &capability in Capability::ALL {
+            let name = capability_name(capability);
+            assert_eq!(stored_capability(name), Some(capability));
+            assert_eq!(serde_json::to_value(capability).unwrap(), name, "the authored and stored spellings agree");
+        }
     }
 }

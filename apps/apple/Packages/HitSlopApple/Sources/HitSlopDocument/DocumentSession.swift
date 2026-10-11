@@ -94,6 +94,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   var fileSaver = DocumentFileSaver() {
     didSet { configureFileSaver() }
   }
+  /// Recognizes recordings on this Mac; tests script their own.
+  var speechRecognizer: any SpeechRecognizing = SystemSpeechRecognizer()
+  /// Transcriptions the attached page started (`serveSpeech`).
+  var speechTasks: [UUID: Task<Void, Never>] = [:]
   /// Every read-only snapshot page is a disposable renderer.
   private func markRenderTarget(_ configuration: WKWebViewConfiguration) {
     configuration.userContentController.addUserScript(
@@ -275,6 +279,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
     filePicker.cancel()
     fileSaver.cancel()
+    cancelSpeech()
+    // The remounted app starts without the old one's camera and microphone.
+    await webView.setCameraCaptureState(.none)
+    await webView.setMicrophoneCaptureState(.none)
     _ = try await webView.callHost(.reloadInterface)
   }
   private func makeWebView() {
@@ -394,6 +402,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     case .failed(let error):
       failOpening(error, reason: .startup, classification: .platform)
       reply(encodeHostReply(reply: .failed), nil)
+    case .speechTranscribe(let attachment, let locale):
+      serveSpeech(attachment: attachment, locale: locale, reply: reply)
     case .pageError(let kind, let error):
       if isReady {
         report(SlopPageIssue(message: error, isOperation: kind == .operation))
@@ -500,6 +510,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   public func withCapture<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
     if capturing { await withCheckedContinuation { captureQueue.append($0) } }
     capturing = true
+    // An export or copy reads saved state; the page's transcriptions end now.
+    cancelSpeech()
     defer {
       if captureQueue.isEmpty { capturing = false } else { captureQueue.removeFirst().resume() }
     }
@@ -633,6 +645,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   private func destroyWebView() {
     filePicker.cancel()
     fileSaver.cancel()
+    cancelSpeech()
+    // A retired page's camera and microphone end now, not whenever WebKit releases it.
+    liveWebView?.setCameraCaptureState(.none)
+    liveWebView?.setMicrophoneCaptureState(.none)
     liveWebView?.uiDelegate = nil
     liveWebView?.stopLoading()
     liveWebView?.configuration.userContentController.removeScriptMessageHandler(

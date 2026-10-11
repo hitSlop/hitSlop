@@ -21,7 +21,7 @@ try {
     }),
   );
   if (templates.length || fixtureSources.length) {
-    const command = [process.execPath, "node_modules/svelte-check/bin/svelte-check", "--workspace", join(repository, "examples/slops"), "--tsconfig", config];
+    const command = [process.execPath, "node_modules/svelte-check/bin/svelte-check", "--workspace", join(repository, "slops"), "--tsconfig", config];
     const { code } = await exec(command, { cwd: repository, env: process.env, inherit: ["stdout", "stderr"] });
     if (code) process.exitCode = code;
   }

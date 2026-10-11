@@ -32,7 +32,7 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
       const inventory = outputs[mode];
       const boundary: Plugin = {
         name: "hitslop-explicit-entry", enforce: "pre",
-        async resolveId(id, importer) {
+        async resolveId(id, importer, resolveOptions) {
           if (id === virtualEntry) {
             const resolved = await this.resolve("hitslop", entry, { skipSelf: true });
             if (!resolved) return this.error("Cannot resolve the project's hitslop SDK");
@@ -41,7 +41,8 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
           }
           refuseRoleImport(id, importer, roles, headless, message => this.error(message));
           if (!importer || importer === virtualEntry) return;
-          const found = await this.resolve(id, importer, { skipSelf: true });
+          // Preserve require/import conditions when checking the resolved role boundary.
+          const found = await this.resolve(id, importer, { ...resolveOptions, skipSelf: true });
           if (found) {
             if (headless) refuseRoleImport(found.id, importer, roles, true, message => this.error(message));
             else refusePageRole(found.id, roles, message => this.error(message));

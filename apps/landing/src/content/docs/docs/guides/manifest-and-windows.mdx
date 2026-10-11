@@ -9,6 +9,10 @@ checkpoint. The embedded app and its defaults are
 immutable in a built template or document, so make changes in the source project and
 rebuild. Writable state and imported attachments belong to the document.
 
+The optional `capabilities` field declares `camera`, `microphone`, or `speech` access.
+It does not grant system permission. See [capabilities and permissions](/docs/guides/capabilities/)
+for declarations, capture, transcription and platform limits.
+
 ## Start with a complete `slop.ts`
 
 `schema.ts` default-exports `defineDocument(fields, { initial })`. Initial values may be
