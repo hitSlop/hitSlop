@@ -28,6 +28,14 @@ test("release notes separate Mac changes from authoring and retain Markdown", ()
   expect(parseReleaseNotes(withExample, "7.2.0").authoring).toContain("## Mac app\nExample heading");
 });
 
+test("release notes keep fence-like content inside examples until a valid closing fence", () => {
+  for (const fence of ["```", "~~~"]) {
+    const example = [fence + "md", fence + "md", "## Mac app", "Example heading", "  " + fence + fence[0] + " \t"].join("\n");
+    const notes = `# hitSlop 7.2.0\n\n## Mac app\n\n${example}\n\n## Authoring\n\n- Add a command.\n`;
+    expect(parseReleaseNotes(notes, "7.2.0")).toEqual({ mac: example.trimEnd(), authoring: "- Add a command." });
+  }
+});
+
 test("release notes reject a wrong version, missing or empty Mac section, and ambiguous sections", () => {
   for (const invalid of [
     source.replace("7.2.0", "7.1.0"),

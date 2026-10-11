@@ -35,7 +35,9 @@ export function parseReleaseNotes(source: string, version: string) {
   let section: string | undefined;
   let fence: string | undefined;
   for (const line of lines) {
-    const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    const marker = (fence
+      ? /^ {0,3}(`{3,}|~{3,})[ \t]*$/
+      : /^ {0,3}(`{3,}|~{3,})/).exec(line)?.[1];
     if (marker && !fence) fence = marker;
     else if (marker && fence && marker[0] === fence[0] && marker.length >= fence.length) fence = undefined;
     const heading = !fence && !marker ? /^## (.+?)\s*$/.exec(line)?.[1] : undefined;
