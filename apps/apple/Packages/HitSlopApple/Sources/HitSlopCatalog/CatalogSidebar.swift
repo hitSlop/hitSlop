@@ -38,6 +38,9 @@ struct CatalogSidebar: View {
         .padding(.horizontal, 10).padding(.bottom, 18)
       }
 
+      AuthoringLink()
+        .padding(.horizontal, 12).padding(.bottom, 12)
+
       HStack(spacing: 2) {
         BrandLink(name: "github", label: "GitHub", destination: CatalogLinks.github)
         BrandLink(name: "discord", label: "Discord", destination: CatalogLinks.discord)
@@ -47,6 +50,38 @@ struct CatalogSidebar: View {
       .overlay(alignment: .top) { Rectangle().fill(CatalogStyle.hairline).frame(height: 1).padding(.horizontal, 14) }
     }
     .background(CatalogStyle.sidebar)
+  }
+}
+
+private struct AuthoringLink: View {
+  @State private var isHovering = false
+
+  var body: some View {
+    Link(destination: CatalogLinks.authoring) {
+      HStack(alignment: .top, spacing: 8) {
+        Text("Learn how to make your own slop")
+          .font(.callout.weight(.medium))
+          .multilineTextAlignment(.leading)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        Image(systemName: "arrow.up.right")
+          .font(.caption.weight(.semibold))
+          .padding(.top, 2)
+          .accessibilityHidden(true)
+      }
+      .foregroundStyle(isHovering ? CatalogStyle.brandHover : CatalogStyle.brand)
+      .padding(12)
+      .background(
+        CatalogStyle.brand.opacity(isHovering ? 0.14 : 0.08),
+        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+      )
+      .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+    .buttonStyle(.plain)
+    .onHover { isHovering = $0 }
+    .help("Open the guide in your browser")
+    .accessibilityLabel("Learn how to make your own slop")
+    .accessibilityHint("Opens the guide in your browser")
   }
 }
 
