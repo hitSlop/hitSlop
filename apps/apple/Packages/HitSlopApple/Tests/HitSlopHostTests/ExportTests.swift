@@ -471,7 +471,8 @@ extension HostTests {
 }
 
 extension HostTests {
-  @Test(.nightly) @MainActor func telemetryCountsCompletedExportsAndReportsFailuresWithoutDocumentValues() async throws {
+  @Test(.nightly) @MainActor func telemetryCountsCompletedExportsAndReportsFailuresWithoutDocumentValues() async throws
+  {
     let root = try contractFixture()
     let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
     defer {

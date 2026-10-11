@@ -6,7 +6,8 @@ import { buildTemplate, prepareRenderer } from "./template";
 
 /** Builds anywhere; only `native` artwork needs the Mac app. */
 export async function build(source: string, artwork?: string) {
-  if (artwork !== undefined && artwork !== "native") throw new Error("--artwork accepts only native");
+  if (artwork !== undefined && artwork !== "native")
+    throw new Error("--artwork accepts only native");
   console.log(await buildTemplate(source, artwork ? await prepareRenderer() : undefined));
 }
 
@@ -24,7 +25,7 @@ export async function register(source: string) {
   const renderer = await prepareRenderer();
   const templates = await installedTemplates(renderer);
   await mkdir(templates, { recursive: true });
-  console.log(await buildTemplate(source, renderer, slug => join(templates, slug + ".slop")));
+  console.log(await buildTemplate(source, renderer, (slug) => join(templates, slug + ".slop")));
 }
 
 export async function dev(source: string, port = 5173) {

@@ -110,7 +110,7 @@ live owner. An engine, helper or owner that does not serve it refuses before doc
 access, with exit status 2 or `requires_update`, and says which side to update; a
 document command that names no protocol is a usage error. Each executable reports the range it serves with
 `--protocol` (`{"version":N,"minimum":M}`). The app bundles its engine, helper and owner
-built from one core; `slop-engine --build-id` and `hitslop-native --core-build` print it.
+built from one core; `slop-engine --build-id` and `hitslop-native --build-id` print it.
 A CLI-only release may reuse an installed app while the protocol and
 [installed-consumer checks](releasing.md) pass.
 

@@ -8,15 +8,27 @@ export function declaresModuleState(code: string, fileName: string) {
   const rune = (node: ts.Expression): boolean => {
     if (!ts.isCallExpression(node)) return false;
     const callee = node.expression;
-    return ts.isIdentifier(callee) ? callee.text === "$state"
-      : ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.expression) && callee.expression.text === "$state";
+    return ts.isIdentifier(callee)
+      ? callee.text === "$state"
+      : ts.isPropertyAccessExpression(callee) &&
+          ts.isIdentifier(callee.expression) &&
+          callee.expression.text === "$state";
   };
-  return root.statements.some(statement => ts.isVariableStatement(statement) &&
-    statement.declarationList.declarations.some(declaration => declaration.initializer && rune(declaration.initializer)));
+  return root.statements.some(
+    (statement) =>
+      ts.isVariableStatement(statement) &&
+      statement.declarationList.declarations.some(
+        (declaration) => declaration.initializer && rune(declaration.initializer),
+      ),
+  );
 }
 
 /** The first stateful module a capture component imports, directly or through others. */
-export function sharedStateIn(component: string, imports: ReadonlyMap<string, readonly string[]>, stateful: ReadonlySet<string>) {
+export function sharedStateIn(
+  component: string,
+  imports: ReadonlyMap<string, readonly string[]>,
+  stateful: ReadonlySet<string>,
+) {
   const seen = new Set<string>();
   const pending = [component];
   while (pending.length) {
@@ -24,6 +36,6 @@ export function sharedStateIn(component: string, imports: ReadonlyMap<string, re
     if (seen.has(id)) continue;
     seen.add(id);
     if (stateful.has(id)) return id;
-    pending.push(...imports.get(id) ?? []);
+    pending.push(...(imports.get(id) ?? []));
   }
 }

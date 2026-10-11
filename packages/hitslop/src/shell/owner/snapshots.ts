@@ -20,7 +20,9 @@ export class SnapshotBindings {
     private readonly report: (error: unknown) => void,
   ) {}
 
-  map(value: unknown) { mapPaths(this.paths, value, this.descriptor, []); }
+  map(value: unknown) {
+    mapPaths(this.paths, value, this.descriptor, []);
+  }
   locate(value: object) {
     const location = this.paths.get(value);
     if (!location) throw new Error("Value is not a snapshot from this document");
@@ -39,30 +41,42 @@ export class SnapshotBindings {
   }
   textLocation(handle: object) {
     const location = this.handlePaths.get(handle);
-    if (!location || unwrap(location.node).kind !== "text") throw new Error("Expected this document's text handle");
+    if (!location || unwrap(location.node).kind !== "text")
+      throw new Error("Expected this document's text handle");
     return location;
   }
   invalidate(changes: Changes) {
     // Caller-held handles remain valid paths; deleted rows leave the strong cache.
     if (changes === "all") this.handles.clear();
-    else for (const path of changes.removed ?? []) {
-      const key = pathKey(path);
-      for (const cached of this.handles.keys())
-        if (atOrBeneath(cached, key)) this.handles.delete(cached);
-    }
+    else
+      for (const path of changes.removed ?? []) {
+        const key = pathKey(path);
+        for (const cached of this.handles.keys())
+          if (atOrBeneath(cached, key)) this.handles.delete(cached);
+      }
   }
-  observed() { this.observer(); }
+  observed() {
+    this.observer();
+  }
   observe(read: () => void) {
     this.observer = read;
-    return () => { if (this.observer === read) this.observer = () => {}; };
+    return () => {
+      if (this.observer === read) this.observer = () => {};
+    };
   }
   subscribe(listener: () => void) {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
   notify() {
     for (const listener of this.listeners) {
-      try { listener(); } catch (error) { this.report(error); }
+      try {
+        listener();
+      } catch (error) {
+        this.report(error);
+      }
     }
   }
   /** Bindings refresh only when a publication touches their path, or on a full refresh. */
@@ -79,9 +93,13 @@ export class SnapshotBindings {
   notifyPaths(changes: Changes) {
     const touched = changes === "all" ? undefined : [...changes.paths];
     for (const [key, set] of this.pathListeners) {
-      if (touched && !touched.some(path => atOrBeneath(key, path))) continue;
+      if (touched && !touched.some((path) => atOrBeneath(key, path))) continue;
       for (const listener of set) {
-        try { listener(); } catch (error) { this.report(error); }
+        try {
+          listener();
+        } catch (error) {
+          this.report(error);
+        }
       }
     }
   }

@@ -14,20 +14,18 @@ import HitSlopHost
       guard arguments.count >= 2, let version = Int(arguments[1]) else {
         return bootstrapFailure("--client-protocol requires an integer")
       }
-      if version != HelperProtocol.version {
-        return bootstrapFailure(
-          version > HelperProtocol.version
-            ? "This command needs a newer hitSlop app; update hitSlop"
-            : "This hitSlop app needs a newer command line; update the hitSlop CLI")
+      guard let wireVersion = UInt64(exactly: version) else {
+        return bootstrapFailure("--client-protocol requires an unsigned integer")
       }
+      if let message = protocolMismatch(version: wireVersion) { return bootstrapFailure(message) }
       protocolVersion = version
       arguments.removeFirst(2)
     }
     if arguments == ["--protocol"] {
-      print(#"{"version":\#(HelperProtocol.version)}"#)
+      print(protocolJson())
       return
     }
-    if arguments == ["--core-build"] {
+    if arguments == ["--build-id"] {
       print(DocumentOwner.coreBuildID)
       return
     }

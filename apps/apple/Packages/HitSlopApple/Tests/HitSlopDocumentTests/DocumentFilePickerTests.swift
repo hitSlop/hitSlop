@@ -16,7 +16,8 @@ import WebKit
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
+      defer: false)
     // Borderless: AppKit pulls a titled window back on screen when it is ordered front.
     window.moveOffScreen()
     window.contentView = engine.webView
@@ -52,7 +53,8 @@ import WebKit
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
+      defer: false)
     // Borderless: AppKit pulls a titled window back on screen when it is ordered front.
     window.moveOffScreen()
     window.contentView = engine.webView

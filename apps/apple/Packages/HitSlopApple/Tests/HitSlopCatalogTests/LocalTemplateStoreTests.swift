@@ -12,7 +12,9 @@ import Testing
 @testable import HitSlopCatalog
 
 // Same-path artwork replacement must update an already mounted catalog, without reselection.
-@Test(.nightly, arguments: [false, true]) @MainActor func displayedCatalogArtworkRefreshesAfterSamePathReplacement(icon: Bool)
+@Test(.nightly, arguments: [false, true]) @MainActor func displayedCatalogArtworkRefreshesAfterSamePathReplacement(
+  icon: Bool
+)
   async throws
 {
   _ = NSApplication.shared

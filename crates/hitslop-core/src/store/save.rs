@@ -70,16 +70,14 @@ fn append(doc: &Document, saved: &VersionVector, meta: Metadata) -> Result<Optio
     Ok(within(meta.rows + 1, meta.stored() + bytes.len() as i64).then_some(bytes))
 }
 /// A checkpoint that fits: the whole history, or only the current state when the history
-/// does not fit or `compact` asks for none. The live document keeps its history, so this
+/// does not fit. The live document keeps its history, so this
 /// session's undo still works; only the file forgets it. A shared document always keeps its
 /// whole history: another replica's edits can depend on any of it.
-fn checkpoint(doc: &mut Document, compact: bool, shared: bool) -> Result<Option<Vec<u8>>> {
+fn checkpoint(doc: &mut Document, shared: bool) -> Result<Option<Vec<u8>>> {
     let fits = |bytes: &[u8]| within(0, checkpoint_row(bytes.len()));
-    if !compact || shared {
-        let bytes = doc.doc.export(ExportMode::Snapshot).map_err(failed)?;
-        if fits(&bytes) || shared {
-            return Ok(fits(&bytes).then_some(bytes));
-        }
+    let bytes = doc.doc.export(ExportMode::Snapshot).map_err(failed)?;
+    if fits(&bytes) || shared {
+        return Ok(fits(&bytes).then_some(bytes));
     }
     let latest = doc.doc.oplog_frontiers();
     trimmed(doc, &latest, fits)
@@ -91,36 +89,41 @@ fn trimmed(doc: &Document, start: &Frontiers, accept: impl Fn(&[u8]) -> bool) ->
 }
 
 impl Store {
-    /// The next write for `doc`, or none when the durable state already covers it and no
-    /// checkpoint is requested. Exports only what it writes: the updates since the last
-    /// save, or a checkpoint once the log is long, full or a checkpoint is requested.
-    pub fn job(&self, doc: &mut Document, force_checkpoint: bool) -> Result<Option<SaveJob>> {
+    /// The next write, or none when already durable. Exports only updates since the
+    /// last save, or a checkpoint once the log is long or full.
+    pub fn job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
         let (meta, saved, shared) = {
             let account = lock(&self.account);
             (account.meta, account.saved.clone(), account.shared)
         };
         let version = doc.doc.oplog_vv();
-        if version == saved && !force_checkpoint {
+        if version == saved {
             return Ok(None);
         }
-        // A checkpoint first when one is requested or the log is due for one.
+        // Prefer a checkpoint when the log is due for one.
         let due = meta.rows >= CHECKPOINT_ROWS || meta.update_bytes >= CHECKPOINT_BYTES;
-        let order: &[bool] = if force_checkpoint {
-            &[true]
-        } else if due {
-            &[true, false]
-        } else {
-            &[false, true]
-        };
+        let order: &[bool] = if due { &[true, false] } else { &[false, true] };
         for &as_checkpoint in order {
-            let bytes =
-                if as_checkpoint { checkpoint(doc, force_checkpoint, shared)? } else { append(doc, &saved, meta)? };
+            let bytes = if as_checkpoint { checkpoint(doc, shared)? } else { append(doc, &saved, meta)? };
             if let Some(bytes) = bytes {
                 let rows = if as_checkpoint { Rows::Checkpoint(bytes) } else { Rows::Append(bytes) };
                 return Ok(Some(SaveJob { rows, version }));
             }
         }
         Err(Error::Full)
+    }
+
+    /// An explicit checkpoint, even when clean. Unshared documents retain only current
+    /// state; shared documents must retain all history other replicas can reference.
+    pub fn checkpoint_job(&self, doc: &mut Document) -> Result<SaveJob> {
+        let shared = lock(&self.account).shared;
+        let bytes = if shared {
+            checkpoint(doc, true)?
+        } else {
+            trimmed(doc, &doc.doc.oplog_frontiers(), |bytes| within(0, checkpoint_row(bytes.len())))?
+        }
+        .ok_or(Error::Full)?;
+        Ok(SaveJob { rows: Rows::Checkpoint(bytes), version: doc.doc.oplog_vv() })
     }
 
     /// The checkpoint to write as the owner closes, after its last save: a session that

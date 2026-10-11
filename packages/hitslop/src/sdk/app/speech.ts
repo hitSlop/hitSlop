@@ -16,7 +16,14 @@ export const speech = {
   transcribe(clip: SpeechClip, options?: SpeechOptions): Promise<SpeechTranscript> {
     const service = (current() as Partial<ReturnType<typeof current>>).speech;
     // A hitSlop older than this SDK has no speech service.
-    if (!service) return Promise.reject(new SpeechError("unavailable", "This hitSlop cannot transcribe speech; update hitSlop", "host"));
+    if (!service)
+      return Promise.reject(
+        new SpeechError(
+          "unavailable",
+          "This hitSlop cannot transcribe speech; update hitSlop",
+          "host",
+        ),
+      );
     return service.transcribe(clip, options);
   },
 };

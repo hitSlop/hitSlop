@@ -7,5 +7,6 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "preview.generated.ts"))]
 pub enum PreviewRequest {
     Page { id: u32, request: PageRequest },
+    ResourcePlan { id: u32, attachment_id: String, range: Option<String> },
     Resource { id: u32, attachment_id: String, offset: u64, length: u64 },
 }

@@ -85,14 +85,25 @@ impl PageRequest {
 /// Host-only operations. These cross UniFFI; document payloads do not.
 #[derive(Debug)]
 pub enum HostAction {
-    WindowResize { width: u32, height: u32 },
+    WindowResize {
+        width: u32,
+        height: u32,
+    },
     /// The app declared `speech` and this page may use it. The host reads the recording
     /// through the owner's resource reader (`ResourceReader::speech_clip`).
-    SpeechTranscribe { attachment: String, locale: Option<String> },
+    SpeechTranscribe {
+        attachment: String,
+        locale: Option<String>,
+    },
     Ready,
     PageRecovered,
-    Failed { error: String },
-    PageError { kind: PageErrorKind, error: String },
+    Failed {
+        error: String,
+    },
+    PageError {
+        kind: PageErrorKind,
+        error: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -171,11 +182,21 @@ pub enum PageSuccess {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
 pub enum SpeechOutcome {
     /// `locale` is the one the recognizer used.
-    Transcribed { text: String, locale: String },
-    Unavailable { reason: SpeechUnavailable, message: String },
+    Transcribed {
+        text: String,
+        locale: String,
+    },
+    Unavailable {
+        reason: SpeechUnavailable,
+        message: String,
+    },
     /// The page was replaced or closed, or an export began, before the transcript was ready.
-    Cancelled { message: String },
-    Failed { message: String },
+    Cancelled {
+        message: String,
+    },
+    Failed {
+        message: String,
+    },
 }
 /// Why this host cannot transcribe: the app did not declare `speech`; this host has no
 /// speech service (`slop dev`, a browser copy, a background renderer); the OS cannot
@@ -260,9 +281,28 @@ impl HostReply {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub enum PagePush {
-    Publication { publication: super::Publication },
+#[cfg_attr(feature = "ts", ts(concrete(P = super::Publication)))]
+pub enum PagePush<P = super::Publication> {
+    Publication { publication: P },
     Resync,
+}
+
+impl PagePush {
+    /// Wraps a publication the core already encoded. Every accepted edit passes through
+    /// here, so the payload (up to `PAGE_PAYLOAD`) is not scanned again as JSON.
+    pub(crate) fn publication_json(publication: String) -> String {
+        let json = format!(r#"{{"type":"publication","publication":{publication}}}"#);
+        debug_assert_eq!(
+            json,
+            crate::encode(&PagePush::Publication {
+                publication: serde_json::value::RawValue::from_string(publication).expect("core publication"),
+            })
+        );
+        json
+    }
+    pub fn resync_json() -> String {
+        crate::encode(&Self::Resync)
+    }
 }
 
 /// Private host-to-shell calls. Authored apps only receive ctx.

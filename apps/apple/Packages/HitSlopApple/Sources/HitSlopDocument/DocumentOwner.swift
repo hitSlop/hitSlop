@@ -91,10 +91,7 @@ public final class DocumentOwner: Sendable {
         case .themeChanged:
           return (facts.listener, .themeChanged)
         case .undoState(let canUndo, let canRedo):
-          // The owner states its undo state when it starts, which a listener received when
-          // it was set; only changes are forwarded.
           let state = UndoState(canUndo: canUndo, canRedo: canRedo)
-          guard state != facts.undo else { return (nil, nil) }
           facts.undo = state
           return (facts.listener, .undo(state))
         case .saveStatus(let status, let failure):

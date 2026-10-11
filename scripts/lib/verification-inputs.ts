@@ -27,7 +27,7 @@ export const tierInputs = {
     /^packages\/hitslop\/src\/(sdk|shell)\//,
     /\.generated\.(rs|swift)$/,
   ],
-  types: [/^slops\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
+  types: [/^\.prettier(?:rc(?:\.[^/]*)?|ignore)$/, /^packages\/hitslop\/src\//, /^slops\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
   bun: [...rustInputs, /^packages\/hitslop\/src\//, /^packages\/hitslop\/tests\/(sdk|shell)\/(?!.*\.browser\.test\.ts$)/, /^tests\/(fixtures|compat|release)\//, /^scripts\/(?!ci\/)/],
   cli: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/hitslop\/tests\/cli\/(?!.*\.(native|browser)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
   browser: [...rustInputs, /^packages\/hitslop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
@@ -51,7 +51,7 @@ export const nativeGateInputs = [
   /^tests\/(abi|apps|compat|fixtures|native|presentation)\//,
   /\.native\.test\.ts$/,
   /^scripts\/(build|compat)\//,
-  /^scripts\/lib\/(native|native-fixtures|swift-tests)\.ts$/,
+  /^scripts\/lib\/(native|native-fixtures|swift-tests|swift-format)\.ts$/,
   /^\.github\/actions\/native-cache\//,
 ];
 

@@ -32,9 +32,9 @@ pub fn content_type(path: &str) -> &'static str {
     let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
     if extension == "html" { "text/html; charset=utf-8" } else { crate::media::asset_type(&extension).media_type }
 }
-/// What every app resource is, at pack and open: a program or stylesheet with content, or
-/// media named by its SHA-256. `hashed` verifies the address; opening checks it only for
-/// integrity, since the app row seals what `pack` verified.
+/// A program or stylesheet with content, or media named by its SHA-256. `pack` verifies
+/// the address and the app row seals it, so serving never re-hashes app media; skins
+/// also check integrity at owner open. Stored media never re-runs authoring signature rules.
 pub(super) fn check_resource(key: &str, bytes: &[u8], hashed: bool) -> Result<()> {
     use sha2::{Digest, Sha256};
     match key.strip_prefix("media/") {
@@ -125,6 +125,70 @@ pub enum ResourceRoute {
 pub struct ResourceInfo {
     pub size: u64,
     pub media_type: String,
+}
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "resources.generated.ts"))]
+pub struct ResourceSpan {
+    pub offset: u64,
+    pub length: u64,
+}
+#[derive(Clone, Debug, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "resources.generated.ts"))]
+pub struct ResponsePlan {
+    pub status: u16,
+    pub headers: std::collections::HashMap<String, String>,
+    pub span: Option<ResourceSpan>,
+}
+/// Plan one HTTP resource response independently of the transport's chunk size.
+/// Malformed or multiple ranges are ignored; a valid empty range is unsatisfiable.
+pub fn resource_response(info: &ResourceInfo, route: ResourceRoute, range: Option<&str>) -> ResponsePlan {
+    let whole = ResourceSpan { offset: 0, length: info.size };
+    let mut plan = ResponsePlan {
+        status: 200,
+        headers: std::collections::HashMap::from([
+            ("Content-Type".into(), info.media_type.clone()),
+            ("Cache-Control".into(), "no-store".into()),
+            ("Accept-Ranges".into(), "bytes".into()),
+            ("X-Content-Type-Options".into(), "nosniff".into()),
+        ]),
+        span: Some(whole),
+    };
+    if route == ResourceRoute::Attachment {
+        plan.headers.insert("Content-Security-Policy".into(), "sandbox".into());
+    }
+    let bounds = range.and_then(|header| {
+        let (first, last) = header.trim().strip_prefix("bytes=")?.split_once('-')?;
+        let (first, last) = (first.trim(), last.trim());
+        let number =
+            |s: &str| (!s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())).then(|| s.parse::<u64>().ok()).flatten();
+        if first.is_empty() {
+            let suffix = number(last)?;
+            Some(if suffix == 0 || info.size == 0 {
+                None
+            } else {
+                Some(ResourceSpan { offset: info.size.saturating_sub(suffix), length: suffix.min(info.size) })
+            })
+        } else {
+            let start = number(first)?;
+            let end = if last.is_empty() { info.size.saturating_sub(1) } else { number(last)? };
+            Some(if start >= info.size || end < start {
+                None
+            } else {
+                Some(ResourceSpan { offset: start, length: end.min(info.size - 1) - start + 1 })
+            })
+        }
+    });
+    if let Some(span) = bounds {
+        plan.status = if span.is_some() { 206 } else { 416 };
+        let content_range = match &span {
+            Some(span) => format!("bytes {}-{}/{}", span.offset, span.offset + span.length - 1, info.size),
+            None => format!("bytes */{}", info.size),
+        };
+        plan.headers.insert("Content-Range".into(), content_range);
+        plan.span = span;
+    }
+    plan.headers.insert("Content-Length".into(), plan.span.as_ref().map_or(0, |s| s.length).to_string());
+    plan
 }
 /// A stored recording and the file extension its container is decoded by.
 #[derive(Clone, Debug)]
@@ -240,6 +304,25 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
         }
         Ok(Some(row))
     }
+    fn decoded<T>(&self, key: &str, read: impl FnOnce(&[u8]) -> T) -> Result<T> {
+        const CACHE_BYTES: usize = 32 << 20;
+        let mut cache = crate::lock(&self.cache);
+        let entry = if let Some(index) = cache.decoded.iter().position(|(name, _)| name == key) {
+            cache.decoded.remove(index).expect("cached entry")
+        } else {
+            let bytes = read_asset(self.conn.borrow(), key)?.ok_or_else(|| invalid("Missing resource"))?;
+            check_resource(key, &bytes, false)?;
+            while cache.bytes + bytes.len() > CACHE_BYTES {
+                let Some((_, old)) = cache.decoded.pop_front() else { break };
+                cache.bytes -= old.len();
+            }
+            cache.bytes += bytes.len();
+            (key.into(), bytes)
+        };
+        let result = read(&entry.1);
+        cache.decoded.push_back(entry);
+        Ok(result)
+    }
     pub fn info(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceInfo>> {
         Ok(self.row(route, key)?.map(|row| row.info))
     }
@@ -271,22 +354,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
             return Ok(Some(Vec::new()));
         }
         if row.encoding != Encoding::Identity {
-            const CACHE_BYTES: usize = 32 << 20;
-            let mut cache = crate::lock(&self.cache);
-            let entry = if let Some(index) = cache.decoded.iter().position(|(name, _)| name == key) {
-                cache.decoded.remove(index).expect("cached entry")
-            } else {
-                let bytes = read_asset(self.conn.borrow(), key)?.ok_or_else(|| invalid("Missing resource"))?;
-                while cache.bytes + bytes.len() > CACHE_BYTES {
-                    let Some((_, old)) = cache.decoded.pop_front() else { break };
-                    cache.bytes -= old.len();
-                }
-                cache.bytes += bytes.len();
-                (key.into(), bytes)
-            };
-            let result = entry.1[start..start + length].to_vec();
-            cache.decoded.push_back(entry);
-            return Ok(Some(result));
+            return self.decoded(key, |bytes| Some(bytes[start..start + length].to_vec()));
         }
         let table = match route {
             ResourceRoute::App => "assets",

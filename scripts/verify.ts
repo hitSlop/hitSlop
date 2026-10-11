@@ -156,6 +156,7 @@ const tiers: Tier[] = [
     inputs: tierInputs.types,
     run: async () => {
       const output = await Promise.all([
+        quiet([process.execPath, "node_modules/prettier/bin/prettier.cjs", "--check", "packages/hitslop/src"]),
         quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]),
         quiet([process.execPath, "scripts/templates/check.ts"]),
       ]);
@@ -180,6 +181,7 @@ const tiers: Tier[] = [
     // is for iterating, so it runs only the tests.
     run: async (args, prepare) => {
       if (!args.length) await prepare("Rust compilation and lints", async () => {
+        await quiet(["cargo", "fmt", "--all", "--", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
         // The WASM adapter's lints do not depend on the host: Linux and release runs check
         // them, so macOS runs skip two builds and Homebrew's clang.
@@ -226,6 +228,9 @@ const tiers: Tier[] = [
     needs: ["native"],
     inputs: tierInputs.swift,
     run: async (args, prepare) => {
+      if (!args.length) await prepare("Swift formatting", async () => {
+        await quiet([process.execPath, "scripts/lib/swift-format.ts", "--check"]);
+      });
       const fixtures = await prepare("Native fixtures", prepareNativeFixtures);
       // Benchmarks change the trial template's build stage before packing it.
       if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();

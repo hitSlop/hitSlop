@@ -86,8 +86,12 @@ export class OwnerDocument<N extends ObjectNode> {
   get theme(): OwnerState["theme"] {
     return this.store.state.theme;
   }
-  subscribe(listener: () => void) { return this.snapshots.subscribe(listener); }
-  observe(read: () => void) { return this.snapshots.observe(read); }
+  subscribe(listener: () => void) {
+    return this.snapshots.subscribe(listener);
+  }
+  observe(read: () => void) {
+    return this.snapshots.observe(read);
+  }
   private report(error: unknown, kind: "application" | "operation" = "operation") {
     try {
       this.reportError(error, kind);
@@ -142,13 +146,18 @@ export class OwnerDocument<N extends ObjectNode> {
     if ((value === undefined && !optional) || this.refusal()) return;
     const key = this.show(path, value);
     clearTimeout(this.settling.get(key));
-    this.settling.set(key, setTimeout(() => {
-      this.settling.delete(key);
-      const preview = this.previews.get(key);
-      // An active barrier commits the preview itself.
-      if (preview && !this.blocked)
-        this.writePreview(key, preview, commitIntent(preview)).catch((error) => this.report(error));
-    }, settleMS));
+    this.settling.set(
+      key,
+      setTimeout(() => {
+        this.settling.delete(key);
+        const preview = this.previews.get(key);
+        // An active barrier commits the preview itself.
+        if (preview && !this.blocked)
+          this.writePreview(key, preview, commitIntent(preview)).catch((error) =>
+            this.report(error),
+          );
+      }, settleMS),
+    );
   }
   private settlePreviews(covered: ReadonlyMap<string, Preview>) {
     const settled = this.previews.settle(covered);
@@ -167,7 +176,7 @@ export class OwnerDocument<N extends ObjectNode> {
   ) {
     return this.submit([intent], undefined, { admitted }).then(
       () => {},
-      error => {
+      (error) => {
         if (isRejected(error) && preview) this.settlePreviews(new Map([[key, preview]]));
         throw error;
       },
@@ -181,7 +190,11 @@ export class OwnerDocument<N extends ObjectNode> {
     return work;
   }
   /** `collected` intents were already copied when their collector ran. */
-  private submit<R>(intents: OwnerIntent[], result: R, { admitted = false, collected = false }: { admitted?: boolean; collected?: boolean } = {}): Promise<R> {
+  private submit<R>(
+    intents: OwnerIntent[],
+    result: R,
+    { admitted = false, collected = false }: { admitted?: boolean; collected?: boolean } = {},
+  ): Promise<R> {
     this.assertNotCollecting();
     const refusal = this.refusal(admitted);
     if (refusal) return Promise.reject(refusal);
@@ -197,7 +210,7 @@ export class OwnerDocument<N extends ObjectNode> {
     this.tail = run.catch(() => {});
     // Return a distinct promise: internal queue/barrier observers must not swallow
     // an unhandled rejection on the author's promise.
-    return this.track(run).then(value => value);
+    return this.track(run).then((value) => value);
   }
   at = ((value: object) => {
     const location = this.snapshots.locate(value);
@@ -205,9 +218,7 @@ export class OwnerDocument<N extends ObjectNode> {
   }) as <T extends Node>(value: import("../../sdk/schema").Snapshot<T>) => Handle<T>;
 
   /** Collects intents synchronously, then submits them as one batch. */
-  private collect<R>(
-    callback: (tx: OwnerScope<N>) => R,
-  ): { intents: OwnerIntent[]; result: R } {
+  private collect<R>(callback: (tx: OwnerScope<N>) => R): { intents: OwnerIntent[]; result: R } {
     this.assertNotCollecting("Nested change() is not supported");
     const intents: OwnerIntent[] = [];
     let active = true;
@@ -255,10 +266,7 @@ export class OwnerDocument<N extends ObjectNode> {
    * so a close or capture never falls between the two. A collector that throws, or edits
    * the core refuses, leave the stored blob unreferenced.
    */
-  admit<R, T>(
-    store: () => Promise<T>,
-    callback: (tx: OwnerScope<N>, stored: T) => R,
-  ): Promise<T> {
+  admit<R, T>(store: () => Promise<T>, callback: (tx: OwnerScope<N>, stored: T) => R): Promise<T> {
     this.assertNotCollecting();
     const refusal = this.refusal();
     if (refusal) return Promise.reject(refusal);
@@ -319,10 +327,12 @@ export class OwnerDocument<N extends ObjectNode> {
     if (refusal) throw refusal;
     await this.drain();
     // A barrier waits for the request, so close saves what it changed.
-    await this.track((async () => {
-      const { sequence } = await this.transport[direction]();
-      await this.store.reached(sequence);
-    })());
+    await this.track(
+      (async () => {
+        const { sequence } = await this.transport[direction]();
+        await this.store.reached(sequence);
+      })(),
+    );
   }
   /** Close and capture: refuse new work, drain what is pending, then save. Inputs stay
    * enabled so focus and composition survive a barrier that is cancelled. */
@@ -354,13 +364,17 @@ export class OwnerDocument<N extends ObjectNode> {
             sequence: this.store.state.sequence,
           };
         },
-        send: (batch) => { this.store.assertWritable(); return this.transport.apply(batch); },
+        send: (batch) => {
+          this.store.assertWritable();
+          return this.transport.apply(batch);
+        },
         reached: (sequence) => this.store.reached(sequence),
         recover: () => this.store.resync(),
         readOnly: () => !!this.transport.readOnly,
         track: (work) => void this.track(work),
         report: (error) => this.report(error),
-        undo: (redo) => void (redo ? this.redo() : this.undo()).catch((error) => this.report(error)),
+        undo: (redo) =>
+          void (redo ? this.redo() : this.undo()).catch((error) => this.report(error)),
       });
       const drain = async () => {
         await binding.commit();
@@ -374,8 +388,9 @@ export class OwnerDocument<N extends ObjectNode> {
           stop();
           // No control remains to retry a detached draft: report it once, then stop
           // holding barriers so close can proceed.
-          void binding.destroy()
-            .catch(error => this.report(error))
+          void binding
+            .destroy()
+            .catch((error) => this.report(error))
             .finally(() => this.drains.delete(drain));
         },
       };

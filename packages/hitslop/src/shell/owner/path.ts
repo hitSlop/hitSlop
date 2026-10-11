@@ -9,7 +9,13 @@ export function indexOf(rows: readonly unknown[], id: string): number {
   if (!index) {
     index = new Map();
     rows.forEach((row, i) => {
-      if (row && typeof row === "object" && "$id" in row && typeof row.$id === "string" && !index!.has(row.$id))
+      if (
+        row &&
+        typeof row === "object" &&
+        "$id" in row &&
+        typeof row.$id === "string" &&
+        !index!.has(row.$id)
+      )
         index!.set(row.$id, i);
     });
     rowIndexes.set(rows, index);
@@ -47,7 +53,8 @@ export function mapPaths(paths: Locations, value: any, node: Node, path: Segment
   paths.set(value, { node, path });
   const inner = unwrap(node);
   if (inner.kind === "object" && !Array.isArray(value)) {
-    for (const [key, child] of Object.entries(inner.properties)) mapPaths(paths, value[key], child, [...path, key]);
+    for (const [key, child] of Object.entries(inner.properties))
+      mapPaths(paths, value[key], child, [...path, key]);
   } else if (inner.kind === "list" && Array.isArray(value)) {
     // Rows a publication kept are already mapped: skip them before building a path.
     for (const row of value)

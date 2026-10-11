@@ -157,6 +157,19 @@ impl BrowserCopy {
         match BrowserRequest::decode(json).map_err(error)? {
             BrowserRequest::Page { id, request } => self.page(id, &request)?,
             BrowserRequest::Flush { id } => self.page(id, r#"{"method":"flush"}"#)?,
+            BrowserRequest::ResourcePlan { id, route, key, range } => {
+                let route = route_to_file(matches!(route, ResourceRoute::Attachment));
+                let info = self
+                    .driver
+                    .as_ref()
+                    .ok_or_else(|| error("Copy is not open"))?
+                    .store()
+                    .resource_info(route, &key)
+                    .map_err(error)?
+                    .ok_or_else(|| error("Resource not found"))?;
+                let plan = hitslop_core::file::resource_response(&info, route, range.as_deref());
+                push(&self.events, Event::ResourcePlan { id, size: info.size, plan });
+            }
             BrowserRequest::Resource { id, route, key, offset, length } => {
                 let attachment = matches!(route, ResourceRoute::Attachment);
                 let store = self.driver.as_ref().ok_or_else(|| error("Copy is not open"))?.store();

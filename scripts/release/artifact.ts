@@ -29,8 +29,8 @@ try {
   const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_NATIVE_CLI: helper } };
   const installed = (args: string[], executable = helper) => run([executable, ...args], placement);
   const value = async (document: string) => (await engineRequest({ method: "get", documentPath: document }, placement)).state.value;
-  const appCore = (await installed(["--core-build"], join(app, "Contents/MacOS/hitSlop"))).trim();
-  const helperCore = (await installed(["--core-build"])).trim();
+  const appCore = (await installed(["--build-id"], join(app, "Contents/MacOS/hitSlop"))).trim();
+  const helperCore = (await installed(["--build-id"])).trim();
   assert.ok(appCore.length > 0, "App did not identify its document core");
   assert.equal(appCore, helperCore, "App and helper embed different document cores");
   assert.equal(await installed(["--build-id"], documentEngine).then(s => s.trim()), helperCore, "Document engine and helper embed different cores");

@@ -100,7 +100,15 @@ export function bindText(
   const value = () => detached?.text ?? element.value;
   /** Sends the DOM value as one change from `confirmed`; one request at a time. */
   const send = () => {
-    if (outcomeFailure || inflight || composing || removed || host.readOnly() || value() === confirmed) return;
+    if (
+      outcomeFailure ||
+      inflight ||
+      composing ||
+      removed ||
+      host.readOnly() ||
+      value() === confirmed
+    )
+      return;
     const target = path;
     const from = confirmed;
     const sent = value();
@@ -113,13 +121,15 @@ export function bindText(
     const quiet = barrierResend;
     const work = (async () => {
       const request = host.send({
-        intents: [{
-          type: "set",
-          path: target as OwnerPath,
-          value: sent,
-          from,
-          selection: { start: selectionStart, end: selectionEnd },
-        }],
+        intents: [
+          {
+            type: "set",
+            path: target as OwnerPath,
+            value: sent,
+            from,
+            selection: { start: selectionStart, end: selectionEnd },
+          },
+        ],
       });
       dispatched = true;
       const { sequence, selectionStart: mergedStart, selectionEnd: mergedEnd } = await request;
@@ -212,7 +222,9 @@ export function bindText(
   element.addEventListener("compositionend", onEnd);
   element.addEventListener("beforeinput", onBeforeInput);
   return {
-    get detached() { return detached !== undefined; },
+    get detached() {
+      return detached !== undefined;
+    },
     refresh: adopt,
     /** Sends unsent text now, ending a composition; the barrier awaits the result. */
     async commit() {
@@ -235,7 +247,9 @@ export function bindText(
         try {
           send();
           while (inflight) await inflight;
-        } finally { barrierResend = false; }
+        } finally {
+          barrierResend = false;
+        }
         if (outcomeFailure) throw outcomeFailure;
       }
     },

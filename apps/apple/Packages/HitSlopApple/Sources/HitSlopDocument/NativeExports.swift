@@ -9,7 +9,10 @@ final class NativeExports: NativeExportHandler {
   typealias Copy = @MainActor @Sendable (URL, NativeCommandDeadline) async throws -> Void
   private let render: Render
   private let copy: Copy?
-  init(copy: Copy? = nil, _ render: @escaping Render) { self.render = render; self.copy = copy }
+  init(copy: Copy? = nil, _ render: @escaping Render) {
+    self.render = render
+    self.copy = copy
+  }
   func export(request: NativeExportRequest, completion: NativeExportCompletion) {
     let deadline = NativeCommandDeadline(active: { completion.isActive() })
     Task { @MainActor in

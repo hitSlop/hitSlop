@@ -44,8 +44,9 @@ import WebKit
     let shell = shell
     let assets = assets
     let range = task.request.value(forHTTPHeaderField: "Range")
+    let head = task.request.httpMethod == "HEAD"
     Self.reads.async { [weak self] in
-      let result = Result { try Self.response(url, range: range, shell: shell, assets: assets) }
+      let result = Result { try Self.response(url, range: range, head: head, shell: shell, assets: assets) }
       Task { @MainActor in self?.finish(id, token: token, url: url, result) }
     }
   }
@@ -74,12 +75,17 @@ import WebKit
   }
   /// The response for a request. WebKit's media loader asks for byte ranges and fails
   /// without a 206 answer; an asset's range is read from the file without loading the rest.
-  nonisolated private static func response(_ url: URL?, range: String?, shell: URL, assets: ResourceReader) throws
+  nonisolated private static func response(_ url: URL?, range: String?, head: Bool, shell: URL, assets: ResourceReader)
+    throws
     -> Response
   {
     guard let url, url.host == "app" else { throw SlopFailure("Unknown resource origin") }
     let isShell = url.path.hasPrefix("/__shell__/")
-    if !isShell && url.path == "/" { return whole(visiblePage, type: "text/html; charset=utf-8") }
+    if !isShell && url.path == "/" {
+      return try ranged(nil, type: "text/html; charset=utf-8", length: visiblePage.count, head: head) {
+        visiblePage.subdata(in: $0)
+      }
+    }
     let isAttachment = url.path.hasPrefix("/attachments/")
     let prefix = isShell ? "/__shell__/" : isAttachment ? "/attachments/" : "/assets/"
     guard url.path.hasPrefix(prefix) else { throw SlopFailure("Resource not exposed") }
@@ -92,80 +98,33 @@ import WebKit
       let base = shell.standardizedFileURL
       let file = base.appendingPathComponent(key).standardizedFileURL
       guard file.path.hasPrefix(base.path + "/") else { throw SlopFailure("Resource outside the shell") }
-      return try ranged(range, type: type, length: shellFile(file).count) { try shellFile(file).subdata(in: $0) }
+      return try ranged(range, type: type, length: shellFile(file).count, head: head) {
+        try shellFile(file).subdata(in: $0)
+      }
     }
     let route: ResourceRoute = isAttachment ? .attachment : .app
     guard let info = try assets.info(route: route, key: key) else { throw SlopFailure("Resource not found") }
-    var response = try ranged(range, type: info.mediaType, length: Int(info.size)) { bounds in
+    return try ranged(range, type: info.mediaType, length: Int(info.size), route: route, head: head) { bounds in
       guard
         let bytes = try assets.readRange(
           route: route, key: key, offset: UInt64(bounds.lowerBound), length: UInt64(bounds.count))
       else { throw SlopFailure("Resource not found") }
       return bytes
     }
-    if isAttachment { response.headers["Content-Security-Policy"] = "sandbox" }
-    return response
   }
-  nonisolated private static func headers(_ type: String, length: Int) -> [String: String] {
-    [
-      "Content-Type": type, "Cache-Control": "no-store", "Content-Security-Policy": contentSecurityPolicy,
-      "Accept-Ranges": "bytes", "Content-Length": String(length), "X-Content-Type-Options": "nosniff",
-    ]
-  }
-  nonisolated private static func whole(_ data: Data, type: String) -> Response {
-    Response(body: data, headers: headers(type, length: data.count))
-  }
-  nonisolated private static func ranged(_ range: String?, type: String, length: Int, read: (Range<Int>) throws -> Data)
-    throws -> Response
-  {
-    switch range.map({ ByteRange($0, length: length) }) ?? .whole {
-    case .whole:
-      return whole(try read(0..<length), type: type)
-    case .part(let bounds):
-      let body = try read(bounds)
-      var response = Response(status: 206, body: body, headers: headers(type, length: body.count))
-      response.headers["Content-Range"] = "bytes \(bounds.lowerBound)-\(bounds.upperBound - 1)/\(length)"
-      return response
-    case .unsatisfiable:
-      var response = Response(status: 416, body: Data(), headers: headers(type, length: 0))
-      response.headers["Content-Range"] = "bytes */\(length)"
-      return response
+  nonisolated private static func ranged(
+    _ range: String?, type: String, length: Int, route: ResourceRoute = .app, head: Bool,
+    read: (Range<Int>) throws -> Data
+  ) throws -> Response {
+    let plan = resourceResponse(info: ResourceInfo(size: UInt64(length), mediaType: type), route: route, range: range)
+    var headers = plan.headers
+    if route == .app { headers["Content-Security-Policy"] = contentSecurityPolicy }
+    let body: Data
+    if !head, let span = plan.span {
+      body = try read(Int(span.offset)..<Int(span.offset + span.length))
+    } else {
+      body = Data()
     }
-  }
-}
-
-/// What one `Range: bytes=…` header asks for: `first-last`, `first-` or `-suffix`. A header
-/// this does not parse, or one naming several ranges, gets the whole resource, which HTTP
-/// allows; a range that names nothing that exists is unsatisfiable (416).
-enum ByteRange: Equatable {
-  case whole
-  case part(Range<Int>)
-  case unsatisfiable
-
-  init(_ header: String, length: Int) {
-    let spec = header.trimmingCharacters(in: .whitespaces)
-    guard spec.hasPrefix("bytes="), !spec.contains(",") else {
-      self = .whole
-      return
-    }
-    let parts = spec.dropFirst(6).split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
-      .map { $0.trimmingCharacters(in: .whitespaces) }
-    guard parts.count == 2 else {
-      self = .whole
-      return
-    }
-    switch (Int(parts[0]), Int(parts[1])) {
-    case (let first?, let last) where first >= 0 && (parts[1].isEmpty || last != nil):
-      if first >= length || (last.map { $0 < first } ?? false) {
-        self = .unsatisfiable
-        return
-      }
-      // Clamped before the inclusive end becomes exclusive, so no endpoint overflows.
-      self = .part(first..<(last.map { min($0, length - 1) + 1 } ?? length))
-    case (nil, let suffix?) where parts[0].isEmpty && suffix >= 0:
-      self = suffix == 0 || length == 0 ? .unsatisfiable : .part(max(0, length - suffix)..<length)
-    default:
-      self = .whole
-    }
+    return Response(status: Int(plan.status), body: body, headers: headers)
   }
 }

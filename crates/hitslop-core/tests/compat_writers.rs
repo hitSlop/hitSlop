@@ -129,7 +129,7 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
                     }
                 }
                 let edited = edited.unwrap_or_else(|| panic!("{label}: no generated edit changed the document"));
-                let job = store.job(&mut doc, false).unwrap().expect("an edit to save");
+                let job = store.job(&mut doc).unwrap().expect("an edit to save");
                 store.write(&job).unwrap();
                 if let Some(job) = store.close_job(&mut doc).unwrap() {
                     store.write(&job).unwrap();

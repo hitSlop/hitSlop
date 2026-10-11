@@ -7,8 +7,12 @@
 const defaultRelay = "https://hitslop.com/embed/youtube.html";
 const idShape = /^[A-Za-z0-9_-]{11}$/;
 const youtubeHosts = new Set([
-  "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
-  "youtube-nocookie.com", "www.youtube-nocookie.com",
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtube-nocookie.com",
+  "www.youtube-nocookie.com",
 ]);
 
 export type VideoMeta = { youtubeId: string; title: string; author: string };
@@ -51,7 +55,10 @@ export type YouTubePlayer = {
 };
 
 export class LookupError extends Error {
-  constructor(readonly kind: "missing" | "embed" | "network", message: string) {
+  constructor(
+    readonly kind: "missing" | "embed" | "network",
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -70,8 +77,12 @@ function parseId(input: string): string | null {
   if (host === "youtu.be") candidate = url.pathname.split("/")[1] ?? null;
   else if (youtubeHosts.has(host)) {
     const [, kind = "", id] = url.pathname.split("/");
-    candidate = kind === "watch" ? url.searchParams.get("v")
-      : ["embed", "shorts", "live", "v"].includes(kind) ? id ?? null : null;
+    candidate =
+      kind === "watch"
+        ? url.searchParams.get("v")
+        : ["embed", "shorts", "live", "v"].includes(kind)
+          ? (id ?? null)
+          : null;
   }
   return candidate && idShape.test(candidate) ? candidate : null;
 }
@@ -103,10 +114,12 @@ async function lookup(youtubeId: string, signal?: AbortSignal): Promise<VideoMet
     if (signal?.aborted) throw cause;
     throw new LookupError("network", "Can't reach YouTube.");
   }
-  if (response.status === 401 || response.status === 403) throw new LookupError("embed", "That video can't be embedded.");
-  if (response.status === 400 || response.status === 404) throw new LookupError("missing", "No video found at that link.");
+  if (response.status === 401 || response.status === 403)
+    throw new LookupError("embed", "That video can't be embedded.");
+  if (response.status === 400 || response.status === 404)
+    throw new LookupError("missing", "No video found at that link.");
   if (!response.ok) throw new LookupError("network", "YouTube didn't answer. Try again.");
-  const body = await response.json() as { title?: unknown; author_name?: unknown };
+  const body = (await response.json()) as { title?: unknown; author_name?: unknown };
   return {
     youtubeId,
     title: clip(typeof body.title === "string" && body.title ? body.title : "Untitled video", 200),
@@ -121,7 +134,8 @@ function src(youtubeId: string, options: YouTubeSrcOptions = {}): string {
   if (options.controls !== undefined) parts.push(`controls=${options.controls ? 1 : 0}`);
   if (options.autoplay !== undefined) parts.push(`autoplay=${options.autoplay ? 1 : 0}`);
   if (options.captions) parts.push("cc=1");
-  if (options.start !== undefined && Number.isSafeInteger(options.start) && options.start > 0) parts.push(`start=${options.start}`);
+  if (options.start !== undefined && Number.isSafeInteger(options.start) && options.start > 0)
+    parts.push(`start=${options.start}`);
   return `${options.relay ?? defaultRelay}#${parts.join("&")}`;
 }
 
@@ -135,17 +149,24 @@ type PlayerEvent =
 function decode(raw: unknown): PlayerEvent[] {
   let message = raw as { event?: unknown; info?: unknown } | null;
   if (typeof raw === "string") {
-    try { message = JSON.parse(raw); } catch { return []; }
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return [];
+    }
   }
   if (!message || typeof message !== "object" || typeof message.event !== "string") return [];
-  if (message.event === "onStateChange" && typeof message.info === "number") return [{ type: "state", state: message.info }];
+  if (message.event === "onStateChange" && typeof message.info === "number")
+    return [{ type: "state", state: message.info }];
   if (message.event === "onError") return [{ type: "error", code: Number(message.info) }];
   if (message.event === "infoDelivery" || message.event === "initialDelivery") {
     const info = (message.info ?? {}) as Record<string, unknown>;
     const events: PlayerEvent[] = [];
-    if (typeof info.playerState === "number") events.push({ type: "state", state: info.playerState });
+    if (typeof info.playerState === "number")
+      events.push({ type: "state", state: info.playerState });
     const time = typeof info.currentTime === "number" ? info.currentTime : undefined;
-    const duration = typeof info.duration === "number" && info.duration > 0 ? info.duration : undefined;
+    const duration =
+      typeof info.duration === "number" && info.duration > 0 ? info.duration : undefined;
     if (time !== undefined || duration !== undefined) events.push({ type: "time", time, duration });
     return events.length ? events : [{ type: "other" }];
   }
@@ -170,8 +191,11 @@ function player(
   let heard = false;
   let state = -1;
   let duration: number | undefined;
-  const post = (payload: object) => frame.contentWindow?.postMessage(JSON.stringify(payload), origin);
-  const listen = () => { if (!heard) post({ event: "listening", id: 1, channel: "widget" }); };
+  const post = (payload: object) =>
+    frame.contentWindow?.postMessage(JSON.stringify(payload), origin);
+  const listen = () => {
+    if (!heard) post({ event: "listening", id: 1, channel: "widget" });
+  };
   const answered = () => {
     if (heard) return;
     heard = true;
@@ -200,12 +224,20 @@ function player(
   window.addEventListener("message", onMessage);
   frame.addEventListener("load", listen);
   const poll = setInterval(listen, 400);
-  const timeout = setTimeout(() => { if (!heard) handlers.onError?.(-1); }, options.timeoutMs ?? 10_000);
+  const timeout = setTimeout(() => {
+    if (!heard) handlers.onError?.(-1);
+  }, options.timeoutMs ?? 10_000);
   return {
     play: () => post({ event: "command", func: "playVideo", args: [] }),
     pause: () => post({ event: "command", func: "pauseVideo", args: [] }),
-    seek: (seconds) => post({ event: "command", func: "seekTo", args: [Math.max(0, seconds), true] }),
-    setVolume: (level) => post({ event: "command", func: "setVolume", args: [Math.round(Math.min(1, Math.max(0, level)) * 100)] }),
+    seek: (seconds) =>
+      post({ event: "command", func: "seekTo", args: [Math.max(0, seconds), true] }),
+    setVolume: (level) =>
+      post({
+        event: "command",
+        func: "setVolume",
+        args: [Math.round(Math.min(1, Math.max(0, level)) * 100)],
+      }),
     dispose() {
       clearInterval(poll);
       clearTimeout(timeout);

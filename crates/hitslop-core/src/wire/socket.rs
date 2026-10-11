@@ -1,151 +1,43 @@
-//! Same-build owner socket messages; protocol refusal precedes decoding.
-use super::engine::{ExportFormat, check_batch, check_path};
-use super::{OutcomeCode, present_option};
+//! Same-build owner socket messages; protocol refusal precedes payload decoding.
+use super::engine::{EngineRequest, check_path};
 use crate::{Code, Error, err};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "storage")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "socket.generated.ts"))]
-#[serde(tag = "method", rename_all_fields = "camelCase", deny_unknown_fields)]
-pub enum SocketRequest {
-    #[serde(rename = "attachments.list")]
-    AttachmentsList { protocol: u64, document_path: String },
-    #[serde(rename = "attachments.read")]
-    AttachmentsRead {
-        protocol: u64,
-        document_path: String,
-        #[serde(rename = "attachmentID")]
-        attachment_id: String,
-    },
-    #[serde(rename = "theme.export")]
-    ThemeExport { protocol: u64, document_path: String },
-    #[serde(rename = "get")]
-    Get { protocol: u64, document_path: String },
-    #[serde(rename = "call")]
-    Call {
-        protocol: u64,
-        document_path: String,
-        command: String,
-        #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-        args: serde_json::Value,
-    },
-    #[serde(rename = "describe")]
-    Describe { protocol: u64, document_path: String },
-    #[serde(rename = "batch")]
-    Batch {
-        protocol: u64,
-        document_path: String,
-        batch: super::Batch,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        attachments: Option<Vec<String>>,
-    },
-    #[serde(rename = "copy")]
-    Copy { protocol: u64, document_path: String, output: String },
-    #[serde(rename = "export")]
-    Export { protocol: u64, document_path: String, format: ExportFormat, output: String },
-}
 
-#[cfg(feature = "storage")]
+#[derive(Clone, Debug, Serialize)]
+pub struct SocketRequest {
+    pub protocol: u64,
+    pub request: EngineRequest,
+}
 impl SocketRequest {
-    /// Requirements are read without interpreting a future protocol's payload.
+    /// Bound the transport, negotiate before interpreting the request, then apply
+    /// the same request validation as the engine and the socket's narrower admission.
     pub fn decode(input: &str) -> Result<Self, Error> {
         if input.len() > super::SOCKET_ATTACHMENT {
             return Err(err(Code::InvalidRequest, "Oversized socket request"));
         }
         check_protocol(input)?;
-        let request: Self = serde_json::from_str(input).map_err(|e| err(Code::InvalidRequest, e))?;
-        request.check().map_err(|e| err(Code::InvalidRequest, e))?;
-        if input.len() > super::SOCKET_REQUEST && !matches!(request, Self::Batch { attachments: Some(_), .. }) {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Envelope {
+            protocol: u64,
+            request: Box<serde_json::value::RawValue>,
+        }
+        let envelope: Envelope = serde_json::from_str(input).map_err(|e| err(Code::InvalidRequest, e))?;
+        let request = EngineRequest::parse(envelope.request.get()).map_err(|e| err(Code::InvalidRequest, e))?;
+        if !request.is_document() {
+            return Err(err(Code::InvalidRequest, "Not a document command"));
+        }
+        if input.len() > request.socket_limit() {
             return Err(err(Code::InvalidRequest, "Oversized socket request"));
         }
-        Ok(request)
+        Ok(Self { protocol: envelope.protocol, request })
     }
-    pub fn check(&self) -> Result<(), &'static str> {
-        let limit = if matches!(self, Self::Batch { attachments: Some(_), .. }) {
-            super::SOCKET_ATTACHMENT
-        } else {
-            super::SOCKET_REQUEST
-        };
-        super::check_json_size(self, limit).map_err(|_| "Oversized socket request")?;
-        check_path(self.path())?;
-        match self {
-            Self::Call { command, .. } if !super::engine::valid_command_name(command) => Err("Invalid command name"),
-            Self::AttachmentsRead { attachment_id, .. } if !super::valid_attachment_id(attachment_id) => {
-                Err("Invalid attachment ID")
-            }
-            Self::Batch { batch, attachments, .. } => check_batch(batch, attachments.as_deref()),
-            Self::Copy { output, .. } | Self::Export { output, .. } => check_path(output),
-            _ => Ok(()),
-        }
-    }
-    pub fn method(&self) -> &'static str {
-        match self {
-            Self::AttachmentsList { .. } => "attachments.list",
-            Self::AttachmentsRead { .. } => "attachments.read",
-            Self::ThemeExport { .. } => "theme.export",
-            Self::Get { .. } => "get",
-            Self::Batch { .. } => "batch",
-            Self::Call { .. } => "call",
-            Self::Describe { .. } => "describe",
-            Self::Copy { .. } => "copy",
-            Self::Export { .. } => "export",
-        }
-    }
-    pub fn path(&self) -> &str {
-        match self {
-            Self::AttachmentsList { document_path, .. } => document_path,
-            Self::AttachmentsRead { document_path, .. } => document_path,
-            Self::ThemeExport { document_path, .. } => document_path,
-            Self::Get { document_path, .. } => document_path,
-            Self::Batch { document_path, .. }
-            | Self::Call { document_path, .. }
-            | Self::Describe { document_path, .. } => document_path,
-            Self::Copy { document_path, .. } | Self::Export { document_path, .. } => document_path,
-        }
-    }
-}
-#[cfg(feature = "storage")]
-#[derive(Debug, Serialize)]
-#[serde(tag = "method", deny_unknown_fields)]
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) enum SocketSuccess {
-    #[serde(rename = "call")]
-    Call { result: Box<serde_json::value::RawValue>, ids: Vec<String> },
-    #[serde(rename = "describe")]
-    Describe { state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "get")]
-    Get { state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "batch")]
-    Batch { ids: Vec<String> },
-    #[serde(rename = "copy")]
-    Copy { output: String },
-    #[serde(rename = "export")]
-    Export { output: String },
-    #[serde(rename = "theme.export")]
-    ThemeExport { state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "attachments.list")]
-    AttachmentsList { state: Box<serde_json::value::RawValue> },
-    #[serde(rename = "attachments.read")]
-    AttachmentsRead { state: Box<serde_json::value::RawValue> },
-}
-
-#[cfg(feature = "storage")]
-#[derive(Debug, Serialize)]
-pub(crate) struct SocketFailure {
-    pub error: String,
-    pub code: OutcomeCode,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<Code>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "opIndex")]
-    pub op_index: Option<u32>,
 }
 
 /// The only fields a discovery reader interprets. Other fields are always ignored,
 /// including values a future protocol could not represent in this build.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "socket.generated.ts"))]
 pub struct Discovery {
     pub document_path: String,
     pub socket: String,

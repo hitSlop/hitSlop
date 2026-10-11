@@ -153,19 +153,12 @@ fn request(input: &str, protocol: u64) -> String {
         Ok(request) => request,
         Err(error) => return rejected(Code::InvalidRequest, error),
     };
-    match request {
-        EngineRequest::Open { .. } | EngineRequest::Screenshot { .. } | EngineRequest::Export { .. } => {
-            native(protocol, request.method(), input)
+    match request.route() {
+        hitslop_core::engine::Route::Native => native(protocol, request.method(), input),
+        hitslop_core::engine::Route::Document => {
+            command::request_with_evaluator(request, protocol, None, evaluator().ok())
         }
-        EngineRequest::Get { .. }
-        | EngineRequest::Batch { .. }
-        | EngineRequest::Copy { .. }
-        | EngineRequest::ThemeExport { .. }
-        | EngineRequest::AttachmentsList { .. }
-        | EngineRequest::AttachmentsRead { .. }
-        | EngineRequest::Describe { .. }
-        | EngineRequest::Call { .. } => command::request_with_evaluator(request, protocol, None, evaluator().ok()),
-        _ => dispatch(request),
+        hitslop_core::engine::Route::File => dispatch(request),
     }
 }
 fn main() -> ExitCode {

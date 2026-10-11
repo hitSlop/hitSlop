@@ -67,7 +67,8 @@ pub fn summary(path: &Path) -> Result<Summary> {
     summary_on(&read, path)
 }
 
-/// Fully accepted app and resources, kept by the owner for its entire lifetime.
+/// Accepted app and resource inventory, kept by the owner for its entire lifetime.
+/// Ordinary asset content is decoded and verified when served.
 pub struct OpenedApp {
     pub kind: Kind,
     /// A document's immutable logical UUID. Templates have none; independent copies get
@@ -95,19 +96,19 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         &definition,
     )
     .map_err(Error::Rejected)?;
-    let mut keys = conn.prepare("SELECT key FROM assets ORDER BY key").map_err(sqlite("read assets"))?;
+    let mut keys = conn.prepare("SELECT key,size FROM assets ORDER BY key").map_err(sqlite("read assets"))?;
     let mut ui = false;
     let mut style = false;
     let mut skin = None;
     let mut commands = None;
-    for key in keys.query_map([], |r| r.get::<_, String>(0)).map_err(sqlite("read assets"))? {
-        let key = key.map_err(sqlite("read assets"))?;
+    for row in
+        keys.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sqlite("read assets"))?
+    {
+        let (key, size) = row.map_err(sqlite("read assets"))?;
         let kind = crate::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
-        let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing app asset"))?;
-        // `pack` checked each asset's signature and the app row seals them; a later
-        // build's signature rules never judge a saved app. Its content address is a
-        // damage check that cannot change meaning.
-        assets::check_resource(&key, &bytes, integrity)?;
+        if !key.starts_with("media/") && size == 0 {
+            return Err(invalid(format!("Resource {key} is empty")));
+        }
         if key == "ui.css" {
             style = true;
         }
@@ -117,6 +118,8 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         if let WindowFrame::Skin { skin: skin_key } = &app.window().frame
             && &key == skin_key
         {
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing window skin"))?;
+            assets::check_resource(&key, &bytes, integrity)?;
             if kind.media_type != "image/png" {
                 return Err(invalid("Window skins must be PNG"));
             }
@@ -125,9 +128,10 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
                 crate::images::Purpose::Skin { width: app.window().width, height: app.window().height },
             )
             .map_err(Error::Rejected)?;
-            skin = Some(bytes.clone());
+            skin = Some(bytes);
         }
         if key == "commands.js" {
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing command program"))?;
             commands = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
         }
     }

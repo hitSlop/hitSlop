@@ -3,9 +3,8 @@ use crate::{
     Code,
     owner::{self, Failure, FailureKind, Owner},
     store,
-    wire::{self, OutcomeCode, PageRequest, SocketFailure},
+    wire::{self, OutcomeCode, PageRequest},
 };
-use serde::Serialize;
 use serde_json::value::RawValue;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
@@ -16,12 +15,6 @@ fn invalid(message: impl Into<String>) -> Failure {
     Failure::rejected(Code::InvalidRequest, message)
 }
 
-#[derive(Serialize)]
-struct Rejected {
-    ok: bool,
-    #[serde(flatten)]
-    result: SocketFailure,
-}
 /// A reply refusing with `error`: what its kind means for the caller. `accepted` once the
 /// owner took a mutation, whose outcome a later failure leaves unknown; `saving` while a
 /// save it waits for can fail.
@@ -43,19 +36,13 @@ pub fn failure(error: Failure, accepted: bool, saving: bool) -> String {
     } else {
         error.message
     };
-    crate::encode(&Rejected {
-        ok: false,
-        result: SocketFailure {
-            error: message,
-            code,
-            reason: (code == OutcomeCode::Rejected).then_some(error.reason).flatten(),
-            op_index: (code == OutcomeCode::Rejected).then_some(error.op_index).flatten(),
-        },
+    crate::encode(&wire::engine::Failure {
+        ok: wire::engine::False,
+        error: message,
+        code,
+        reason: (code == OutcomeCode::Rejected).then_some(error.reason).flatten(),
+        op_index: (code == OutcomeCode::Rejected).then_some(error.op_index).flatten(),
     })
-}
-#[cfg(not(target_arch = "wasm32"))]
-fn fragment(value: impl Serialize) -> Result<Box<RawValue>> {
-    serde_json::value::to_raw_value(&value).map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))
 }
 fn raw(value: String) -> Result<Box<RawValue>> {
     RawValue::from_string(value).map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))

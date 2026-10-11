@@ -13,7 +13,10 @@ export interface SlopPageHandle {
 }
 
 declare global {
-  var __slop: (Pick<SlopPageHandle, "publish"> & Partial<Omit<SlopPageHandle, "publish">> & {
-    dispatch: ReturnType<typeof import("./host-dispatch").hostDispatcher>;
-  }) | undefined;
+  var __slop:
+    | (Pick<SlopPageHandle, "publish"> &
+        Partial<Omit<SlopPageHandle, "publish">> & {
+          dispatch: ReturnType<typeof import("./host-dispatch").hostDispatcher>;
+        })
+    | undefined;
 }

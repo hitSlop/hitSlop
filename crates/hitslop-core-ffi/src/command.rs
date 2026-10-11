@@ -99,3 +99,16 @@ impl NativeOwner {
         core::page(&self.0, view, &json, move |reply| completion.complete(reply));
     }
 }
+
+#[uniffi::export]
+pub fn protocol_mismatch(version: u64) -> Option<String> {
+    core::protocol_mismatch(version).map(str::to_owned)
+}
+#[uniffi::export]
+pub fn protocol_json() -> String {
+    core::protocol()
+}
+#[uniffi::export]
+pub fn resync_push() -> String {
+    hitslop_core::page_wire::PagePush::resync_json()
+}

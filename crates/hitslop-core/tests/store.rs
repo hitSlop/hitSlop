@@ -81,7 +81,7 @@ fn set_title(doc: &mut Document, title: &str) {
         .unwrap();
 }
 fn save(store: &Store, doc: &mut Document) -> Option<bool> {
-    let job = store.job(doc, false).unwrap()?;
+    let job = store.job(doc).unwrap()?;
     store.write(&job).unwrap();
     Some(job.is_checkpoint())
 }
@@ -143,11 +143,11 @@ fn a_new_document_saves_its_first_checkpoint_and_reopens_with_its_edits() {
     let (store, mut doc) = open(&path);
     assert_eq!(stored(&path).rows, 0);
     assert!(stored(&path).checkpoint_bytes > 0);
-    assert!(store.job(&mut doc, false).unwrap().is_none(), "a clean document has nothing to save");
+    assert!(store.job(&mut doc).unwrap().is_none(), "a clean document has nothing to save");
     set_title(&mut doc, "Edited");
     assert_eq!(save(&store, &mut doc), Some(false), "an edit appends");
     assert_eq!(stored(&path).rows, 1);
-    assert!(store.job(&mut doc, false).unwrap().is_none());
+    assert!(store.job(&mut doc).unwrap().is_none());
     store.close().unwrap();
     let (_, doc) = open(&path);
     assert_eq!(title(&doc), "Edited");
@@ -169,7 +169,7 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     store.close().unwrap();
     let (store, mut doc) = open(&path);
     assert!(!stale(&doc, &first), "a small checkpoint keeps its whole history");
-    let job = store.job(&mut doc, true).unwrap().expect("a requested checkpoint is written even when clean");
+    let job = store.checkpoint_job(&mut doc).expect("a requested checkpoint is written even when clean");
     assert!(job.is_checkpoint());
     store.write(&job).unwrap();
     store.close().unwrap();
@@ -242,7 +242,7 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
     set_title(&mut doc, "Edited");
     let edited = doc.version();
     set_title(&mut doc, "Compacted");
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     let latest = doc.version();
     store.close().unwrap();
     let doc = open(&path).1;
@@ -318,7 +318,7 @@ fn undo_survives_compaction() {
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Before");
     set_title(&mut doc, "After");
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert!(doc.undo().unwrap().publication.is_some());
     assert_eq!(title(&doc), "Before");
     save(&store, &mut doc);
@@ -345,7 +345,7 @@ fn restoring_a_deleted_row_after_compaction_survives_reopen() {
     let with_row = doc.value();
     doc.apply_json(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page)
         .unwrap();
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert!(doc.undo().unwrap().publication.is_some());
     save(&store, &mut doc);
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
@@ -370,7 +370,7 @@ fn redo_across_compaction_survives_reopen() {
     set_title(&mut doc, "Before");
     set_title(&mut doc, "After");
     assert!(doc.undo().unwrap().publication.is_some());
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert!(doc.redo().unwrap().publication.is_some());
     assert_eq!(title(&doc), "After");
     close(store, &mut doc);
@@ -389,7 +389,7 @@ fn a_text_edit_from_before_a_trimming_checkpoint_saves_and_reopens() {
     let mut doc = store.document().unwrap();
     doc.apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
         .unwrap();
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     type_text(&mut doc, json!(["title"]), "abc", "abcX", 4).unwrap();
     save(&store, &mut doc);
     store.close().unwrap();
@@ -443,10 +443,10 @@ fn snapshots_never_lock_or_modify_the_document() {
     assert_eq!(title(&doc), "Saved");
     assert_eq!(std::fs::read(&path).unwrap(), before, "a render writes nothing");
     set_title(&mut doc, "In memory");
-    let job = snapshot.job(&mut doc, false).unwrap().unwrap();
+    let job = snapshot.job(&mut doc).unwrap().unwrap();
     assert!(matches!(snapshot.write(&job), Err(Error::Closed)), "snapshots own nothing");
     set_accent(&mut doc, "#123456");
-    assert!(matches!(snapshot.write(&snapshot.job(&mut doc, false).unwrap().unwrap()), Err(Error::Closed)));
+    assert!(matches!(snapshot.write(&snapshot.job(&mut doc).unwrap().unwrap()), Err(Error::Closed)));
     assert_eq!(std::fs::read(&path).unwrap(), before);
     drop(hitslop_core::registry::Lease::acquire(&path).expect("a snapshot holds no lock"));
 }
@@ -494,8 +494,14 @@ fn a_refused_save_keeps_every_change_for_the_retry() {
         let (_dir, path) = document();
         let (store, mut doc) = open(&path);
         set_title(&mut doc, "Retried");
-        refused(&store, &path, &store.job(&mut doc, checkpoint).unwrap().unwrap());
-        let retry = store.job(&mut doc, false).unwrap().expect("the refused edit is saved again");
+        refused(
+            &store,
+            &path,
+            &(if checkpoint { store.checkpoint_job(&mut doc).map(Some) } else { store.job(&mut doc) })
+                .unwrap()
+                .unwrap(),
+        );
+        let retry = store.job(&mut doc).unwrap().expect("the refused edit is saved again");
         store.write(&retry).unwrap();
         store.close().unwrap();
         assert_eq!(title(&open(&path).1), "Retried", "checkpoint: {checkpoint}");
@@ -504,7 +510,7 @@ fn a_refused_save_keeps_every_change_for_the_retry() {
         let (_dir, path) = document();
         let (store, mut doc) = open(&path);
         set_accent(&mut doc, "#303030");
-        refused(&store, &path, &store.job(&mut doc, false).unwrap().expect("a theme-only job"));
+        refused(&store, &path, &store.job(&mut doc).unwrap().expect("a theme-only job"));
         assert_eq!(accent(&doc), "#303030");
         assert_eq!(saved_accent(&path), "#335577");
         assert_eq!(save(&store, &mut doc), Some(false));
@@ -515,7 +521,7 @@ fn a_refused_save_keeps_every_change_for_the_retry() {
         let (store, mut doc) = open(&path);
         set_accent(&mut doc, "#222222");
         set_title(&mut doc, "Both");
-        refused(&store, &path, &store.job(&mut doc, false).unwrap().unwrap());
+        refused(&store, &path, &store.job(&mut doc).unwrap().unwrap());
         assert_eq!(saved_accent(&path), "#335577", "the theme change and the edit fail together");
         save(&store, &mut doc);
         assert_eq!(saved_accent(&path), "#222222");
@@ -528,7 +534,7 @@ fn a_refused_save_keeps_every_change_for_the_retry() {
         set_title(&mut doc, "Before");
         save(&store, &mut doc);
         set_title(&mut doc, "After");
-        refused(&store, &path, &store.job(&mut doc, true).unwrap().unwrap());
+        refused(&store, &path, &store.checkpoint_job(&mut doc).unwrap());
         assert!(doc.undo().unwrap().publication.is_some());
         assert_eq!(title(&doc), "Before");
         save(&store, &mut doc);
@@ -556,7 +562,7 @@ fn a_moved_or_linked_document_refuses_writes() {
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Unsaved");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     std::fs::rename(&path, dir.path().join("Moved.slop")).unwrap();
     std::fs::write(&path, b"").unwrap();
     assert!(matches!(store.write(&job), Err(Error::Moved)));
@@ -582,7 +588,7 @@ fn a_document_moved_away_and_back_saves_and_reloads() {
     let moved = dir.path().join("Moved.slop");
     std::fs::rename(&path, &moved).unwrap();
     std::fs::rename(&moved, &path).unwrap();
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     store.write(&job).unwrap();
     set_title(&mut doc, "Discarded");
     std::fs::rename(&path, &moved).unwrap();
@@ -607,12 +613,12 @@ fn a_full_document_refuses_appends_and_keeps_saved_state() {
     let room = STORAGE_BYTES as i64 - stored(&path).checkpoint_bytes;
     sql(&path).execute("INSERT INTO history(bytes) VALUES(zeroblob(?))", [room - 8]).unwrap();
     set_title(&mut doc, "Too much");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     let result = store.write(&job);
     assert!(matches!(result, Err(Error::Full)), "{result:?}");
     assert!(stored(&path).update_bytes > 0, "saved state is intact");
     // Sizes were re-read, so the next save checkpoints, which fits.
-    let retry = store.job(&mut doc, false).unwrap().unwrap();
+    let retry = store.job(&mut doc).unwrap().unwrap();
     assert!(retry.is_checkpoint());
     store.write(&retry).unwrap();
 }
@@ -636,7 +642,7 @@ fn checkpoints_reclaim_free_pages() {
         .unwrap();
         save(&store, &mut doc);
     }
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     let logical = stored(&path).checkpoint_bytes as u64;
     let file = std::fs::metadata(&path).unwrap().len();
     assert!(file < logical + 256 * 1024, "file {file} bytes for {logical} logical bytes");
@@ -672,7 +678,7 @@ fn a_shared_document_keeps_its_history_and_blobs_and_a_clean_copy_is_unshared() 
     set_title(&mut doc, "Edited");
     let edited = doc.version();
     set_title(&mut doc, "Compacted");
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert_eq!(store.reclaim_attachments().unwrap(), 0, "a shared document reclaims no blob");
     store.close().unwrap();
     let (store, doc) = open(&path);
@@ -772,7 +778,7 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     let (store, mut doc) = open(&path);
     let store = Arc::new(store);
     set_title(&mut doc, "Slow");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     // The save waits on another connection's lock, inside its transaction.
     let other = hold(&path);
     let writer = {
@@ -861,7 +867,7 @@ fn readers_beside_an_open_document_never_fail_its_saves() {
     let mut failures = vec![];
     for i in 0..300 {
         set_title(&mut doc, &format!("Title {i}"));
-        let job = store.job(&mut doc, false).unwrap().unwrap();
+        let job = store.job(&mut doc).unwrap().unwrap();
         if let Err(e) = store.write(&job) {
             failures.push(format!("save {i}: {e}"));
         }
@@ -890,11 +896,14 @@ fn save_then_die() {
     let job = match save.as_str() {
         "theme" => {
             assert!(set_accent(&mut doc, "#123456"));
-            store.job(&mut doc, false).unwrap().unwrap()
+            store.job(&mut doc).unwrap().unwrap()
         }
         kind => {
             set_title(&mut doc, &format!("Saved by {kind}"));
-            let job = store.job(&mut doc, kind == "checkpoint").unwrap().unwrap();
+            let job =
+                (if kind == "checkpoint" { store.checkpoint_job(&mut doc).map(Some) } else { store.job(&mut doc) })
+                    .unwrap()
+                    .unwrap();
             assert_eq!(job.is_checkpoint(), kind == "checkpoint");
             job
         }
@@ -939,7 +948,7 @@ fn save_while_held() {
     isolate_registry();
     let (store, mut doc) = open(Path::new(&path));
     set_title(&mut doc, "Never saved");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     std::fs::write(&marker, b"").unwrap();
     // Waits for the held database until the parent kills this process.
     let _ = store.write(&job);
@@ -988,7 +997,8 @@ fn a_save_retried_after_a_lost_reply_counts_once() {
         let (store, mut doc) = open(&path);
         doc.apply_json(r#"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#, Origin::Page).unwrap();
         expected += 3;
-        let job = store.job(&mut doc, checkpoint).unwrap().unwrap();
+        let job =
+            (if checkpoint { store.checkpoint_job(&mut doc).map(Some) } else { store.job(&mut doc) }).unwrap().unwrap();
         assert_eq!(job.is_checkpoint(), checkpoint);
         store.write(&job).unwrap();
         store.write(&job).unwrap();

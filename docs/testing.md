@@ -60,14 +60,14 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 
 | Tier | Runs |
 |---|---|
-| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; TypeScript and template types. Together, concurrently |
+| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), TypeScript and template types. Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell and release tests; up to four isolated file workers |
 | `cli` | Non-native CLI integration tests; one file worker, 30-second default test deadline |
-| `rust` | Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
+| `rust` | `cargo fmt --all -- --check`, Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | `tests/packed`, when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
-| `swift` | The Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
+| `swift` | `swift format lint --strict` for non-generated Swift under `apps/apple`, then the Swift package in three isolated process shards, bounded by available CPUs and balanced by full test identities. Shards run sequentially because even `swift test --skip-build` opens SwiftPM's shared build database; every listed test must run. A filtered run (`verify swift --filter X`) runs only the tests |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
 | `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `HITSLOP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
 | `native` | `*.native.test.ts` against the debug helper |

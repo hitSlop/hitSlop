@@ -145,11 +145,13 @@ test("native preview serves sniffed attachments and fences disconnected owners",
         (tx: any, ref: any) => tx.fields.title.set(ref.id));
       const url = attachments.url(ref.id);
       const whole = await fetch(url), range = await fetch(url, { headers: { Range: "bytes=0-3" } });
+      const head = await fetch(url, { method: "HEAD", headers: { Range: "bytes=-5" } });
       const missing = await fetch(url.replace(ref.id, "a".repeat(64)));
       return { times, before, after: doc.current.tasks.length, invalid, url,
         type: whole.headers.get("content-type"), sandbox: whole.headers.get("content-security-policy"),
         nosniff: whole.headers.get("x-content-type-options"), bytes: await whole.text(),
-        rangeStatus: range.status, range: await range.text(), missing: missing.status };
+        rangeStatus: range.status, range: await range.text(), missing: missing.status,
+        head: [head.status, head.headers.get("content-length"), await head.text()] };
     }, iterations);
     expect(result.before).toBe(3 + iterations);
     expect(result.before).toBe(result.after);
@@ -158,6 +160,7 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     expect(result.sandbox).toBe("sandbox"); expect(result.nosniff).toBe("nosniff");
     expect(result.bytes).toBe("imported media"); expect(result.rangeStatus).toBe(206); expect(result.range).toBe("impo");
     expect(result.missing).toBe(404);
+    expect(result.head).toEqual([206, "5", ""]);
     const sorted = [...result.times].sort((a, b) => a - b);
     if (benchmark) console.log(`Native preview edit latency (${sorted.length} fresh evaluations): p50=${sorted[Math.floor(sorted.length * .5)]}ms p95=${sorted[Math.ceil(sorted.length * .95)-1]}ms`);
     const [owner] = await dev.diagnostics(); expect(owner).toBeDefined();

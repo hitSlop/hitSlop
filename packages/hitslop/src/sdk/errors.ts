@@ -23,8 +23,10 @@ export function isDocumentError(error: unknown): error is DocumentError {
   return (
     typeof error === "object" &&
     error !== null &&
-    brand in error && error[brand] === true &&
-    "code" in error && typeof error.code === "string"
+    brand in error &&
+    error[brand] === true &&
+    "code" in error &&
+    typeof error.code === "string"
   );
 }
 /** Definite semantic refusal: no mutation was accepted. */
@@ -32,7 +34,9 @@ export function isRejected(error: unknown): error is DocumentError & { code: "re
   return isDocumentError(error) && error.code === "rejected";
 }
 /** A command or page action refused with a message for the person. */
-export function isRefused(error: unknown): error is DocumentError & { code: "rejected"; reason: "refused" } {
+export function isRefused(
+  error: unknown,
+): error is DocumentError & { code: "rejected"; reason: "refused" } {
   return isRejected(error) && error.reason === "refused";
 }
 /** Stops a command, or a page action, with `message` for the person: "Enter a task." The
@@ -55,7 +59,11 @@ export type SpeechUnavailableReason = SpeechUnavailable;
 export class SpeechError extends Error {
   readonly code: "unavailable" | "cancelled" | "failed" | (string & {});
   readonly reason?: SpeechUnavailableReason | (string & {});
-  constructor(code: "unavailable" | "cancelled" | "failed", message: string, reason?: SpeechUnavailableReason) {
+  constructor(
+    code: "unavailable" | "cancelled" | "failed",
+    message: string,
+    reason?: SpeechUnavailableReason,
+  ) {
     super(message);
     this.name = "SpeechError";
     this.code = code;
@@ -68,7 +76,9 @@ export function isSpeechError(error: unknown): error is SpeechError {
   return (
     typeof error === "object" &&
     error !== null &&
-    speechBrand in error && error[speechBrand] === true &&
-    "code" in error && typeof error.code === "string"
+    speechBrand in error &&
+    error[speechBrand] === true &&
+    "code" in error &&
+    typeof error.code === "string"
   );
 }

@@ -1,11 +1,16 @@
 import { json, print } from "./json";
 import { execute as send } from "./engine";
-// Document commands. Each is one `SocketRequest` the document engine sends to the
+// Document commands. Each is one engine request the document engine envelopes for the
 // document's live owner, or to an owner it opens; files the command names are read and
 // written here.
 import { lstat, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { AttachmentLimits, SocketLimits, ThemeFileLimit, type ExportFormats } from "../schema/constants";
+import {
+  AttachmentLimits,
+  SocketLimits,
+  ThemeFileLimit,
+  type ExportFormats,
+} from "../schema/constants";
 import type { PaletteIntent, Batch } from "../schema/core";
 
 type ExportFormat = (typeof ExportFormats)[number];
@@ -29,7 +34,9 @@ function text(bytes: Uint8Array, what: string) {
  * document or an earlier export, under any spelling of its path. */
 async function publish(output: string, bytes: string | Uint8Array) {
   await writeFile(output, bytes, { flag: "wx" }).catch((error: NodeJS.ErrnoException) => {
-    throw error.code === "EEXIST" ? new Error(`${output} already exists; exports never replace a file`) : error;
+    throw error.code === "EEXIST"
+      ? new Error(`${output} already exists; exports never replace a file`)
+      : error;
   });
   console.log(resolve(output));
 }
@@ -41,7 +48,8 @@ export async function get(document: string, snapshot: boolean) {
 
 export async function call(document: string, command: string, args: string) {
   const parsed = json(args);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("--args must be a JSON object");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("--args must be a JSON object");
   const input = { ...at(document), command, args: parsed };
   const reply = await send({ method: "call", ...input });
   print({ result: reply.result, ids: reply.ids });
@@ -53,9 +61,16 @@ function argumentLines(schema: Record<string, unknown>): string[] {
   const required = new Set(schema.required as string[] | undefined);
   return properties.map(([name, argument]) => {
     const details = [required.has(name) ? "required" : "optional"];
-    if (Object.hasOwn(argument, "default")) details.push(`default: ${JSON.stringify(argument.default)}`);
-    if (Array.isArray(argument.enum)) details.push(`choices: ${argument.enum.map(value => JSON.stringify(value)).join(", ")}`);
-    for (const [key, label] of [["minimum", "min"], ["maximum", "max"], ["minLength", "min length"], ["maxLength", "max length"]] as const)
+    if (Object.hasOwn(argument, "default"))
+      details.push(`default: ${JSON.stringify(argument.default)}`);
+    if (Array.isArray(argument.enum))
+      details.push(`choices: ${argument.enum.map((value) => JSON.stringify(value)).join(", ")}`);
+    for (const [key, label] of [
+      ["minimum", "min"],
+      ["maximum", "max"],
+      ["minLength", "min length"],
+      ["maxLength", "max length"],
+    ] as const)
       if (argument[key] !== undefined) details.push(`${label}: ${argument[key]}`);
     return `    ${name}: ${argument.type} (${details.join("; ")})${argument.description ? " — " + argument.description : ""}`;
   });
@@ -64,9 +79,16 @@ function argumentLines(schema: Record<string, unknown>): string[] {
 export async function describe(document: string, machine = false) {
   const { state } = await send({ method: "describe", ...at(document) });
   if (machine) return print(state);
-  const lines = [`${state.metadata.title}: ${state.metadata.description}`, `Version: ${state.version}`, "", "Fields"];
+  const lines = [
+    `${state.metadata.title}: ${state.metadata.description}`,
+    `Version: ${state.version}`,
+    "",
+    "Fields",
+  ];
   for (const field of state.fields)
-    lines.push(`  ${JSON.stringify(field.path)}: ${field.kind} (${field.operations.join(", ")})${field.description ? " — " + field.description : ""}`);
+    lines.push(
+      `  ${JSON.stringify(field.path)}: ${field.kind} (${field.operations.join(", ")})${field.description ? " — " + field.description : ""}`,
+    );
   lines.push("", "Commands (slop call PATH NAME --args JSON)");
   if (Object.keys(state.commands).length) lines.push("  Arguments accept only the listed fields.");
   for (const [name, spec] of Object.entries(state.commands)) {
@@ -93,9 +115,18 @@ export function batchIntents(ops: string): Batch["intents"] {
  * request, before the operations that reference them (`attachmentsRef` prints a reference). */
 export async function batch(document: string, ops: string, attach: string[] = []) {
   const intents = batchIntents(ops);
-  const attachments = await Promise.all(attach.map(async (file) => Buffer.from(await read(file, AttachmentLimits.file)).toString("base64")));
-  if (attachments.reduce((total, encoded) => total + encoded.length, ops.length) > SocketLimits.attachment - 4096)
-    throw new Error(`Attachments exceed ${SocketLimits.attachment >> 20} MiB in one batch; attach fewer files per batch`);
+  const attachments = await Promise.all(
+    attach.map(async (file) =>
+      Buffer.from(await read(file, AttachmentLimits.file)).toString("base64"),
+    ),
+  );
+  if (
+    attachments.reduce((total, encoded) => total + encoded.length, ops.length) >
+    SocketLimits.attachment - 4096
+  )
+    throw new Error(
+      `Attachments exceed ${SocketLimits.attachment >> 20} MiB in one batch; attach fewer files per batch`,
+    );
   const { ids } = await send({
     method: "batch",
     ...at(document),
@@ -106,10 +137,12 @@ export async function batch(document: string, ops: string, attach: string[] = []
 }
 export async function apply(document: string, ops: string[], attach: string[] = []) {
   // The flag is repeatable only so a second --op is refused instead of silently replacing the first.
-  if (ops.length !== 1) throw new Error("slop apply takes one --op; pass several operations to slop batch --ops");
+  if (ops.length !== 1)
+    throw new Error("slop apply takes one --op; pass several operations to slop batch --ops");
   const [op] = ops;
   const value = json(op);
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("--op must be one JSON object");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("--op must be one JSON object");
   await batch(document, `[${op}]`, attach);
 }
 /** One `replace`: the value at `path` (the whole document by default) becomes the file's
@@ -117,18 +150,23 @@ export async function apply(document: string, ops: string[], attach: string[] = 
 export async function importValue(document: string, file: string, path = "[]") {
   const value = text(await read(file, SocketLimits.request - 4096), basename(file));
   if (json(value) === undefined) throw new Error("The file must hold one JSON value");
-  if (!Array.isArray(json(path))) throw new Error(`--path must be a JSON array, such as '["rows"]'`);
+  if (!Array.isArray(json(path)))
+    throw new Error(`--path must be a JSON array, such as '["rows"]'`);
   await batch(document, `[{"type":"replace","path":${path},"value":${value}}]`);
 }
 export async function exportDocument(document: string, format: ExportFormat, output: string) {
-  console.log((await send({ method: "export", ...at(document), format, output: resolve(output) })).output);
+  console.log(
+    (await send({ method: "export", ...at(document), format, output: resolve(output) })).output,
+  );
 }
 
 /** The palette: the template's colors, the document's overrides and the result. */
 async function palette(document: string) {
   const { defaults, theme: effective } = (await send({ method: "get", ...at(document) })).state;
   // A write drops an override equal to its default, so the overrides are the colors that differ.
-  const overrides = Object.fromEntries(Object.entries(effective).filter(([token, color]) => defaults[token] !== color));
+  const overrides = Object.fromEntries(
+    Object.entries(effective).filter(([token, color]) => defaults[token] !== color),
+  );
   return { defaults, overrides, effective };
 }
 /** One palette intent, as an atomic batch, then the palette it left. */
@@ -141,12 +179,21 @@ export async function themeGet(document: string) {
 }
 export async function themeSet(document: string, values: string) {
   const parsed = json(values);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === "string"))
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    !Object.values(parsed).every((v) => typeof v === "string")
+  )
     throw new Error("--values must be a JSON object of theme tokens and colors");
   await changeTheme(document, { type: "setTheme", values: parsed as Record<string, string> });
 }
 export async function themeReset(document: string, token?: string) {
-  await changeTheme(document, { type: "setTheme", values: token === undefined ? {} : { [token]: null }, replace: token === undefined });
+  await changeTheme(document, {
+    type: "setTheme",
+    values: token === undefined ? {} : { [token]: null },
+    replace: token === undefined,
+  });
 }
 /** The theme file as the core writes it, to `output` or standard output. */
 export async function themeExport(document: string, output?: string) {
@@ -169,6 +216,7 @@ export async function attachmentsRef(file: string) {
 }
 /** Writes an attachment's bytes to `output`. */
 export async function attachmentsExport(document: string, id: string, output: string) {
-  const { bytes } = (await send({ method: "attachments.read", ...at(document), attachmentID: id })).state;
+  const { bytes } = (await send({ method: "attachments.read", ...at(document), attachmentID: id }))
+    .state;
   await publish(output, Buffer.from(bytes, "base64"));
 }

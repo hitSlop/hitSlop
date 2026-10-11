@@ -55,7 +55,7 @@ if (frozen && dirty) throw new Error("Capture a frozen entry from a clean releas
 
 // Build the producing tools rather than trusting an existing helper or inventory.
 await run([process.execPath, "run", "build"]);
-if (await run([documentEngine(), "--build-id"]) !== await run([helper, "--core-build"])) throw new Error("Capture helper and authoring core differ");
+if (await run([documentEngine(), "--build-id"]) !== await run([helper, "--build-id"])) throw new Error("Capture helper and authoring core differ");
 const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
@@ -221,7 +221,7 @@ const release: Release = {
   },
   inputs: capturedInputs,
   producer: {
-    coreBuildID: await run([helper, "--core-build"]),
+    coreBuildID: await run([helper, "--build-id"]),
     shell: await digest(shellDestinations.app, shellFiles),
     // The command prelude this release ran; a frozen entry freezes it (scripts/build/runner.ts).
     runner: { [RuntimeABI]: await fileDigest(join(repository, `crates/hitslop-runner/src/abi/${RuntimeABI}.generated.js`)) },

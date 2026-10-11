@@ -64,7 +64,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
                     scenario["value"],
                     "{label}: the edit differs"
                 );
-                let job = store.job(&mut doc, false).unwrap().expect("an edit to save");
+                let job = store.job(&mut doc).unwrap().expect("an edit to save");
                 store.write(&job).unwrap();
                 if let Some(job) = store.close_job(&mut doc).unwrap() {
                     store.write(&job).unwrap();

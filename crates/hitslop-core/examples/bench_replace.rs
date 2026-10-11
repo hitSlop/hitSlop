@@ -48,5 +48,27 @@ fn main() {
             );
         }
     }
+    // Typical page change(): two small edits, independent of the document's size.
+    let rows: Vec<Value> =
+        (0..4096).map(|i| json!({"$id":format!("row_{i}"),"text":"x".repeat(960),"done":false})).collect();
+    let initial = json!({"rows":rows}).to_string();
+    let batch = json!({"intents":[
+        {"type":"set","path":["rows",{"id":"row_0"},"done"],"value":true},
+        {"type":"set","path":["rows",{"id":"row_1"},"done"],"value":true}
+    ]})
+    .to_string();
+    let mut samples = vec![];
+    for sample in 0..11 {
+        let mut document = Document::create(&app, &initial).unwrap();
+        let batch = hitslop_core::Batch::decode(&batch).unwrap();
+        let start = Instant::now();
+        std::hint::black_box(document.apply_batch(batch, Origin::Page).unwrap());
+        if sample > 0 {
+            samples.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+    samples.sort_by(f64::total_cmp);
+    results.push(json!({"rows":4096,"stateBytes":initial.len(),"scenario":"two-intent-page-batch",
+        "medianMs":samples[samples.len()/2],"samplesMs":samples}));
     println!("{}", serde_json::to_string_pretty(&results).unwrap());
 }

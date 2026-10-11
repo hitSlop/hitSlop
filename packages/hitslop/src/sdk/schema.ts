@@ -18,16 +18,37 @@ export type Text = Description & { kind: "text" };
 /** `default`: the value an object field takes when a write or `initial` omits it. */
 export type BooleanNode = Description & { kind: "boolean"; default?: boolean };
 /** Last writer wins. Length bounds count Unicode code points, not UTF-16 units. */
-export type StringNode = Description & { kind: "string"; minLength?: number; maxLength?: number; default?: string };
+export type StringNode = Description & {
+  kind: "string";
+  minLength?: number;
+  maxLength?: number;
+  default?: string;
+};
 /** A finite number; bounds are inclusive. */
-export type NumberNode = Description & { kind: "number"; min?: number; max?: number; default?: number };
+export type NumberNode = Description & {
+  kind: "number";
+  min?: number;
+  max?: number;
+  default?: number;
+};
 /** A safe integer; bounds are inclusive. */
-export type IntegerNode = Description & { kind: "integer"; min?: number; max?: number; default?: number };
-export type EnumNode<V extends readonly string[] = readonly string[]> = Description & { kind: "enum"; values: V; default?: V[number] };
+export type IntegerNode = Description & {
+  kind: "integer";
+  min?: number;
+  max?: number;
+  default?: number;
+};
+export type EnumNode<V extends readonly string[] = readonly string[]> = Description & {
+  kind: "enum";
+  values: V;
+  default?: V[number];
+};
 export type Scalar = StringNode | NumberNode | IntegerNode | BooleanNode | EnumNode;
 /** An exact checked integer counter in the single-writer owner. It starts at 0. */
 export type CounterNode = Description & { kind: "counter" };
-export interface ObjectNode<P extends Record<string, Node> = Record<string, Node>> extends Description {
+export interface ObjectNode<
+  P extends Record<string, Node> = Record<string, Node>,
+> extends Description {
   kind: "object";
   properties: P;
 }
@@ -37,19 +58,24 @@ export interface ListNode<I extends ObjectNode | Scalar = ObjectNode | Scalar> e
   item: I;
 }
 /** Entries by string key; each entry is absent until `put` and removed by `delete`. */
-export interface RecordNode<V extends Scalar | ObjectNode = Scalar | ObjectNode> extends Description {
+export interface RecordNode<
+  V extends Scalar | ObjectNode = Scalar | ObjectNode,
+> extends Description {
   kind: "record";
   value: V;
 }
 /** Absent until set; `clear()` removes it. Holds a scalar, text or an object. */
-export interface OptionalNode<S extends Scalar | Text | ObjectNode = Scalar | Text | ObjectNode> extends Description {
+export interface OptionalNode<
+  S extends Scalar | Text | ObjectNode = Scalar | Text | ObjectNode,
+> extends Description {
   kind: "optional";
   inner: S;
 }
 export type Description = { description?: string };
 /** What a collector or command `run` returns. A promise is refused: they run synchronously,
  * and a write after an `await` would fall outside the batch. */
-export type Synchronous<R> = R extends PromiseLike<unknown> ? "This callback must be synchronous (no async or await)" : R;
+export type Synchronous<R> =
+  R extends PromiseLike<unknown> ? "This callback must be synchronous (no async or await)" : R;
 export type Node = Text | Scalar | CounterNode | ObjectNode | ListNode | RecordNode | OptionalNode;
 
 /** Compile-time provenance only; snapshots contain no symbols or schema data. */
@@ -64,8 +90,12 @@ type OptionalKeys<P extends Record<string, Node>> = {
 type Omittable<N extends Node> = N extends OptionalNode | Text | ListNode | RecordNode | CounterNode
   ? true
   : N extends ObjectNode<infer P>
-    ? false extends { [K in keyof P]: Omittable<P[K]> }[keyof P] ? false : true
-    : N extends { default: unknown } ? true : false;
+    ? false extends { [K in keyof P]: Omittable<P[K]> }[keyof P]
+      ? false
+      : true
+    : N extends { default: unknown }
+      ? true
+      : false;
 type OmittableKeys<P extends Record<string, Node>> = {
   [K in keyof P]: Omittable<P[K]> extends true ? K : never;
 }[keyof P];
@@ -93,20 +123,20 @@ type ProjectedValue<N extends Node, Origin extends Node = N> = N extends Text | 
             : N extends RecordNode<infer V>
               ? { readonly [key: string]: Value<V> } & Snapshot<Origin>
               : N extends ObjectNode<infer P>
-              ? ObjectValue<P> & Snapshot<Origin>
-              : never;
+                ? ObjectValue<P> & Snapshot<Origin>
+                : never;
 export type Input<N extends Node> =
   N extends ListNode<infer I>
     ? Input<I>[]
     : N extends RecordNode<infer V>
       ? { [key: string]: Input<V> }
       : N extends OptionalNode<infer S>
-      ? Input<S> | undefined
-      : N extends ObjectNode<infer P>
-        ? ObjectInput<P>
-        : N extends CounterNode
-          ? number
-          : Value<N>;
+        ? Input<S> | undefined
+        : N extends ObjectNode<infer P>
+          ? ObjectInput<P>
+          : N extends CounterNode
+            ? number
+            : Value<N>;
 /** Field names and record keys, `{ id }` for a row, and `{ index }` for a scalar-list element. */
 export type Segment = import("../schema/core").Segment;
 export type Path = Segment[];
@@ -115,7 +145,11 @@ export type Definition<N extends ObjectNode> = { descriptor: N };
 
 type Bounds = Description & { min?: number; max?: number };
 /** Omission is safe only when the supplied default is guaranteed to survive serialization. */
-type Defaulted<N, E> = E extends { default: infer D } ? undefined extends D ? N : N & { default: D } : N;
+type Defaulted<N, E> = E extends { default: infer D }
+  ? undefined extends D
+    ? N
+    : N & { default: D }
+  : N;
 /** `base` with the options given; the declared return type of each builder types it. */
 const options = <T>(base: object, extra: object | undefined) =>
   ({
@@ -124,27 +158,42 @@ const options = <T>(base: object, extra: object | undefined) =>
   }) as T;
 export const s = {
   text: (extra?: Description): Text => options({ kind: "text" }, extra),
-  boolean: <E extends Description & { default?: boolean } = {}>(extra?: E): Defaulted<BooleanNode, E> =>
-    options({ kind: "boolean" }, extra),
-  string: <E extends Description & { minLength?: number; maxLength?: number; default?: string } = {}>(
+  boolean: <E extends Description & { default?: boolean } = {}>(
+    extra?: E,
+  ): Defaulted<BooleanNode, E> => options({ kind: "boolean" }, extra),
+  string: <
+    E extends Description & { minLength?: number; maxLength?: number; default?: string } = {},
+  >(
     extra?: E,
   ): Defaulted<StringNode, E> => options({ kind: "string" }, extra),
   number: <E extends Bounds & { default?: number } = {}>(extra?: E): Defaulted<NumberNode, E> =>
     options({ kind: "number" }, extra),
   integer: <E extends Bounds & { default?: number } = {}>(extra?: E): Defaulted<IntegerNode, E> =>
     options({ kind: "integer" }, extra),
-  enum: <const V extends readonly [string, ...string[]], E extends Description & { default?: V[number] } = {}>(
+  enum: <
+    const V extends readonly [string, ...string[]],
+    E extends Description & { default?: V[number] } = {},
+  >(
     values: V,
     extra?: E,
   ): Defaulted<EnumNode<V>, E> => options({ kind: "enum", values }, extra),
-  optional: <S extends Scalar | Text | ObjectNode>(inner: S, extra?: Description): OptionalNode<S> => options({ kind: "optional", inner }, extra),
-  record: <V extends Scalar | ObjectNode>(value: V, extra?: Description): RecordNode<V> => options({ kind: "record", value }, extra),
+  optional: <S extends Scalar | Text | ObjectNode>(
+    inner: S,
+    extra?: Description,
+  ): OptionalNode<S> => options({ kind: "optional", inner }, extra),
+  record: <V extends Scalar | ObjectNode>(value: V, extra?: Description): RecordNode<V> =>
+    options({ kind: "record", value }, extra),
   counter: (extra?: Description): CounterNode => options({ kind: "counter" }, extra),
-  object: <P extends Record<string, Node>>(properties: P, extra?: Description): ObjectNode<P> => options({
-    kind: "object",
-    properties,
-  }, extra),
-  list: <I extends ObjectNode | Scalar>(item: I, extra?: Description): ListNode<I> => options({ kind: "list", item }, extra),
+  object: <P extends Record<string, Node>>(properties: P, extra?: Description): ObjectNode<P> =>
+    options(
+      {
+        kind: "object",
+        properties,
+      },
+      extra,
+    ),
+  list: <I extends ObjectNode | Scalar>(item: I, extra?: Description): ListNode<I> =>
+    options({ kind: "list", item }, extra),
 };
 /** A field's write handle. Writes resolve once `current` shows them; inside `change()`
  * the same handles collect synchronously. */

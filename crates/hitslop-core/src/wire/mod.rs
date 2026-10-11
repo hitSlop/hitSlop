@@ -9,7 +9,7 @@ pub mod page;
 pub(crate) use page::*;
 #[cfg(feature = "storage")]
 pub mod socket;
-#[cfg(feature = "storage")]
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub(crate) use socket::*;
 mod codes;
 pub use codes::Code;

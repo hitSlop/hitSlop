@@ -1,12 +1,12 @@
 // Compile-only boundary checks: unsafe envelopes and replies must not become `any`.
-import type { SocketRequest } from "../../src/wire/socket";
+import type { EngineRequest } from "../../src/wire/engine";
 import type { PageRequest } from "../../src/wire/page";
 import type { SlopPageHandle } from "../../src/shell/page-handle";
 import { call } from "../../src/shell/bridge";
 
 function contracts(handle: SlopPageHandle) {
-  // @ts-expect-error An edit without lifetime identity is unsafe.
-  const missingEpoch: SocketRequest = { documentPath: "/doc", method: "batch", batch: { intents: [] } };
+  // @ts-expect-error An engine edit must name its document.
+  const missingDocument: EngineRequest = { method: "batch", batch: { intents: [] } };
   const error: PageRequest<"pageError"> = { method: "pageError", kind: "application", error: "x" };
   // @ts-expect-error A runtime error names its kind.
   const missingKind: PageRequest<"pageError"> = { method: "pageError", error: "x" };

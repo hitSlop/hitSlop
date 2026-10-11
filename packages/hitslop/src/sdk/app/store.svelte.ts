@@ -25,11 +25,14 @@ export { bindText } from "./bind-text";
  * The generated entry adapts App.svelte and optional capture components to the host.
  * Once mounted, `schema` is the live document.
  */
-export function svelteApp(App: Component, options: {
-  schema: Definition<ObjectNode>;
-  export?: Component<{ mode: Exclude<CaptureMode, "icon"> }> | Component<Record<string, never>>;
-  icon?: Component;
-}): SlopApp {
+export function svelteApp(
+  App: Component,
+  options: {
+    schema: Definition<ObjectNode>;
+    export?: Component<{ mode: Exclude<CaptureMode, "icon"> }> | Component<Record<string, never>>;
+    icon?: Component;
+  },
+): SlopApp {
   return {
     descriptor: options.schema.descriptor,
     mount(ctx, target) {
@@ -40,7 +43,14 @@ export function svelteApp(App: Component, options: {
         deactivate(ctx);
       };
       try {
-        const app = mount(Root, { target, props: { App, Export: options.export as Component<{ mode: Exclude<CaptureMode, "icon"> }> | undefined, Icon: options.icon } });
+        const app = mount(Root, {
+          target,
+          props: {
+            App,
+            Export: options.export as Component<{ mode: Exclude<CaptureMode, "icon"> }> | undefined,
+            Icon: options.icon,
+          },
+        });
         return {
           rendered: tick,
           unmount: async () => {

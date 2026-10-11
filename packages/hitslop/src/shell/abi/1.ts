@@ -25,7 +25,8 @@ export function createContext(
     },
     fields: doc.fields,
     at: ((value: any) => doc.at(value)) as SlopContext["document"]["at"],
-    change: ((callback: (tx: any) => unknown) => doc.change(callback)) as SlopContext["document"]["change"],
+    change: ((callback: (tx: any) => unknown) =>
+      doc.change(callback)) as SlopContext["document"]["change"],
     flush: () => doc.flush(),
     undo: () => doc.undo(),
     redo: () => doc.redo(),
