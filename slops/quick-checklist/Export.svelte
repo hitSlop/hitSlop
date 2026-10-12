@@ -19,7 +19,7 @@
       {#each visible as task (task.$id)}
         <li class="checklist-row" data-done={task.done}>
           <span class="checklist-box" aria-label={task.done ? "Complete" : "Incomplete"}>
-            {#if task.done}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{/if}
+            {#if task.done}<Check size={20} strokeWidth={3.5} />{/if}
           </span>
           <span class="checklist-task-text">{task.text || "Untitled task"}</span>
         </li>

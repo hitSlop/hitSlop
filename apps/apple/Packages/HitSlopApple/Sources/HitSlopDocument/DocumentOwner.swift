@@ -61,7 +61,7 @@ public final class DocumentOwner: Sendable {
 
   /// The app and its renderer ship this sibling helper. Missing helpers refuse commands;
   /// they never cause authored code to execute in the page or native process.
-  private static var evaluatorPath: String? {
+  public static var evaluatorPath: String? {
     #if DEBUG
       if let path = ProcessInfo.processInfo.environment["HITSLOP_EVALUATOR"] { return path }
     #endif

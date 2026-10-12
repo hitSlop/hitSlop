@@ -7,29 +7,59 @@ import HitSlopWidgets
 import WebKit
 
 @MainActor public enum SlopRenderer {
-  private enum CaptureOutput { case previewPNG, exportPNG, pdf }
+  enum CaptureOutput { case previewPNG, exportPNG, pdf }
+  private static let captureQueue = DispatchQueue(
+    label: "com.hitslop.capture-render", qos: .utility, attributes: .concurrent)
 
   public static func previewPNGData(url: URL) async throws -> Data {
-    try await withRenderSession(url: url) { try await capture(session: $0, output: .previewPNG) }
+    try await capture(url: url, output: .previewPNG)
   }
   static func previewPNGData(session: DocumentSession) async throws -> Data {
-    try await withSavedRenderer(session) { try await capture(session: $0, output: .previewPNG) }
+    try await withSavedSource(session) { try await capture(url: $0, output: .previewPNG) }
   }
   public static func exportPNGData(session: DocumentSession) async throws -> Data {
-    try await withSavedRenderer(session) { try await capture(session: $0, output: .exportPNG) }
+    try await withSavedSource(session) { try await capture(url: $0, output: .exportPNG) }
   }
   public static func exportPDFData(session: DocumentSession) async throws -> Data {
-    try await withSavedRenderer(session) { try await capture(session: $0, output: .pdf) }
+    try await withSavedSource(session) { try await capture(url: $0, output: .pdf) }
+  }
+
+  private static func withSavedSource<T>(
+    _ session: DocumentSession,
+    trace: SlopCloseTrace? = nil, _ body: @MainActor (URL) async throws -> T
+  ) async throws -> T {
+    if session.isSnapshot { return try await body(session.file.url) }
+    return try await session.withCaptureSnapshot(trace: trace, body)
+  }
+
+  static func capture(url: URL, output: CaptureOutput) async throws -> Data {
+    if output == .pdf {
+      return try await withRenderSession(url: url) { try await capture(session: $0, output: output) }
+    }
+    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Capture renderer is missing") }
+    let kind: ViewCaptureKind = output == .previewPNG ? .preview : .export
+    let bytes = try await SlopPreparation.run(on: captureQueue) {
+      try renderSavedView(path: url.path, evaluatorPath: evaluator, kind: kind)
+    }
+    try Task.checkCancellation()
+    if let bytes {
+      let png = Data(bytes)
+      return png
+    }
+    return try await withRenderSession(url: url) { try await capture(session: $0, output: output) }
   }
 
   /// Renders artwork from a source already acquired by a copy operation.
   static func artwork(url: URL, telemetry: SlopTelemetry) async -> SlopRenderedArtwork? {
-    do {
-      return try await withRenderSession(url: url) { await artwork(session: $0, telemetry: telemetry) }
-    } catch {
+    var preview: Data?
+    var icon: Data?
+    do { preview = try await previewPNGData(url: url) } catch {
       reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
-      return nil
     }
+    do { icon = try await iconPNGData(url: url) } catch {
+      reportArtworkFailure(error, reason: .icon, telemetry: telemetry)
+    }
+    return SlopRenderedArtwork(preview: preview, icon: icon)
   }
 
   /// The artwork a closing window writes into its document: its preview and, when the
@@ -42,29 +72,36 @@ import WebKit
   {
     let capturedAt = Date()
     let widgetIdentity = widgetURL.flatMap { try? WidgetCache.identity($0) }
+    if !renderArtwork {
+      if let widgetURL, let widgetIdentity {
+        await SlopWidgetPublisher.shared.capture(
+          renderer: session, url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt)
+      }
+      return SlopRenderedArtwork(preview: nil, icon: nil)
+    }
     do {
-      return try await withSavedRenderer(session, trace: trace) { renderer in
+      return try await withSavedSource(session, trace: trace) { source in
         var preview: Data?
         var icon: Data?
         if renderArtwork {
           do {
             let interval = trace?.begin("Preview capture")
             defer { trace?.end("Preview capture", interval) }
-            preview = try await capture(session: renderer, output: .previewPNG)
+            preview = try await capture(url: source, output: .previewPNG)
           } catch {
             reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
           }
           do {
             let interval = trace?.begin("Icon capture")
             defer { trace?.end("Icon capture", interval) }
-            icon = try await captureIcon(session: renderer)
+            icon = try await iconPNGData(url: source)
           } catch {
             reportArtworkFailure(error, reason: .icon, telemetry: telemetry)
           }
         }
-        if let widgetURL, let widgetIdentity, renderer.file.views.widget != nil {
+        if let widgetURL, let widgetIdentity, session.file.views.widget != nil {
           await SlopWidgetPublisher.shared.capture(
-            renderer: renderer, url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt)
+            renderer: session, url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt)
         }
         return SlopRenderedArtwork(preview: preview, icon: icon)
       }
@@ -79,17 +116,6 @@ import WebKit
   ) {
     guard !SlopFailureContext.isCancellation(error) else { return }
     telemetry.send(.failed(.artwork, .init(reason: reason)))
-  }
-
-  private static func withSavedRenderer<T>(
-    _ session: DocumentSession,
-    trace: SlopCloseTrace? = nil,
-    _ capture: @MainActor (DocumentSession) async throws -> T
-  ) async throws -> T {
-    if session.isSnapshot { return try await capture(session) }
-    return try await session.withCaptureSnapshot(trace: trace) { source in
-      try await withRenderSession(url: source, trace: trace, capture)
-    }
   }
 
   /// Background renders read the saved document as a snapshot: they take no ownership
@@ -126,16 +152,28 @@ import WebKit
   }
 
   public static func iconPNGData(url: URL) async throws -> Data? {
-    try await withRenderSession(url: url) { session in
-      try await iconPNGData(session: session)
-    }
+    let file = try await SlopPreparation.run(on: captureQueue) { try SlopFile(url: url) }
+    guard file.views.icon else { return nil }
+    if let png = try await nativeIconPNGData(url: url) { return png }
+    return try await withRenderSession(url: url) { try await captureWebIcon(session: $0) }
   }
 
   public static func iconPNGData(session: DocumentSession) async throws -> Data? {
-    try await withSavedRenderer(session) { try await captureIcon(session: $0) }
+    guard session.file.views.icon else { return nil }
+    if session.isSnapshot { return try await iconPNGData(url: session.file.url) }
+    return try await session.withCaptureSnapshot { try await iconPNGData(url: $0) }
   }
 
-  private static func captureIcon(session: DocumentSession) async throws -> Data? {
+  private static func nativeIconPNGData(url: URL) async throws -> Data? {
+    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Capture renderer is missing") }
+    let bytes = try await SlopPreparation.run(on: captureQueue) {
+      try renderSavedIcon(path: url.path, evaluatorPath: evaluator)
+    }
+    try Task.checkCancellation()
+    return bytes.map { Data($0) }
+  }
+
+  private static func captureWebIcon(session: DocumentSession) async throws -> Data? {
     try await withCapture(session) { view, token, originalFrame in
       view.frame.size = CGSize(width: max(512, originalFrame.width), height: max(512, originalFrame.height))
       let value = try await begin(view, token: token, mode: .icon)
@@ -155,54 +193,36 @@ import WebKit
     }
   }
 
-  /// All families share one saved snapshot and mount only the dedicated widget view.
+  /// One saved source, one restricted Rust child, three widget images. No render WebView.
   public static func widgetImages(session: DocumentSession) async throws -> [WidgetImage] {
-    try await withSavedRenderer(session) { try await captureWidgets(session: $0) }
+    try await widgetCapture(session: session).images
   }
   public static func widgetImages(url: URL) async throws -> [WidgetImage] {
-    try await withRenderSession(url: url) { try await captureWidgets(session: $0) }
+    try await widgetCapture(url: url).images
   }
-  private static func captureWidgets(session: DocumentSession) async throws -> [WidgetImage] {
-    guard session.file.views.widget != nil else { throw SlopFailure("This slop has no Widget.svelte") }
-    var images: [WidgetImage] = []
-    for viewport in widgetViewports() {
-      let png = try await withCapture(session) { view, token, _ in
-        view.frame.size = CGSize(width: Int(viewport.width), height: Int(viewport.height))
-        guard let json = try await view.callHost(.captureWidget(token: token, viewport: viewport)) as? String else {
-          throw SlopFailure("Could not prepare widget capture")
-        }
-        let bounds = try decodeHostCaptureResult(json: json)
-        let rect = try geometry(bounds)
-        guard bounds.dedicated, abs(rect.minX) < 0.5, abs(rect.minY) < 0.5,
-          abs(rect.width - view.bounds.width) < 0.5, abs(rect.height - view.bounds.height) < 0.5
-        else { throw SlopFailure("Widget capture surface does not match its viewport") }
-        WebViewBackground.set(false, on: view)
-        let configuration = WKSnapshotConfiguration()
-        configuration.rect = view.bounds
-        configuration.snapshotWidth = NSNumber(value: viewport.width)
-        let snapshot = try await view.takeSnapshot(configuration: configuration)
-        // Normalize independently of the backing display's scale: bounded 2× PNGs.
-        let scale = Int(widgetLimits().scale)
-        let size = CGSize(width: Int(viewport.width) * scale, height: Int(viewport.height) * scale)
-        guard
-          let bitmap = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
-            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-            bytesPerRow: 0, bitsPerPixel: 0), let context = NSGraphicsContext(bitmapImageRep: bitmap)
-        else { throw SlopFailure("Could not create widget image") }
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = context
-        context.cgContext.clear(CGRect(origin: .zero, size: size))
-        snapshot.draw(in: CGRect(origin: .zero, size: size))
-        NSGraphicsContext.restoreGraphicsState()
-        guard let png = bitmap.representation(using: .png, properties: [:]) else {
-          throw SlopFailure("Could not encode widget image")
-        }
-        return png
-      }
-      images.append(WidgetImage(family: WidgetImageFamily(viewport.family), png: png))
+  struct WidgetCapture {
+    let sourceVersion: String
+    let images: [WidgetImage]
+  }
+  static func widgetSourceVersion(url: URL) async throws -> String {
+    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Widget renderer is missing") }
+    return try await SlopPreparation.run(on: captureQueue) {
+      try savedWidgetVersion(path: url.path, evaluatorPath: evaluator)
     }
-    return images
+  }
+  static func widgetCapture(session: DocumentSession) async throws -> WidgetCapture {
+    if session.isSnapshot { return try await widgetCapture(url: session.file.url) }
+    return try await session.withCaptureSnapshot { try await widgetCapture(url: $0) }
+  }
+  static func widgetCapture(url: URL) async throws -> WidgetCapture {
+    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Widget renderer is missing") }
+    let capture = try await SlopPreparation.run(on: captureQueue) {
+      try renderSavedWidgets(path: url.path, evaluatorPath: evaluator)
+    }
+    try Task.checkCancellation()
+    return WidgetCapture(
+      sourceVersion: capture.sourceVersion,
+      images: capture.images.map { WidgetImage(family: WidgetImageFamily($0.family), png: Data($0.png)) })
   }
 
   /// Capture only a disposable read-only page. Reset the render viewport between

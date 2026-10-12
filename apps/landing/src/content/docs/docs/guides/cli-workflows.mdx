@@ -326,7 +326,7 @@ bunx hitslop export My.slop --format png --output My.png
 bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
-Export saves your edits and prints the output path. Choose an output other than the `.slop` itself; existing output files are replaced. Both open and closed documents render saved data in a fresh page, using the export view or the app’s starting view. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
+Export saves your edits and prints the output path. Choose a new output path other than the `.slop` itself; an existing destination is refused. Both open and closed documents render saved data independently, using the export view or the app’s starting view. Eligible PNG views use the Rust renderer; browser-dependent views and PDF use WebKit. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
 
 Successful exports print their resolved output paths, respectively:
 

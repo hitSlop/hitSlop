@@ -1,5 +1,5 @@
 //! Native sandbox and pipe adapter.
-use crate::{INPUT, OUTPUT, sandbox};
+use crate::{CAPTURE_OUTPUT, INPUT, sandbox};
 use std::io::Read;
 use std::time::{Duration, Instant};
 
@@ -15,7 +15,7 @@ pub fn child() {
         crate::evaluate(&input, move || Instant::now() > deadline)
     };
     let output = run().unwrap_or_else(|error| serde_json::json!({"ok":false,"error":error}).to_string());
-    if output.len() <= OUTPUT {
+    if output.len() <= CAPTURE_OUTPUT {
         println!("{output}");
     }
 }

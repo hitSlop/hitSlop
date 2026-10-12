@@ -31,6 +31,18 @@ pub fn evaluate(input: &[u8], interrupted: impl FnMut() -> bool + 'static) -> Re
     }
     let input: Input = serde_json::from_slice(input).map_err(|e| e.to_string())?;
     let prelude = prelude(input.runtime_abi)?;
+    if matches!(input.mode, Mode::Widget) {
+        #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+        return crate::capture::evaluate(&input.bundle, &input.request, interrupted);
+        #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
+        return Err("Native widget rendering is unavailable".into());
+    }
+    if matches!(input.mode, Mode::Capture) {
+        #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+        return crate::capture::evaluate_view(&input.bundle, &input.request, interrupted);
+        #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
+        return Err("Native capture rendering is unavailable".into());
+    }
     let runtime = Runtime::new().map_err(|e| e.to_string())?;
     runtime.set_memory_limit(HEAP);
     runtime.set_max_stack_size(512 << 10);
@@ -43,6 +55,7 @@ pub fn evaluate(input: &[u8], interrupted: impl FnMut() -> bool + 'static) -> Re
         let function = match input.mode {
             Mode::Command => "__slopRun",
             Mode::Definition => "__slopDescribe",
+            Mode::Widget | Mode::Capture => unreachable!("handled before the command realm"),
         };
         let run: Function = ctx.globals().get(function).catch(&ctx).map_err(|e| e.to_string())?;
         run.call::<_, String>((input.request,)).catch(&ctx).map_err(|e| e.to_string())

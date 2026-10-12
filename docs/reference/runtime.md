@@ -58,7 +58,7 @@ metadata/window/theme values and never decodes the stored definition itself.
 
 ```text
 app          one row: package_format, runtime_abi, catalog columns, definition_json
-assets       key, media_type, encoding, size, bytes: ui.js, optional ui.css / commands.js, media…
+assets       key, media_type, encoding, size, bytes: ui.js, optional ui.css / commands.js / widget.js, media…
 artwork      preview and icon PNGs: built, then rewritten as an edited document's window closes
 document     a document's identity; none in a template
 history      the saved Loro state in order: a snapshot (data and theme overrides; a template's
@@ -73,7 +73,7 @@ and atomically adds its identity. A template is immutable (`is_template` refuses
 document), and bundled starters are also read-only on disk. Initial values seed only
 a new document. Schema changes require new documents.
 
-The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges; the resource reader refuses commands.js. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. The local Chrome browser host uses the same Rust owner compiled to WASM, with SQLite in OPFS. Its app frame has a separate origin per copy and receives assets through a client-bound Service Worker channel. Runtime code is bundled with the CLI and served locally.
+The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges; the resource reader refuses private commands.js, widget.js, icon.js and export.js programs. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. The local Chrome browser host uses the same Rust owner compiled to WASM, with SQLite in OPFS. Its app frame has a separate origin per copy and receives assets through a client-bound Service Worker channel. Runtime code is bundled with the CLI and served locally.
 
 Both readers check the application/storage markers, then package-format and runtime-ABI requirements, then the exact SQLite layout. `summary` reads only safe catalog fields and artwork, never the definition, app assets, attachments or Loro payloads. It is not a validity certificate. Full acceptance checks the definition with its frozen package-format module, resource inventory and budgets, streaming PNGs and optionally SQLite integrity; owners also validate Loro state. A newer marker returns `requires_update` without writes. Reads never migrate. SQLite may roll back a hot journal from an interrupted transaction to restore committed bytes.
 
@@ -109,7 +109,7 @@ The declaration and host enforcement described below do not create a per-slop OS
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates the file, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
-The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
+The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`, `widget.js`, `icon.js` or `export.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
 The native, browser and development-preview CSPs are defined in Rust
 (`crates/hitslop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
@@ -148,7 +148,7 @@ Rust resolves window defaults, frame capabilities and silhouettes once for the n
 
 ## Capture and Finder integration
 
-Every host capture uses a disposable read-only page. An open document first drains its
+Every host capture uses a disposable read-only renderer. An open document first drains its
 page writes, saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
 ends after the backup. Rendering then uses that independent copy, including its app,
 attachments, data and theme. The editor's focus, selection, scroll and local selected
@@ -161,7 +161,17 @@ State that should determine an export, such as a selected report, must be saved 
 document. Capture components read the same document facade; they cannot change saved
 state to prepare their view.
 
-The renderer mounts only the requested dedicated export or icon, without mounting a
+The builder emits separate synchronous SSR programs for eligible icons and exports.
+These read immutable `doc.current` in a fresh QuickJS realm and render with Takumi in
+the restricted Rust child. Icons are 512×512; export PNGs are 2× with measured natural
+height, and previews crop at the larger of the saved window height and three widths.
+Native capture preserves the saved viewport's layout while extending the image canvas
+to include horizontal overflow; viewport units retain the saved window dimensions.
+The build conservatively retains WebKit for closures using browser lifecycle/DOM,
+attachments, locale formatting, async code or host helpers, and names the reason.
+Native runtime failures reject capture; they do not trigger a hidden fallback.
+
+WebKit mounts only the requested dedicated export or icon, without mounting a
 hidden editor. Without a dedicated export it mounts the editor for preview/export,
 including apps that declare only an icon. Capture preparation also runs hooks installed
 by the newly mounted component, then waits for fonts, visible images and stable layout.
@@ -173,22 +183,31 @@ artwork. The host's window-filling sizing rules are disabled during capture; the
 reset remains. Rendering errors reject the capture, and the disposable page is closed.
 
 Widget capture requires `Widget.svelte`: it has no App or Export fallback. The component
-receives the Rust-generated `WidgetProps` (`family`, `width`, `height`), and preparation
-hooks receive `"widget"` plus the viewport as their optional third argument. The host
-captures all three families from one snapshot, normalizes to 2× PNGs, and publishes them
-outside the document. The [macOS widget architecture](../architecture.md#macos-image-widgets)
+receives the Rust-generated `WidgetProps` (`family`, `width`, `height`). A private synchronous
+Svelte SSR program reads saved `doc.current` in a fresh QuickJS realm. Takumi renders the
+three fixed canvases at 2× in the same restricted child, using bundled fonts and resources.
+No browser preparation hooks run during native widget capture. The browser authoring
+preview still mounts the component normally. The host publishes PNGs outside the document.
+Widget freshness includes saved state, renderer/font bytes and canvas configuration;
+startup refreshes stale images even when the document has not been edited. Failed
+captures retain the previous images, and WidgetKit controls visible reload timing.
+The [macOS widget architecture](../architecture.md#macos-image-widgets)
 describes selection, opening and refresh policy. The extension never runs authored code.
 
 Dedicated PNG and PDF captures use the export's measured width, including compositions
 wider than the editor window. Preview rasterization prefers 2×; a large fallback window
 uses 1× when 2× exceeds the raster budget. Explicit PNG export remains 2×.
-PDF recomposes WebKit's internal pages into one continuous page when needed. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
+PDF still uses WebKit and recomposes its internal pages into one continuous page when needed.
+It retains selectable text. The native vector backend remains an isolated spike;
+native PNG/Quick Look and browser PDF may differ in layout or typography. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
 
 The core stores artwork losslessly optimized with oxipng: `pack` at level 2, and a closing window's artwork at level 0, because the writer lock is released only after it is written ([measurements](../evidence/artwork-optimization-2026-10-05.md)). Pixels, dimensions and transparency are preserved, fully transparent pixels keep their colour, alpha is removed only from fully opaque images, and metadata that does not affect display is stripped. A result is kept only when it is smaller; artwork oxipng cannot read, or would decode past 64 MiB, is stored as it is. PNG and PDF exports are written as rendered.
 
-Build and register render artwork the project does not supply from a draft of the template, before packing it. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup in a fresh read-only page; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
+Build and register render artwork the project does not supply from a draft of the template, before packing it. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup in an independent read-only renderer; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
 
-Open and closed exports use fresh saved-state pages with default local UI state. An open export uses the flushed backup described above; a closed export takes no writer lock and can render while another process holds the document.
+Open and closed exports use independent saved-state renderers; browser fallbacks use
+default local UI state. An open export uses the flushed backup described above; a
+closed export takes no writer lock and can render while another process holds the document.
 
 ## Telemetry
 

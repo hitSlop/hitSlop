@@ -62,7 +62,7 @@ the application behind a hole, not merely that a DOM element ignores them.
 
 Add an optional root `Export.svelte`. It receives
 `mode: "preview" | "export"` and reads the same document by importing its module.
-Render saved data in a fresh page; transient editor selection is not carried over. Share presentation and theme components.
+Render saved data in an independent read-only renderer; transient editor selection is not carried over. Share presentation and theme components.
 Use normal flow rather than viewport heights or scrolling panels. This view also
 supplies the catalog and Quick Look preview (captured at the export object’s
 size, not the empty editor window). Without it, use `data-slop-capture="static"`
@@ -70,12 +70,17 @@ styles and `data-slop-export="hide"` on editing controls.
 
 PNG exports use the window width and full content height at 2×, within 16384 pixels
 per side and 24 megapixels. PDF retains selectable text on one content-sized page.
-Dedicated exports do not inherit native window masks. Fonts, visible images, and
-stable geometry are awaited; asynchronous charts can use `capture.onPrepare`.
+Dedicated exports do not inherit native window masks. Eligible icons, previews and
+PNG exports use synchronous Svelte SSR and Takumi in the Rust child. Browser-dependent
+views and PDF use WebKit, which waits for fonts, visible images and stable geometry;
+asynchronous browser charts can use `capture.onPrepare`. Native captures must be
+synchronous and use packaged fonts or the renderer's bundled fallbacks. Review both
+PNG and PDF when supplying an export view: their typography and CSS support can differ.
 
 Rendering failures in export or icon components reject that capture without
-replacing the editor or reporting an application-render error. Restoration
-clears the component failure so the next attempt renders it again. Editor rendering
+replacing the editor or reporting an application-render error. A declared native
+program failure is reported rather than silently switching engines; the next attempt
+starts a fresh render. Editor rendering
 failures still use native application-error recovery and prevent capture.
 
 ## Icon
@@ -90,3 +95,7 @@ Build with `--artwork native` (or register) and check the generated artwork (`sl
 ## Widget compositions
 
 Use optional root `Widget.svelte` for small, medium and large image widgets. It receives `WidgetProps` (`family`, `width`, `height`) from `hitslop/svelte` and reads saved `doc.current` and theme tokens. Keep the slop's typography, colors and reusable components; edit density and hierarchy for each canvas. The fixed canvas clips overflow; intentionally shorten lists and text. In `slop dev`, use Preview → Small/Medium/Large widget to review all three compositions and any overflow warning, then return to Editor without losing accepted edits. Widgets contain images; tapping opens the source slop. Do not add interactive controls or an export fallback.
+
+Widget images always use the native renderer. Compare the actual PNGs with the browser
+preview: unsupported CSS is ignored, and page CSS does not style the interior of inline
+SVG images. Prefer explicit SVG attributes and simple flex/grid layouts for capture views.

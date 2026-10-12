@@ -14,6 +14,75 @@ use support::{App, isolate_registry, registry_folder, write_app};
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
+
+#[test]
+fn widget_program_is_required_at_pack_and_private_when_opened() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = stage(directory.path());
+    support::edit_input(&source, |input| input["declaration"]["views"]["widget"] = serde_json::json!({}));
+    let template = directory.path().join("widget.slop");
+    assert!(support::pack(&source, &template).is_err());
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+    support::edit_input(&source, |input| input["roles"]["widget"] = "widget.js".into());
+    support::pack(&source, &template).unwrap();
+    let document = directory.path().join("document.slop");
+    file::create_document(&template, &document).unwrap();
+    let store = Store::open(&document, Mode::Snapshot).unwrap();
+    assert!(store.app().widget.as_ref().unwrap().contains("__slopWidget"));
+    let reader = store.resource_reader().unwrap();
+    assert!(reader.info(file::ResourceRoute::App, "widget.js").unwrap().is_none());
+    assert!(reader.read_range(file::ResourceRoute::App, "widget.js", 0, 100).unwrap().is_none());
+}
+
+#[test]
+fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_document() {
+    use std::os::unix::fs::symlink;
+    let directory = tempfile::tempdir().unwrap();
+    let source = stage(directory.path());
+    support::edit_input(&source, |input| {
+        input["declaration"]["views"]["widget"] = serde_json::json!({});
+        input["roles"]["widget"] = "widget.js".into();
+    });
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+    let template = directory.path().join("widget.slop");
+    support::pack(&source, &template).unwrap();
+    let document = directory.path().join("document.slop");
+    file::create_document(&template, &document).unwrap();
+    let saved = fs::read(&document).unwrap();
+    let images: Vec<_> = hitslop_core::widgets::widget_viewports()
+        .iter()
+        .map(|view| data_encoding::BASE64.encode(&png(view.width * 2, view.height * 2, 6)))
+        .collect();
+    let reply = serde_json::json!({"ok": true, "images": images});
+    let program = format!("/bin/cat >/dev/null; printf '%s' '{reply}'");
+    let executable = directory.path().join("evaluator");
+    symlink("/bin/sh", &executable).unwrap();
+    let evaluator =
+        hitslop_core::owner::Evaluator::new(executable.clone(), vec!["-c".into(), program.clone()]).unwrap();
+    let first = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    let repeated = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    assert_eq!(first.source_version, repeated.source_version);
+    let replacement = directory.path().join("replacement");
+    symlink("/bin/bash", &replacement).unwrap();
+    fs::rename(&replacement, &executable).unwrap();
+    let upgraded = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    assert_ne!(first.source_version, upgraded.source_version, "new renderer must invalidate unchanged widget state");
+    assert_eq!(hitslop_core::widgets::saved_version(&document, &evaluator).unwrap(), upgraded.source_version);
+    // Replacing a helper at the same path with identical bytes does not need a
+    // new generation, but a capture that actually crosses a replacement is refused.
+    symlink("/bin/bash", &replacement).unwrap();
+    fs::rename(&replacement, &executable).unwrap();
+    assert_eq!(hitslop_core::widgets::saved_version(&document, &evaluator).unwrap(), upgraded.source_version);
+    let evaluator = hitslop_core::owner::Evaluator::new(
+        executable.clone(),
+        vec!["-c".into(), format!("/bin/ln -sf /bin/sh '{}'; {program}", executable.display())],
+    )
+    .unwrap();
+    let error =
+        hitslop_core::widgets::render_saved(&document, &evaluator).err().expect("replacement must refuse capture");
+    assert!(error.to_string().contains("renderer changed during capture"), "{error}");
+    assert_eq!(fs::read(&document).unwrap(), saved, "capture must never modify the document");
+}
 /// What a crashed owner leaves behind: its discovery file, with its lock released.
 fn crashed_owner(doc: &Path, json: &str) {
     let lease = Lease::acquire(doc).unwrap();

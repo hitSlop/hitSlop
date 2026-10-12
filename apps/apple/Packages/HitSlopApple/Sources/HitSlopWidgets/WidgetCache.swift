@@ -131,7 +131,8 @@ public struct WidgetCache: Sendable {
   /// Write every image and the bookmark before replacing the one visible pointer. A
   /// failure leaves the previous generation readable. Callers serialize publications.
   @discardableResult public func publish(
-    url: URL, title: String, images: [WidgetImage], capturedAt: Date, refreshMinutes: UInt32?
+    url: URL, title: String, images: [WidgetImage], capturedAt: Date, refreshMinutes: UInt32?,
+    sourceVersion: String? = nil
   ) throws -> WidgetRecord {
     let old = record(for: url)
     if let old, old.updatedAt > capturedAt.timeIntervalSince1970 { return old }
@@ -142,7 +143,7 @@ public struct WidgetCache: Sendable {
       id: id, title: title, fileIdentity: identity, generation: generation,
       updatedAt: capturedAt.timeIntervalSince1970, refreshMinutes: refreshMinutes,
       sourcePath: url.path, volumePath: try url.resourceValues(forKeys: [.volumeURLKey]).volume?.path,
-      previousGeneration: old?.generation)
+      previousGeneration: old?.generation, sourceVersion: sourceVersion)
     guard record.isValid else { throw CocoaError(.fileWriteInvalidFileName) }
     let json = try JSONEncoder().encode(record)
     guard images.count == 3,
@@ -200,6 +201,9 @@ public struct WidgetRecord: Codable, Sendable {
   let sourcePath: String?
   let volumePath: String?
   let previousGeneration: String?
+  /// Opaque core token for saved state, renderer/fonts and canvas settings.
+  /// Missing/older tokens stay readable and are refreshed by the app.
+  public let sourceVersion: String?
 
   var isValid: Bool {
     UUID(uuidString: id) != nil && UUID(uuidString: generation) != nil

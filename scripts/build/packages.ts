@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { stageEngines } from "./engines";
 import { buildSkills } from "../../packages/hitslop/src/cli/skills-build";
@@ -19,6 +19,11 @@ export async function packPackages() {
   try {
     const commit = (await new Response(Bun.spawn(["git", "rev-parse", "HEAD"], { stdout: "pipe" }).stdout).text()).trim();
     await stageEngines(engines, resolve("generated/engines"), cargoOutput("slop-engine"), commit);
+    const notices = join(engines, "font-licenses");
+    await mkdir(notices);
+    const fonts = resolve("crates/hitslop-runner/fonts");
+    for (const name of await readdir(fonts))
+      if (name.includes("LICENSE") || name === "README.md") await copyFile(join(fonts, name), join(notices, name));
     const directory = resolve("packages/hitslop");
     const metadata = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
     for (const value of Object.values(metadata.dependencies ?? {}))

@@ -80,6 +80,9 @@ pub struct OpenedApp {
     pub skin: Option<Vec<u8>>,
     pub style: bool,
     pub commands: Option<std::sync::Arc<String>>,
+    pub widget: Option<std::sync::Arc<String>>,
+    pub icon: Option<std::sync::Arc<String>>,
+    pub export: Option<std::sync::Arc<String>>,
     pub bytes: u64,
 }
 pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<OpenedApp> {
@@ -101,6 +104,9 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     let mut style = false;
     let mut skin = None;
     let mut commands = None;
+    let mut widget = None;
+    let mut icon = None;
+    let mut export = None;
     for row in
         keys.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sqlite("read assets"))?
     {
@@ -130,6 +136,18 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
             .map_err(Error::Rejected)?;
             skin = Some(bytes);
         }
+        if key == "widget.js" {
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing widget program"))?;
+            widget = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
+        }
+        if key == "export.js" {
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing export program"))?;
+            export = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
+        }
+        if key == "icon.js" {
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing icon program"))?;
+            icon = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
+        }
         if key == "commands.js" {
             let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing command program"))?;
             commands = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
@@ -153,6 +171,9 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         skin,
         style,
         commands,
+        widget,
+        icon,
+        export,
         bytes: summary.bytes,
     })
 }

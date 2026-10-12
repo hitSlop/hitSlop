@@ -125,19 +125,35 @@ In order, with the reasoning in [ideas](ideas.md):
   [later](#later).
 - `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
   `App.svelte` the editor, and optional root `Export.svelte`, `Icon.svelte`, `Widget.svelte` and
-  `commands.ts` the other roles. Captures use fresh saved-state pages, with a fresh `App` as the export
-  fallback. `slop dev` runs the native owner on a disposable copy per preview page.
+  `commands.ts` the other roles. Widgets and eligible icon/preview/PNG captures use
+  saved-state Svelte SSR and Takumi in the restricted Rust child. Browser-dependent
+  captures and PDF retain fresh WebKit pages, with a fresh `App` as the export fallback.
+  `slop dev` runs the native owner on a disposable copy per preview page.
 
 A historical summary of the ownership decisions and integration findings is retained in
 the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
 
+**Catalog capture fidelity.** The [76-slop visual review](evidence/slop-capture-review-2026-10-12.md)
+found six blank icons caused by capture-mode markup, lost SVG styling in four
+icons (also Household Chores export), and collapsed Grocery List and Pixel Art
+exports. Fix and visually recheck these before broad native-capture qualification.
+The review also proposes eight additional widgets; Quick Checklist remains the
+only implemented widget composition.
+
 **Widget qualification.** The macOS image-widget integration includes dedicated saved-state
 captures, document selection, bookmark opening and optional approximate refreshes.
+Saved edits and renderer/font changes invalidate image generations; the app watches
+cached sources and catches up at startup. Shared tests cover publication, reload requests,
+restart catch-up and retaining prior images on failure. The signed app is installed and
+all three review images were generated, and the user reported the installed widget
+working after hands-on review. That report does not qualify every size or lifecycle
+scenario. See [native capture evidence](evidence/takumi-capture-2026-10-12.md) for measured
+macOS costs and the review checklist.
 Finish signed product testing of all sizes, appearance modes, refresh budgets and
 sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrower evidence.
-The `slop dev` composition selector previews all three widget families with HMR. Signed desktop qualification, cache management UI and iOS hosting are pending.
+The `slop dev` composition selector previews all three widget families with HMR. Broader desktop qualification, cache management UI and iOS hosting are pending.
 
 **Permissions and device services.** Code-bound grants and per-slop consent remain a
 [proposal](ideas.md#permissions-bound-to-the-apps-code), as do additional devices such

@@ -5,6 +5,7 @@ pub mod app;
 pub mod arguments;
 #[cfg(feature = "ts")]
 pub mod bindings;
+pub mod capture;
 mod check;
 #[cfg(feature = "storage")]
 pub mod command;

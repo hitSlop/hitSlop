@@ -43,10 +43,20 @@ documents stay openable: follow AGENTS.md's Compatibility rules, and keep
 **Windows and captures.** `SlopSilhouette` builds paths from the core's parsed shape and
 is the one mask for clipping, hit testing and window-sized PNG captures. Dedicated
 `export`/`icon` view captures are never masked. Flush and copy saved state before
-rendering in an independent hidden page. The editor holds `capturing` only while acquiring
+rendering in an independent read-only renderer. Eligible icons, preview artwork and
+PNG exports use synchronous Svelte SSR and Takumi in the restricted Rust child;
+browser-dependent views and PDF use a hidden WebKit page. The editor holds `capturing` only while acquiring
 that copy; rendering can continue after the editor closes. Without an `export` view, export
 uses a fresh `view` with its default transient view state. Theme overrides live in
 Loro and use the same publication, undo and saving path as data edits.
+
+**Widgets.** The app captures `Widget.svelte` in the Rust child and atomically publishes
+three PNGs outside the document; the extension only reads cached images. Successful
+saves, cached-file watchers, startup/reopen and optional scheduled refresh drive
+captures. Freshness combines saved state, installed evaluator bytes (including fonts),
+and canvas configuration. Renderer upgrades invalidate unchanged cached documents.
+Failed refreshes retain the previous generation; publish before requesting a WidgetKit
+reload. Quitting retains cached images, and WidgetKit controls visible reload timing.
 
 **Checks.** `bun run verify --native` runs what a change touches, building first.
 `bun run verify swift` covers WKWebView, live and closed CLI, save failure, close and

@@ -52,7 +52,7 @@ Read `slop.ts` first. It declares the app with `defineSlop`: its title, descript
 - `slop.ts`'s `theme` declares the colors people can change.
 - `styles.css` owns layout and component styling; import it explicitly from `App.svelte`.
 
-The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, optional `Export.svelte`, `Icon.svelte` and `commands.ts`. Put helper modules anywhere.
+The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, optional `Export.svelte`, `Icon.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state desktop images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-macos-widget).
 
 The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to metadata, schema, commands, their dependencies or the role inventory resets the copy. Test native persistence in a writable document copy.
 
@@ -121,7 +121,7 @@ Replace `App.svelte` with:
 </main>
 ```
 
-PNG and PDF exports render this view from the saved document in a fresh page; `data-slop-export="hide"` leaves the button out of them. Add a thin `Export.svelte` component with natural height when content grows longer than the window or should become a different artifact. It reads the same saved state and mounts without the editor.
+PNG and PDF exports render this view independently from the saved document; `data-slop-export="hide"` leaves the button out of them. Add a thin `Export.svelte` component with natural height when content grows longer than the window or should become a different artifact. It reads the same saved state and renders without the editor. See [icons and exports](/docs/guides/icons-and-exports/) for native rendering support and browser fallbacks.
 
 `Icon.svelte` draws the Finder icon:
 

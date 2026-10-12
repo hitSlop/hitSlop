@@ -125,6 +125,7 @@ extension HostTests {
             ]
           ]
         ).ok)
+      let expandedPNG = try await SlopRenderer.exportPNGData(session: session)
       _ = try await session.webView.evaluateJavaScript(
         "document.querySelector('[data-toggle-view]').click()")
       let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
@@ -136,11 +137,18 @@ extension HostTests {
         #expect(pdf.string?.contains("Final task \(count - 1)") == true)
         #expect(pdf.string?.contains("Café") == true)
       }
-      let png = try #require(NSBitmapImageRep(data: try await SlopRenderer.exportPNGData(session: session)))
+      let collapsedPNG = try await SlopRenderer.exportPNGData(session: session)
+      #expect(collapsedPNG == expandedPNG)
+      let png = try #require(NSBitmapImageRep(data: collapsedPNG))
       let bounds = page.bounds(for: .mediaBox)
       #expect(abs(CGFloat(png.pixelsWide) - bounds.width * 2) <= 2)
-      #expect(abs(CGFloat(png.pixelsHigh) - bounds.height * 2) <= 2)
-      if count == 40 { #expect(bounds.height > 1000) }
+      // PNG and PDF use different font/layout engines. Both must include the
+      // long document; pixel-identical text height is not their contract.
+      #expect(png.pixelsHigh > 0)
+      if count == 40 {
+        #expect(bounds.height > 1000)
+        #expect(png.pixelsHigh > 2000)
+      }
       #expect(
         try await session.webView.evaluateJavaScript(
           "document.querySelector('[data-toggle-view]').getAttribute('aria-pressed') === 'true'") as? Bool == true)

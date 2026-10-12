@@ -24,6 +24,7 @@ extension SlopDocumentWindowController {
   }
 
   public func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
+    if saveStatus == .saved { SlopWidgetPublisher.shared.saved(session) }
     recordSaveStatus(saveStatus)
     apply(saveAttention.status(saveStatus, otherSheet: window?.attachedSheet != nil, hidden: attentionHidden))
   }

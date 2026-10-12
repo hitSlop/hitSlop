@@ -154,6 +154,30 @@ public enum Fixtures {
     }
   }
 
+  /// A minimal private render program, independent of any shipped slop or browser UI.
+  public static func addWidget(_ stage: URL) throws {
+    let source = """
+      globalThis.__slopWidget = json => {
+        const request = JSON.parse(json);
+        const color = request.snapshot.title === 'Widget saved' ? '#ff0000' : '#0000ff';
+        return JSON.stringify({fonts:[], frames: request.viewports.map(viewport => ({
+          width: viewport.width, height: viewport.height,
+          html: '<html><body><div></div></body></html>',
+          css: 'html,body,div{margin:0;width:100%;height:100%;background:'+color+'}'
+        }))});
+      };
+      """
+    try Data(source.utf8).write(to: stage.appendingPathComponent("assets/widget.js"))
+    try updateInput(stage) { input in
+      var roles = input["roles"] as! [String: Any]
+      roles["widget"] = "widget.js"
+      input["roles"] = roles
+      var resources = input["resources"] as! [[String: Any]]
+      resources.append(["kind": "app", "key": "widget.js", "mediaType": "text/javascript", "path": "assets/widget.js"])
+      input["resources"] = resources
+    }
+  }
+
   public static func addAsset(_ stage: URL, bytes: Data, ext: String, mediaType: String) throws -> String {
     let key = "media/" + SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined() + "." + ext
     let path = "assets/" + key

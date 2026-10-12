@@ -57,16 +57,20 @@ short execution budget does not govern WebKit rendering.
 
 Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
 in `App.svelte`. Optional `Export.svelte`, `Icon.svelte`, `Widget.svelte` and agent-only `commands.ts` have
-fixed root roles. Two disconnected Vite graphs share resolution: the page imports the
+fixed root roles. The UI and definition graphs share resolution: the page imports the
 schema and components, while the definition imports metadata, schema and commands.
-Neither graph rewrites command bodies or substitutes component tokens. The restricted
+A private capture graph compiles synchronous Svelte SSR for Widget.svelte and eligible
+Icon.svelte and Export.svelte roles. It includes each closure's component CSS and explicit global CSS imports from the
+UI graph, without copying other components' scoped styles. Takumi uses tolerant CSS
+parsing, so unsupported declarations do not refuse a whole shared stylesheet.
+The graphs do not rewrite command bodies or substitute component tokens. The restricted
 definition evaluator returns a declaration for `BuildInput`. Rust checks that input and the explicit resource inventory before
 packing. Imported images, fonts and CSS URLs become content-addressed media resources;
 unimported files and `public/` are never copied.
 
 The immutable `app` row contains catalog columns, compatibility markers and one
 `definition_json`: the window, ordered theme, original document descriptor, views and
-command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`
+command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`, `widget.js`, `icon.js` and `export.js`,
 and media. Pack inserts assets before the app row, whose presence seals them. Attachments
 and artwork have their own mutable lifecycles. Initial values seed the history's first snapshot; the authored schema module also includes
 those creation defaults. There is no JSON mirror of saved document state.
@@ -119,7 +123,7 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | File | `crates/hitslop-core/src/file/` (feature `storage`, native and browser) | The `.slop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
 | Storage | `crates/hitslop-core/src/store/`, `registry.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
 | Engine | `crates/slop-engine` | Authoring validation and packing; document creation, inspection, and requests on macOS and Linux |
-| Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations and stored commands; ABI-specific preludes, sandbox and execution limits |
+| Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations, stored commands and native image capture; ABI-specific preludes, sandbox and execution limits |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Sync | `crates/hitslop-core/src/sync/`, `owner/actor/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
@@ -342,10 +346,15 @@ a file without artwork shows the `.slop` document icon.
 The page barrier sends unsent text, waits for queued writes and attachment imports, then
 flushes; it never joins a flush that already passed its drain point. Inputs stay
 enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
-fresh read-only pages from saved state. For an open document, the core first backs up
+independent read-only renderers from saved state. For an open document, the core first backs up
 SQLite after the page drain and save; the temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
-WebKit rendering. A dedicated `export` view hides the editor before layout; without
+rendering. Native icon and export programs run synchronous Svelte SSR and Takumi in
+the restricted Rust child. The build retains WebKit for browser-dependent capture
+closures, with a diagnostic; missing native programs use the embedded browser view.
+A declared native program failure is reported instead of silently changing engines.
+PDF remains on WebKit; the vector PDF backend is a separate local spike pending a
+product decision. A dedicated `export` view avoids mounting the editor; without
 one, a fresh `view` renders its default local UI state. Capture never changes the open
 editor's focus, selection, scroll, frame or selected tab.
 
@@ -371,10 +380,35 @@ refuses, leaves the blob unreferenced until the document closes.
 
 An optional embedded `Widget.svelte` renders small, medium and large PNGs from one
 saved snapshot, with family and viewport props and the document's effective theme.
-It never falls back to an export or preview. Closing an eligible document after edits or with missing cached images publishes
-the three images into a disposable App Group cache; ordinary saves do not capture.
+It never falls back to an export or preview. A private synchronous Svelte bundle runs in
+QuickJS, then Takumi renders all three canvases in the same restricted child. The owner
+supplies one saved source; authored execution and rasterization never run in the owner
+or WidgetKit extension. The renderer uses portable default fonts and color emoji;
+packaged @font-face fonts are registered with their authored family aliases per batch.
+It does not discover system fonts or fetch remote resources. Each batch retains the
+3-second process watchdog and CPU limit, a 256 MiB QuickJS heap and an 8 MiB reply cap.
+Linux additionally limits address space to 2 GiB; on macOS the parent samples resident
+memory and terminates a widget child above 512 MiB. This is a polling threshold, not a
+hard allocation ceiling.
+
+Successful saves coalesce for one second before capturing; opening a document with
+missing cache also schedules capture. Closing an eligible document after edits or with
+missing cached images publishes the three images into a disposable App Group cache.
+The running app watches cached source files, including saves made by a closed CLI
+owner. Events coalesce before comparing a core-produced freshness fingerprint
+with the version that produced the image. It combines the saved Loro version, the
+installed evaluator's bytes (including Takumi and bundled fonts), and widget canvases
+and scale. Startup and reopen perform the same check, even without a refresh interval.
+Updating the renderer refreshes unchanged documents; artwork-only writes do not.
+The evaluator digest is computed off the main thread and cached against file identity,
+size and modification/change times. A helper changed during capture cannot publish.
+The fingerprint travels with the rendered snapshot, so a newer save cannot be marked
+fresh by an older capture. Watching starts with a version recheck to cover saves made
+while the first capture was running.
 The owner still controls the close barrier and document artwork. A widget capture or
-cache failure keeps the previous generation and does not become a save failure.
+cache failure keeps the previous generation and does not become a save failure. Older
+cache tokens are simply stale: the previous images stay visible until replacement
+succeeds. This disposable cache policy does not change the document format.
 
 One configurable WidgetKit extension offers the three sizes. Its AppIntents `Document`
 parameter lists successfully captured documents. The extension reads presentation
@@ -398,7 +432,7 @@ The running Mac app queries active WidgetKit configurations, deduplicates docume
 and serializes due captures using a tolerant background activity. Close captures bypass
 that queue and do not rewrite document artwork when only widget images are missing. It skips missed
 intervals after sleep. Open documents use the owner save/copy barrier; closed ones use
-the read-only snapshot path. Quitting stops work and leaves cached images. WidgetKit
+the read-only snapshot path. Quitting stops captures and file watchers and leaves cached images. WidgetKit
 controls visible reload timing. The `slop dev` composition selector previews all three families with HMR. iOS
 background capture remains follow-up work. See the [platform spike evidence](evidence/widget-images-2026-10-11.md).
 

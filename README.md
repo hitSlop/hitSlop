@@ -269,12 +269,15 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 <div class="wins-icon">{doc.current.wins}</div>
 ```
 
-`App.svelte` is the editor. Two optional files supply capture components:
+`App.svelte` is the editor. Optional files supply capture components:
 
 - `Export.svelte` supplies the layout for previews and PNG/PDF exports. Use normal document flow so long content can expand. Without this component, hitSlop renders a fresh App from saved data with its default local view; mark controls with `data-slop-export="hide"` to leave them out.
 - `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Without it, Finder can use the saved preview or the generic document icon.
+- `Widget.svelte` supplies small, medium and large desktop images from saved data. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
 
 hitSlop refreshes the Finder preview and icon when you close the document. Register renders the template's initial artwork from starting values.
+
+Widgets and eligible icon/preview/PNG views render with Takumi in the restricted Rust child. Browser-dependent icon/export views and PDF use WebKit. Quick Look reads the saved artwork.
 
 See [icons, previews, and exports](apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) for capture details and size limits.
 

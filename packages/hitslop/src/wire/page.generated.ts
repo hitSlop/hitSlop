@@ -35,6 +35,15 @@ export type SpeechOutcome = { "status": "transcribed", text: string, locale: str
  */
 export type SpeechUnavailable = "notDeclared" | "host" | "system" | "locale" | "permission" | "format";
 
+export type ViewCaptureKind = "icon" | "preview" | "export";
+
+export type ViewRenderRequest = { kind: ViewCaptureKind, width: number, height: number, snapshot: unknown, theme: { [key in string]: string }, };
+
 export type WidgetFamily = "small" | "medium" | "large";
+
+/**
+ * One immutable saved snapshot, never a second document engine.
+ */
+export type WidgetRenderRequest = { snapshot: unknown, theme: { [key in string]: string }, viewports: Array<WidgetViewport>, };
 
 export type WidgetViewport = { family: WidgetFamily, width: number, height: number, };

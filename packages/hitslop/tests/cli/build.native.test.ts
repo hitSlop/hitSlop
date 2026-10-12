@@ -59,9 +59,9 @@ test("dedicated capture components share the document and mode without mounting 
       `
       <script lang="ts">
         import doc from "./schema";
-        const previous = (globalThis as any).captureFields;
-        if (previous && doc.fields !== previous) throw new Error("Child received another document");
-        (globalThis as any).captureFields = doc.fields;
+        const previous = (globalThis as any).captureSnapshot;
+        if (previous && doc.current !== previous) throw new Error("Child received another document");
+        (globalThis as any).captureSnapshot = doc.current;
       </script>
       <h1>{doc.current.title}</h1>
     `,
@@ -69,8 +69,8 @@ test("dedicated capture components share the document and mode without mounting 
     await writeFile(
       join(source, "App.svelte"),
       `
-      <script lang="ts">
-        throw new Error("The editor mounted during a dedicated capture");
+      <script module lang="ts">
+        throw new Error("The editor module evaluated during a native capture");
       </script>
     `,
     );

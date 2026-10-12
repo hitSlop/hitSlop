@@ -13,6 +13,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     EngineRequest::export_all(&config)?;
     EngineReply::export_all(&config)?;
     BuildInput::export_all(&config)?;
+    hitslop_core::widgets::WidgetRenderRequest::export_all(&config)?;
+    hitslop_core::capture::ViewRenderRequest::export_all(&config)?;
     Batch::export_all(&config)?;
     OwnerState::export_all(&config)?;
     Publication::export_all(&config)?;

@@ -230,6 +230,33 @@ Optional `Widget.svelte` receives `WidgetProps` from `hitslop/svelte`: `family`,
 It draws saved document state and theme into a fixed canvas; content outside the canvas is clipped.
 Use the `slop dev` Preview selector for Editor, Small widget, Medium widget and Large widget.
 Switching preserves accepted edits; component and CSS changes update the selected view live.
-The preview warns when the widget target overflows. The Mac app captures all three sizes on
-close after edits or when cached images are missing. Optional `widget.refreshMinutes` in `slop.ts`
+The browser preview helps compose the widget, but native output uses Takumi and can differ.
+Review an actual native capture before shipping. The Mac app captures all three sizes after
+successful saves (coalesced for one second), on opening when cached state is stale or missing, and on close
+after edits. While hitSlop runs it also watches cached source files for closed-document
+edits, and checks for missed edits on startup. Renderer and bundled-font updates
+also invalidate cached images without a document edit. Quitting retains the last image.
+A failed refresh keeps the previous generation. Publishing replaces the complete image generation, then requests a WidgetKit
+reload; the OS decides when that reload is displayed. Optional `widget.refreshMinutes` in `slop.ts`
 requests approximate refresh while the app runs; authoring accepts 15–1440 minutes.
+
+Widget rendering uses synchronous Svelte SSR in an isolated Rust child. Read `doc.current`;
+document handles and writes are unavailable. Do not rely on `onMount`, DOM measurement,
+canvas, browser globals, async/await or capture preparation hooks for widget content.
+Use font longhands, flexbox or numeric grid placement, and SVG attributes/currentColor.
+The build collects CSS; omit `css="injected"` from Svelte options. This first native path
+supports bundled PNG and SVG images.
+Container queries, named grid areas and page CSS inside inline SVG are not portable.
+Like Takumi's HTML API, native capture ignores unsupported CSS declarations and rules;
+review the native images, since a successful capture does not guarantee browser fidelity.
+Icons and synchronous export views use this same constrained renderer. Browser-dependent
+icon/export closures retain WebKit, with build diagnostics; widgets require native support.
+PDF stays on WebKit while the vector backend is evaluated separately.
+
+The renderer bundles Geist (sans), Newsreader (serif), Geist Mono, converted Apple color emoji and Noto Sans Symbols 2 for text symbols.
+It does not discover platform fonts. Import additional fonts with `@font-face` and CSS
+`url()`; the document packages their bytes and the renderer registers their family aliases,
+weights and normal/italic styles for each batch. Variable font ranges preserve the font's
+intrinsic weight range. You may switch between packaged families based on saved state.
+`local()`-only or remote font sources cannot render. Other scripts need a bundled font
+with the required glyphs; the default set does not promise universal Unicode coverage.

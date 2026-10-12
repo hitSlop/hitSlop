@@ -23,6 +23,14 @@ pub fn restrict() -> Result<(), String> {
                 return Err("Cannot limit command process".into());
             }
         }
+        // Darwin refuses finite RLIMIT_AS; its parent monitors resident memory instead.
+        #[cfg(target_os = "linux")]
+        {
+            let limit = libc::rlimit { rlim_cur: 2 << 30, rlim_max: 2 << 30 };
+            if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                return Err("Cannot limit evaluator address space".into());
+            }
+        }
     }
     platform()
 }

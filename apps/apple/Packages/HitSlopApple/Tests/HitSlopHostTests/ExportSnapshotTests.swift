@@ -13,23 +13,7 @@ extension HostTests {
   @Test @MainActor func widgetCapturesSavedStateAtEveryFamilySize() async throws {
     let root = try contractFixture { stage in
       try Fixtures.updateApp(stage) { $0["views"] = ["export": false, "icon": false, "widget": [:]] as [String: Any] }
-      try Fixtures.writeApp(
-        """
-        export default { mount(ctx, target) {
-          const surface = document.createElement('section');
-          surface.style.cssText = 'width:100vw;height:100vh;margin:0;';
-          document.body.append(surface);
-          ctx.capture.onPrepare((mode, signal, widget) => {
-            if(mode === 'widget') surface.textContent = widget.family + ':' + widget.width + ':' + ctx.document.current.title;
-          });
-          const stop = ctx.capture.registerTarget('widget', {
-            element: surface,
-            prepare() { surface.style.background = ctx.document.current.title === 'Widget saved' ? '#ff0000' : '#0000ff'; },
-            restore() {}
-          });
-          return { unmount() { stop(); surface.remove(); } };
-        } };
-        """, to: stage)
+      try Fixtures.addWidget(stage)
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)

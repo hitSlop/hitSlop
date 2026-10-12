@@ -11,10 +11,11 @@ import {
 import { portableAssetURLs } from "./asset-url-transform";
 import { declaresModuleState, sharedStateIn } from "./capture-state";
 import { resourceKey, bytesOf, typeOf, type Emitted } from "./definition-resources";
+import { buildCapture, browserCaptureReasons } from "./capture-build";
 export type DefinitionBuildOptions = { alias?: Record<string, string> };
 const virtualEntry = "\0hitslop-definition-entry";
 
-/** Build two disconnected graphs and collect Vite's complete resource inventory. */
+/** Build disconnected role graphs and collect Vite's complete resource inventory. */
 export async function buildGraphs(source: string, options: DefinitionBuildOptions) {
   let sdk = "";
   const publicFiles = await readdir(join(source, "public")).catch(
@@ -32,6 +33,7 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
   const inputs = { ui: new Set<string>(), definition: new Set<string>() };
   const outputs = { ui: new Map<string, Emitted>(), definition: new Map<string, Emitted>() };
   const referencedUIAssets = new Set<string>();
+  const globalStyles = new Set<string>();
   // The UI's module graph, and the project's modules in it with top-level $state.
   const uiImports = new Map<string, string[]>();
   const statefulModules = new Set<string>();
@@ -87,6 +89,8 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
           const clean = (id: string) => id.split("?", 1)[0]!;
           for (const id of this.getModuleIds()) {
             if (!id.startsWith("\0")) inputs[mode].add(clean(id));
+            if (!headless && !id.startsWith("\0") && !id.includes("?") && id.endsWith(".css"))
+              globalStyles.add(id);
             if (!headless)
               uiImports.set(clean(id), [...(this.getModuleInfo(id)?.importedIds ?? [])].map(clean));
             // The host's own runtime, not an author folder that happens to be named shell.
@@ -169,7 +173,7 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
     }
     // Captures render saved state in a fresh page, so a module the editor sets shows only
     // its initial value there, even when the editor is reused as the export component.
-    for (const role of ["export", "icon"] as const) {
+    for (const role of ["export", "icon", "widget"] as const) {
       const component = roles[role];
       if (!component) continue;
       const shared = sharedStateIn(component, uiImports, statefulModules);
@@ -177,6 +181,32 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
         throw new Error(
           `${component} (the ${role} view) imports ${relative(source, shared)}, whose $state is always its initial value in a capture. Captures render saved state in a fresh page: read doc.current there, and give a component shared with the editor that value as a prop.`,
         );
+    }
+    const usesBrowser = (role: "widget" | "icon" | "export", reasons: string[]) => {
+      if (!reasons.length) return false;
+      if (role === "widget")
+        throw new Error(
+          `Widget rendering is synchronous and cannot use browser services:\n${reasons.join("\n")}`,
+        );
+      console.warn(
+        `${role === "icon" ? "Icon" : "Export"}.svelte uses WebKit:\n${reasons.join("\n")}`,
+      );
+      return true;
+    };
+    for (const role of ["widget", "icon", "export"] as const) {
+      if (roles[role]) {
+        const reasons = await browserCaptureReasons(roles[role], uiImports, sdk);
+        if (usesBrowser(role, reasons)) continue;
+      }
+      const capture = await buildCapture(role, source, sdk, outputs.ui, options, [...globalStyles]);
+      if (!capture) continue;
+      if (usesBrowser(role, capture.unavailable)) continue;
+      outputs.definition.set(`${role}.js`, {
+        key: `${role}.js`,
+        bytes: capture.bytes,
+        mediaType: "text/javascript",
+      });
+      for (const path of capture.dependencies) inputs.ui.add(path);
     }
     return { inputs, outputs, referencedUIAssets, sdk };
   } finally {

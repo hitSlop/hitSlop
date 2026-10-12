@@ -15,6 +15,10 @@ mod child;
 mod sandbox;
 #[cfg(all(feature = "child", not(target_arch = "wasm32")))]
 pub use child::child;
+#[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+mod capture;
+pub const WIDGET_OUTPUT: usize = 8 << 20;
+pub const CAPTURE_OUTPUT: usize = 36 << 20;
 pub const INPUT: usize = 64 << 20;
 pub const OUTPUT: usize = 4 << 20;
 pub const WATCHDOG_MS: u64 = 3000;
@@ -30,12 +34,14 @@ struct Sent<'a> {
     mode: Mode,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Mode {
     #[default]
     Command,
     Definition,
+    Widget,
+    Capture,
 }
 
 /// The bounded envelope used by both native and browser command drivers.

@@ -20,7 +20,7 @@ beforeAll(async () => {
   helpers = join(folder, "hitSlop.app/Contents/Helpers");
   await mkdir(helpers, { recursive: true });
   const build = resolve("apps/apple/Packages/HitSlopApple/.build/debug");
-  for (const name of ["hitslop-native", "HitSlopApple_HitSlopDocument.bundle"])
+  for (const name of ["hitslop-native", "hitslop-evaluator", "HitSlopApple_HitSlopDocument.bundle"])
     await cp(join(build, name), join(helpers, name), { recursive: true });
   const engine = join(folder, "slop-engine");
   await cp(await (await import("../../packages/hitslop/src/cli/engine")).findEngine(), engine);

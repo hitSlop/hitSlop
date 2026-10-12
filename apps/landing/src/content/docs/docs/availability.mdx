@@ -6,6 +6,10 @@ Available: macOS 15.2+ on Apple silicon, bundled and local templates, Recents, n
 document editing, imported file attachments, and PNG/PDF export. Creating, previewing
 and building slops also works on Linux with Bun.
 
+macOS desktop widgets display saved document images in small, medium and large sizes
+when the embedded app includes a widget view. Images refresh while hitSlop runs;
+quitting leaves the last image visible. See [widget setup and refresh behavior](/docs/guides/icons-and-exports/#design-a-macos-widget).
+
 Apps may declare camera and microphone capture. Native on-device speech recognition
 transcribes saved recordings when the Mac supports the language and speech permission
 is granted. It is not available in `slop dev` or browser copies; see

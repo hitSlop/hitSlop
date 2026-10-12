@@ -5,6 +5,63 @@ import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promise
 import { join } from "node:path";
 import { buildDefinition } from "../../src/cli/definition-build";
 import { definitionFixture } from "./definition-fixture";
+import { runInNewContext } from "node:vm";
+import { buildGraphs } from "../../src/cli/definition-config";
+
+test("private widget SSR reads saved state, packages font aliases, and refuses writes and async views", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-widget-"));
+  try {
+    const source = join(root, "source");
+    const options = await definitionFixture(source);
+    const view = '<script>import doc from "./schema"; let {family}=$props();</script><h1>{doc.current.title} {family}</h1>';
+    await writeFile(join(source, "Widget.svelte"), view);
+    const bundle = async () => new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("widget.js")!.bytes);
+    const script = await bundle();
+    const render = (script: string, title: string) => {
+      const context: Record<string, any> = {};
+      runInNewContext(script, context);
+      return JSON.parse(context.__slopWidget(JSON.stringify({snapshot: {title}, theme: {accent: "#123456"}, viewports: [{family: "small", width: 164, height: 164}]})));
+    };
+    const result = render(script, "Saved 😀");
+    expect(result.frames[0].html).toContain("Saved 😀 small");
+    expect(result.frames[0].css).toContain("--slop-accent:#123456");
+    expect(result.fonts[0].family).toBe("Fixture");
+    expect(Buffer.from(result.fonts[0].bytes, "base64")).toEqual(await readFile(join(source, "font.woff2")));
+    expect(render(script, "Another document").frames[0].html).not.toContain("Saved");
+    await writeFile(join(source, "Icon.svelte"), '<script>import doc from "./schema";</script><svg width="512" height="512"><rect width="512" height="512" fill="var(--slop-accent)"/><text>{doc.current.title}</text></svg>');
+    const iconScript = new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("icon.js")!.bytes);
+    const iconContext: Record<string, any> = {};
+    runInNewContext(iconScript, iconContext);
+    const icon = JSON.parse(iconContext.__slopCapture(JSON.stringify({kind:"icon", width:512, height:512, snapshot: {title:"Saved icon"}, theme:{accent:"#123456"}})));
+    expect(icon.frames).toHaveLength(1);
+    expect(icon.frames[0].html).toContain("Saved icon");
+    expect(icon.frames[0].html).toContain('fill="#123456"');
+    const literal = JSON.parse(iconContext.__slopCapture(JSON.stringify({kind:"icon",width:512,height:512,snapshot:{title:"var(--slop-accent)"},theme:{accent:"#123456"}})));
+    expect(literal.frames[0].html).toContain("var(--slop-accent)</text>");
+    await writeFile(join(source, "Export.svelte"), '<script>import doc from "./schema";</script><p>document {doc.current.title}</p>');
+    expect((await buildGraphs(source, options)).outputs.definition.has("export.js")).toBe(true);
+    await writeFile(join(source, "BrowserPart.svelte"), '<script>import {onMount} from "svelte"; onMount(()=>{});</script><p>Browser scene</p>');
+    await writeFile(join(source, "Export.svelte"), '<script>import BrowserPart from "./BrowserPart.svelte";</script><BrowserPart/>');
+    const browserExport = await buildGraphs(source, options);
+    expect(browserExport.outputs.definition.has("export.js")).toBe(false);
+    expect(browserExport.outputs.definition.has("icon.js")).toBe(true);
+    const localeDependency = join(source, "node_modules", "capture-locale");
+    await mkdir(localeDependency, {recursive:true});
+    await writeFile(join(localeDependency, "package.json"), JSON.stringify({name:"capture-locale",type:"module",exports:"./index.js"}));
+    await writeFile(join(localeDependency, "index.js"), 'export const format = value => new Intl.NumberFormat("en").format(value);');
+    await writeFile(join(source, "Export.svelte"), '<script>import {format} from "capture-locale";</script><p>{format(1234)}</p>');
+    const dependencyExport = await buildGraphs(source, options);
+    expect(dependencyExport.outputs.definition.has("export.js")).toBe(false);
+    expect(dependencyExport.outputs.definition.has("icon.js")).toBe(true);
+    for (const write of ['doc.current.title="bad"', 'doc.change(()=>{})', 'doc.fields.title.set("bad")']) {
+      await writeFile(join(source, "Widget.svelte"), view.replace('let {family}', `${write}; let {family}`));
+      const mutation = await bundle();
+      expect(() => render(mutation, "Original")).toThrow();
+    }
+    await writeFile(join(source, "Widget.svelte"), '{#await Promise.resolve(1) then value}<p>{value}</p>{/await}');
+    await expect(bundle()).rejects.toThrow("synchronous");
+  } finally { await rm(root, {recursive: true, force: true}); }
+}, 60000);
 const resourceKey = (bytes: Uint8Array, name: string) => `media/${createHash("sha256").update(bytes).digest("hex")}${extname(name)}`;
 
 test("conditional dependency exports preserve require and import semantics", async () => {

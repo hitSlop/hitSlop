@@ -40,80 +40,132 @@ extension HostTests {
     }
   }
 
-  private func widgetCloseFixture(hold: Bool = false) throws -> URL {
-    return try contractFixture { stage in
+  private func widgetCloseFixture(brokenRenderer: Bool = false) throws -> URL {
+    try contractFixture { stage in
       try Fixtures.addArtwork(stage, name: "preview", bytes: Fixtures.png())
       try Fixtures.updateApp(stage) { $0["views"] = ["export": false, "icon": false, "widget": [:]] as [String: Any] }
-      let app = stage.appendingPathComponent("assets/ui.js")
-      let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
-        of: "const doc = ctx.document;",
-        with: """
-          const doc = ctx.document;
-          let held = false;
-          ctx.capture.onPrepare(mode => {
-            if (!\(hold ? "true" : "false") || mode !== 'widget' || held) return;
-            held = true;
-            return new Promise(resolve => { globalThis.releaseScheduledWidget = resolve; });
-          });
-          const widget = document.createElement('div');
-          widget.style.cssText = 'width:100vw;height:100vh;background:red';
-          widget.hidden = true; document.body.append(widget);
-          ctx.capture.registerTarget('widget', { element: widget,
-            prepare() { widget.hidden = false; }, restore() { widget.hidden = true; } });
-          """)
-      try Data(script.utf8).write(to: app)
+      try Fixtures.addWidget(stage)
+      if brokenRenderer {
+        try Data("globalThis.__slopWidget = () => { throw new Error('capture unavailable'); };".utf8)
+          .write(to: stage.appendingPathComponent("assets/widget.js"))
+      }
     }
   }
 
-  @Test @MainActor func widgetCloseDoesNotWaitForScheduledCapture() async throws {
+  @Test @MainActor func staleWidgetRendererTokensRefreshWithoutEditingAndFailuresKeepTheirImages() async throws {
     _ = NSApplication.shared
-    let scheduledURL = try widgetCloseFixture(hold: true)
-    let closingURL = try widgetCloseFixture()
+    for scenario in ["old renderer", "missing token", "failed refresh"] {
+      let broken = scenario == "failed refresh"
+      let root = try widgetCloseFixture(brokenRenderer: broken)
+      let folder = try Fixtures.folder()
+      defer {
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: folder)
+      }
+      let cache = WidgetCache(root: folder)
+      let png = try Fixtures.png()
+      let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
+      let first = try cache.publish(
+        url: root, title: "Previous renderer", images: images, capturedAt: Date(timeIntervalSince1970: 1),
+        refreshMinutes: nil, sourceVersion: scenario == "missing token" ? nil : "prior-renderer")
+      let saved = try Data(contentsOf: root)
+      var reloads = 0
+      let publisher = SlopWidgetPublisher.shared
+      publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
+      defer { publisher.stop() }
+      await publisher.refresh(ids: [first.id], scheduledIDs: [])
+      let current = try #require(cache.record(for: root))
+      if broken {
+        #expect(current.generation == first.generation)
+        #expect(cache.imageData(current, .small) == images[0].png)
+        #expect(reloads == 0, "a failed refresh must not consume a reload request")
+      } else {
+        #expect(current.generation != first.generation, "\(scenario) must refresh unchanged documents")
+        #expect(current.sourceVersion == (try await SlopRenderer.widgetSourceVersion(url: root)))
+        #expect(reloads == 1)
+        await publisher.refresh(ids: [first.id], scheduledIDs: [])
+        #expect(cache.record(for: root)?.generation == current.generation)
+        #expect(reloads == 1, "unchanged renderer and document must skip duplicate capture")
+      }
+      #expect(try Data(contentsOf: root) == saved, "widget refresh must never save or migrate the document")
+    }
+  }
+
+  @Test @MainActor func savedEditsPublishNewWidgetPixelsAndRequestReloadWithoutClosing() async throws {
+    _ = NSApplication.shared
+    let root = try widgetCloseFixture()
     let folder = try Fixtures.folder()
     defer {
-      try? FileManager.default.removeItem(at: scheduledURL)
-      try? FileManager.default.removeItem(at: closingURL)
+      try? FileManager.default.removeItem(at: root)
       try? FileManager.default.removeItem(at: folder)
     }
     let cache = WidgetCache(root: folder)
-    let png = try Fixtures.png()
-    let record = try cache.publish(
-      url: scheduledURL, title: "Scheduled",
-      images: WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) },
-      capturedAt: Date().addingTimeInterval(-3600), refreshMinutes: 15)
+    var reloads = 0
     let publisher = SlopWidgetPublisher.shared
-    publisher.start(cache: cache) { _ in nil }
+    publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
     defer { publisher.stop() }
-    let scheduled = Task { @MainActor in await publisher.refresh(ids: [record.id]) }
-    var capturePage: WKWebView?
-    let waiting = await eventually(timeout: .seconds(5)) {
-      for window in NSApp.windows {
-        guard let view = window.contentView as? WKWebView else { continue }
-        if (try? await view.evaluateJavaScript("typeof globalThis.releaseScheduledWidget === 'function'")) as? Bool
-          == true
-        {
-          capturePage = view
-          return true
-        }
-      }
-      return false
-    }
-    #expect(waiting)
-    let controller = try await SlopDocumentWindowController.open(url: closingURL)
+    let controller = try await SlopDocumentWindowController.open(url: root)
     controller.window?.moveOffScreen()
     controller.showWindow(nil)
     await controller.waitForPresentation()
-    let finished = Locked(false)
-    let closing = Task { @MainActor in
-      try await controller.finishClose()
-      finished.modify { $0 = true }
+    #expect(await eventually(timeout: .seconds(10)) { cache.record(for: root) != nil })
+    let first = try #require(cache.record(for: root))
+    let oldImage = try #require(cache.imageData(first, .small))
+    let previousReloads = reloads
+    #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
+    #expect(await eventually(timeout: .seconds(10)) { cache.record(for: root)?.generation != first.generation })
+    let newer = try #require(cache.record(for: root))
+    #expect(Fixtures.pixels(cache.imageData(newer, .small)) != Fixtures.pixels(oldImage))
+    #expect(reloads > previousReloads)
+    #expect(controller.session.isReady, "refresh must not close the editor")
+    try await controller.finishClose()
+  }
+
+  @Test @MainActor func closedWidgetEditsRefreshAndRestartCatchesUpWithoutAnInterval() async throws {
+    _ = NSApplication.shared
+    let root = try widgetCloseFixture()
+    let folder = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
     }
-    let independent = await eventually(timeout: .seconds(3)) { finished.value }
-    #expect(independent, "close must finish while an unrelated scheduled renderer is still held")
-    _ = try await capturePage?.evaluateJavaScript("globalThis.releaseScheduledWidget(); true")
-    await scheduled.value
-    try await closing.value
-    #expect(cache.record(for: closingURL) != nil)
+    let cache = WidgetCache(root: folder)
+    let publisher = SlopWidgetPublisher.shared
+    var reloads = 0
+    func start() { publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil }) }
+    start()
+    defer { publisher.stop() }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    controller.window?.moveOffScreen()
+    controller.showWindow(nil)
+    await controller.waitForPresentation()
+    try await controller.finishClose()
+    let first = try #require(cache.record(for: root))
+    let blue = try #require(Fixtures.pixels(cache.imageData(first, .small)))
+    let initialReloads = reloads
+    #expect(!Fixtures.isLocked(root))
+    #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
+    #expect(
+      await eventually(timeout: .seconds(10)) {
+        guard let record = cache.record(for: root) else { return false }
+        return Fixtures.pixels(cache.imageData(record, .small)) != blue
+      }, "a closed-document CLI save must refresh without a declared interval or open window")
+    #expect(reloads > initialReloads)
+    let red = try #require(cache.record(for: root))
+    publisher.stop()
+    #expect(try await command("batch", url: root, setTitle("Changed while quit")).ok)
+    let saved = try Data(contentsOf: root)
+    #expect(cache.record(for: root)?.generation == red.generation, "quit retains the previous image")
+    start()
+    #expect(
+      await eventually(timeout: .seconds(10)) {
+        guard let record = cache.record(for: root), record.generation != red.generation else { return false }
+        return Fixtures.pixels(cache.imageData(record, .small)) == blue
+      }, "startup must catch up even when the widget has no refresh interval")
+    #expect(try Data(contentsOf: root) == saved, "background refresh must never write the source")
+    let caughtUp = try #require(cache.record(for: root))
+    await publisher.refresh(ids: [caughtUp.id])
+    #expect(cache.record(for: root)?.generation == caughtUp.generation, "unchanged state must not render again")
   }
 
   // The capture page waits for this test to release it. The window must hand off before

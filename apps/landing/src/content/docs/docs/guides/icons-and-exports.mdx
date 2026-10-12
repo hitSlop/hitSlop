@@ -1,6 +1,6 @@
 ---
-title: Icons, previews, and exports
-description: Design live icons and export views, then capture native PNG and PDF output.
+title: Icons, widgets, previews, and exports
+description: Design icons, desktop widgets and export views from the same saved document.
 ---
 
 The editor, Finder artwork, and exported document should feel like the same object. They can have different layouts while reading the same saved data and theme.
@@ -16,7 +16,7 @@ Use `App.svelte` for the editor and optional root `Export.svelte` and `Icon.svel
 </main>
 ```
 
-Captures render saved state in a fresh page, with transient state at its defaults. A dedicated export mounts without the editor and owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Without `Export.svelte`, preview and export mount `App.svelte`; mark composers, menus and tabs with `data-slop-export="hide"` and make any scrolling layout adjustments in your CSS. The default Quick Look preview is a 2× snapshot of the window that preserves its silhouette. An export component (`Export.svelte`):
+Captures render saved state independently of the editor, with transient state at its defaults. A dedicated export owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Without `Export.svelte`, preview and export mount `App.svelte`; mark composers, menus and tabs with `data-slop-export="hide"` and make any scrolling layout adjustments in your CSS. The default preview preserves the window silhouette, and Quick Look displays the saved artwork. An export component (`Export.svelte`):
 
 ```svelte
 <script lang="ts">
@@ -38,11 +38,26 @@ Captures render saved state in a fresh page, with transient state at its default
 ```
 
 Use the app's existing document facade in capture components. Captures render saved
-data in a fresh read-only page. If an export should show a selected tab or report, save
+data in an independent read-only renderer. If an export should show a selected tab or report, save
 that choice in the document; transient editor state is not carried into the capture.
 Without `Export.svelte`, a fresh rendering of `App.svelte` with its default local state is the fallback.
 An export or icon component that throws fails that capture without changing the live
-editor. A later attempt gets a fresh rendering page.
+editor. A later attempt gets a fresh renderer.
+
+Eligible icons, previews and PNG exports use synchronous Svelte rendering and Takumi
+in a restricted Rust process. Use `doc.current`, ordinary flexbox, numeric grid
+placement, explicit font properties, and SVG attributes/currentColor. Container
+queries, named grid areas and page CSS inside inline SVG are unsupported; ignored
+CSS can change the result, so review native captures. Browser-dependent icon/export
+components retain WebKit, and the build explains why. Widgets require the native
+subset. A native rendering failure is reported rather than silently switching engines.
+PDF currently uses WebKit, so its typography or layout may differ from PNG.
+
+Default sans, serif, monospace, Apple color emoji and text-symbol fonts are bundled.
+Package additional fonts with `@font-face` and imported `url()` resources; system-font
+discovery and remote font loading are unavailable. Fonts need glyph coverage for the
+languages your document uses. Do not use Svelte's `css="injected"`; the build collects
+the capture component's styles and global CSS.
 
 ## Design a macOS widget
 
@@ -63,10 +78,10 @@ Add an optional root `Widget.svelte` to compose the same saved document for the 
 
 Families are `small`, `medium` and `large`. Fit the provided canvas using ordinary CSS;
 reuse components, imported assets and theme colors. The host captures a fixed canvas
-at 2× in a fresh read-only page. Only the widget view mounts. WidgetKit clips its outer
+at 2× through the native renderer. Only the widget component renders. WidgetKit clips its outer
 corners; avoid adding an outer shadow or padding just to simulate the system frame.
 
-Create a document from the rebuilt template, open it in hitSlop, then close it to publish
+Create a document from the rebuilt template and open it in hitSlop to generate
 its widget images. Add a hitSlop widget from macOS's widget gallery and choose the
 document under **Edit Widget → Document**. Only documents containing `Widget.svelte` with a
 successful capture appear. Existing documents retain their embedded app, so rebuilding
@@ -88,8 +103,15 @@ family. Accepted edits survive switching, and component/CSS changes update the p
 live. Widget canvases clip overflow; the preview warns when content extends beyond
 its canvas.
 
-By default, images refresh on close. To request occasional recaptures while hitSlop is
-running, add `widget: { refreshMinutes: 30 }` to `slop.ts`. Whole-minute intervals from
+Successful saves refresh images after a one-second debounce, including edits while
+the editor stays open. The running app watches cached documents for closed-document
+edits, and catches missed changes at startup or reopen. Updating the renderer or
+its bundled fonts also refreshes unchanged cached documents. A failed capture retains
+the previous images. The browser preview uses a different renderer; inspect native
+images before relying on its appearance.
+
+To request occasional recaptures while hitSlop is running, add
+`widget: { refreshMinutes: 30 }` to `slop.ts`. Whole-minute intervals from
 15 to 1440 are accepted and require `Widget.svelte`. Only documents used by placed
 widgets are scheduled. This requests capture attempts, not an exact visible refresh
 rate: macOS controls scheduling and WidgetKit controls display updates. Quitting
@@ -142,9 +164,9 @@ Successful responses, respectively (your paths will differ):
 /Users/you/Documents/My.pdf
 ```
 
-An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy in a fresh page. Closed documents also render from saved state. Both use default local UI state and the saved theme. The open editor is not used as the rendering workspace.
+An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both use default local UI state and the saved theme. The open editor is not used as the rendering workspace.
 
-The editor barrier lasts through saving and copying; rendering then proceeds independently. Capture waits for fonts, visible images and a stable layout in the fresh page. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.
+The editor barrier lasts through saving and copying; rendering then proceeds independently. Browser capture waits for fonts, visible images and a stable layout in its fresh page. Native capture loads packaged fonts and resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.
 
 Completed captures publish atomically before their deadline. If the acknowledgement is lost, inspect the destination before retrying.
 

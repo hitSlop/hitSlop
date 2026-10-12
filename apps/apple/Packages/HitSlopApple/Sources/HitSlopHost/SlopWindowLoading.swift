@@ -8,6 +8,7 @@ import WebKit
 extension SlopDocumentWindowController {
   public func pageSessionDidBecomeReady(_ session: DocumentSession) {
     toolbar.republishControls()
+    SlopWidgetPublisher.shared.opened(session)
     failures.rendererRecovered(telemetry: telemetry)
     recordStartup("page-ready")
     #if DEBUG

@@ -9,6 +9,7 @@ private struct Entry: TimelineEntry {
   let id: String?
   let title: String
   let image: NSImage?
+  var generation: String? = nil
 }
 
 private struct Provider: AppIntentTimelineProvider {
@@ -27,7 +28,9 @@ private struct Provider: AppIntentTimelineProvider {
     }
     let data = cache.imageData(
       record, context.family == .systemSmall ? .small : context.family == .systemMedium ? .medium : .large)
-    return Entry(date: Date(), id: record.id, title: record.title, image: data.flatMap { NSImage(data: $0) })
+    return Entry(
+      date: Date(), id: record.id, title: record.title, image: data.flatMap { NSImage(data: $0) },
+      generation: record.generation)
   }
 }
 
@@ -39,6 +42,7 @@ private struct ImageView: View {
         Image(nsImage: image).renderingMode(.original).resizable()
           .widgetAccentedRenderingMode(.fullColor).scaledToFit()
           .accessibilityLabel("Open \(entry.title)")
+          .id(entry.generation)
       } else {
         VStack(spacing: 8) {
           Text(entry.title).font(.headline)

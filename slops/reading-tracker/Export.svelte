@@ -54,3 +54,13 @@ const view = $derived(readingView(doc.current));
         <span>One book at a time.</span>
       </footer>
     </article>
+
+<style>
+/* Explicit placement also works in the native capture renderer. */
+.masthead { font-size: 44px; }
+.bookSpine { grid-column: 1; grid-row: 1 / span 2; }
+.bookInfo { grid-column: 2; grid-row: 1; }
+.stars { grid-column: 2; grid-row: 2; }
+.statusPill { grid-column: 3; grid-row: 1 / span 2; }
+.exportNotes { grid-column: 2 / 4; grid-row: 3; }
+</style>
