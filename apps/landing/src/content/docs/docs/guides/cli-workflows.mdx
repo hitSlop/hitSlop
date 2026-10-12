@@ -15,11 +15,10 @@ Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx
 | --- | --- |
 | `bunx hitslop COMMAND` | Run the authoring CLI without a global install. |
 | `slop COMMAND` | After `bun install -g hitslop`, with Bun's bin directory on your PATH. |
-| `"/Applications/hitSlop.app/Contents/Helpers/slop-engine" COMMAND` | Run document commands directly, without Node or Bun. |
 
 Use `bunx` or `slop` for the examples below. Authoring builds, browser preview, document creation and document edits run on macOS or Linux. Register, open, native artwork and PNG/PDF export use the installed Mac app, which need not already be running.
 
-For an app installed under `~/Applications`, use `"$HOME/Applications/hitSlop.app/Contents/Helpers/slop-engine"` in the native commands.
+The npm package includes its document engine. Native rendering uses the helper in the matching Mac app, discovered automatically in `/Applications` or `~/Applications`.
 
 Append `--help` to any command to see its arguments.
 

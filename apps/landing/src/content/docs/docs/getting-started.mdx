@@ -31,7 +31,8 @@ and timings vary). `bun run dev` starts a long-running preview and prints:
 Disposable preview: http://localhost:5173/
 ```
 
-The port may differ if that one is busy. Stop the preview before continuing with builds.
+If port 5173 is busy, choose another with `bun run dev --port 5174`.
+Stop the preview before continuing with builds.
 
 Alternatively, install the CLI with `bun install -g hitslop` and run `slop init tiny-counter`. The generated project pins its own `hitslop` version; prefer its `bun run` scripts after creation.
 
