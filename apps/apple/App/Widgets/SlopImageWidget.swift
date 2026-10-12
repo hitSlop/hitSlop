@@ -19,7 +19,7 @@ private struct Provider: AppIntentTimelineProvider {
   func timeline(for configuration: SlopWidgetIntent, in context: Context) async -> Timeline<Entry> {
     Timeline(entries: [entry(configuration, context: context)], policy: .never)
   }
-  private func empty() -> Entry { Entry(date: Date(), id: nil, title: "Choose a Slop", image: nil) }
+  private func empty() -> Entry { Entry(date: Date(), id: nil, title: "Choose a document", image: nil) }
   private func entry(_ configuration: SlopWidgetIntent, context: Context) -> Entry {
     guard let selection = configuration.slop else { return empty() }
     guard let cache = try? WidgetCache.shared(), let record = cache.record(id: selection.id) else {
@@ -44,8 +44,8 @@ private struct ImageView: View {
           Text(entry.title).font(.headline)
           Text(
             entry.id == nil
-              ? "Edit Widget to choose a document. Open and close a slop with a widget to add it here."
-              : "Open this slop in hitSlop to refresh its widget."
+              ? "Right-click, then choose Edit Widget → Document."
+              : "Open this document in hitSlop to refresh its widget."
           )
           .font(.caption).multilineTextAlignment(.center)
         }.padding()
@@ -62,8 +62,8 @@ private struct ImageView: View {
     AppIntentConfiguration(kind: WidgetCache.kind, intent: SlopWidgetIntent.self, provider: Provider()) {
       ImageView(entry: $0)
     }
-    .configurationDisplayName("Slop")
-    .description("A piece of your slop, just as you made it.")
+    .configurationDisplayName("Document")
+    .description("Keep a slop on your desktop. Click to open it.")
     .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     .contentMarginsDisabled()
     .containerBackgroundRemovable(false)

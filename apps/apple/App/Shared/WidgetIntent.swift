@@ -3,11 +3,21 @@ import Foundation
 import HitSlopWidgets
 
 public struct SlopWidgetEntity: AppEntity {
-  public static let typeDisplayRepresentation: TypeDisplayRepresentation = "Slop"
+  public static let typeDisplayRepresentation: TypeDisplayRepresentation = "Document"
   public static let defaultQuery = SlopWidgetQuery()
   public let id: String
   public let title: String
-  public var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(title)") }
+  public var displayRepresentation: DisplayRepresentation {
+    let image: DisplayRepresentation.Image
+    if let cache = try? WidgetCache.shared(), let record = cache.record(id: id),
+      let png = cache.imageData(record, .small)
+    {
+      image = .init(data: png, isTemplate: false)
+    } else {
+      image = .init(systemName: "doc")
+    }
+    return DisplayRepresentation(title: "\(title)", image: image)
+  }
   public init(id: String, title: String) {
     self.id = id
     self.title = title
@@ -27,9 +37,9 @@ public struct SlopWidgetQuery: EntityQuery {
 }
 
 public struct SlopWidgetIntent: WidgetConfigurationIntent {
-  public static let title: LocalizedStringResource = "Choose a Slop"
+  public static let title: LocalizedStringResource = "Choose a Document"
   public static let description = IntentDescription(
-    "Choose a document with a widget. Open and close it in hitSlop to make it available here.")
-  @Parameter(title: "Slop") public var slop: SlopWidgetEntity?
+    "Choose the document to show on your desktop.")
+  @Parameter(title: "Document") public var slop: SlopWidgetEntity?
   public init() {}
 }

@@ -376,7 +376,7 @@ the three images into a disposable App Group cache; ordinary saves do not captur
 The owner still controls the close barrier and document artwork. A widget capture or
 cache failure keeps the previous generation and does not become a save failure.
 
-One configurable WidgetKit extension offers the three sizes. Its AppIntents `Slop`
+One configurable WidgetKit extension offers the three sizes. Its AppIntents `Document`
 parameter lists successfully captured documents. The extension reads presentation
 records and PNGs only. The app and extension compile the shared intent source directly
 so each bundle owns resolvable AppIntents metadata; the app passes active document IDs
