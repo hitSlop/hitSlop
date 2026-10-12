@@ -100,6 +100,24 @@ test("a declaration without commands is evaluated but stores no command program"
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);
 
+test("Widget.svelte is a dedicated UI role and scheduling requires that role", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
+  try {
+    const source = join(root, "source"), stage = join(root, "stage");
+    const options = await definitionFixture(source);
+    const entry = await readFile(join(source, "slop.ts"), "utf8");
+    await writeFile(join(source, "slop.ts"), entry.replace("title:'Fixture'", "title:'Fixture',widget:{refreshMinutes:30}"));
+    await expect(buildDefinition(source, stage, options)).rejects.toThrow("requires a root Widget.svelte");
+    await writeFile(join(source, "Widget.svelte"), '<script lang="ts">import art from "./export.svg"; let {family,width,height} = $props();</script><img src={art} alt=""/><p>{family} {width}×{height}</p>');
+    const built = await buildDefinition(source, stage, options);
+    expect(built.input.declaration.views.widget).toEqual({refreshMinutes:30});
+    expect(built.dependencies.ui).toContain(join(source, "Widget.svelte"));
+    expect(built.dependencies.definition).not.toContain(join(source, "Widget.svelte"));
+    await writeFile(join(source, "slop.ts"), entry);
+    expect((await buildDefinition(source, stage, options)).input.declaration.views.widget).toEqual({});
+  } finally { await rm(root, {recursive:true, force:true}); }
+}, 60000);
+
 test("role names and graph boundaries reject misplaced code", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
   try {

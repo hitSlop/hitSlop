@@ -148,7 +148,7 @@ Installing hitSlop does not replace a document's embedded app.
 `slop.ts` exports metadata through `defineSlop({ slug, title, description, author,
 categories, window, theme, artwork?, capabilities? })`. Required `schema.ts` default-exports
 `defineDocument(fields, { initial })`; `initial` is optional when all fields have defaults
-or may be omitted. Required `App.svelte` is the editor; `Export.svelte`, `Icon.svelte`
+or may be omitted. Required `App.svelte` is the editor; `Export.svelte`, `Icon.svelte`, `Widget.svelte`
 and `commands.ts` are optional. These root names are case-sensitive. Import CSS from
 components. The page imports `schema.ts`, so
 its creation defaults ship in the page bundle; metadata and command bodies do not.
@@ -222,3 +222,14 @@ locale), `permission` (the person declined speech recognition for hitSlop), or
 `format` (this provider cannot transcribe the recording format). `cancelled`
 means the window closed, the interface reloaded or an export began first; `failed` means
 the recording could not be read or recognized. Keep a usable path without a transcript.
+
+
+### Widget authoring
+
+Optional `Widget.svelte` receives `WidgetProps` from `hitslop/svelte`: `family`, `width`, `height`.
+It draws saved document state and theme into a fixed canvas; content outside the canvas is clipped.
+Use the `slop dev` Preview selector for Editor, Small widget, Medium widget and Large widget.
+Switching preserves accepted edits; component and CSS changes update the selected view live.
+The preview warns when the widget target overflows. The Mac app captures all three sizes on
+close after edits or when cached images are missing. Optional `widget.refreshMinutes` in `slop.ts`
+requests approximate refresh while the app runs; authoring accepts 15–1440 minutes.

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, type Snippet } from "svelte";
   import type { SlopContext } from "../abi";
-  let { ctx, kind, content, assertRenderable }: { ctx: SlopContext; kind: "export" | "icon"; content: Snippet; assertRenderable: () => void } = $props();
+  let { ctx, kind, content, assertRenderable }: { ctx: SlopContext; kind: "export" | "icon" | "widget"; content: Snippet; assertRenderable: () => void } = $props();
   let active = $state(false);
   let failure: { error: unknown } | undefined;
   function register(element: HTMLDivElement) {
@@ -24,7 +24,8 @@
 <!-- The icon stage is a fixed 512px square with centered art. -->
 <div use:register hidden={!active} data-slop-capture-target={kind}
   style:width={kind === "icon" ? "512px" : "100%"}
-  style:height={kind === "icon" ? "512px" : undefined}
+  style:height={kind === "icon" ? "512px" : kind === "widget" ? "100vh" : undefined}
+  style:overflow={kind === "widget" ? "hidden" : undefined}
   style:display={kind === "icon" && active ? "grid" : undefined}
   style:place-items={kind === "icon" ? "center" : undefined}>
   {#if active}

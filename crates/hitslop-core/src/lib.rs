@@ -37,6 +37,8 @@ pub mod store;
 pub mod sync;
 mod text;
 pub mod theme;
+#[cfg(feature = "storage")]
+pub mod widgets;
 mod wire;
 
 pub use descriptor::validate;

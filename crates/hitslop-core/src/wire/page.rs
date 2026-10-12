@@ -324,6 +324,11 @@ pub enum HostRequest {
         token: String,
         mode: CaptureMode,
     },
+    #[serde(rename = "capture.widget")]
+    CaptureWidget {
+        token: String,
+        viewport: crate::widgets::WidgetViewport,
+    },
     #[serde(rename = "capture.settle")]
     CaptureSettle {
         token: String,

@@ -5,6 +5,7 @@ import "./globals";
 import type { PagePush } from "../wire/page";
 export type PreviewHost = {
   uiURL: string;
+  ready?(): void;
   attachmentURL(id: string): string;
   request(request: unknown): Promise<unknown>;
   onPush(receiver: (pushes: PagePush[]) => void): void;

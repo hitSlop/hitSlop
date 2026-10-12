@@ -1,16 +1,18 @@
 <script lang="ts">
   import { onMount, tick, type Component } from "svelte";
-  import type { CaptureMode } from "../abi";
+  import type { WidgetProps } from "../abi";
   import CaptureTarget from "./CaptureTarget.svelte";
   import { current } from "./context";
   import { notice, notify } from "./notice.svelte";
 
-  let { App, Export, Icon }: {
+  let { App, Export, Icon, Widget }: {
     App: Component;
-    Export?: Component<{ mode: Exclude<CaptureMode, "icon"> }>;
+    Export?: Component<{ mode: "preview" | "export" }>;
     Icon?: Component;
+    Widget?: Component<WidgetProps>;
   } = $props();
-  let mode = $state<Exclude<CaptureMode, "icon">>("preview");
+  let mode = $state<"preview" | "export">("preview");
+  let widget = $state<WidgetProps>();
   const ctx = current();
   const renderer = ctx.capture.isRenderer();
   let editor = $state(!renderer);
@@ -21,9 +23,10 @@
     renderFailure = { error };
     ctx.reportError(error);
   }
-  onMount(() => ctx.capture.onPrepare(async (next, signal) => {
-    if (next !== "icon") mode = next;
-    if (renderer && next !== "icon" && !Export) {
+  onMount(() => ctx.capture.onPrepare(async (next, signal, viewport) => {
+    if (next === "widget") widget = viewport;
+    if (next === "preview" || next === "export") mode = next;
+    if (renderer && (next === "preview" || next === "export") && !Export) {
       editor = true;
       signal.addEventListener("abort", () => { editor = false; renderFailure = undefined; }, { once: true });
       await tick();
@@ -71,6 +74,12 @@
 {#if Icon}
   <CaptureTarget {ctx} kind="icon" {assertRenderable}>
     {#snippet content()}<Icon />{/snippet}
+  </CaptureTarget>
+{/if}
+
+{#if Widget}
+  <CaptureTarget {ctx} kind="widget" {assertRenderable}>
+    {#snippet content()}{#if widget}<Widget {...widget} />{/if}{/snippet}
   </CaptureTarget>
 {/if}
 

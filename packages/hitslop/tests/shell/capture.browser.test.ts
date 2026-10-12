@@ -83,3 +83,21 @@ test("a failed target preparation restores host state and permits a later captur
   });
   expect(result).toEqual({ error: "Authored preparation failed", cleaned: true, text: "Ready", restored: 2 });
 }));
+
+test("widget capture refuses preview fallback and supplies the requested family", () => capturePage(async page => {
+  const result = await page.evaluate(async () => {
+    const capture = (window as any).capture;
+    const viewport = { family: "medium", width: 344, height: 164 };
+    const fallback = await capture.begin("missing", "widget", viewport).then(() => true, () => false);
+    const element = document.createElement("main");
+    element.style.cssText = "width:344px;height:164px";
+    document.body.append(element);
+    let received: unknown;
+    capture.onPrepare((_mode: string, _signal: AbortSignal, widget: unknown) => { received = widget; });
+    capture.registerTarget("widget", { element, prepare() {}, restore() {} });
+    const bounds = await capture.begin("widget", "widget", viewport);
+    await capture.restore("widget");
+    return { fallback, received, width: bounds.width, height: bounds.height, dedicated: bounds.dedicated };
+  });
+  expect(result).toEqual({ fallback: false, received: {family:"medium",width:344,height:164}, width:344, height:164, dedicated:true });
+}));

@@ -39,7 +39,10 @@ export async function appConfig(source: string): Promise<InlineConfig> {
     logLevel: "error",
     resolve: { dedupe: ["svelte"], tsconfigPaths: true },
     optimizeDeps: {
-      entries: [roles.view, ...[roles.export, roles.icon].filter((path): path is string => !!path)],
+      entries: [
+        roles.view,
+        ...[roles.export, roles.icon, roles.widget].filter((path): path is string => !!path),
+      ],
       exclude: ["hitslop"],
     },
     plugins: [app, sveltePlugin()],

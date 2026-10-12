@@ -8,7 +8,7 @@ export function describeApp(
   commands: unknown,
   views: BuildDeclaration["views"],
 ): BuildDeclaration & { artwork?: ArtworkInput } {
-  const { theme, window, artwork, capabilities, ...metadata } = app;
+  const { theme, window, artwork, capabilities, widget, ...metadata } = app;
   if (!document?.descriptor)
     throw new Error("schema.ts must default-export a defineDocument value");
   const set = commands === undefined ? undefined : commandSet(commands);
@@ -16,6 +16,8 @@ export function describeApp(
     throw new Error("commands.ts must default-export defineCommands(document, specs)");
   if (set && set.document !== document)
     throw new Error("commands.ts must pass the schema.ts document to defineCommands");
+  if (widget !== undefined && !views.widget)
+    throw new Error("widget metadata requires a root Widget.svelte");
   return {
     metadata,
     window,
@@ -27,7 +29,7 @@ export function describeApp(
       description: spec.description,
       args: { kind: "object", properties: spec.args },
     })),
-    views,
+    views: { ...views, ...(views.widget ? { widget: widget === undefined ? {} : widget } : {}) },
     capabilities: capabilities ?? [],
     artwork,
   };

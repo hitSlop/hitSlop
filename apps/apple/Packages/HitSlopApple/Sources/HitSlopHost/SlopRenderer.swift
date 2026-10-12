@@ -3,6 +3,7 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 import HitSlopDocument
+import HitSlopWidgets
 import WebKit
 
 @MainActor public enum SlopRenderer {
@@ -33,26 +34,37 @@ import WebKit
 
   /// The artwork a closing window writes into its document: its preview and, when the
   /// app draws one, its icon. A capture that fails is reported and left out.
-  public static func artwork(session: DocumentSession, telemetry: SlopTelemetry, trace: SlopCloseTrace? = nil) async
+  public static func artwork(
+    session: DocumentSession, telemetry: SlopTelemetry, trace: SlopCloseTrace? = nil, widgetURL: URL? = nil,
+    renderArtwork: Bool = true
+  ) async
     -> SlopRenderedArtwork
   {
+    let capturedAt = Date()
+    let widgetIdentity = widgetURL.flatMap { try? WidgetCache.identity($0) }
     do {
       return try await withSavedRenderer(session, trace: trace) { renderer in
         var preview: Data?
         var icon: Data?
-        do {
-          let interval = trace?.begin("Preview capture")
-          defer { trace?.end("Preview capture", interval) }
-          preview = try await capture(session: renderer, output: .previewPNG)
-        } catch {
-          reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
+        if renderArtwork {
+          do {
+            let interval = trace?.begin("Preview capture")
+            defer { trace?.end("Preview capture", interval) }
+            preview = try await capture(session: renderer, output: .previewPNG)
+          } catch {
+            reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
+          }
+          do {
+            let interval = trace?.begin("Icon capture")
+            defer { trace?.end("Icon capture", interval) }
+            icon = try await captureIcon(session: renderer)
+          } catch {
+            reportArtworkFailure(error, reason: .icon, telemetry: telemetry)
+          }
         }
-        do {
-          let interval = trace?.begin("Icon capture")
-          defer { trace?.end("Icon capture", interval) }
-          icon = try await captureIcon(session: renderer)
-        } catch {
-          reportArtworkFailure(error, reason: .icon, telemetry: telemetry)
+        if let widgetURL, let widgetIdentity, renderer.file.views.widget != nil {
+          await SlopWidgetPublisher.shared.capture(
+            renderer: renderer, url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt)
         }
         return SlopRenderedArtwork(preview: preview, icon: icon)
       }
@@ -141,6 +153,56 @@ import WebKit
       configuration.snapshotWidth = 512
       return try SlopPreviewImage.png(from: try await view.takeSnapshot(configuration: configuration))
     }
+  }
+
+  /// All families share one saved snapshot and mount only the dedicated widget view.
+  public static func widgetImages(session: DocumentSession) async throws -> [WidgetImage] {
+    try await withSavedRenderer(session) { try await captureWidgets(session: $0) }
+  }
+  public static func widgetImages(url: URL) async throws -> [WidgetImage] {
+    try await withRenderSession(url: url) { try await captureWidgets(session: $0) }
+  }
+  private static func captureWidgets(session: DocumentSession) async throws -> [WidgetImage] {
+    guard session.file.views.widget != nil else { throw SlopFailure("This slop has no Widget.svelte") }
+    var images: [WidgetImage] = []
+    for viewport in widgetViewports() {
+      let png = try await withCapture(session) { view, token, _ in
+        view.frame.size = CGSize(width: Int(viewport.width), height: Int(viewport.height))
+        guard let json = try await view.callHost(.captureWidget(token: token, viewport: viewport)) as? String else {
+          throw SlopFailure("Could not prepare widget capture")
+        }
+        let bounds = try decodeHostCaptureResult(json: json)
+        let rect = try geometry(bounds)
+        guard bounds.dedicated, abs(rect.minX) < 0.5, abs(rect.minY) < 0.5,
+          abs(rect.width - view.bounds.width) < 0.5, abs(rect.height - view.bounds.height) < 0.5
+        else { throw SlopFailure("Widget capture surface does not match its viewport") }
+        WebViewBackground.set(false, on: view)
+        let configuration = WKSnapshotConfiguration()
+        configuration.rect = view.bounds
+        configuration.snapshotWidth = NSNumber(value: viewport.width)
+        let snapshot = try await view.takeSnapshot(configuration: configuration)
+        // Normalize independently of the backing display's scale: bounded 2× PNGs.
+        let scale = Int(widgetLimits().scale)
+        let size = CGSize(width: Int(viewport.width) * scale, height: Int(viewport.height) * scale)
+        guard
+          let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0), let context = NSGraphicsContext(bitmapImageRep: bitmap)
+        else { throw SlopFailure("Could not create widget image") }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        context.cgContext.clear(CGRect(origin: .zero, size: size))
+        snapshot.draw(in: CGRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        guard let png = bitmap.representation(using: .png, properties: [:]) else {
+          throw SlopFailure("Could not encode widget image")
+        }
+        return png
+      }
+      images.append(WidgetImage(family: WidgetImageFamily(viewport.family), png: png))
+    }
+    return images
   }
 
   /// Capture only a disposable read-only page. Reset the render viewport between
@@ -361,5 +423,15 @@ import WebKit
   }
   private static func restore(_ view: WKWebView, token: String) async throws {
     _ = try await view.callHost(.captureRestore(token: token))
+  }
+}
+
+extension WidgetImageFamily {
+  init(_ family: WidgetFamily) {
+    switch family {
+    case .small: self = .small
+    case .medium: self = .medium
+    case .large: self = .large
+    }
   }
 }

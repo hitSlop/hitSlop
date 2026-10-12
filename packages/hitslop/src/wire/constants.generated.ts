@@ -16,6 +16,7 @@ export const ErrorTextLimit = 4096 as const;
 export const OperationErrorBrand = "slop.operation-error" as const;
 export const SpeechErrorBrand = "slop.speech-error" as const;
 export const SpeechLimits = {"localeBytes":35,"localePattern":"^[A-Za-z][A-Za-z0-9_-]*$","textBytes":1048576} as const;
+export const WidgetViewports = [{"family":"small","height":164,"width":164},{"family":"medium","height":164,"width":344},{"family":"large","height":344,"width":344}] as const;
 export const PushLimits = {"bytes":4194304,"items":256} as const;
 export const ResyncPush = {"type":"resync"} as const;
 export const SocketLimits = {"attachment":16777216,"request":1048576} as const;

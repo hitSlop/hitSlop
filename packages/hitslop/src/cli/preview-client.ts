@@ -47,6 +47,7 @@ hot.on("slop:push", batch => {
 });
 globalThis.__slopPreview = {
   uiURL: "/__app__/assets/ui.js",
+  ready() { window.parent.postMessage({type: "slop:preview-ready", widget: new URL(import.meta.url).searchParams.get("widget") === "true"}, location.origin); },
   attachmentURL(id) { return new URL("/attachments/" + resourceToken + "/" + id, location.href).href; },
   async request(request) {
     await ready.promise;
@@ -61,6 +62,7 @@ globalThis.__slopPreview = {
   },
   onPush(next) { receiver = next; if (pushes.length) next(pushes); pushes = []; },
 };
+hot.on("vite:afterUpdate", () => setTimeout(() => window.parent.postMessage("slop:preview-ready", location.origin), 0));
 hot.send("slop:open", { token });
 await ready.promise;
 await import("/__shell__/boot.js");

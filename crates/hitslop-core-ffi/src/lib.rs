@@ -251,4 +251,5 @@ pub use command::*;
 
 mod native;
 mod page;
+mod widgets;
 pub use native::*;

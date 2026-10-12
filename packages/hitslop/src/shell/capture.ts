@@ -1,19 +1,24 @@
-import type { CaptureMode } from "../sdk/abi";
+import type { CaptureMode, WidgetProps } from "../sdk/abi";
 import type { CaptureTarget as Target } from "../sdk/abi";
 export type { CaptureMode } from "../sdk/abi";
 type CaptureState = {
   style: HTMLStyleElement;
+  widget: boolean;
   target?: Target | undefined;
   controller: AbortController;
   restoring?: Promise<void>;
   inputs: { input: HTMLElement; replacement: HTMLElement; display: string; priority: string }[];
 };
 const timeoutMS = 10_000;
-type Preparation = (mode: CaptureMode, signal: AbortSignal) => void | Promise<void>;
+type Preparation = (
+  mode: CaptureMode,
+  signal: AbortSignal,
+  widget?: WidgetProps,
+) => void | Promise<void>;
 
 /** Captures run in disposable read-only pages, never in the interactive editor. */
 export function createCaptureController() {
-  const targets = new Map<"icon" | "export", Target>();
+  const targets = new Map<"icon" | "export" | "widget", Target>();
   const preparations = new Set<Preparation>();
   /** The capture in progress; there is at most one. */
   let session: { token: string; state: CaptureState } | undefined;
@@ -51,8 +56,8 @@ export function createCaptureController() {
       return {
         x: rect.x,
         y: rect.y,
-        width: Math.ceil(Math.max(rect.width, target.scrollWidth)),
-        height: Math.ceil(Math.max(rect.height, target.scrollHeight)),
+        width: Math.ceil(state.widget ? rect.width : Math.max(rect.width, target.scrollWidth)),
+        height: Math.ceil(state.widget ? rect.height : Math.max(rect.height, target.scrollHeight)),
         dedicated: true,
       };
     }
@@ -128,7 +133,7 @@ export function createCaptureController() {
     return state.restoring;
   };
   return {
-    registerTarget(kind: "icon" | "export", target: Target) {
+    registerTarget(kind: "icon" | "export" | "widget", target: Target) {
       if (targets.has(kind)) throw new Error(`Expected one ${kind} capture target`);
       targets.set(kind, target);
       return () => {
@@ -141,13 +146,16 @@ export function createCaptureController() {
         preparations.delete(handler);
       };
     },
-    async begin(token: string, mode: CaptureMode) {
+    async begin(token: string, mode: CaptureMode, widget?: WidgetProps) {
+      if (mode === "widget" && (!widget || !targets.has("widget")))
+        throw new Error("Widget capture requires Widget.svelte and a viewport");
       if (session) throw new Error("Another capture is already in progress");
       const style = document.createElement("style");
       style.textContent =
         '*{animation:none!important;transition:none!important;caret-color:transparent!important;scroll-behavior:auto!important}html[data-slop-capture="static"] [data-slop-export="hide"]{display:none!important}';
       const state: CaptureState = {
         style,
+        widget: mode === "widget",
         controller: new AbortController(),
         inputs: [],
       };
@@ -158,7 +166,9 @@ export function createCaptureController() {
           "data-slop-capture",
           mode === "icon" ? "icon" : "static",
         );
-        state.target = targets.get(mode === "icon" ? "icon" : "export");
+        state.target = targets.get(
+          mode === "icon" ? "icon" : mode === "widget" ? "widget" : "export",
+        );
         if (state.target) {
           state.target.element.setAttribute("data-slop-active-target", "");
           style.textContent +=
@@ -172,7 +182,7 @@ export function createCaptureController() {
               for (const prepare of preparations) {
                 if (prepared.has(prepare)) continue;
                 prepared.add(prepare);
-                await prepare(mode, state.controller.signal);
+                await prepare(mode, state.controller.signal, widget);
                 state.controller.signal.throwIfAborted();
               }
             };

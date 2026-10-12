@@ -61,6 +61,7 @@ pub enum HostRequest {
     Close,
     ReloadInterface,
     CaptureBegin { token: String, mode: CaptureMode },
+    CaptureWidget { token: String, viewport: hitslop_core::widgets::WidgetViewport },
     CaptureSettle { token: String },
     CaptureRestore { token: String },
 }

@@ -8,6 +8,7 @@ const roleNames = [
   "App.svelte",
   "Export.svelte",
   "Icon.svelte",
+  "Widget.svelte",
   "commands.ts",
 ] as const;
 type AppRoles = {
@@ -16,6 +17,7 @@ type AppRoles = {
   view: string;
   export?: string;
   icon?: string;
+  widget?: string;
   commands?: string;
 };
 export function roleName(file: string): string | undefined {
@@ -41,6 +43,7 @@ export async function discoverRoles(source: string): Promise<AppRoles> {
     schema: join(source, "schema.ts"),
     view: join(source, "App.svelte"),
     ...(files.has("Export.svelte") ? { export: join(source, "Export.svelte") } : {}),
+    ...(files.has("Widget.svelte") ? { widget: join(source, "Widget.svelte") } : {}),
     ...(files.has("Icon.svelte") ? { icon: join(source, "Icon.svelte") } : {}),
     ...(files.has("commands.ts") ? { commands: join(source, "commands.ts") } : {}),
   };
@@ -80,8 +83,9 @@ export const uiEntrySource = (roles: AppRoles) => `import view from ${JSON.strin
 import document from ${JSON.stringify(roles.schema)};
 ${roles.export ? `import exportView from ${JSON.stringify(roles.export)};` : "const exportView = undefined;"}
 ${roles.icon ? `import icon from ${JSON.stringify(roles.icon)};` : "const icon = undefined;"}
+${roles.widget ? `import widget from ${JSON.stringify(roles.widget)};` : "const widget = undefined;"}
 import {svelteApp} from "hitslop/svelte";
-export default svelteApp(view,{schema:document,export:exportView,icon});`;
+export default svelteApp(view,{schema:document,export:exportView,icon,widget});`;
 export const sveltePlugin = () =>
   svelte({
     configFile: false,

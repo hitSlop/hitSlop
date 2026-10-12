@@ -14,6 +14,10 @@ export function hostDispatcher(page: Pick<SlopPageHandle, "publish"> & Partial<S
         if (!page.capture) throw new Error("Document capture is not ready");
         return await page.capture.begin(request.token, request.mode);
       }
+      case "capture.widget": {
+        if (!page.capture) throw new Error("Document capture is not ready");
+        return await page.capture.begin(request.token, "widget", request.viewport);
+      }
       case "capture.settle": {
         if (!page.capture) throw new Error("Document capture is not ready");
         return await page.capture.settle(request.token);

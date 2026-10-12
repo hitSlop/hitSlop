@@ -62,7 +62,7 @@ export type Scope<N extends ObjectNode> = {
 };
 export type AttachmentInfo = import("../schema/values").AttachmentInfo;
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
-export type { CaptureMode } from "../wire/page.generated";
+export type { WidgetViewport as WidgetProps } from "../wire/page.generated";
 /** A recording stored with `attachments.import` (its reference), or its attachment ID. */
 export type SpeechClip = string | { readonly id: string };
 export interface SpeechOptions {
@@ -74,7 +74,9 @@ export interface SpeechTranscript {
   /** The locale the recognizer used. */
   locale: string;
 }
-import type { CaptureMode } from "../wire/page.generated";
+import type { CaptureMode as HostCaptureMode, WidgetViewport } from "../wire/page.generated";
+/** Author preparation hooks include the dedicated widget request. */
+export type CaptureMode = HostCaptureMode | "widget";
 
 export interface SlopApp {
   /** The document descriptor the app was built for (`svelteApp` declares its schema's); the
@@ -102,9 +104,13 @@ export interface SlopContext {
     /** True inside the host's export renderer. */
     isRenderer(): boolean;
     onPrepare(
-      handler: (mode: CaptureMode, signal: AbortSignal) => void | Promise<void>,
+      handler: (
+        mode: CaptureMode,
+        signal: AbortSignal,
+        widget?: WidgetViewport,
+      ) => void | Promise<void>,
     ): () => void;
-    registerTarget(kind: "icon" | "export", target: CaptureTarget): () => void;
+    registerTarget(kind: "icon" | "export" | "widget", target: CaptureTarget): () => void;
   };
   readonly attachments: {
     /** Stores the file, then runs `reference` synchronously (like `change`) to write

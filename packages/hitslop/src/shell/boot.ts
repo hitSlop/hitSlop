@@ -147,4 +147,5 @@ export async function boot() {
   });
   Object.assign(globalThis.__slop!, lifecycle, { capture });
   if (native) await call({ method: "ready" });
+  preview.host?.ready?.();
 }

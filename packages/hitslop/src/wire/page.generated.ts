@@ -10,7 +10,7 @@ export type HostCaptureResult = { x: number, y: number, width: number, height: n
 /**
  * Private host-to-shell calls. Authored apps only receive ctx.
  */
-export type HostRequest = { "method": "publish", payload: string, } | { "method": "flush" } | { "method": "undo" } | { "method": "redo" } | { "method": "prepareClose" } | { "method": "cancelClose" } | { "method": "close" } | { "method": "reloadInterface" } | { "method": "capture.begin", token: string, mode: CaptureMode, } | { "method": "capture.settle", token: string, } | { "method": "capture.restore", token: string, };
+export type HostRequest = { "method": "publish", payload: string, } | { "method": "flush" } | { "method": "undo" } | { "method": "redo" } | { "method": "prepareClose" } | { "method": "cancelClose" } | { "method": "close" } | { "method": "reloadInterface" } | { "method": "capture.begin", token: string, mode: CaptureMode, } | { "method": "capture.widget", token: string, viewport: WidgetViewport, } | { "method": "capture.settle", token: string, } | { "method": "capture.restore", token: string, };
 
 export type PageErrorKind = "operation" | "application";
 
@@ -34,3 +34,7 @@ export type SpeechOutcome = { "status": "transcribed", text: string, locale: str
  * provider cannot decode this recording's format.
  */
 export type SpeechUnavailable = "notDeclared" | "host" | "system" | "locale" | "permission" | "format";
+
+export type WidgetFamily = "small" | "medium" | "large";
+
+export type WidgetViewport = { family: WidgetFamily, width: number, height: number, };

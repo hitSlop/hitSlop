@@ -1,12 +1,18 @@
+import AppIntents
 import AppKit
 import HitSlopCatalog
 import HitSlopCore
 import HitSlopDocument
 import HitSlopFirebase
 import HitSlopHost
+import HitSlopWidgets
 import Sparkle
 import SwiftUI
 import UniformTypeIdentifiers
+
+struct HitSlopAppIntents: AppIntentsPackage {
+  static var includedPackages: [any AppIntentsPackage.Type] { [HitSlopWidgetIntents.self] }
+}
 
 @main enum HitSlopApp {
   @MainActor static func main() {
@@ -58,6 +64,9 @@ private struct UpdateSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
+    SlopWidgetPublisher.shared.start { [weak self] identity in
+      self?.coordinator.documentControllers.first { $0.widgetFileIdentity == identity && !$0.isHiddenForClose }?.session
+    }
     HitSlopFirebase.telemetry.send(.launched)
     // A crashed session's discovery file would name a dead owner; clear it off the main
     // thread.
@@ -70,7 +79,36 @@ private struct UpdateSettingsView: View {
       urls.forEach(openDocument)
     }
   }
-  func application(_ application: NSApplication, open urls: [URL]) { urls.forEach(openDocument) }
+  func application(_ application: NSApplication, open urls: [URL]) {
+    for url in urls {
+      if url.isFileURL {
+        openDocument(url)
+        continue
+      }
+      guard url.scheme == "hitslop" else { continue }
+      if url.host == "widgets" {
+        showCatalog()
+        continue
+      }
+      guard let id = WidgetCache.selectionID(from: url) else { continue }
+      do {
+        let cache = try WidgetCache.shared()
+        guard let record = cache.record(id: id) else {
+          throw SlopFailure(
+            "This widget's document is no longer available. Open the slop in hitSlop, then choose it in Edit Widget.")
+        }
+        coordinator.openDocument(try cache.resolve(record))
+        NSApp.activate()
+      } catch {
+        showCatalog()
+        let alert = NSAlert()
+        alert.messageText = "Could not open this widget’s slop"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+      }
+    }
+  }
+  func applicationWillTerminate(_ notification: Notification) { SlopWidgetPublisher.shared.stop() }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     coordinator.requestQuit()

@@ -70,7 +70,7 @@ import document from ${JSON.stringify(roles.schema)};
 ${roles.commands ? `import commands from ${JSON.stringify(roles.commands)}; if (commands === undefined) throw new Error("commands.ts must default-export defineCommands(document, specs)");` : "const commands = undefined;"}
 import {describeApp} from ${JSON.stringify(join(sdk, "app-definition.ts"))};
 globalThis.__slopCommands = commands;
-globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app,document,commands,${JSON.stringify({ export: !!roles.export, icon: !!roles.icon })})});`
+globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app,document,commands,${JSON.stringify({ export: !!roles.export, icon: !!roles.icon, ...(roles.widget ? { widget: {} } : {}) })})});`
               : uiEntrySource(roles);
         },
         transform(code, id) {

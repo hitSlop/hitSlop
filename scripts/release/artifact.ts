@@ -60,6 +60,9 @@ try {
     assert.ok(embedded, `Quick Look ${kind} embeds a different document core`);
   }
   const selected = (await builtTemplates()).templates.filter((t) => t.bundled).map((t) => t.slug);
+  const widget = await plist(join(app, "Contents/PlugIns/hitSlop-Widgets.appex/Contents/Info.plist"));
+  assert.equal(widget.NSExtension?.NSExtensionPointIdentifier, "com.apple.widgetkit-extension", "Missing image widget extension");
+  assert.ok(info.CFBundleURLTypes?.some((entry: { CFBundleURLSchemes?: string[] }) => entry.CFBundleURLSchemes?.includes("hitslop")), "Missing widget document-opening scheme");
   const starters = join(app, "Contents/Resources/StarterTemplates");
   assert.deepEqual((await readdir(starters)).sort(), selected.map((slug) => slug + ".slop").sort());
   const exhaustive = process.env.HITSLOP_TEMPLATE_EXHAUSTIVE === "1";

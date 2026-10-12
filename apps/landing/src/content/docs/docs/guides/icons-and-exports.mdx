@@ -44,6 +44,41 @@ Without `Export.svelte`, a fresh rendering of `App.svelte` with its default loca
 An export or icon component that throws fails that capture without changing the live
 editor. A later attempt gets a fresh rendering page.
 
+## Design a macOS widget
+
+Add an optional root `Widget.svelte` to compose the same saved document for the desktop:
+
+```svelte
+<script lang="ts">
+  import type { WidgetProps } from "hitslop/svelte";
+  import doc from "./schema";
+  let { family, width, height }: WidgetProps = $props();
+</script>
+
+<main style:width={`${width}px`} style:height={`${height}px`}>
+  <h1>{doc.current.title}</h1>
+  {#if family !== "small"}<p>A little more detail.</p>{/if}
+</main>
+```
+
+Families are `small`, `medium` and `large`. Fit the provided canvas using ordinary CSS;
+reuse components, imported assets and theme colors. The host captures a fixed canvas
+at 2× in a fresh read-only page. Only the widget view mounts. WidgetKit clips its outer
+corners; avoid adding an outer shadow or padding just to simulate the system frame.
+
+Create a document from the rebuilt template, open it in hitSlop, then close it to publish
+its widget images. Add a hitSlop widget from macOS's widget gallery and choose the
+document under **Edit Widget → Slop**. Only documents containing `Widget.svelte` with a
+successful capture appear. Existing documents retain their embedded app, so rebuilding
+a template does not add widget support to them. Clicking the image opens that document.
+
+By default, images refresh on close. To request occasional recaptures while hitSlop is
+running, add `widget: { refreshMinutes: 30 }` to `slop.ts`. Whole-minute intervals from
+15 to 1440 are accepted and require `Widget.svelte`. Only documents used by placed
+widgets are scheduled. This requests capture attempts, not an exact visible refresh
+rate: macOS controls scheduling and WidgetKit controls display updates. Quitting
+hitSlop leaves the last images on the desktop. iOS background capture is not implemented.
+
 ## Design an icon at 512 × 512
 
 The native icon canvas is 512 × 512, and the host centers the artwork in it. Give the design breathing room; for example, a tile around 456 pixels wide. Prefer a recognizable silhouette and a few strong marks over tiny text or a screenshot of every control. The icon may summarize current content. Use the same theme colors as the editor, so a person's palette carries into the icon.
@@ -102,3 +137,8 @@ Completed captures publish atomically before their deadline. If the acknowledgem
 Registration, or `slop build --artwork native`, captures the initial preview and, when declared, icon into the template; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
 Test normal and narrow windows, empty and populated data, themed output, default local views, saved view choices, and exports from open and closed documents. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.
+
+
+In `slop dev`, use the Preview selector to switch between the editor and each widget family.
+Accepted edits survive switching, and component/CSS changes update the preview live. Widget
+canvases clip overflow; the preview warns when the target extends beyond its canvas.

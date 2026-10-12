@@ -56,7 +56,7 @@ saved-state render. Replies return as structured JSON. The restricted command ev
 short execution budget does not govern WebKit rendering.
 
 Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
-in `App.svelte`. Optional `Export.svelte`, `Icon.svelte` and agent-only `commands.ts` have
+in `App.svelte`. Optional `Export.svelte`, `Icon.svelte`, `Widget.svelte` and agent-only `commands.ts` have
 fixed root roles. Two disconnected Vite graphs share resolution: the page imports the
 schema and components, while the definition imports metadata, schema and commands.
 Neither graph rewrites command bodies or substitutes component tokens. The restricted
@@ -366,6 +366,39 @@ recording document content or paths.
 An attachment import stores the blob, then submits its reference through a
 collector admitted past an active barrier. A collector that throws, or an edit the core
 refuses, leaves the blob unreferenced until the document closes.
+
+## macOS image widgets
+
+An optional embedded `Widget.svelte` renders small, medium and large PNGs from one
+saved snapshot, with family and viewport props and the document's effective theme.
+It never falls back to an export or preview. Closing an eligible document after edits or with missing cached images publishes
+the three images into a disposable App Group cache; ordinary saves do not capture.
+The owner still controls the close barrier and document artwork. A widget capture or
+cache failure keeps the previous generation and does not become a save failure.
+
+One configurable WidgetKit extension offers the three sizes. Its AppIntents `Slop`
+parameter lists successfully captured documents. The extension reads presentation
+records and PNGs only. Swift owns the disposable cache format and image bounds; the
+extension does not link the document core. Rust owns stored declarations, capture
+viewports and scheduling bounds, carried to the host through UniFFI. Immutable generation folders precede an
+atomic record replacement; a late older capture cannot replace newer images. The cache
+retains the current and previous generation. Readers own image bytes and retry an
+expired pointer. App-side maintenance prunes confirmed missing/replaced files while
+retaining cached images when their source is temporarily unavailable.
+
+Each choice has a host-minted ID and bookmark, with local file identity checked on
+resolution. Copies get different choices even when their content matches. A
+`hitslop://widget/<id>` URL resolves the source and routes through the existing document
+coordinator, which focuses an open document. Unavailable files report a native error.
+
+`widget.refreshMinutes` requests approximate capture intervals of 15–1440 minutes.
+The running Mac app queries active WidgetKit configurations, deduplicates document IDs,
+and serializes due captures using a tolerant background activity. Close captures bypass
+that queue and do not rewrite document artwork when only widget images are missing. It skips missed
+intervals after sleep. Open documents use the owner save/copy barrier; closed ones use
+the read-only snapshot path. Quitting stops work and leaves cached images. WidgetKit
+controls visible reload timing. The `slop dev` composition selector previews all three families with HMR. iOS
+background capture remains follow-up work. See the [platform spike evidence](evidence/widget-images-2026-10-11.md).
 
 ## CLI
 

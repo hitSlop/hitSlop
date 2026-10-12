@@ -1,9 +1,10 @@
 // The Svelte adapter, compiled into each slop. It depends only on ctx.
 import { mount, tick, unmount, type Component } from "svelte";
-import type { CaptureMode, SlopApp, SlopContext } from "../abi";
+import type { WidgetProps, SlopApp, SlopContext } from "../abi";
 import type { Definition, LiveDocument, ObjectNode, Value } from "../schema";
 import { activate, deactivate, current } from "./context";
 import Root from "./Root.svelte";
+export type { WidgetProps } from "../abi";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
 export { capture, type CaptureMode } from "./capture";
 export {
@@ -29,8 +30,9 @@ export function svelteApp(
   App: Component,
   options: {
     schema: Definition<ObjectNode>;
-    export?: Component<{ mode: Exclude<CaptureMode, "icon"> }> | Component<Record<string, never>>;
+    export?: Component<{ mode: "preview" | "export" }> | Component<Record<string, never>>;
     icon?: Component;
+    widget?: Component<WidgetProps>;
   },
 ): SlopApp {
   return {
@@ -47,8 +49,9 @@ export function svelteApp(
           target,
           props: {
             App,
-            Export: options.export as Component<{ mode: Exclude<CaptureMode, "icon"> }> | undefined,
+            Export: options.export as Component<{ mode: "preview" | "export" }> | undefined,
             Icon: options.icon,
+            Widget: options.widget,
           },
         });
         return {

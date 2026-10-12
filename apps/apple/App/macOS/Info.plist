@@ -42,7 +42,12 @@
 	<string>https://github.com/hitSlop/hitslop/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>OHq/9CpeUKhI0BZFhSerL8wE/hzhhm/x4VO2qnB3RHw=</string>
-	<key>CFBundleDocumentTypes</key>
+		<key>CFBundleURLTypes</key>
+		<array><dict>
+			<key>CFBundleURLName</key><string>com.hitslop.widget</string>
+			<key>CFBundleURLSchemes</key><array><string>hitslop</string></array>
+		</dict></array>
+		<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeExtensions</key>

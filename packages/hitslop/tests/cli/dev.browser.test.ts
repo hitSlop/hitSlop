@@ -177,3 +177,45 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     expect(await ui.locator("[data-count]").textContent()).toBe("3");
   } finally { await browser.close(); await dev?.close(); await rm(root, {recursive:true,force:true}); }
 }, 60000);
+
+
+test("widget previews switch family, retain edits and update with HMR", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".dev-test-"));
+  const browser = await webkit.launch();
+  let dev: Awaited<ReturnType<typeof startDev>> | undefined;
+  try {
+    const source = join(root, "source");
+    await createFixture(process.cwd(), source);
+    const widget = `<script lang="ts">
+      import type {WidgetProps} from 'hitslop/svelte';
+      import doc from './schema';
+      let {family, width, height}: WidgetProps = $props();
+    </script><section data-widget style="width:100%;height:100%">Original {family} {width}×{height}: {doc.current.title}</section>`;
+    await writeFile(join(source, "Widget.svelte"), widget);
+    dev = await startDev(source);
+    const page = await browser.newPage();
+    page.setDefaultTimeout(15000);
+    await page.goto(dev.url);
+    const frame = page.frameLocator("iframe");
+    await frame.getByRole("textbox", {name: "Document title"}).fill("Saved preview edit");
+    await frame.locator("[data-title]").filter({hasText: "Saved preview edit"}).waitFor();
+    const picker = page.getByRole("combobox", {name: "Preview composition"});
+    for (const [family, size] of [["small", "164×164"], ["medium", "344×164"], ["large", "344×344"]]) {
+      await picker.selectOption(family!);
+      await frame.locator("[data-widget]").filter({hasText: `${family} ${size}: Saved preview edit`}).waitFor();
+    }
+    await writeFile(join(source, "Widget.svelte"), widget.replace("Original", "Updated"));
+    await frame.locator("[data-widget]").filter({hasText: "Updated large 344×344: Saved preview edit"}).waitFor();
+    await writeFile(join(source, "Widget.svelte"), widget.replace('width:100%;height:100%', 'width:900px;height:900px'));
+    await page.getByRole("status").filter({hasText: "will be clipped"}).waitFor();
+    await picker.selectOption("editor");
+    await frame.getByRole("textbox", {name: "Document title"}).waitFor();
+    expect(await frame.getByRole("textbox", {name: "Document title"}).inputValue()).toBe("Saved preview edit");
+    await rm(join(source, "Widget.svelte"));
+    await picker.waitFor({state: "hidden"});
+    await writeFile(join(source, "Widget.svelte"), widget);
+    await picker.waitFor({state: "visible"});
+    await picker.selectOption("small");
+    await frame.locator("[data-widget]").filter({hasText: "small 164×164"}).waitFor();
+  } finally { await browser.close(); await dev?.close(); await rm(root, {recursive: true, force: true}); }
+}, 60000);

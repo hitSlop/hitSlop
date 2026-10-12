@@ -124,7 +124,7 @@ In order, with the reasoning in [ideas](ideas.md):
   relay source is outside this repository. The production relay and clients are
   [later](#later).
 - `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
-  `App.svelte` the editor, and optional root `Export.svelte`, `Icon.svelte` and
+  `App.svelte` the editor, and optional root `Export.svelte`, `Icon.svelte`, `Widget.svelte` and
   `commands.ts` the other roles. Captures use fresh saved-state pages, with a fresh `App` as the export
   fallback. `slop dev` runs the native owner on a disposable copy per preview page.
 
@@ -132,6 +132,12 @@ A historical summary of the ownership decisions and integration findings is reta
 the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
+
+**Widget qualification.** The macOS image-widget integration includes dedicated saved-state
+captures, document selection, bookmark opening and optional approximate refreshes.
+Finish signed product testing of all sizes, appearance modes, refresh budgets and
+sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrower evidence.
+The `slop dev` composition selector previews all three widget families with HMR. Signed desktop qualification, cache management UI and iOS hosting are pending.
 
 **Permissions and device services.** Code-bound grants and per-slop consent remain a
 [proposal](ideas.md#permissions-bound-to-the-apps-code), as do additional devices such

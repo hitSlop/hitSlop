@@ -46,6 +46,42 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
 }
 
 #[test]
+fn widget_role_and_refresh_policy_survive_pack_and_reopen() {
+    assert!(read(&metadata(), &definition()).unwrap().views().widget.is_none());
+    for options in [json!({}), json!({"refreshMinutes":15}), json!({"refreshMinutes":1440})] {
+        let mut value = definition();
+        value["views"]["widget"] = options.clone();
+        value["metadata"] = metadata();
+        value["initial"] = json!({"title":"Initial"});
+        let declaration: BuildDeclaration = serde_json::from_value(value).unwrap();
+        let app = AppDefinition::from_declaration(&declaration, None).unwrap();
+        let reopened = AppDefinition::decode(1, 1, &metadata().to_string(), &app.definition_json()).unwrap();
+        assert_eq!(serde_json::to_value(reopened.views().widget).unwrap(), options);
+    }
+    for bad in [
+        json!(true),
+        json!(null),
+        json!({"refreshMinutes":15.5}),
+        json!({"refreshMinutes":null}),
+        json!({"unknown":30}),
+    ] {
+        let mut value = definition();
+        value["views"]["widget"] = bad.clone();
+        assert!(read(&metadata(), &value).is_err(), "{bad}");
+    }
+    for minutes in [0, 14, 1441, u32::MAX] {
+        let mut value = definition();
+        value["views"]["widget"] = json!({"refreshMinutes": minutes});
+        let opened = read(&metadata(), &value).expect("host scheduling policy must not reject stored documents");
+        assert_eq!(opened.views().widget.unwrap().refresh_minutes, Some(minutes));
+        value["metadata"] = metadata();
+        value["initial"] = json!({"title":"Initial"});
+        let declaration: BuildDeclaration = serde_json::from_value(value).unwrap();
+        assert!(AppDefinition::from_declaration(&declaration, None).is_err());
+    }
+}
+
+#[test]
 fn bootstrap_receives_the_original_descriptor_including_descriptions() {
     let descriptor = r#"{ "kind":"object", "properties": {"z": {"kind":"string","description":"Keep this"}, "a": {"kind":"number","min":1.0}} }"#;
     let definition = format!(

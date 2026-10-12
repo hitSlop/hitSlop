@@ -36,7 +36,7 @@ lists the host-internal names apps never read (`slop:render-error`, `data-slop-h
 
 `hitslop/svelte` is the Svelte adapter compiled into each app:
 the builder emits `svelteApp` from required root `schema.ts` and `App.svelte`, plus
-optional `Export.svelte` and `Icon.svelte`. These filenames are fixed and case-sensitive.
+optional `Export.svelte`, `Icon.svelte` and `Widget.svelte`. These filenames are fixed and case-sensitive.
 Metadata in `slop.ts` and agent-only `commands.ts` stay outside the UI graph. Authors
 import styles from their components. Once mounted, the schema's definition is the live document
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
@@ -154,7 +154,7 @@ ends after the backup. Rendering then uses that independent copy, including its 
 attachments, data and theme. The editor's focus, selection, scroll and local selected
 view are not used or changed. No read transaction remains open during rendering.
 
-The CLI discovers optional `Export.svelte` and `Icon.svelte` beside `App.svelte`. The export view
+The CLI discovers optional `Export.svelte`, `Icon.svelte` and `Widget.svelte` beside `App.svelte`. The export view
 receives `mode: "preview" | "export"` and supplies the capture layout. Without it, a fresh
 rendering of `view` shows saved data using its default local UI state.
 State that should determine an export, such as a selected report, must be saved in the
@@ -171,6 +171,13 @@ fallback can hide `data-slop-export="hide"` controls and replace native text inp
 wrapping text. The icon target owns a transparent 512×512 canvas and centers authored
 artwork. The host's window-filling sizing rules are disabled during capture; the page
 reset remains. Rendering errors reject the capture, and the disposable page is closed.
+
+Widget capture requires `Widget.svelte`: it has no App or Export fallback. The component
+receives the Rust-generated `WidgetProps` (`family`, `width`, `height`), and preparation
+hooks receive `"widget"` plus the viewport as their optional third argument. The host
+captures all three families from one snapshot, normalizes to 2× PNGs, and publishes them
+outside the document. The [macOS widget architecture](../architecture.md#macos-image-widgets)
+describes selection, opening and refresh policy. The extension never runs authored code.
 
 Dedicated PNG and PDF captures use the export's measured width, including compositions
 wider than the editor window. Preview rasterization prefers 2×; a large fallback window

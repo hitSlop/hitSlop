@@ -142,6 +142,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
                     title: input.declaration.metadata.title,
                     window,
                     capabilities,
+                    widget: input.declaration.views.widget !== undefined,
                   });
                   type = "text/html";
                 },
@@ -150,7 +151,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
                 path === "/app.html",
                 () => {
                   type = "text/html";
-                  content = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}"></script></body></html>`;
+                  content = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}&widget=${input.declaration.views.widget !== undefined}"></script></body></html>`;
                 },
               ],
               [

@@ -1,7 +1,7 @@
 //! Typed app and catalog projections. Only core's format module decodes stored JSON.
 use hitslop_core::app::{
-    self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WindowDefinition,
-    WindowFrame,
+    self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WidgetOptions,
+    WindowDefinition, WindowFrame,
 };
 use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, Summary};
 use hitslop_core::shape::Silhouette;
@@ -77,6 +77,11 @@ pub struct ThemeInput {
 pub struct Views {
     pub export: bool,
     pub icon: bool,
+    pub widget: Option<WidgetOptions>,
+}
+#[uniffi::remote(Record)]
+pub struct WidgetOptions {
+    pub refresh_minutes: Option<u32>,
 }
 #[uniffi::remote(Record)]
 pub struct Summary {

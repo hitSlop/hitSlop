@@ -85,3 +85,8 @@ only for capture, centered on a transparent 512×512 surface. Pass progress or o
 a strong silhouette, safe margins, and no essential small text. It refreshes
 a document's artwork and Finder icon on close; the template's icon remains as built.
 Build with `--artwork native` (or register) and check the generated artwork (`slop inspect` lists it; Quick Look shows it), then verify native exports.
+
+
+## Widget compositions
+
+Use optional root `Widget.svelte` for small, medium and large image widgets. It receives `WidgetProps` (`family`, `width`, `height`) from `hitslop/svelte` and reads saved `doc.current` and theme tokens. Keep the slop's typography, colors and reusable components; edit density and hierarchy for each canvas. The fixed canvas clips overflow; intentionally shorten lists and text. In `slop dev`, use Preview → Small/Medium/Large widget to review all three compositions and any overflow warning, then return to Editor without losing accepted edits. Widgets contain images; tapping opens the source slop. Do not add interactive controls or an export fallback.

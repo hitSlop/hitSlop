@@ -70,7 +70,9 @@ radius: string, shape: Silhouette, };
 
 export type ThemeInput = { token: string, color: string, };
 
-export type Views = { export: boolean, icon: boolean, };
+export type Views = { export: boolean, icon: boolean, widget?: WidgetOptions, };
+
+export type WidgetOptions = { refreshMinutes?: number, };
 
 /**
  * Resolved host window semantics, independent of the stored definition's decoding rules.

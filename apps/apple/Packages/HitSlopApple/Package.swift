@@ -10,6 +10,7 @@ let package = Package(
     .library(name: "HitSlopDocument", targets: ["HitSlopDocument"]),
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
+    .library(name: "HitSlopWidgets", targets: ["HitSlopWidgets"]),
     .executable(name: "hitslop-native", targets: ["HitSlopNativeCLI"]),
   ],
   dependencies: [
@@ -47,10 +48,11 @@ let package = Package(
     ),
     .target(
       name: "HitSlopHost",
-      dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument"],
+      dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopWidgets"],
       linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit")]
     ),
     .target(name: "HitSlopFeatures", dependencies: ["HitSlopCore"]),
+    .target(name: "HitSlopWidgets"),
     .testTarget(name: "HitSlopFeaturesTests", dependencies: ["HitSlopFeatures"]),
     .target(
       name: "HitSlopCatalog",
@@ -75,7 +77,9 @@ let package = Package(
       dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
     .testTarget(
       name: "HitSlopHostTests",
-      dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
+      dependencies: [
+        "HitSlopHost", "HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport", "HitSlopWidgets",
+      ]),
     .testTarget(
       name: "HitSlopCatalogTests",
       dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures", "HitSlopTestSupport"]
