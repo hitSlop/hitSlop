@@ -67,7 +67,7 @@ import HitSlopHost
       case .open(let documentPath):
         let file = URL(fileURLWithPath: documentPath)
         guard try SlopFile.kind(of: file) == .document else { throw SlopError.template }
-        let application = SlopApplicationLocation.application(for: URL(fileURLWithPath: CommandLine.arguments[0])) {
+        let application = SlopApplicationLocation.application {
           NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app")
         }
         guard let app = application else {
