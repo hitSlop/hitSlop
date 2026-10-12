@@ -71,9 +71,10 @@ bun run apple:build
 ```
 
 Or run the first two commands, then rebuild/run in Xcode. `build:templates` prepares
-`generated/templates/`; the Mac app build copies those files into its bundle. Xcode does
-not recompile `slops/` source, and building just `slops/beat-pad/dist/beat-pad.slop` does
-not update the bundled Beat Pad. Create a new document from the refreshed starter after
+`generated/templates/`; the Mac app build refreshes that cache from current source and
+copies the selected templates into its bundle. Building just
+`slops/beat-pad/dist/beat-pad.slop` does not update the installed app's bundled Beat Pad.
+Create a new document from the refreshed starter after
 rebuilding. A separately installed local template still needs re-registering.
 
 ## Share a template or a document

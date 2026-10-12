@@ -60,7 +60,8 @@ fn run(name: &str) {
                     // A delivery: everything replica `j` holds, merged into replica `i`.
                     let j = (i + 1 + (next(&mut rng) % 2) as usize) % 3;
                     let theirs = replicas[j].checkpoint().unwrap();
-                    replicas[i] = Document::open(&spec, &replicas[i].checkpoint().unwrap(), &[theirs])
+                    replicas[i]
+                        .import_remote(&[&theirs])
                         .unwrap_or_else(|e| panic!("{name} seed {seed}: a merge was refused: {e:?}"));
                     assert!(rows_are_unique(&snapshot(&replicas[i])["value"]), "{name} seed {seed}: a row reads twice");
                 }
@@ -82,4 +83,87 @@ fn concurrent_edits_of_every_kind_merge_into_documents_that_open() {
     for name in ["checklist", "collections", "nested", "scalars"] {
         run(name);
     }
+}
+
+// Ordinary children choose one complete value on concurrent creation. Existing text
+// still merges, and later edits to the winning child remain shared by both replicas.
+#[test]
+fn concurrent_creation_selects_whole_children_and_keeps_them_editable() {
+    let schema = json!({"kind":"object","properties":{
+        "title":{"kind":"text"},
+        "note":{"kind":"optional","inner":{"kind":"text"}},
+        "entries":{"kind":"record","value":{"kind":"object","properties":{
+            "text":{"kind":"text"},"label":{"kind":"string"}
+        }}},
+        "rows":{"kind":"list","item":{"kind":"object","properties":{
+            "text":{"kind":"text"},
+            "children":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}}
+        }}}
+    }});
+    let spec = app(schema.to_string());
+    let seed = Document::create(&spec, &json!({"title":"base","entries":{},"rows":[]}).to_string())
+        .unwrap()
+        .checkpoint()
+        .unwrap();
+    let mut a = Document::open(&spec, &seed, &[]).unwrap();
+    let mut b = Document::open(&spec, &seed, &[]).unwrap();
+    let mut av = support::View::of(&a);
+    let mut bv = support::View::of(&b);
+    for (doc, view, label, title) in [(&mut a, &mut av, "Left", "Lbase"), (&mut b, &mut bv, "Right", "baseR")] {
+        let applied = doc
+            .apply_json(
+                &json!({"intents":[
+                    {"type":"set","path":["title"],"value":title},
+                    {"type":"set","path":["note"],"value":label},
+                    {"type":"set","path":["entries","same"],"value":{"text":label,"label":label}},
+                    {"type":"insert","path":["rows"],"id":"same","value":{
+                        "text":label,"children":[{"$id":"child","text":label}]
+                    }}
+                ]})
+                .to_string(),
+                Origin::Page,
+            )
+            .unwrap();
+        view.publish(&applied.publication.unwrap());
+        view.check(doc, "local creation");
+    }
+    let left = a.checkpoint().unwrap();
+    let right = b.checkpoint().unwrap();
+    av.publish(&a.import_remote(&[&right]).unwrap().unwrap().publication.unwrap());
+    bv.publish(&b.import_remote(&[&left]).unwrap().unwrap().publication.unwrap());
+    av.check(&a, "left after creation race");
+    bv.check(&b, "right after creation race");
+    let merged = support::value(&a);
+    assert_eq!(merged, support::value(&b));
+    assert_eq!(merged["title"], "LbaseR");
+    for child in [&merged["note"], &merged["entries"]["same"]["text"], &merged["rows"][0]["text"]] {
+        assert!(child == "Left" || child == "Right", "creation must select one child: {child}");
+    }
+    assert_eq!(merged["entries"]["same"]["text"], merged["entries"]["same"]["label"]);
+    assert_eq!(merged["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(merged["rows"][0]["$id"], "same");
+    for path in [json!(["note"]), json!(["entries", "same", "text"]), json!(["rows",{"id":"same"},"text"])] {
+        let applied = a
+            .apply_json(&json!({"intents":[{"type":"set","path":path,"value":"Edited"}]}).to_string(), Origin::Page)
+            .unwrap();
+        av.publish(&applied.publication.unwrap());
+        av.check(&a, "editing a winning child");
+    }
+    let applied = a
+        .apply_json(
+            &json!({"intents":[
+                {"type":"insert","path":["rows",{"id":"same"},"children"],"id":"second","value":{"text":"Second"}},
+                {"type":"remove","path":["rows",{"id":"same"},"children"],"id":"child"}
+            ]})
+            .to_string(),
+            Origin::Page,
+        )
+        .unwrap();
+    av.publish(&applied.publication.unwrap());
+    av.check(&a, "editing the winning row's nested list");
+    bv.publish(&b.import_remote(&[&a.checkpoint().unwrap()]).unwrap().unwrap().publication.unwrap());
+    bv.check(&b, "remote edits after replacement");
+    assert_eq!(support::value(&a), support::value(&b));
+    let reopened = Document::open(&spec, &b.checkpoint().unwrap(), &[]).unwrap();
+    assert_eq!(support::value(&a), support::value(&reopened));
 }

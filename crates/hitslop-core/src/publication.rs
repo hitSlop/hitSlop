@@ -131,7 +131,7 @@ enum Place<'s> {
     /// A field's own container (an object, record entry, row, text, counter or scalar list).
     Field { path: Vec<Segment>, node: &'s Node },
     /// A row list: its own map, its rows or its order.
-    List { path: Vec<Segment>, node: &'s Node, list: ContainerID },
+    List { path: Vec<Segment>, node: &'s Node, list: ContainerID, rows: bool },
 }
 /// Places a Loro container path from the document root; `None` when the path does not
 /// follow the layout.
@@ -178,7 +178,8 @@ fn place<'s>(schema: &'s Node, path: &[(ContainerID, Index)]) -> Option<Place<'s
     }
     Some(match at {
         In::Field => Place::Field { path: out, node },
-        In::ListMap(list) | In::Rows(list) | In::Order(list) => Place::List { path: out, node, list },
+        In::Rows(list) => Place::List { path: out, node, list, rows: true },
+        In::ListMap(list) | In::Order(list) => Place::List { path: out, node, list, rows: false },
     })
 }
 
@@ -213,7 +214,7 @@ pub(super) fn publish(
     if events.is_empty() {
         return Ok(None);
     }
-    // Containers this change created or revived are published whole by the map update that
+    // Containers this change created or replaced are published whole by the map update that
     // introduced them (a field set or a row insertion); their own events are skipped.
     let fresh: HashSet<ContainerID> = events
         .iter()
@@ -233,12 +234,21 @@ pub(super) fn publish(
     });
     let mut ops = vec![];
     let mut touched: Vec<(Vec<Segment>, &Node, ContainerID)> = vec![];
+    let mut assigned: HashMap<ContainerID, HashSet<String>> = HashMap::new();
     for e in &events {
         let Some(place) = place(schema, &e.path) else {
             return Ok(Some(everything(doc, schema, lists)));
         };
         match (place, &e.change) {
-            (Place::List { path, node, list }, Change::Map(_) | Change::List) => {
+            (Place::List { path, node, list, rows }, Change::Map(_) | Change::List) => {
+                if rows && let Change::Map(updates) = &e.change {
+                    assigned.entry(list.clone()).or_default().extend(
+                        updates
+                            .iter()
+                            .filter(|(_, slot)| matches!(slot, Some(Slot::Container(_))))
+                            .map(|(id, _)| id.clone()),
+                    );
+                }
                 if !touched.iter().any(|(_, _, l)| *l == list) {
                     touched.push((path, node, list));
                 }
@@ -296,15 +306,17 @@ pub(super) fn publish(
             continue;
         };
         let (old_set, new_set): (HashSet<&String>, HashSet<&String>) = (old.iter().collect(), new.iter().collect());
-        // Rows that appear or go are published whole, or as one deletion: drop any field
-        // ops this change made inside them.
-        let changed: HashSet<&String> = old_set.symmetric_difference(&new_set).copied().collect();
+        let replaced = assigned.remove(&list).unwrap_or_default();
+        // Rows that appear, go or change container are published whole, or as one deletion:
+        // drop any field ops this change made inside them, even when the row ID survives.
+        let changed: HashSet<&String> =
+            old_set.symmetric_difference(&new_set).copied().chain(replaced.iter()).collect();
         ops.retain(|op| {
             !op.path().get(path.len()).is_some_and(|segment| {
                 op.path().starts_with(&path) && matches!(segment, Segment::Id { id } if changed.contains(id))
             })
         });
-        let Some(diff) = diff(&path, &old, &new, |id| {
+        let mut row_value = |id: &str| {
             let row = rows.row(id)?;
             index(item, &ValueOrContainer::Container(Container::Map(row.clone())), lists);
             let mut value = project(Some(item), deep(doc, &row.id()));
@@ -312,13 +324,22 @@ pub(super) fn publish(
                 fields.insert("$id".into(), Value::String(id.to_owned()));
             }
             Some(value)
-        }) else {
+        };
+        let Some(diff) = diff(&path, &old, &new, &mut row_value) else {
             ops.retain(|op| !op.path().starts_with(&path));
             ops.push(PatchOp::Set { path, value: project(Some(node), deep(doc, &list)) });
             lists.insert(list, new);
             continue;
         };
         ops.extend(diff);
+        for id in new.iter().filter(|id| old_set.contains(id) && replaced.contains(*id)) {
+            let Some(value) = row_value(id) else {
+                return Ok(Some(everything(doc, schema, lists)));
+            };
+            let mut row_path = path.clone();
+            row_path.push(Segment::Id { id: id.clone() });
+            ops.push(PatchOp::Set { path: row_path, value });
+        }
         lists.insert(list, new);
     }
     Ok(Some(ops))

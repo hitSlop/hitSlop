@@ -160,6 +160,8 @@ seed and attachments, rate limits, quotas, server compaction); the Mac client (a
 connection with backoff, Share and Join, the room key in the Keychain, a sync status line);
 attachment sync; a way to save a full shared document's live state as a new, unshared copy;
 CLI `share` and `join`; the browser host's connection; and hosted-latency qualification.
+Qualify [container-creation and undo conflicts](reference/document-types.md#storage-layout)
+before shipping sharing.
 
 Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,
 JavaScriptCore, data.json, or a second semantic validator. Convergence tests around

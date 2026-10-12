@@ -67,7 +67,10 @@ import HitSlopHost
       case .open(let documentPath):
         let file = URL(fileURLWithPath: documentPath)
         guard try SlopFile.kind(of: file) == .document else { throw SlopError.template }
-        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app") else {
+        let application = SlopApplicationLocation.application {
+          NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.hitslop.app")
+        }
+        guard let app = application else {
           return write(
             .failure(
               error: "Install hitSlop.app to open documents", code: .rejected,

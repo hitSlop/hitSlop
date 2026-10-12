@@ -486,6 +486,8 @@ Accepted limits, chosen for mini apps over heavier machinery:
 
 - **Text** merges on strings: when both sides delete one of several identical adjacent
   characters, one of them may survive ([text](#text)).
+- **Container creation and undo** follow the conflict semantics of the
+  [storage layout](reference/document-types.md#storage-layout).
 - **Counters** are Loro counters, exact until a counter's increments, summed as absolute
   values, reach about 9×10^15.
 - **Live history** grows through a long session; nothing compacts it while the document is

@@ -346,16 +346,16 @@ Layout 1:
 |---|---|
 | the authored document data | the root map `data`, one entry per field |
 | document theme overrides | the root map `theme`, declared color token → canonical color string |
-| `s.text()` | a mergeable `LoroText` |
+| `s.text()` | a parent-owned `LoroText` |
 | `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
 | `s.number()` | an f64 value; integral values project as integers |
 | `s.integer()` | an i64 value |
-| `s.counter()` | a mergeable `LoroCounter`; the total projects as an integer |
+| `s.counter()` | a parent-owned `LoroCounter`; the total projects as an integer |
 | `s.optional(inner)` | the inner kind's representation, or no entry when unset |
-| `s.object({...})` | a mergeable `LoroMap` |
-| `s.list(s.object({...}))` | a mergeable `LoroMap` of `rows` (a mergeable `LoroMap` of `$id` → mergeable `LoroMap` row) and `order` (a mergeable `LoroMovableList` of `$id` strings) |
-| `s.list(scalar)` | a mergeable `LoroMovableList` of values |
-| `s.record(value)` | a mergeable `LoroMap` of key to the value's representation |
+| `s.object({...})` | a parent-owned `LoroMap` |
+| `s.list(s.object({...}))` | a parent-owned `LoroMap` of `rows` (a `LoroMap` of `$id` → `LoroMap` row) and `order` (a `LoroMovableList` of `$id` strings) |
+| `s.list(scalar)` | a parent-owned `LoroMovableList` of values |
+| `s.record(value)` | a parent-owned `LoroMap` of key to the value's representation |
 
 The theme map is host-owned and outside the authored descriptor. Defaults remain in the
 immutable app row; the effective palette combines them with these overrides. Per-color
@@ -364,11 +364,22 @@ advance the same publication sequence. JSON replacement targets `data`, so it ne
 replaces the theme. State carries the effective `theme`; publications include it when
 it changes, including on a theme-only edit.
 
-Every container a field holds is a mergeable child of its parent map
-(`ensure_mergeable_*`): its identity follows from its place, so two devices that create
-the same field, entry or row converge on one container instead of one hiding the
-other. Clearing a field or removing a row hides its container; writing it again, or an
-undo, revives the same container and writes the new value over its earlier content.
+Containers are ordinary Loro children, created with their parent entry. Edits reuse a
+present container; creating an absent field, entry or row creates a new one. Removing it
+allows a history-trimming snapshot to discard its deleted content. Full checkpoints keep
+history, and the live session keeps its undo independently of a trimmed saved checkpoint.
+Application `$id`s survive undo; Loro's internal container IDs need not.
+
+These remain CRDT containers: edits to an existing shared text or counter merge. Two
+replicas independently creating the same absent field, record key or row ID create
+different containers, and the parent map chooses one complete container by last-writer-wins.
+Undo may restore a row in new containers, so remote edits to its previous containers need
+not follow it. The local owner serializes page, window and CLI writes; these creation and
+restoration races are limits of the deferred collaboration feature.
+
+Production sharing must qualify these conflicts. A future room may start fresh history
+from the local document's current app, values, row IDs, theme and attachments; it need
+not reuse local v1 history. The relay, session and owner hooks remain its foundation.
 
 A row list's application order is `order` read once per row at its first place, then
 rows `order` misses, by `$id`. Merging valid edits from several devices can leave `order`

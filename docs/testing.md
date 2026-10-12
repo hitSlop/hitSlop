@@ -156,10 +156,14 @@ so a write that stored invalid state fails the run. `publications.rs` keeps its 
 
 `merge.rs` checks merge closure: three replicas of each fixture edit concurrently with every
 intent kind, refusals, undo and redo, insert rows from a small pool of IDs, and exchange
-whole histories in random order. Every merge must open (acceptance never refuses merged
-valid edits), both merge orders must read the same, and no row may read twice. It runs 40
+whole histories in random order without resetting live undo. Every merge must pass
+acceptance, both merge orders must read the same, and no row may read twice. It runs 40
 seeds of 120 steps by default (8 on an ordinary `verify`, 400 in the extended run;
 `HITSLOP_MERGE_{SEEDS,STEPS}`).
+The deterministic creation-race test checks page publications against fresh snapshots
+after both imports and later edits, including a replaced row's nested list. Storage tests
+check that clean copies discard deleted nested content and close-time trimming bounds
+deleted rows with both string and text fields while preserving the live value.
 
 `sync.rs` runs three replicas through the relay's rules (`tests/support/relay.rs`) with
 the real session and codec: dropped connections, relay restarts and crashes that reopen

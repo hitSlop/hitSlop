@@ -249,25 +249,10 @@ fn an_edit_from_a_cleared_and_recreated_field_applies_to_the_field_there_now() {
 }
 
 #[test]
-fn undoing_a_row_removal_revives_the_same_row_and_text_containers() {
-    use loro::{Container, ContainerTrait, LoroDoc, ValueOrContainer};
-    // Rows are mergeable children keyed by `$id`: removal hides a row and undo revives it.
-    let identities = |d: &Document| {
-        let saved = LoroDoc::new();
-        saved.import(&d.checkpoint().unwrap()).unwrap();
-        let Some(ValueOrContainer::Container(Container::Map(list))) = saved.get_map("data").get("rows") else {
-            panic!("rows")
-        };
-        let Some(ValueOrContainer::Container(Container::Map(rows))) = list.get("rows") else { panic!("rows map") };
-        let Some(ValueOrContainer::Container(Container::Map(row))) = rows.get(A) else { panic!("row") };
-        let Some(ValueOrContainer::Container(text)) = row.get("text") else { panic!("text") };
-        (row.id(), text.id())
-    };
+fn undoing_a_row_removal_restores_its_application_id_and_editable_text() {
     let (mut d, mut view) = open("checklist");
-    let before = identities(&d);
     apply(&mut d, &mut view, &json!({"intents":[{"type":"remove","path":["rows"],"id":A}]}).to_string());
     view.publish(&d.undo().unwrap().publication.unwrap());
-    assert_eq!(identities(&d), before);
     assert_eq!(value(&d)["rows"][0], json!({"$id":A,"text":"A","done":false}));
     let typed = type_text(&mut d, json!(["rows",{"id":A},"text"]), "A", "AX", 2).unwrap();
     view.publish(&typed.publication.unwrap());

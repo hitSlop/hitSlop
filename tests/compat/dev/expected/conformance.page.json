@@ -148,14 +148,14 @@
   },
   "attachments": [
     {
-      "byteLength": 11,
+      "mimeType": "application/octet-stream",
       "id": "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed",
-      "mimeType": "application/octet-stream"
+      "byteLength": 11
     },
     {
-      "byteLength": 82,
+      "mimeType": "image/png",
       "id": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
-      "mimeType": "image/png"
+      "byteLength": 82
     }
   ]
 }
