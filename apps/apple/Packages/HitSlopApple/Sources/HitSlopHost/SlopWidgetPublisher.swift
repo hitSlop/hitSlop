@@ -14,18 +14,25 @@ import WidgetKit
   private var tail: Task<Void, Never>?
   private var cache: WidgetCache?
   private var openSession: (String) -> DocumentSession? = { _ in nil }
+  private var activeSelections: () async -> Set<String> = { [] }
   private let logger = Logger(subsystem: "com.hitslop.app", category: "widgets")
 
-  public func start(openSession: @escaping (String) -> DocumentSession?) {
+  public func start(
+    activeSelections: @escaping () async -> Set<String>, openSession: @escaping (String) -> DocumentSession?
+  ) {
     guard let cache = try? WidgetCache.shared() else { return }
-    start(cache: cache, openSession: openSession)
+    start(cache: cache, activeSelections: activeSelections, openSession: openSession)
   }
 
-  func start(cache: WidgetCache, openSession: @escaping (String) -> DocumentSession?) {
+  func start(
+    cache: WidgetCache, activeSelections: @escaping () async -> Set<String> = { [] },
+    openSession: @escaping (String) -> DocumentSession?
+  ) {
     guard !enabled else { return }
     self.cache = cache
     enabled = true
     self.openSession = openSession
+    self.activeSelections = activeSelections
     let activity = NSBackgroundActivityScheduler(identifier: "com.hitslop.widget-capture")
     activity.interval = Double(widgetLimits().minRefreshMinutes) * 60
     activity.tolerance = 5 * 60
@@ -45,6 +52,7 @@ import WidgetKit
     scheduler = nil
     enabled = false
     cache = nil
+    activeSelections = { [] }
   }
 
   func needsCapture(url: URL, edited: Bool) -> Bool {
@@ -87,13 +95,7 @@ import WidgetKit
   private func refreshDue() async {
     guard enabled, let cache else { return }
     if cache.pruneUnavailable() { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
-    let configurations: [WidgetInfo] = await withCheckedContinuation { continuation in
-      WidgetCenter.shared.getCurrentConfigurations { continuation.resume(returning: (try? $0.get()) ?? []) }
-    }
-    let ids = Set(
-      configurations.filter { $0.kind == WidgetCache.kind }
-        .compactMap { $0.widgetConfigurationIntent(of: SlopWidgetIntent.self)?.slop?.id })
-    await refresh(ids: ids)
+    await refresh(ids: activeSelections())
   }
 
   func refresh(ids: Set<String>) async {

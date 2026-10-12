@@ -378,7 +378,9 @@ cache failure keeps the previous generation and does not become a save failure.
 
 One configurable WidgetKit extension offers the three sizes. Its AppIntents `Slop`
 parameter lists successfully captured documents. The extension reads presentation
-records and PNGs only. Swift owns the disposable cache format and image bounds; the
+records and PNGs only. The app and extension compile the shared intent source directly
+so each bundle owns resolvable AppIntents metadata; the app passes active document IDs
+to the publisher. Swift owns the disposable cache format and image bounds; the
 extension does not link the document core. Rust owns stored declarations, capture
 viewports and scheduling bounds, carried to the host through UniFFI. Immutable generation folders precede an
 atomic record replacement; a late older capture cannot replace newer images. The cache

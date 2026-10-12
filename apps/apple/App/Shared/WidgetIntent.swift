@@ -1,5 +1,6 @@
 import AppIntents
 import Foundation
+import HitSlopWidgets
 
 public struct SlopWidgetEntity: AppEntity {
   public static let typeDisplayRepresentation: TypeDisplayRepresentation = "Slop"
@@ -32,5 +33,3 @@ public struct SlopWidgetIntent: WidgetConfigurationIntent {
   @Parameter(title: "Slop") public var slop: SlopWidgetEntity?
   public init() {}
 }
-
-public struct HitSlopWidgetIntents: AppIntentsPackage {}

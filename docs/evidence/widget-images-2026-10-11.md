@@ -115,3 +115,26 @@ native scenarios skipped by their gates). Nine focused browser checks passed wit
 including Widget.svelte addition/removal during development. The final macOS app and
 extension Debug build and `git diff --check` passed. Signed desktop picker/tap/refresh
 qualification remains pending; no installation or distribution was performed in this pass.
+
+## Installed picker registration — 2026-10-12
+
+The signed product initially showed only a skeleton and no per-widget Edit Widget
+menu. Replacing an older `/Applications` app and unregistering the duplicate Xcode
+extension did not resolve it. `linkd` reported `aggregateMetadataIsEmpty`; WidgetKit
+then refused timelines because the intent configuration was missing. The document's
+three cached images were already present.
+
+The intent was in a static Swift package with an `AppIntentsPackage` framework
+reference. The app and extension now compile one shared intent source directly, and
+the app supplies active selection IDs to the host publisher. This follows
+[Apple's guidance on shared intent source membership](https://developer.apple.com/forums/thread/759160?page=2).
+The artifact check reproduced the unsupported package reference in the previous
+installed build and passes against the corrected app and extension.
+
+A development-signed Release build was installed and verified at `/Applications/hitSlop.app`.
+At 14:32:41Z, `linkd` completed indexing; at 14:32:43Z the installed extension received
+`SlopWidgetIntent` and returned a successful small-widget timeline. This qualifies
+registration and the unselected timeline, not yet the user's picker selection or tap.
+`bun run verify`, `bun run verify --native` (220 Swift tests, 26 native CLI tests),
+and the installed-app artifact checks passed. Three native CLI scenarios retained
+their existing skip gates.

@@ -1,4 +1,3 @@
-import AppIntents
 import AppKit
 import HitSlopCatalog
 import HitSlopCore
@@ -9,10 +8,7 @@ import HitSlopWidgets
 import Sparkle
 import SwiftUI
 import UniformTypeIdentifiers
-
-struct HitSlopAppIntents: AppIntentsPackage {
-  static var includedPackages: [any AppIntentsPackage.Type] { [HitSlopWidgetIntents.self] }
-}
+import WidgetKit
 
 @main enum HitSlopApp {
   @MainActor static func main() {
@@ -64,9 +60,19 @@ private struct UpdateSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
-    SlopWidgetPublisher.shared.start { [weak self] identity in
-      self?.coordinator.documentControllers.first { $0.widgetFileIdentity == identity && !$0.isHiddenForClose }?.session
-    }
+    SlopWidgetPublisher.shared.start(
+      activeSelections: {
+        let configurations: [WidgetInfo] = await withCheckedContinuation { continuation in
+          WidgetCenter.shared.getCurrentConfigurations { continuation.resume(returning: (try? $0.get()) ?? []) }
+        }
+        return Set(
+          configurations.filter { $0.kind == WidgetCache.kind }
+            .compactMap { $0.widgetConfigurationIntent(of: SlopWidgetIntent.self)?.slop?.id })
+      },
+      openSession: { [weak self] identity in
+        self?.coordinator.documentControllers.first { $0.widgetFileIdentity == identity && !$0.isHiddenForClose }?
+          .session
+      })
     HitSlopFirebase.telemetry.send(.launched)
     // A crashed session's discovery file would name a dead owner; clear it off the main
     // thread.

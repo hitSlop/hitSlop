@@ -25,6 +25,7 @@ targets:
     platform: macOS
     sources:
       - path: App/Shared/Assets.xcassets
+      - path: App/Shared/WidgetIntent.swift
       - path: App/macOS
         excludes:
           - ExportOptions.plist
@@ -104,7 +105,10 @@ targets:
   hitSlop-Widgets:
     type: app-extension
     platform: macOS
-    sources: [App/Widgets]
+    sources:
+      - App/Widgets
+      # Intent types must belong to each bundle, not a static Swift package.
+      - App/Shared/WidgetIntent.swift
     dependencies:
       - package: HitSlopApple
         product: HitSlopWidgets

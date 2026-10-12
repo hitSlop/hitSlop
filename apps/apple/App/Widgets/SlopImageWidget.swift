@@ -4,10 +4,6 @@ import HitSlopWidgets
 import SwiftUI
 import WidgetKit
 
-struct HitSlopExtensionIntents: AppIntentsPackage {
-  static var includedPackages: [any AppIntentsPackage.Type] { [HitSlopWidgetIntents.self] }
-}
-
 private struct Entry: TimelineEntry {
   let date: Date
   let id: String?

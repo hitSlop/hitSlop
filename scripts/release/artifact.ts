@@ -9,6 +9,19 @@ import { run } from "../../packages/hitslop/src/cli/process";
 import { createDocument, engineRequest } from "../lib/native";
 import { verifyAppCommands } from "./app-commands";
 const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
+// Both bundles compile the intent directly. A package reference to a statically
+// linked module extracts JSON but cannot be resolved by macOS's intent registry.
+for (const bundle of [app, join(app, "Contents/PlugIns/hitSlop-Widgets.appex")]) {
+  const metadata = join(bundle, "Contents/Resources/Metadata.appintents");
+  const actions = JSON.parse(await readFile(join(metadata, "extract.actionsdata"), "utf8"));
+  assert.ok(actions.actions?.SlopWidgetIntent?.parameters?.some((p: { name: string }) => p.name === "slop"), "Missing widget document selection metadata");
+  assert.ok(actions.entities?.SlopWidgetEntity && actions.queries?.SlopWidgetQuery, "Missing widget document query metadata");
+  const packages = await readFile(join(metadata, "extract.packagedata"), "utf8").catch((error) => {
+    if (error.code === "ENOENT") return "{}";
+    throw error;
+  });
+  assert.deepEqual(JSON.parse(packages).includes ?? [], [], "Widget intent metadata must not reference an unbundled static package");
+}
 const helper = join(app, "Contents/Helpers/hitslop-native");
 const evaluator = join(app, "Contents/Helpers/hitslop-evaluator");
 await run(["/usr/bin/codesign", "--verify", "--strict", evaluator]);
