@@ -133,8 +133,10 @@ installed build and passes against the corrected app and extension.
 
 A development-signed Release build was installed and verified at `/Applications/hitSlop.app`.
 At 14:32:41Z, `linkd` completed indexing; at 14:32:43Z the installed extension received
-`SlopWidgetIntent` and returned a successful small-widget timeline. This qualifies
-registration and the unselected timeline, not yet the user's picker selection or tap.
+`SlopWidgetIntent` and returned a successful small-widget timeline. The user then
+confirmed that Edit Widget → Slop selected their Quick Checklist document and displayed
+its image. This qualifies installed registration, picker selection and image display;
+tap-to-open, all-family appearance and sustained refresh qualification remain pending.
 `bun run verify`, `bun run verify --native` (220 Swift tests, 26 native CLI tests),
 and the installed-app artifact checks passed. Three native CLI scenarios retained
 their existing skip gates.
