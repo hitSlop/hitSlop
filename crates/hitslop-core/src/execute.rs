@@ -2,7 +2,7 @@ use super::*;
 use layout::RowList;
 
 /// Writes every declared field of the object `value` into `map`. A field the value leaves
-/// out is removed when optional: a revived map may still hold it.
+/// out is removed when optional: a present map may still hold it.
 pub(super) fn fill(map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
     let Node::Object { properties } = node else {
         return Err(err(Code::TypeMismatch, "Expected object"));
@@ -21,23 +21,23 @@ pub(super) fn fill(map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
     Ok(())
 }
 /// Stores a validated value at `map[key]` in the representation its kind uses (`layout`):
-/// a plain value for scalars, a mergeable child for text, counters, objects, records and
-/// lists. Writing over a child replaces its whole content.
+/// a plain value for scalars, an ordinary child for text, counters, objects, records and
+/// lists. Present children keep their identity while their content is replaced.
 pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
     match node {
         Node::Optional { inner } => put(map, key, inner, value),
         scalar if is_scalar(scalar) => map.insert(key, loro_scalar(scalar, value)).map_err(engine),
         Node::Counter {} => {
-            let counter = map.ensure_mergeable_counter(key).map_err(engine)?;
+            let counter = layout::ensure_child(map, key)?;
             layout::set_counter(&counter, value.as_i64().expect("validated counter"))
         }
         Node::Text {} => {
-            let text = map.ensure_mergeable_text(key).map_err(engine)?;
+            let text = layout::ensure_child(map, key)?;
             layout::set_text(&text, value.as_str().expect("validated text"))
         }
-        Node::Object { .. } => fill(&map.ensure_mergeable_map(key).map_err(engine)?, node, value),
+        Node::Object { .. } => fill(&layout::ensure_child(map, key)?, node, value),
         Node::Record { value: entry } => {
-            let record = map.ensure_mergeable_map(key).map_err(engine)?;
+            let record: LoroMap = layout::ensure_child(map, key)?;
             let wanted = value.as_object().expect("validated record");
             let gone: Vec<String> = record.keys().map(|k| k.to_string()).filter(|k| !wanted.contains_key(k)).collect();
             for key in gone {
@@ -49,7 +49,7 @@ pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Resul
             Ok(())
         }
         Node::List { item } if is_scalar(item) => {
-            let list = map.ensure_mergeable_movable_list(key).map_err(engine)?;
+            let list = layout::ensure_child(map, key)?;
             rewrite_list(&list, item, value.as_array().expect("validated list"))
         }
         Node::List { item } => {

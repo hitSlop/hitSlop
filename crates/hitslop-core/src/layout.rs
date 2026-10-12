@@ -1,8 +1,7 @@
 //! How descriptor kinds live in Loro (layout 1, docs/reference/document-types.md). Every
-//! container a field holds is a mergeable child of its parent map: two writers that create
-//! the same field converge on one container instead of one hiding the other. Reads never
-//! ensure a child, because ensuring writes; writing over a child replaces its whole content,
-//! including anything a hidden earlier incarnation still holds.
+//! container a field holds is an ordinary child of its parent map. Edits keep a present
+//! child; creating an absent field makes a new child, so trimming can discard deleted
+//! content. Concurrent creation at one key selects one container by the map's LWW rule.
 use super::*;
 use loro::LoroCounter;
 use std::collections::HashSet;
@@ -10,6 +9,18 @@ use std::collections::HashSet;
 /// The two children of a row list's map.
 const ROWS: &str = "rows";
 const ORDER: &str = "order";
+
+/// Gets a present child of the expected kind, or creates an ordinary parent-owned one.
+/// Only writes use this: reading a missing field must not create it.
+pub(crate) fn ensure_child<C: ContainerTrait + Default>(parent: &LoroMap, key: &str) -> Result<C> {
+    match parent.get(key) {
+        None => parent.insert_container(key, C::default()).map_err(engine),
+        Some(ValueOrContainer::Container(container)) => {
+            C::try_from_container(container).ok_or_else(|| err(Code::TypeMismatch, "Expected container kind"))
+        }
+        Some(_) => Err(err(Code::TypeMismatch, "Expected container")),
+    }
+}
 
 /// A list of rows: `rows` maps each row's `$id` to its fields, and `order` lists the IDs.
 /// Merged edits can leave an ID in `order` twice (two restores of one row) or name a row
@@ -38,11 +49,11 @@ impl RowList {
         };
         Some(Self { map: map.clone(), rows, order })
     }
-    /// The row list at `parent[key]`, created (or revived) when absent.
+    /// The row list at `parent[key]`, created when absent.
     pub(crate) fn ensure(parent: &LoroMap, key: &str) -> Result<Self> {
-        let map = parent.ensure_mergeable_map(key).map_err(engine)?;
-        let rows = map.ensure_mergeable_map(ROWS).map_err(engine)?;
-        let order = map.ensure_mergeable_movable_list(ORDER).map_err(engine)?;
+        let map = ensure_child(parent, key)?;
+        let rows = ensure_child(&map, ROWS)?;
+        let order = ensure_child(&map, ORDER)?;
         Ok(Self { map, rows, order })
     }
     /// The rows as the application sees them (`visible`).
@@ -94,7 +105,7 @@ impl RowList {
     }
     /// Inserts a validated row with `id` at `at` in `order`.
     pub(crate) fn insert(&self, at: usize, id: &str, item: &Node, value: &Value) -> Result<()> {
-        let row = self.rows.ensure_mergeable_map(id).map_err(engine)?;
+        let row = self.rows.insert_container(id, LoroMap::new()).map_err(engine)?;
         execute::fill(&row, item, value)?;
         self.order.insert(at, id).map_err(engine)
     }

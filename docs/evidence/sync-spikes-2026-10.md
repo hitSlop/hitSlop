@@ -1,5 +1,45 @@
 # Sync spikes (2026-10)
 
+The experiments below used mergeable containers. Before launch, layout 1 switched to
+ordinary parent-owned containers so trimmed files and independent copies discard deleted
+content. Their same-key creation and restoration semantics differ; the experiments are
+historical evidence, not qualification of the current container layout. The repository's
+merge, sync, undo and storage tests exercise the current implementation. See
+[document types](../reference/document-types.md#storage-layout) for its limits.
+
+The first ordinary-container pass ran 8 sync seeds and 500 merge seeds per fixture
+(2,000 merge scenarios). Those merge checks compared document values, not page views.
+Review exposed a page-publication regression at sync seed 9: a winning row container
+could replace a losing one under the same row ID without publishing the new row. Adding
+page views to the deterministic creation race reproduced it before the publication fix.
+
+The storage baseline was rechecked on 2026-10-11 in an isolated archive of clean
+`fa6668c9a0e2c22f599dc478b1646f59299f34dc`, with the default-filter exclusions explicitly
+disabled. Both existing string-row growth tests failed: the close checkpoint retained
+10,530,874 bytes (limit 65,536), and repeated sessions reached 6,615,492 bytes on day 4
+(limit 5,898,240). Scalar strings still reside inside mergeable row maps. Reproduction:
+
+```sh
+cargo nextest run --locked -p hitslop-core --features storage --test store \
+  --ignore-default-filter --no-fail-fast \
+  -E 'test(a_session_too_large_to_keep_closes_with_no_history) | test(doodle_like_use_stays_bounded)'
+```
+
+The clean-copy regression also failed before the switch because deleted nested text
+remained recoverable through the old container IDs. Repeating the baseline close-trim
+test with only its row field changed from `string` to `text` retained 10,560,488 bytes,
+also failing the 65,536-byte bound.
+
+After the publication fix, 81 focused tests passed, including the deterministic page-view
+regression, 400 relay-sync seeds and 400 merge seeds for each of four fixtures (1,600
+merge scenarios). The close-trim test now covers both string and text row fields; both
+pass alongside the other storage-growth and undo tests. The run used:
+
+```sh
+HITSLOP_MERGE_SEEDS=400 bun run verify rust --profile extended \
+  --test merge --test sync --test publications --test replace --test store --test undo
+```
+
 The checks behind the sync design in [architecture](../architecture.md#sync): local owners
 under one Loro peer per session, a merge-closed layout, Loro's `UndoManager`, three-way text
 merges, and a Durable Object that relays Loro updates indexed by version vector.

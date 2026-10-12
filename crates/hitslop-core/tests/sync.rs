@@ -427,7 +427,11 @@ fn a_gap_says_hello_again() {
     assert_eq!(session.status(), &Status::Syncing);
 
     let (record, remote) = foreign(&seed, |other| {
-        other.get_map("data").ensure_mergeable_text("title").unwrap().insert(0, "Remote ").unwrap();
+        let Some(loro::ValueOrContainer::Container(loro::Container::Text(title))) = other.get_map("data").get("title")
+        else {
+            panic!("title text")
+        };
+        title.insert(0, "Remote ").unwrap();
     });
     let before = support::value(&doc);
     let broadcast = session.receive(&mut doc, &Frame::Records(vec![record.clone()]).encode());

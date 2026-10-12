@@ -255,7 +255,15 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
 // that deletes a lot never shrank. Oracle: it closes to its live value with no history.
 #[test]
 fn a_session_too_large_to_keep_closes_with_no_history() {
-    let (_dir, path) = document();
+    for kind in ["string", "text"] {
+        let mut schema: Value = serde_json::from_str(SCHEMA).unwrap();
+        schema["properties"]["rows"]["item"]["properties"]["text"]["kind"] = json!(kind);
+        session_too_large_to_keep(&schema.to_string());
+    }
+}
+
+fn session_too_large_to_keep(schema: &str) {
+    let (_dir, path) = document_with(schema, INITIAL);
     let mut seed = 3;
     let mut opened = String::new();
     for _ in 0..2 {
@@ -731,6 +739,77 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
     assert!(doc.undo().unwrap().publication.is_some(), "the session's undo is untouched");
     assert!(doc.undo().unwrap().publication.is_some());
     assert_eq!(title(&doc), replaced);
+}
+
+// A hidden child is still saved state, even when the public value no longer shows it.
+// A clean copy must discard deleted nested data, not just hide it from the page.
+#[test]
+fn a_clean_copy_excludes_deleted_nested_content() {
+    use loro::{Container, ContainerTrait, LoroDoc, LoroMap, ValueOrContainer};
+    let schema = json!({"kind":"object","properties":{
+        "rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}},
+        "entries":{"kind":"record","value":{"kind":"object","properties":{"text":{"kind":"text"}}}},
+        "note":{"kind":"optional","inner":{"kind":"text"}}
+    }});
+    let secret = "deleted-private-content-7b516e";
+    let initial = json!({"rows":[{"$id":"gone","text":secret}],"entries":{"gone":{"text":secret}},"note":secret});
+    let (dir, path) = document_with(&schema.to_string(), &initial.to_string());
+    let (store, mut doc) = open(&path);
+    let before = LoroDoc::new();
+    before.import(&doc.checkpoint().unwrap()).unwrap();
+    let child = |map: &LoroMap, key: &str| match map.get(key).unwrap() {
+        ValueOrContainer::Container(container) => container,
+        _ => panic!("expected container at {key}"),
+    };
+    let map = |container| match container {
+        Container::Map(map) => map,
+        _ => panic!("expected map"),
+    };
+    let root = before.get_map("data");
+    let rows = map(child(&map(child(&root, "rows")), "rows"));
+    let row = map(child(&rows, "gone"));
+    let entry = map(child(&map(child(&root, "entries")), "gone"));
+    let deleted = [child(&row, "text").id(), child(&entry, "text").id(), child(&root, "note").id()];
+    doc.apply_json(
+        &json!({"intents":[
+            {"type":"remove","path":["rows"],"id":"gone"},
+            {"type":"clear","path":["entries","gone"]},
+            {"type":"clear","path":["note"]}
+        ]})
+        .to_string(),
+        Origin::Page,
+    )
+    .unwrap();
+    save(&store, &mut doc);
+    let copy = dir.path().join("Copy.slop");
+    store.copy_clean(&copy, &[]).unwrap();
+    let (_copied_store, mut copied) = open(&copy);
+    assert_eq!(copied.value(), doc.value());
+    let raw = LoroDoc::new();
+    raw.import(&copied.checkpoint().unwrap()).unwrap();
+    for id in deleted {
+        let retained = raw.get_container(id).map(|c| ValueOrContainer::Container(c).get_deep_value());
+        assert!(!format!("{retained:?}").contains(secret), "the copy retained deleted content: {retained:?}");
+    }
+    copied
+        .apply_json(
+            &json!({"intents":[
+                {"type":"insert","path":["rows"],"id":"gone","value":{"text":"New row"}},
+                {"type":"set","path":["entries","gone"],"value":{"text":"New entry"}},
+                {"type":"set","path":["note"],"value":"New note"}
+            ]})
+            .to_string(),
+            Origin::Page,
+        )
+        .unwrap();
+    assert_eq!(
+        support::value(&copied),
+        json!({
+            "rows":[{"$id":"gone","text":"New row"}],"entries":{"gone":{"text":"New entry"}},"note":"New note"
+        })
+    );
+    assert!(doc.undo().unwrap().publication.is_some(), "copying preserves the source's undo");
+    assert_eq!(support::value(&doc), initial);
 }
 
 fn accent(doc: &Document) -> String {
