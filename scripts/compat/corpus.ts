@@ -3,9 +3,8 @@
 // regenerated or deleted; see docs/testing.md#compatibility-corpus.
 import { repository } from "../lib/artifacts";
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { exec } from "../../packages/hitslop/src/cli/process";
-import { strict as assert } from "node:assert";
 import type { AttachmentInfo } from "../../packages/hitslop/src/wire/engine.generated";
 
 export const corpus = join(repository, "tests/compat");

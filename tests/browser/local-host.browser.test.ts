@@ -668,7 +668,7 @@ test("Chrome fails every page request for good when the document worker stops an
     // The worker never reports anything, so only the page's own deadline can end the wait.
     await context.clock.install();
     await context.addInitScript(watchDocuments, [copyDeadline, 30_000]);
-    const { page, frame, worker } = await stalledCopy(context);
+    const { frame, worker } = await stalledCopy(context);
     await startWrites(frame);
     await untilAsked(worker, 2);
     await wait(200);

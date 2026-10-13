@@ -175,12 +175,12 @@ export function transactionCapabilities(
 }
 
 // Error narrowing is public; its constructor belongs to the separately bundled shell.
-import { DocumentError, isDocumentError, isRejected } from "../../src/sdk/schema";
+import * as sdk from "../../src/sdk/schema";
 function documentErrors(error: unknown) {
-  if (isDocumentError(error)) { const typed: DocumentError = error; void typed.code; }
-  if (isRejected(error)) { const code: "rejected" = error.code; void code; }
+  if (sdk.isDocumentError(error)) { const typed: sdk.DocumentError = error; void typed.code; }
+  if (sdk.isRejected(error)) { const code: "rejected" = error.code; void code; }
   // @ts-expect-error The public DocumentError is a type, not a constructor.
-  new DocumentError("rejected", "bad");
+  new sdk.DocumentError("rejected", "bad");
 }
 
 // One shared write serves `doc.change` in the page and `run({ tx })` in a command.

@@ -209,7 +209,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
         });
       },
       handleHotUpdate(ctx) {
-        if (rebuilding || failed || dependencies.has(ctx.file)) return [];
+        return rebuilding || failed || dependencies.has(ctx.file) ? [] : undefined;
       },
     };
     const config = await appConfig(source);

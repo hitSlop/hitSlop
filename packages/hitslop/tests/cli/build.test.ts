@@ -2,7 +2,7 @@
 // its source. slop.ts is covered in slop-ts.test.ts, portable builds in portable.test.ts.
 import { test, expect, spyOn } from "bun:test";
 import { execute } from "../../src/cli/engine";
-import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, rename } from "node:fs/promises";
+import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { overrideSlop, overrideSchema, stage } from "./source-fixture";
 import { png } from "./png-fixture";

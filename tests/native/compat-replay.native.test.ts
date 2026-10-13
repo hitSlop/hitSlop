@@ -69,7 +69,7 @@ if (required)
   test(`tests/compat/${required} is captured, frozen and matches this candidate`, async () => {
     const entry = entries.find(({ name }) => name === required);
     assert.ok(entry?.release.frozen, `tests/compat/${required} must be captured and frozen before this release`);
-    await verifyCandidate(entry.root, entry.release);
+    await verifyCandidate(entry.release);
   }, 120_000);
 
 for (const { name, root, release, documents: saved, templates } of entries)

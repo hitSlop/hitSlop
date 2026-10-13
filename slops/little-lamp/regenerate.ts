@@ -1,3 +1,4 @@
+/// <reference types="bun" />
 import { copyFile } from "node:fs/promises";
 import { join } from "node:path";
 const root = import.meta.dir;

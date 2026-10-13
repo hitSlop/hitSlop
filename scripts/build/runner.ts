@@ -11,6 +11,7 @@ async function frozen(abi: number) {
     const digest = record.frozen ? record.producer?.runner?.[abi] : undefined;
     if (digest) return { release, digest: digest as string };
   }
+  return undefined;
 }
 export async function buildRunner(check = false) {
   const path = `crates/hitslop-runner/src/abi/${RuntimeABI}.generated.js`;

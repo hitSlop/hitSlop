@@ -14,6 +14,7 @@ function attachmentRefusal(file: Blob & { name?: unknown }) {
     return 'An attachment needs a file name: pass a File, such as new File([blob], "photo.jpg", { type: blob.type })';
   if (new TextEncoder().encode(file.name).length > AttachmentLimits.name)
     return `An attachment name holds at most ${AttachmentLimits.name} UTF-8 bytes`;
+  return undefined;
 }
 
 export function ownerAttachments(

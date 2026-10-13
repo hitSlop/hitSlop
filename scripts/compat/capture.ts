@@ -25,7 +25,7 @@ import {
 } from "./corpus";
 import { prepareNativeFixtures } from "../lib/native-fixtures";
 import { corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
-import { digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
+import { digest, fileDigest, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import { createDocument } from "../lib/native";

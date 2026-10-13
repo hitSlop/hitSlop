@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { documentFromStage, engineRequest } from "../../scripts/lib/native";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { negotiate } from "../../packages/hitslop/src/cli/engine";

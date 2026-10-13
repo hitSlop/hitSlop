@@ -150,8 +150,8 @@ export async function buildCapture(
       if (id.startsWith("\0capture-unavailable:"))
         return 'throw Error("Node services are unavailable in synchronous capture rendering");';
       if (styles.has(id)) return styles.get(id);
-      if (id === entry)
-        return `${editorStyles.map((path) => `import ${JSON.stringify(path)};`).join("\n")}
+      if (id !== entry) return;
+      return `${editorStyles.map((path) => `import ${JSON.stringify(path)};`).join("\n")}
 import Component from ${JSON.stringify(component)};
 import {${renderer}} from ${JSON.stringify(join(sdk, role === "widget" ? "app/widget-render.ts" : "app/capture-render.ts"))};
 globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCaptureCSS)(json);`;
@@ -203,7 +203,8 @@ globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCapt
         await inspect(js);
         if (id.startsWith(source + "/") && declaresModuleState(code, id)) stateful.add(id);
       }
-      if (runes) return compileModule(js, { filename: id, generate: "server", dev: false }).js;
+      if (!runes) return;
+      return compileModule(js, { filename: id, generate: "server", dev: false }).js;
     },
     generateBundle() {
       for (const id of this.getModuleIds()) {
@@ -214,10 +215,11 @@ globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCapt
   };
   const refuse = (found: Iterable<string>) => {
     const sorted = [...found].sort();
-    if (sorted.length)
-      return new Error(
-        `${component} (${role} capture) must render synchronously with Takumi:\n${sorted.join("\n")}`,
-      );
+    return sorted.length
+      ? new Error(
+          `${component} (${role} capture) must render synchronously with Takumi:\n${sorted.join("\n")}`,
+        )
+      : undefined;
   };
   const refusal = () =>
     stateful.size
@@ -238,7 +240,8 @@ globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCapt
         name: "hitslop-capture-asset-urls",
         enforce: "post",
         renderChunk(code, chunk) {
-          if (code.includes("/assets/")) return portableAssetURLs(code, chunk.fileName);
+          if (!code.includes("/assets/")) return;
+          return portableAssetURLs(code, chunk.fileName);
         },
       },
     ],

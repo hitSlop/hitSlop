@@ -154,12 +154,14 @@ const tiers: Tier[] = [
     quick: true,
     inputs: tierInputs.types,
     run: async () => {
+      const tsc = (project: string) => quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", project]);
       const output = await Promise.all([
         quiet([process.execPath, "node_modules/prettier/bin/prettier.cjs", "--check", "packages/hitslop/src"]),
-        quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]),
+        // The type tests' own project relaxes only the unused rules: their checks are never read.
+        tsc("tsconfig.json").then(async (root) => [root, await tsc("packages/hitslop/tests/tsconfig.json")]),
         quiet([process.execPath, "scripts/templates/check.ts"]),
       ]);
-      console.log(output.filter(Boolean).join("\n"));
+      console.log(output.flat().filter(Boolean).join("\n"));
     },
   },
   {
@@ -265,7 +267,7 @@ const tiers: Tier[] = [
     native: true,
     needs: ["engine", "shell"],
     inputs: tierInputs.native,
-    run: async (args, prepare) => {
+    run: async (args) => {
       await bunTest(inventory.native, ["--timeout=120000", ...args], {
         HITSLOP_TEST_EVIDENCE: runDirectory,
         // A release renders every bundled template and requires its frozen corpus entry.

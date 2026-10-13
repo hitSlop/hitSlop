@@ -74,7 +74,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 
 | Tier | Runs |
 |---|---|
-| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), TypeScript and template types. Together, concurrently |
+| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), and Svelte types for the templates and the SDK's components. Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell and release tests over SDK WASM; up to four isolated file workers |
 | `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |

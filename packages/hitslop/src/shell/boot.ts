@@ -15,7 +15,7 @@ import { checkedApp } from "./app-module";
 import { isDocumentError } from "../sdk/errors";
 import type {} from "./page-handle";
 import { hostDispatcher } from "./host-dispatch";
-import { ErrorTextLimit, RuntimeABI } from "../schema/constants";
+import { ErrorTextLimit, type RuntimeABI } from "../schema/constants";
 import { preview } from "./preview";
 
 const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop) || hasBrowserBridge();

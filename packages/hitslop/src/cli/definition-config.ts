@@ -101,7 +101,8 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
                   name: "hitslop-portable-asset-urls",
                   enforce: "post" as const,
                   renderChunk(code: string, chunk: { fileName: string }) {
-                    if (code.includes("/assets/")) return portableAssetURLs(code, chunk.fileName);
+                    if (!code.includes("/assets/")) return;
+                    return portableAssetURLs(code, chunk.fileName);
                   },
                 },
               ]

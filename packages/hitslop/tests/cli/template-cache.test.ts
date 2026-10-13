@@ -52,7 +52,7 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     expect(await run()).toBe("built");
     const cached = join(directory, "fixture-one/template.slop");
     const bytes = await readFile(cached);
-    bytes[bytes.length - 1] ^= 1;
+    bytes.writeUInt8(bytes.readUInt8(bytes.length - 1) ^ 1, bytes.length - 1);
     await writeFile(cached, bytes);
     expect(await run()).toBe("built");
     await writeFile(join(directory, "fixture-one/entry.json"), "interrupted");

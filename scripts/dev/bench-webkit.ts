@@ -11,7 +11,7 @@ await page.waitForFunction((n) => document.querySelectorAll(".checklist-row").le
 await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 const startup = Date.now() - t0;
 
-const result = await page.evaluate(async (kind) => {
+const result = await page.evaluate(async () => {
   const frame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   const out = { js: [] as number[], layout: [] as number[], frame: [] as number[] };
   for (let i = 0; i < 20; i++) {
@@ -37,7 +37,7 @@ const result = await page.evaluate(async (kind) => {
   }
   const med = (a: number[]) => a.sort((x, y) => x - y)[a.length >> 1];
   return { jsMS: med(out.js), forcedLayoutMS: med(out.layout), restOfFrameMS: med(out.frame) };
-}, "checkbox");
+});
 const geometry = await page.evaluate(() => { const s = document.querySelector(".checklist-scroller") as HTMLElement; return { scrollerClient: s?.clientHeight, scrollerContent: s?.scrollHeight, rowHeight: (document.querySelector(".checklist-row") as HTMLElement)?.getBoundingClientRect().height }; });
 console.log(JSON.stringify({ engine: engine.name(), rows, startupMS: startup, ...result, ...geometry }));
 await browser.close();

@@ -32,7 +32,7 @@ test("stored commands validate arguments, return typed results and refuse atomic
     const run = (command: string, args: unknown) => request({ method: "call", documentPath: document, command, args });
     const describe = async () => (await execute({ method: "describe", documentPath: document })).state;
     const first = await describe();
-    expect(first.commands.addRow.args).toMatchObject({ properties: { text: { type: "string" } } });
+    expect(first.commands.addRow?.args).toMatchObject({ properties: { text: { type: "string" } } });
     expect(first.fields.find(field => field.path[0] === "title")?.description).toBeTruthy();
     const added = await run("addRow", { text: "From command" });
     expect(added.ok, JSON.stringify(added)).toBe(true);

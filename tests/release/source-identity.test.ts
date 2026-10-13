@@ -37,11 +37,11 @@ test("release acceptance compares presentation fixtures at their built location"
       inputs: await sourceFingerprint(folder),
       templates: { "presentation-ellipse": await fileDigest(fixture) },
     };
-    await verifyCandidate(folder, release, folder);
+    await verifyCandidate(release, folder);
     await writeFile(fixture, "changed presentation bytes");
-    await expect(verifyCandidate(folder, release, folder)).rejects.toThrow("Captured template differs from candidate: presentation-ellipse");
+    await expect(verifyCandidate(release, folder)).rejects.toThrow("Captured template differs from candidate: presentation-ellipse");
     await mkdir(join(folder, "tests/presentation"), { recursive: true });
     await writeFile(join(folder, "tests/presentation/slop.ts"), "changed producing input");
-    await expect(verifyCandidate(folder, release, folder)).rejects.toThrow("Release inputs changed after compatibility capture");
+    await expect(verifyCandidate(release, folder)).rejects.toThrow("Release inputs changed after compatibility capture");
   } finally { await rm(folder, { recursive: true, force: true }); }
 });

@@ -20,7 +20,7 @@ if (process.argv.includes("--preflight")) process.exit(0);
 const entry = (await releases()).find(entry => entry.name === version && entry.release.frozen);
 if (!entry) throw new Error("Missing frozen release corpus");
 await verifyCorpus(entry.root, entry.release);
-await verifyCandidate(entry.root, entry.release);
+await verifyCandidate(entry.release);
 const shell = await verifyShellCopies();
 const output = join(repository, "dist/macos");
 await mkdir(output, { recursive: true });

@@ -34,15 +34,15 @@ export async function appConfig(source: string): Promise<InlineConfig> {
       if (id === "/assets/ui.js" || id === virtualEntry) return virtualEntry;
       if (id === "/assets/views.js" || id === viewsEntry) return viewsEntry;
       refuseRoleImport(id, importer, roles, false, (message) => this.error(message));
-      if (importer && importer !== virtualEntry && importer !== viewsEntry) {
-        const found = await this.resolve(id, importer, { ...resolveOptions, skipSelf: true });
-        if (found) refusePageRole(found.id, roles, (message) => this.error(message));
-        return found;
-      }
+      if (!importer || importer === virtualEntry || importer === viewsEntry) return;
+      const found = await this.resolve(id, importer, { ...resolveOptions, skipSelf: true });
+      if (found) refusePageRole(found.id, roles, (message) => this.error(message));
+      return found;
     },
     async load(id) {
       if (id === virtualEntry) return uiEntrySource(roles);
-      if (id === viewsEntry) return viewsEntrySource((roles = await discoverRoles(source)));
+      if (id !== viewsEntry) return;
+      return viewsEntrySource((roles = await discoverRoles(source)));
     },
   };
   return {
