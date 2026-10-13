@@ -665,8 +665,10 @@ test("Chrome fails a page request when the worker throws outside request handlin
 test("Chrome fails every page request for good when the document worker stops answering", async () => {
   const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "worker-silence-profile-")), { channel: "chrome" });
   try {
-    // The worker never reports anything, so only the page's own deadline can end the wait.
-    await context.clock.install();
+    // The worker never reports anything, so only the page's own deadline can end the wait. The
+    // clock is paused, so only this test moves it and a loaded machine cannot eat into the deadline.
+    await context.clock.install({ time: 0 });
+    await context.clock.pauseAt(1000);
     await context.addInitScript(watchDocuments, [copyDeadline, 30_000]);
     const { frame, worker } = await stalledCopy(context);
     await startWrites(frame);

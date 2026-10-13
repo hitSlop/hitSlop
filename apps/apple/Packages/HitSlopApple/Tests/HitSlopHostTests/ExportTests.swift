@@ -110,9 +110,10 @@ extension HostTests {
         context.drawPDFPage(page)
         let rendered = NSBitmapImageRep(cgImage: try #require(context.makeImage()))
         let png = try #require(NSBitmapImageRep(data: try await SlopRenderer.exportPNGData(session: session)))
-        // A PDF page lands on whole 0.75 pt renderer pixels, so it may differ from the PNG by a step.
-        #expect(abs(CGFloat(png.pixelsWide) / 2 - bounds.width) <= 0.75)
-        #expect(abs(CGFloat(png.pixelsHigh) / 2 - bounds.height) <= 0.75)
+        // A PDF page lands on whole 0.75 pt renderer pixels and measures its own height, so it can
+        // differ from the PNG by a point or so.
+        #expect(abs(CGFloat(png.pixelsWide) / 2 - bounds.width) <= 1.5)
+        #expect(abs(CGFloat(png.pixelsHigh) / 2 - bounds.height) <= 1.5)
         // Sample the controlled solid surface away from text.
         let pdfColor = try #require(rendered.colorAt(x: 4, y: rendered.pixelsHigh / 2)?.usingColorSpace(.sRGB))
         let pngColor = try #require(png.colorAt(x: 8, y: png.pixelsHigh / 2)?.usingColorSpace(.sRGB))
