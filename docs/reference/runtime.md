@@ -148,7 +148,7 @@ Rust resolves window defaults, frame capabilities and silhouettes once for the n
 
 ## Capture and Finder integration
 
-Every host capture uses a disposable read-only renderer. An open document first drains its
+Every host capture uses synchronous Svelte SSR and Takumi in the restricted Rust child. An open document first drains its
 page writes, saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
 ends after the backup. Rendering then uses that independent copy, including its app,
 attachments, data and theme. The editor's focus, selection, scroll and local selected
@@ -172,7 +172,7 @@ height, and previews crop at the larger of the saved window height and three wid
 Native capture preserves the saved viewport's layout while extending the image canvas
 to include horizontal overflow; viewport units retain the saved window dimensions.
 The build rejects retained browser lifecycle/DOM, locale formatting, async code or
-host helpers with a role/source diagnostic. the `attachmentURL(id)` prop resolves referenced
+host helpers with a role/source diagnostic. The `attachmentURL(id)` prop resolves referenced
 PNG/JPEG/GIF/WebP images from the saved source; capture cannot import or read blobs.
 The inventory is capped at 24 MiB before base64 encoding. Missing or unsupported
 images fail capture and retain prior artwork. Native failures never change engines.
@@ -205,7 +205,7 @@ PDF has an independent 24 MiB output budget (36 MiB encoded reply), a 10-second 
 
 The core stores artwork losslessly optimized with oxipng: `pack` at level 2, and a closing window's artwork at level 0, because the writer lock is released only after it is written ([measurements](../evidence/artwork-optimization-2026-10-05.md)). Pixels, dimensions and transparency are preserved, fully transparent pixels keep their colour, alpha is removed only from fully opaque images, and metadata that does not affect display is stripped. A result is kept only when it is smaller; artwork oxipng cannot read, or would decode past 64 MiB, is stored as it is. PNG and PDF exports are written as rendered.
 
-On macOS, build and register render artwork the project does not supply from the staged template, inside the same `pack` request that writes it, and store it as supplied artwork is stored; a failed render publishes nothing. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup in an independent read-only renderer; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
+On macOS, build and register render artwork the project does not supply from the staged template, inside the same `pack` request that writes it, and store it as supplied artwork is stored; a failed render publishes nothing. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup through Svelte SSR and Takumi in the restricted Rust child; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
 
 Open and closed exports use independent saved-state renderers. An open export uses the flushed backup described above; a
 closed export takes no writer lock and can render while another process holds the document.

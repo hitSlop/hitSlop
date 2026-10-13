@@ -125,7 +125,7 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
 | File | `crates/hitslop-core/src/file/` (feature `storage`, native and browser) | The `.slop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
 | Storage | `crates/hitslop-core/src/store/`, `registry.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
-| Engine | `crates/slop-engine` | Authoring validation and packing; document creation, inspection, and requests on macOS and Linux |
+| Engine | `crates/slop-engine` | Authoring validation and packing, including artwork rendering on macOS; document creation, inspection and requests; closed PNG/PDF export on macOS and app opening through `/usr/bin/open -a` |
 | Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations, stored commands and native image capture; ABI-specific preludes, sandbox and execution limits |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
@@ -360,7 +360,7 @@ a file without artwork shows the `.slop` document icon.
 The page barrier sends unsent text, waits for queued writes and attachment imports, then
 flushes; it never joins a flush that already passed its drain point. Inputs stay
 enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
-independent read-only renderers from saved state. For an open document, the core first backs up
+saved state independently of the editor. For an open document, the core first backs up
 SQLite after the page drain and save; the temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
 rendering. Icons, preview artwork, widgets, PNG exports and vector PDFs use synchronous Svelte SSR

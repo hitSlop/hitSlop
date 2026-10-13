@@ -111,9 +111,9 @@ function changedInputs(previous: Inputs = {}, current: Inputs, limit = 5) {
     : changed;
 }
 
-/** Checks shared by cache reads and signed-app verification: a regular template file the
- * engine opens, built for `slug`, with preview artwork unless `artwork` is false (the icon
- * is optional: a build without an icon view has none). Returns the file's checksum. */
+/** Checks shared by cache publication and signed-app verification: a regular template file
+ * the engine opens, built for `slug`, with preview artwork unless `artwork` is false.
+ * Icon artwork is not required by this check. Returns the file's checksum. */
 export async function validateTemplate(path: string, slug: string, artwork = true) {
   const info = await lstat(path);
   if (!info.isFile()) throw new Error(`Invalid template file: ${slug}`);

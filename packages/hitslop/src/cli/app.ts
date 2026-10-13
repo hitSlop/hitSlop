@@ -497,7 +497,7 @@ export const app = new Crust("slop", {
         sections: [
           {
             title: "Capture behavior",
-            body: "Exports render the saved state in a fresh page with its default view; an open document first saves pending edits. Output must not be the document itself. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
+            body: "Exports render saved state through Svelte SSR and Takumi in the restricted Rust child; an open document first saves pending edits. Output must not be the document itself. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
           },
         ],
       },

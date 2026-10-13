@@ -64,7 +64,7 @@ Share components between Preview and Export where useful. Avoid generating a lon
 <div class="note-icon">{snapshot.tasks.length}</div>
 ```
 
-Capture components render their saved `snapshot` in an independent read-only renderer. If an export should show a selected tab or report, save
+Capture components render their saved `snapshot` through Svelte SSR and Takumi in the restricted Rust process. If an export should show a selected tab or report, save
 that choice in the document; transient editor state is not carried into the capture.
 An export or icon component that throws fails that capture without changing the live
 editor. A later attempt gets a fresh renderer.
@@ -183,6 +183,8 @@ The artwork can be rectangular or another shape; only the canvas must be square.
 ## Make exports readable
 
 Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. The optional `Export.svelte` supplies this complete static view; the editor is never captured. Dedicated exports and icons ignore the window's shape mask.
+
+The platform hides elements marked `data-slop-export="hide"` in Preview, Export and Icon, including the Preview and Icon layouts in `slop dev`. Mark shared editing controls with this attribute; you do not need to copy the hide rule into your CSS.
 
 The host sets `html[data-slop-capture="static"]` during capture. Use it for deliberate static layout adjustments:
 

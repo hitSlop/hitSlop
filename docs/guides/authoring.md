@@ -43,6 +43,9 @@ adding a template and choosing which templates ship.
   and reduced-motion defaults. App CSS still owns typography, layout and palette.
 - Capture views never change saved state to prepare a view.
 
+For shared editing controls in static views, follow the platform's
+[hide rule](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#make-exports-readable).
+
 ## Design standards
 
 The examples are references, not a limit or a default visual
