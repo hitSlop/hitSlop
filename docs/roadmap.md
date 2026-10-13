@@ -100,10 +100,6 @@ In order, with the reasoning in [ideas](ideas.md):
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
   understandable. WebKit does not isolate `slop:` pages, so there is no
   `SharedArrayBuffer`.
-- **No exceptions in the capture import rule.** A static view may not import editor
-  runtime, except `youtube` from `hitslop/embed`, whose thumbnail helper only builds a URL.
-  Move the pure URL helpers (`parseId`, `findId`, `thumbnail`, `src`) to a module static
-  views may import, keep `player` and `lookup` editor-only, and delete the exception.
 - **Static views declare their own stylesheets.** A capture imports the editor's
   stylesheets, in the editor's import order, because most slops' Preview, Export and Icon
   rely on `styles.css` that only `App.svelte` imports. Let each view (or `slop.ts`) name

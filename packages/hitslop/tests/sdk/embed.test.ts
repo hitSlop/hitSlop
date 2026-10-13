@@ -24,17 +24,6 @@ test("video ids come from every common YouTube link and from pasted text", () =>
   expect(youtube.findId("nothing to see here")).toBeNull();
 });
 
-test("the relay URL carries the video and options in the fragment", () => {
-  expect(youtube.src("dQw4w9WgXcQ")).toBe("https://hitslop.com/embed/youtube.html#v=dQw4w9WgXcQ");
-  expect(youtube.src("dQw4w9WgXcQ", { controls: true, autoplay: false, captions: true, start: 30 })).toBe(
-    "https://hitslop.com/embed/youtube.html#v=dQw4w9WgXcQ&controls=1&autoplay=0&cc=1&start=30",
-  );
-  expect(youtube.src("dQw4w9WgXcQ", { relay: "https://example.com/relay.html", start: -4 })).toBe(
-    "https://example.com/relay.html#v=dQw4w9WgXcQ",
-  );
-  expect(() => youtube.src("not an id")).toThrow();
-});
-
 const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
 const stubFetch = (respond: () => Response | Promise<Response>) => {

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { youtube, type YouTubeHandlers, type YouTubePlayer } from "hitslop/embed";
+import { src } from "hitslop/youtube";
 
 let { youtubeId, handlers, onattach, waiting = false }: {
   youtubeId: string;
@@ -25,7 +26,7 @@ $effect(() => {
   bind:this={frame}
   class="pod-player"
   title="Video player"
-  src={youtube.src(youtubeId, { controls: false })}
+  src={src(youtubeId, { controls: false })}
   allow="autoplay; encrypted-media"
   tabindex="-1"
   data-waiting={waiting}

@@ -2,10 +2,13 @@
 // player refuses to play for an embedder that doesn't send an HTTP(S) referrer (error 153). So
 // the player is embedded through a small relay page on hitslop.com, which supplies the referrer
 // and forwards the player's postMessage API. Authors never run a server and never load YouTube's
-// own script (remote scripts are blocked): they call `youtube.src` and `youtube.player`.
+// own script (remote scripts are blocked): they embed the `src` from `hitslop/youtube` and control
+// it with `youtube.player`. Reading a pasted link, the lookup and the player need `URL`, the
+// network or the page, none of which a capture has, so a static view may not import this module;
+// the thumbnail and relay URL builders are plain strings and live in `hitslop/youtube`.
 
-const defaultRelay = "https://hitslop.com/embed/youtube.html";
-const idShape = /^[A-Za-z0-9_-]{11}$/;
+import { defaultRelay, idShape } from "./youtube";
+
 const youtubeHosts = new Set([
   "youtube.com",
   "www.youtube.com",
@@ -16,19 +19,6 @@ const youtubeHosts = new Set([
 ]);
 
 export type VideoMeta = { youtubeId: string; title: string; author: string };
-
-export type YouTubeSrcOptions = {
-  /** Show YouTube's own controls. Off by default: the slop draws its own. */
-  controls?: boolean;
-  /** Start playing as soon as the player loads. On by default. */
-  autoplay?: boolean;
-  /** Show the video's caption track, if it has one. Off by default. */
-  captions?: boolean;
-  /** Start position in whole seconds. */
-  start?: number;
-  /** A relay you host yourself instead of hitslop.com. */
-  relay?: string;
-};
 
 export type YouTubeHandlers = {
   /** The player answered for the first time. */
@@ -102,8 +92,6 @@ function clip(text: string, max: number): string {
   return text.slice(0, (text.charCodeAt(max - 1) & 0xfc00) === 0xd800 ? max - 1 : max);
 }
 
-const thumbnail = (youtubeId: string) => `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
-
 /** Title and author from YouTube's oEmbed endpoint, which also refuses videos that can't be embedded. */
 async function lookup(youtubeId: string, signal?: AbortSignal): Promise<VideoMeta> {
   const watch = encodeURIComponent(`https://www.youtube.com/watch?v=${youtubeId}`);
@@ -125,18 +113,6 @@ async function lookup(youtubeId: string, signal?: AbortSignal): Promise<VideoMet
     title: clip(typeof body.title === "string" && body.title ? body.title : "Untitled video", 200),
     author: clip(typeof body.author_name === "string" ? body.author_name : "", 120),
   };
-}
-
-/** The relay URL to use as an `<iframe src>`. The video travels in the fragment, which is never sent to a server. */
-function src(youtubeId: string, options: YouTubeSrcOptions = {}): string {
-  if (!idShape.test(youtubeId)) throw new Error("A YouTube video id is 11 letters, digits, - or _");
-  const parts = [`v=${youtubeId}`];
-  if (options.controls !== undefined) parts.push(`controls=${options.controls ? 1 : 0}`);
-  if (options.autoplay !== undefined) parts.push(`autoplay=${options.autoplay ? 1 : 0}`);
-  if (options.captions) parts.push("cc=1");
-  if (options.start !== undefined && Number.isSafeInteger(options.start) && options.start > 0)
-    parts.push(`start=${options.start}`);
-  return `${options.relay ?? defaultRelay}#${parts.join("&")}`;
 }
 
 type PlayerEvent =
@@ -174,8 +150,8 @@ function decode(raw: unknown): PlayerEvent[] {
 }
 
 /**
- * Control the player in `frame`, whose `src` came from `youtube.src`. Attach it after the frame
- * has its `src`; it keeps asking the relay to start reporting until the player answers.
+ * Control the player in `frame`, whose `src` came from `src` in `hitslop/youtube`. Attach it after
+ * the frame has its `src`; it keeps asking the relay to start reporting until the player answers.
  */
 function player(
   frame: HTMLIFrameElement,
@@ -247,4 +223,4 @@ function player(
   };
 }
 
-export const youtube = { parseId, findId, thumbnail, lookup, src, player };
+export const youtube = { parseId, findId, lookup, player };

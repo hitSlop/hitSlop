@@ -109,10 +109,15 @@ test("captures refuse editor-only bindings however they are imported, not names 
     const source = join(root, "source");
     const options = await definitionFixture(source);
     const graphs = () => buildGraphs(source, options);
-    // Local names and type imports are harmless, even when they match editor helpers.
+    // Local names and type imports are harmless, even when they match editor helpers, and so is
+    // hitslop/youtube, whose helpers only make strings.
     await writeFile(join(source, "names.ts"), "export const draft = (value: string) => value.trim(); export function capture(document: string) { return document; } export const notify = { motion: 1 };");
-    await writeFile(join(source, "Export.svelte"), '<script lang="ts">import type { WidgetProps } from "hitslop/svelte"; import { type AttachmentRef } from "hitslop/svelte"; import { draft, capture, notify } from "./names"; const document = { title: " Saved " }; const motion = { draft: capture(document.title) }; const shown: Partial<WidgetProps> & { ref?: AttachmentRef } = { document: 1, window() { return 2; } } as never;</script><p>{draft(motion.draft)} {notify.motion} {shown.family ?? ""}</p>');
-    expect((await graphs()).outputs.definition.has("export.js")).toBe(true);
+    await writeFile(join(source, "Export.svelte"), '<script lang="ts">import type { WidgetProps } from "hitslop/svelte"; import { type AttachmentRef } from "hitslop/svelte"; import { thumbnail } from "hitslop/youtube"; import { draft, capture, notify } from "./names"; const document = { title: " Saved " }; const motion = { draft: capture(document.title) }; const shown: Partial<WidgetProps> & { ref?: AttachmentRef } = { document: 1, window() { return 2; } } as never;</script><p>{draft(motion.draft)} {notify.motion} {shown.family ?? ""}</p><img src={thumbnail("dQw4w9WgXcQ")} alt="" />');
+    const harmless = (await graphs()).outputs.definition.get("export.js")!;
+    const context: Record<string, any> = {};
+    runInNewContext(new TextDecoder().decode(harmless.bytes), context);
+    const { frames } = JSON.parse(context.__slopCapture(JSON.stringify({kind:"export", width:320, height:240, snapshot:{}, theme:{}})));
+    expect(frames[0].html).toContain("https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg");
     // Editor-only runtime is refused wherever it enters, under any local name.
     await writeFile(join(source, "lib.ts"), 'export { notify as tell } from "hitslop/svelte"; export * from "hitslop/svelte"; export * as runtime from "hitslop/svelte"; export const trim = (value: string) => value.trim();');
     for (const [script, reason] of [
@@ -125,6 +130,7 @@ test("captures refuse editor-only bindings however they are imported, not names 
       ['import * as lib from "./lib"; lib.trim(" ");', "Export.svelte: * from ./lib"],
       ['import { onMount as mounted } from "svelte"; mounted(() => {});', "Export.svelte: onMount"],
       ['import { LookupError } from "hitslop/embed"; console.log(LookupError);', "Export.svelte: LookupError"],
+      ['import { youtube } from "hitslop/embed"; console.log(youtube);', "Export.svelte: youtube"],
     ]) {
       await writeFile(join(source, "Export.svelte"), `<script lang="ts">${script}</script><p>Export</p>`);
       await expect(graphs()).rejects.toThrow(reason!);
@@ -134,8 +140,10 @@ test("captures refuse editor-only bindings however they are imported, not names 
     for (const [module, reason] of [
       ["export const size = () => window.innerWidth;", "size.ts: retained dependency uses window"],
       ["export const size = () => globalThis.document;", "size.ts: retained dependency uses document"],
+      ["export const size = () => new URL('https://example.com').hostname.length;", "size.ts: retained dependency uses URL"],
       ["export async function size() { return await Promise.resolve(1); }", "size.ts: await"],
       ["export const size = (): number => { const document = { width: 2 }; return document.width + ({ navigator: 1 }).navigator; };", undefined],
+      ["export const size = (): number => { const URL = { width: 2 }; return URL.width + ({ URL: 1 }).URL; };", undefined],
     ] as const) {
       await writeFile(join(source, "size.ts"), module);
       if (reason) await expect(graphs()).rejects.toThrow(reason);

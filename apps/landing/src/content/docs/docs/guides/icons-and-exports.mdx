@@ -74,12 +74,15 @@ rendering and Takumi in a restricted Rust process. Use `snapshot`, ordinary flex
 placement, explicit font properties, and SVG attributes/currentColor. Container
 queries, named grid areas and page CSS inside inline SVG are unsupported; ignored
 CSS can change the result, so review native captures. Browser-dependent capture
-components fail the build with a role/source diagnostic. Editor runtime imports from
+components fail the build with a role/source diagnostic, and so does your own code that
+uses `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`, `AbortController`, `Blob` or
+`structuredClone`, which the capture runtime lacks. Editor runtime imports from
 `hitslop/svelte`, such as `getDocument`, `draft`, `motion`, `notify`, `EditableText`,
 `bindText`, `speech` and `resizeWindow`, and Svelte's `onMount` are refused, including
 through aliases, namespace imports and re-exports, and so is `attachments`: read a stored
-image's URL from the `attachmentURL` prop instead. `youtube` remains allowed because its
-thumbnail helper only builds a URL. Use static representations
+image's URL from the `attachmentURL` prop instead. Everything `hitslop/embed` exports,
+the YouTube link parser, lookup and player, is refused too; a video's thumbnail comes from
+`thumbnail(id)` in `hitslop/youtube`, which only builds a URL. Use static representations
 for canvas, animation or WebGL content. A rendering failure retains previous artwork;
 there is no automatic fallback or public renderer override.
 

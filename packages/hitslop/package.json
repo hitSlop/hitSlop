@@ -53,6 +53,7 @@
     "./svelte": "./src/sdk/app/store.svelte.ts",
     "./base.css": "./src/sdk/base.css",
     "./embed": "./src/sdk/app/embed.ts",
+    "./youtube": "./src/sdk/app/youtube.ts",
     "./tsconfig.json": "./tsconfig.slop.json",
     "./package.json": "./package.json"
   }

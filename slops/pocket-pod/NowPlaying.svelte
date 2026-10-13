@@ -1,7 +1,8 @@
 <script lang="ts">
 import Player from "./Player.svelte";
 import TitleBar from "./TitleBar.svelte";
-import { youtube, type YouTubeHandlers, type YouTubePlayer } from "hitslop/embed";
+import type { YouTubeHandlers, YouTubePlayer } from "hitslop/embed";
+import { thumbnail } from "hitslop/youtube";
 import type { Playback } from "./controller.svelte";
 import type { Video } from "./pod";
 
@@ -51,7 +52,7 @@ const status = $derived.by(() => {
     {held}
   />
   <div class="pod-video">
-    {#if video}<img class="pod-poster" src={youtube.thumbnail(video.youtubeId)} alt="" draggable="false" />{/if}
+    {#if video}<img class="pod-poster" src={thumbnail(video.youtubeId)} alt="" draggable="false" />{/if}
     {#if playback.started && video}
       {#key video.youtubeId}
         <Player youtubeId={video.youtubeId} {handlers} {onattach} {waiting} />

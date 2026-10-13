@@ -22,6 +22,9 @@ export type CaptureInputs = {
 };
 type Binding = [specifier: string, name: string];
 type Resolve = (specifier: string, importer: string) => Promise<string | undefined>;
+// What authored code may not reference: the page, and the web APIs a capture's JavaScript lacks
+// (a bare QuickJS, crates/hitslop-runner/src/realm.rs). Packages are not inspected for these:
+// they use some behind guards, and Svelte's own renderer names AbortController and TextEncoder.
 const browserGlobals = [
   "window",
   "document",
@@ -31,6 +34,13 @@ const browserGlobals = [
   "XMLHttpRequest",
   "Image",
   "Worker",
+  "URL",
+  "URLSearchParams",
+  "TextEncoder",
+  "TextDecoder",
+  "AbortController",
+  "Blob",
+  "structuredClone",
 ];
 
 /** Every graph refuses the host's own runtime: the document engine and the SDK's sibling page
@@ -116,12 +126,9 @@ export async function buildCapture(
     enforce: "pre",
     async buildStart() {
       // Editor-only runtime: every value hitslop/svelte and hitslop/embed export, and Svelte's
-      // onMount, which SSR never runs. A capture reads attachment URLs from its
-      // `attachmentURL` prop. The exception is `youtube`, whose thumbnail helper only builds a URL.
-      for (const [specifier, allowed] of [
-        ["hitslop/svelte", undefined],
-        ["hitslop/embed", "youtube"],
-      ] as const) {
+      // onMount, which SSR never runs. A capture reads attachment URLs from its `attachmentURL`
+      // prop and a video's thumbnail from hitslop/youtube, which only works on strings.
+      for (const specifier of ["hitslop/svelte", "hitslop/embed"]) {
         const found = await this.resolve(specifier, component);
         if (!found) continue;
         const values = new Set(
@@ -132,7 +139,7 @@ export async function buildCapture(
               ),
           ),
         );
-        editorOnly.set(found.id, (name) => name === "*" || (name !== allowed && values.has(name)));
+        editorOnly.set(found.id, (name) => name === "*" || values.has(name));
       }
       const svelte = await this.resolve("svelte", component);
       if (svelte) editorOnly.set(svelte.id, (name) => name === "*" || name === "onMount");

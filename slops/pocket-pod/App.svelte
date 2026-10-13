@@ -5,7 +5,7 @@ import { onMount } from "svelte";
 import { prefersReducedMotion } from "svelte/motion";
 import { Button } from "bits-ui";
 import { bindText, getDocument } from "hitslop/svelte";
-import { youtube } from "hitslop/embed";
+import { thumbnail } from "hitslop/youtube";
 import schema from "./schema";
 import { createPod, menuItems } from "./controller.svelte";
 import { closeClicker } from "./clicker";
@@ -127,7 +127,7 @@ onMount(() => {
 
 {#snippet menuAside()}
   {#if pod.current}
-    <img class="pod-aside-art" src={youtube.thumbnail(pod.current.youtubeId)} alt="" draggable="false" />
+    <img class="pod-aside-art" src={thumbnail(pod.current.youtubeId)} alt="" draggable="false" />
     <p class="pod-aside-title">{pod.current.title}</p>
     <p class="pod-aside-sub">{pod.current.author}</p>
   {:else}
