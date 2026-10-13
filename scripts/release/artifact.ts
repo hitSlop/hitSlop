@@ -22,32 +22,27 @@ for (const bundle of [app, join(app, "Contents/PlugIns/hitSlop-Widgets.appex")])
   });
   assert.deepEqual(JSON.parse(packages).includes ?? [], [], "Widget intent metadata must not reference an unbundled static package");
 }
-const helper = join(app, "Contents/Helpers/hitslop-native");
 const evaluator = join(app, "Contents/Helpers/hitslop-evaluator");
 await run(["/usr/bin/codesign", "--verify", "--strict", evaluator]);
 await verifyAppCommands(app);
 const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findEngine();
-// Host and helper each bundle the page shell, byte-identical to the build; no engine WASM.
+// The host bundles the page shell, byte-identical to the build; no engine WASM.
 const shells = [...new Bun.Glob("**/shell/boot.js").scanSync({ cwd: app, onlyFiles: true })].map((p) =>
   dirname(join(app, p)),
 );
 assert.ok(shells.some((root) => root.startsWith(join(app, "Contents/Resources") + "/")), "Missing app page shell");
-assert.ok(shells.some((root) => root.startsWith(join(app, "Contents/Helpers") + "/")), "Missing helper page shell");
 const expected = await digest(shellDestinations.app, shellFiles);
 for (const root of shells) assert.equal(await digest(root, shellFiles), expected, `Page shell differs: ${root}`);
 assert.deepEqual([...new Bun.Glob("**/*.wasm").scanSync({ cwd: app, onlyFiles: true })], [], "The app must not bundle WASM");
 const folder = await mkdtemp(join(tmpdir(), "hitslop-release-verify-"));
 try {
   // Installed, without Bun or Node on the path.
-  const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_NATIVE_CLI: helper } };
-  const installed = (args: string[], executable = helper) => run([executable, ...args], placement);
+  const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
+  const installed = (args: string[], executable: string) => run([executable, ...args], placement);
   const value = async (document: string) => (await engineRequest({ method: "get", documentPath: document }, placement)).state.value;
   const appCore = (await installed(["--build-id"], join(app, "Contents/MacOS/hitSlop"))).trim();
-  const helperCore = (await installed(["--build-id"])).trim();
   assert.ok(appCore.length > 0, "App did not identify its document core");
-  assert.equal(appCore, helperCore, "App and helper embed different document cores");
-  assert.equal(await installed(["--build-id"], documentEngine).then(s => s.trim()), helperCore, "Document engine and helper embed different cores");
-  assert.deepEqual(JSON.parse(await installed(["--protocol"], documentEngine)), JSON.parse(await installed(["--protocol"])), "Native tools serve different command protocols");
+  assert.equal(await installed(["--build-id"], documentEngine).then(s => s.trim()), appCore, "App and document engine embed different cores");
   assert.deepEqual([...new Bun.Glob("**/slop-engine").scanSync({ cwd: app })], [], "The Mac app must not bundle the npm engine");
   // A release is built from one tree, so the CLI's authoring core is the app's core.
   // Finder shows a .slop through the app's type declaration and its Quick Look extensions,
@@ -69,7 +64,7 @@ try {
     );
     let embedded = false;
     for (const binary of await readdir(join(appex, "Contents/MacOS")))
-      embedded ||= (await readFile(join(appex, "Contents/MacOS", binary))).includes(helperCore);
+      embedded ||= (await readFile(join(appex, "Contents/MacOS", binary))).includes(appCore);
     assert.ok(embedded, `Quick Look ${kind} embeds a different document core`);
   }
   const selected = (await builtTemplates()).templates.filter((t) => t.bundled).map((t) => t.slug);
@@ -107,7 +102,7 @@ try {
   // Mutation semantics use a deliberate fixture, independent of bundled selection
   // and of the fields provided by any newly authored template.
   const mutation = join(folder, "mutation.slop");
-  const fixture = await buildTemplate(resolve("tests/apps/document"), undefined, join(folder, "fixture.slop"));
+  const fixture = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderArtwork: false });
   await createDocument(fixture, mutation, placement);
   await engineRequest({ method: "batch", documentPath: mutation, batch: { intents: [{ type: "set", path: ["title"], value: "Installed engine verified" }] } }, placement);
   assert.ok(String((await value(mutation) as { title: unknown }).title).startsWith("Installed engine verified"));

@@ -1,24 +1,18 @@
 // The native tools as scripts run them: requests as the CLI sends them to the document
-// engine, which passes an export to the selected rendering helper, and documents created
-// from templates or build stages.
+// engine, and documents created from templates or build stages.
 import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execute, request, findEngine } from "../../packages/hitslop/src/cli/engine";
-import type { EngineMethod, EngineRequestFor, EngineSuccess, EngineReplyFor } from "../../packages/hitslop/src/wire/engine";
-import { repository } from "./artifacts";
+import { execute, findEngine } from "../../packages/hitslop/src/cli/engine";
+import type { EngineMethod, EngineRequestFor, EngineSuccess } from "../../packages/hitslop/src/wire/engine";
 
-/** The helper `bun run build` compiles, and this checkout's independent document engine. */
-export const debugHelper = join(repository, "apps/apple/Packages/HitSlopApple/.build/debug/hitslop-native");
+/** This checkout's document engine. */
 export const debugEngine = () => findEngine();
-/** Which engine a script runs (the debug build's unless named) and, for a relocated or
- * installed one, the folder and environment it runs in. */
+/** Which engine a script runs (the debug build's unless named) and, for an installed one,
+ * the folder and environment it runs in. */
 export type Placement = { engine?: string; cwd?: string; env?: Record<string, string | undefined> };
-/** One request as the CLI sends it; a refusal is a reply. */
-export function engineReply<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, { engine, ...options }: Placement = {}): Promise<EngineReplyFor<M>> {
-  return request<M>(body, { binary: engine, timeout: 120_000, ...options });
-}
+/** One request as the CLI sends it; a refusal throws. */
 export function engineRequest<M extends EngineMethod>(body: EngineRequestFor<M> & { method: M }, { engine, ...options }: Placement = {}): Promise<Extract<EngineSuccess, { method: M }>> {
   return execute<M>(body, { binary: engine, timeout: 120_000, ...options });
 }
@@ -41,7 +35,7 @@ export async function documentFromStage(stage: string, document: string, options
   const folder = await mkdtemp(join(tmpdir(), "hitslop-fixture-"));
   try {
     const template = join(folder, "template.slop");
-    await engineRequest({ method: "pack", stage, file: template, app: JSON.parse(await readFile(join(stage, "input.json"), "utf8")) }, options);
+    await engineRequest({ method: "pack", stage, file: template, app: JSON.parse(await readFile(join(stage, "input.json"), "utf8")), renderArtwork: false }, options);
     return await createDocument(template, document, options);
   } finally {
     await rm(folder, { recursive: true, force: true });

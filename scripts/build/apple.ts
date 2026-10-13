@@ -31,7 +31,7 @@ await run([
   "CODE_SIGNING_ALLOWED=NO",
   "build",
 ]);
-// Validate Xcode Run's product before the packaging wrapper adds the renderer.
+// Validate Xcode Run's product before it is copied for the artifact check.
 await verifyAppCommands(resolve(derived, "Build/Products/Debug/hitSlop.app"));
 await mkdir("generated/app", { recursive: true });
 const artifact = resolve("generated/app/hitSlop.app");
@@ -46,10 +46,6 @@ await run([
   resolve(derived, "Build/Products/Debug/hitSlop.app"),
   artifact,
 ]);
-// Embed the same Swift helper/resources in the development artifact as in Release.
-env.HITSLOP_NATIVE_CONFIGURATION = "debug";
-env.HITSLOP_NATIVE_SCRATCH = resolve("apps/apple/Packages/HitSlopApple/.build");
-await run(["/bin/sh", "scripts/build/embed-hitslop-native.sh", resolve("generated/app/hitSlop.app")]);
 await run([
   process.execPath,
   "scripts/release/artifact.ts",

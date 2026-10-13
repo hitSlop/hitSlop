@@ -1,6 +1,6 @@
 // Captures a compatibility corpus entry from this build: the runtime, not individual slops.
 // The conformance app (every ctx member, descriptor kind and a stored command) as built,
-// with documents saved through this build's CLI and helper and by its own page, what they
+// with documents saved through this build's CLI and by its own page, what they
 // read as and edits to replay on them; a template for each window kind; and the engine
 // that wrote them (the candidate writer).
 // Usage: bun run compat:capture RELEASE [--frozen]
@@ -10,10 +10,9 @@ import { Database } from "bun:sqlite";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { HelperProtocol, PackageFormat, RuntimeABI } from "../../packages/hitslop/src/schema/constants";
+import { EngineProtocol, PackageFormat, RuntimeABI } from "../../packages/hitslop/src/schema/constants";
 import {
   corpus,
-  helper,
   documentEngine,
   slop,
   slopJSON,
@@ -29,7 +28,7 @@ import { corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
 import { digest, fileDigest, sha256, shellDestinations, shellFiles, useTestRegistry, repository } from "../lib/artifacts";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { exec } from "../../packages/hitslop/src/cli/process";
-import { createDocument, debugHelper } from "../lib/native";
+import { createDocument } from "../lib/native";
 import { evaluateStored } from "./commands";
 // The producing tools are built as they ship (the `dist` Cargo profile), as the release
 // gate builds them: a candidate's packages then match what was captured.
@@ -39,8 +38,8 @@ useTestRegistry();
 const [name, ...flags] = process.argv.slice(2);
 if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name)) throw new Error("Usage: bun run compat:capture RELEASE [--frozen]");
 const frozen = flags.includes("--frozen");
-if (helper !== debugHelper)
-  throw new Error("Capture uses the helper it builds; remove HITSLOP_NATIVE_CLI for capture");
+if (process.env.HITSLOP_ENGINE)
+  throw new Error("Capture uses the engine it builds; remove HITSLOP_ENGINE for capture");
 const destination = join(corpus, name);
 const previous = await readJSON<Release>(join(destination, "release.json"));
 if (previous?.frozen) throw new Error(`tests/compat/${name} is frozen; it is never recaptured`);
@@ -53,9 +52,8 @@ const run = async (command: string[], cwd = repository) => {
 const dirty = (await run(["git", "status", "--porcelain"])) !== "";
 if (frozen && dirty) throw new Error("Capture a frozen entry from a clean release candidate");
 
-// Build the producing tools rather than trusting an existing helper or inventory.
+// Build the producing tools rather than trusting an existing engine or inventory.
 await run([process.execPath, "run", "build"]);
-if (await run([documentEngine(), "--build-id"]) !== await run([helper, "--build-id"])) throw new Error("Capture helper and authoring core differ");
 const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
@@ -217,11 +215,11 @@ const release: Release = {
     runtimeABI: RuntimeABI,
     storage: Number((await readFile(join(repository, "crates/hitslop-core/src/file/mod.rs"), "utf8")).match(/const STORAGE_VERSION: i64 = (\d+);/)![1]),
     layout: Number((await readFile(join(repository, "crates/hitslop-core/src/document/mod.rs"), "utf8")).match(/pub const LAYOUT: i64 = (\d+);/)![1]),
-    protocol: HelperProtocol.version,
+    protocol: EngineProtocol.version,
   },
   inputs: capturedInputs,
   producer: {
-    coreBuildID: await run([helper, "--build-id"]),
+    coreBuildID: await run([documentEngine(), "--build-id"]),
     shell: await digest(shellDestinations.app, shellFiles),
     // The command prelude this release ran; a frozen entry freezes it (scripts/build/runner.ts).
     runner: { [RuntimeABI]: await fileDigest(join(repository, `crates/hitslop-runner/src/abi/${RuntimeABI}.generated.js`)) },

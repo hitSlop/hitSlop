@@ -2,10 +2,11 @@ import { expect, test } from "bun:test";
 import { cp, mkdtemp, rm, readFile, readdir, mkdir, writeFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkoutLease, retainReport, shardTests, assertShardComplete, testInventory, changedPaths } from "../../scripts/lib/verification";
+import { checkoutLease, retainReport, testInventory, changedPaths } from "../../scripts/lib/verification";
 import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/verification-inputs";
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
+import { assertSwiftTestsRan } from "../../scripts/lib/swift-tests";
 import { ciCompatibility, ciJobs, touchesNativeGate, verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
@@ -68,7 +69,7 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
-  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "browser", "rust", "packed", "swift", "native"]);
+  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "packed", "swift", "native"]);
   for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
@@ -80,7 +81,7 @@ test("policy and verification tests select tooling while shared execution stays 
     expect(affected(path)).toEqual(["tooling"]);
   for (const path of ["scripts/ci/attribution.ts", "tests/verification/runner.test.ts", "tests/verification/process.test.ts"])
     expect(affected(path)).toEqual(["tooling", "types"]);
-  expect(affected(".github/actions/native-cache/action.yml")).toEqual(["swift", "native"]);
+  expect(affected(".github/actions/native-cache/action.yml")).toEqual(["render", "swift", "native"]);
   for (const path of ["scripts/ci/select.ts", ".github/actions/prepare-checks/action.yml", "scripts/verify.ts", "scripts/lib/test-process.ts"])
     expect(affected(path)).toEqual(candidates);
 });
@@ -112,6 +113,8 @@ test("required CI keeps document compatibility and packaging, without browser qu
   expect(corpus.native).toBe("swift,native");
   const none = { native: "", nativeRust: "", rust: "", deferred: "", qualification: "" };
   expect(jobs(["docs/testing.md"])).toEqual({ fast: "", ...none });
+  for (const path of ["tests/native/render.native.test.ts", "tests/native/landing.native.test.ts", "packages/hitslop/tests/cli/build.native.test.ts"])
+    expect(jobs([path])).toEqual({ fast: "types,render", ...none });
   expect(jobs(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"])).toEqual({ fast: "types", ...none });
   expect(jobs(["packages/hitslop/src/browser/worker.ts"]).fast.split(",")).toContain("packed");
   for (const event of ["pull_request", "push", "schedule", "workflow_dispatch"]) {
@@ -173,7 +176,11 @@ test("test-only edits and build inputs still select their owning checks", () => 
     ["tests/packed/packed.test.ts", ["packed"]],
     ["packages/hitslop/tests/cli/build.test.ts", ["cli"]],
     ["packages/hitslop/tests/sdk/errors.test.ts", ["bun"]],
-    ["tests/native/render.native.test.ts", ["native"]],
+    ["tests/native/render.native.test.ts", ["render"]],
+    ["tests/native/landing.native.test.ts", ["render"]],
+    ["apps/landing/scripts/templates.ts", ["render"]],
+    ["packages/hitslop/tests/cli/build.native.test.ts", ["render"]],
+    ["packages/hitslop/tests/cli/source-fixture.ts", ["render"]],
     ["tests/fixtures/schema.json", ["bun", "cli", "swift", "native"]],
     ["packages/hitslop/src/wire/engine.generated.ts", ["contracts", "swift", "native"]],
     ["scripts/build/core.ts", ["packed"]],
@@ -206,9 +213,10 @@ test("Git selection includes both sides of renames, deleted files and fails on a
 });
 
 test("test discovery assigns each boundary and refuses unclassified tests", () => {
-  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "packages/hitslop/tests/sdk/editable-text.browser.test.ts", "tests/verification/runner.test.ts"];
+  const files = ["tests/packed/packed.test.ts", "packages/hitslop/tests/cli/build.test.ts", "packages/hitslop/tests/sdk/errors.test.ts", "packages/hitslop/tests/sdk/editable-text.browser.test.ts", "tests/verification/runner.test.ts", "tests/native/render.native.test.ts", "tests/native/landing.native.test.ts", "packages/hitslop/tests/cli/build.native.test.ts"];
   const groups = testInventory(files);
   expect(Object.values(groups).flat().sort()).toEqual(files.sort());
+  expect(groups.render).toEqual(["packages/hitslop/tests/cli/build.native.test.ts", "tests/native/landing.native.test.ts", "tests/native/render.native.test.ts"]);
   expect(groups.cli).toEqual(["packages/hitslop/tests/cli/build.test.ts"]);
   expect(groups.browser).toEqual(["packages/hitslop/tests/sdk/editable-text.browser.test.ts"]);
   expect(groups.tooling).toEqual(["tests/verification/runner.test.ts"]);
@@ -241,16 +249,10 @@ test("a checkout permits only one verifier, then releases ownership", async () =
   } finally { release?.(); await rm(root, { recursive: true, force: true }); }
 }, 30_000);
 
-test("Swift shard assignment is exhaustive, nonempty and rejects incomplete execution", () => {
-  const ids = ["M.One/same()", "M.Two/same()", "M.Three/slow()"];
-  const groups = shardTests(ids, 8, { "M.Three/slow()": 20 });
-  expect(groups.flat().sort()).toEqual(ids.sort());
-  expect(groups.every(group => group.length > 0)).toBe(true);
-  expect(() => shardTests([], 3, {})).toThrow();
-  expect(() => shardTests([ids[0]!, ids[0]!], 3, {})).toThrow();
-  expect(() => assertShardComplete(ids, 2, 0)).toThrow("ran 2 of 3");
-  expect(() => assertShardComplete(ids, 3, 1)).toThrow("exited 1");
-  assertShardComplete(ids, 3, 0);
+test("Swift success requires at least one executed test", () => {
+  expect(() => assertSwiftTestsRan("Test run with 0 tests passed")).toThrow("no tests");
+  expect(() => assertSwiftTestsRan("Build complete")).toThrow("no tests");
+  assertSwiftTestsRan("Test run with 228 tests passed");
 });
 
 test("formatter policy changes select the tier that enforces formatting", () => {

@@ -4,7 +4,6 @@ import { basename, dirname, join } from "node:path";
 import { stageProject } from "../../packages/hitslop/src/cli/build";
 import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { templateCache } from "../templates/build";
-import { debugHelper } from "./native";
 import { Database } from "bun:sqlite";
 import { bytesOf, resourceKey, typeOf } from "../../packages/hitslop/src/cli/definition-resources";
 
@@ -21,8 +20,7 @@ export async function prepareNativeFixtures() {
     await mkdir(dirname(destination), { recursive: true });
     await rm(destination, { force: true });
     const artwork = slug === "document-fixture";
-    const renderer = artwork ? { env: { ...process.env, HITSLOP_NATIVE_CLI: debugHelper } } : undefined;
-    await cache.build(source, slug, destination, () => buildTemplate(source, renderer, destination), artwork);
+    await cache.build(source, slug, destination, () => buildTemplate(source, destination, { renderArtwork: artwork }), artwork);
     return destination;
   };
   await build(join(repository, "tests/apps/document"), "document-fixture", join(output, "document-fixture.slop"));
@@ -102,7 +100,7 @@ export type ShapeLabVariant = keyof typeof shapeLabVariants;
 const shapeLabRoot = join(repository, "generated/shape-lab");
 /** Builds the project `source` (whose folder name is its slug) into `destination`. */
 export type Builder = (source: string, slug: string, destination: string) => Promise<string>;
-const direct: Builder = (source, _, destination) => buildTemplate(source, undefined, destination);
+const direct: Builder = (source, _, destination) => buildTemplate(source, destination, { renderArtwork: false });
 
 /** A copy of `fixture` at `source` with this `variant.ts`: the fixtures vary only there. */
 async function withVariant(fixture: string, source: string, value: unknown) {

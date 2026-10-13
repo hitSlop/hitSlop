@@ -51,10 +51,9 @@ async function version(command: string[]) {
   return (await run(command, { failure: `Cannot fingerprint ${command[0]}` })).trim();
 }
 
-/** Files every template build reads: compiler, SDK, page shell, file engine and native
+/** Files every template build reads: compiler, SDK, page shell, file engine and
  * renderer. */
 export async function sharedTemplatePaths(repository: string, sources: string[], includeExamples = true) {
-  const native = "apps/apple/Packages/HitSlopApple";
   const paths = [
     ".cargo/config.toml",
     "bun.lock",
@@ -70,11 +69,6 @@ export async function sharedTemplatePaths(repository: string, sources: string[],
     "packages/hitslop/shell",
     "scripts/templates/build.ts",
     "scripts/templates/cache.ts",
-    `${native}/Package.swift`,
-    `${native}/Package.resolved`,
-    ...["HitSlopCore", "HitSlopDocument", "HitSlopHost", "HitSlopNativeCLI"].map(
-      (name) => `${native}/Sources/${name}`,
-    ),
     ...(await compilerSources(repository, [
       "packages/hitslop/src/cli/template.ts",
       "packages/hitslop/src/cli/stage-worker.ts",
@@ -97,16 +91,10 @@ export async function sharedTemplatePaths(repository: string, sources: string[],
 
 /** Shared files plus the toolchain that compiles and renders every template. */
 export async function sharedTemplateInputs(repository: string, sources: string[], includeExamples = true): Promise<Inputs> {
-  const [build, xcode, swift] = await Promise.all([
-    version(["/usr/bin/sw_vers", "-buildVersion"]),
-    version(["xcodebuild", "-version"]),
-    version(["swift", "--version"]),
-  ]);
   return {
     ...(await inputs(repository, await sharedTemplatePaths(repository, sources, includeExamples))),
-    "@macos": build,
-    "@xcode": xcode,
-    "@swift": swift,
+    "@rust": await version(["rustc", "--version"]),
+    "@platform": process.platform,
     "@arch": process.arch,
     "@bun": Bun.version,
     "@debug": String(process.env.HITSLOP_DEBUG_BUILD === "1"),
