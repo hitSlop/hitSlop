@@ -1,10 +1,11 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { formatDateStr, getTypeColor, semesterView } from "./shared";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   // The capture cannot see the editor's course filter, so it lists every milestone.
-  const view = $derived(semesterView(doc.current));
+  const view = $derived(semesterView(snapshot));
 </script>
 
 <main class="semester-app">
@@ -13,9 +14,9 @@
       <div class="title-block">
         <div class="sub-label">TERM SYLLABUS & EXAM ROADMAP</div>
         <div class="main-title-row">
-          <h1 class="term-title-input">{doc.current.termTitle}</h1>
+          <h1 class="term-title-input">{snapshot.termTitle}</h1>
           <span class="dot">·</span>
-          <p class="year-input">{doc.current.academicYear}</p>
+          <p class="year-input">{snapshot.academicYear}</p>
         </div>
       </div>
     </header>

@@ -1,10 +1,11 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { trayView } from "./dice";
   import History from "./History.svelte";
   import Readout from "./Readout.svelte";
-  const view = $derived(trayView(doc.current));
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const view = $derived(trayView(snapshot));
   const now = Date.now();
 </script>
 

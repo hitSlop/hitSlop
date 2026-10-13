@@ -1,9 +1,9 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Recipe = typeof doc.current;
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Recipe = Value<typeof schema.descriptor>;
 export type Step = Recipe["steps"][number];
 export type RowKind = "ingredient" | "step";
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** Seconds on a step's timer; a step without minutes has no timer. */
 export function stepSeconds(step: Step): number {

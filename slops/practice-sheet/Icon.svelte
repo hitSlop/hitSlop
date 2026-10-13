@@ -1,8 +1,10 @@
 <script lang="ts">
   // A corner of the sheet on felt: five staff lines, a phrase with the cursor on it,
   // and the brass tempo stamp showing the current tempo.
-  import doc from "./schema";
-  const tempo = $derived(doc.current.tempo);
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const tempo = $derived(snapshot.tempo);
   const notes = [
     { x: 118, y: 196 }, { x: 170, y: 226 }, { x: 214, y: 214 }, { x: 258, y: 202 }, { x: 302, y: 190 },
   ];

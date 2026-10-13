@@ -1,9 +1,8 @@
 <script lang="ts">
   import starterSheet from "./assets/bubu-spritesheet.webp";
-  import doc from "./schema";
-  import { petView } from "./pet";
-  let { label }: { label?: string } = $props();
-  const view = $derived(petView(doc.current));
+  import { petView, type PetDocument } from "./pet";
+  let { snapshot, label }: { snapshot: PetDocument; label?: string } = $props();
+  const view = $derived(petView(snapshot));
 </script>
 <div class="pet-icon" aria-label={label} aria-hidden={label ? undefined : true}>
   <div class="pet-capture-card">

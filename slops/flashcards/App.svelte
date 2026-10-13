@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { onDestroy, onMount, tick, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Button, Dialog, Select, Tabs } from "bits-ui";
@@ -14,9 +14,11 @@
   import Shuffle from "@lucide/svelte/icons/shuffle";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import { capture } from "hitslop/svelte";
-  import doc from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { BOXES, addCard, addDeck, editCard, gradeCard, newDeckKey, nextBox, removeCard, shuffleDeck, studyView } from "./study";
+
+  const doc = getDocument(schema);
 
   const FLIP_MS = 420;
   // Where the person is in the study session. Local to this page; not saved with the document.
@@ -168,14 +170,7 @@
 
   onMount(() => {
     window.addEventListener("keydown", handleKeyDown);
-    const unregister = capture.onPrepare(async () => {
-      await rotation.set(rotationTarget, { duration: 0, delay: 0 });
-      await tick();
-    });
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      unregister();
-    };
+    return () => window.removeEventListener("keydown", handleKeyDown);
   });
 
   onDestroy(() => {

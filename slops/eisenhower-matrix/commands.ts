@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { zones } from "./schema";
+import schema, { zones } from "./schema";
 import { addTask, moveTask, removeTask, setDone } from "./shared";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addTask: {
     description: "Place a new task in the holding pen (or the given square) and return its stable row ID.",
     args: {

@@ -1,15 +1,16 @@
 <script lang="ts">
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { moodView } from "./entries";
   import { orbColor } from "./orbs";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(moodView(doc.current));
+  const view = $derived(moodView(snapshot));
 </script>
 
 <article class="export-sheet" aria-label="Exported mood log">
-  <h1 class="prompt">{doc.current.prompt}</h1>
+  <h1 class="prompt">{snapshot.prompt}</h1>
   <ul class="list">
     {#each (preview ? (view.entries).slice(0, 6) : view.entries) as item (item.$id)}
       <li class="row">

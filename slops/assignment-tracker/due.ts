@@ -1,9 +1,9 @@
 import type { DateValue } from "@internationalized/date";
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 export type Assignment = Data["assignments"][number];
 
 export type Urgency = "overdue" | "today" | "soon" | "later" | "undated";

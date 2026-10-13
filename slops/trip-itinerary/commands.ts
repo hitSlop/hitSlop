@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { stopTags } from "./schema";
+import schema, { stopTags } from "./schema";
 import { addDay, addPackingItem, addStop, removeStop, setPackingDone, setStopDone } from "./shared";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addStop: {
     description: "Add a stop to a day's timeline and return its stable row ID.",
     args: {

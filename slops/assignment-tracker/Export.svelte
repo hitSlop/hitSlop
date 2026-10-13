@@ -1,11 +1,12 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type schema from "./schema";
   import { todayISO, relativeDue, trackerView } from "./due";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   const reference = todayISO();
-  const data = $derived(doc.current);
+  const data = $derived(snapshot);
   // The export shows every stack, completed included; the window's open tab is not visible here.
   const stacks = $derived(trackerView(data, reference).all);
 </script>

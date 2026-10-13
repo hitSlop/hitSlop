@@ -1,10 +1,10 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
 import { maxCaption, maxTiles } from "./schema";
-import type doc from "./schema";
+import type schema from "./schema";
 
-export type Board = typeof doc.current;
+export type Board = Value<typeof schema.descriptor>;
 export type Tile = Board["tiles"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export const acceptedTypes = ["image/jpeg", "image/png", "image/webp"];
 export const maxImageBytes = 10 * 1024 * 1024;

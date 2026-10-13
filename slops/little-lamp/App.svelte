@@ -1,8 +1,10 @@
 <script lang="ts">
 import "hitslop/base.css";
 import "./styles.css";
-  import doc from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import Lamp from "./Lamp.svelte";
+  const doc = getDocument(schema);
   let lookX = $state(0);
   let lookY = $state(0);
   function look(event: PointerEvent) {

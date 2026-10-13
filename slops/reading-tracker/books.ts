@@ -1,10 +1,10 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { statuses } from "./schema";
 
-export type Library = typeof doc.current;
+export type Library = Value<typeof schema.descriptor>;
 export type Status = (typeof statuses)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** The reading list and the export derive their counts from the same snapshot. */
 export function readingView(data: Library) {

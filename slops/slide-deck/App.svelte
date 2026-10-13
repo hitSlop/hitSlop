@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import ChevronLeft from "@lucide/svelte/icons/chevron-left";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import Play from "@lucide/svelte/icons/play";
@@ -10,8 +10,10 @@
   import X from "@lucide/svelte/icons/x";
   import { Dialog } from "bits-ui";
   import { onDestroy } from "svelte";
-  import doc, { layouts } from "./schema";
+  import schema, { layouts } from "./schema";
   import { addSlide, deckView, moveSlide, nextTheme, removeSlide, setLayout, type Slide, type SlideLayout } from "./deck";
+
+  const doc = getDocument(schema);
 
   let isPresenting = $state(false);
   let timerSeconds = $state(0);

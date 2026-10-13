@@ -1,9 +1,9 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { nextSignifier, type Signifier } from "./signifiers";
 
-export type Journal = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Journal = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /** The page and the export derive their rows and counts from the same snapshot. */
 export function journalView(data: Journal) {

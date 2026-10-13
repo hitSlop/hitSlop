@@ -12,7 +12,8 @@
   import EyeOff from "@lucide/svelte/icons/eye-off";
   import "hitslop/base.css";
   import "./styles.css";
-  import doc, { DAYS, COLORS } from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema, { DAYS, COLORS } from "./schema";
   import {
     DAY_NAMES,
     COLOR_NAMES,
@@ -43,6 +44,7 @@
     type Period,
   } from "./schedule";
   import Choice from "./Choice.svelte";
+  const doc = getDocument(schema);
   let now = $state(new Date());
   $effect(() => {
     const update = () => {

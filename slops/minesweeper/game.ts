@@ -1,8 +1,8 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-type Edit = Tx<typeof doc>;
-export type Game = typeof doc.current;
+type Edit = Tx<typeof schema>;
+export type Game = Value<typeof schema.descriptor>;
 
 export const LEVELS = {
   easy: { cols: 6, rows: 6, mines: 5 },

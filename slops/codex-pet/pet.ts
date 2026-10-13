@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { PetMetadata } from "./pet-package";
 
-export type PetDocument = typeof doc.current;
+export type PetDocument = Value<typeof schema.descriptor>;
 export type StoredPackage = NonNullable<PetDocument["package"]>;
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 /** An attachment reference as `attachments.import` hands it to the collector. */
 type PackageRef = { id: string; name: string; mimeType: string; byteLength: number };
 

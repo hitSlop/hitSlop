@@ -1,12 +1,15 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
   import { onMount } from "svelte";
   import { Button, Popover, Slider, Toggle } from "bits-ui";
-  import doc from "./schema";
+  import schema from "./schema";
   import chromeUrl from "./assets/alien-radio-chrome.png";
   import { radioView, selectChannel, setFavorite, setMuted, setVolume, stepChannel } from "./radio";
   import { fallbackChannels, preferredPlaylist, type Channel } from "./stations";
+
+  const doc = getDocument(schema);
 
   // The catalog, playback and the audio graph are view state: the document stores only
   // the tuned station, favorites and gain. A reopened receiver waits for play.

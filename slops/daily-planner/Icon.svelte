@@ -1,7 +1,3 @@
-<script lang="ts">
-  import doc from "./schema";
-</script>
-
 <div class="iconSurface" aria-hidden="true">
   <article class="iconPage">
     <div class="iconPlate">

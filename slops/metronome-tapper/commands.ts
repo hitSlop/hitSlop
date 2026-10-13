@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { signatures } from "./schema";
+import schema, { signatures } from "./schema";
 import { removePreset, savePreset, setMuted, setSignature, setTempo, setVolume } from "./metronome";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setTempo: {
     description: "Set the tempo in beats per minute (40 to 240).",
     args: { bpm: s.number() },

@@ -1,14 +1,15 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type schema from "./schema";
   import Globe from "@lucide/svelte/icons/globe";
   import Mail from "@lucide/svelte/icons/mail";
   import MapPin from "@lucide/svelte/icons/map-pin";
   import { resumeView } from "./entries";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const data = $derived(doc.current);
-  const { initials, printed: { skills, education, experience } } = $derived(resumeView(doc.current));
+  const data = $derived(snapshot);
+  const { initials, printed: { skills, education, experience } } = $derived(resumeView(snapshot));
 </script>
 
 <article class="resume" aria-label="Exported resume for {data.name}">

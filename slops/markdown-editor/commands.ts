@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { modes, themes } from "./schema";
+import schema, { modes, themes } from "./schema";
 import { appendContent, setContent, setMode, setTheme, setTitle, toggleTheme } from "./markdown";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setTitle: {
     description: "Replace the manuscript title.",
     args: { title: s.string() },

@@ -1,10 +1,10 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { sides } from "./schema";
+import schema, { sides } from "./schema";
 import { statuses } from "./statuses";
 import { addFactor, removeFactor, setStatus, setWeight } from "./balance";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addFactor: {
     description: "Add a reason to the pros or the cons and return its stable row ID.",
     args: {

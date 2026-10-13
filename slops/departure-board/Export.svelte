@@ -1,9 +1,10 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { boardView } from "./board";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(boardView(doc.current));
+  const view = $derived(boardView(snapshot));
 </script>
 
 <article class="board-shell export" aria-label="Exported departure board">

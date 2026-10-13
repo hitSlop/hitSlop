@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { detailFields, setField, vCardText } from "./shared";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setField: {
     description: "Set one contact detail (name, headline, location, bio, email, phone or website) to the given text.",
     args: {

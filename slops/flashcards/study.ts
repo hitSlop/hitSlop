@@ -1,8 +1,8 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 type Deck = Data["decks"][number];
 type Card = Deck["cards"][number];
 

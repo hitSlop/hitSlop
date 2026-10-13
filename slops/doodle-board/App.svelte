@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { capture, notify, resizeWindow } from "hitslop/svelte";
+  import { getDocument, notify, resizeWindow } from "hitslop/svelte";
   import { onDestroy, onMount, tick } from "svelte";
   import { AlertDialog, Collapsible, Popover, RadioGroup, ToggleGroup } from "bits-ui";
   import Pin from "@lucide/svelte/icons/pin";
@@ -12,10 +12,11 @@
   import Sparkles from "@lucide/svelte/icons/sparkles";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Check from "@lucide/svelte/icons/check";
-  import doc, { boardShapes } from "./schema";
+  import schema, { boardShapes } from "./schema";
   import { boards, markers, widths, StrokeSamples, strokePath, sweep, defaultBrush, fitWindowSize, boardView, addStroke, eraseStrokes, clearBoard, setBoardShape, type Brush, type Point, type Stroke } from "./drawing";
   import BrushControls from "./BrushControls.svelte";
 
+  const doc = getDocument(schema);
   const view = $derived(boardView(doc.current));
   const board = $derived(view.board);
   let marker = $state<(typeof markers)[number]>("charcoal");
@@ -38,7 +39,6 @@
   let alive = true;
   let fitVersion = 0;
   let resizeQueue = Promise.resolve();
-  let nativeResize = $state(false);
   let svg: SVGSVGElement;
   // `draw` marks a pen gesture; its stroke is written once, when the gesture ends.
   let active: { pointer: number; draw: boolean; color: string; samples: StrokeSamples; brush: Brush; pen: boolean; last: Point; erased: Set<string>; eraserPaths: { id: string; path: Path2D }[] } | undefined;
@@ -77,7 +77,7 @@
     const version = ++fitVersion;
     resizeQueue = resizeQueue.then(async () => {
       await tick();
-      if (!alive || version !== fitVersion || capture.isRenderer()) return;
+      if (!alive || version !== fitVersion) return;
       const chrome = { width: shell.clientWidth - stage.clientWidth, height: shell.clientHeight - stage.clientHeight };
       const desired = fitWindowSize(view.shape, chrome, { width: screen.availWidth, height: screen.availHeight });
       // The host may further clamp to this window's display; CSS fits its actual viewport.
@@ -89,8 +89,7 @@
     // Slop mounts its child snippet inside a boundary; wait for its element bindings.
     void tick().then(() => {
       if (!alive || !shell) return;
-      nativeResize = !capture.isRenderer();
-      if (nativeResize) fitBoard();
+      fitBoard();
       let previous = { width: shell.clientWidth, height: shell.clientHeight };
       observer = new ResizeObserver(() => {
         const next = { width: shell.clientWidth, height: shell.clientHeight };
@@ -224,8 +223,7 @@
           <RadioGroup.Root value={view.shape} onValueChange={chooseBoard} aria-label="Board size" class="doodle-presets">
             {#each boardShapes as shape}<RadioGroup.Item value={shape} class="doodle-preset"><span class="doodle-shape" data-shape={shape}></span><span>{boards[shape].label}<small>{boards[shape].width} × {boards[shape].height}</small></span>{#if view.shape === shape}<Check size={17} />{/if}</RadioGroup.Item>{/each}
           </RadioGroup.Root>
-          <button class="doodle-fit" disabled={!nativeResize} onclick={() => { boardMenu = false; fitBoard(); }}><Maximize size={16} /> Fit board</button>
-          {#if !nativeResize}<p>Window fitting is available in the Mac app.</p>{/if}
+          <button class="doodle-fit" onclick={() => { boardMenu = false; fitBoard(); }}><Maximize size={16} /> Fit board</button>
           <p>Anything outside the board stays tucked away until you make it bigger.</p>
         </Popover.Content></Popover.Portal>
       </Popover.Root>

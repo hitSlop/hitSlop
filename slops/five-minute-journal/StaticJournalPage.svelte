@@ -2,13 +2,12 @@
   import Sun from "@lucide/svelte/icons/sun";
   import Moon from "@lucide/svelte/icons/moon";
   import Check from "@lucide/svelte/icons/check";
-  import doc from "./schema";
-  import { journalView } from "./journal";
+  import { journalView, type Data } from "./journal";
   import WritingField from "./StaticWritingField.svelte";
 
-  let { period }: { period: "am" | "pm" } = $props();
+  let { period, snapshot }: { period: "am" | "pm"; snapshot: Data } = $props();
   const id = $props.id();
-  const view = $derived(journalView(doc.current));
+  const view = $derived(journalView(snapshot));
   const morning = $derived(period === "am");
   const done = $derived(morning ? view.morningDone : view.eveningDone);
   const gratitudes = $derived(view.gratitudes);
@@ -42,7 +41,7 @@
     </div>
     <div class={"fmj-prompt"}>
       <h3 class={"fmj-promptLabel"}>Daily affirmation</h3>
-      <WritingField value={doc.current.affirmation} label="Daily affirmation" prefix="I am" placeholder="Give yourself a few kind words…" />
+      <WritingField value={snapshot.affirmation} label="Daily affirmation" prefix="I am" placeholder="Give yourself a few kind words…" />
     </div>
   {:else}
     <div class={"fmj-prompt"} role="group" aria-labelledby="{id}-highlights">
@@ -53,7 +52,7 @@
     </div>
     <div class={"fmj-prompt"}>
       <h3 class={"fmj-promptLabel"}>How could today have been even better?</h3>
-      <WritingField value={doc.current.lesson} label="How could today have been even better?" placeholder="A lesson, a boundary, a gentler next time…" />
+      <WritingField value={snapshot.lesson} label="How could today have been even better?" placeholder="A lesson, a boundary, a gentler next time…" />
     </div>
   {/if}
 

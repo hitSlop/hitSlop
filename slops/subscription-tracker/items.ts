@@ -1,9 +1,9 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { cadences, categories, currencies } from "./schema";
 import { isDate } from "./shared";
 
-export type Tracker = typeof doc.current;
+export type Tracker = Value<typeof schema.descriptor>;
 export type Subscription = Tracker["subscriptions"][number];
 export type Cadence = (typeof cadences)[number];
 export type Category = (typeof categories)[number];
@@ -17,7 +17,7 @@ export type Details = {
   category: Category;
   note: string;
 };
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export function blankDetails(today: string): Details {
   return { name: "", amount: 0, cadence: "monthly", nextRenewal: today, category: "Entertainment", note: "" };

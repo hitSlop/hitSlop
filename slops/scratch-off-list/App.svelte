@@ -1,17 +1,18 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { Checkbox, Button } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import X from "@lucide/svelte/icons/x";
   import Check from "@lucide/svelte/icons/check";
   import Eraser from "@lucide/svelte/icons/rotate-ccw";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addItem, cardView, recoverAll, removeItem, revealItem, setDone } from "./items";
   import { scratch } from "./scratch";
 
+  const doc = getDocument(schema);
   const newItem = draft((text) => doc.change((tx) => addItem(tx, text)));
   let composer = $state<HTMLInputElement>();
   const card = $derived(cardView(doc.current));

@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { themes } from "./schema";
+import schema, { themes } from "./schema";
 import { addItem, removeItem, setDate, setTheme } from "./notes";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addItem: {
     description: "Add a Cornell note block with a cue and notes and return its stable row ID.",
     args: { cue: s.string(), notes: s.string() },

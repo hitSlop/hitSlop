@@ -1,27 +1,27 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-import { attachments } from "hitslop/svelte";
-import doc from "./schema";
-import { recipeView, stepTitle } from "./recipe";
+  import type schema from "./schema";
+  import { recipeView, stepTitle } from "./recipe";
+  let { snapshot, attachmentURL, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-const view = $derived(recipeView(doc.current));
-// The export is its own page: it reads the saved photo itself rather than sharing the editor's state.
-const photoURL = $derived(doc.current.photo ? attachments.url(doc.current.photo.id) : "");
+  const view = $derived(recipeView(snapshot));
+  // The export is its own page: it reads the saved photo itself rather than sharing the editor's state.
+  const photoURL = $derived(snapshot.photo ? attachmentURL(snapshot.photo.id) : "");
 </script>
 
-<article class="card" aria-label="Exported recipe for {doc.current.title}">
+<article class="card" aria-label="Exported recipe for {snapshot.title}">
       <header class="hero" style:grid-template-columns={photoURL ? undefined : "1fr"}>
         <div class="intro">
           <div class="utilityLine">
-            <span class="difficultyTrigger">{doc.current.difficulty}</span>
+            <span class="difficultyTrigger">{snapshot.difficulty}</span>
           </div>
           <h1 class="titleText">{view.title}</h1>
-          {#if doc.current.description.trim()}<p class="descriptionText">{previewText(doc.current.description, preview, 160)}</p>{/if}
+          {#if snapshot.description.trim()}<p class="descriptionText">{previewText(snapshot.description, preview, 160)}</p>{/if}
           <div class="stats">
-            <div><span>Serves</span><strong>{doc.current.servings ?? "—"}</strong></div>
-            <div><span>Prep</span><span class="number"><strong>{doc.current.prepMinutes ?? "—"}</strong><small>min</small></span></div>
-            <div><span>Cook</span><span class="number"><strong>{doc.current.cookMinutes ?? "—"}</strong><small>min</small></span></div>
+            <div><span>Serves</span><strong>{snapshot.servings ?? "—"}</strong></div>
+            <div><span>Prep</span><span class="number"><strong>{snapshot.prepMinutes ?? "—"}</strong><small>min</small></span></div>
+            <div><span>Cook</span><span class="number"><strong>{snapshot.cookMinutes ?? "—"}</strong><small>min</small></span></div>
           </div>
         </div>
         {#if photoURL}<figure class="photoWell" data-photo="true">
@@ -33,7 +33,7 @@ const photoURL = $derived(doc.current.photo ? attachments.url(doc.current.photo.
         <section class="section" aria-labelledby="export-ingredients">
           <div class="sectionTitle"><div><h2 id="export-ingredients">Ingredients</h2></div></div>
           <ul class="list">
-            {#each (preview ? (doc.current.ingredients).slice(0, 6) : doc.current.ingredients) as item (item.$id)}
+            {#each (preview ? (snapshot.ingredients).slice(0, 6) : snapshot.ingredients) as item (item.$id)}
               <li class="ingredientRow" data-checked={item.checked}>
                 <span data-checkbox-root data-state={item.checked ? "checked" : "unchecked"}></span>
                 <span class="itemText">{item.text.trim() || "Untitled ingredient"}</span>
@@ -46,7 +46,7 @@ const photoURL = $derived(doc.current.photo ? attachments.url(doc.current.photo.
         <section class="section" aria-labelledby="export-method">
           <div class="sectionTitle"><div><h2 id="export-method">Method</h2></div></div>
           <ol class="list">
-            {#each (preview ? (doc.current.steps).slice(0, 2) : doc.current.steps) as step, index (step.$id)}
+            {#each (preview ? (snapshot.steps).slice(0, 2) : snapshot.steps) as step, index (step.$id)}
               <li class="stepRow">
                 <span class="stepNumber">{String(index + 1).padStart(2, "0")}</span>
                 <div class="stepCopy">

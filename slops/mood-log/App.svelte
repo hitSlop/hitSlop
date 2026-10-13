@@ -1,14 +1,16 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Slider, RadioGroup, Button } from "bits-ui";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addEntry, moodView, removeEntry } from "./entries";
   import { orbs, orbColor } from "./orbs";
+
+  const doc = getDocument(schema);
 
   const flipMs = $derived(prefersReducedMotion.current ? 0 : 220);
   const view = $derived(moodView(doc.current));

@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Tabs, Checkbox, Select, Button, Tooltip } from "bits-ui";
@@ -10,12 +10,13 @@
   import Plane from "@lucide/svelte/icons/plane";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import doc from "./schema";
+  import schema from "./schema";
   import {
     DEFAULT_DAY_SUBTITLE, TAGS, addDay, addPackingItem, addStop, itineraryView, removeDay, removePackingItem,
     removeStop, selectDay, setDayDate, setPackingDone, setStopDone, setStopTime, tagCode, type StopTag,
   } from "./shared";
 
+  const doc = getDocument(schema);
   const tagItems = TAGS.map((tag) => ({ value: tag.value, label: tag.code }));
 
   let newTime = $state("10:00");

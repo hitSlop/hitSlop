@@ -1,6 +1,7 @@
 import { dateLabel } from "../_shared/format";
-import type doc from "./schema";
-export type Hourglass = typeof doc.current;
+import type { Value } from "hitslop";
+import type schema from "./schema";
+export type Hourglass = Value<typeof schema.descriptor>;
 
 const minute = 60_000;
 const hour = 60 * minute;

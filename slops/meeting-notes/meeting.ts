@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** The editor and its export derive counts and listed attendees from the same snapshot. */
-export function meetingView(data: typeof doc.current) {
+export function meetingView(data: Value<typeof schema.descriptor>) {
   return {
     agendaDone: data.agenda.filter((topic) => topic.done).length,
     actionsDone: data.actions.filter((action) => action.done).length,

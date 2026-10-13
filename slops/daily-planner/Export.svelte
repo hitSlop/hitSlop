@@ -1,25 +1,26 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type schema from "./schema";
   import { formatDate, plannedLabel, plannerView, toLabel } from "./schedule";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(plannerView(doc.current));
+  const view = $derived(plannerView(snapshot));
 </script>
 
 <article class="exportPage" aria-label="Exported daily planner">
   <header class="header">
     <span class="eyebrow">DAILY / PLANNER</span>
     <div class="headerMain">
-      <h1 class="title">{formatDate(doc.current.date, { weekday: "long" })}</h1>
-      <span class="dateNumber">{formatDate(doc.current.date, { day: "2-digit" })}</span>
+      <h1 class="title">{formatDate(snapshot.date, { weekday: "long" })}</h1>
+      <span class="dateNumber">{formatDate(snapshot.date, { day: "2-digit" })}</span>
     </div>
-    <p>{formatDate(doc.current.date, { month: "long", day: "numeric", year: "numeric" })}</p>
+    <p>{formatDate(snapshot.date, { month: "long", day: "numeric", year: "numeric" })}</p>
   </header>
   <section class="priorities" style="max-height:none;overflow:visible">
     <h2 class="heading">Make room for</h2>
     <ol class="priorityList">
-      {#each (preview ? (doc.current.priorities).slice(0, 3) : doc.current.priorities) as priority, index (priority.$id)}
+      {#each (preview ? (snapshot.priorities).slice(0, 3) : snapshot.priorities) as priority, index (priority.$id)}
         <li class="priority">
           <span class="checkbox">{priority.done ? "✓" : index + 1}</span>
           <span style:text-decoration={priority.done ? "line-through" : "none"}>{priority.text || "—"}</span>
@@ -43,6 +44,6 @@
   </div>
   <section class="exportNotes">
     <h2 class="heading">Day notes</h2>
-    {previewText(doc.current.notes || "Nothing noted.", preview, 160)}
+    {previewText(snapshot.notes || "Nothing noted.", preview, 160)}
   </section>
 </article>

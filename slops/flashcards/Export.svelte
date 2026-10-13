@@ -1,10 +1,13 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { studyView } from "./study";
+
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
   // The export is a fresh page with no session: it shows the first deck, every card, and the question side.
   const { activeDeck, visibleCards, cardIndex, currentCard, stages } = $derived(
-    studyView(doc.current, { deckKey: "", box: 0, cardIndex: 0 }),
+    studyView(snapshot, { deckKey: "", box: 0, cardIndex: 0 }),
   );
 </script>
 

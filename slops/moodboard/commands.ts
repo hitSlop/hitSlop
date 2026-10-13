@@ -1,10 +1,10 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { removeTile, setCaption, setTitle } from "./tiles";
 
 // Adding an image needs its bytes: agents insert a tile with `slop batch --attach` instead.
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setTitle: {
     description: "Rename the board; an empty title shows as Moodboard.",
     args: { title: s.string({ description: "The board's new title." }) },

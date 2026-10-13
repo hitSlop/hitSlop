@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { milestoneTypes } from "./schema";
+import schema, { milestoneTypes } from "./schema";
 import { addMilestone, moveMilestone, removeMilestone } from "./shared";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addMilestone: {
     description: "Add a dated milestone for a course and return its stable row ID.",
     args: {

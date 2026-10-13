@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { slots } from "./schema";
+import schema, { slots } from "./schema";
 import { addOption, removeOption, setOption, setTitle, spin } from "./options";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setTitle: {
     description: "Set whose future the page is about; the title is shown on the future card.",
     args: { title: s.string({ description: "The name, or blank for none." }) },

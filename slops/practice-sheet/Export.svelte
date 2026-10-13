@@ -1,14 +1,15 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type schema from "./schema";
   import SheetHead from "./SheetHead.svelte";
   import Ladder from "./Ladder.svelte";
   import Record from "./Record.svelte";
   import { localDay, practiceView } from "./practice";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   const today = localDay(new Date());
-  const view = $derived(practiceView(doc.current, today));
+  const view = $derived(practiceView(snapshot, today));
 </script>
 
 <main class="ps-desk ps-export">
@@ -23,7 +24,7 @@
     </header>
     <div class="ps-score">
       <p class="ps-label">ABC notation</p>
-      <pre class="ps-export-notation">{previewText(doc.current.abc, preview, 500)}</pre>
+      <pre class="ps-export-notation">{previewText(snapshot.abc, preview, 500)}</pre>
     </div>
     <footer class="ps-export-foot">
       <section class="ps-export-ladder" aria-label="Tempo ladder">

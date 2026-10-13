@@ -1,11 +1,13 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
+import type { Value } from "hitslop";
+import type { CaptureProps } from "hitslop/svelte";
 import Check from "@lucide/svelte/icons/check";
-import doc from "./schema";
+import type schema from "./schema";
 import { dayKey, heatmapView, labelDay, localDate, shortDay, weekdays } from "./calendar";
-type Habit = (typeof doc.current.habits)[number];
+let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+type Habit = Value<typeof schema.descriptor>["habits"][number];
 const today = dayKey(new Date());
-const view = $derived(heatmapView(doc.current, today));
+const view = $derived(heatmapView(snapshot, today));
 const { days, labels } = $derived(view);
 </script>
 {#snippet calendar(habit: Habit)}

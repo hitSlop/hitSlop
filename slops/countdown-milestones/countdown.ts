@@ -1,8 +1,8 @@
 import { dateLabel } from "../_shared/format";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Countdown = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Countdown = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export const maxMilestones = 25;
 
 export function isoDate(date: Date) {

@@ -1,10 +1,10 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
 import { koiPatterns, maxKoi } from "./schema";
-import type doc from "./schema";
+import type schema from "./schema";
 
-export type Pond = typeof doc.current;
+export type Pond = Value<typeof schema.descriptor>;
 export type KoiPattern = (typeof koiPatterns)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 type Random = () => number;
 
 export const maxName = 24;

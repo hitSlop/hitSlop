@@ -1,7 +1,9 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { COLS, ROWS, wordleView } from "./wordle";
   import { dayOf, evaluateGuess, type TileState } from "./words";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
   type Game = ReturnType<typeof wordleView>["game"];
   const today = dayOf(Date.now());
@@ -14,7 +16,7 @@
     if (!completed) return "";
     return evaluateGuess(completed, game.targetWord)[colIndex] ?? "";
   }
-  const view = $derived(wordleView(doc.current, today));
+  const view = $derived(wordleView(snapshot, today));
   const game = $derived(view.game);
   const meta = $derived(view.mode === "daily" ? `Daily · ${game.date ?? ""} · ${view.score}` : `Practice · ${view.score}`);
 </script>

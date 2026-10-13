@@ -1,8 +1,9 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
-  const data = $derived(doc.current);
+  import type schema from "./schema";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const data = $derived(snapshot);
 </script>
 
 <main class="cp-sheet cp-export">

@@ -1,11 +1,13 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc, { stages } from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { stages } from "./schema";
   import { dateString, dueLabel, shortDate } from "./dates";
   import { trackerView } from "./pipeline";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   const today = dateString(new Date());
-  const view = $derived(trackerView(doc.current, today));
+  const view = $derived(trackerView(snapshot, today));
 </script>
 
 <article class="badge export">

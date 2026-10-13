@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { clearPeriod, lineKeys, setDate, setWritten, writeLine } from "./journal";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setDate: {
     description: "Move the journal to a day and return the date.",
     args: { date: s.string({ description: "The day, YYYY-MM-DD." }) },

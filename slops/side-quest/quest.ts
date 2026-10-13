@@ -1,15 +1,15 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { sprites, stickers, tapes } from "./schema";
 
-export type Map = typeof doc.current;
+export type Map = Value<typeof schema.descriptor>;
 export type Course = Map["courses"][number];
 export type Quest = Course["quests"][number];
 export type Placed = Map["placed"][number];
 export type Sticker = (typeof stickers)[number];
 export type Tape = (typeof tapes)[number];
 export type Kind = Quest["kind"];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 const DAY = 86_400_000;
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;

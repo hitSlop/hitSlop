@@ -1,19 +1,20 @@
 <script lang="ts">
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { journalView } from "./journal";
   import { symbolFor } from "./signifiers";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const { entries, openCount, days } = $derived(journalView(doc.current));
+  const { entries, openCount, days } = $derived(journalView(snapshot));
 </script>
 
 <article class="exportPage" aria-label="Exported bullet journal">
   <span class="ribbon" aria-hidden="true"></span>
   <section aria-label="Daily rapid log">
     <div class="titleRow">
-      <h1 class="title">{doc.current.date.trim() || "Rapid log"}</h1>
-      <span class="pageNumWrap">pg. {doc.current.dailyPage.trim() || "—"}</span>
+      <h1 class="title">{snapshot.date.trim() || "Rapid log"}</h1>
+      <span class="pageNumWrap">pg. {snapshot.dailyPage.trim() || "—"}</span>
     </div>
     <ul class="list">
       {#each (preview ? (entries).slice(0, 6) : entries) as item (item.$id)}
@@ -33,8 +34,8 @@
   </section>
   <section aria-label="Monthly index">
     <div class="titleRow">
-      <h1 class="title">{doc.current.monthTitle.trim() || "Monthly index"}</h1>
-      <span class="pageNumWrap">pg. {doc.current.monthlyPage.trim() || "—"}</span>
+      <h1 class="title">{snapshot.monthTitle.trim() || "Monthly index"}</h1>
+      <span class="pageNumWrap">pg. {snapshot.monthlyPage.trim() || "—"}</span>
     </div>
     <ul class="list">
       {#each (preview ? (days).slice(0, 4) : days) as item (item.$id)}

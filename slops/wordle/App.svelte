@@ -1,19 +1,20 @@
 <script lang="ts">
 import "hitslop/base.css";
   import "./styles.css";
-  import { capture } from "hitslop/svelte";
+  import { getDocument } from "hitslop/svelte";
   import { Button, Dialog, Progress, Tabs } from "bits-ui";
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import BarChart3 from "@lucide/svelte/icons/chart-column";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Share2 from "@lucide/svelte/icons/share-2";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import { evaluateGuess, dayOf, isValidWord, type TileState } from "./words";
   import { COLS, ROWS, newPractice, playGuess, setMode as writeMode, shareText, wordleView } from "./wordle";
 
+  const doc = getDocument(schema);
   const TILE_FLIP_MS = 420;
   const TILE_STAGGER = 80;
   const ROW_FLIP_MS = TILE_FLIP_MS + TILE_STAGGER * (COLS - 1);
@@ -309,17 +310,10 @@ import "hitslop/base.css";
     window.addEventListener("keyup", onWindowKeyUp);
     const refreshDay = () => { today = dayOf(Date.now()); };
     document.addEventListener("visibilitychange", refreshDay);
-    const unregister = capture.onPrepare(async () => {
-      snapRows(activeState.guesses.length, 0);
-      shakeRow = false;
-      revealing = false;
-      await tick();
-    });
     return () => {
       window.removeEventListener("keydown", onWindowKeyDown);
       window.removeEventListener("keyup", onWindowKeyUp);
       document.removeEventListener("visibilitychange", refreshDay);
-      unregister();
       clearTimer(toastTimer);
       clearTimer(shakeTimer);
       clearTimer(revealTimer);

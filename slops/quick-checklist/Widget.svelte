@@ -1,20 +1,20 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
   import Check from "@lucide/svelte/icons/check";
   import Sparkle from "@lucide/svelte/icons/sparkle";
   import Brand from "./Brand.svelte";
   import Progress from "./Progress.svelte";
-  import doc from "./schema";
+  import type schema from "./schema";
   import { checklistView } from "./tasks";
-  let { family }: WidgetProps = $props();
-  const { visible, finished, ratio } = $derived(checklistView(doc.current));
+  let { snapshot, family }: CaptureProps<typeof schema> & WidgetProps = $props();
+  const { visible, finished, ratio } = $derived(checklistView(snapshot));
   const rows = $derived(visible.slice(0, family === "small" ? 1 : family === "medium" ? 2 : 6));
 </script>
 
 <main class="widget" data-family={family}>
   {#if family === "large"}<Brand />{/if}
   <section class="paper">
-    <h1>{doc.current.title || "Untitled list"}</h1>
+    <h1>{snapshot.title || "Untitled list"}</h1>
     {#if family === "large"}
       <Progress total={visible.length} {finished} fill={ratio} />
     {:else}

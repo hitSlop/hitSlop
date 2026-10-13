@@ -3,8 +3,8 @@
   import { Dialog, Select, Checkbox } from "bits-ui";
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
-  import doc from "./schema";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import {
     type Task,
     type TaskColor,
@@ -27,6 +27,8 @@
     layout,
     tasksByTime,
   } from "./schedule";
+
+  const doc = getDocument(schema);
   let scroller = $state<HTMLDivElement>();
   let board = $state<HTMLDivElement>();
 

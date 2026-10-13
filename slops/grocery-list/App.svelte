@@ -1,7 +1,8 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Tabs, Checkbox, Select, Button, Tooltip } from "bits-ui";
@@ -9,10 +10,11 @@
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import Check from "@lucide/svelte/icons/check";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
-  import doc, { categories } from "./schema";
+  import schema, { categories } from "./schema";
   import { addItem, clearDone as clearCheckedItems, groceryView, removeItem, setDone, type Category, type Filter } from "./items";
 
-  type GroceryItem = (typeof doc.current.items)[number];
+  const doc = getDocument(schema);
+  type GroceryItem = Value<typeof schema.descriptor>["items"][number];
 
   const categoryItems = categories.map((value) => ({ value, label: value }));
   let filter = $state<Filter>("All");

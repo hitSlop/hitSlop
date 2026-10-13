@@ -1,11 +1,11 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { kinds } from "./schema";
 
-export type Stash = typeof doc.current;
+export type Stash = Value<typeof schema.descriptor>;
 export type Product = Stash["products"][number];
 export type Kind = Product["kind"];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 // Product colours are content, not theme: each pan keeps the shade it holds.
 export const swatches = ["#e8a0a8", "#d96f7e", "#b8445f", "#e9a07b", "#d9b18f", "#a8704f", "#d8b45a", "#7b3f5e", "#8fa58a", "#7d9bc4"] as const;

@@ -1,10 +1,10 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { bands } from "./schema";
+import schema, { bands } from "./schema";
 import { stationIds } from "./station-list";
 import { selectStation, setBalance, setBand, setEqualizerOn, setVolume, useBaseSkin } from "./settings";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   selectStation: {
     description: "Tune the receiver to one of the eight SomaFM stations; playback stays paused until someone presses play.",
     args: { station: s.enum(stationIds, { description: "The station ID, e.g. groovesalad or dronezone." }) },

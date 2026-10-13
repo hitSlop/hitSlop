@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { onMount, tick } from "svelte";
   import TreePine from "@lucide/svelte/icons/tree-pine";
   import House from "@lucide/svelte/icons/house";
@@ -13,9 +13,11 @@
   import Sun from "@lucide/svelte/icons/sun";
   import Leaf from "@lucide/svelte/icons/leaf";
   import Snowflake from "@lucide/svelte/icons/snowflake";
-  import doc, { seasons, type Kind, type Season } from "./schema";
+  import schema, { seasons, type Kind, type Season } from "./schema";
   import { PlanetScene, readPalette, type Tool } from "./planet";
   import { newWorld, placeProblem, placeThing, removeThing, setSeason, worldView } from "./world";
+
+  const doc = getDocument(schema);
 
   const tools: { id: Tool; label: string; icon: typeof TreePine }[] = [
     { id: "tree", label: "Tree", icon: TreePine },

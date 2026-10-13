@@ -1,14 +1,15 @@
 <script lang="ts">
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
+  import type { CaptureProps } from "hitslop/svelte";
   // The worked solution as a clean sheet: the same title block, numbered typeset lines,
   // notes, and each graph drawn as SVG from its saved window and parameters.
-  import doc from "./schema";
+  import type schema from "./schema";
   import { notebookView, paramValues, plotCaption } from "./notebook";
   import StaticMath from "./StaticMath.svelte";
   import PlotFigure from "./PlotFigure.svelte";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(notebookView(doc.current));
+  const view = $derived(notebookView(snapshot));
   const shown = (value: number) => (Math.round(value * 100) / 100).toString().replace("-", "−");
 </script>
 

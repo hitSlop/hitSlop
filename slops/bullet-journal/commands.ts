@@ -1,10 +1,10 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { signifierTypes } from "./signifiers";
 import { addEntry, addMonthDay, cycleSignifier, removeEntry, removeMonthDay, setPriority } from "./journal";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addEntry: {
     description: "Rapid log an entry at the end of the daily page and return its stable row ID.",
     args: {

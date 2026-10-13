@@ -1,7 +1,3 @@
-<script lang="ts">
-  import doc from "./schema";
-</script>
-
 <section class="grade-render grade-icon" data-slop-render="icon" aria-hidden="true">
   <div class="icon-instrument">
     <div class="icon-header">

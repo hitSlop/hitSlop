@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addCard, addLane, laneKeyFrom, moveCard, removeCard, setDoneLane, setLaneLimit } from "./model";
 
 const laneKey = s.string({ description: "The lane's laneKey." });
 const card = s.string({ description: "The work order's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addCard: {
     description: "Punch a work order onto the end of a lane and return its stable row ID.",
     args: {

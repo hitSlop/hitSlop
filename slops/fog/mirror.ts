@@ -1,10 +1,10 @@
 import { dateLabel as formattedDate } from "../_shared/format";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { BRUSH } from "./schema";
 
-export type Mirror = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Mirror = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 /** An attachment reference as `attachments.import` returns it. */
 export type FileRef = { id: string; name: string; mimeType: string; byteLength: number };
 

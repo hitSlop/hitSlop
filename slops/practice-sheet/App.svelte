@@ -1,7 +1,8 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, notify } from "hitslop/svelte";
+  import { bindText, getDocument, notify } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { Popover, Toggle } from "bits-ui";
   import { onMount, tick } from "svelte";
   import { prefersReducedMotion } from "svelte/motion";
@@ -18,7 +19,7 @@
   import ScrollText from "@lucide/svelte/icons/scroll-text";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import Engraved from "./Engraved.svelte";
   import SheetHead from "./SheetHead.svelte";
   import Ladder from "./Ladder.svelte";
@@ -29,6 +30,8 @@
     cleanRun, localDay, logPractice, MINUTES_MAX, practiceView, removeSession, restartLadder,
     setLadder, setTempo, shortDay, TEMPO_MAX, TEMPO_MIN,
   } from "./practice";
+
+  const doc = getDocument(schema);
 
   // ---- view state: nothing below is saved
   let today = $state(localDay(new Date()));
@@ -193,7 +196,7 @@
     notify(`Logged ${logged} min at ${doc.current.tempo} bpm.`);
   }
 
-  async function remove(session: (typeof doc.current.log)[number]) {
+  async function remove(session: Value<typeof schema.descriptor>["log"][number]) {
     await doc.change(tx => removeSession(tx, session));
     notify("Session removed.");
   }

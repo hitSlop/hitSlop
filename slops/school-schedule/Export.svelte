@@ -1,9 +1,11 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc, { DAYS } from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { DAYS } from "./schema";
   import { DAY_NAMES, activitiesOn, classAt, clockLabel, scheduleView } from "./schedule";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const data = $derived(doc.current);
+  const data = $derived(snapshot);
   const { periods } = $derived(scheduleView(data));
 </script>
 

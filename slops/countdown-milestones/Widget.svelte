@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
-  import doc from "./schema";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type schema from "./schema";
 
-  let { family, width, height }: WidgetProps = $props();
+  let { snapshot, family, width, height }: CaptureProps<typeof schema> & WidgetProps = $props();
   const now = new Date();
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   function calendarDay(value: string): number | null {
@@ -14,19 +14,19 @@
     return date.getTime() / 86400000;
   }
   const today = calendarDay(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`)!;
-  const target = $derived(calendarDay(doc.current.targetDate));
+  const target = $derived(calendarDay(snapshot.targetDate));
   const days = $derived(target === null ? null : Math.round(target - today));
-  const dateLabel = $derived(target === null ? "Choose a date" : `${months[Number(doc.current.targetDate.slice(5, 7)) - 1]} ${Number(doc.current.targetDate.slice(8))}, ${doc.current.targetDate.slice(0, 4)}`);
-  const timeLabel = $derived(/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(doc.current.targetTime) ? doc.current.targetTime : "");
-  const done = $derived(doc.current.milestones.filter(item => item.done).length);
-  const pending = $derived(doc.current.milestones.filter(item => !item.done));
+  const dateLabel = $derived(target === null ? "Choose a date" : `${months[Number(snapshot.targetDate.slice(5, 7)) - 1]} ${Number(snapshot.targetDate.slice(8))}, ${snapshot.targetDate.slice(0, 4)}`);
+  const timeLabel = $derived(/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(snapshot.targetTime) ? snapshot.targetTime : "");
+  const done = $derived(snapshot.milestones.filter(item => item.done).length);
+  const pending = $derived(snapshot.milestones.filter(item => !item.done));
   const rows = $derived(pending.slice(0, family === "large" ? 3 : 2));
 </script>
 
 <main class="countdown-widget" data-family={family} style:width={`${width}px`} style:height={`${height}px`}>
   <section class="countdown-widget-page">
     <span class="countdown-widget-binding" aria-hidden="true"></span>
-    <h1>{doc.current.title || "A date to remember"}</h1>
+    <h1>{snapshot.title || "A date to remember"}</h1>
     <strong class="countdown-widget-number" data-long={days !== null && String(Math.abs(days)).length > 3}>{days === null ? "—" : days === 0 ? "Today" : Math.abs(days)}</strong>
     <span class="countdown-widget-unit">{days === null ? "Something to look forward to" : days === 0 ? "The day is here" : `${Math.abs(days) === 1 ? "day" : "days"} ${days < 0 ? "since" : "to go"}`}</span>
     <p class="countdown-widget-date">{dateLabel}{#if timeLabel && family !== "small"}<span> · {timeLabel}</span>{/if}</p>
@@ -34,11 +34,11 @@
   </section>
   {#if family !== "small"}
     <section class="countdown-widget-steps">
-      <header><h2>Along the way</h2><span>{done}/{doc.current.milestones.length}</span></header>
+      <header><h2>Along the way</h2><span>{done}/{snapshot.milestones.length}</span></header>
       {#each rows as item (item.$id)}
         <p class="countdown-widget-step"><span class="countdown-widget-box" aria-hidden="true"></span><span>{item.title || "Untitled milestone"}</span></p>
       {:else}
-        <p class="countdown-widget-empty">{doc.current.milestones.length ? "Every milestone, done." : "Make a little plan for the big day."}</p>
+        <p class="countdown-widget-empty">{snapshot.milestones.length ? "Every milestone, done." : "Make a little plan for the big day."}</p>
       {/each}
       <footer><span>{pending.length > rows.length ? `+ ${pending.length - rows.length} more` : "A date worth remembering."}</span><span>As of {months[now.getMonth()]} {now.getDate()}</span></footer>
     </section>

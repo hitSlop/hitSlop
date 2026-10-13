@@ -1,12 +1,13 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { previewText } from "../_shared/preview";
   import { markdownView } from "./markdown";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const { content } = $derived(doc.current);
-  const view = $derived(markdownView(doc.current));
+  const { content } = $derived(snapshot);
+  const view = $derived(markdownView(snapshot));
 </script>
 
 <article class={"md-exportSheet"} aria-label="Exported manuscript {view.title}">

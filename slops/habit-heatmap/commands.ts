@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { colors } from "./schema";
+import schema, { colors } from "./schema";
 import { addHabit, dayKey, editHabit, removeHabit, setCheckin } from "./calendar";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addHabit: {
     description: "Add a habit with no check-ins and return its stable row ID.",
     args: { name: s.string(), color: s.enum(colors) },

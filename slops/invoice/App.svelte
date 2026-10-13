@@ -6,9 +6,10 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import { bindText } from "hitslop/svelte";
-  import doc, { currencies, statuses } from "./schema";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import schema, { currencies, statuses } from "./schema";
   import { addItem, invoiceView, removeItem, setCurrency, setStatus } from "./items";
+  const doc = getDocument(schema);
   const statusItems = statuses.map((value) => ({ value, label: value }));
   const currencyItems = currencies.map((value) => ({ value, label: value }));
   const totals = $derived(invoiceView(doc.current));

@@ -2,9 +2,9 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { onMount } from "svelte";
-  import { attachments, capture, resizeWindow } from "hitslop/svelte";
+  import { attachments, getDocument, resizeWindow } from "hitslop/svelte";
   import { Toggle } from "bits-ui";
-  import doc, { bands } from "./schema";
+  import schema, { bands } from "./schema";
   import { Receiver } from "./player";
   import { resolveStations, type ResolvedStation } from "./stations";
   import { validateClassicSkin } from "./skin-archive";
@@ -12,7 +12,8 @@
     receiverView, saveAudio as commitAudio, selectStation, setSkin, setVisualizer as saveVisualizer, useBaseSkin,
     type AudioPreferences,
   } from "./settings";
-  const capturing = capture.isRenderer();
+
+  const doc = getDocument(schema);
   let stage: HTMLDivElement;
   let picker: HTMLInputElement;
   let receiver = $state.raw<Receiver | null>(null);
@@ -126,7 +127,7 @@
       if (disposed) return;
       status = "Importing skin…";
       let importedId = "";
-      await attachments.import<typeof doc.descriptor>(file, (tx, ref) => {
+      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
         setSkin(tx, ref);
         importedId = ref.id;
       });
@@ -176,7 +177,6 @@
     if (receiver) void setVisualizer(doc.current.milkdropOpen && !reduced, false);
   });
   onMount(() => {
-    if (capturing) return;
     const abort = new AbortController();
     const motion = matchMedia("(prefers-reduced-motion: reduce)");
     const motionChanged = () => { reduced = motion.matches; receiver?.reducedMotion(reduced); };

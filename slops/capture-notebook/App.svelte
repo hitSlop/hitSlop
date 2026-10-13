@@ -2,13 +2,13 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { AlertDialog, Dialog } from "bits-ui";
-  import { attachments, draft, EditableText, notify } from "hitslop/svelte";
+  import { attachments, draft, EditableText, getDocument, notify } from "hitslop/svelte";
   import Mic from "@lucide/svelte/icons/mic";
   import PenLine from "@lucide/svelte/icons/pen-line";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import Camera from "./Camera.svelte";
   import Recorder from "./Recorder.svelte";
   import Print from "./Print.svelte";
@@ -18,6 +18,7 @@
     type Entry,
   } from "./notebook";
 
+  const doc = getDocument(schema);
   const view = $derived(notebookView(doc.current));
   // Which photo is open large and which entry is being removed are view state.
   let viewingId = $state<string | null>(null);
@@ -32,7 +33,7 @@
     if (full) throw new Error(full);
     const now = new Date();
     const file = new File([blob], fileName("photo", now, "jpg"), { type: "image/jpeg" });
-    await attachments.import<typeof doc.descriptor>(file, (tx, ref) => { keepPhoto(tx, ref, now.toISOString(), width, height); });
+    await attachments.import<typeof schema.descriptor>(file, (tx, ref) => { keepPhoto(tx, ref, now.toISOString(), width, height); });
     notify(`Photo kept · ${formatBytes(blob.size)}`);
   }
   async function keepClip({ blob, ext, seconds }: { blob: Blob; ext: string; seconds: number }) {
@@ -40,7 +41,7 @@
     if (full) throw new Error(full);
     const now = new Date(Date.now() - seconds * 1000);
     const file = new File([blob], fileName("recording", now, ext), { type: blob.type });
-    await attachments.import<typeof doc.descriptor>(file, (tx, ref) => { keepRecording(tx, ref, now.toISOString(), seconds); });
+    await attachments.import<typeof schema.descriptor>(file, (tx, ref) => { keepRecording(tx, ref, now.toISOString(), seconds); });
     notify(`Recording kept · ${formatBytes(blob.size)}`);
   }
   async function addTyped(event: SubmitEvent) {

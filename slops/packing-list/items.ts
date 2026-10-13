@@ -1,8 +1,8 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { PRESETS } from "./presets";
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /**
  * The tag and the export derive their totals, sections and empty state from the same snapshot.

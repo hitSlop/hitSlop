@@ -1,12 +1,13 @@
 <script lang="ts">
   // A fresh, read-only page: it renders saved frames only and never asks for the camera.
-  import doc from "./schema";
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { dayKey, dayLabel, frameView, shortLabel, sizeLabel } from "./frames";
   import Photo from "./Photo.svelte";
 
-  let { mode = "export" }: { mode?: "preview" | "export" } = $props();
+  let { snapshot, attachmentURL, mode }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
   const today = dayKey(new Date());
-  const view = $derived(frameView(doc.current, today));
+  const view = $derived(frameView(snapshot, today));
   const hero = $derived(view.latest);
   // The most recent frames, oldest first, read like the flipbook.
   const limit = $derived(mode === "preview" ? 8 : view.stack.length);
@@ -19,7 +20,7 @@
   <header class="df-head">
     <div class="df-heading">
       <p class="df-eyebrow">Daily Frame{view.sample ? " · sample" : ""}</p>
-      <h1 class="df-title">{doc.current.title || "Daily Frame"}</h1>
+      <h1 class="df-title">{snapshot.title || "Daily Frame"}</h1>
     </div>
     <dl class="df-readout">
       <div><dt>frames</dt><dd>{view.stack.length}</dd></div>
@@ -29,7 +30,7 @@
 
   {#if hero}
     <figure class="df-print df-export-hero">
-      <div class="df-window"><Photo shown={hero} /></div>
+      <div class="df-window"><Photo shown={hero} url={attachmentURL} /></div>
       <figcaption class="df-caption">
         <span class="df-caption-note">{hero.note || (view.sample ? "Sample frame" : " ")}</span>
         <span class="df-caption-day">{hero.date === today ? "Today" : dayLabel(hero.date)}</span>
@@ -44,7 +45,7 @@
   <ol class="df-sheet">
     {#each sheet as shown (shown.key)}
       <li class="df-sheet-print">
-        <span class="df-sheet-photo"><Photo {shown} /></span>
+        <span class="df-sheet-photo"><Photo {shown} url={attachmentURL} /></span>
         <span class="df-sheet-note">{shown.note || dayLabel(shown.date)}</span>
       </li>
     {/each}

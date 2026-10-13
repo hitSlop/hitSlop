@@ -1,6 +1,6 @@
 import type { Caregiver } from "./journal";
 
-/** Pure lookups; the page passes the caregivers from `doc.current`. */
+/** Pure lookups; callers pass the caregivers from the document snapshot. */
 export function caregiverLabel(people: readonly Caregiver[], id: string) {
   return people.find(person => person.$id === id)?.name.trim() || "Unknown caregiver";
 }

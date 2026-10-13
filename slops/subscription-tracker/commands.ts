@@ -1,6 +1,6 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { cadences, categories, currencies } from "./schema";
+import schema, { cadences, categories, currencies } from "./schema";
 import { addSubscription, removeSubscription, setActive, setCurrency, updateSubscription } from "./items";
 
 const details = {
@@ -12,7 +12,7 @@ const details = {
   note: s.string({ description: "A plan or detail; blank for none." }),
 };
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addSubscription: {
     description: "Track a recurring cost and return its stable row ID.",
     args: details,

@@ -1,16 +1,16 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
-  import doc from "./schema";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type schema from "./schema";
 
-  let { family }: WidgetProps = $props();
-  const priorities = $derived(doc.current.priorities.filter((item) => item.text.trim()));
+  let { snapshot, family }: CaptureProps<typeof schema> & WidgetProps = $props();
+  const priorities = $derived(snapshot.priorities.filter((item) => item.text.trim()));
   const remaining = $derived(priorities.filter((item) => !item.done));
   const focus = $derived(remaining[0]);
-  const blocks = $derived([...doc.current.blocks].sort((a, b) => a.start.localeCompare(b.start)));
+  const blocks = $derived([...snapshot.blocks].sort((a, b) => a.start.localeCompare(b.start)));
   const visibleBlocks = $derived(blocks.slice(0, 2));
   const day = $derived.by(() => {
-    const date = new Date(`${doc.current.date}T12:00:00`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(doc.current.date) || Number.isNaN(date.valueOf()))
+    const date = new Date(`${snapshot.date}T12:00:00`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(snapshot.date) || Number.isNaN(date.valueOf()))
       return { number: "—", label: "Choose a day", full: "Undated plan" };
     const weekday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][date.getDay()];
     const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()];

@@ -1,9 +1,12 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import Chart from "./StaticChart.svelte";
   import { notebookView } from "./lab";
 
-  const data = $derived(doc.current);
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+
+  const data = $derived(snapshot);
   const view = $derived(notebookView(data));
   const small = $derived(data.rows.length <= 12);
 </script>

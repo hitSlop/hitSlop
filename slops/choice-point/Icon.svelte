@@ -1,7 +1,3 @@
-<script lang="ts">
-  import doc from "./schema";
-</script>
-
 <section class="cp-render" data-slop-render="icon" aria-hidden="true">
   <div class="cp-icon">
     <svg viewBox="0 0 240 240">

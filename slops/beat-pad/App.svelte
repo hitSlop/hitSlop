@@ -1,15 +1,18 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
   import { onDestroy, onMount } from "svelte";
   import { Button } from "bits-ui";
   import Play from "@lucide/svelte/icons/play";
   import Square from "@lucide/svelte/icons/square";
   import Shuffle from "@lucide/svelte/icons/shuffle";
   import Eraser from "@lucide/svelte/icons/eraser";
-  import doc from "./schema";
+  import schema from "./schema";
   import { BeatEngine } from "./engine";
   import { BPM, SWING, beatView, clearPattern, kitLabel, kits, pressStep, setKit, setSwing, setTempo, shufflePattern, type Track } from "./pattern";
+
+  const doc = getDocument(schema);
 
   // The engine, Play state and playhead are view state: never saved, rebuilt from the pattern on Play.
   let engine = $state.raw<BeatEngine>();

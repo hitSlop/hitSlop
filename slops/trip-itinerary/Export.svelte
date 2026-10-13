@@ -1,11 +1,12 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import Check from "@lucide/svelte/icons/check";
   import Plane from "@lucide/svelte/icons/plane";
   import { formatDate, itineraryView, tagCode } from "./shared";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(itineraryView(doc.current));
+  const view = $derived(itineraryView(snapshot));
 </script>
 
 <article class="export-pass" aria-label="Exported trip itinerary">
@@ -13,12 +14,12 @@
     <header class="masthead">
       <div class="mast-top">
         <div class="airline"><Plane size={15} /><span>HITSLOP TRANSIT</span></div>
-        <strong class="trip-name">{doc.current.tripTitle || "Untitled trip"}</strong>
+        <strong class="trip-name">{snapshot.tripTitle || "Untitled trip"}</strong>
       </div>
       <div class="route">
         <div class="city">
-          <strong class="iata">{doc.current.origin}</strong>
-          <span class="city-name">{doc.current.originCity}</span>
+          <strong class="iata">{snapshot.origin}</strong>
+          <span class="city-name">{snapshot.originCity}</span>
         </div>
         <div class="flight-arrow" aria-hidden="true">
           <span class="flight-line"></span>
@@ -26,16 +27,16 @@
           <span class="flight-line"></span>
         </div>
         <div class="city city-end">
-          <strong class="iata">{doc.current.destination}</strong>
-          <span class="city-name">{doc.current.destCity}</span>
+          <strong class="iata">{snapshot.destination}</strong>
+          <span class="city-name">{snapshot.destCity}</span>
         </div>
       </div>
       <div class="stripe">
-        <div class="field"><span>PASSENGER</span><strong>{doc.current.passenger}</strong></div>
-        <div class="field"><span>FLIGHT</span><strong>{doc.current.flight}</strong></div>
-        <div class="field"><span>GATE</span><strong>{doc.current.gate}</strong></div>
-        <div class="field"><span>SEAT</span><strong>{doc.current.seat}</strong></div>
-        <div class="field"><span>PNR</span><strong>{doc.current.bookingRef}</strong></div>
+        <div class="field"><span>PASSENGER</span><strong>{snapshot.passenger}</strong></div>
+        <div class="field"><span>FLIGHT</span><strong>{snapshot.flight}</strong></div>
+        <div class="field"><span>GATE</span><strong>{snapshot.gate}</strong></div>
+        <div class="field"><span>SEAT</span><strong>{snapshot.seat}</strong></div>
+        <div class="field"><span>PNR</span><strong>{snapshot.bookingRef}</strong></div>
       </div>
     </header>
 
@@ -79,21 +80,21 @@
   <aside class="stub">
     <div class="stub-head">
       <span class="stub-label">BOARDING STUB</span>
-      <strong class="stub-route">{doc.current.origin} ✈ {doc.current.destination}</strong>
+      <strong class="stub-route">{snapshot.origin} ✈ {snapshot.destination}</strong>
     </div>
     <div class="stub-meta">
-      <div><span>FLIGHT</span><strong>{doc.current.flight}</strong></div>
-      <div><span>GATE</span><strong>{doc.current.gate}</strong></div>
-      <div><span>SEAT</span><strong>{doc.current.seat}</strong></div>
+      <div><span>FLIGHT</span><strong>{snapshot.flight}</strong></div>
+      <div><span>GATE</span><strong>{snapshot.gate}</strong></div>
+      <div><span>SEAT</span><strong>{snapshot.seat}</strong></div>
     </div>
     <div class="stub-passenger">
       <span>NAME</span>
-      <strong>{doc.current.passenger}</strong>
+      <strong>{snapshot.passenger}</strong>
     </div>
     <div class="packing">
       <span class="stub-label">PACKING STUB · {view.packed}/{view.packedTotal}</span>
       <ul class="stub-items">
-        {#each (preview ? (doc.current.stubItems).slice(0, 6) : doc.current.stubItems) as stub (stub.$id)}
+        {#each (preview ? (snapshot.stubItems).slice(0, 6) : snapshot.stubItems) as stub (stub.$id)}
           <li class="stub-row" data-done={stub.done}>
             <span data-checkbox-root data-state={stub.done ? "checked" : "unchecked"}>{#if stub.done}<Check size={10} strokeWidth={3} />{/if}</span>
             <span class="stub-text">{stub.text || "Untitled item"}</span>
@@ -105,7 +106,7 @@
     </div>
     <div class="barcode-box" aria-hidden="true">
       <div class="barcode"></div>
-      <span class="barcode-num">{doc.current.bookingRef}</span>
+      <span class="barcode-num">{snapshot.bookingRef}</span>
     </div>
   </aside>
 </article>

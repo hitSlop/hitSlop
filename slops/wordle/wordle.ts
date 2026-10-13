@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { evaluateGuess, getDailyWord, getRandomWord, isValidWord } from "./words";
 
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 type Mode = Data["mode"];
 type Status = Data["daily"]["status"];
 

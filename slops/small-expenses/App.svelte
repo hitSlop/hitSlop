@@ -2,11 +2,12 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { Checkbox, Tabs } from "bits-ui";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { tick } from "svelte";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addItem, clearNote, expenseView, formatMoney, moveItem, parseEntry, removeItem, settleItems } from "./items";
 
+  const doc = getDocument(schema);
   const { title, currency } = doc.fields;
   const merchantInputs = new Map<string, HTMLInputElement>();
   function merchantInput(node: HTMLInputElement, id: string) {

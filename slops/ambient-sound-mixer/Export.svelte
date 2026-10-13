@@ -1,9 +1,11 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { CHANNELS } from "./shared";
   import { mixerView } from "./mixer";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const data = $derived(doc.current);
+  const data = $derived(snapshot);
   // Playback is not saved, so the export shows the mix as it would sound when switched on.
   const view = $derived(mixerView(data));
 </script>

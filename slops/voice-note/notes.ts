@@ -1,12 +1,12 @@
 import { dateLabel } from "../_shared/format";
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Pad = typeof doc.current;
+export type Pad = Value<typeof schema.descriptor>;
 export type Note = Pad["notes"][number];
 /** An attachment reference as `attachments.import` returns it and `clip` stores it. */
 export type Clip = { readonly id: string; readonly byteLength: number; readonly name: string; readonly mimeType: string };
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** One note records for at most five minutes: at 64 kbit/s that is about 2.4 MB, well
  * under the 10 MiB attachment limit. */

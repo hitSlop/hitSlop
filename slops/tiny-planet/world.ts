@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { kinds, maxProps, maxSeed, seasons, type Kind, type Season } from "./schema";
 import { SEA, direction, radiusAt } from "./terrain";
 
-export type World = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type World = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 const MAX_LAT = 1.5708;
 const MAX_LON = 3.1416;

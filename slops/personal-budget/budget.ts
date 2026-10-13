@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { clamp, money } from "./shared";
 
-export type Budget = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Budget = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export const newCategory = { name: "New Category", allocated: 200 } as const;
 

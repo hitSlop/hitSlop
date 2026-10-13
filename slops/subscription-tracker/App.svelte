@@ -1,7 +1,8 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import doc, { cadences, categories, currencies } from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema, { cadences, categories, currencies } from "./schema";
   import {
     addSubscription, blankDetails, removeSubscription, setActive, setCurrency, subscriptionView, updateSubscription,
     type Cadence, type Category, type Currency, type Details, type Scope, type Subscription,
@@ -20,6 +21,7 @@
   import X from "@lucide/svelte/icons/x";
   import Repeat2 from "@lucide/svelte/icons/repeat-2";
 
+  const doc = getDocument(schema);
   const currencyItems = currencies.map((value) => ({ value, label: value }));
   const cadenceItems = [
     { value: "monthly", label: "Monthly" },

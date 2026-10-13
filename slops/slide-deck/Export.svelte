@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { deckView, type Slide } from "./deck";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
   // The selected slide is view state a capture cannot see, so the export shows the cover slide.
-  const currentSlide = $derived(deckView(doc.current, 0).current);
+  const currentSlide = $derived(deckView(snapshot, 0).current);
 </script>
 {#snippet slideLayouts(slide: Slide)}
   {#if slide.layout === "title"}
@@ -53,6 +55,6 @@
     </div>
   {/if}
 {/snippet}
-<article class="slide-canvas-frame" data-theme={doc.current.theme}>
+<article class="slide-canvas-frame" data-theme={snapshot.theme}>
   {#if currentSlide}{@render slideLayouts(currentSlide)}{/if}
 </article>

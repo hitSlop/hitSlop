@@ -1,7 +1,7 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Plan = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Plan = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 const MAX_MINUTES = 180;
 

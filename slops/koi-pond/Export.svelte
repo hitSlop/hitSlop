@@ -1,9 +1,11 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { pondView } from "./shared";
-  const view = $derived(pondView(doc.current));
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const view = $derived(pondView(snapshot));
   const position = (index: number) => {
-    const angle = (index * 2.39996 + doc.current.seed * 0.17) % (Math.PI * 2);
+    const angle = (index * 2.39996 + snapshot.seed * 0.17) % (Math.PI * 2);
     const radius = 45 + index % 3 * 35;
     return { x: 210 + Math.cos(angle) * radius, y: 210 + Math.sin(angle) * radius, turn: angle * 180 / Math.PI + 80 };
   };
@@ -14,7 +16,7 @@
     <circle cx="210" cy="210" r="198" fill="var(--slop-stone)"/>
     <circle cx="210" cy="210" r="184" fill="url(#pond-water)"/>
     {#each [60, 105, 150] as radius}<circle cx="210" cy="210" r={radius} fill="none" stroke="var(--slop-paper)" stroke-opacity="0.12" stroke-width="2"/>{/each}
-    {#each doc.current.koi as koi, index}
+    {#each snapshot.koi as koi, index}
       {@const at = position(index)}
       <g transform={`translate(${at.x} ${at.y}) rotate(${at.turn}) scale(${koi.size})`}>
         <ellipse cx="3" cy="6" rx="15" ry="38" fill="var(--slop-deep)" fill-opacity="0.25"/>

@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { kinds } from "./schema";
+import schema, { kinds } from "./schema";
 import { addProduct, removeProduct, setLeft, setOpened, setPao, setShade } from "./pan";
 
 const product = s.string({ description: "The product's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addProduct: {
     description: "Add a full product to the tray and return its stable row ID.",
     args: {

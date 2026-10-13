@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { formatAmount, formatDate } from "./shared";
 
-export type Expenses = typeof doc.current;
+export type Expenses = Value<typeof schema.descriptor>;
 export type Category = Expenses["items"][number]["category"];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** The editor and the export derive totals and sections from the same snapshot. */
 export function expenseView(data: Expenses) {

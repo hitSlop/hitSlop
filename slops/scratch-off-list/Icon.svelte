@@ -1,6 +1,8 @@
 <script lang="ts">
-  import doc from "./schema";
-  const open = $derived(doc.current.items.slice(0, 6).map((item) => item.revealed));
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const open = $derived(snapshot.items.slice(0, 6).map((item) => item.revealed));
 </script>
 
 <div class="icon-surface" aria-hidden="true">

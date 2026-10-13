@@ -1,11 +1,12 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { budgetView } from "./budget";
   import { categoryPercent, formatCurrency, money } from "./shared";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const data = $derived(doc.current);
-  const { totalSpent, remaining, remainingRatio, overspent } = $derived(budgetView(doc.current));
+  const data = $derived(snapshot);
+  const { totalSpent, remaining, remainingRatio, overspent } = $derived(budgetView(snapshot));
 </script>
 
 <article class="exportChassis" aria-label="Exported personal budget">

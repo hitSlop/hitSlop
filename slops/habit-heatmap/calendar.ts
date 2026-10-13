@@ -1,6 +1,6 @@
 import { dateLabel } from "../_shared/format";
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { colors } from "./schema";
 /** Local calendar dates, deliberately independent of UTC offsets and 24-hour durations. */
 export function dayKey(date: Date): string {
@@ -55,8 +55,8 @@ export const shortDay = (day: string) => dateLabel(localDate(day), {
 });
 
 // Edits are written once: the page runs them with doc.change, a command with its tx.
-export type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 export type HabitColor = (typeof colors)[number];
 
 /** The editor and its export derive the calendar and per-habit numbers from the same snapshot. */

@@ -1,36 +1,37 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { packingView } from "./items";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   // The export is a fresh page with no filter: it always lists every category and item.
-  const view = $derived(packingView(doc.current));
+  const view = $derived(packingView(snapshot));
 </script>
 
 <article class="export-tag" aria-label="Exported packing list">
   <div class="airmail" aria-hidden="true"></div>
   <header class="header">
     <div class="eyelet-row">
-      <span class="flag-btn" aria-hidden="true"><span class="flag-emoji">{doc.current.flag || "🇯🇵"}</span></span>
+      <span class="flag-btn" aria-hidden="true"><span class="flag-emoji">{snapshot.flag || "🇯🇵"}</span></span>
       <span class="airline">HS-BAG // TRAVEL MANIFEST</span>
     </div>
     <div class="meta">
       <div class="field">
         <span class="meta-label">TRIP / EXPEDITION</span>
-        <strong class="meta-input title-input">{doc.current.tripTitle || "Untitled trip"}</strong>
+        <strong class="meta-input title-input">{snapshot.tripTitle || "Untitled trip"}</strong>
       </div>
       <div class="submeta">
         <div class="field">
           <span class="meta-label">DESTINATION</span>
-          <strong class="meta-input dest-input">{doc.current.destination}</strong>
+          <strong class="meta-input dest-input">{snapshot.destination}</strong>
         </div>
         <div class="field">
           <span class="meta-label">PASSENGER</span>
-          <strong class="meta-input passenger-input">{doc.current.traveler}</strong>
+          <strong class="meta-input passenger-input">{snapshot.traveler}</strong>
         </div>
         <div class="field">
           <span class="meta-label">DEPARTURE</span>
-          <strong class="meta-input date-input">{doc.current.departureDate}</strong>
+          <strong class="meta-input date-input">{snapshot.departureDate}</strong>
         </div>
       </div>
     </div>
@@ -71,7 +72,7 @@
   <footer class="footer">
     <div class="barcode-block">
       <div class="barcode" aria-hidden="true"></div>
-      <span class="barcode-code">{doc.current.bagTag} // CHECKED AIRLINE TAG</span>
+      <span class="barcode-code">{snapshot.bagTag} // CHECKED AIRLINE TAG</span>
     </div>
     <div class="footer-stamp" data-complete={view.complete}>{view.complete ? "100% READY FOR FLIGHT" : "PACK IN PROGRESS"}</div>
   </footer>

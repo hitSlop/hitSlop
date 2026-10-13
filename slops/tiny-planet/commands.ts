@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { kinds, seasons } from "./schema";
+import schema, { kinds, seasons } from "./schema";
 import { newWorld, placeThing, removeThing, rename, setSeason } from "./world";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   placeThing: {
     description: "Stand a tree, house, rock or crystal on land at a latitude and longitude in radians and return its stable row ID; open water and a full planet are refused.",
     args: {

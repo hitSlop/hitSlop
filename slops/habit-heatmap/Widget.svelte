@@ -1,16 +1,16 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
-  import doc from "./schema";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type schema from "./schema";
 
-  let { family }: WidgetProps = $props();
+  let { snapshot, family }: CaptureProps<typeof schema> & WidgetProps = $props();
   const now = new Date();
   const dayKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   const today = dayKey(now);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   // Calendar arithmetic at local noon stays correct across daylight-saving changes.
   const days = $derived(Array.from({ length: family === "large" ? 14 : 7 }, (_, index) => dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + index - (family === "large" ? 13 : 6), 12))));
-  const completed = $derived(doc.current.habits.filter(habit => habit.checkins[today] > 0).length);
-  const habits = $derived(doc.current.habits.slice(0, family === "large" ? 4 : family === "medium" ? 2 : 1));
+  const completed = $derived(snapshot.habits.filter(habit => habit.checkins[today] > 0).length);
+  const habits = $derived(snapshot.habits.slice(0, family === "large" ? 4 : family === "medium" ? 2 : 1));
   const dateLabel = (day: string) => `${months[Number(day.slice(5, 7)) - 1]} ${Number(day.slice(8))}`;
   function name(value: string) {
     const characters = Array.from(value.trim() || "Untitled habit");
@@ -22,7 +22,7 @@
 <main class="habit-widget" data-family={family}>
   <header class="habit-widget-header">
     <div><p class="habit-widget-label">Daily practice</p><h1>{dateLabel(today)}</h1></div>
-    <p class="habit-widget-score"><strong>{completed}<span>/{doc.current.habits.length}</span></strong><span>done today</span></p>
+    <p class="habit-widget-score"><strong>{completed}<span>/{snapshot.habits.length}</span></strong><span>done today</span></p>
   </header>
   <section class="habit-widget-paper">
     {#each habits as habit (habit.$id)}
@@ -41,7 +41,7 @@
     {/each}
     {#if habits.length}<p class="habit-widget-range">{dateLabel(days[0]!)} — {dateLabel(today)}</p>{/if}
   </section>
-  {#if family === "large"}<footer class="habit-widget-footer">{doc.current.habits.length > habits.length ? `+ ${doc.current.habits.length - habits.length} more habits` : "Keep the thread."}</footer>{/if}
+  {#if family === "large"}<footer class="habit-widget-footer">{snapshot.habits.length > habits.length ? `+ ${snapshot.habits.length - habits.length} more habits` : "Keep the thread."}</footer>{/if}
 </main>
 
 <style>

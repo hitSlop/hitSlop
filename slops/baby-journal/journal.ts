@@ -1,13 +1,13 @@
 import { dateLabel as formattedDate } from "../_shared/format";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { kinds } from "./schema";
 
-export type Journal = typeof doc.current;
+export type Journal = Value<typeof schema.descriptor>;
 export type Entry = Journal["entries"][number];
 export type Caregiver = Journal["caregivers"][number];
 export type Kind = (typeof kinds)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** One entry as the form or a command gives it; the edits below check and store it. */
 export type EntryInput = {

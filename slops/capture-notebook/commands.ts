@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addNote, removeEntry, rename, setCaption } from "./notebook";
 
 // Commands cannot capture or carry file bytes: photos and recordings are added in the
 // window (or with `slop batch --attach`). These are the notebook's document verbs.
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   rename: {
     description: "Change the notebook's name shown at the top of the page.",
     args: { title: s.string({ description: "The new name." }) },

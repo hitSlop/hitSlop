@@ -1,6 +1,6 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { restPresets } from "./schema";
+import schema, { restPresets } from "./schema";
 import { addExercise, moveExercise, removeExercise, resetProgress, setRestPreset, toggleSet, updateExercise } from "./workout";
 
 const fields = {
@@ -10,7 +10,7 @@ const fields = {
   weight: s.string({ description: "Target load, such as \"185 lbs\". Empty means Bodyweight." }),
 };
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addExercise: {
     description: "Add an exercise to the end of the routine and return its stable row ID.",
     args: fields,

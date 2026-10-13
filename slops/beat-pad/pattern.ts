@@ -1,8 +1,8 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Beat = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Beat = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export const STEPS = 16;
 export const BPM = { min: 60, max: 200 } as const;

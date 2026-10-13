@@ -1,22 +1,22 @@
 <script lang="ts">
-  import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
   // The export renders saved photos and recordings only. It never asks for a camera or
   // microphone, and it shows every entry (the editor's open photo is view state).
-  import { attachments } from "hitslop/svelte";
+  import type { CaptureProps } from "hitslop/svelte";
+  import { previewText } from "../_shared/preview";
   import Mic from "@lucide/svelte/icons/mic";
   import PenLine from "@lucide/svelte/icons/pen-line";
-  import doc from "./schema";
+  import type schema from "./schema";
   import Print from "./Print.svelte";
   import { clock, formatBytes, formatLabel, notebookView, stamp, summary } from "./notebook";
+  let { snapshot, attachmentURL, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(notebookView(doc.current));
+  const view = $derived(notebookView(snapshot));
 </script>
 
 <article class="cn-export">
   <header class="cn-export-head">
     <p class="cn-export-kicker">Capture Notebook</p>
-    <h1 class="cn-title">{doc.current.title.trim() || "Untitled notebook"}</h1>
+    <h1 class="cn-title">{snapshot.title.trim() || "Untitled notebook"}</h1>
     <p class="cn-summary">{summary(view)}{view.totalBytes ? ` · ${formatBytes(view.totalBytes)} kept` : ""}</p>
   </header>
 
@@ -27,7 +27,7 @@
         {#each (preview ? (view.photos).slice(0, 2) : view.photos) as entry (entry.$id)}
           {#if entry.file}
             <figure>
-              <Print size="export" src={attachments.url(entry.file.id)} alt={entry.caption.trim() || `Photo from ${stamp(entry.at)}`} width={entry.width} height={entry.height} />
+              <Print size="export" src={attachmentURL(entry.file.id)} alt={entry.caption.trim() || `Photo from ${stamp(entry.at)}`} width={entry.width} height={entry.height} />
               <figcaption>
                 {#if entry.caption.trim()}<span class="cn-caption">{entry.caption.trim()}</span>{/if}
                 <span class="cn-stamp">{stamp(entry.at)}</span>

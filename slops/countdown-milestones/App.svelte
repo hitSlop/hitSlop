@@ -1,15 +1,17 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { Checkbox, Dialog, Progress } from "bits-ui";
   import { onMount } from "svelte";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addMilestone, countdownView, moveMilestone, removeMilestone, setCountdown, setMilestoneDone } from "./countdown";
   import CountdownFace from "./CountdownFace.svelte";
   import DatePicker from "./DatePicker.svelte";
   import { grow } from "./grow";
-  type Milestone = (typeof doc.current.milestones)[number];
+  const doc = getDocument(schema);
+  type Milestone = Value<typeof schema.descriptor>["milestones"][number];
 
   let now = $state(Date.now());
   const view = $derived(countdownView(doc.current, now));

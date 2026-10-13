@@ -1,9 +1,10 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { cardView } from "./items";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const card = $derived(cardView(doc.current));
+  const card = $derived(cardView(snapshot));
 </script>
 
 <article class="night export" aria-label="Exported scratch-off card">

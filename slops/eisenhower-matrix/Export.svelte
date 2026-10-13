@@ -1,17 +1,18 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import Check from "@lucide/svelte/icons/check";
   import { QUADRANTS, matrixView } from "./shared";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(matrixView(doc.current));
+  const view = $derived(matrixView(snapshot));
 </script>
 
-<article class="exportBlotter" aria-label="Exported Eisenhower matrix {doc.current.title}">
+<article class="exportBlotter" aria-label="Exported Eisenhower matrix {snapshot.title}">
   <header class="letterhead">
     <div class="titleGroup">
-      <h1 class="title">{doc.current.title.trim() || "Priority Desk Blotter"}</h1>
-      <p class="date">{doc.current.date.trim() || "Undated"}</p>
+      <h1 class="title">{snapshot.title.trim() || "Priority Desk Blotter"}</h1>
+      <p class="date">{snapshot.date.trim() || "Undated"}</p>
     </div>
     <div class="leverage" aria-label="Q2 leverage {view.q2Ratio} percent">
       <span class="leverageRow">

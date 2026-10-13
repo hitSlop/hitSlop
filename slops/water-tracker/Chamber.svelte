@@ -5,12 +5,12 @@
 <script lang="ts">
   import { numberLabel } from "../_shared/format";
   import { Progress } from "bits-ui";
-  import doc from "./schema";
-  import { intakeView } from "./intake";
 
-  let { level, percent, interactive, particles = [], oncelebrate = () => {}, onparticleend = () => {} }: {
+  let { level, percent, total, unit, interactive, particles = [], oncelebrate = () => {}, onparticleend = () => {} }: {
     level: number;
     percent: number;
+    total: number;
+    unit: string;
     interactive: boolean;
     particles?: Particle[];
     oncelebrate?: () => void;
@@ -37,8 +37,8 @@
         <span class="badge">Goal reached</span>
       {/if}
     {/if}
-    <strong class="digits">{numberLabel(intakeView(doc.current).total)}</strong>
-    <span class="unit">{doc.current.unit}</span>
+    <strong class="digits">{numberLabel(total)}</strong>
+    <span class="unit">{unit}</span>
     <span class="percent">{percent}% of daily goal</span>
   </div>
 </Progress.Root>

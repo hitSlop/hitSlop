@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
-  import doc from "./schema";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type schema from "./schema";
 
-  let { family }: WidgetProps = $props();
-  const remaining = $derived(doc.current.items.filter(item => !item.done));
-  const memo = $derived(doc.current.stickyNote.trim());
+  let { snapshot, family }: CaptureProps<typeof schema> & WidgetProps = $props();
+  const remaining = $derived(snapshot.items.filter(item => !item.done));
+  const memo = $derived(snapshot.stickyNote.trim());
   const rows = $derived(remaining.slice(0, family === "large" ? (memo ? 6 : 8) : family === "medium" ? 3 : 2));
   function shorten(value: string, limit: number) {
     const characters = Array.from(value);
@@ -15,7 +15,7 @@
 <main class="grocery-widget" data-family={family}>
   <section class="grocery-widget-pad">
     <header class="grocery-widget-header">
-      <h1>{shorten(doc.current.title.trim() || "Groceries", family === "small" ? 12 : 25)}</h1>
+      <h1>{shorten(snapshot.title.trim() || "Groceries", family === "small" ? 12 : 25)}</h1>
       <p>{remaining.length} to get</p>
     </header>
     <ul class="grocery-widget-items">
@@ -26,7 +26,7 @@
           {#if family !== "small"}<span class="grocery-widget-category">{item.category}</span>{/if}
         </li>
       {:else}
-        <li class="grocery-widget-empty">{doc.current.items.length ? "All picked up." : "Your next trip starts here."}</li>
+        <li class="grocery-widget-empty">{snapshot.items.length ? "All picked up." : "Your next trip starts here."}</li>
       {/each}
     </ul>
     {#if remaining.length > rows.length}<p class="grocery-widget-more">+ {remaining.length - rows.length} more on the list</p>{/if}

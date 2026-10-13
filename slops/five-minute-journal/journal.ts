@@ -1,10 +1,10 @@
 import { dateLabel } from "../_shared/format";
 import { CalendarDate, parseDate, type DateValue } from "@internationalized/date";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 export type View = "am" | "pm" | "all";
 export type Period = "am" | "pm";
 

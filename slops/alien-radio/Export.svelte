@@ -1,10 +1,13 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import chromeUrl from "./assets/alien-radio-chrome.png";
   import { radioView } from "./radio";
 
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+
   // Exports never reach the network: the station resolves against the bundled index.
-  const view = $derived(radioView(doc.current));
+  const view = $derived(radioView(snapshot));
 </script>
 
 <article class="radio" aria-label="Exported Alien Radio">

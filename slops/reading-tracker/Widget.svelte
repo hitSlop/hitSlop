@@ -1,14 +1,14 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
   import BookOpen from "@lucide/svelte/icons/book-open";
-  import doc from "./schema";
+  import type schema from "./schema";
   import { readingView } from "./books";
 
-  let { family, width, height }: WidgetProps = $props();
-  const view = $derived(readingView(doc.current));
-  const reading = $derived(doc.current.books.filter(book => book.status === "Reading"));
-  const queued = $derived(doc.current.books.filter(book => book.status === "To Read"));
-  const featured = $derived(reading[0] ?? queued[0] ?? doc.current.books.find(book => book.status === "Read"));
+  let { snapshot, family, width, height }: CaptureProps<typeof schema> & WidgetProps = $props();
+  const view = $derived(readingView(snapshot));
+  const reading = $derived(snapshot.books.filter(book => book.status === "Reading"));
+  const queued = $derived(snapshot.books.filter(book => book.status === "To Read"));
+  const featured = $derived(reading[0] ?? queued[0] ?? snapshot.books.find(book => book.status === "Read"));
   const nextBooks = $derived([...reading.slice(1), ...queued].filter(book => book.$id !== featured?.$id).slice(0, 3));
   const label = $derived(featured?.status === "Reading" ? "On your nightstand" : featured?.status === "To Read" ? "Your next chapter" : "From your shelf");
   const shorten = (text: string, limit: number) => {
@@ -41,7 +41,7 @@
       {/each}
     </section>
   {/if}
-  <footer><span>{shorten(doc.current.memberName || "Personal library", family === "small" ? 20 : 32)}</span>{#if family !== "small"}<span>{view.total} {view.total === 1 ? "book" : "books"}</span>{/if}</footer>
+  <footer><span>{shorten(snapshot.memberName || "Personal library", family === "small" ? 20 : 32)}</span>{#if family !== "small"}<span>{view.total} {view.total === 1 ? "book" : "books"}</span>{/if}</footer>
 </main>
 
 <style>

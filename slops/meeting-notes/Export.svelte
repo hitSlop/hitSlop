@@ -1,11 +1,12 @@
 <script lang="ts">
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-import Check from "@lucide/svelte/icons/check";
-import doc from "./schema";
-import { meetingView } from "./meeting";
-const data = $derived(doc.current);
-const view = $derived(meetingView(data));
+  import Check from "@lucide/svelte/icons/check";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { meetingView } from "./meeting";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const data = $derived(snapshot);
+  const view = $derived(meetingView(data));
 </script>
 
 <article class="exportMemo" aria-label="Exported meeting memo {data.title}">

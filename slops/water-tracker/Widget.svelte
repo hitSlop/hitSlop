@@ -1,13 +1,13 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
-  import doc from "./schema";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { intakeView } from "./intake";
 
-  let { family, width, height }: WidgetProps = $props();
-  const view = $derived(intakeView(doc.current));
+  let { snapshot, family, width, height }: CaptureProps<typeof schema> & WidgetProps = $props();
+  const view = $derived(intakeView(snapshot));
   const level = $derived(Math.max(0, Math.min(100, view.percent)));
-  const remaining = $derived(Math.max(0, doc.current.target - view.total));
-  const drinks = $derived([...doc.current.logs].sort((a, b) => a.time < b.time ? 1 : a.time > b.time ? -1 : 0).slice(0, 3));
+  const remaining = $derived(Math.max(0, snapshot.target - view.total));
+  const drinks = $derived([...snapshot.logs].sort((a, b) => a.time < b.time ? 1 : a.time > b.time ? -1 : 0).slice(0, 3));
   const amount = (value: number) => String(Math.round(value * 100) / 100);
 </script>
 
@@ -18,14 +18,14 @@
       <div class="water-fill" style:height={`${level}%`} aria-hidden="true"></div>
       <div class="water-readout">
         <strong>{amount(view.total)}</strong>
-        <span class="water-unit">{doc.current.unit}</span>
+        <span class="water-unit">{snapshot.unit}</span>
       </div>
     </section>
     <div class="water-summary">
-      <p class="water-goal">of {amount(doc.current.target)} {doc.current.unit}</p>
+      <p class="water-goal">of {amount(snapshot.target)} {snapshot.unit}</p>
       {#if family !== "small"}
         <h1>{view.complete ? "Goal reached." : "A little more water."}</h1>
-        <p class="water-remaining">{view.complete ? "Every sip adds up." : `${amount(remaining)} ${doc.current.unit} to go`}</p>
+        <p class="water-remaining">{view.complete ? "Every sip adds up." : `${amount(remaining)} ${snapshot.unit} to go`}</p>
       {/if}
       {#if family === "medium"}<p class="water-count">{view.count} {view.count === 1 ? "drink" : "drinks"} logged</p>{/if}
     </div>
@@ -34,7 +34,7 @@
     <section class="water-log" aria-label="Latest drinks">
       <div class="water-log-heading"><span>Latest drinks</span><span>{view.count} logged</span></div>
       {#each drinks as drink (drink.$id)}
-        <div class="water-drink"><time>{drink.time}</time><span>{drink.label || "Drink"}</span><strong>{amount(drink.amount)} {doc.current.unit}</strong></div>
+        <div class="water-drink"><time>{drink.time}</time><span>{drink.label || "Drink"}</span><strong>{amount(drink.amount)} {snapshot.unit}</strong></div>
       {:else}
         <p class="water-empty">Your first glass is a good start.</p>
       {/each}

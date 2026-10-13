@@ -1,14 +1,15 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, capture } from "hitslop/svelte";
-  import { onDestroy, onMount, tick, untrack } from "svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Progress } from "bits-ui";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addDays, countWords, dateKey, formatDisplayDate, markFinished, openPage, pageView, TARGET } from "./model";
 
+  const doc = getDocument(schema);
   const { active, wordsCount, progressPct, page1Done, page2Done, page3Done } = $derived(pageView(doc.current));
   const isToday = $derived(doc.current.currentKey === dateKey(new Date()));
 
@@ -20,10 +21,6 @@
     initialized = true;
   });
 
-  onMount(() => capture.onPrepare(async () => {
-    await odometer.set(wordsCount, { duration: 0, delay: 0 });
-    await tick();
-  }));
   onDestroy(() => { void odometer.set(odometer.target, { duration: 0, delay: 0 }); });
 
   function openDay(key: string) {

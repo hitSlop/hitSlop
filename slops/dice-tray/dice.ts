@@ -1,11 +1,11 @@
 import { dateLabel } from "../_shared/format";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { kinds, maxDice, maxModifier, maxRolls, type Kind } from "./schema";
 
-export type Tray = typeof doc.current;
+export type Tray = Value<typeof schema.descriptor>;
 export type Roll = Tray["rolls"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 export type Pool = Record<Kind, number>;
 
 export const sides: Record<Kind, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };

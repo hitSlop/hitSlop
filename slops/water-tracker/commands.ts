@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { logIntake, resetDay, setTarget } from "./intake";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   logIntake: {
     description: "Log a drink at the current time (today's total is the sum of the logs) and return the log's stable row ID.",
     args: {

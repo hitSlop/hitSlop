@@ -1,7 +1,7 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Card = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Card = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /** The ticket and its export derive the tally and the tiles from the same snapshot. */
 export function cardView(data: Card) {

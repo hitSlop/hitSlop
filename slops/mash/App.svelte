@@ -1,15 +1,16 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import Plus from "@lucide/svelte/icons/plus";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import { maxOptions, spiralPath } from "./fate";
   import { addOption, mashView, removeOption, spin } from "./options";
   import Future from "./Future.svelte";
 
+  const doc = getDocument(schema);
   const view = $derived(mashView(doc.current));
   // UI-only: true while a fresh spin animates. A document that opens never animates.
   let playing = $state(false);
@@ -51,7 +52,7 @@
     </div>
   </section>
 
-  <Future />
+  <Future snapshot={doc.current} />
 
   <div class="blocks">
     {#each view.blocks as block (block.slot)}

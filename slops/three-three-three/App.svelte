@@ -1,16 +1,18 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import Check from "@lucide/svelte/icons/check";
   import Clock from "@lucide/svelte/icons/clock";
   import Plus from "@lucide/svelte/icons/plus";
   import Minus from "@lucide/svelte/icons/minus";
   import { Checkbox } from "bits-ui";
-  import doc from "./schema";
+  import schema from "./schema";
   import { adjustFocus, planView, setTaskDone, toggleHour } from "./plan";
 
-  type PlanTask = (typeof doc.current.shortTasks)[number];
+  const doc = getDocument(schema);
+  type PlanTask = Value<typeof schema.descriptor>["shortTasks"][number];
 
   const view = $derived(planView(doc.current));
 

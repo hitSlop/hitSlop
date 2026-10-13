@@ -1,4 +1,3 @@
-import { capture } from "hitslop/svelte";
 import p5 from "./p5-global";
 import * as brush from "p5.brush";
 import type { KoiPattern } from "./shared";
@@ -222,10 +221,7 @@ export class PondScene {
     this.animator.resizeCanvas(side, side);
     this.animator.pixelDensity(density);
     // Watercolor is soft; painting above 1.5× costs time without visible detail.
-    // Capture uses a smaller plate so the still frame finishes within the screenshot budget.
-    this.pixels = capture.isRenderer()
-      ? MIN_PLATE
-      : Math.max(MIN_PLATE, Math.round(side * Math.min(density, 1.5)));
+    this.pixels = Math.max(MIN_PLATE, Math.round(side * Math.min(density, 1.5)));
     // Stretch the existing painting while resizing, and repaint once it settles.
     clearTimeout(this.resizeTimer);
     const repaint = () => { if (Math.abs(this.pixels - this.paintedPixels) > this.paintedPixels * 0.2 || this.paintedSeed !== this.seed) this.repaint(); };
@@ -369,7 +365,7 @@ export class PondScene {
           if (this.disposed || this.seed !== seed || epoch !== this.paintEpoch) { this.job = undefined; return; }
           // Let the animator draw a frame between slices. Capture paints straight through
           // so the screenshot does not wait out the interactive time-slicing.
-          if (!this.capturePass && !this.paintingFast) await new Promise((resolve) => setTimeout(resolve, 0));
+          if (!this.capturePass) await new Promise((resolve) => setTimeout(resolve, 0));
         }
         layers.push(this.cutOut(layer, pixels));
       }
@@ -400,11 +396,6 @@ export class PondScene {
     return target;
   }
 
-  /** Screenshot capture has no swimming koi to keep responsive, so the plate can finish in one pass. */
-  private get paintingFast() {
-    return capture.isRenderer() || document.documentElement.hasAttribute("data-slop-capture");
-  }
-
   /** One painter redraw: runs the active paint job for about 8ms. */
   private paintSlice(p: p5) {
     if (!this.job) return;
@@ -412,7 +403,7 @@ export class PondScene {
     // The matrix resets each redraw. No push/pop: p5.brush ties its fill/stroke state to them.
     p.translate(-p.width / 2, -p.height / 2);
     p.scale(p.width / SIZE);
-    if (this.capturePass || this.paintingFast) {
+    if (this.capturePass) {
       while (this.job && !this.job.next().done) {}
       this.job = undefined;
       return;

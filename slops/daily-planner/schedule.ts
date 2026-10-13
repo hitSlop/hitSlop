@@ -1,12 +1,12 @@
 import { dateLabel, type DateLabelOptions } from "../_shared/format";
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { KINDS } from "./schema";
 
-export type Planner = typeof doc.current;
+export type Planner = Value<typeof schema.descriptor>;
 export type Block = Planner["blocks"][number];
 export type Kind = (typeof KINDS)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export const DAY_START = 6 * 60;
 export const DAY_END = 24 * 60;

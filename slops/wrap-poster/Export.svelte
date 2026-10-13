@@ -1,14 +1,15 @@
 <script lang="ts">
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { posterView } from "./poster";
-  const view = $derived(posterView(doc.current));
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const view = $derived(posterView(snapshot));
 </script>
 <article class="export" aria-label="Exported poster">
   <div class="static-poster">
     <div class="static-marks" aria-hidden="true">{#each view.shapes as shape}<span class="static-shape shape" data-kind={shape.kind} data-tone={shape.tone} style:width={`${Math.max(24, shape.size * 260)}px`} style:height={`${Math.max(24, shape.size * 260)}px`}></span>{/each}</div>
-    <h1>{doc.current.title}</h1><p>{previewText(doc.current.body, preview, 800)}</p>
+    <h1>{snapshot.title}</h1><p>{previewText(snapshot.body, preview, 800)}</p>
   </div>
 </article>
 <style>

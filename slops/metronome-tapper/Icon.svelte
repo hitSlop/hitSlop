@@ -1,7 +1,9 @@
 <script lang="ts">
-import doc from "./schema";
+import type { CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
 import { metronomeView } from "./metronome";
-const view = $derived(metronomeView(doc.current));
+let { snapshot }: CaptureProps<typeof schema> = $props();
+const view = $derived(metronomeView(snapshot));
 </script>
 
 <div style="width:512px;height:512px;display:grid;place-items:center" aria-hidden="true">
@@ -12,7 +14,7 @@ const view = $derived(metronomeView(doc.current));
       </div>
       <div class="icon-face">
         <div class="icon-bpm-card">
-          <span class="icon-bpm-num">{doc.current.bpm}</span>
+          <span class="icon-bpm-num">{snapshot.bpm}</span>
           <span class="icon-bpm-lbl">{view.tempoName}</span>
         </div>
         <div class="icon-pendulum-chamber">

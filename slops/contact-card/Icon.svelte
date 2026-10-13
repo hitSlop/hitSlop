@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { indexLetter } from "./shared";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const tabLetter = $derived(indexLetter(doc.current.name));
+  const tabLetter = $derived(indexLetter(snapshot.name));
 </script>
 
 <div class="iconSurface" aria-hidden="true">

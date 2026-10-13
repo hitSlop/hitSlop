@@ -1,9 +1,9 @@
 <script lang="ts">
-  import doc from "./schema";
-  import { mashView } from "./options";
+  import { mashView, type Mash } from "./options";
   import { slotLabel } from "./fate";
 
-  const view = $derived(mashView(doc.current));
+  let { snapshot }: { snapshot: Mash } = $props();
+  const view = $derived(mashView(snapshot));
 </script>
 
 <aside class="sticky" aria-label="Your future">

@@ -1,8 +1,8 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export const percentOf = (total: number, target: number) =>
   target > 0 ? Math.min(100, Math.round((total / target) * 100)) : 0;

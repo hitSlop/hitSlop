@@ -2,7 +2,7 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { QUADRANTS, addTask, matrixView, moveTask, removeTask, setDone, type Zone } from "./shared";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { crossfade } from "svelte/transition";
@@ -11,7 +11,9 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import doc, { zones } from "./schema";
+  import schema, { zones } from "./schema";
+
+  const doc = getDocument(schema);
 
   const ZONES: { key: Zone; num: string; label: string }[] = [
     ...QUADRANTS.map(q => ({ key: q.key, num: q.num, label: q.title })),

@@ -1,21 +1,22 @@
 <script lang="ts">
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { balanceView, clampWeight } from "./balance";
   import Scale from "./Scale.svelte";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const { pros, cons, proTotal, conTotal, tilt, statusLabel } = $derived(balanceView(doc.current));
+  const { pros, cons, proTotal, conTotal, tilt, statusLabel } = $derived(balanceView(snapshot));
 </script>
 
 <article class="exportLetter" aria-label="Exported decision balance">
   <header class="letterhead">
     <div class="metaRow">
       <span class="stamp">Decision Balance</span>
-      <span class="dateField">{doc.current.date}</span>
+      <span class="dateField">{snapshot.date}</span>
     </div>
     <div class="questionRow">
       <span class="whether">Whether to</span>
-      <h1 class="question">{doc.current.question.trim() || "state the choice clearly…"}</h1>
+      <h1 class="question">{snapshot.question.trim() || "state the choice clearly…"}</h1>
     </div>
     <Scale {tilt} {proTotal} {conTotal} />
   </header>
@@ -67,8 +68,8 @@
     </div>
     <div class="verdict">
       <span class="verdictLabel">Verdict</span>
-      {#if doc.current.verdict.trim()}
-        <p class="verdictExport">{doc.current.verdict}</p>
+      {#if snapshot.verdict.trim()}
+        <p class="verdictExport">{snapshot.verdict}</p>
       {:else}
         <p class="empty">No conclusion recorded.</p>
       {/if}

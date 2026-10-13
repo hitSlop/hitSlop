@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { themes } from "./schema";
 
-export type Notes = typeof doc.current;
+export type Notes = Value<typeof schema.descriptor>;
 export type Theme = (typeof themes)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export const DEFAULT_CUE = "New Question or Key Term";
 export const DEFAULT_NOTES = "- Detailed notes and supporting facts...";

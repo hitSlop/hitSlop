@@ -3,15 +3,17 @@
   import "./styles.css";
   import { categoryPercent, formatCurrency, money } from "./shared";
   import { addCategory as insertCategory, budgetView, logExpense, newCategory, removeCategory as dropCategory, roundCents } from "./budget";
-  import { onDestroy, onMount, tick, untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Progress, Button } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
-  import { bindText, capture } from "hitslop/svelte";
-  import doc from "./schema";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+
+  const doc = getDocument(schema);
 
   type BudgetCategory = (typeof doc.current.categories)[number];
 
@@ -51,12 +53,6 @@
     }
     initialized = true;
   });
-
-  onMount(() => capture.onPrepare(async () => {
-    await remainingMotion.set(remainingRatio, { duration: 0, delay: 0 });
-    await Promise.all(doc.current.categories.map((cat) => fillTween(cat).set(categoryPercent(cat), { duration: 0, delay: 0 })));
-    await tick();
-  }));
 
   onDestroy(() => {
     void remainingMotion.set(remainingMotion.target, { duration: 0, delay: 0 });

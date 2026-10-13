@@ -1,10 +1,13 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import Chart from "./StaticChart.svelte";
   import { money } from "./money";
   import { planView } from "./plan";
 
-  const plan = $derived(doc.current);
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+
+  const plan = $derived(snapshot);
   const view = $derived(planView(plan));
 </script>
 

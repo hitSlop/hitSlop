@@ -1,11 +1,11 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { Dialog, AlertDialog, DropdownMenu, RadioGroup } from "bits-ui";
   import { isRefused } from "hitslop";
-  import { attachments, bindText, capture } from "hitslop/svelte";
-  import doc, { colors, kinds } from "./schema";
+  import { attachments, bindText, getDocument } from "hitslop/svelte";
+  import schema, { colors, kinds } from "./schema";
   import {
     addCaregiver, addEntry, babyAge, dateLabel, dayKey, duration, elapsed, entryTitle, journalView, localInput,
     removeEntry, setCaregiverArchived, timeLabel, updateEntry, type Entry, type EntryInput, type Kind,
@@ -14,6 +14,7 @@
   import Mark from "./Mark.svelte";
   import Choice from "./Choice.svelte";
 
+  const doc = getDocument(schema);
   const labels: Record<Kind, string> = { feeding: "Feeding", diaper: "Diaper", sleep: "Sleep", note: "Note" };
   const prompts: Record<Kind, string> = { feeding: "Log a feed", diaper: "Log a change", sleep: "Log some sleep", note: "Keep a memory" };
   let now = $state(Date.now());
@@ -160,7 +161,7 @@
       const image = new Image();
       image.src = url;
       await image.decode();
-      await attachments.import<typeof doc.descriptor>(file, (tx, ref) => {
+      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
         tx.fields.photo.set({ id: ref.id, mimeType: ref.mimeType });
       });
       announcement = "Photo added.";
@@ -170,11 +171,7 @@
   }
   onMount(() => {
     const timer = setInterval(() => { now = Date.now(); }, 30000);
-    const dispose = capture.onPrepare(async () => {
-      await tick();
-      await Promise.all(Array.from(document.images, (image) => image.decode().catch(() => undefined)));
-    });
-    return () => { clearInterval(timer); dispose(); };
+    return () => clearInterval(timer);
   });
 </script>
 

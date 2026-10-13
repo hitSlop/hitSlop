@@ -2,10 +2,12 @@
   import Sun from "@lucide/svelte/icons/sun";
   import Moon from "@lucide/svelte/icons/moon";
   import Check from "@lucide/svelte/icons/check";
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
 
-  const morningDone = $derived(doc.current.morningDone);
-  const eveningDone = $derived(doc.current.eveningDone);
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const morningDone = $derived(snapshot.morningDone);
+  const eveningDone = $derived(snapshot.eveningDone);
 </script>
 
 <div class={"fmj-iconSurface"} aria-hidden="true">

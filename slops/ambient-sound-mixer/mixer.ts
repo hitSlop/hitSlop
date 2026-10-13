@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
+import { refuse, type Tx, type Value } from "hitslop";
 import { CHANNEL_IDS } from "./schema";
-import type doc from "./schema";
+import type schema from "./schema";
 
-export type Mixer = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Mixer = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export type ChannelID = (typeof CHANNEL_IDS)[number];
 export type ChannelLevels = Record<ChannelID, number>;
 export type PresetName = "Lo-Fi Rain" | "Forest Dawn" | "Midnight Storm" | "Cozy Evening";

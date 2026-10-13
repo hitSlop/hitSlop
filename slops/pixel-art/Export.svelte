@@ -1,7 +1,9 @@
 <script lang="ts">
-import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { spriteView } from "./sprite";
-  const { cells } = $derived(spriteView(doc.current));
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const { cells } = $derived(spriteView(snapshot));
 </script>
 
 <article class="exportSheet" aria-label="Exported 16 by 16 sprite">

@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Board = typeof doc.current;
+export type Board = Value<typeof schema.descriptor>;
 export type Lane = Board["lanes"][number];
 export type Card = Board["cards"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** The editor and export read lanes, counts and limits from the same snapshot. */
 export function boardView(board: Board) {

@@ -1,8 +1,8 @@
 import { moneyLabel } from "../_shared/format";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export type Entry = { merchant: string; amountMinor: number; note?: string };
 
 /** The editor and any capture derive totals and counts from the same snapshot. */

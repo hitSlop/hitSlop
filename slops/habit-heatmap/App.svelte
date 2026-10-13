@@ -7,10 +7,13 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Pencil from "@lucide/svelte/icons/pencil";
   import X from "@lucide/svelte/icons/x";
-  import doc, { colors } from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
+  import schema, { colors } from "./schema";
   import { addHabit, dayKey, editHabit, heatmapView, labelDay, removeHabit as dropHabit, setCheckin, shortDay, weekdays, type HabitColor } from "./calendar";
 
-  type Habit = (typeof doc.current.habits)[number];
+  const doc = getDocument(schema);
+  type Habit = Value<typeof schema.descriptor>["habits"][number];
 
   // View state: Export cannot see it and shows every habit.
   let today = $state(dayKey(new Date()));

@@ -1,9 +1,9 @@
 import { getStroke } from "perfect-freehand";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Board = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Board = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export type Stroke = { geometry: string; color: string };
 
 export const boards = {

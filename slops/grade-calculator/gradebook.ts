@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { calculateCourseMetrics } from "./shared";
 
-export type Edit = Tx<typeof doc>;
-export type Gradebook = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Gradebook = Value<typeof schema.descriptor>;
 type Course = Gradebook["courses"][number];
 
 /** The page and Export derive their totals and course metrics from this one snapshot. */

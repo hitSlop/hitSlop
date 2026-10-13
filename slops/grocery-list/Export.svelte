@@ -1,19 +1,21 @@
 <script lang="ts">
+  import type { Value } from "hitslop";
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
+  import type schema from "./schema";
   import { groceryView } from "./items";
   import Check from "@lucide/svelte/icons/check";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  type GroceryItem = (typeof doc.current.items)[number];
+  type GroceryItem = Value<typeof schema.descriptor>["items"][number];
 
-  const { items: visible, done, total, memo } = $derived(groceryView(doc.current));
+  const { items: visible, done, total, memo } = $derived(groceryView(snapshot));
 </script>
 
 <article class="export-door" aria-label="Exported grocery list">
   <section class="notepad">
     <div class="title-row">
-      <h1 class="title">{doc.current.title || "Groceries"}</h1>
+      <h1 class="title">{snapshot.title || "Groceries"}</h1>
       <span class="count">{done}/{total} done</span>
     </div>
     {@render rows(visible)}
@@ -21,7 +23,7 @@
   {#if memo}
     <aside class="sticky">
       <span class="pin" aria-hidden="true"></span>
-      <p class="memo">{previewText(doc.current.stickyNote, preview, 140)}</p>
+      <p class="memo">{previewText(snapshot.stickyNote, preview, 140)}</p>
     </aside>
   {/if}
 </article>

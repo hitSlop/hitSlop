@@ -1,12 +1,13 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
   import Check from "@lucide/svelte/icons/check";
   import Brand from "./Brand.svelte";
   import Progress from "./Progress.svelte";
-  import doc from "./schema";
+  import type schema from "./schema";
   import { checklistView } from "./tasks";
-  const { visible, finished, ratio } = $derived(checklistView(doc.current));
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const { visible, finished, ratio } = $derived(checklistView(snapshot));
 </script>
 
 <main class="checklist-shell checklist-export">
@@ -14,7 +15,7 @@
   <section class="checklist-paper" aria-label="Your checklist">
     <div class="checklist-heading">
       <p class="checklist-eyebrow">A little less on your mind.</p>
-      <h1 class="checklist-title">{doc.current.title || "Untitled list"}</h1>
+      <h1 class="checklist-title">{snapshot.title || "Untitled list"}</h1>
       <Progress total={visible.length} {finished} fill={ratio} />
     </div>
     <ol class="checklist-list">

@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { Calendar, Popover } from "bits-ui";
   import { getLocalTimeZone, today, type DateValue } from "@internationalized/date";
   import Eye from "@lucide/svelte/icons/eye";
@@ -15,7 +15,7 @@
   import CalendarIcon from "@lucide/svelte/icons/calendar";
   import ChevronLeft from "@lucide/svelte/icons/chevron-left";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
-  import doc from "./schema";
+  import schema from "./schema";
   import {
     addItem as insertBlock,
     notesView,
@@ -23,6 +23,8 @@
     setDate,
     setTheme,
   } from "./notes";
+
+  const doc = getDocument(schema);
 
   function autosize(node: HTMLTextAreaElement) {
     const resize = () => {

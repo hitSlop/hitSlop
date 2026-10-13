@@ -1,11 +1,11 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { sides } from "./schema";
 import { STATUS_LABELS, type Status } from "./statuses";
 
-export type Balance = typeof doc.current;
+export type Balance = Value<typeof schema.descriptor>;
 export type Side = (typeof sides)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export type Weighted = { weight: number };
 

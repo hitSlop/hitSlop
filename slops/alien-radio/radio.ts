@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { fallbackChannels, type Channel } from "./stations";
 
-export type Radio = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Radio = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 const stationId = /^[a-z0-9-]{1,64}$/;
 

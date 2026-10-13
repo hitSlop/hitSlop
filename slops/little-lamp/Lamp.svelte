@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { prefersReducedMotion } from "svelte/motion";
-  import { capture } from "hitslop/svelte";
   import { Alignment, Fit, Layout, Rive, RuntimeLoader } from "@rive-app/canvas";
   import wasmUrl from "@rive-app/canvas/rive.wasm?url";
   import sceneUrl from "./assets/little-lamp.riv?url";
@@ -15,11 +14,6 @@
   let remaining = 0;
   let frames = 0;
   let captureTimer: ReturnType<typeof setInterval> | undefined;
-  let settle: () => void;
-  let fail: (error: Error) => void;
-  const ready = new Promise<void>((resolve, reject) => { settle = resolve; fail = reject; });
-  // The host waits for the actual Rive pose before capturing PNG/PDF or an icon.
-  const stopPreparing = capture.onPrepare(() => ready);
 
   function wake(seconds: number) {
     remaining = Math.max(remaining, seconds);
@@ -38,7 +32,8 @@
       onLoad: () => {
         if (disposed) return;
         if (!rive.viewModelInstance?.boolean("on") || !rive.viewModelInstance.boolean("animate")) {
-          fail(new Error("Little Lamp's Rive scene is missing its power bindings."));
+          // Rive only logs an error thrown in its callbacks, so raise load failures as page errors.
+          reportError(new Error("Little Lamp's Rive scene is missing its power bindings."));
           return;
         }
         rive.resizeDrawingSurfaceToCanvas();
@@ -49,13 +44,10 @@
           captureTimer = setInterval(() => { rive.stopRendering(); rive.drawFrame(); }, 16);
         }
       },
-      onLoadError: event => { if (!disposed) fail(new Error(`Could not load Little Lamp: ${event.data}`)); },
+      onLoadError: event => { if (!disposed) reportError(new Error(`Could not load Little Lamp: ${event.data}`)); },
       onAdvance: event => {
         remaining -= Number(event.data);
-        if (++frames >= 4) {
-          if (captureTimer) { clearInterval(captureTimer); captureTimer = undefined; }
-          settle();
-        }
+        if (++frames >= 4 && captureTimer) { clearInterval(captureTimer); captureTimer = undefined; }
         // Awake idle/blinks live inside Rive. Hidden, sleeping and reduced-motion lamps rest.
         if (frames >= 4 && (still || (remaining <= 0 && (!on || prefersReducedMotion.current || !visible))))
           // Rive schedules its next frame after onAdvance returns.
@@ -66,7 +58,7 @@
       if (player) { rive.resizeDrawingSurfaceToCanvas(); wake(.1); }
     });
     observer.observe(canvas);
-    return () => { disposed = true; stopPreparing(); clearInterval(captureTimer); observer.disconnect(); rive.cleanup(); };
+    return () => { disposed = true; clearInterval(captureTimer); observer.disconnect(); rive.cleanup(); };
   });
 
   $effect(() => {

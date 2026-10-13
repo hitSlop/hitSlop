@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addMilestone, moveMilestone, removeMilestone, setCountdown, setMilestoneDone } from "./countdown";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setCountdown: {
     description: "Set the event name, date (YYYY-MM-DD) and local time (HH:MM).",
     args: { title: s.string(), date: s.string(), time: s.string() },

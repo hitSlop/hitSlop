@@ -1,12 +1,12 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { bands } from "./schema";
 import { stations, type Station } from "./station-list";
 
-export type Receiver = typeof doc.current;
+export type Receiver = Value<typeof schema.descriptor>;
 export type Band = (typeof bands)[number];
 export type AudioPreferences = Pick<Receiver, "volume" | "balance" | "equalizer">;
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 const stationOf = (id: string): Station | undefined => stations.find(station => station.id === id);
 

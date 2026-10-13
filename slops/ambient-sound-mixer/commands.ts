@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { CHANNEL_IDS } from "./schema";
+import schema, { CHANNEL_IDS } from "./schema";
 import { applyPreset, PRESET_NAMES, setLevel, setMaster, setMuted, setSoloed } from "./mixer";
 
 const channel = s.enum(CHANNEL_IDS, { description: "The channel: rain, thunder, wind, birds or night." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   applyPreset: {
     description: "Move every fader to a named preset and clear mute and solo.",
     args: { preset: s.enum(PRESET_NAMES) },

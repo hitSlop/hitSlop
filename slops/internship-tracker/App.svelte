@@ -1,20 +1,21 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Tabs, Select, Button, Checkbox } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import X from "@lucide/svelte/icons/x";
   import Check from "@lucide/svelte/icons/check";
-  import doc, { stages } from "./schema";
+  import schema, { stages } from "./schema";
   import { dateString, dueLabel } from "./dates";
   import {
     addApplication, addChat, removeApplication, removeChat, setFollowUp, setMetDate, setStage, setThanked,
     trackerView, type Stage,
   } from "./pipeline";
 
+  const doc = getDocument(schema);
   const stageItems = stages.map((value) => ({ value, label: value }));
   const today = dateString(new Date());
   // The open tab is window state; the export is a separate page and shows both lists.

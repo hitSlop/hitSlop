@@ -3,14 +3,15 @@
   import { Dialog, AlertDialog, Checkbox, Progress, Select } from "bits-ui";
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
-  import doc, { restPresets } from "./schema";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import schema, { restPresets } from "./schema";
   import {
     addExercise, checked, complete, count, formatTime, moveExercise, nextExercise, nextSet, removeExercise,
     resetProgress, sets, toggleSet as toggleSetEdit, updateExercise, workoutView, type Exercise,
   } from "./workout";
   import { createRestClock } from "./rest";
 
+  const doc = getDocument(schema);
   const PRESETS = restPresets.map((value) => ({
     value,
     label: Number(value) < 120 ? `${value}s` : `${Number(value) / 60}m`,

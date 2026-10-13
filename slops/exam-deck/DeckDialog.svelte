@@ -2,12 +2,13 @@
   import { Dialog } from "bits-ui";
   import X from "@lucide/svelte/icons/x";
   import Trash from "@lucide/svelte/icons/trash-2";
-  import { EditableText, notify } from "hitslop/svelte";
-  import doc from "./schema";
+  import { EditableText, getDocument, notify } from "hitslop/svelte";
+  import schema from "./schema";
   import { addCard, cardStatus, removeCard, resetCard, type DeckView } from "./deck";
 
   interface Props { open: boolean; now: number; view: DeckView }
   let { open = $bindable(), now, view }: Props = $props();
+  const doc = getDocument(schema);
 
   let front = $state("");
   let back = $state("");

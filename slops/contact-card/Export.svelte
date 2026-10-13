@@ -1,17 +1,17 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-  import doc from "./schema";
-  import { attachments } from "hitslop/svelte";
+  import type schema from "./schema";
   import Mail from "@lucide/svelte/icons/mail";
   import Phone from "@lucide/svelte/icons/phone";
   import Globe from "@lucide/svelte/icons/globe";
   import MapPin from "@lucide/svelte/icons/map-pin";
   import { cardView, indexLetter } from "./shared";
+  let { snapshot, attachmentURL, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const data = $derived(doc.current);
+  const data = $derived(snapshot);
   const card = $derived(cardView(data));
-  const portraitSrc = $derived(card.portraitId ? attachments.url(card.portraitId) : "");
+  const portraitSrc = $derived(card.portraitId ? attachmentURL(card.portraitId) : "");
 </script>
 
 <article class="exportCanvas" aria-label="Exported contact card">

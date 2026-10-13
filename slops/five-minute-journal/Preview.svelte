@@ -1,14 +1,15 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { displayDate, journalView } from "./journal";
   import { previewText } from "../_shared/preview";
   import PreviewNote from "../_shared/PreviewNote.svelte";
-  const data = $derived(doc.current);
-  const view = $derived(journalView(data));
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const view = $derived(journalView(snapshot));
 </script>
 
 <article class="fmj-exportBook fmj-book">
-  <header class="fmj-masthead"><h1 class="fmj-title">Five Minute Journal</h1><p class="fmj-exportDate">{displayDate(data.date)}</p></header>
+  <header class="fmj-masthead"><h1 class="fmj-title">Five Minute Journal</h1><p class="fmj-exportDate">{displayDate(snapshot.date)}</p></header>
   <div class="preview-periods">
     <section>
       <h2 class="fmj-heading">Morning</h2>
@@ -16,7 +17,7 @@
       {#each view.gratitudes.filter(line => line.value.trim()).slice(0, 2) as line}<p>{previewText(line.value, true, 100)}</p>{:else}<p class="quiet">A little gratitude to come.</p>{/each}
       <h3 class="fmj-promptLabel">What would make today great?</h3>
       {#each view.intentions.filter(line => line.value.trim()).slice(0, 2) as line}<p>{previewText(line.value, true, 100)}</p>{:else}<p class="quiet">Room for a good intention.</p>{/each}
-      {#if data.affirmation.trim()}<h3 class="fmj-promptLabel">I am…</h3><p>{previewText(data.affirmation, true, 100)}</p>{/if}
+      {#if snapshot.affirmation.trim()}<h3 class="fmj-promptLabel">I am…</h3><p>{previewText(snapshot.affirmation, true, 100)}</p>{/if}
       <small>{view.morningDone ? "Written" : "Still unfolding"}</small>
     </section>
     <section>
@@ -24,7 +25,7 @@
       <h3 class="fmj-promptLabel">Amazing things today</h3>
       {#each view.highlights.filter(line => line.value.trim()).slice(0, 2) as line}<p>{previewText(line.value, true, 100)}</p>{:else}<p class="quiet">A moment to gather the good.</p>{/each}
       <h3 class="fmj-promptLabel">A lesson for tomorrow</h3>
-      <p>{previewText(data.lesson, true, 140) || "Let the rest wait until tomorrow."}</p>
+      <p>{previewText(snapshot.lesson, true, 140) || "Let the rest wait until tomorrow."}</p>
       <small>{view.eveningDone ? "Written" : "Still unfolding"}</small>
     </section>
   </div>

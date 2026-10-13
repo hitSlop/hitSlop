@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value as DocumentValue } from "hitslop";
+import type schema from "./schema";
 import { tints } from "./schema";
 import { cellKey, columnName, COLUMNS, display, evaluate, isError, parseKey, ROWS, type Value } from "./formula";
 
-type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+type Edit = Tx<typeof schema>;
+export type Data = DocumentValue<typeof schema.descriptor>;
 export type Tint = (typeof tints)[number];
 
 export const DEFAULT_WIDTH = 96;

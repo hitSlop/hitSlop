@@ -1,9 +1,11 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { packingView } from "./items";
   import { iconRows } from "./shared";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const { total: totalCount, packed: packedCount, complete } = $derived(packingView(doc.current));
+  const { total: totalCount, packed: packedCount, complete } = $derived(packingView(snapshot));
   const marks = $derived(totalCount > 0 ? Math.round(4 * packedCount / totalCount) : 0);
 </script>
 

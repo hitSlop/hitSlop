@@ -1,8 +1,11 @@
 <script lang="ts">
-import doc, { signatures } from "./schema";
+import type { CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
+import { signatures } from "./schema";
 import { metronomeView } from "./metronome";
+let { snapshot }: CaptureProps<typeof schema> = $props();
 const CAPTURE_ANGLE = -16;
-const view = $derived(metronomeView(doc.current));
+const view = $derived(metronomeView(snapshot));
 </script>
 
 <main class="metronome-shell" aria-label="Exported metronome">
@@ -14,7 +17,7 @@ const view = $derived(metronomeView(doc.current));
 
     <section class="display-card">
       <div class="display-readout">
-        <strong class="bpm-digits">{doc.current.bpm}</strong>
+        <strong class="bpm-digits">{snapshot.bpm}</strong>
         <span class="bpm-unit">BPM</span>
       </div>
       <p class="tempo-descriptor">{view.tempoName}</p>
@@ -44,10 +47,10 @@ const view = $derived(metronomeView(doc.current));
       <div class="settings-row">
         <div class="time-sig-selector" aria-label="Time signature">
           {#each signatures as value}
-            <span class="sig-btn" data-state={doc.current.signature === value ? "checked" : undefined}>{value}</span>
+            <span class="sig-btn" data-state={snapshot.signature === value ? "checked" : undefined}>{value}</span>
           {/each}
         </div>
-        <span class="mute-toggle" data-state={doc.current.muted ? "on" : undefined}>{doc.current.muted ? "MUTE" : "CLICK"}</span>
+        <span class="mute-toggle" data-state={snapshot.muted ? "on" : undefined}>{snapshot.muted ? "MUTE" : "CLICK"}</span>
       </div>
     </section>
   </main>

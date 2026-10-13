@@ -1,12 +1,13 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
-import BookOpen from "@lucide/svelte/icons/book-open";
-import Star from "@lucide/svelte/icons/star";
-import doc from "./schema";
-import { readingView } from "./books";
-const STARS = [1, 2, 3, 4, 5] as const;
-const view = $derived(readingView(doc.current));
+  import BookOpen from "@lucide/svelte/icons/book-open";
+  import Star from "@lucide/svelte/icons/star";
+  import type schema from "./schema";
+  import { readingView } from "./books";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const STARS = [1, 2, 3, 4, 5] as const;
+  const view = $derived(readingView(snapshot));
 </script>
 
 <article class="exportCard" aria-label="Exported reading list">
@@ -14,9 +15,9 @@ const view = $derived(readingView(doc.current));
         <div class="identity">
           <h1 class="masthead">Reading list</h1>
           <div class="memberRow">
-            <span class="memberName">{doc.current.memberName.trim() || "Cardholder"}</span>
-            {#if doc.current.memberName.trim() && doc.current.memberSince.trim()}<span aria-hidden="true">·</span>{/if}
-            <span class="memberSince">{doc.current.memberSince}</span>
+            <span class="memberName">{snapshot.memberName.trim() || "Cardholder"}</span>
+            {#if snapshot.memberName.trim() && snapshot.memberSince.trim()}<span aria-hidden="true">·</span>{/if}
+            <span class="memberSince">{snapshot.memberSince}</span>
           </div>
         </div>
         <div class="finishedCount" aria-label="{view.read} books finished"><strong>{view.read}</strong><span>finished</span></div>
@@ -30,7 +31,7 @@ const view = $derived(readingView(doc.current));
           <span>Status</span>
         </div>
         <ul class="list" aria-label="Reading list">
-          {#each (preview ? (doc.current.books).slice(0, 4) : doc.current.books) as book (book.$id)}
+          {#each (preview ? (snapshot.books).slice(0, 4) : snapshot.books) as book (book.$id)}
             <li class="row exportRow">
               <span class="bookSpine" data-status={book.status} aria-hidden="true"><BookOpen size={19} strokeWidth={1.5} /></span>
               <div class="bookInfo">

@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { signatures } from "./schema";
 
-export type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 export type TimeSignature = (typeof signatures)[number];
 
 export const MIN_BPM = 40;

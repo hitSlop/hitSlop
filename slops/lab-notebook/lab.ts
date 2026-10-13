@@ -1,12 +1,12 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
 export const kinds = ["scatter", "line", "bar"] as const;
 export type Kind = (typeof kinds)[number];
 export const maxRows = 60;
 
-export type Notebook = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Notebook = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export type Point = { id: string; label: string; x: number; y: number; err: number };
 /** An ordinary least squares line. `r2` is null when every y is the same (R-squared is undefined). */

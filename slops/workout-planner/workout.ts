@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { restPresets } from "./schema";
 
-export type Data = typeof doc.current;
+export type Data = Value<typeof schema.descriptor>;
 export type Exercise = Data["exercises"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export function count(value: number, min = 1, max = 12) {
   return Math.max(min, Math.min(max, Number.isFinite(value) ? Math.round(value) : min));

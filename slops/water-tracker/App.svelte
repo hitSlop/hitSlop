@@ -5,7 +5,8 @@
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Button } from "bits-ui";
-  import doc from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import Chamber, { type Particle } from "./Chamber.svelte";
   import { intakeView, logIntake, resetDay, setTarget } from "./intake";
 
@@ -16,6 +17,7 @@
     { amount: 750, label: "Flask" },
   ] as const;
   const PARTICLES = ["💧", "✨", "🎉", "🌟", "🫧", "🌊", "💎", "💙"];
+  const doc = getDocument(schema);
   const view = $derived(intakeView(doc.current));
   const percent = $derived(view.percent);
   const fill = $derived(view.fill);
@@ -125,7 +127,7 @@
       </label>
     </header>
 
-    <Chamber level={liquid.current} {percent} interactive {particles} oncelebrate={celebrate} onparticleend={(id) => { particles = particles.filter((item) => item.id !== id); }} />
+    <Chamber level={liquid.current} {percent} total={view.total} unit={doc.current.unit} interactive {particles} oncelebrate={celebrate} onparticleend={(id) => { particles = particles.filter((item) => item.id !== id); }} />
 
     <section class="taps" data-slop-export="hide" aria-label="Quick log drinks">
       {#each QUICK as drink}

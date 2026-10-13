@@ -1,13 +1,13 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { EditableText, notify } from "hitslop/svelte";
+  import { EditableText, getDocument, notify } from "hitslop/svelte";
   import { onMount } from "svelte";
   import Minus from "@lucide/svelte/icons/minus";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import doc, { kinds, maxModifier, type Kind } from "./schema";
+  import schema, { kinds, maxModifier, type Kind } from "./schema";
   import {
     addDie, clearHistory, fairRandom, removeDie, roll, rollAgain, setModifier, setPool, trayView, type RollView,
   } from "./dice";
@@ -16,6 +16,7 @@
   import Readout from "./Readout.svelte";
   import Tray from "./Tray.svelte";
 
+  const doc = getDocument(schema);
   const view = $derived(trayView(doc.current));
   const shown = $derived(view.last ? { id: view.last.$id, seed: view.last.seed, dice: view.last.dice } : undefined);
   // View state: which roll is mid-tumble, motion preference and the clock for "8:07 PM".

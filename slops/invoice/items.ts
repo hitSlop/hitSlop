@@ -1,7 +1,7 @@
-import type { Tx } from "hitslop";
-import type doc from "./schema";
-export type Invoice = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import type { Tx, Value } from "hitslop";
+import type schema from "./schema";
+export type Invoice = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /** The editor and the export page derive their totals from the same snapshot. */
 export function invoiceView(data: Invoice) {

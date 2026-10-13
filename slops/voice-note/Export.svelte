@@ -1,14 +1,15 @@
 <script lang="ts">
   import { previewText } from "../_shared/preview";
-  let { preview = false }: { preview?: boolean } = $props();
+  import type { CaptureProps } from "hitslop/svelte";
   // The export renders saved notes only. It never imports the recorder and never asks
   // for the microphone; recordings are listed, not played.
-  import doc from "./schema";
+  import type schema from "./schema";
   import { durationLabel, padView, sizeLabel } from "./notes";
   import NoteMeta from "./NoteMeta.svelte";
   import Spiral from "./Spiral.svelte";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(padView(doc.current));
+  const view = $derived(padView(snapshot));
 </script>
 
 <main class="vn vn-export">
@@ -16,7 +17,7 @@
     <Spiral rings={13} />
     <div class="vn-pad-scroll">
       <header class="vn-pad-head">
-        <h1 class="vn-title">{doc.current.title || "Voice notes"}</h1>
+        <h1 class="vn-title">{snapshot.title || "Voice notes"}</h1>
         <p class="vn-summary">
           {view.count} {view.count === 1 ? "note" : "notes"} · {durationLabel(view.recordedMs)} recorded · {view.words} words
         </p>

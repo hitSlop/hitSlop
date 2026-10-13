@@ -1,8 +1,11 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { receiverView } from "./settings";
 
-  const view = $derived(receiverView(doc.current));
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+
+  const view = $derived(receiverView(snapshot));
 </script>
 
 <article class="soma-export">

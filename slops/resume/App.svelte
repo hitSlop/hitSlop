@@ -7,9 +7,10 @@
   import MapPin from "@lucide/svelte/icons/map-pin";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import { bindText } from "hitslop/svelte";
-  import doc from "./schema";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { addEducation, addExperience, addSkill, removeEducation, removeExperience, removeSkill, resumeView } from "./entries";
+  const doc = getDocument(schema);
   const { initials, skills, education, experience } = $derived(resumeView(doc.current));
 </script>
 

@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { repeatModes, stickerKinds } from "./schema";
+import schema, { repeatModes, stickerKinds } from "./schema";
 import {
   addSticker, addVideo, clearStickers, peelSticker, placeSticker, removeVideo, selectVideo,
   setOwnerName, setVolume, shuffleAll,
 } from "./pod";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addVideo: {
     description: "Add a YouTube video to the library (the first one becomes current) and return its stable row ID.",
     args: {

@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { days } from "./schema";
 import { tones } from "./schema";
 
-type Edit = Tx<typeof doc>;
-export type Household = typeof doc.current;
+type Edit = Tx<typeof schema>;
+export type Household = Value<typeof schema.descriptor>;
 export type Person = Household["people"][number];
 export type Chore = Household["chores"][number];
 export type Day = (typeof days)[number];

@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { modes } from "./schema";
 
-type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 export type Mode = Data["mode"];
 export type Theme = Data["theme"];
 /** New text plus where the selection should land. */

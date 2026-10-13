@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
-  import doc from "./schema";
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type schema from "./schema";
 
-  let { family, width, height }: WidgetProps = $props();
+  let { snapshot, family, width, height }: CaptureProps<typeof schema> & WidgetProps = $props();
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -16,7 +16,7 @@
   function shortDate(value: string) {
     return `${months[Number(value.slice(5, 7)) - 1]} ${Number(value.slice(8))}`;
   }
-  const active = $derived(doc.current.assignments.filter(item => !item.completed).map(item => ({ item, date: validDate(item.dueDate) ? item.dueDate : "" })).sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : (a.date || "9999") > (b.date || "9999") ? 1 : 0));
+  const active = $derived(snapshot.assignments.filter(item => !item.completed).map(item => ({ item, date: validDate(item.dueDate) ? item.dueDate : "" })).sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : (a.date || "9999") > (b.date || "9999") ? 1 : 0));
   const overdue = $derived(active.filter(({ date }) => date && date < today).length);
   const rows = $derived(active.slice(0, family === "small" ? 1 : family === "medium" ? 2 : 4));
 </script>
@@ -26,7 +26,7 @@
     <h1>Assignments</h1>
     <span class="asg-widget-count">{active.length} to do</span>
   </header>
-  {#if family === "large"}<p class="asg-widget-person">{doc.current.studentName || "Your study pad"}<span>{doc.current.term}</span></p>{/if}
+  {#if family === "large"}<p class="asg-widget-person">{snapshot.studentName || "Your study pad"}<span>{snapshot.term}</span></p>{/if}
   {#if active.length}
     <div class="asg-widget-rows">
       {#each rows as { item, date } (item.$id)}
@@ -37,7 +37,7 @@
       {/each}
     </div>
   {:else}
-    <div class="asg-widget-empty"><strong>{doc.current.assignments.length ? "All caught up." : "A fresh study pad."}</strong><span>{doc.current.assignments.length ? "A little room to breathe." : "Add your first assignment."}</span></div>
+    <div class="asg-widget-empty"><strong>{snapshot.assignments.length ? "All caught up." : "A fresh study pad."}</strong><span>{snapshot.assignments.length ? "A little room to breathe." : "Add your first assignment."}</span></div>
   {/if}
   <footer class="asg-widget-footer"><span>{overdue ? `${overdue} overdue` : active.length > rows.length ? `+ ${active.length - rows.length} more` : "One thing at a time."}</span><span>As of {shortDate(today)}</span></footer>
 </main>
