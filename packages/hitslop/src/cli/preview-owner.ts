@@ -242,6 +242,12 @@ export class PreviewOwners {
         if (active()) client.send("slop:fatal", { error: String(error) });
         this.remove(client);
       };
+      /** One request line for the owner. A write it cannot take rejects after it started (a
+       * broken pipe), so each caller says where that failure goes. */
+      const post = (frame: PreviewRequest, failed: (error: unknown) => void) => {
+        void Promise.resolve(child.stdin.write(JSON.stringify(frame) + "\n")).catch(failed);
+        void Promise.resolve(child.stdin.flush()).catch(failed);
+      };
       const session: Session = {
         pid: child.pid,
         path,
@@ -260,13 +266,15 @@ export class PreviewOwners {
               range === undefined
                 ? { type: "resource", id, attachmentId, offset, length }
                 : { type: "resourcePlan", id, attachmentId, range };
-            try {
-              child.stdin.write(JSON.stringify(frame) + "\n");
-              void Promise.resolve(child.stdin.flush()).catch(reject);
-            } catch (error) {
+            const fail = (error: unknown) => {
               reads.delete(id);
               clearTimeout(timer);
               reject(error);
+            };
+            try {
+              post(frame, fail);
+            } catch (error) {
+              fail(error);
             }
           });
         },
@@ -274,8 +282,7 @@ export class PreviewOwners {
           if (ended || pending.size >= 64 || pending.has(frame.id))
             throw new Error("Preview disconnected or request queue full");
           pending.add(frame.id);
-          child.stdin.write(JSON.stringify(frame) + "\n");
-          void Promise.resolve(child.stdin.flush()).catch(disconnected);
+          post(frame, disconnected);
         },
         close() {
           return (closing ??= (async () => {
@@ -285,7 +292,8 @@ export class PreviewOwners {
               read.reject(new Error("Preview closed"));
             }
             reads.clear();
-            child.stdin.end();
+            // The owner may already be gone, and then there is nobody to give EOF to.
+            void Promise.resolve(child.stdin.end()).catch(() => {});
             const kill = setTimeout(() => child.kill(), 12000);
             try {
               await child.exited;

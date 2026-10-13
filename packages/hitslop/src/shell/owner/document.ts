@@ -296,7 +296,7 @@ export class OwnerDocument<N extends ObjectNode> {
     await Promise.all([...this.drains].map((drain) => drain()));
     // Writes in flight settle first: an accepted live write clears its own preview, so
     // only uncommitted previews remain to write.
-    while (this.pending.size) await Promise.allSettled([...this.pending]);
+    while (this.pending.size) await Promise.allSettled(this.pending);
     // One invalid draft must not reject an unrelated, valid draft's atomic batch.
     for (const [key, preview] of this.previews.all()) {
       try {
@@ -306,7 +306,7 @@ export class OwnerDocument<N extends ObjectNode> {
         this.report(error);
       }
     }
-    while (this.pending.size) await Promise.allSettled([...this.pending]);
+    while (this.pending.size) await Promise.allSettled(this.pending);
   }
   flush(): Promise<void> {
     this.assertNotCollecting("Cannot flush inside change()");

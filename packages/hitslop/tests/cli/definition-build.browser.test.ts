@@ -45,7 +45,7 @@ test("conventional UI entry renders emitted CSS and writes through document hand
     expect(writes).toEqual([{title:"New title"}]);
     expect(errors).toEqual([]);
   } finally {
-    server?.stop(true);
+    await server?.stop(true);
     await browser.close();
     await rm(root, {recursive:true,force:true});
   }

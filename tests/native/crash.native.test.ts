@@ -27,7 +27,7 @@ afterAll(() => rm(folder, { recursive: true, force: true }));
 /** One engine request, killed after `killAfter` milliseconds unless it has answered. */
 async function request(body: Record<string, unknown>, killAfter: number) {
   const child = Bun.spawn(negotiate(documentEngine), { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-  child.stdin.write(JSON.stringify(body));
+  await child.stdin.write(JSON.stringify(body));
   await child.stdin.end();
   setTimeout(() => child.kill("SIGKILL"), killAfter);
   const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);

@@ -183,13 +183,18 @@ export async function startBrowserHost(runtimeRoot = join(cliRoot, "browser")) {
     },
   });
   const expiry = setInterval(() => {
-    for (const [id, session] of sessions) if (session.expires <= Date.now()) void closeSession(id);
+    for (const [id, session] of sessions)
+      if (session.expires <= Date.now())
+        // Only removing the directory can fail; a leftover import is no reason to end the host.
+        void closeSession(id).catch((error) =>
+          console.error(`Could not remove the expired import ${session.directory}: ${error}`),
+        );
   }, 30_000);
   return {
     discovery,
     async close() {
       clearInterval(expiry);
-      server.stop(true);
+      await server.stop(true);
       await Promise.all([...sessions.keys()].map(closeSession));
     },
   };
