@@ -97,9 +97,9 @@
     }
   }
 
-  function log(amount: number, label: string) {
+  async function log(amount: number, label: string) {
     const wasComplete = percent >= 100;
-    doc.change((tx) => logIntake(tx, doc.current, amount, label, new Date()));
+    await doc.change((tx) => logIntake(tx, doc.current, amount, label, new Date()));
     if (!wasComplete && intakeView(doc.current).complete) celebrate();
   }
 
