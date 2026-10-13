@@ -20,7 +20,7 @@ My.slop
   history    initial values, as one Loro snapshot
 ```
 
-The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. The page shell is served to the WebView; it is never copied into the file.
+The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, attachment, speech, and window services. The page shell is served to the WebView; it is never copied into the file.
 
 ## A document adds its saved state
 

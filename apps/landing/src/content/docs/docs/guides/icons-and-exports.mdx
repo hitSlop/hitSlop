@@ -80,14 +80,14 @@ uses `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`, `AbortController`, 
 `hitslop/svelte`, such as `getDocument`, `draft`, `motion`, `notify`, `EditableText`,
 `bindText`, `speech` and `resizeWindow`, and Svelte's `onMount` are refused, including
 through aliases, namespace imports and re-exports, and so is `attachments`: read a stored
-image's URL from the `attachmentURL` prop instead. Everything `hitslop/embed` exports,
-the YouTube link parser, lookup and player, is refused too; a video's thumbnail comes from
-`thumbnail(id)` in `hitslop/youtube`, which only builds a URL. Use static representations
+image's URL from the `attachmentURL` prop instead. Everything `hitslop/embed` exports
+is refused too. Static views may import the string helpers in `hitslop/youtube`; see
+[YouTube and saved thumbnails](/docs/guides/files-and-web/#youtube). Use static representations
 for canvas, animation or WebGL content. A rendering failure retains previous artwork;
 there is no automatic fallback or public renderer override.
 
 Use the `attachmentURL(id)` prop for referenced PNG/JPEG/GIF/WebP images in saved
-data. Capture currently loads the whole saved image inventory, capped at 24 MiB,
+data; it throws for a missing or non-image attachment. Capture currently loads the whole saved image inventory, capped at 24 MiB,
 including images that this role does not display. Blob reads,
 imports, remote loading and document writes are unavailable. Missing or unsupported
 images fail capture. PNG and PDF share the same native layout, fonts and resources.
@@ -147,8 +147,8 @@ image or the document's theme. See [Apple's widget settings](https://support.app
 
 In `slop dev`, use the Preview selector to switch between the editor, the preview, the
 icon and each widget family. Accepted edits survive switching, and component/CSS changes
-update the view live. These are browser layouts, so review the final image with
-`slop build`. Icon and widget canvases clip overflow; the preview warns when content
+update the view live. These are browser layouts: review built preview/icon artwork with
+`slop build` and widget images in the Mac app. Icon and widget canvases clip overflow; the preview warns when content
 extends beyond its canvas.
 
 Successful saves refresh images after a one-second debounce, including edits while
@@ -214,7 +214,7 @@ Successful responses, respectively (your paths will differ):
 /Users/you/Documents/My.pdf
 ```
 
-An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both use default local UI state and the saved theme. The open editor is not used as the rendering workspace.
+An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both pass the saved snapshot and theme to the static view. The open editor is not used as the rendering workspace.
 
 The editor barrier lasts through saving and copying; rendering then proceeds independently. Native capture loads packaged fonts and saved image resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF export is experimental. It keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side; complex layouts and long documents may need further refinement.
 

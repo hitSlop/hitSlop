@@ -105,14 +105,22 @@ video is playing. `hitslop/youtube` holds the URL builders.
 import { youtube } from "hitslop/embed";
 import { src } from "hitslop/youtube";
 
-const id = youtube.findId(pastedText);              // null unless it holds a YouTube link
+const id = youtube.findId(pastedText); // null unless it holds a YouTube link
+if (!id) throw new Error("Paste a YouTube link.");
 const { title, author } = await youtube.lookup(id); // rejects with a LookupError if it can't be embedded
 // <iframe bind:this={frame} src={src(id, { controls: false })}
 //         allow="autoplay; encrypted-media" title="Player"></iframe>
 const player = youtube.player(frame, { onState, onTime, onEnded, onError });
-player.play(); player.seek(30); player.setVolume(0.5); player.dispose();
+player.play();
+player.seek(30);
+player.setVolume(0.5);
+player.dispose();
 ```
 
-`thumbnail(id)` from `hitslop/youtube` is an image URL, which a Preview, Export or Icon
-may use; they may not import `hitslop/embed`. Playback needs the network; `onError(-1)`
+`hitslop/youtube` exports `thumbnail(id)`, `src(id, options)`, `defaultRelay` and `idShape`
+without browser APIs; static views may import it, including Widget. These helpers only
+build or validate strings: native capture cannot load a remote thumbnail. Keep an image
+as an attachment in the editor and pass its saved ID to `attachmentURL` in the static
+view. Static views may not import `hitslop/embed`, which owns `youtube.parseId`,
+`findId`, `lookup`, `player` and `LookupError`. Playback needs the network; `onError(-1)`
 means the relay never answered. Pass `relay` to `src` to host the relay page yourself.

@@ -105,7 +105,8 @@ Quick Checklist is the reference example. Active projects under `slops` declare 
 - `swift` (`bun run swift:test`): native tests with cached document/ABI apps and presentation fixtures.
 - `app`: complete macOS app build and bundle acceptance; included in `release:check`.
 - `browser`: Chrome durable copies and WebKit native-owner preview, without Swift compilation; run explicitly or in nightly/manual qualification, not by `--native`.
-- `native` (`bun run test:native`): native CLI owners, the native render of the fixtures (`HITSLOP_RENDER=all` for every bundled template), the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the corpus replay.
+- `render`: portable engine artwork and PNG/PDF rendering of the fixtures (`HITSLOP_RENDER=all` for every bundled template), with no Swift build.
+- `native` (`bun run test:native`): the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the macOS corpus replay.
 - `packed`: exact npm artifact dependency/type/init/check/preview verification, without the Mac app. `HITSLOP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
 - `landing` (`bun run landing:check`, `bun run landing:build`): public documentation and site validation.
 

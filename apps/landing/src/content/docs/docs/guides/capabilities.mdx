@@ -27,11 +27,11 @@ export default defineSlop({
 
 Use only the entries your app needs. Omitting `capabilities` declares none.
 
-| Capability | How to use it | What it admits |
-| --- | --- | --- |
-| `camera` | `navigator.mediaDevices.getUserMedia({ video: true })` | Camera capture in the interactive editor. |
-| `microphone` | `navigator.mediaDevices.getUserMedia({ audio: true })` | Microphone capture, including recording with `MediaRecorder`. |
-| `speech` | `speech.transcribe(attachment, options)` from `hitslop/svelte` | On-device transcription of a recording already stored in the document. |
+| Capability   | How to use it                                                  | What it admits                                                         |
+| ------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `camera`     | `navigator.mediaDevices.getUserMedia({ video: true })`         | Camera capture in the interactive editor.                              |
+| `microphone` | `navigator.mediaDevices.getUserMedia({ audio: true })`         | Microphone capture, including recording with `MediaRecorder`.          |
+| `speech`     | `speech.transcribe(attachment, options)` from `hitslop/svelte` | On-device transcription of a recording already stored in the document. |
 
 A combined audio/video request needs both `camera` and `microphone`. Transcribing an
 imported recording needs `speech`, but not `microphone`. Playing music through Web Audio
@@ -43,16 +43,16 @@ see [files and the web](/docs/guides/files-and-web/). Browser policies and CORS 
 
 ## Where they work
 
-| Environment | Camera and microphone | `speech.transcribe` |
-| --- | --- | --- |
-| Mac app, interactive document | Declared devices, subject to macOS permission. | On-device recognition when this Mac supports the requested language and permission is granted. |
-| `slop dev` preview | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`. Test in the Mac app. |
-| Local Chrome browser copy | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`. |
-| Native icon, preview, or export renderer | Refused. Render saved content instead. | Unavailable. |
+| Environment                              | Camera and microphone                                        | `speech.transcribe`                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Mac app, interactive document            | Declared devices, subject to macOS permission.               | On-device recognition when this Mac supports the requested language and permission is granted. |
+| `slop dev` preview                       | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`. Test in the Mac app.                                            |
+| Local Chrome browser copy                | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`.                                                                 |
+| Native icon, preview, or export renderer | Refused. Render saved content instead.                       | Unavailable.                                                                                   |
 
 In the Mac app, a capture request must come from the current document's main page in a
-visible window. Embedded web frames cannot borrow its device access. A document being
-captured or closed cannot start a new device request.
+visible window. Embedded web frames cannot borrow its device access. A document being closed cannot start a new device request. Saved-state rendering
+leaves the live editor's device access available.
 
 macOS permissions belong to **hitSlop**, not to an individual `.slop` file. There is no
 separate per-slop consent dialog or permission manager yet. The declaration is an
@@ -160,11 +160,11 @@ file does not convert it: hitSlop checks its bytes. A transcript is limited to 1
 Use `isSpeechError(error)` rather than `instanceof`; the host and authored app are
 separate bundles.
 
-| Code | Meaning and response |
-| --- | --- |
+| Code          | Meaning and response                                                                                                                          |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `unavailable` | Inspect `reason`: `notDeclared`, `host`, `system`, `locale`, `permission`, or `format`. Explain the limit and keep recording/playback usable. |
-| `cancelled` | The page was replaced, reloaded, or closed, or an export/copy began. Keep the recording; the person can retry. |
-| `failed` | The recording could not be read or recognized. Preserve it and show the message. |
+| `cancelled`   | The page was replaced, reloaded, or closed. Keep the recording; the person can retry.                                                         |
+| `failed`      | The recording could not be read or recognized. Preserve it and show the message.                                                              |
 
 Speech recognition is separate from microphone permission. It can fail even when audio
 recording works. An older host without this service returns `unavailable` with `host`.

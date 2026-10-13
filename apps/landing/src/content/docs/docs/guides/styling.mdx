@@ -26,22 +26,38 @@ Fonts, sizes and colors derived from the palette belong in your CSS. A derived c
 
 ## Write ordinary CSS
 
-Import `styles.css` from `App.svelte` (or any component). Vite emits one minified `ui.css` for the editor and its capture views, including component styles and dependencies reached through CSS `@import` and `url()`. Styles ship as ordinary CSS.
+Import `styles.css` from `App.svelte` (or any component). Vite emits minified `ui.css` for the editor, including component styles and dependencies reached through CSS `@import` and `url()`. Each static view imports the editor's stylesheets in the editor's import order, then its own imports and component CSS; it does not inherit other editor components' scoped styles. Styles ship as ordinary CSS.
 
 ```css title="styles.css"
 :root {
   --font: "Avenir Next", Avenir, sans-serif;
   --rule: color-mix(in srgb, var(--slop-ink) 15%, transparent);
 }
-body { color: var(--slop-ink); background: var(--slop-surface); font-family: var(--font); }
-.my-slop-paper { padding: clamp(1rem, 5vw, 2.5rem); }
+body {
+  color: var(--slop-ink);
+  background: var(--slop-surface);
+  font-family: var(--font);
+}
+.my-slop-paper {
+  padding: clamp(1rem, 5vw, 2.5rem);
+}
 .my-slop-footer {
   border-top: 1px dashed var(--rule);
   background: var(--slop-panel);
-  & > span { font-size: 12px; color: var(--slop-muted); }
-  & button { border: 2px solid var(--slop-ink); background: var(--slop-accent); }
+  & > span {
+    font-size: 12px;
+    color: var(--slop-muted);
+  }
+  & button {
+    border: 2px solid var(--slop-ink);
+    background: var(--slop-accent);
+  }
 }
-@media (max-width: 360px) { .my-slop-paper { padding: 1rem; } }
+@media (max-width: 360px) {
+  .my-slop-paper {
+    padding: 1rem;
+  }
+}
 ```
 
 Use readable app-prefixed classes in markup. Group descendants and interaction states with their base component. Nesting is supported and lowered for the host's Safari target. Use flex/grid reflow, container queries, visible focus, and reduced-motion styles. Keep controls clear of transparent edges.
@@ -91,14 +107,14 @@ Each read or edit prints the complete `defaults`, `overrides`, and `effective`
 palettes. Example responses for the declared palette above (only the changed tokens
 are shown in `defaults` and `effective`; `overrides` is complete):
 
-| Command | Response excerpt |
-| --- | --- |
-| `theme get My.slop` | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{},"effective":{"accent":"#db6648","surface":"#f7f4eb"}}` |
-| `theme set My.slop …` | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{"accent":"#7050ad","surface":"#f5efff"},"effective":{"accent":"#7050ad","surface":"#f5efff"}}` |
-| `theme reset My.slop --token accent` | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{"surface":"#f5efff"},"effective":{"accent":"#db6648","surface":"#f5efff"}}` |
-| `theme reset My.slop` | The original palette from the first response, with `"overrides":{}`. |
-| `theme export My.slop --output Purple.json` | `/Users/you/Documents/Purple.json` (your path will differ). |
-| `theme import Other.slop Purple.json` | The original palette from the first response, assuming the same template. |
+| Command                                     | Response excerpt                                                                                                                                                  |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `theme get My.slop`                         | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{},"effective":{"accent":"#db6648","surface":"#f7f4eb"}}`                                       |
+| `theme set My.slop …`                       | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{"accent":"#7050ad","surface":"#f5efff"},"effective":{"accent":"#7050ad","surface":"#f5efff"}}` |
+| `theme reset My.slop --token accent`        | `{"defaults":{"accent":"#db6648","surface":"#f7f4eb"},"overrides":{"surface":"#f5efff"},"effective":{"accent":"#db6648","surface":"#f5efff"}}`                    |
+| `theme reset My.slop`                       | The original palette from the first response, with `"overrides":{}`.                                                                                              |
+| `theme export My.slop --output Purple.json` | `/Users/you/Documents/Purple.json` (your path will differ).                                                                                                       |
+| `theme import Other.slop Purple.json`       | The original palette from the first response, assuming the same template.                                                                                         |
 
 This sequence exports after resetting. Export before resetting to keep your custom colors.
 
@@ -106,19 +122,19 @@ A theme file names its template and every color:
 
 ```json
 {
-  "template" : "my-slop",
-  "values" : {
-    "accent" : "#7050ad",
-    "surface" : "#f5efff"
+  "template": "my-slop",
+  "values": {
+    "accent": "#7050ad",
+    "surface": "#f5efff"
   }
 }
 ```
 
 Themes live inside the `.slop` file:
 
-| Part | Purpose |
-| --- | --- |
-| Theme defaults | Immutable, from the author's `slop.ts` when the template is built. |
+| Part            | Purpose                                                             |
+| --------------- | ------------------------------------------------------------------- |
+| Theme defaults  | Immutable, from the author's `slop.ts` when the template is built.  |
 | Theme overrides | The colors this writable document changed, saved with its contents. |
 
 Only declared colors can change, and a document stores only the ones that differ from the template's. An open window applies accepted CLI changes at once; unknown colors and invalid values are refused. Fonts and layout stay authored. Registered masters and generated templates remain unchanged.

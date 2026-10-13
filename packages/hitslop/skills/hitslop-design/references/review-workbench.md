@@ -1,7 +1,7 @@
 # Review a slop
 
-Run `bun run dev` from an initialized project. Preview uses disposable memory;
-refresh restores initial values. Restart after changing source. Inspect the
+Run `bun run dev` from an initialized project. Preview uses a disposable document;
+refresh restores initial values. Component and CSS HMR preserve edits; definition changes reset them. Inspect the
 manifest-sized editor, a narrow window, keyboard focus, and open Bits UI menus.
 
 Exercise empty, typical, and long-content states through normal controls. Keep

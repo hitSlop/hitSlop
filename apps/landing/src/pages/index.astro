@@ -25,7 +25,7 @@ const faqs = [
   { question: "What is a .slop?", answer: "A tiny app or a living document, packaged as a single SQLite file. Open it, move it, share it, keep it. The interface and your data travel together." },
   { question: "Can I open a .slop without hitSlop?", answer: "You can look inside it: a .slop is a standard SQLite database, so any SQLite tool opens it and shows its tables. To use or edit it, open it in hitSlop or change it through the CLI. hitSlop is MIT-licensed, so the format is all in the open." },
   { question: "What comes with the app?", answer: `A whole collection: ${count} tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond, and we keep releasing more. Pick one from Templates and hitSlop makes you your own copy.` },
-  { question: "Where does my data live?", answer: "In the document on your Mac: one SQLite file, with the app and everything you save inside it. No account, no server, and every included template works offline." },
+  { question: "Where does my data live?", answer: "In the document on your Mac: one SQLite file, with the app and everything you save inside it. No account or document server. Apps that use online media still need the network." },
   { question: "Can an AI edit it?", answer: "Yes. A coding agent can build a slop from scratch, and it can change the tasks, notes and numbers in a document through the hitSlop CLI. It edits the same live document you have open." },
   { question: "Can a tiny app go fullscreen?", answer: "Yes, when its author enables fullscreen, as Checklist and Hourglass do. Use the green fullscreen control or View ▸ Enter Full Screen. Flexible windows fill the screen; fixed or shaped designs scale to fit on a black backdrop. You can also pin a desktop window Always on Top." },
   { question: "Can I change how a slop looks?", answer: "Yes. Open the theme panel in any slop’s window to pick your own colors, and import or export a palette to share it. Your agent can do the same with the theme commands. Colors stay with that document. Authors change layout and structure in source and build a new version." },
@@ -184,7 +184,7 @@ const faqs = [
           <p class="kicker">Small files. Big ideas.</p>
           <h2 class="headline" id="final-title">Put a tiny app on your desktop.</h2>
           <a class="button button-primary final-download" href={SITE_LINKS.download} data-burst={JSON.stringify(burst)}><AppleIcon /> Download for Mac</a>
-          <p class="small-print">Free &amp; open source · macOS 15.2+ on Apple silicon · Signed &amp; notarized · Live collaboration, Windows + iOS coming soon</p>
+          <p class="small-print">Free &amp; open source · macOS 15.2+ on Apple silicon · Signed &amp; notarized · Live collaboration coming soon</p>
         </div>
         <div class="final-dock" aria-hidden="true">
           <span>🍅</span><span>☑️</span><span class="app"><img src="/assets/appicon-256.webp" width="96" height="96" alt="" loading="lazy" /></span><span>🐟</span><span>📻</span>

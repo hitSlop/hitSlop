@@ -79,7 +79,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `bun` | SDK, shell and release tests over SDK WASM; up to four isolated file workers |
 | `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |
 | `render` | Engine-only artwork and export tests with engine/evaluator and shell, on macOS or Linux; one file worker, 120-second default test deadline |
-| `rust` | `cargo fmt --all -- --check`, Clippy with warnings denied (the workspace and the WASM adapter), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
+| `rust` | `cargo fmt --all -- --check`, Clippy with warnings denied (the workspace, plus the WASM adapter on Linux or release runs), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check (and build, on release) |
 | `packed` | Engine/evaluator, shell, durable-browser WASM and skills, then `tests/packed` (120-second default deadline), when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | Swift formatting, native bindings, shell and fixtures, then one serial `swift test` invocation after compilation, with an isolated temporary directory and registry. Requires at least one executed test. Filtered runs (`verify swift --filter X`) pass Swift’s filters through, including `name\(` patterns |
@@ -466,7 +466,7 @@ check saved-state capture, color, selectable text and editor isolation. App acce
 launches the actual app with no `HITSLOP_EVALUATOR`, executes the document fixture's
 insert, row-ID and remove commands through its live owner, and checks saved
 state after reopening. `apple:build` runs this against the raw
-Xcode product before adding the standalone renderer; release artifact acceptance runs
+Xcode product before copying it to `generated/app`; release artifact acceptance runs
 it against the packaged app. Test-runner environment overrides cannot mask a missing
 bundled evaluator in these checks.
 The evaluator prelude and page context dispatch by runtime ABI; corpus replay uses the

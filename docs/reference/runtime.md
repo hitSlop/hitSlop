@@ -234,7 +234,7 @@ services. Text edits are batches: a binding's `apply` carries a `set` with `from
 `wire/core.rs`. Requests carry no correlation ID or view token: WebKit
 correlates promises and Swift supplies its own lifecycle view token alongside the
 request after checking the sender. The page never chooses that token.
-The host enters the shell through `__slop` for publications, capture and lifecycle.
+The host enters the shell through `__slop` for publications and lifecycle.
 Apps use the restricted `ctx.document` facade and its explicit durability barrier,
 `flush()`. The initial owner state includes effective theme values, and ordered publications include
 them when they change (defaults come from `slop.ts`'s `theme`). Authored layout stays in CSS.

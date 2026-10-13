@@ -178,5 +178,5 @@ quiet unless ongoing motion communicates a real function.
 - Check normal/reduced motion, rapid retargeting, and capture during animation.
 
 Runtime packages remain source-free: never ship authoring skills, editable CSS,
-dependencies, build caches, or seed stores inside a `.slop`. The builder alone
-adds the canonical document skill.
+dependencies, build caches, or seed stores inside a `.slop`. Agent guidance ships
+with the CLI.
