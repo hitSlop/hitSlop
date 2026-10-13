@@ -107,9 +107,16 @@ export class PreviewOwners {
     const session = this.sessions.get(client);
     if (!session) return;
     this.sessions.delete(client);
+    // Only a rebuild or the server's close waits for this, and a rejection nobody observes ends
+    // the CLI. A close that fails (its directory could not be removed) is reported where it starts.
     const closing = session
       .then(
-        (session) => session.close(),
+        (session) =>
+          session
+            .close()
+            .catch((error) =>
+              console.error(`Could not close the preview ${session.path}: ${error}`),
+            ),
         () => {},
       )
       .finally(() => this.closing.delete(closing));

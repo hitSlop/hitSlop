@@ -1,8 +1,9 @@
 // The preview adapter writes frames to its owner's stdin without waiting. A frame larger than a
 // pipe holds, written after the owner stopped reading, is a write that rejects with EPIPE: left
-// unobserved it ends the CLI (bun test fails the running test) and the page is never told.
+// unobserved it ends the CLI (bun test fails the running test) and the page is never told. Closing
+// a preview nobody waits for is the same: a failure there is reported, not left unobserved.
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ViteDevServer, WebSocketClient } from "vite";
@@ -61,6 +62,8 @@ if (process.argv.includes("--preview-owner")) {
   const { pid } = (await owners.diagnostics())[0]!;
   return {
     owners,
+    root,
+    pid,
     resourceToken,
     fatal: fatal.promise,
     request: (request: unknown) =>
@@ -95,6 +98,24 @@ test("an attachment read the owner cannot receive is rejected, not left to time 
     const error = await page.owners.resource(page.resourceToken, large, 0, 0).catch((e) => e);
     expect(String(error)).toContain("EPIPE");
   } finally {
+    await page.close();
+  }
+});
+
+test.skipIf(process.getuid?.() === 0)("a preview that cannot be closed is reported, not left unobserved", async () => {
+  const page = await connect();
+  const reported = Promise.withResolvers<string>();
+  const report = console.error;
+  console.error = (...args: unknown[]) => reported.resolve(args.join(" "));
+  try {
+    // Nobody waits for this close, and without write access to its parent it cannot remove the
+    // session's directory. The owner ending is what starts it.
+    await chmod(page.root, 0o500);
+    process.kill(page.pid, "SIGKILL");
+    expect(await reported.promise).toContain("Could not close the preview");
+  } finally {
+    console.error = report;
+    await chmod(page.root, 0o700);
     await page.close();
   }
 });
