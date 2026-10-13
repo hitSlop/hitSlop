@@ -166,6 +166,31 @@ test("a capture keeps the stylesheets, images and fonts only it imports", async 
   } finally { await rm(root, { recursive: true, force: true }); }
 }, 60000);
 
+test("captures order stylesheets as the editor imports them, wherever the project is", async () => {
+  const programs: string[] = [];
+  // The same project in two places builds the same capture programs.
+  for (const place of ["a", join("another", "checkout")]) {
+    const root = await mkdtemp(join(process.cwd(), ".build-test-css-order-"));
+    try {
+      const source = join(root, place, "source");
+      const options = await definitionFixture(source);
+      // Equal-strength rules for one element: the later stylesheet wins. The editor imports
+      // 1, Panel (which imports 2), 3 and 4; the export imports 5, then 1 again.
+      for (const n of [1, 2, 3, 4, 5]) await writeFile(join(source, `s${n}.css`), `.s${n}{--winner:${n}}`);
+      await writeFile(join(source, "Panel.svelte"), '<script>import "./s2.css";</script><p>Panel</p>');
+      await writeFile(join(source, "App.svelte"), '<script>import "./s1.css"; import Panel from "./Panel.svelte"; import "./s3.css"; import "./s4.css";</script><Panel/>');
+      await writeFile(join(source, "Export.svelte"), '<script>import "./s5.css"; import "./s1.css";</script><p class="s1 s2 s3 s4 s5">Export</p>');
+      const { outputs } = await buildGraphs(source, options);
+      const context: Record<string, any> = {};
+      runInNewContext(new TextDecoder().decode(outputs.definition.get("export.js")!.bytes), context);
+      const { css } = JSON.parse(context.__slopCapture(JSON.stringify({kind:"export", width:320, height:240, snapshot:{title:"Saved"}, theme:{}}))).frames[0];
+      expect([...css.matchAll(/--winner:(\d)/g)].map((match: string[]) => Number(match[1]))).toEqual([1, 2, 3, 4, 5]);
+      programs.push(["icon.js", "preview.js", "export.js"].map((key) => new TextDecoder().decode(outputs.definition.get(key)!.bytes)).join("\n"));
+    } finally { await rm(root, { recursive: true, force: true }); }
+  }
+  expect(programs[1]).toBe(programs[0]!);
+}, 60000);
+
 test("portable asset URLs replace only Vite's import.meta URLs and keep a source map", () => {
   const chunk = 'const e="😀",a=new URL("/assets/media/x.png",import.meta.url).href,b=new URL(`/assets/y.svg`,import.meta.url).href,c=new URL("./z.png",import.meta.url).href,d=new URL("/assets/w.png").href;';
   const result = portableAssetURLs(chunk, "commands.js")!;
@@ -236,7 +261,7 @@ test("separate Vite graphs retain dependencies without leaking metadata or comma
     expect(built.dependencies.definition).toContain(join(source,"schema.ts"));
     expect(built.dependencies.definition).not.toContain(join(source,"export.svg"));
     // Each capture build reports what it read itself, independent of the editor graph.
-    for (const name of ["Export.svelte","export.svg","Preview.svelte","schema.ts","theme.css"])
+    for (const name of ["Export.svelte","export.svg","Preview.svelte","theme.css"])
       expect(built.dependencies.capture).toContain(join(source,name));
     expect(built.dependencies.capture).not.toContain(join(source,"commands.ts"));
     const again=await buildDefinition(source,join(root,"again"),options);

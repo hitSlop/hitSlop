@@ -1,7 +1,7 @@
 import { build, parseSync, transformWithOxc, Visitor, type ParseResult, type Plugin } from "vite";
 import { compile, compileModule, parse } from "svelte/compiler";
 import { analyze } from "periscopic";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import postcss from "postcss";
 import { readFile } from "node:fs/promises";
 import { refusePageRole, refuseRoleImport, type AppRoles } from "./app-vite";
@@ -11,14 +11,14 @@ import { portableAssetURLs } from "./asset-url-transform";
 import { declaresModuleState } from "./capture-state";
 
 /** What a capture build reads besides its own graph: the editor build's emitted resources
- * and the stylesheets every capture imports first. */
+ * and its stylesheets, which every capture imports first in the editor's order. */
 export type CaptureInputs = {
   source: string;
   roles: AppRoles;
   sdk: string;
   ui: Map<string, Emitted>;
   options: DefinitionBuildOptions;
-  globalStyles: string[];
+  editorStyles: string[];
 };
 type Binding = [specifier: string, name: string];
 type Resolve = (specifier: string, importer: string) => Promise<string | undefined>;
@@ -33,11 +33,18 @@ const browserGlobals = [
   "Worker",
 ];
 
+/** Every graph refuses the host's own runtime: the document engine and the SDK's sibling page
+ * shell, not an author folder that happens to be named shell. */
+export function refuseHostRuntime(id: string, sdk: string, error: (message: string) => never) {
+  if (id.includes("/node_modules/loro-crdt/") || id.startsWith(join(dirname(sdk), "shell") + "/"))
+    error(`Embedded host runtime rejected: ${id}`);
+}
+
 /** Each capture closure is a classic synchronous script; it never mounts the editor. Its
  * build inspects the authored modules it compiles, before SSR erases unsupported calls. */
 export async function buildCapture(
   role: "widget" | "icon" | "preview" | "export",
-  { source, roles, sdk, ui, options, globalStyles }: CaptureInputs,
+  { source, roles, sdk, ui, options, editorStyles }: CaptureInputs,
 ) {
   const component = roles[role];
   if (!component) return;
@@ -144,7 +151,7 @@ export async function buildCapture(
         return 'throw Error("Node services are unavailable in synchronous capture rendering");';
       if (styles.has(id)) return styles.get(id);
       if (id === entry)
-        return `${globalStyles.map((path) => `import ${JSON.stringify(path)};`).join("\n")}
+        return `${editorStyles.map((path) => `import ${JSON.stringify(path)};`).join("\n")}
 import Component from ${JSON.stringify(component)};
 import {${renderer}} from ${JSON.stringify(join(sdk, role === "widget" ? "app/widget-render.ts" : "app/capture-render.ts"))};
 globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCaptureCSS)(json);`;
@@ -199,8 +206,10 @@ globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCapt
       if (runes) return compileModule(js, { filename: id, generate: "server", dev: false }).js;
     },
     generateBundle() {
-      for (const id of this.getModuleIds())
+      for (const id of this.getModuleIds()) {
         if (!id.startsWith("\0") && !styles.has(id)) dependencies.add(id.split("?", 1)[0]!);
+        refuseHostRuntime(id, sdk, (message) => this.error(message));
+      }
     },
   };
   const refuse = (found: Iterable<string>) => {

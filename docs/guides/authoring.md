@@ -40,7 +40,9 @@ adding a template and choosing which templates ship.
   data from the `snapshot` prop and keep editor controls and effects out of it. All capture
   views must render synchronously without browser APIs.
 - Import optional `hitslop/base.css` before app styles for low-specificity form, focus
-  and reduced-motion defaults. App CSS still owns typography, layout and palette.
+  and reduced-motion defaults. App CSS still owns typography, layout and palette. Of two
+  equally specific rules, the later import wins; captures load the editor's stylesheets in
+  its import order, then their own.
 - Capture views never change saved state to prepare a view.
 
 For shared editing controls in static views, follow the platform's

@@ -10,7 +10,7 @@ import {
 } from "./app-vite";
 import { portableAssetURLs } from "./asset-url-transform";
 import { resourceKey, bytesOf, typeOf, type Emitted } from "./definition-resources";
-import { buildCapture } from "./capture-build";
+import { buildCapture, refuseHostRuntime } from "./capture-build";
 export type DefinitionBuildOptions = { alias?: Record<string, string> };
 const virtualEntry = "\0hitslop-definition-entry";
 
@@ -36,25 +36,14 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
   };
   const outputs = { ui: new Map<string, Emitted>(), definition: new Map<string, Emitted>() };
   const referencedUIAssets = new Set<string>();
-  // Captures import every stylesheet of a client graph of all roles, in the order Rolldown
-  // lists that graph's modules: neither import nor role order, and it varies with paths. Only
-  // the same graph reproduces it, so it is built beside the editor and never shipped.
-  const globalStyles = new Set<string>();
-  const allRoles = [
-    roles.view,
-    roles.schema,
-    roles.export,
-    roles.preview,
-    roles.icon,
-    roles.widget,
-    "hitslop/svelte",
-  ]
-    .flatMap((path) => (path ? [`import ${JSON.stringify(path)};`] : []))
-    .join("\n");
+  // Captures import the editor's stylesheets first, in the order of its cascade: depth-first in
+  // import order, each at its first import. A chunk lists its modules in that execution order,
+  // which ui.css follows; the build's module table is a hash order that changes with paths.
+  let editorStyles: string[] = [];
   const previous = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
-    for (const mode of ["definition", "ui", "styles"] as const) {
+    for (const mode of ["definition", "ui"] as const) {
       const headless = mode === "definition";
       const boundary: Plugin = {
         name: "hitslop-explicit-entry",
@@ -79,7 +68,6 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
         },
         load(id) {
           if (id !== virtualEntry) return;
-          if (mode === "styles") return allRoles;
           return headless
             ? `import app from ${JSON.stringify(roles.metadata)};
 import document from ${JSON.stringify(roles.schema)};
@@ -92,20 +80,8 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
         generateBundle() {
           const clean = (id: string) => id.split("?", 1)[0]!;
           for (const id of this.getModuleIds()) {
-            if (!id.startsWith("\0")) inputs[mode === "styles" ? "capture" : mode].add(clean(id));
-            if (
-              mode === "styles" &&
-              !id.startsWith("\0") &&
-              !id.includes("?") &&
-              id.endsWith(".css")
-            )
-              globalStyles.add(id);
-            // The host's own runtime, not an author folder that happens to be named shell.
-            if (
-              id.includes("/node_modules/loro-crdt/") ||
-              id.startsWith(join(dirname(sdk), "shell") + "/")
-            )
-              this.error(`Embedded host runtime rejected: ${id}`);
+            if (!id.startsWith("\0")) inputs[mode].add(clean(id));
+            refuseHostRuntime(id, sdk, (message) => this.error(message));
           }
         },
       };
@@ -157,7 +133,6 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
       // The returned output is the complete emit, including those late assets.
       const result = await build(config);
       if ("on" in result) throw new Error("Definition builds cannot run in watch mode");
-      if (mode === "styles") continue;
       for (const output of Array.isArray(result) ? result : [result]) {
         for (const item of output.output) {
           const bytes = bytesOf(item.type === "chunk" ? item.code : item.source);
@@ -175,6 +150,9 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
             ).viteMetadata;
             if (!metadata) throw new Error("Vite emitted a UI chunk without asset metadata");
             for (const key of metadata.importedAssets) referencedUIAssets.add(key);
+            editorStyles = item.moduleIds.filter(
+              (id) => !id.startsWith("\0") && !id.includes("?") && id.endsWith(".css"),
+            );
           }
         }
       }
@@ -186,7 +164,7 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
         sdk,
         ui: outputs.ui,
         options,
-        globalStyles: [...globalStyles],
+        editorStyles,
       });
       if (!capture) continue;
       outputs.definition.set(`${role}.js`, {
