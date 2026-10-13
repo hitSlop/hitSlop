@@ -20,7 +20,11 @@ export async function buildDefinition(
   const input = await stageResources(source, resolve(stage), graphs, declaration);
   return {
     input,
-    dependencies: { ui: [...graphs.inputs.ui], definition: [...graphs.inputs.definition] },
+    dependencies: {
+      definition: [...graphs.inputs.definition],
+      ui: [...graphs.inputs.ui],
+      capture: [...graphs.inputs.capture],
+    },
     uiBytes: graphs.outputs.ui.get("ui.js")!.bytes.length,
   };
 }

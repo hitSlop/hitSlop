@@ -256,23 +256,22 @@ export const app = new Crust("slop", {
     ),
   )
   .add(
-    defineCommand("build", { description: "Build a runtime template on any platform" }, (c) =>
-      c
-        .args(source)
-        .flags({
-          name: "artwork",
-          type: "string",
-          description: "native: render Finder artwork not in artwork/ with hitSlop.app (macOS)",
-        })
-        .action(async ({ args, flags }) => {
-          await (await import("./authoring")).build(args.source, flags.artwork);
+    defineCommand(
+      "build",
+      {
+        description:
+          "Build a runtime template, rendering missing Preview and Icon artwork on macOS",
+      },
+      (c) =>
+        c.args(source).action(async ({ args }) => {
+          await (await import("./authoring")).build(args.source);
         }),
     ),
   )
   .add(
     defineCommand(
       "register",
-      { description: "Build with native artwork and register an immutable local template (macOS)" },
+      { description: "Build and register an immutable local template" },
       (c) =>
         c.args(source).action(async ({ args }) => {
           await (await import("./authoring")).register(args.source);

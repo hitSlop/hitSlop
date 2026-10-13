@@ -7,7 +7,6 @@ export type { Destination, InsertResult, RowRef } from "./handle-types";
 import type { Scope } from "./abi";
 import type { At, Handle as ModeHandle } from "./handle-types";
 import { fromDescriptor } from "./descriptor";
-import { documentFor } from "./app/context";
 /**
  * Descriptors are data. Command bodies run only in the owner's restricted evaluator.
  * Only kinds the Rust core, the SDK and a fixture implement are offered here; a new
@@ -198,12 +197,14 @@ export const s = {
 /** A field's write handle. Writes resolve once `current` shows them; inside `change()`
  * the same handles collect synchronously. */
 export type Handle<N extends Node> = ModeHandle<N, "live">;
-/** What `defineDocument` returns: the descriptor, and, once the app is mounted, the live
- * document. Components `import doc from "./schema"` and read `doc.current`. */
-export type DocumentDefinition<N extends ObjectNode> = Definition<N> & LiveDocument<N>;
+/** What `defineDocument` returns: definition data, never a document. Editor components
+ * acquire theirs with `const doc = getDocument(schema)` from `hitslop/svelte`; Preview,
+ * Export, Icon and Widget receive the saved snapshot as props (`CaptureProps`). */
+export type DocumentDefinition<N extends ObjectNode> = Definition<N>;
 /** The `tx` a shared write takes: the page passes it with `doc.change(fn)` and a command
- * with `run({ tx })`, so one function serves both. */
+ * with `run({ tx })`, so one function serves both: `(tx: Tx<typeof schema>) => …`. */
 export type Tx<D extends Definition<ObjectNode>> = Scope<D["descriptor"]>;
+/** The reactive document `getDocument(schema)` gives an editor component. */
 export interface LiveDocument<N extends ObjectNode> {
   /** Immutable snapshot. Unchanged rows keep their identity. */
   readonly current: Value<N>;
@@ -226,21 +227,11 @@ export function defineDocument<P extends Record<string, Node>>(
     ? [options?: { initial?: NoInfer<Input<ObjectNode<P>>> }]
     : [options: { initial: NoInfer<Input<ObjectNode<P>>> }]
 ): DocumentDefinition<ObjectNode<P>> {
-  type Live = LiveDocument<ObjectNode<P>>;
-  const definition = { ...fromDescriptor(s.object(properties)) };
-  // Non-enumerable, and read only once mounted: build tools see just the descriptor.
-  const live = () => documentFor(definition) as Live;
+  // The starting value is read only by the definition build; not page API. Non-enumerable,
+  // so build tools see just the descriptor.
   return Object.freeze(
-    Object.defineProperties(definition, {
-      // The starting value, read only by the definition build; not page API.
-      initial: { value: options[0]?.initial ?? {} },
-      current: { get: () => live().current },
-      fields: { get: () => live().fields },
-      at: { get: () => live().at },
-      change: { value: ((callback) => live().change(callback)) satisfies Live["change"] },
-      flush: { value: () => live().flush() },
-      undo: { value: () => live().undo() },
-      redo: { value: () => live().redo() },
+    Object.defineProperty({ ...fromDescriptor(s.object(properties)) }, "initial", {
+      value: options[0]?.initial ?? {},
     }),
   ) as DocumentDefinition<ObjectNode<P>>;
 }

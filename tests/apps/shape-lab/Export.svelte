@@ -1,8 +1,8 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type schema from "./schema";
   import variant from "./variant";
-  import type { CaptureMode } from "hitslop/svelte";
-  let { mode }: { mode: Exclude<CaptureMode, "icon"> } = $props();
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  let { snapshot, mode }: CaptureProps<typeof schema> & { mode: Exclude<CaptureMode, "icon"> } = $props();
 </script>
 
 <article class="shape-lab-export">
@@ -10,7 +10,7 @@
   <span class="shape-lab-corner shape-lab-bl">BL</span><span class="shape-lab-corner shape-lab-br">BR</span>
   <p class="shape-lab-caption">SHAPE LAB / {mode.toUpperCase()}</p>
   <h1>Four corners. One rectangle.</h1><p>{variant.name}</p>
-  <p class="shape-lab-export-note">{doc.current.note}</p>
-  <p>{doc.current.hits} accepted clicks · Last: {doc.current.lastTarget}</p>
+  <p class="shape-lab-export-note">{snapshot.note}</p>
+  <p>{snapshot.hits} accepted clicks · Last: {snapshot.lastTarget}</p>
   <p>Window geometry must not cut this sheet.</p>
 </article>

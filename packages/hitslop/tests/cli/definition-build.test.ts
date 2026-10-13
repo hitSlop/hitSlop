@@ -7,6 +7,7 @@ import { buildDefinition } from "../../src/cli/definition-build";
 import { definitionFixture } from "./definition-fixture";
 import { runInNewContext } from "node:vm";
 import { buildGraphs } from "../../src/cli/definition-config";
+import { portableAssetURLs } from "../../src/cli/asset-url-transform";
 
 test("capture roles require icon and preview while export is independent and optional", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-capture-roles-"));
@@ -38,7 +39,7 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
   try {
     const source = join(root, "source");
     const options = await definitionFixture(source);
-    const view = '<script>import doc from "./schema"; let {family}=$props();</script><h1>{doc.current.title} {family}</h1><svg width="16" height="16"><rect width="16" height="16" fill="var(--slop-accent)"/><text>{doc.current.title}</text></svg>';
+    const view = '<script>let {snapshot,family}=$props();</script><h1>{snapshot.title} {family}</h1><svg width="16" height="16"><rect width="16" height="16" fill="var(--slop-accent)"/><text>{snapshot.title}</text></svg>';
     await writeFile(join(source, "Widget.svelte"), view);
     const bundle = async () => new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("widget.js")!.bytes);
     const script = await bundle();
@@ -55,7 +56,7 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
     expect(result.fonts[0].family).toBe("Fixture");
     expect(Buffer.from(result.fonts[0].bytes, "base64")).toEqual(await readFile(join(source, "font.woff2")));
     expect(render(script, "Another document").frames[0].html).not.toContain("Saved");
-    await writeFile(join(source, "Icon.svelte"), '<script>import doc from "./schema";</script><svg width="512" height="512"><rect width="512" height="512" fill="var(--slop-accent)"/><text>{doc.current.title}</text></svg>');
+    await writeFile(join(source, "Icon.svelte"), '<script>let {snapshot}=$props();</script><svg width="512" height="512"><rect width="512" height="512" fill="var(--slop-accent)"/><text>{snapshot.title}</text></svg>');
     const iconScript = new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("icon.js")!.bytes);
     const iconContext: Record<string, any> = {};
     runInNewContext(iconScript, iconContext);
@@ -66,7 +67,7 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
     expect(icon.frames[0].html).toContain('fill="#123456"');
     const literal = JSON.parse(iconContext.__slopCapture(JSON.stringify({kind:"icon",width:512,height:512,snapshot:{title:"var(--slop-accent)"},theme:{accent:"#123456"}})));
     expect(literal.frames[0].html).toContain("var(--slop-accent)</text>");
-    await writeFile(join(source, "Export.svelte"), '<script>import doc from "./schema";</script><p>document {doc.current.title}</p>');
+    await writeFile(join(source, "Export.svelte"), '<script>let {snapshot}=$props();</script><p>document {snapshot.title}</p>');
     expect((await buildGraphs(source, options)).outputs.definition.has("export.js")).toBe(true);
     await writeFile(join(source, "Export.svelte"), '<script>const title = document.title;</script><p>{title}</p>');
     await expect(buildGraphs(source, options)).rejects.toThrow("uses document");
@@ -82,7 +83,7 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
     await writeFile(join(source, "helper.ts"), 'export const format = value => new Intl.NumberFormat("en").format(value); export const trim = value => value.trim();');
     await writeFile(join(source, "Export.svelte"), '<script>import {trim} from "./helper"; const document = " Saved ";</script><p>{trim(document)}</p>');
     expect((await buildGraphs(source, options)).outputs.definition.has("export.js")).toBe(true);
-    await writeFile(join(source, "Export.svelte"), '<script>import {attachments} from "hitslop/svelte";</script><img src={attachments.url("photo")} alt="Saved photo"/><img src={attachments.url("photo")} alt="Same photo"/>');
+    await writeFile(join(source, "Export.svelte"), '<script>let {attachmentURL}=$props();</script><img src={attachmentURL("photo")} alt="Saved photo"/><img src={attachmentURL("photo")} alt="Same photo"/>');
     const attached = new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("export.js")!.bytes);
     const attachedContext: Record<string, any> = {};
     runInNewContext(attached, attachedContext);
@@ -94,22 +95,86 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
     expect(image.frames[0].html).toContain('data-slop-capture="static"');
     for (const resources of [{}, {photo:null}, {photo:""}, null])
       expect(() => attachedContext.__slopCapture(JSON.stringify({...request,resources}))).toThrow("missing or is not a supported image");
-    for (const method of ['read("photo")', 'import(null,()=>{})']) {
-      await writeFile(join(source, "Export.svelte"), `<script>import {attachments} from "hitslop/svelte"; attachments.${method};</script><p>Read only</p>`);
-      const forbidden = new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("export.js")!.bytes);
-      runInNewContext(forbidden, attachedContext);
-      expect(() => attachedContext.__slopCapture(JSON.stringify(request))).toThrow("read-only");
-    }
     await writeFile(join(source, "Export.svelte"), "<p>Capture</p>");
-    for (const write of ['doc.current.title="bad"', 'doc.change(()=>{})', 'doc.fields.title.set("bad")']) {
-      await writeFile(join(source, "Widget.svelte"), view.replace('let {family}', `${write}; let {family}`));
-      const mutation = await bundle();
-      expect(() => render(mutation, "Original")).toThrow();
-    }
+    await writeFile(join(source, "Widget.svelte"), view.replace("$props();", '$props(); snapshot.title="bad";'));
+    const mutation = await bundle();
+    expect(() => render(mutation, "Original")).toThrow();
     await writeFile(join(source, "Widget.svelte"), '{#await Promise.resolve(1) then value}<p>{value}</p>{/await}');
     await expect(bundle()).rejects.toThrow("synchronous");
   } finally { await rm(root, {recursive: true, force: true}); }
 }, 60000);
+test("captures refuse editor-only bindings however they are imported, not names that match them", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-capture-bindings-"));
+  try {
+    const source = join(root, "source");
+    const options = await definitionFixture(source);
+    const graphs = () => buildGraphs(source, options);
+    // Local names and type imports are harmless, even when they match editor helpers.
+    await writeFile(join(source, "names.ts"), "export const draft = (value: string) => value.trim(); export function capture(document: string) { return document; } export const notify = { motion: 1 };");
+    await writeFile(join(source, "Export.svelte"), '<script lang="ts">import type { WidgetProps } from "hitslop/svelte"; import { type AttachmentRef } from "hitslop/svelte"; import { draft, capture, notify } from "./names"; const document = { title: " Saved " }; const motion = { draft: capture(document.title) }; const shown: Partial<WidgetProps> & { ref?: AttachmentRef } = { document: 1, window() { return 2; } } as never;</script><p>{draft(motion.draft)} {notify.motion} {shown.family ?? ""}</p>');
+    expect((await graphs()).outputs.definition.has("export.js")).toBe(true);
+    // Editor-only runtime is refused wherever it enters, under any local name.
+    await writeFile(join(source, "lib.ts"), 'export { notify as tell } from "hitslop/svelte"; export * from "hitslop/svelte"; export * as runtime from "hitslop/svelte"; export const trim = (value: string) => value.trim();');
+    for (const [script, reason] of [
+      ['import { notify as tell } from "hitslop/svelte"; tell("Saved");', "Export.svelte: notify"],
+      ['import { attachments } from "hitslop/svelte"; console.log(attachments);', "Export.svelte: attachments"],
+      ['import * as runtime from "hitslop/svelte"; runtime.draft;', "Export.svelte: * from hitslop/svelte"],
+      ['import { tell } from "./lib"; tell("Saved");', "Export.svelte: tell"],
+      ['import { motion } from "./lib"; console.log(motion);', "Export.svelte: motion"],
+      ['import { runtime } from "./lib"; console.log(runtime);', "Export.svelte: runtime"],
+      ['import * as lib from "./lib"; lib.trim(" ");', "Export.svelte: * from ./lib"],
+      ['import { onMount as mounted } from "svelte"; mounted(() => {});', "Export.svelte: onMount"],
+      ['import { LookupError } from "hitslop/embed"; console.log(LookupError);', "Export.svelte: LookupError"],
+    ]) {
+      await writeFile(join(source, "Export.svelte"), `<script lang="ts">${script}</script><p>Export</p>`);
+      await expect(graphs()).rejects.toThrow(reason!);
+    }
+    // TypeScript modules: awaits and unbound browser globals, but not shadowed or property names.
+    await writeFile(join(source, "Export.svelte"), '<script lang="ts">import { size } from "./size";</script><p>{size()}</p>');
+    for (const [module, reason] of [
+      ["export const size = () => window.innerWidth;", "size.ts: retained dependency uses window"],
+      ["export const size = () => globalThis.document;", "size.ts: retained dependency uses document"],
+      ["export async function size() { return await Promise.resolve(1); }", "size.ts: await"],
+      ["export const size = (): number => { const document = { width: 2 }; return document.width + ({ navigator: 1 }).navigator; };", undefined],
+    ] as const) {
+      await writeFile(join(source, "size.ts"), module);
+      if (reason) await expect(graphs()).rejects.toThrow(reason);
+      else expect((await graphs()).outputs.definition.has("export.js")).toBe(true);
+    }
+    // Module state reached through an authored re-export is still the editor's.
+    await writeFile(join(source, "ui.svelte.ts"), "export const ui = $state({ tab: 1 });");
+    await writeFile(join(source, "size.ts"), 'export { ui as size } from "./ui.svelte";');
+    await expect(graphs()).rejects.toThrow("imports ui.svelte.ts, whose $state");
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 60000);
+
+test("a capture keeps the stylesheets, images and fonts only it imports", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-capture-assets-"));
+  try {
+    const source = join(root, "source");
+    const options = await definitionFixture(source);
+    await writeFile(join(source, "export.css"), '@font-face{font-family:Capture;src:url("./font.woff2") format("woff2")}p{--capture-only:7px;font-family:Capture}');
+    await writeFile(join(source, "Export.svelte"), '<script>import "./export.css"; import image from "./export.svg";</script><p>Export</p><img src={image} alt="Export image"/><style>p{--component-only:3px}</style>');
+    const { outputs } = await buildGraphs(source, options);
+    const context: Record<string, any> = {};
+    runInNewContext(new TextDecoder().decode(outputs.definition.get("export.js")!.bytes), context);
+    const result = JSON.parse(context.__slopCapture(JSON.stringify({kind:"export", width:320, height:240, snapshot:{title:"Saved"}, theme:{}})));
+    expect(result.frames[0].css).toContain("--capture-only:7px");
+    expect(result.frames[0].css).toContain("--component-only:3px");
+    expect(result.frames[0].html).toContain(`src="data:image/svg+xml;base64,${(await readFile(join(source, "export.svg"))).toString("base64")}"`);
+    expect(result.fonts.map((font: { family: string }) => font.family)).toEqual(expect.arrayContaining(["Capture", "Fixture"]));
+  } finally { await rm(root, { recursive: true, force: true }); }
+}, 60000);
+
+test("portable asset URLs replace only Vite's import.meta URLs and keep a source map", () => {
+  const chunk = 'const e="😀",a=new URL("/assets/media/x.png",import.meta.url).href,b=new URL(`/assets/y.svg`,import.meta.url).href,c=new URL("./z.png",import.meta.url).href,d=new URL("/assets/w.png").href;';
+  const result = portableAssetURLs(chunk, "commands.js")!;
+  expect(result.code).toBe('const e="😀",a="/assets/media/x.png",b="/assets/y.svg",c=new URL("./z.png",import.meta.url).href,d=new URL("/assets/w.png").href;');
+  expect(result.map.sources).toEqual(["commands.js"]);
+  expect(result.map.mappings).not.toBe("");
+  expect(portableAssetURLs('const c=new URL("./z.png",import.meta.url).href;', "commands.js")).toBeUndefined();
+});
+
 const resourceKey = (bytes: Uint8Array, name: string) => `media/${createHash("sha256").update(bytes).digest("hex")}${extname(name)}`;
 
 test("conditional dependency exports preserve require and import semantics", async () => {
@@ -148,8 +213,10 @@ test("separate Vite graphs retain dependencies without leaking metadata or comma
     expect(input.declaration.capabilities).toEqual([]);
     expect(input.roles.style).toBe("ui.css");
     const keys=input.resources.map(r=>r.key);
-    for (const name of ["skin.png","font.woff2","lib/paper.svg","export.svg"])
+    for (const name of ["skin.png","font.woff2","lib/paper.svg"])
       expect(keys).toContain(resourceKey(await readFile(join(source,name)),name));
+    // Static views render in their own captures, which inline what only they import.
+    expect(keys).not.toContain(resourceKey(await readFile(join(source,"export.svg")),"export.svg"));
     expect(keys).not.toContain(resourceKey(await readFile(join(source,"preview.png")),"preview.png"));
     expect(input.artwork.preview).toBe("artwork/preview.png");
     expect(keys).not.toContain("unused.txt");
@@ -163,9 +230,15 @@ test("separate Vite graphs retain dependencies without leaking metadata or comma
     expect(commands).not.toContain(source);
     expect(Object.keys(input.declaration.commands[0]!)).toEqual(["name", "description", "args"]);
     expect(built.dependencies.ui).toContain(join(source,"App.svelte"));
+    for (const role of ["Export.svelte","Preview.svelte","Icon.svelte"])
+      expect(built.dependencies.ui).not.toContain(join(source,role));
     expect(built.dependencies.ui).toContain(join(source,"font.woff2"));
     expect(built.dependencies.definition).toContain(join(source,"schema.ts"));
     expect(built.dependencies.definition).not.toContain(join(source,"export.svg"));
+    // Each capture build reports what it read itself, independent of the editor graph.
+    for (const name of ["Export.svelte","export.svg","Preview.svelte","schema.ts","theme.css"])
+      expect(built.dependencies.capture).toContain(join(source,name));
+    expect(built.dependencies.capture).not.toContain(join(source,"commands.ts"));
     const again=await buildDefinition(source,join(root,"again"),options);
     expect(again.input).toEqual(input);
     const entry = await readFile(join(source,"slop.ts"),"utf8");
@@ -207,7 +280,7 @@ test("a declaration without commands is evaluated but stores no command program"
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);
 
-test("Widget.svelte is a dedicated UI role and scheduling requires that role", async () => {
+test("Widget.svelte is a dedicated capture role and scheduling requires that role", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));
   try {
     const source = join(root, "source"), stage = join(root, "stage");
@@ -218,7 +291,8 @@ test("Widget.svelte is a dedicated UI role and scheduling requires that role", a
     await writeFile(join(source, "Widget.svelte"), '<script lang="ts">import art from "./export.svg"; let {family,width,height} = $props();</script><img src={art} alt=""/><p>{family} {width}×{height}</p>');
     const built = await buildDefinition(source, stage, options);
     expect(built.input.declaration.views.widget).toEqual({refreshMinutes:30});
-    expect(built.dependencies.ui).toContain(join(source, "Widget.svelte"));
+    expect(built.dependencies.ui).not.toContain(join(source, "Widget.svelte"));
+    expect(built.dependencies.capture).toContain(join(source, "Widget.svelte"));
     expect(built.dependencies.definition).not.toContain(join(source, "Widget.svelte"));
     await writeFile(join(source, "slop.ts"), entry);
     expect((await buildDefinition(source, stage, options)).input.declaration.views.widget).toEqual({});
@@ -296,7 +370,7 @@ test("headless declarations fail at the actual import or initialization boundary
       await writeFile(join(source,"commands.ts"),actions.replace("run({tx},args)", run));
       await expect(buildDefinition(source,stage,options)).rejects.toThrow("must be synchronous");
     }
-    await writeFile(join(source,"commands.ts"),actions.replace("defineCommands(doc,", "defineCommands({descriptor:doc.descriptor},"));
+    await writeFile(join(source,"commands.ts"),actions.replace("defineCommands(schema,", "defineCommands({descriptor:schema.descriptor},"));
     await expect(buildDefinition(source,stage,options)).rejects.toThrow("must pass the schema.ts document");
     await writeFile(join(source,"commands.ts"),actions);
     const entry=await readFile(join(source,"slop.ts"),"utf8");

@@ -3,7 +3,6 @@ import { expect, test } from "bun:test";
 import { evaluate } from "../../src/shell/commands";
 import { defineDocument, s, type CommandContext } from "hitslop";
 import { defineCommands } from "../../src/sdk/commands";
-import { commandSet } from "../../src/sdk/command-set";
 const doc = defineDocument({ tasks: s.list(s.object({ text: s.text(), done: s.boolean({ default: false }) })) });
 const request = (args: unknown) => ({ value: { tasks: [{ $id: "a", text: "Walk", done: true }] }, descriptor: doc.descriptor, now: 0, seed: [1, 2, 3, 4], args });
 test("scalar IDs address rows and arguments and snapshots are immutable", () => {
@@ -13,13 +12,6 @@ test("scalar IDs address rows and arguments and snapshots are immutable", () => 
     ctx.tx.fields.tasks.item(args.task).done.set(false);
   });
   expect(intents).toEqual([{ type: "set", path: ["tasks", { id: "a" }, "done"], value: false }]);
-});
-test("commands use their supplied context instead of the mounted document", () => {
-  for (const field of ["current", "fields"] as const) {
-    const set = defineCommands(doc, { probe: { description: "Probe", args: {}, run() { void doc[field]; } } });
-    expect(() => evaluate(request({}), commandSet(set)!.specs.probe!.run)).toThrow("Inside a command, use ctx.current and ctx.tx");
-    expect(() => doc.current).toThrow("Requires a mounted");
-  }
 });
 test("untyped commands reject noncallable, async and generator implementations", () => {
   for (const run of [null, 7, async () => 1, function*() { yield 1; }, async function*() { yield 1; }])

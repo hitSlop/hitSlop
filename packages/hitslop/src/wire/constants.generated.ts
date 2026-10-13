@@ -24,5 +24,5 @@ export const RowIdRule = {"characters":"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcd
 export const CoreErrorCodes = ["type_mismatch","out_of_range","path_not_found","invalid_key","exists","duplicate_id","invalid_request","invalid_id","invalid_path","invalid_schema","too_large","stale_base","invalid_bytes","missing_dependencies","engine_error","invalid_shape","requires_update","is_template","refused"] as const;
 export const PackageFormat = 1 as const;
 export const RuntimeABI = 1 as const;
-export const HelperProtocol = {"version":1} as const;
+export const EngineProtocol = {"version":1} as const;
 export const OutcomeCodes = ["rejected","owner_replaced","closing","save_failed","owner_invalidated","unknown_outcome"] as const;

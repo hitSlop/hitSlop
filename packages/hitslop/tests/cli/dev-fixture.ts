@@ -10,8 +10,9 @@ export async function createFixture(repository: string, source: string) {
     join(source, "Child.svelte"),
     `
 <script lang="ts">
-  import {bindText} from 'hitslop/svelte';
-  import doc from './schema';
+  import {bindText, getDocument} from 'hitslop/svelte';
+  import schema from './schema';
+  const doc = getDocument(schema);
 </script>
 <input aria-label="Document title" use:bindText={doc.fields.title} />
 <output data-title>{doc.current.title}</output>
@@ -23,12 +24,13 @@ export async function createFixture(repository: string, source: string) {
 <script lang="ts">
   import './styles.css';
   import Circle from '@lucide/svelte/icons/circle';
-  import doc from './schema';
+  import schema from './schema';
   import {local} from './probe.svelte';
-  const addRow = ({text}: {text: string}) => doc.fields.tasks.insert({text});
-  import {attachments} from 'hitslop/svelte';
-  (globalThis as any).__devProbe = {doc, addRow, attachments};
+  import {attachments, getDocument} from 'hitslop/svelte';
   import Child from './Child.svelte';
+  const doc = getDocument(schema);
+  const addRow = ({text}: {text: string}) => doc.fields.tasks.insert({text});
+  (globalThis as any).__devProbe = {doc, addRow, attachments};
   let error = $state('');
   async function add() {
     try { await addRow({text:'Accepted row'}); await doc.flush(); }

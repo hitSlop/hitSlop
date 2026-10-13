@@ -1,6 +1,6 @@
 // Compile-time checks of the async author API (typechecked by `bun run check`). Each
-// definition is also the live document authors import, so the checks use `typeof`.
-import { defineDocument, s, type Input, type Node } from "../../src/sdk/schema";
+// check takes the live document `getDocument(schema)` gives for its definition.
+import { defineDocument, s, type Input, type LiveDocument, type Node } from "../../src/sdk/schema";
 import type { Node as WireNode } from "../../src/wire/descriptor.generated";
 
 // The SDK may narrow Rust's accepted descriptors, but must never invent a wire shape.
@@ -10,7 +10,7 @@ type Assert<T extends true> = T;
 type DescriptorsStayAligned = Assert<Node extends DeepReadonly<WireNode> ? true : false>;
 
 const counters = defineDocument({ count: s.counter() });
-export function counterTypes(doc: typeof counters) {
+export function counterTypes(doc: LiveDocument<typeof counters.descriptor>) {
   const count: number = doc.current.count;
   const valid: Input<typeof counters.descriptor> = { count: 1 };
   // @ts-expect-error A counter's input is a number.
@@ -24,7 +24,7 @@ const checklist = defineDocument({
   title: s.text(),
   tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
 });
-export async function asyncHandleTypes(doc: typeof checklist) {
+export async function asyncHandleTypes(doc: LiveDocument<typeof checklist.descriptor>) {
   const { id } = await doc.fields.tasks.insert({ text: "x", done: false });
   await doc.fields.tasks.item(id).done.set(true);
   await doc.fields.title.set("Packing");
@@ -74,7 +74,7 @@ const defaults = defineDocument({
     owner: s.string(),
   })),
 });
-export async function defaultTypes(doc: typeof defaults) {
+export async function defaultTypes(doc: LiveDocument<typeof defaults.descriptor>) {
   const initial: Input<typeof defaults.descriptor> = { tasks: [{ owner: "Ana" }] };
   await doc.fields.tasks.insert({ owner: "Ana" });
   // @ts-expect-error A field without a default is still required.
@@ -110,7 +110,7 @@ const scalars = defineDocument({
   photo: s.optional(s.object({ id: s.string() })),
   rows: s.list(s.object({ text: s.text(), limit: s.optional(s.integer()) })),
 }, { initial: { currency: "CAD", amount: 0 } });
-export async function scalarTypes(doc: typeof scalars) {
+export async function scalarTypes(doc: LiveDocument<typeof scalars.descriptor>) {
   const currency: "CAD" | "USD" = doc.current.currency;
   const note: string | undefined = doc.current.note;
   // @ts-expect-error An optional value may be absent.
@@ -137,7 +137,7 @@ const collections = defineDocument({
   pixels: s.list(s.string()),
   notes: s.optional(s.text()),
 });
-export async function collectionTypes(doc: typeof collections) {
+export async function collectionTypes(doc: LiveDocument<typeof collections.descriptor>) {
   const count: number | undefined = doc.current.checkins["2026-09-23"];
   const pixel: string | undefined = doc.current.pixels[0];
   const notes: string | undefined = doc.current.notes;
@@ -158,7 +158,10 @@ export async function collectionTypes(doc: typeof collections) {
   return { count, pixel, notes };
 }
 
-export function transactionCapabilities(doc: typeof scalars, lists: typeof collections) {
+export function transactionCapabilities(
+  doc: LiveDocument<typeof scalars.descriptor>,
+  lists: LiveDocument<typeof collections.descriptor>,
+) {
   void doc.change(tx => {
     // @ts-expect-error Previews are live-only, never part of a collector.
     tx.fields.amount.preview(2);
@@ -184,12 +187,26 @@ function documentErrors(error: unknown) {
 import type { Tx } from "../../src/sdk/schema";
 const wins = defineDocument({ wins: s.counter(), title: s.text() });
 const countOne = (tx: Tx<typeof wins>) => tx.fields.wins.increment();
-export function sharedWrites() {
-  void wins.change(countOne);
-  void wins.change(tx => {
+export function sharedWrites(doc: LiveDocument<typeof wins.descriptor>) {
+  void doc.change(countOne);
+  void doc.change(tx => {
     // @ts-expect-error Tx keeps the document's field types.
     tx.fields.title.set(7);
   });
+}
+
+// A definition is data: components acquire the document, captures receive a snapshot.
+export function definitionData() {
+  const descriptor: { kind: "object" } = wins.descriptor;
   // @ts-expect-error The starting value is build input, not page API.
   void wins.initial;
+  // @ts-expect-error A definition has no snapshot; read getDocument(schema).current.
+  void wins.current;
+  // @ts-expect-error A definition has no handles.
+  void wins.fields;
+  // @ts-expect-error A definition cannot resolve snapshot objects.
+  void wins.at;
+  // @ts-expect-error A definition cannot write.
+  void wins.change(countOne);
+  return descriptor;
 }

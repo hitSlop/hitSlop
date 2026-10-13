@@ -2,6 +2,11 @@
 import type { AppMetadata, Capability, Category, Views, WindowDefinition, WindowInput } from "./app.generated";
 import type { Batch, Segment } from "./core.generated";
 
+/**
+ * Where a packed template's artwork image came from.
+ */
+export type ArtworkSource = "supplied" | "rendered" | "absent";
+
 export type ArtworkTarget = "preview" | "icon";
 
 export type AttachmentBytes = { bytes: string, };
@@ -32,12 +37,16 @@ export type EngineReply = EngineSuccess | Failure;
 /**
  * One request on the engine's standard input. Protocol negotiation stays outside it.
  */
-export type EngineRequest = { "method": "attachments.ref", file: string, } | { "method": "attachments.list", documentPath: string, } | { "method": "attachments.read", documentPath: string, attachmentID: string, } | { "method": "theme.export", documentPath: string, } | { "method": "get", documentPath: string, } | { "method": "batch", documentPath: string, batch: Batch, attachments?: Array<string>, } | { "method": "copy", documentPath: string, output: string, } | { "method": "export", documentPath: string, format: ExportFormat, output: string, } | { "method": "templates", } | { "method": "create", from: string, output: string, } | { "method": "inspect", file: string, } | { "method": "artwork.export", file: string, target: ArtworkTarget, output: string, } | { "method": "schema", file: string, } | { "method": "pack", stage: string, file: string, app: unknown, } | { "method": "validateApp", stage: string, app: unknown, } | { "method": "validateMetadata", metadata: AppMetadata, } | { "method": "describe", documentPath: string, } | { "method": "call", documentPath: string, command: string, args: unknown, } | { "method": "open", documentPath: string, } | { "method": "screenshot", documentPath: string, output: string, target: ArtworkTarget, ifPresent: boolean, };
+export type EngineRequest = { "method": "attachments.ref", file: string, } | { "method": "attachments.list", documentPath: string, } | { "method": "attachments.read", documentPath: string, attachmentID: string, } | { "method": "theme.export", documentPath: string, } | { "method": "get", documentPath: string, } | { "method": "batch", documentPath: string, batch: Batch, attachments?: Array<string>, } | { "method": "copy", documentPath: string, output: string, } | { "method": "export", documentPath: string, format: ExportFormat, output: string, } | { "method": "templates", } | { "method": "create", from: string, output: string, } | { "method": "inspect", file: string, } | { "method": "artwork.export", file: string, target: ArtworkTarget, output: string, } | { "method": "schema", file: string, } | { "method": "pack", stage: string, file: string, app: unknown,
+/**
+ * Render the Preview and Icon artwork the build does not supply before publishing.
+ */
+renderArtwork: boolean, } | { "method": "validateApp", stage: string, app: unknown, } | { "method": "validateMetadata", metadata: AppMetadata, } | { "method": "describe", documentPath: string, } | { "method": "call", documentPath: string, command: string, args: unknown, } | { "method": "open", documentPath: string, };
 
 /**
  * Every successful result names its method and carries all fields that method promises.
  */
-export type EngineSuccess = { "method": "attachments.ref", ok: True, reference: AttachmentRef, } | { "method": "get", ok: True, state: GetState, } | { "method": "batch", ok: True, ids: Array<string>, } | { "method": "copy", ok: True, output: string, } | { "method": "export", ok: True, output: string, } | { "method": "theme.export", ok: True, state: ThemeExportState, } | { "method": "attachments.list", ok: True, state: Array<AttachmentInfo>, } | { "method": "attachments.read", ok: True, state: AttachmentBytes, } | { "method": "call", ok: True, result: unknown, ids: Array<string>, } | { "method": "templates", ok: True, catalog: Catalog, } | { "method": "create", ok: True, documentPath: string, } | { "method": "inspect", ok: True, info: InspectInfo, } | { "method": "artwork.export", ok: True, output: string | null, } | { "method": "schema", ok: True, schema: Record<string, unknown>, } | { "method": "pack", ok: True, } | { "method": "validateApp", ok: True, window: WindowDefinition, capabilities: Array<Capability>, } | { "method": "validateMetadata", ok: True, } | { "method": "describe", ok: True, state: DescribeState, } | { "method": "open", ok: True, documentPath: string, } | { "method": "screenshot", ok: True, output: string | null, };
+export type EngineSuccess = { "method": "attachments.ref", ok: True, reference: AttachmentRef, } | { "method": "get", ok: True, state: GetState, } | { "method": "batch", ok: True, ids: Array<string>, } | { "method": "copy", ok: True, output: string, } | { "method": "export", ok: True, output: string, } | { "method": "theme.export", ok: True, state: ThemeExportState, } | { "method": "attachments.list", ok: True, state: Array<AttachmentInfo>, } | { "method": "attachments.read", ok: True, state: AttachmentBytes, } | { "method": "call", ok: True, result: unknown, ids: Array<string>, } | { "method": "templates", ok: True, catalog: Catalog, } | { "method": "create", ok: True, documentPath: string, } | { "method": "inspect", ok: True, info: InspectInfo, } | { "method": "artwork.export", ok: True, output: string | null, } | { "method": "schema", ok: True, schema: Record<string, unknown>, } | { "method": "pack", ok: True, artwork: PackedArtwork, } | { "method": "validateApp", ok: True, window: WindowDefinition, capabilities: Array<Capability>, } | { "method": "validateMetadata", ok: True, } | { "method": "describe", ok: True, state: DescribeState, } | { "method": "open", ok: True, documentPath: string, };
 
 export type ExportFormat = "png" | "pdf";
 
@@ -77,6 +86,8 @@ appDigest: string, live: boolean, };
 export type NamedSize = { name: string, bytes: number, };
 
 export type OutcomeCode = "rejected" | "owner_replaced" | "closing" | "save_failed" | "owner_invalidated" | "unknown_outcome";
+
+export type PackedArtwork = { preview: ArtworkSource, icon: ArtworkSource, };
 
 export type StateSizes = { checkpointBytes: number, updates: number, updateBytes: number, };
 

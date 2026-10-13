@@ -1,10 +1,11 @@
 // Building a project: what a built app may contain and how the build's output depends on
 // its source. slop.ts is covered in slop-ts.test.ts, portable builds in portable.test.ts.
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { execute } from "../../src/cli/engine";
 import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { overrideSlop, overrideSchema, stage } from "./source-fixture";
+import { png } from "./png-fixture";
 import { buildTemplate } from "../../src/cli/template";
 
 /** What a new document of a built template holds: created and read by the engine. */
@@ -72,14 +73,41 @@ test("build paths and fresh source evaluation follow the declaration", async () 
     const source = join(root, "path with spaces", "starter");
     await cp("tests/apps/document", source, { recursive: true });
     await overrideSlop(source, { slug: '"starter"' });
-    const defaultOutput = await buildTemplate(source, undefined);
+    const defaultOutput = await buildTemplate(source, undefined, { renderArtwork: false });
     expect(defaultOutput).toBe(join(source, "dist", "starter.slop"));
     const first = await initialValue(defaultOutput);
     await overrideSchema(source, JSON.stringify({ ...first, title: "Fresh evaluation" }));
     const explicitOutput = join(root, "output with spaces.slop");
-    expect(await buildTemplate(source, undefined, explicitOutput)).toBe(explicitOutput);
+    expect(await buildTemplate(source, explicitOutput, { renderArtwork: false })).toBe(explicitOutput);
     expect((await initialValue(explicitOutput)).title).toBe("Fresh evaluation");
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
+
+// Where a build renders nothing (a platform the gate leaves off), it stores only the artwork
+// the project supplies and names each role it lacks. Rendering is covered in
+// build.native.test.ts; supplied artwork in portable.test.ts.
+test("a build that renders nothing names each artwork role the project lacks", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const source = join(root, "source");
+    await cp("tests/apps/document", source, { recursive: true });
+    const stored = async (file: string) =>
+      (await execute({ method: "inspect", file })).info.artwork.map((image) => image.name);
+    const bare = await buildTemplate(source, join(root, "bare.slop"), { renderArtwork: false });
+    expect(await stored(bare)).toEqual([]);
+    expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("No preview or icon artwork"));
+    await mkdir(join(source, "artwork"));
+    await writeFile(join(source, "artwork/icon.png"), png(512, 512));
+    await overrideSlop(source, { artwork: "{ icon }" }, 'import icon from "./artwork/icon.png";');
+    const icon = await buildTemplate(source, join(root, "icon.slop"), { renderArtwork: false });
+    expect(await stored(icon)).toEqual(["icon"]);
+    expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("No preview artwork"));
+    expect(warn).toHaveBeenCalledTimes(2);
+  } finally {
+    warn.mockRestore();
     await rm(root, { recursive: true, force: true });
   }
 }, 60000);

@@ -100,6 +100,7 @@ export interface SlopContext {
     /** Two-way text binding with IME composition and remote-edit transforms. */
     text(element: HTMLInputElement | HTMLTextAreaElement, handle: TextHandle): Binding<TextHandle>;
   };
+  // The SDK no longer uses capture (static views render from props); phase 5 removes it.
   readonly capture: {
     /** True inside the host's export renderer. */
     isRenderer(): boolean;

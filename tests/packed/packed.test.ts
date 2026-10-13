@@ -1,8 +1,8 @@
 // The published npm packages (generated/npm), installed outside the checkout with Node
 // absent: the SDK alone, then the CLI through init, check, build, preview and the
 // getting-started tutorial. With HITSLOP_PACKED_NATIVE=1 (a release), also the native
-// workflow: register, global skills, create, theme and export with the debug helper. Each
-// test continues the one before it.
+// workflow: register, global skills, create, theme and export. Each test continues the
+// one before it.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { strict as assert } from "node:assert";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, cp, realpath } from "node:fs/promises";
@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appAsset, repository } from "../../scripts/lib/artifacts";
 import { exec, testProcess } from "../../scripts/lib/test-process";
-import { debugHelper } from "../../scripts/lib/native";
 
 // Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
 // wording checks that never guard opening, editing or saving a document (docs/testing.md).
@@ -27,7 +26,7 @@ beforeAll(async () => {
   coreRoot = await mkdtemp(join(tmpdir(), "hitslop framework neutral "));
   // The installed CLI must find the file engine it ships, never this checkout's.
   const { HITSLOP_ENGINE: _engine, ...inherited } = process.env;
-  env = { ...inherited, HITSLOP_TEMPLATES_ROOT: join(root, "templates"), HITSLOP_NATIVE_CLI: native ? debugHelper : join(root, "native-helper-must-not-be-used") };
+  env = { ...inherited, HITSLOP_TEMPLATES_ROOT: join(root, "templates") };
   const bin = join(root, "bin");
   await mkdir(bin);
   await symlink(process.execPath, join(bin, "bun"));

@@ -1,10 +1,21 @@
 import { BrowserHost } from "../schema/constants";
-import type { BrowserEvent, BrowserRequest } from "../wire/browser.generated";
+import type { BrowserRequest } from "../wire/browser.generated";
 import type { Capability, WindowDefinition } from "../wire/app.generated";
+import type { PageFailure } from "../wire/page";
 import { cleanup, listCopies, lockName, putCopy, removeCopy } from "./copies";
-import { silhouettePath } from "../schema/presentation";
+import { silhouetteClip } from "../schema/presentation";
 import { capabilityFeatures } from "../schema/policy";
-import { PendingRequests } from "./requests";
+import {
+  PendingRequests,
+  copyDeadline,
+  type CallBody,
+  type CallReply,
+  type CallType,
+  type Deadline,
+  type FrameMessage,
+  type HostReply,
+  type WorkerEvent,
+} from "./requests";
 
 const status = document.querySelector<HTMLElement>("#status")!;
 const title = document.querySelector<HTMLElement>("#title")!;
@@ -25,24 +36,84 @@ let page: MessagePort | undefined;
 let frame: HTMLIFrameElement | undefined;
 let surface: HTMLDivElement | undefined;
 let windowSpec: WindowDefinition | undefined;
-const requests = new PendingRequests();
+/** Everything this tab waits on: the worker's replies and the page's answers to `host` messages.
+ * Once it has failed, the worker is gone for good: nothing more is sent to it or believed. */
+const requests = new PendingRequests<WorkerEvent | HostReply>();
 const send = (message: BrowserRequest) => worker!.postMessage(message);
-type WithoutId<T> = T extends { id: string } ? Omit<T, "id"> : never;
-function request(message: WithoutId<BrowserRequest>): Promise<any> {
-  return requests.start((id) => send({ ...message, id } as BrowserRequest), {
-    after: 60_000,
-    message: "The copy did not respond; keep this tab open and retry",
+const toFrame = (message: FrameMessage) => page?.postMessage(message);
+const copyTimeout: Deadline = {
+  after: copyDeadline,
+  message: "The copy did not respond; keep this tab open and retry",
+};
+/** Asks the worker and waits for its paired reply. A copy that ran out the deadline is still
+ * usable, so the person can retry; pass `null` where the caller holds its own deadline. */
+async function request<T extends CallType>(
+  message: { type: T } & CallBody<T>,
+  timeout: Deadline | null = copyTimeout,
+): Promise<CallReply<T>> {
+  const reply = await requests.start((id) => send({ ...message, id } as BrowserRequest), {
+    timeout: timeout ?? undefined,
   });
+  // The worker answers each request with the event the wire pairs with it (`answeredBy`), but
+  // the table matches on the ID alone.
+  return reply as CallReply<T>;
 }
 async function drain() {
-  if (!page) throw new Error("Document is still opening");
+  if (requests.failure) throw requests.failure;
+  const target = page;
+  if (!target) throw new Error("Document is still opening");
   await requests.start(
-    (id) => page!.postMessage({ type: "host", id, request: { method: "flush" } }),
-    {
-      after: 30_000,
-      message: "The app did not finish saving",
-    },
+    (id) =>
+      target.postMessage({ type: "host", id, request: { method: "flush" } } satisfies FrameMessage),
+    { timeout: { after: 30_000, message: "The app did not finish saving" } },
   );
+}
+/** The worker has failed for good, so what it was asked is unanswerable and none of it may be
+ * repeated. Requests this tab holds fail now and later ones on arrival; the page frame, which
+ * holds the page's own, is told to do the same. The worker itself is left to the tab:
+ * terminating it could drop accepted edits it has not saved yet. */
+function stop(error: Error) {
+  if (requests.failure) return;
+  requests.fail(error);
+  download.disabled = true;
+  fail(error.message);
+  tellFrame();
+}
+/** The frame's last message, then the page connection is closed: nothing more crosses it. */
+function tellFrame() {
+  if (!requests.failure || !page) return;
+  toFrame({ type: "fatal", error: requests.failure.message });
+  page.close();
+  page = undefined;
+}
+/** One Service Worker fetch, relayed to the worker and answered on the asset channel. The frame
+ * and the Service Worker each bound it at 30 s, so the host adds no deadline of its own. */
+type ResourceFetch = { id: string; route: "app" | "attachment"; key: string } & (
+  | { type: "resourcePlan"; range: string | null }
+  | { type: "resource"; offset: number | null; length: number | null }
+);
+async function relayResource(port: MessagePort, fetched: ResourceFetch) {
+  try {
+    const reply =
+      fetched.type === "resourcePlan"
+        ? await request(
+            { type: "resourcePlan", route: fetched.route, key: fetched.key, range: fetched.range },
+            null,
+          )
+        : await request(
+            {
+              type: "resource",
+              route: fetched.route,
+              key: fetched.key,
+              offset: fetched.offset,
+              length: fetched.length,
+            },
+            null,
+          );
+    port.postMessage({ ...reply, id: fetched.id }, reply.bytes ? [reply.bytes.buffer] : []);
+  } catch (error) {
+    port.postMessage({ type: "error", id: fetched.id, error: (error as Error).message });
+  }
 }
 function fit() {
   if (!surface || !windowSpec) return;
@@ -91,11 +162,14 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
     const pages = new MessageChannel();
     const assets = new MessageChannel();
     page = pages.port1;
+    // The frame is the page's, so its messages are checked, not trusted.
     page.onmessage = ({ data }) => {
+      if (requests.failure) return;
       if (data.type === "page" && typeof data.id === "string" && typeof data.request === "string")
         send({ type: "page", id: data.id, request: data.request });
       if (data.type === "hostReply") {
-        requests.settle(data.id, data, data.error ? new Error(data.error) : undefined);
+        if (data.error) requests.settle(data.id, undefined, new Error(data.error));
+        else requests.settle(data.id, data);
       }
     };
     assets.port1.onmessage = ({ data }) => {
@@ -105,31 +179,11 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
         typeof data.key !== "string"
       )
         return;
-      void requests
-        .start((id) =>
-          send(
-            data.type === "resourcePlan"
-              ? { type: "resourcePlan", id, route: data.route, key: data.key, range: data.range }
-              : {
-                  type: "resource",
-                  id,
-                  route: data.route,
-                  key: data.key,
-                  offset: data.offset,
-                  length: data.length,
-                },
-          ),
-        )
-        .then(
-          (result) =>
-            assets.port1.postMessage(
-              { ...result, id: data.id },
-              result.bytes ? [result.bytes.buffer] : [],
-            ),
-          (error) => assets.port1.postMessage({ type: "error", id: data.id, error: error.message }),
-        );
+      void relayResource(assets.port1, data);
     };
     frame!.contentWindow!.postMessage({ type: "connect" }, origin, [pages.port2, assets.port2]);
+    // A frame that connects after the worker failed learns it at once.
+    tellFrame();
   };
   addEventListener("message", connect);
   surface = document.createElement("div");
@@ -152,6 +206,7 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
           offset,
           length: Math.min(BrowserHost.chunkBytes, info.size - offset),
         });
+        if (!result.bytes) throw new Error("Incomplete skin transfer");
         chunks.push(result.bytes);
       }
       const url = URL.createObjectURL(new Blob(chunks, { type: info.media_type }));
@@ -169,22 +224,7 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
     if (background === "glass") surface.style.backdropFilter = "blur(24px) saturate(1.8)";
     if (shape.kind === "radii") surface.style.clipPath = `inset(0 round ${radius})`;
     else {
-      const ns = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(ns, "svg"),
-        clip = document.createElementNS(ns, "clipPath"),
-        path = document.createElementNS(ns, "path");
-      svg.setAttribute("width", "0");
-      svg.setAttribute("height", "0");
-      svg.style.position = "absolute";
-      clip.id = "window-shape";
-      clip.setAttribute("clipPathUnits", "objectBoundingBox");
-      const { viewBoxWidth: w, viewBoxHeight: h } = shape;
-      path.setAttribute("d", silhouettePath(shape.segments));
-      path.setAttribute("transform", `scale(${1 / w},${1 / h})`);
-      path.setAttribute("clip-rule", shape.evenOdd ? "evenodd" : "nonzero");
-      clip.append(path);
-      svg.append(clip);
-      stage.append(svg);
+      stage.insertAdjacentHTML("beforeend", silhouetteClip(shape));
       surface.style.clipPath = "url(#window-shape)";
     }
   }
@@ -215,17 +255,19 @@ async function own() {
       const launch = (attempt: number) => {
         worker = new Worker("/browser/worker.js", { type: "module" });
         let opened = false;
-        worker.onerror = () => {
-          const error = new Error(
-            "The document worker stopped. Reload to recover its last confirmed save.",
+        // The worker is gone, or can no longer be trusted: every request waiting on it is lost.
+        worker.onerror = () =>
+          stop(
+            new Error("The document worker stopped. Reload to recover its last confirmed save."),
           );
-          requests.fail(error);
-          download.disabled = true;
-          fail(error.message);
-        };
-        worker.onmessage = async ({
-          data,
-        }: MessageEvent<BrowserEvent & { bytes?: Uint8Array }>) => {
+        worker.onmessageerror = () =>
+          stop(
+            new Error(
+              "The document worker sent a message this tab could not read. Reload to recover its last confirmed save.",
+            ),
+          );
+        worker.onmessage = async ({ data }: MessageEvent<WorkerEvent>) => {
+          if (requests.failure) return;
           if (data.type === "ready") {
             opened = true;
             title.textContent = data.title;
@@ -241,6 +283,8 @@ async function own() {
               reject(error);
               return;
             }
+            // The worker may have failed while the catalog was written.
+            if (requests.failure) return;
             history.replaceState(null, "", `/?copy=${id}`);
             mount(data.window, data.capabilities);
             download.disabled = false;
@@ -248,7 +292,7 @@ async function own() {
             status.textContent =
               data.error || (data.status === "saved" ? "Saved in this browser" : "Saving…");
             retry.hidden = data.status !== "failed";
-          } else if (data.type === "publication") page?.postMessage(data);
+          } else if (data.type === "publication") toFrame(data);
           else if (data.type === "error" && !data.id) {
             if (!opened) {
               worker?.terminate();
@@ -259,14 +303,15 @@ async function own() {
               reject(new Error(data.error));
             } else fail(data.error);
           } else if ("id" in data && data.id) {
-            if (
-              !requests.settle(
-                data.id,
-                data,
-                data.type === "error" ? new Error(data.error) : undefined,
-              )
-            )
-              page?.postMessage(data);
+            const settled =
+              data.type === "error"
+                ? requests.settle(data.id, undefined, new Error(data.error))
+                : requests.settle(data.id, data);
+            // Not this tab's request: a page request's reply or refusal, matched by the frame.
+            if (!settled && data.type === "reply")
+              toFrame({ type: "reply", id: data.id, json: data.json });
+            if (!settled && data.type === "error")
+              toFrame({ type: "error", id: data.id, error: data.error });
           }
         };
         send({ type: "open", copy: id, source });
@@ -323,13 +368,14 @@ download.onclick = async () => {
     if ((error as DOMException).name !== "AbortError") fail(error);
   } finally {
     await staged?.folder.removeEntry(staged.name).catch(fail);
-    download.disabled = false;
+    download.disabled = requests.failure !== undefined;
   }
 };
 retry.onclick = () => {
   void request({ type: "flush" })
-    .then((data) => {
-      if (!JSON.parse(data.json).ok) throw new Error(JSON.parse(data.json).error);
+    .then((reply) => {
+      const outcome = JSON.parse(reply.json) as { ok: true } | PageFailure;
+      if (!outcome.ok) throw new Error(outcome.error);
     })
     .catch(fail);
 };

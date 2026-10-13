@@ -24,7 +24,7 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
       builds++;
       await writeTemplate(output);
     };
-    const cache = new TemplateCache(directory, { "@swift": "a" });
+    const cache = new TemplateCache(directory, { "@rust": "a" });
     const run = async (current = cache, artwork = true) => {
       await rm(output, { force: true });
       return current.build(source, "fixture-one", output, build, artwork);
@@ -46,9 +46,9 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     await mkdir(join(source, "assets/dist"), { recursive: true });
     await writeFile(join(source, "assets/dist/theme.css"), "changed asset");
     expect(await run()).toBe("built");
-    const toolchain = new TemplateCache(directory, { "@swift": "b" });
+    const toolchain = new TemplateCache(directory, { "@rust": "b" });
     expect(await run(toolchain)).toBe("built");
-    expect(toolchain.misses.get("fixture-one")).toEqual(["shared @swift"]);
+    expect(toolchain.misses.get("fixture-one")).toEqual(["shared @rust"]);
     expect(await run()).toBe("built");
     const cached = join(directory, "fixture-one/template.slop");
     const bytes = await readFile(cached);

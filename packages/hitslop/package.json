@@ -11,6 +11,8 @@
     "@crustjs/prompts": "0.2.6",
     "@crustjs/skills": "0.5.4",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "magic-string": "1.4.3",
+    "periscopic": "4.0.3",
     "postcss": "8.5.6",
     "svelte": "5.57.2",
     "svelte-check": "4.7.6",

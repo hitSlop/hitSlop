@@ -1,7 +1,7 @@
 import { input, select, resolvePromptIO, type PromptIO } from "@crustjs/prompts";
 
 const handoff =
-  "Read slop.ts, AGENTS.md, BRIEF.md, and the local hitSlop authoring/design skills. Build the slop described in BRIEF.md, adapting the checklist starter to its purpose. Update the title, description, and categories in slop.ts to match what you build; the user can edit them later. Install dependencies with bun install, implement the app, then run bun run check and bun run build. If native build needs a compatible hitSlop Mac app, explain that requirement and complete the checks available here.";
+  "Read slop.ts, AGENTS.md, BRIEF.md, and the local hitSlop authoring/design skills. Build the slop described in BRIEF.md, adapting the checklist starter to its purpose. Update the title, description, and categories in slop.ts to match what you build; the user can edit them later. Install dependencies with bun install, implement the app, then run bun run check and bun run build.";
 
 const knownAgents = [
   { executable: "codex", label: "Codex", args: [handoff] },

@@ -12,7 +12,7 @@ const roleNames = [
   "Widget.svelte",
   "commands.ts",
 ] as const;
-type AppRoles = {
+export type AppRoles = {
   metadata: string;
   schema: string;
   view: string;
@@ -82,14 +82,11 @@ export function refusePageRole(id: string, roles: AppRoles, error: (message: str
   if (clean === roles.commands || clean === join(dirname(roles.metadata), "commands.ts"))
     error("commands.ts is agent-only; the page cannot import it");
 }
+/** The editor mounts App alone; static views render from snapshots in their own captures. */
 export const uiEntrySource = (roles: AppRoles) => `import view from ${JSON.stringify(roles.view)};
-import document from ${JSON.stringify(roles.schema)};
-${roles.export ? `import exportView from ${JSON.stringify(roles.export)};` : "const exportView = undefined;"}
-${roles.preview ? `import preview from ${JSON.stringify(roles.preview)};` : "const preview = undefined;"}
-${roles.icon ? `import icon from ${JSON.stringify(roles.icon)};` : "const icon = undefined;"}
-${roles.widget ? `import widget from ${JSON.stringify(roles.widget)};` : "const widget = undefined;"}
+import schema from ${JSON.stringify(roles.schema)};
 import {svelteApp} from "hitslop/svelte";
-export default svelteApp(view,{schema:document,export:exportView,preview,icon,widget});`;
+export default svelteApp(view,{schema});`;
 export const sveltePlugin = () =>
   svelte({
     configFile: false,

@@ -1,12 +1,14 @@
 // The Svelte adapter, compiled into each slop. It depends only on ctx.
 import { mount, tick, unmount, type Component } from "svelte";
-import type { WidgetProps, SlopApp, SlopContext } from "../abi";
+import type { SlopApp, SlopContext } from "../abi";
 import type { Definition, LiveDocument, ObjectNode, Value } from "../schema";
 import { activate, deactivate, current } from "./context";
+import { documentContext } from "./document";
 import Root from "./Root.svelte";
 export type { WidgetProps } from "../abi";
+export { getDocument } from "./document";
+export type { CaptureMode, CaptureProps } from "./capture-props";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
-export { capture, type CaptureMode } from "./capture";
 export {
   speech,
   isSpeechError,
@@ -23,24 +25,15 @@ export { motion } from "./motion.svelte";
 export { bindText } from "./bind-text";
 
 /**
- * The generated entry adapts App.svelte and optional capture components to the host.
- * Once mounted, `schema` is the live document.
+ * The generated entry adapts App.svelte to the host. Each mount gives App's components
+ * their own reactive document, which they acquire with `getDocument(schema)`.
  */
-export function svelteApp(
-  App: Component,
-  options: {
-    schema: Definition<ObjectNode>;
-    export?: Component<{ mode: "preview" | "export" }> | Component<Record<string, never>>;
-    preview?: Component;
-    icon?: Component;
-    widget?: Component<WidgetProps>;
-  },
-): SlopApp {
+export function svelteApp(App: Component, options: { schema: Definition<ObjectNode> }): SlopApp {
   return {
     descriptor: options.schema.descriptor,
     mount(ctx, target) {
       const adapter = createAdapter(ctx.document);
-      activate(ctx, options.schema, adapter.document);
+      activate(ctx);
       const release = () => {
         adapter.dispose();
         deactivate(ctx);
@@ -48,13 +41,8 @@ export function svelteApp(
       try {
         const app = mount(Root, {
           target,
-          props: {
-            App,
-            Export: options.export as Component<{ mode: "preview" | "export" }> | undefined,
-            Preview: options.preview,
-            Icon: options.icon,
-            Widget: options.widget,
-          },
+          props: { App },
+          context: documentContext(options.schema, adapter.document),
         });
         return {
           rendered: tick,

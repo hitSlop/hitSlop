@@ -1,5 +1,5 @@
 import { json } from "./json";
-import { HelperProtocol, OutcomeCodes, SocketLimits } from "../schema/constants";
+import { EngineProtocol, OutcomeCodes, SocketLimits } from "../schema/constants";
 import type {
   EngineRequest,
   EngineRequestFor,
@@ -39,7 +39,7 @@ export class ExitStatus extends Error {
 /** A native tool's command in this CLI's protocol. A tool that serves another refuses with
  * exit status 2 and one line naming the side to update; nothing was written. */
 export function negotiate(binary: string): string[] {
-  return [binary, "--client-protocol", String(HelperProtocol.version)];
+  return [binary, "--client-protocol", String(EngineProtocol.version)];
 }
 
 /** The command that updates this copy of the CLI: the global install, a project's, or bunx. */
@@ -110,12 +110,11 @@ const replyFields = {
   create: ["documentPath"],
   inspect: ["info"],
   schema: ["schema"],
-  pack: [],
+  pack: ["artwork"],
   validateApp: ["window", "capabilities"],
   validateMetadata: [],
   describe: ["state"],
   open: ["documentPath"],
-  screenshot: ["output"],
 } satisfies Record<EngineMethod, readonly string[]>;
 function acknowledged(value: unknown, method: EngineMethod): value is EngineReply {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -141,8 +140,7 @@ function acknowledged(value: unknown, method: EngineMethod): value is EngineRepl
   if (method === "batch" || method === "call")
     return Array.isArray(reply.ids) && reply.ids.every((id) => typeof id === "string");
   if (method === "export" || method === "copy") return typeof reply.output === "string";
-  if (method === "screenshot" || method === "artwork.export")
-    return reply.output === null || typeof reply.output === "string";
+  if (method === "artwork.export") return reply.output === null || typeof reply.output === "string";
   if (method === "create" || method === "open") return typeof reply.documentPath === "string";
   return true;
 }

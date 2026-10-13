@@ -1,33 +1,135 @@
-import { build, transformWithOxc, type Plugin } from "vite";
+import { build, parseSync, transformWithOxc, Visitor, type ParseResult, type Plugin } from "vite";
 import { compile, compileModule, parse } from "svelte/compiler";
-import { join } from "node:path";
+import { analyze } from "periscopic";
+import { join, relative } from "node:path";
 import postcss from "postcss";
-import ts from "typescript";
 import { readFile } from "node:fs/promises";
-import { discoverRoles, refusePageRole, refuseRoleImport } from "./app-vite";
+import { refusePageRole, refuseRoleImport, type AppRoles } from "./app-vite";
 import { bytesOf, typeOf, type Emitted } from "./definition-resources";
 import type { DefinitionBuildOptions } from "./definition-config";
 import { portableAssetURLs } from "./asset-url-transform";
+import { declaresModuleState } from "./capture-state";
 
-/** Each capture closure is a classic synchronous script; it never mounts the editor. */
+/** What a capture build reads besides its own graph: the editor build's emitted resources
+ * and the stylesheets every capture imports first. */
+export type CaptureInputs = {
+  source: string;
+  roles: AppRoles;
+  sdk: string;
+  ui: Map<string, Emitted>;
+  options: DefinitionBuildOptions;
+  globalStyles: string[];
+};
+type Binding = [specifier: string, name: string];
+type Resolve = (specifier: string, importer: string) => Promise<string | undefined>;
+const browserGlobals = [
+  "window",
+  "document",
+  "navigator",
+  "requestAnimationFrame",
+  "fetch",
+  "XMLHttpRequest",
+  "Image",
+  "Worker",
+];
+
+/** Each capture closure is a classic synchronous script; it never mounts the editor. Its
+ * build inspects the authored modules it compiles, before SSR erases unsupported calls. */
 export async function buildCapture(
   role: "widget" | "icon" | "preview" | "export",
-  source: string,
-  sdk: string,
-  ui: Map<string, Emitted>,
-  options: DefinitionBuildOptions,
-  globalStyles: string[],
+  { source, roles, sdk, ui, options, globalStyles }: CaptureInputs,
 ) {
-  const roles = await discoverRoles(source);
-  if (!roles[role]) return;
+  const component = roles[role];
+  if (!component) return;
   const functionName = role === "widget" ? "__slopWidget" : "__slopCapture";
   const renderer = role === "widget" ? "widgetRenderer" : "viewRenderer";
   const entry = `\0hitslop-${role}-entry`;
   const styles = new Map<string, string>();
   const dependencies = new Set<string>();
+  const reasons = new Set<string>();
+  // Captures render saved state in a fresh page, so a module the editor sets shows only
+  // its initial value there, even when the editor is reused as the export component.
+  const stateful = new Set<string>();
+  // Imported names a capture may not use, by resolved module (see buildStart).
+  const editorOnly = new Map<string, (name: string) => boolean>();
+  const reexports = new Map<string, Promise<ReturnType<typeof bindings>>>();
+  const authored = (id: string) =>
+    /\.(svelte|[cm]?[jt]s)$/.test(id) &&
+    !id.startsWith("\0") &&
+    !id.startsWith(sdk) &&
+    !id.includes("/node_modules/");
+  /** Whether importing `name` from `id` reaches editor-only runtime through authored
+   * re-exports. A namespace import ("*") reaches everything its module exports. */
+  const forbidden = async (
+    id: string | undefined,
+    name: string,
+    resolve: Resolve,
+    seen = new Set<string>(),
+  ): Promise<boolean> => {
+    if (!id) return false;
+    const rule = editorOnly.get(id);
+    if (rule) return rule(name);
+    // A component's default export is the component itself.
+    if (
+      !authored(id) ||
+      seen.has(`${id}\0${name}`) ||
+      (id.endsWith(".svelte") && name === "default")
+    )
+      return false;
+    seen.add(`${id}\0${name}`);
+    if (!reexports.has(id))
+      reexports.set(
+        id,
+        readFile(id, "utf8").then((code) =>
+          id.endsWith(".svelte")
+            ? bindings(
+                parseSync(id, compile(code, { filename: id, generate: "server" }).js.code, {
+                  lang: "js",
+                }).module,
+              )
+            : bindings(parseSync(id, code).module),
+        ),
+      );
+    const { exports, stars } = await reexports.get(id)!;
+    const binding = exports.get(name);
+    const next: Binding[] =
+      name === "*"
+        ? [...exports.values(), ...stars.map((star): Binding => [star, "*"])]
+        : binding
+          ? [binding]
+          : name === "default"
+            ? []
+            : stars.map((star): Binding => [star, name]);
+    for (const [specifier, imported] of next)
+      if (await forbidden(await resolve(specifier, id), imported, resolve, seen)) return true;
+    return false;
+  };
   const plugin: Plugin = {
     name: "hitslop-capture-ssr",
     enforce: "pre",
+    async buildStart() {
+      // Editor-only runtime: every value hitslop/svelte and hitslop/embed export, and Svelte's
+      // onMount, which SSR never runs. A capture reads attachment URLs from its
+      // `attachmentURL` prop. The exception is `youtube`, whose thumbnail helper only builds a URL.
+      for (const [specifier, allowed] of [
+        ["hitslop/svelte", undefined],
+        ["hitslop/embed", "youtube"],
+      ] as const) {
+        const found = await this.resolve(specifier, component);
+        if (!found) continue;
+        const values = new Set(
+          parseSync(found.id, await readFile(found.id, "utf8")).module.staticExports.flatMap(
+            ({ entries }) =>
+              entries.flatMap(({ isType, exportName }) =>
+                !isType && exportName.name ? [exportName.name] : [],
+              ),
+          ),
+        );
+        editorOnly.set(found.id, (name) => name === "*" || (name !== allowed && values.has(name)));
+      }
+      const svelte = await this.resolve("svelte", component);
+      if (svelte) editorOnly.set(svelte.id, (name) => name === "*" || name === "onMount");
+    },
     async resolveId(id, importer, resolveOptions) {
       if (id === entry || styles.has(id)) return id;
       if (id.startsWith("node:")) return `\0capture-unavailable:${id}`;
@@ -43,13 +145,30 @@ export async function buildCapture(
       if (styles.has(id)) return styles.get(id);
       if (id === entry)
         return `${globalStyles.map((path) => `import ${JSON.stringify(path)};`).join("\n")}
-import doc from ${JSON.stringify(roles.schema)};
-import Widget from ${JSON.stringify(roles[role])};
+import Component from ${JSON.stringify(component)};
 import {${renderer}} from ${JSON.stringify(join(sdk, role === "widget" ? "app/widget-render.ts" : "app/capture-render.ts"))};
-globalThis.${functionName} = json => ${renderer}(doc,Widget,globalThis.__slopCaptureCSS)(json);`;
+globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCaptureCSS)(json);`;
     },
     async transform(code, id) {
+      const resolve: Resolve = async (specifier, importer) =>
+        (await this.resolve(specifier, importer))?.id;
+      /** Awaits, editor-only imports and browser globals in an authored module's JavaScript. */
+      const inspect = async (js: string) => {
+        const { program, module } = parseSync(id, js, { lang: "js" });
+        new Visitor({
+          AwaitExpression() {
+            reasons.add(`${id}: await`);
+          },
+        }).visit(program);
+        for (const reason of retainedCaptureReasons(js, id, browserGlobals)) reasons.add(reason);
+        for (const [specifier, name] of bindings(module).imports)
+          if (await forbidden(await resolve(specifier, id), name, resolve))
+            reasons.add(`${id}: ${name === "*" ? `* from ${specifier}` : name}`);
+      };
       if (id.endsWith(".svelte")) {
+        // Before compiling, which refuses top-level await without experimental options.
+        if (!id.startsWith(sdk) && awaits(parse(code, { modern: true })))
+          reasons.add(`${id}: await`);
         const result = compile(code, {
           filename: id,
           generate: "server",
@@ -61,33 +180,7 @@ globalThis.${functionName} = json => ${renderer}(doc,Widget,globalThis.__slopCap
           this.error(
             `Remove css="injected" from ${id}; capture CSS is collected by the build for native rendering`,
           );
-        // The compiler AST distinguishes real await syntax from comments and strings.
-        const visit = (node: unknown): void => {
-          if (!node || typeof node !== "object") return;
-          const value = node as { type?: string };
-          if (
-            !id.startsWith(sdk) &&
-            (value.type === "AwaitBlock" || value.type === "AwaitExpression")
-          )
-            this.error(`Native capture rendering is synchronous: remove await from ${id}`);
-          Object.values(node).forEach((value) =>
-            Array.isArray(value) ? value.forEach(visit) : visit(value),
-          );
-        };
-        visit(result.ast);
-        if (!id.startsWith(sdk) && !id.includes("/node_modules/")) {
-          const reasons = retainedCaptureReasons(result.js.code, id, [
-            "window",
-            "document",
-            "navigator",
-            "requestAnimationFrame",
-            "fetch",
-            "XMLHttpRequest",
-            "Image",
-            "Worker",
-          ]);
-          if (reasons.length) this.error(reasons.join("\n"));
-        }
+        if (authored(id)) await inspect(result.js.code);
         const style = id.replace(/\.svelte$/, ".widget.css");
         if (result.css) styles.set(style, result.css.code);
         return {
@@ -95,16 +188,34 @@ globalThis.${functionName} = json => ${renderer}(doc,Widget,globalThis.__slopCap
           map: result.js.map,
         };
       }
-      if (/\.svelte\.[jt]s$/.test(id)) {
-        const stripped = id.endsWith(".ts") ? (await transformWithOxc(code, id)).code : code;
-        return compileModule(stripped, { filename: id, generate: "server", dev: false }).js;
+      const runes = /\.svelte\.[jt]s$/.test(id);
+      if (!runes && !authored(id)) return;
+      // TypeScript is erased first, as the build erases it, so a type is never a use.
+      const js = /\.[cm]?ts$/.test(id) ? (await transformWithOxc(code, id)).code : code;
+      if (authored(id)) {
+        await inspect(js);
+        if (id.startsWith(source + "/") && declaresModuleState(code, id)) stateful.add(id);
       }
+      if (runes) return compileModule(js, { filename: id, generate: "server", dev: false }).js;
     },
     generateBundle() {
       for (const id of this.getModuleIds())
         if (!id.startsWith("\0") && !styles.has(id)) dependencies.add(id.split("?", 1)[0]!);
     },
   };
+  const refuse = (found: Iterable<string>) => {
+    const sorted = [...found].sort();
+    if (sorted.length)
+      return new Error(
+        `${component} (${role} capture) must render synchronously with Takumi:\n${sorted.join("\n")}`,
+      );
+  };
+  const refusal = () =>
+    stateful.size
+      ? new Error(
+          `${component} (the ${role} view) imports ${relative(source, [...stateful].sort()[0]!)}, whose $state is always its initial value in a capture. Captures render saved state in a fresh page: read the snapshot prop there, and give a component shared with the editor that value as a prop.`,
+        )
+      : refuse(reasons);
   const result = await build({
     root: source,
     configFile: false,
@@ -142,7 +253,12 @@ globalThis.${functionName} = json => ${renderer}(doc,Widget,globalThis.__slopCap
         output: { format: "iife", codeSplitting: false, entryFileNames: `${role}.js` },
       },
     },
+  }).catch((error) => {
+    // A refused module can also fail to compile: report the cause.
+    throw refusal() ?? error;
   });
+  const refused = refusal();
+  if (refused) throw refused;
   if ("on" in result) throw new Error("Capture builds cannot watch");
   let program = "";
   let css = "";
@@ -206,6 +322,8 @@ globalThis.${functionName} = json => ${renderer}(doc,Widget,globalThis.__slopCap
     });
     rule.remove();
   });
+  const missing = refuse(unavailable);
+  if (missing) throw missing;
   // The font bytes are registered once for the batch, not repeated for each family.
   return {
     bytes:
@@ -214,125 +332,92 @@ const render = globalThis.${functionName};
 globalThis.${functionName} = json => JSON.stringify({frames:JSON.parse(render(json)),fonts:${JSON.stringify(fonts)}});
 }`),
     dependencies,
-    unavailable,
   };
 }
 
-/** Diagnose unsupported authored lifecycle calls before SSR can erase them.
- * Inspect source ASTs through the already resolved UI graph, before compiling SSR.
- * Strings and comments never choose the rendering engine.
- */
-export async function browserCaptureReasons(
-  entry: string,
-  imports: Map<string, string[]>,
-  sdk: string,
-) {
-  const pending = [entry],
-    seen = new Set<string>(),
-    reasons = new Set<string>();
-  const names = /^(onMount|onPrepare|capture|motion|draft|notify)$/;
-  while (pending.length) {
-    const id = pending.pop()!;
-    if (seen.has(id) || id.startsWith("\0") || id.startsWith(sdk) || id.includes("/node_modules/"))
-      continue;
-    seen.add(id);
-    pending.push(...(imports.get(id) ?? []));
-    if (!/\.(svelte|[cm]?[jt]s)$/.test(id)) continue;
-    const code = await readFile(id, "utf8");
-    const identifier = (name: string) => {
-      if (names.test(name)) reasons.add(`${id}: ${name}`);
-    };
-    if (id.endsWith(".svelte")) {
-      const visit = (node: unknown): void => {
-        if (!node || typeof node !== "object") return;
-        const value = node as { type?: string; name?: string };
-        if (value.type === "Identifier" && value.name) identifier(value.name);
-        if (value.type === "AwaitBlock" || value.type === "AwaitExpression")
-          reasons.add(`${id}: await`);
-        Object.values(node).forEach((value) =>
-          Array.isArray(value) ? value.forEach(visit) : visit(value),
-        );
-      };
-      visit(parse(code, { modern: true }));
-    } else {
-      const visit = (node: ts.Node) => {
-        if (ts.isIdentifier(node)) identifier(node.text);
-        if (node.kind === ts.SyntaxKind.AwaitExpression) reasons.add(`${id}: await`);
-        ts.forEachChild(node, visit);
-      };
-      visit(ts.createSourceFile(id, code, ts.ScriptTarget.Latest, false));
-      for (const reason of retainedCaptureReasons(code, id, [
-        "window",
-        "document",
-        "navigator",
-        "requestAnimationFrame",
-        "fetch",
-        "XMLHttpRequest",
-        "Image",
-        "Worker",
-      ]))
-        reasons.add(reason);
+/** Real await syntax, not comments or strings: the compiler AST distinguishes them. */
+function awaits(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const { type } = node as { type?: unknown };
+  return (
+    type === "AwaitBlock" ||
+    type === "AwaitExpression" ||
+    Object.values(node).some((value) => (Array.isArray(value) ? value.some(awaits) : awaits(value)))
+  );
+}
+
+/** A module's value imports, the bindings it re-exports by exported name, and its
+ * `export *` sources. A namespace binding is named "*". */
+function bindings({ staticImports, staticExports }: ParseResult["module"]) {
+  const imports: Binding[] = [];
+  const locals = new Map<string, Binding>();
+  for (const { moduleRequest, entries } of staticImports)
+    for (const { importName, localName, isType } of entries) {
+      if (isType) continue;
+      const binding: Binding = [
+        moduleRequest.value,
+        importName.name ?? (importName.kind === "Default" ? "default" : "*"),
+      ];
+      imports.push(binding);
+      locals.set(localName.value, binding);
     }
-  }
-  return [...reasons];
+  const exports = new Map<string, Binding>();
+  const stars: string[] = [];
+  for (const { entries } of staticExports)
+    for (const { moduleRequest, importName, exportName, localName, isType } of entries) {
+      if (isType) continue;
+      if (moduleRequest && importName.kind === "AllButDefault") stars.push(moduleRequest.value);
+      const binding: Binding | undefined = moduleRequest
+        ? [moduleRequest.value, importName.name ?? "*"]
+        : locals.get(localName.name ?? "");
+      const name = exportName.kind === "Default" ? "default" : exportName.name;
+      if (binding && name) exports.set(name, binding);
+    }
+  return { imports, exports, stars };
 }
 
 /** Inspect retained code, not unused helpers in a shared source module. Binding the
  * program distinguishes browser globals from local names such as `document`. */
 function retainedCaptureReasons(code: string, filename: string, names: string[]): string[] {
-  const scriptName = `${filename}.js`;
-  const file = ts.createSourceFile(
-    scriptName,
-    code,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.JS,
-  );
-  const host: ts.CompilerHost = {
-    getSourceFile: (name) => (name === scriptName ? file : undefined),
-    getDefaultLibFileName: () => "",
-    writeFile() {},
-    getCurrentDirectory: () => "",
-    getDirectories: () => [],
-    fileExists: (name) => name === scriptName,
-    readFile: (name) => (name === scriptName ? code : undefined),
-    getCanonicalFileName: (name) => name,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => "\n",
-  };
-  const checker = ts
-    .createProgram([scriptName], { allowJs: true, noLib: true }, host)
-    .getTypeChecker();
-  const globals = new Set(names);
+  const { program, module } = parseSync(filename, code, { lang: "js" });
   const reasons = new Set<string>();
-  const inspect = (node: ts.Node) => {
-    if (ts.isIdentifier(node) && globals.has(node.text)) {
-      const parent = node.parent;
-      const property =
-        (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
-        ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) &&
-          parent.name === node);
-      const globalProperty =
-        ts.isPropertyAccessExpression(parent) &&
-        parent.name === node &&
-        ts.isIdentifier(parent.expression) &&
-        ["globalThis", "self", "window"].includes(parent.expression.text);
-      if (globalProperty || (!property && !checker.getSymbolAtLocation(node)))
+  const uses = (name: string) =>
+    reasons.add(
+      `${filename}: retained dependency uses ${name}, unavailable in synchronous capture rendering`,
+    );
+  // Periscopic leaves namespace imports undeclared.
+  const namespaces = new Set(
+    module.staticImports.flatMap(({ entries }) =>
+      entries.flatMap(({ importName, localName }) =>
+        importName.kind === "NamespaceObject" ? [localName.value] : [],
+      ),
+    ),
+  );
+  for (const name of analyze(program as unknown as Parameters<typeof analyze>[0]).globals.keys())
+    if (names.includes(name) && !namespaces.has(name)) uses(name);
+  new Visitor({
+    MemberExpression(node) {
+      if (
+        !node.computed &&
+        node.object.type === "Identifier" &&
+        ["globalThis", "self", "window"].includes(node.object.name) &&
+        node.property.type === "Identifier" &&
+        names.includes(node.property.name)
+      )
+        uses(node.property.name);
+    },
+    CallExpression({ callee }) {
+      if (
+        names.includes("Intl") &&
+        callee.type === "MemberExpression" &&
+        !callee.computed &&
+        callee.property.type === "Identifier" &&
+        /^(toLocaleString|toLocaleDateString|toLocaleTimeString)$/.test(callee.property.name)
+      )
         reasons.add(
-          `${filename}: retained dependency uses ${node.text}, unavailable in synchronous capture rendering`,
+          `${filename}: ${callee.property.name} requires locale services unavailable in QuickJS`,
         );
-    }
-    if (
-      names.includes("Intl") &&
-      ts.isCallExpression(node) &&
-      ts.isPropertyAccessExpression(node.expression) &&
-      /^(toLocaleString|toLocaleDateString|toLocaleTimeString)$/.test(node.expression.name.text)
-    )
-      reasons.add(
-        `${filename}: ${node.expression.name.text} requires locale services unavailable in QuickJS`,
-      );
-    ts.forEachChild(node, inspect);
-  };
-  inspect(file);
+    },
+  }).visit(program);
   return [...reasons];
 }

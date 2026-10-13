@@ -2,9 +2,9 @@ import { test, expect } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { HelperProtocol } from "../../src/schema/constants";
+import { EngineProtocol } from "../../src/schema/constants";
 
-const selection = ["--client-protocol", String(HelperProtocol.version)];
+const selection = ["--client-protocol", String(EngineProtocol.version)];
 
 async function run(args: string[], env: Record<string, string> = {}) {
   const child = Bun.spawn([process.execPath, "packages/hitslop/src/cli/cli.ts", ...args], {
@@ -23,16 +23,16 @@ async function run(args: string[], env: Record<string, string> = {}) {
 test("document commands send one request and print its reply", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-command-"));
   try {
-    const helper = join(root, "helper");
+    const engine = join(root, "engine");
     const sent = join(root, "sent.json");
     // Records the request it reads and answers like an owner that accepted a batch.
     await writeFile(
-      helper,
+      engine,
       `#!${process.execPath}\n{ await Bun.write(${JSON.stringify(sent)}, JSON.stringify({ args: process.argv.slice(2), body: await new Response(Bun.stdin.stream()).text() })); console.log(JSON.stringify({ ok: true, method: "batch", ids: ["r1"] })); }\n`,
       { mode: 0o755 },
     );
     const op = '{ "type": "set", "path": ["title"], "value": "hello \\"world\\"" }';
-    const applied = await run(["apply", "a file.slop", "--op", op], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
+    const applied = await run(["apply", "a file.slop", "--op", op], { HITSLOP_ENGINE: engine });
     expect(applied.code).toBe(0);
     expect(JSON.parse(applied.stdout)).toEqual({ ids: ["r1"] });
     const { args, body } = JSON.parse(await Bun.file(sent).text());
@@ -41,7 +41,7 @@ test("document commands send one request and print its reply", async () => {
     expect(JSON.parse(body)).toEqual({ method: "batch", documentPath: join(process.cwd(), "a file.slop"), batch: { intents: [JSON.parse(op)] } });
     const data = join(root, "new data.json");
     await writeFile(data, '{"n": 1.50, "wide": 9007199254740993}');
-    const imported = await run(["import", "a file.slop", data, "--path", '["rows"]'], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
+    const imported = await run(["import", "a file.slop", data, "--path", '["rows"]'], { HITSLOP_ENGINE: engine });
     expect(imported.code).toBe(0);
     expect(JSON.parse(await Bun.file(sent).text()).body).toContain('"value":{"n":1.50,"wide":9007199254740993}');
   } finally {
@@ -55,13 +55,13 @@ test("document commands send one request and print its reply", async () => {
 test("a refused edit names its operation and says whether it was applied", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-refused-"));
   try {
-    const helper = join(root, "helper");
+    const engine = join(root, "engine");
     await writeFile(
-      helper,
+      engine,
       `#!${process.execPath}\nconsole.log(JSON.stringify({ ok: false, error: "No such row", code: "rejected", reason: "path_not_found", opIndex: 2 }));\n`,
       { mode: 0o755 },
     );
-    const refused = await run(["batch", "a.slop", "--ops", "[]"], { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
+    const refused = await run(["batch", "a.slop", "--ops", "[]"], { HITSLOP_ENGINE: engine });
     expect(refused.code).not.toBe(0);
     expect(refused.stderr).toContain("Refused ops[2] (path_not_found): No such row\nNot applied.");
   } finally {
@@ -74,14 +74,14 @@ test("a refused edit names its operation and says whether it was applied", async
 test("a success missing its method's result is an unknown outcome", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-bare-success-"));
   try {
-    const helper = join(root, "helper");
+    const engine = join(root, "engine");
     await writeFile(
-      helper,
+      engine,
       `#!${process.execPath}\nconsole.log(JSON.stringify({ ok: true }));\n`,
       { mode: 0o755 },
     );
     for (const args of [["batch", "a.slop", "--ops", "[]"], ...(process.platform === "darwin" ? [["export", "a.slop", "--format", "pdf", "--output", join(root, "a.pdf")]] : [])]) {
-      const reply = await run(args, { HITSLOP_NATIVE_CLI: helper, HITSLOP_ENGINE: helper });
+      const reply = await run(args, { HITSLOP_ENGINE: engine });
       expect(reply.code).not.toBe(0);
       expect(reply.stdout).toBe("");
       expect(reply.stderr).toContain("Outcome unknown");
@@ -91,11 +91,11 @@ test("a success missing its method's result is an unknown outcome", async () => 
   }
 });
 
-test("create and open name this CLI's protocol to the selected engine or native helper", async () => {
+test("create and open name this CLI's protocol to the selected engine", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-create-open-"));
   try {
-    const helper = async (name: string, serves: boolean) => {
-      const path = join(root, `helper-${name}`);
+    const engine = async (name: string, serves: boolean) => {
+      const path = join(root, `engine-${name}`);
       await writeFile(
         path,
         `#!${process.execPath}\nif (!${serves}) { console.error("Unsupported client protocol"); process.exit(2); }\nconst body = await Bun.stdin.json(); await Bun.write(${JSON.stringify(join(root, "sent"))}, JSON.stringify({args:process.argv.slice(2),body})); console.log(JSON.stringify({ok:true,method:body.method,documentPath:body.output ?? body.documentPath}));\n`,
@@ -103,21 +103,42 @@ test("create and open name this CLI's protocol to the selected engine or native 
       );
       return path;
     };
-    const matching = await helper("matching", true);
+    const matching = await engine("matching", true);
     const create = ["create", "--from", "a template.slop", "--output", "my doc.slop"];
-    const created = await run(create, { HITSLOP_NATIVE_CLI: matching, HITSLOP_ENGINE: matching });
+    const created = await run(create, { HITSLOP_ENGINE: matching });
     expect(created.code).toBe(0);
     expect(created.stdout.trim()).toBe("my doc.slop");
     expect(await Bun.file(join(root, "sent")).json()).toEqual({args:selection,body:{method:"create",from:"a template.slop",output:"my doc.slop"}});
     if (process.platform === "darwin") {
-    const opened = await run(["open", "my doc.slop"], { HITSLOP_NATIVE_CLI: matching, HITSLOP_ENGINE: matching });
+    const opened = await run(["open", "my doc.slop"], { HITSLOP_ENGINE: matching });
     expect(opened.code).toBe(0);
     expect(opened.stdout.trim()).toBe("my doc.slop");
     expect(await Bun.file(join(root, "sent")).json()).toEqual({args:selection,body:{method:"open",documentPath:"my doc.slop"}});
     }
-    const refused = await run(create, { HITSLOP_ENGINE: await helper("newer", false) });
+    const refused = await run(create, { HITSLOP_ENGINE: await engine("newer", false) });
     expect(refused.code).not.toBe(0);
     expect(refused.stdout).toBe("");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// The permanent refusal path, seen from the CLI: an engine that serves another protocol
+// exits 2 with one line naming the side to update. The CLI passes it on, adding its own
+// update command when it is the older side.
+const refusals: [string, string, string][] = [
+  ["the app", "This command needs a newer hitSlop app; update hitSlop", "update hitSlop"],
+  ["the CLI", "This hitSlop app needs a newer command line; update the hitSlop CLI", "update the hitSlop CLI ("],
+];
+test.each(refusals)("an engine that says %s must update is refused as such", async (_side, refusal, shown) => {
+  const root = await mkdtemp(join(tmpdir(), "hsl-refusal-"));
+  try {
+    const engine = join(root, "engine");
+    await writeFile(engine, `#!${process.execPath}\nconsole.error(${JSON.stringify(refusal)}); process.exit(2);\n`, { mode: 0o755 });
+    const refused = await run(["get", "a.slop"], { HITSLOP_ENGINE: engine });
+    expect(refused.code).toBe(2);
+    expect(refused.stdout).toBe("");
+    expect(refused.stderr).toContain(shown);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
