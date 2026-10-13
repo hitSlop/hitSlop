@@ -93,7 +93,6 @@ fn marking(marker: &Path) -> hitslop_core::owner::Evaluator {
 /// An export never replaces anything at its output under any spelling, and refuses before
 /// any authored code renders.
 #[test]
-#[cfg(target_os = "macos")]
 fn closed_export_refuses_an_existing_output_before_rendering() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
@@ -126,7 +125,6 @@ fn closed_export_refuses_an_existing_output_before_rendering() {
 /// An export publishes exactly the image its renderer made, once it passed the checks every
 /// capture passes, and leaves the document's bytes and its writer lock alone.
 #[test]
-#[cfg(target_os = "macos")]
 fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() {
     use hitslop_core::capture::{CaptureFormat, export_saved};
     let dir = tempfile::tempdir().unwrap();
@@ -150,7 +148,6 @@ fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() 
 
 /// A result that arrives after its command's deadline is discarded, not published late.
 #[test]
-#[cfg(target_os = "macos")]
 fn a_closed_export_past_its_deadline_publishes_nothing() {
     use hitslop_core::capture::{CaptureFormat, export_saved};
     let dir = tempfile::tempdir().unwrap();
@@ -166,7 +163,6 @@ fn a_closed_export_past_its_deadline_publishes_nothing() {
 /// A file made at the output while the export rendered wins: the export refuses rather
 /// than replace it.
 #[test]
-#[cfg(target_os = "macos")]
 fn a_file_made_at_the_output_while_rendering_is_never_replaced() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
@@ -180,7 +176,6 @@ fn a_file_made_at_the_output_while_rendering_is_never_replaced() {
 /// A template exports through a document made from it, and an app without an Export view
 /// has nothing to export; neither runs its renderer.
 #[test]
-#[cfg(target_os = "macos")]
 fn closed_export_refuses_templates_and_apps_without_an_export_view() {
     let dir = tempfile::tempdir().unwrap();
     let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Export.png"));
@@ -197,20 +192,6 @@ fn closed_export_refuses_templates_and_apps_without_an_export_view() {
     file::create_document(&plain, &doc).unwrap();
     let error = export(&doc, &output, &marking(&rendered)).unwrap_err();
     assert!(error.to_string().contains("Export.svelte"), "{error}");
-    assert_eq!(code(error), Code::InvalidRequest);
-    assert!(!output.exists());
-    assert!(!rendered.exists());
-}
-
-/// Closed export is macOS-only for now: elsewhere it refuses before rendering anything.
-#[test]
-#[cfg(not(target_os = "macos"))]
-fn closed_export_refuses_on_other_platforms() {
-    let dir = tempfile::tempdir().unwrap();
-    let doc = document(dir.path());
-    let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Export.png"));
-    let error = export(&doc, &output, &marking(&rendered)).unwrap_err();
-    assert!(error.to_string().contains("macOS"), "{error}");
     assert_eq!(code(error), Code::InvalidRequest);
     assert!(!output.exists());
     assert!(!rendered.exists());
