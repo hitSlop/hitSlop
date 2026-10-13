@@ -74,7 +74,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 
 | Tier | Runs |
 |---|---|
-| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), and Svelte types for the templates and the SDK's components. Together, concurrently |
+| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), Oxlint for `packages/hitslop/src` and `scripts`, TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), and Svelte types for the templates and the SDK's components. Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell and release tests over SDK WASM; up to four isolated file workers |
 | `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |
@@ -86,6 +86,12 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
 | `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `HITSLOP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
 | `native` | Remaining native tests with engine/evaluator and shell; no Swift preparation |
+
+Oxlint (`.oxlintrc.json`, `bun run lint`) adds type-aware promise rules to its correctness
+rules: a promise must be awaited, returned, handled or `void`-prefixed, and never used as a
+condition. It covers the SDK, shell, CLI and scripts. It does not lint Svelte templates, and its
+type-aware rules skip `.svelte` files, so `svelte-check` stays the Svelte type check. Tests are
+out of scope: Bun's types declare `expect(...).rejects` matchers as returning `void`.
 
 Each tier prepares only its prerequisites: SDK WASM for `bun`, native bindings and
 shell for `swift`, engine/evaluator and shell for CLI/render/native, and durable-browser

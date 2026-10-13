@@ -157,6 +157,8 @@ const tiers: Tier[] = [
       const tsc = (project: string) => quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", project]);
       const output = await Promise.all([
         quiet([process.execPath, "node_modules/prettier/bin/prettier.cjs", "--check", "packages/hitslop/src"]),
+        // Type-aware rules from .oxlintrc.json; .svelte templates are not linted.
+        quiet([process.execPath, "node_modules/oxlint/bin/oxlint", "packages/hitslop/src", "scripts"]),
         // The type tests' own project relaxes only the unused rules: their checks are never read.
         tsc("tsconfig.json").then(async (root) => [root, await tsc("packages/hitslop/tests/tsconfig.json")]),
         quiet([process.execPath, "scripts/templates/check.ts"]),

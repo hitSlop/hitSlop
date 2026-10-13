@@ -255,8 +255,8 @@ test("Swift success requires at least one executed test", () => {
   assertSwiftTestsRan("Test run with 228 tests passed");
 });
 
-test("formatter policy changes select the tier that enforces formatting", () => {
-  for (const path of [".prettierrc.json", ".prettierignore"])
+test("formatter and lint policy changes select the tier that enforces them", () => {
+  for (const path of [".prettierrc.json", ".prettierignore", ".oxlintrc.json"])
     expect(affected(path)).toEqual(["types"]);
   for (const path of ["sdk/base.css", "shell/boot.js", "browser/index.html"])
     expect(affected(`packages/hitslop/src/${path}`)).toContain("types");
