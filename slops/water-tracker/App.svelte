@@ -46,6 +46,15 @@
     stopChime();
   });
 
+  // The day becoming complete is what we celebrate, however it came about (a tap, an agent,
+  // an undo): react to the state instead of reading it again after a write that may not have landed.
+  let wasComplete = untrack(() => view.complete);
+  $effect(() => {
+    const complete = view.complete;
+    if (complete && !wasComplete) untrack(celebrate);
+    wasComplete = complete;
+  });
+
   function celebrate() {
     if (prefersReducedMotion.current) {
       particles = [];
@@ -97,10 +106,8 @@
     }
   }
 
-  async function log(amount: number, label: string) {
-    const wasComplete = percent >= 100;
-    await doc.change((tx) => logIntake(tx, doc.current, amount, label, new Date()));
-    if (!wasComplete && intakeView(doc.current).complete) celebrate();
+  function log(amount: number, label: string) {
+    doc.change((tx) => logIntake(tx, doc.current, amount, label, new Date()));
   }
 
   function reset() {
