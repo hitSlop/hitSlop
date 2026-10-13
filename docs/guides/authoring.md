@@ -18,7 +18,7 @@ rules and standards for templates in this repository.
 ## Work in this checkout
 
 Use `bun slop dev slops/SLUG`, `bun slop build SOURCE` and
-`bun slop register SOURCE`. [Development](development.md) covers preparing the helper,
+`bun slop register SOURCE`. [Development](development.md) covers preparing the tools,
 adding a template and choosing which templates ship.
 
 ## Rules for authored code
@@ -37,7 +37,7 @@ adding a template and choosing which templates ship.
 - Use `EditableText` for text, `draft` for composers, `motion` for animated numbers and
   `notify` for messages (all from `hitslop/svelte`) rather than reimplementing them.
 - Use required `Preview.svelte` for a compact overview and optional `Export.svelte` with natural height for complete growing content; derive their
-  data from `doc.current` and keep editor controls and effects out of it. All capture
+  data from the `snapshot` prop and keep editor controls and effects out of it. All capture
   views must render synchronously without browser APIs.
 - Import optional `hitslop/base.css` before app styles for low-specificity form, focus
   and reduced-motion defaults. App CSS still owns typography, layout and palette.
@@ -65,7 +65,7 @@ addresses, or code, or on `body` for the whole slop. The default also applies in
 [styling guide](../../apps/landing/src/content/docs/docs/guides/styling.mdx#text-selection)
 for CSS overrides.
 
-Motion should explain change and settle before capture. Persist target values
+Motion should explain change. Static views render saved targets directly. Persist target values
 immediately and honor reduced motion. Stop transient work on unmount and pause it while
 the window is hidden, as
 [Files and the web](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#opening-hiding-and-closing)
@@ -95,9 +95,9 @@ default-exports one `defineCommands` set for CLI and agent callers:
 ```ts
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   rename: {
     description: "Change the title shown in the window.",
     args: { title: s.string({ minLength: 1 }) },
@@ -108,13 +108,13 @@ export default defineCommands(doc, {
 
 Only root `commands.ts` may import `hitslop/commands`, and the page cannot import
 `commands.ts`. The page edits with handles and `doc.change()`. To give the page and an
-agent the same edit, write it once over `Tx<typeof doc>` in a plain module:
+agent the same edit, write it once over `Tx<typeof schema>` in a plain module:
 
 ```ts
 // tasks.ts
 import type { Tx } from "hitslop";
-import type doc from "./schema";
-export const rename = (tx: Tx<typeof doc>, title: string) => tx.fields.title.set(title);
+import type schema from "./schema";
+export const rename = (tx: Tx<typeof schema>, title: string) => tx.fields.title.set(title);
 ```
 
 The page calls `doc.change(tx => rename(tx, title))`; the command's `run` calls
@@ -150,7 +150,7 @@ categories, window, theme, artwork?, capabilities? })`. Required `schema.ts` def
 `defineDocument(fields, { initial })`; `initial` is optional when all fields have defaults
 or may be omitted. Required `App.svelte` is the editor; required `Preview.svelte` supplies compact preview artwork, and required `Icon.svelte` supplies the icon. `Export.svelte`, `Widget.svelte` and `commands.ts` are optional. These root names are case-sensitive. Import CSS from
 components. The page imports `schema.ts`, so
-its creation defaults ship in the page bundle; metadata and command bodies do not.
+its definition ships in the editor bundle; metadata and command bodies do not.
 The window is either `{ kind: "standard", width, height, ... }` or
 `{ kind: "skin", width, height, image: importedPNG }`.
 
@@ -227,9 +227,9 @@ the recording could not be read or recognized. Keep a usable path without a tran
 
 Optional `Widget.svelte` receives `WidgetProps` from `hitslop/svelte`: `family`, `width`, `height`.
 It draws saved document state and theme into a fixed canvas; content outside the canvas is clipped.
-Use the `slop dev` Preview selector for Editor, Small widget, Medium widget and Large widget.
+Use the `slop dev` Preview selector for Editor, Preview, Icon, Small widget, Medium widget and Large widget.
 Switching preserves accepted edits; component and CSS changes update the selected view live.
-The browser preview helps compose the widget, but native output uses Takumi and can differ.
+The browser preview helps compose each view, but native output uses Takumi and can differ.
 Review an actual native capture before shipping. The Mac app captures all three sizes after
 successful saves (coalesced for one second), on opening when cached state is stale or missing, and on close
 after edits. While hitSlop runs it also watches cached source files for closed-document
@@ -239,12 +239,12 @@ A failed refresh keeps the previous generation. Publishing replaces the complete
 reload; the OS decides when that reload is displayed. Optional `widget.refreshMinutes` in `slop.ts`
 requests approximate refresh while the app runs; authoring accepts 15–1440 minutes.
 
-Widget rendering uses synchronous Svelte SSR in an isolated Rust child. Read `doc.current`;
+Widget rendering uses synchronous Svelte SSR in an isolated Rust child. Read the `snapshot` prop;
 document handles and writes are unavailable. Do not rely on `onMount`, DOM measurement,
 canvas, browser globals, async/await or capture preparation hooks for widget content.
 Use font longhands, flexbox or numeric grid placement, and SVG attributes/currentColor.
 The build collects CSS; omit `css="injected"` from Svelte options. Native capture supports bundled PNG/JPEG/GIF/WebP and SVG images, plus referenced
-image attachments through synchronous `attachments.url(id)`. Blob reads/imports and
+image attachments through the `attachmentURL(id)` prop. Blob reads/imports and
 remote loading are unavailable in capture views.
 Container queries, named grid areas and page CSS inside inline SVG are not portable.
 Like Takumi's HTML API, native capture ignores unsupported CSS declarations and rules;

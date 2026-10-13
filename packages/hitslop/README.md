@@ -28,7 +28,7 @@ bunx hitslop init budget-book --yes \
 `--yes`, CI, and non-TTY runs never prompt or launch agents. Missing metadata
 defaults to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`.
 
-`init`, `check`, `dev` and `build` run on macOS or Linux; `register` and `build --artwork native` need the hitSlop Mac app (Apple silicon, macOS 15.2+). Hosted template publication is not supported.
+`init`, `check`, `dev`, `build` and `register` run on macOS or Linux. On macOS, `build` and `register` also render the preview and icon artwork a project does not supply, and `export` renders a closed document's PNG or PDF, without the Mac app; elsewhere, supply the artwork as PNGs. `open` needs the hitSlop Mac app (Apple silicon, macOS 15.2+). Hosted template publication is not supported.
 
 ## Common workflows
 

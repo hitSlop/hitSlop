@@ -208,10 +208,12 @@ a person and their agent edit the same live document. What's missing is the slop
 
 - **Menu-bar slops and widgets.** A `menubar` presentation for timers and players, and
   WidgetKit widgets rendered from the icon or export capture of saved state.
-- **History scrubber.** A timeline of the history a document keeps: all of it below
-  4 MiB, otherwise only the open session's. Restore applies an old version as a
-  new edit. A longer timeline needs a retention rule that bounds the cost of deleted
-  content, which Loro keeps in the starting state of any cut before the latest version.
+- **History scrubber.** A timeline of whatever history remains under the
+  [current retention policy](architecture.md#saving). Saved history can be pruned while
+  open or on close; reopening does not guarantee a retained timeline, and undo starts empty.
+  Restore applies an available old version as a new edit. A guaranteed longer timeline
+  would need a retention rule that bounds the cost of deleted content, which Loro keeps
+  in the starting state of any cut before the latest version.
 - **Household sharing.** A family's grocery list as home-cooked software, through the
   room described next.
 

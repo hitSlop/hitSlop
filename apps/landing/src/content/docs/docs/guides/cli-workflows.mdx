@@ -16,9 +16,9 @@ Install Bun 1.4.2 or newer and the hitSlop Mac app. The examples below use `bunx
 | `bunx hitslop COMMAND` | Run the authoring CLI without a global install. |
 | `slop COMMAND` | After `bun install -g hitslop`, with Bun's bin directory on your PATH. |
 
-Use `bunx` or `slop` for the examples below. Authoring builds, browser preview, document creation and document edits run on macOS or Linux. Register, open, native artwork and PNG/PDF export use the installed Mac app, which need not already be running.
+Use `bunx` or `slop` for the examples below. Authoring builds, registering, browser preview, document creation and document edits run on macOS or Linux. On macOS the CLI also renders Finder artwork and exports PNG/PDF itself. Opening a window uses the installed Mac app, which need not already be running.
 
-The npm package includes its document engine. Native rendering uses the helper in the matching Mac app, discovered automatically in `/Applications` or `~/Applications`.
+The npm package includes its document engine, which does that rendering. `open` finds the Mac app automatically in `/Applications` or `~/Applications`.
 
 Append `--help` to any command to see its arguments.
 
@@ -115,9 +115,9 @@ Responses, respectively (additional build progress omitted):
 /Users/you/.hitslop/templates/weekend-kit.slop
 ```
 
-A build without supplied or native artwork also reports that no artwork was captured.
+Where a build doesn't render artwork (anywhere but macOS) and you supply none, it also tells you which PNGs to import.
 
-Build writes `dist/weekend-kit.slop` on macOS or Linux. Register, on a Mac, builds it with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) and adds it to the Mac app's template catalog. Existing documents keep their app version.
+Build writes `dist/weekend-kit.slop` on macOS or Linux, with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) rendered on a Mac. Register builds it the same way and adds it to the Mac app's template catalog. Existing documents keep their app version.
 
 From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174` (the preview port defaults to 5173), `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
 
@@ -245,7 +245,7 @@ is invalid, none apply. Use row IDs rather than list positions. See the
 Successful edits are saved. Errors go to stderr with a nonzero exit status. On a Mac,
 **Edit ▸ Undo** can revert agent edits in the open window. If a command’s outcome is
 uncertain, run `get` before retrying. Document creation and editing work on macOS and
-Linux; native windows and PNG/PDF export require the Mac app.
+Linux; PNG/PDF export works on macOS, and opening a window needs the Mac app.
 
 ## Move data between documents
 
@@ -326,7 +326,7 @@ bunx hitslop export My.slop --format png --output My.png
 bunx hitslop export My.slop --format pdf --output My.pdf
 ```
 
-Export saves your edits and prints the output path. Choose a new output path other than the `.slop` itself; an existing destination is refused. Both open and closed documents render saved data independently, using `Export.svelte`. Slops without this optional view refuse PNG/PDF export. PNG and selectable vector PDF use the Rust renderer. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
+Export saves your edits and prints the output path. Choose a new output path other than the `.slop` itself; an existing destination is refused. Both open and closed documents render saved data independently, using `Export.svelte`. Slops without this optional view refuse PNG/PDF export. PNG and selectable vector PDF use the Rust renderer. On macOS the CLI exports a closed document itself; an open one is exported by the Mac app that has it open. Other platforms refuse export. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
 
 Successful exports print their resolved output paths, respectively:
 

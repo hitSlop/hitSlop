@@ -113,8 +113,9 @@ In order, with the reasoning in [ideas](ideas.md):
   [the build workflow](guides/development.md#build-current-templates-with-the-app).
 - Rust owns edit admission, save scheduling, discard, close, command dispatch and the
   live socket. Swift delivers events and provides native UI and rendering.
-- The CLI's engine creates, edits and validates documents on macOS and Linux. The Mac
-  app links its core and supplies the rendering helper independently.
+- The CLI's engine creates, edits and validates documents on macOS and Linux, and on
+  macOS renders template artwork and exports closed documents itself. The Mac app links
+  its core independently.
 - The CLI, SDK, contracts, templates and skills ship as one `hitslop` npm package with
   the Mac app's release version.
 - Rust types own every wire and the app definition; ts-rs generates TypeScript and UniFFI

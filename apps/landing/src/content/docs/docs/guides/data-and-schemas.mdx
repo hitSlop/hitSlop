@@ -49,12 +49,13 @@ The builder validates initial values and stores the schema's descriptor and the 
 
 ## Read snapshots; write through handles
 
-`schema.ts`'s default export is also the live document. Any component imports it:
+`defineDocument` returns definition data. In an editor component, import that definition as `schema` and call `getDocument(schema)` while the component initializes: at the top of its script, or in a store factory called there. Keep the result; event handlers and timers use it rather than calling `getDocument` again. Do not call it at module scope. Each mount has its own typed, reactive document.
 
 ```svelte
 <script lang="ts">
-  import { EditableText } from "hitslop/svelte";
-  import doc from "./schema";
+  import { EditableText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+  const doc = getDocument(schema);
 </script>
   <EditableText class="title" field={doc.fields.title} label="Title" placeholder="Untitled" />
   <input type="checkbox" bind:checked={doc.fields.archived.value} />
@@ -69,6 +70,8 @@ The builder validates initial values and stores the schema's descriptor and the 
     <EditableText class="task" field={row.text} label="Task" />
   {/each}
 ```
+
+Use `Value<typeof schema.descriptor>` from `hitslop` for the saved data type and `LiveDocument<typeof schema.descriptor>` for an acquired document's type. Static views receive [capture props](/docs/guides/icons-and-exports/#declare-capture-views).
 
 `doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
@@ -86,8 +89,9 @@ A refused write leaves the saved value in `doc.current`, and hitSlop shows the p
 
 ```svelte
 <script lang="ts">
-  import { draft, motion, notify } from "hitslop/svelte";
-  import doc from "./schema";
+  import { draft, motion, notify, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+  const doc = getDocument(schema);
   const task = draft(text => doc.fields.tasks.insert({ text }));
   async function finishAll() {
     const count = await doc.change(tx => {
@@ -108,7 +112,7 @@ A refused write leaves the saved value in `doc.current`, and hitSlop shows the p
 <button onclick={finishAll}>Finish all</button>
 ```
 
-`draft` trims the text, ignores a second submit while one runs, and clears the input once the write is accepted, unless the person typed more meanwhile. `motion` eases a number toward its target, jumps when the person prefers reduced motion, and settles before a capture. `notify` shows a message in the window's notice region, `[data-slop-notice]`, which holds the current message as a `<p>`; restyle it from your CSS. A page handler can call `refuse("Enter a task.")` to show a refusal there too.
+`draft` trims the text, ignores a second submit while one runs, and clears the input once the write is accepted, unless the person typed more meanwhile. `motion` eases a number toward its target, jumps when the person prefers reduced motion, and starts at its target. `notify` shows a message in the window's notice region, `[data-slop-notice]`, which holds the current message as a `<p>`; restyle it from your CSS. A page handler can call `refuse("Enter a task.")` to show a refusal there too.
 
 ## Previews for drags and drawing
 
@@ -145,14 +149,14 @@ Prefer a change, or `increment` on a counter, over reading a value and writing i
 
 ## Share an edit with agents
 
-Commands in `commands.ts` are for agents, and the page cannot import that file. When a button and an agent should do the same thing, write the edit once as a plain function over `Tx<typeof doc>`, the `tx` that both `doc.change` and a command's `run` receive:
+Commands in `commands.ts` are for agents, and the page cannot import that file. When a button and an agent should do the same thing, write the edit once as a plain function over `Tx<typeof schema>`, the `tx` that both `doc.change` and a command's `run` receive:
 
 ```ts title="schema.ts"
 import { defineDocument, refuse, s, type Tx } from "hitslop";
-const doc = defineDocument({ tasks: s.list(s.object({ text: s.text() })) });
-export default doc;
+const schema = defineDocument({ tasks: s.list(s.object({ text: s.text() })) });
+export default schema;
 
-export function addTask(tx: Tx<typeof doc>, text: string) {
+export function addTask(tx: Tx<typeof schema>, text: string) {
   if (!text.trim()) refuse("Enter a task.");
   return tx.fields.tasks.insert({ text: text.trim() });
 }
@@ -163,9 +167,9 @@ The page runs it with `doc.change(tx => addTask(tx, text))`, and the command wra
 ```ts title="commands.ts"
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { addTask } from "./schema";
+import schema, { addTask } from "./schema";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addTask: {
     description: "Add a task and return its row ID.",
     args: { text: s.string() },

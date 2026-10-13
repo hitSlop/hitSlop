@@ -10,21 +10,29 @@ The editor, Finder artwork, and exported document should feel like the same obje
 Use `App.svelte` for the editor, required root `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte` for captures. The CLI discovers these exact filenames. Preview supplies a compact overview; Export includes the complete document. Without `Export.svelte`, PNG/PDF share/save actions are hidden and CLI export is refused.
 
 ```svelte
+<script lang="ts">
+  import { bindText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+  const doc = getDocument(schema);
+  const addItem = () => doc.fields.tasks.insert({ text: "New task" });
+</script>
 <main class="note-editor">
   <input aria-label="Title" use:bindText={doc.fields.title} />
   <button onclick={addItem}>Add item</button>
 </main>
 ```
 
-Captures render saved state independently of the editor, with transient state at its defaults. A dedicated export owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Capture views must be synchronous and independent of browser APIs. Dedicated captures ignore the window silhouette; Quick Look displays the saved artwork. An optional export component (`Export.svelte`):
+Preview, Export and Icon receive `snapshot`, deeply readonly saved data, `attachmentURL(id)`, and `mode` (`"preview"`, `"export"` or `"icon"`). Widget receives the same data and URL function plus `family`, `width` and `height`. Type these props with `CaptureProps<typeof schema>` and `CaptureMode` or `WidgetProps`; use `import type schema` so the definition stays out of the capture. Shared editor/static components take data and an attachment URL function as props; the editor passes `attachments.url`, and captures pass `attachmentURL`. A dedicated export owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Capture views must be synchronous and independent of browser APIs. Dedicated captures ignore the window silhouette; Quick Look displays the saved artwork. An optional export component (`Export.svelte`):
 
 ```svelte
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
 <article class="note-export">
-  <h1>{doc.current.title}</h1>
-  <ul>{#each doc.current.tasks as task (task.$id)}<li>{task.text}</li>{/each}</ul>
+  <h1>{snapshot.title}</h1>
+  <ul>{#each snapshot.tasks as task (task.$id)}<li>{task.text}</li>{/each}</ul>
 </article>
 ```
 
@@ -32,12 +40,14 @@ Required `Preview.svelte` can show a bounded selection and an honest total:
 
 ```svelte
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
 <article class="note-preview">
-  <h1>{doc.current.title}</h1>
-  <p>{doc.current.tasks.length} tasks</p>
-  <ul>{#each doc.current.tasks.slice(0, 5) as task (task.$id)}<li>{task.text}</li>{/each}</ul>
+  <h1>{snapshot.title}</h1>
+  <p>{snapshot.tasks.length} tasks</p>
+  <ul>{#each snapshot.tasks.slice(0, 5) as task (task.$id)}<li>{task.text}</li>{/each}</ul>
 </article>
 ```
 
@@ -47,27 +57,33 @@ Share components between Preview and Export where useful. Avoid generating a lon
 
 ```svelte
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
-<div class="note-icon">{doc.current.tasks.length}</div>
+<div class="note-icon">{snapshot.tasks.length}</div>
 ```
 
-Use the app's existing document facade in capture components. Captures render saved
-data in an independent read-only renderer. If an export should show a selected tab or report, save
+Capture components render their saved `snapshot` in an independent read-only renderer. If an export should show a selected tab or report, save
 that choice in the document; transient editor state is not carried into the capture.
 An export or icon component that throws fails that capture without changing the live
 editor. A later attempt gets a fresh renderer.
 
 Icons, previews, widgets, PNG and selectable vector PDF exports use synchronous Svelte
-rendering and Takumi in a restricted Rust process. Use `doc.current`, ordinary flexbox, numeric grid
+rendering and Takumi in a restricted Rust process. Use `snapshot`, ordinary flexbox, numeric grid
 placement, explicit font properties, and SVG attributes/currentColor. Container
 queries, named grid areas and page CSS inside inline SVG are unsupported; ignored
 CSS can change the result, so review native captures. Browser-dependent capture
-components fail the build with a role/source diagnostic. Use static representations
+components fail the build with a role/source diagnostic. Editor runtime imports from
+`hitslop/svelte`, such as `getDocument`, `draft`, `motion`, `notify`, `EditableText`,
+`bindText`, `speech` and `resizeWindow`, and Svelte's `onMount` are refused, including
+through aliases, namespace imports and re-exports, and so is `attachments`: read a stored
+image's URL from the `attachmentURL` prop instead. `youtube` remains allowed because its
+thumbnail helper only builds a URL. Use static representations
 for canvas, animation or WebGL content. A rendering failure retains previous artwork;
 there is no automatic fallback or public renderer override.
 
-Use synchronous `attachments.url(id)` for referenced PNG/JPEG/GIF/WebP images in saved
+Use the `attachmentURL(id)` prop for referenced PNG/JPEG/GIF/WebP images in saved
 data. Capture currently loads the whole saved image inventory, capped at 24 MiB,
 including images that this role does not display. Blob reads,
 imports, remote loading and document writes are unavailable. Missing or unsupported
@@ -93,13 +109,13 @@ Add an optional root `Widget.svelte` to compose the same saved document for the 
 
 ```svelte
 <script lang="ts">
-  import type { WidgetProps } from "hitslop/svelte";
-  import doc from "./schema";
-  let { family, width, height }: WidgetProps = $props();
+  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot, family, width, height }: CaptureProps<typeof schema> & WidgetProps = $props();
 </script>
 
 <main style:width={`${width}px`} style:height={`${height}px`}>
-  <h1>{doc.current.title}</h1>
+  <h1>{snapshot.title}</h1>
   {#if family !== "small"}<p>A little more detail.</p>{/if}
 </main>
 ```
@@ -126,10 +142,11 @@ image or the document's theme. See [Apple's widget settings](https://support.app
 
 ### Preview and refresh
 
-In `slop dev`, use the Preview selector to switch between the editor and each widget
-family. Accepted edits survive switching, and component/CSS changes update the preview
-live. Widget canvases clip overflow; the preview warns when content extends beyond
-its canvas.
+In `slop dev`, use the Preview selector to switch between the editor, the preview, the
+icon and each widget family. Accepted edits survive switching, and component/CSS changes
+update the view live. These are browser layouts, so review the final image with
+`slop build`. Icon and widget canvases clip overflow; the preview warns when content
+extends beyond its canvas.
 
 Successful saves refresh images after a one-second debounce, including edits while
 the editor stays open. The running app watches cached documents for closed-document
@@ -200,6 +217,6 @@ Completed captures publish atomically before their deadline. If the acknowledgem
 
 ## Quick Look and Finder artwork
 
-Registration, or `slop build --artwork native`, captures `Preview.svelte` and `Icon.svelte` as the initial preview and icon into the template; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
+On macOS, building or registering captures `Preview.svelte` and `Icon.svelte` as the initial preview and icon into the template; PNGs you declare with `artwork: { preview, icon }` in `defineSlop` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
 Test normal and narrow windows, empty and populated data, themed output, default local views, saved view choices, and exports from open and closed documents. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.

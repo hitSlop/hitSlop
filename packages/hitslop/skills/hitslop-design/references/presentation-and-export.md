@@ -61,7 +61,7 @@ the application behind a hole, not merely that a DOM element ignores them.
 ## Static output
 
 Provide required root `Preview.svelte` for a compact saved-state overview and optional
-`Export.svelte` for complete output. Both read the same document by importing its module;
+`Export.svelte` for complete output. Both receive the saved `snapshot` and `attachmentURL` as props;
 share presentation and theme components. Preview supplies the catalog and Quick Look artwork.
 Bound its lists and show omitted counts. Export uses normal flow and full content height.
 Without Export, PNG/PDF actions are hidden and CLI export is refused. Neither captures editor controls.
@@ -71,7 +71,7 @@ per side and 24 megapixels. PDF retains selectable text on one content-sized pag
 Dedicated exports do not inherit native window masks. All icons, previews, widgets,
 PNG and vector PDF exports use synchronous Svelte SSR and Takumi in the Rust child.
 Use static SVG with explicit presentation attributes for charts, and packaged fonts or
-the bundled fallbacks. Read images through `attachments.url(id)`; blob reads/imports,
+the bundled fallbacks. Read images through the `attachmentURL(id)` prop; blob reads/imports,
 async/await, DOM and browser capture hooks are unavailable. Review PNG and PDF;
 PDF preserves vectors and selectable text, with uniform scaling for very long pages.
 
@@ -87,12 +87,12 @@ Provide the required root `Icon.svelte`. It mounts
 only for capture, centered on a transparent 512×512 surface. Pass progress or other saved data if useful; keep
 a strong silhouette, safe margins, and no essential small text. It refreshes
 a document's artwork and Finder icon on close; the template's icon remains as built.
-Build with `--artwork native` (or register) and check the generated artwork (`slop inspect` lists it; Quick Look shows it), then verify native exports.
+Build (or register) on a Mac and check the generated artwork (`slop inspect` lists it; Quick Look shows it), then verify native exports.
 
 
 ## Widget compositions
 
-Use optional root `Widget.svelte` for small, medium and large image widgets. It receives `WidgetProps` (`family`, `width`, `height`) from `hitslop/svelte` and reads saved `doc.current` and theme tokens. Keep the slop's typography, colors and reusable components; edit density and hierarchy for each canvas. The fixed canvas clips overflow; intentionally shorten lists and text. In `slop dev`, use Preview → Small/Medium/Large widget to review all three compositions and any overflow warning, then return to Editor without losing accepted edits. Widgets contain images; tapping opens the source slop. Do not add interactive controls or an export fallback.
+Use optional root `Widget.svelte` for small, medium and large image widgets. It receives `CaptureProps<typeof schema> & WidgetProps` from `hitslop/svelte`: the saved `snapshot`, `attachmentURL`, and viewport (`family`, `width`, `height`). Import these and `schema` as types; read theme tokens from CSS. Keep the slop's typography, colors and reusable components; edit density and hierarchy for each canvas. The fixed canvas clips overflow; intentionally shorten lists and text. In `slop dev`, use Preview → Small/Medium/Large widget to review all three compositions and any overflow warning, then return to Editor without losing accepted edits. Widgets contain images; tapping opens the source slop. Do not add interactive controls or an export fallback.
 
 Widget images always use the native renderer. Compare the actual PNGs with the browser
 preview: unsupported CSS is ignored, and page CSS does not style the interior of inline

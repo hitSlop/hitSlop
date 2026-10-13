@@ -107,12 +107,15 @@ export default defineDocument({
 Use these functions from the editor's Keep recording and Transcribe buttons. The `file`
 may come from a file picker or a finished `MediaRecorder` recording:
 
+Put this in the editor component's script so `getDocument` runs during [component initialization](/docs/guides/data-and-schemas/#read-snapshots-write-through-handles):
+
 ```ts
-import { attachments, isSpeechError, speech } from "hitslop/svelte";
-import doc from "./schema";
+import { attachments, getDocument, isSpeechError, speech } from "hitslop/svelte";
+import schema from "./schema";
+const doc = getDocument(schema);
 
 async function keepRecording(file: File) {
-  await attachments.import<typeof doc.descriptor>(file, (tx, ref) => {
+  await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
     tx.fields.recording.set(ref.id);
     tx.fields.transcript.set("");
   });

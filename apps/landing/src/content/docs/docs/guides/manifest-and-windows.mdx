@@ -42,9 +42,9 @@ Define an optional agent action in `commands.ts`:
 
 ```ts title="commands.ts"
 import { defineCommands } from "hitslop/commands";
-import doc from "./schema";
+import schema from "./schema";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   countOne: {
     description: "Count one more.",
     args: {},

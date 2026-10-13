@@ -125,8 +125,8 @@ and PDF behavior.
 ## Review efficiently
 
 Use `bun run dev` for disposable browser preview. Review at the `window` size
-and a narrow width, with menus open and keyboard focus visible. Build with the
-matching Mac app to verify export and icon artwork. Read
+and a narrow width, with menus open and keyboard focus visible. Build on a Mac
+to verify export and icon artwork. Read
 [references/review-workbench.md](references/review-workbench.md) for a short pass.
 
 ## Check the real task
@@ -171,11 +171,10 @@ quiet unless ongoing motion communicates a real function.
   (minimized or hidden window) and derive elapsed time from `Date.now()`.
   Celebrations should finish and should not fire just because a saved document
   opens in a completed state.
-- Export/icon views render final data, not interpolated values. Capture's CSS
-  overrides do not stop JavaScript springs, tweens, or animation loops. When
-  capturing an animated editor, settle it through `capture.onPrepare`, await
-  the DOM update, and clean up the returned registration. Do not change saved
-  data to prepare a capture or rely only on `capture.isRenderer()`.
+- Export/icon views render final saved data from their `snapshot` props. Give
+  animated content a static representation there; keep springs, tweens and
+  animation loops in the editor. Do not change saved data to prepare a capture.
+  See [static output](references/presentation-and-export.md#static-output).
 - Check normal/reduced motion, rapid retargeting, and capture during animation.
 
 Runtime packages remain source-free: never ship authoring skills, editable CSS,

@@ -11,7 +11,7 @@ The Rust core (`crates/hitslop-core`) enforces all of it. The SDK
 (`packages/hitslop/src/sdk`) gives authors types and adapters; the private shell implements
 the handles and immutable snapshots.
 
-`defineDocument(fields, { initial })` produces a plain object-root descriptor.
+`defineDocument(fields, { initial })` returns plain definition data with an object-root `descriptor`.
 Initial values are required when a field has no default and cannot be omitted. Build validation calls the
 same Rust rules as native editing; the small TypeScript schema module is metadata and
 types, not a second validator. Catch document errors with `isDocumentError(error)`
@@ -59,6 +59,11 @@ Kinds nest:
 Trees and rich text are not implemented; no slop uses them.
 
 ## Common behavior
+
+Editor components acquire a `LiveDocument` with `getDocument(schema)` from
+`hitslop/svelte` during initialization; see [document access](../../apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles).
+`Value<typeof schema.descriptor>` is the readonly data type; `Tx<typeof schema>`
+types a shared edit. Static views receive [capture props](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#declare-capture-views).
 
 **Reads.**
 - `doc.current` is an immutable snapshot. Unchanged objects and rows keep their identity

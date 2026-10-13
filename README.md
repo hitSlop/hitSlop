@@ -78,7 +78,7 @@ hitSlop is built for tools with one clear job and a little character. Its templa
 Apps can declare camera and microphone capture and transcribe stored recordings on-device
 on a supported Mac. [Capabilities and permissions](apps/landing/src/content/docs/docs/guides/capabilities.mdx)
 explains the APIs, system consent, platform limits and future directions. Contributors
-should follow the [template and app rebuild order](docs/guides/development.md#rebuild-templates-before-the-app)
+should follow the [template and app rebuild order](docs/guides/development.md#build-current-templates-with-the-app)
 so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
@@ -93,7 +93,7 @@ so the catalog uses their latest changes.
 
 ## Make your own with an agent
 
-Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows, register templates and export PNG/PDF.
+Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows and pick your registered templates in its catalog; on macOS the CLI renders template artwork and exports PNG/PDF itself.
 
 ```sh
 bunx hitslop@1.0.0 init weekend-kit
@@ -135,7 +135,7 @@ Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitsl
 | Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
 | Install agent guidance | `bun install -g hitslop`, then `slop skills install`; skills update with the global CLI |
 
-Document creation and editing run on macOS and Linux. The CLI carries its own engine; opening windows and exporting PNG/PDF use the Mac app's rendering helper. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
+Document creation and editing run on macOS and Linux. The CLI carries its own engine, which on macOS also exports a closed document as PNG/PDF and renders template artwork; opening a window needs the Mac app. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
 
 ## Where it's going
 
@@ -173,14 +173,14 @@ Replace the following starter files. Keep the generated `package.json` and `tsco
 ```ts
 import { defineDocument, s, type Tx } from "hitslop";
 
-const doc = defineDocument({
+const schema = defineDocument({
   title: s.text(),
   wins: s.counter(),
 }, { initial: { title: "Tiny wins today" } });
-export default doc;
+export default schema;
 
 /** Give yourself credit for one little win. */
-export const countOne = (tx: Tx<typeof doc>) => tx.fields.wins.increment();
+export const countOne = (tx: Tx<typeof schema>) => tx.fields.wins.increment();
 ```
 
 Changing `initial` later doesn't overwrite saved wins.
@@ -217,9 +217,9 @@ Replace the starter's `commands.ts` with:
 
 ```ts
 import { defineCommands } from "hitslop/commands";
-import doc, { countOne } from "./schema";
+import schema, { countOne } from "./schema";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   countOne: {
     description: "Give yourself credit for one little win.",
     args: {},
@@ -232,13 +232,14 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 
 ### 4. Build the app, icon, and export together
 
-`App.svelte` is the whole interface. Import the document from `schema.ts`, read from `doc.current`, write through `doc.fields`, and let hitSlop handle saving.
+`App.svelte` is the whole interface. Import the definition from `schema.ts` and acquire the document with `getDocument(schema)` while the component initializes. Read `doc.current`, write through `doc.fields`, and let hitSlop handle saving. See [document access](apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles) for child components and helpers.
 
 ```svelte
 <script lang="ts">
-  import { bindText } from "hitslop/svelte";
-  import doc, { countOne } from "./schema";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import schema, { countOne } from "./schema";
   import "./styles.css";
+  const doc = getDocument(schema);
 </script>
 <main class="wins-card">
   <input aria-label="Counter title" use:bindText={doc.fields.title} />
@@ -247,15 +248,17 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 </main>
 ```
 
-`Preview.svelte`:
+`Preview.svelte` reads its saved `snapshot` prop. [Capture props](apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#declare-capture-views) also supply image URLs and the view's mode:
 
 ```svelte
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
 <article class="wins-card">
-  <h1>{doc.current.title}</h1>
-  <p class="wins-number">{doc.current.wins}</p>
+  <h1>{snapshot.title}</h1>
+  <p class="wins-number">{snapshot.wins}</p>
   <p>Little things add up.</p>
 </article>
 ```
@@ -264,18 +267,23 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 
 ```svelte
 <script lang="ts">
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import Preview from "./Preview.svelte";
+  let props: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
-<Preview />
+<Preview {...props} />
 ```
 
 `Icon.svelte`:
 
 ```svelte
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
-<div class="wins-icon">{doc.current.wins}</div>
+<div class="wins-icon">{snapshot.wins}</div>
 ```
 
 `App.svelte` is the editor. Separate components supply saved-state captures:
@@ -285,7 +293,7 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 - Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
 - `Widget.svelte` supplies small, medium and large desktop images from saved data. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
 
-hitSlop refreshes the Finder preview and icon when you close the document. Register renders the template's initial artwork from starting values.
+hitSlop refreshes the Finder preview and icon when you close the document. On macOS, build and register render the template's initial artwork from starting values.
 
 All capture views render with Takumi in the restricted Rust child, including selectable vector PDF. Capture components must be synchronous. Quick Look reads the saved artwork.
 

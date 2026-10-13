@@ -6,7 +6,7 @@
 
 <!-- Mark the applicable tiers and include failures or checks not run. See docs/testing.md. -->
 
-- [ ] Everyday: `bun run verify` (add `--native` when Swift, the FFI or the helper changed)
+- [ ] Everyday: `bun run verify` (add `--native` when Swift or the FFI changed)
 - [ ] Native changes: native boundary and full render checks from `docs/testing.md`
 - [ ] Release candidate: `bun run release:check` on the final clean commit
 - [ ] Visual changes include screenshots

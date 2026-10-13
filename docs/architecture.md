@@ -15,7 +15,8 @@ page (WebKit) ── requests ──▶ Swift DocumentOwner façade ──▶ Ru
 
 slop ── slop-engine ── Rust command router ──▶ same Rust owner
                          live: owner's socket; closed: acquire writer lock
-                     └── hitslop-native: open windows / render saved-state exports and artwork
+                     ├── closed export, a build's artwork ──▶ restricted evaluator renders
+                     └── open ──▶ LaunchServices ──▶ hitSlop.app
 ```
 
 Descriptor kinds: text (merging); boolean, string, number, integer and enum (last
@@ -48,12 +49,13 @@ callback on its output. A full output queue or a stalled reader fails the dispos
 session, fences the page and attempts a bounded close; the browser must reload rather
 than replay an edit with an unknown outcome.
 
-Native operations keep a separate process boundary: the typed TypeScript CLI invokes
-`slop-engine`, which validates and forwards macOS requests to `hitslop-native`. The
-Swift helper receives Rust-decoded requests through UniFFI and supplies AppKit/WebKit
-rendering; exports route through the Rust command router to a live owner or an independent
-saved-state render. Replies return as structured JSON. The restricted command evaluator's
-short execution budget is separate from capture budgets.
+The typed TypeScript CLI invokes `slop-engine` as a separate process, once per request,
+and gets structured JSON back. On macOS, a closed document's export and the artwork a
+build packs render inside the engine, in its restricted evaluator, with no app involved;
+an open document's export routes through the Rust command router to its live owner.
+`open` is the one request that starts hitSlop.app: the engine asks LaunchServices to open
+the document in it. The restricted command evaluator's short execution budget is
+separate from capture budgets.
 
 Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
 in `App.svelte`. Required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and agent-only `commands.ts` have
@@ -109,9 +111,8 @@ hash on first touch. Compressed app assets share a bounded decoded cache. Rust p
 browser and preview resource adapters, which retain their transport and origin checks. Script sources are restricted to shell and app-asset paths;
 attachment and command-program paths cannot become script sources.
 
-The CLI's engine forwards to a live owner or acquires the writer lock. Native exports,
-windows and artwork use the app helper. Their command protocol is exact, with no old
-CLI adapters. Owner socket operations carry `{protocol, request}` around the engine
+The CLI's engine forwards to a live owner or acquires the writer lock. Its command
+protocol is exact, with no old CLI adapters. Owner socket operations carry `{protocol, request}` around the engine
 request type and return the same typed successes and failures. Protocol refusal precedes
 payload interpretation; hello preflight and transport limits still apply. Stored `packageFormat`, `runtimeABI`, SQLite storage version and Loro layout
 remain independent; [compatibility](engineering-contract.md#compatibility) and the
@@ -225,7 +226,9 @@ session's own Loro peer, and Loro's `UndoManager` undoes that peer's steps: an u
 reverses only the step's own operations (the palette with the data) and is rebased over
 changes made since by anyone else, which it keeps. A document opens with nothing to
 undo; the core keeps up to 100 steps per open document. A restored row keeps its `$id`.
-There are no JSON snapshots or persistent undo records.
+There are no JSON snapshots or persistent undo records. The step limit is not a memory
+budget: a grouped step can contain many edits, and dropping an undo step does not remove
+its operations from the live Loro document.
 
 - **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
   to one field, each starting at the caret the last one left. Consecutive agent batches
@@ -284,19 +287,28 @@ The UUID names the logical document, not its writer or its inode-based lease. Op
 save, rename, capture snapshots and internal backups preserve it; explicit Duplicate
 and independent editable copies receive a new UUID. Templates have no UUID. The core
 keeps this identity outside authored state; it is never a Loro peer ID.
-A history that does not start with a snapshot is
-refused and preserved for recovery. A checkpoint (one snapshot) replaces the history at 256
-updates or 4 MiB; the limits are 4,096 updates and 32 MiB. Shared storage limits are defined in
+A history that does not start with a snapshot is refused and preserved for recovery.
+Saving prefers a checkpoint (one snapshot replacing the saved log) once the log reaches
+256 saved updates or 4 MiB of update bytes. A regular snapshot retains history; a shallow
+snapshot discards history before its starting version. The limits are 4,096 saved updates
+and 32 MiB of saved Loro checkpoint and update bytes, not the whole `.slop` file: the app,
+attachments and artwork are separate. Shared storage limits are defined in
 [`wire/limits.rs`](../crates/hitslop-core/src/wire/limits.rs) and projected into host types.
 
-History is trimmed when nothing is editing. After its final save, a session that edited
-a document larger than 4 MiB writes one more checkpoint (`Store::close_job`) that keeps
-no history: undo covers the open session only, so nothing reads it later. While open, a
-checkpoint keeps the whole history when it fits the 32 MiB limit and the current state
-otherwise; the live document keeps its own history either way, so the session's undo
-still works. There is no live history rebuild: a long, heavy session's memory grows until
-it closes. There is no public live-compaction command. Only the checkpoint may
-start history late. Files
+Unshared documents need no lifetime edit history: undo covers the open session only.
+After its final save, a session that saved an edit or stored an attachment to an unshared
+document with more than 4 MiB of saved Loro data attempts one more checkpoint
+(`Store::close_job`) that keeps only current state, when that would shrink the saved data.
+This pruning is best-effort housekeeping: failure does not prevent closing after the
+final save succeeded. A session that only reads does not prune.
+
+While open, an unshared document's checkpoint keeps the whole history when it fits the
+32 MiB limit and only current state otherwise. If neither a checkpoint nor an append fits,
+saving fails and ownership is retained for retry. The live document keeps its own history
+either way, so the session's undo still works. There is no live history rebuild: a long,
+heavy session's memory can grow until it closes. This retention policy is intentional;
+live compaction remains deferred, and there is no public live-compaction command. Only
+the checkpoint may start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
 loads, and the core is the only code that opens a `.slop` file.
@@ -427,7 +439,7 @@ installed evaluator's bytes (including Takumi and bundled fonts), provider ident
 and scale. Startup and reopen perform the same check, even without a refresh interval.
 Updating the renderer refreshes unchanged documents; artwork-only writes do not.
 The evaluator digest is computed off the main thread and cached against file identity,
-size and modification/change times. A helper changed during capture cannot publish.
+size and modification/change times. An evaluator changed during capture cannot publish.
 The fingerprint travels with the rendered snapshot, so a newer save cannot be marked
 fresh by an older capture. Watching starts with a version recheck to cover saves made
 while the first capture was running.
@@ -468,14 +480,19 @@ background capture remains follow-up work. See the [platform spike evidence](evi
 on bounded standard input and returns one method-specific `EngineReply`. Authoring,
 catalog, inspection, named commands and owner operations share this JSON boundary.
 `crates/hitslop-core/src/wire/engine.rs` defines the serde types and explicit checks;
-ts-rs exports the CLI's TypeScript. The engine forwards open, screenshot and export JSON
-to `hitslop-native`. Rust decodes its `NativeRequest` subset once and passes the request
-to Swift through UniFFI, rejecting document edits before starting AppKit. Exports still use
-the Rust command router, so the live owner or a closed document's renderer handles them.
-Screenshot output may replace an existing regular PNG, but refuses documents, links and
-destinations changed during rendering. New screenshot destinations are created exclusively.
+ts-rs exports the CLI's TypeScript. The engine renders for itself. `export` of a closed
+document (macOS only, for now) draws a read-only snapshot of its saved state in the
+engine's restricted evaluator, without the app or a lock. It refuses a template and an
+existing output of any kind (`rejected`, reason `exists`) before rendering, stages the
+result beside the destination, publishes it without replacing anything, and discards one
+that finishes after the 30-second command deadline. When the CLI asks, as it does on
+macOS, `pack` renders the Preview and Icon artwork a project does not supply in the same
+request that writes the template, so a failed render publishes nothing. Only `open` starts
+hitSlop.app (macOS only): it refuses a template, then has LaunchServices (`open -a`) open
+the document in the app that contains the running engine, else the one `HITSLOP_APP`
+names, else `/Applications` or `~/Applications`.
 
-Both executables check the frozen first-position `--client-protocol N` before other
+The engine checks the frozen first-position `--client-protocol N` before other
 arguments or stdin: mismatches exit 2 with one stderr line. Identity queries remain
 flags, and the engine's exact standalone `--evaluate-command` starts its restricted
 child. All handled requests return JSON and exit 0, including classified failures.
@@ -487,10 +504,9 @@ mismatch kills the process, denied calls return `EPERM`, and installation sets
 
 An open document routes through its owner's socket, which lives as long as the owner,
 not the page. Commands never blur a field being typed in; a live `get` returns
-owner-accepted state. For a closed document, the engine takes the writer lock and runs
-the same owner in-process, without WebKit or authored code. Closed exports use a
-read-only saved-state renderer. Socket work runs off the main actor; edit payloads
-remain JSON text until the core parses them.
+owner-accepted state. For a closed document, the engine takes the writer lock (an export
+takes none) and runs the same owner in-process, without WebKit or authored code. Socket
+work runs off the main actor; edit payloads remain JSON text until the core parses them.
 
 Generic edits print `{ids}` after saving and are never replayed automatically. The socket has
 one edit method, `batch`, for data and palette alike; CLI `apply` wraps one operation.
@@ -499,7 +515,7 @@ descriptor and declared colors, and the document's version, value and effective 
 The page's state adds the publication `sequence`, which orders its stream and means
 nothing to an agent. The CLI prints `value` by default and the whole object with
 `get --snapshot`. Engine selection and protocol negotiation
-are detailed in the [CLI reference](guides/cli.md#helper-discovery-and-identity).
+are detailed in the [CLI reference](guides/cli.md#engine-discovery-and-identity).
 
 ## Themes and attachments
 
@@ -585,8 +601,9 @@ Accepted limits, chosen for mini apps over heavier machinery:
   [storage layout](reference/document-types.md#storage-layout).
 - **Counters** are Loro counters, exact until a counter's increments, summed as absolute
   values, reach about 9×10^15.
-- **Live history** grows through a long session; nothing compacts it while the document is
-  open. An unshared document trims at close.
+- **Live history** can grow through a long session despite the undo step limit and saved
+  data limits. Live compaction remains deferred; unshared documents attempt pruning on
+  close under the size and edit conditions above.
 - **Undo** starts over for the session if a live batch is refused after rehearsal
   admitted it, which a rehearsed batch should never be ([undo](#undo)).
 - **A shared document** never trims, so the 32 MiB save limit bounds it. Before sharing
