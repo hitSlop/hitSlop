@@ -469,9 +469,6 @@ button:focus-visible,
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
 }
-html[data-slop-capture=static] [data-slop-export=hide] {
-  display: none !important;
-}
 html[data-slop-capture=static] input,
 html[data-slop-capture=static] textarea {
   border-bottom-color: transparent;

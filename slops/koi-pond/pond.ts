@@ -143,8 +143,6 @@ export class PondScene {
   private started: Promise<void>;
   private disposed = false;
   private pixels = 0;
-  private capturePass = false;
-  private paintEpoch = 0;
   palette: Palette;
   seed: number;
   reducedMotion: boolean;
@@ -193,13 +191,6 @@ export class PondScene {
     options.host.addEventListener("pointerleave", this.leave);
     document.addEventListener("visibilitychange", this.visibility);
     void this.started.then(() => { this.resize(true); });
-  }
-
-  /** Resolves once the current seed is painted at the current size. */
-  async ready() {
-    await this.started;
-    let pending: Promise<void>;
-    do { pending = this.painting; await pending; } while (pending !== this.painting);
   }
 
   private get looping() { return !this.reducedMotion && !this.hidden && !this.disposed; }
@@ -284,26 +275,6 @@ export class PondScene {
     return undefined;
   }
 
-  /** A still frame of the current pond, used by the export view. */
-  async snapshot() {
-    // Drop any interactive time-sliced plate and paint the smallest clean one in a single
-    // pass, inside the 10s screenshot budget. A plate already painted at this size and seed
-    // is reused rather than painted twice.
-    await this.started;
-    this.paintEpoch++;
-    this.job = undefined;
-    this.pixels = MIN_PLATE;
-    this.capturePass = true;
-    this.repaint();
-    try {
-      await this.ready();
-      await this.animator.redraw();
-      return this.animator.canvas.toDataURL("image/png");
-    } finally {
-      this.capturePass = false;
-    }
-  }
-
   destroy() {
     this.disposed = true;
     clearTimeout(this.resizeTimer);
@@ -348,8 +319,8 @@ export class PondScene {
    */
   private repaint() {
     this.painting = this.painting.then(async () => {
-      const seed = this.seed, pixels = this.pixels, epoch = this.paintEpoch;
-      if (this.disposed || !this.painter || !pixels || epoch !== this.paintEpoch) return;
+      const seed = this.seed, pixels = this.pixels;
+      if (this.disposed || !this.painter || !pixels) return;
       if (seed === this.paintedSeed && pixels === this.paintedPixels) return;
       const crossfade = this.painted && this.paintedSeed >= 0 && seed !== this.paintedSeed && !this.reducedMotion;
       if (this.paintedSeed >= 0 && seed !== this.paintedSeed) this.options.onPaintingChange?.(true);
@@ -360,12 +331,10 @@ export class PondScene {
         this.painter.noiseSeed(seed);
         this.job = layer === "water" ? this.paintWater(this.painter) : this.paintLilies(this.painter);
         while (this.job) {
-          if (epoch !== this.paintEpoch) { this.job = undefined; return; }
           await this.painter.redraw();
-          if (this.disposed || this.seed !== seed || epoch !== this.paintEpoch) { this.job = undefined; return; }
-          // Let the animator draw a frame between slices. Capture paints straight through
-          // so the screenshot does not wait out the interactive time-slicing.
-          if (!this.capturePass) await new Promise((resolve) => setTimeout(resolve, 0));
+          if (this.disposed || this.seed !== seed) { this.job = undefined; return; }
+          // Let the animator draw a frame between slices.
+          await new Promise((resolve) => setTimeout(resolve, 0));
         }
         layers.push(this.cutOut(layer, pixels));
       }
@@ -403,11 +372,6 @@ export class PondScene {
     // The matrix resets each redraw. No push/pop: p5.brush ties its fill/stroke state to them.
     p.translate(-p.width / 2, -p.height / 2);
     p.scale(p.width / SIZE);
-    if (this.capturePass) {
-      while (this.job && !this.job.next().done) {}
-      this.job = undefined;
-      return;
-    }
     const until = performance.now() + 8;
     while (this.job && performance.now() < until) {
       if (this.job.next().done) { this.job = undefined; break; }

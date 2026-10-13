@@ -440,7 +440,6 @@ input:focus-visible,
   box-shadow: 0 6px 18px rgba(28, 25, 23, 0.16);
 }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] { display: none !important; }
 html[data-slop-capture="static"] .shell { min-height: 0; }
 
 @media (prefers-reduced-motion: reduce) {

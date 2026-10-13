@@ -273,7 +273,6 @@ input:focus-visible,
   font-weight: 700;
 }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] { display: none !important; }
 html[data-slop-capture="static"] .flask { height: auto; min-height: 100vh; overflow: visible; }
 
 @media (prefers-reduced-motion: reduce) {

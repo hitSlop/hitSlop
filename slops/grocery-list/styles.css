@@ -444,7 +444,6 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .empty p { margin: 0; font-size: 12px; }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] { display: none !important; }
 html[data-slop-capture="static"] .door { height: auto; min-height: 100vh; overflow: visible; }
 html[data-slop-capture="static"] .notepad { height: auto; overflow: visible; }
 html[data-slop-capture="static"] .list { overflow: visible; }

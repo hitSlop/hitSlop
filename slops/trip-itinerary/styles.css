@@ -705,9 +705,6 @@ button:focus-visible, input:focus-visible, [data-select-trigger]:focus-visible, 
   color: var(--slop-muted);
   font-weight: 700;
 }
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
 html[data-slop-capture="static"] .pass {
   height: auto;
   min-height: 0;

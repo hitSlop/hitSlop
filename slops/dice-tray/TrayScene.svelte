@@ -7,18 +7,16 @@
     type DiceKit, type Palette, type Placement, type ShownRoll, type Tumble,
   } from "./dice3d";
 
-  let { roll, kit, palette, reduced, still = false, onRolling, onSettled, onStill }: {
+  let { roll, kit, palette, reduced, onRolling, onSettled }: {
     roll: ShownRoll | undefined;
     kit: DiceKit;
     palette: Palette;
     reduced: boolean;
-    still?: boolean;
     onRolling?: (id: string) => void;
     onSettled?: (id: string) => void;
-    onStill?: (url: string) => void;
   } = $props();
 
-  const { renderer, scene, size, invalidate } = useThrelte();
+  const { renderer, size, invalidate } = useThrelte();
 
   // The felt: a soft seeded noise multiplied by the theme colour.
   const feltCanvas = document.createElement("canvas");
@@ -54,14 +52,11 @@
   const seen = new Set<string>();
   let animating = $state(false);
   let startedAt = 0;
-  let stillTaken = false;
-  let built = $state(false);
 
   function place(target: ShownRoll | undefined, animate: boolean) {
     dice.clear();
     live = [];
-    built = false;
-    if (!camera || !target) { invalidate(); built = !!camera; return; }
+    if (!camera || !target) { invalidate(); return; }
     const { width, height } = $size;
     if (!width || !height) return;
     camera.aspect = width / height;
@@ -84,7 +79,6 @@
       dice.add(mesh);
       return entry;
     });
-    built = true;
     invalidate();
   }
 
@@ -101,7 +95,7 @@
   function show(id: string | undefined) {
     const target = roll;
     const fresh = id !== shownId;
-    const animate = fresh && !!target && !first && !still && !reduced && !seen.has(target.id);
+    const animate = fresh && !!target && !first && !reduced && !seen.has(target.id);
     first = false;
     shownId = id;
     if (target) seen.add(target.id);
@@ -138,14 +132,6 @@
       if (roll) onSettled?.(roll.id);
     }
   }, { running: () => animating });
-
-  // Export: draw one frame of the resting dice and hand it over as a PNG.
-  useTask(() => {
-    if (stillTaken || !camera) return;
-    stillTaken = true;
-    renderer.render(scene, camera);
-    onStill?.(renderer.domElement.toDataURL("image/png"));
-  }, { running: () => still && built, autoInvalidate: false });
 
   onDestroy(() => {
     dice.clear();

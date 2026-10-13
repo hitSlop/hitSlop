@@ -75,6 +75,6 @@ such as Tiny Planet.
 
 ## Unverified
 
-Rendering, tumbling, reduced motion, a 360 px width and the export still were checked in
-headless Chromium through `slop dev`. Not verified: WebGL and the tumble under `slop://` in
-WKWebView, native PNG/PDF export timing of the still, theme overrides in the native panel.
+Rendering, tumbling, reduced motion and a 360 px width were checked in headless Chromium
+through `slop dev`. Not verified: WebGL and the tumble under `slop://` in WKWebView, theme
+overrides in the native panel.

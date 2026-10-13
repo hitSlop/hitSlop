@@ -553,9 +553,6 @@ input::placeholder {
   font-size: 12px;
   text-align: center;
 }
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
 html[data-slop-capture="static"] .page {
   height: auto;
   min-height: 100vh;

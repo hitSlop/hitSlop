@@ -1127,5 +1127,5 @@ button {
 }
 
 /* Capture keeps the printed sticker artwork without browser drop shadows. */
-html[data-slop-renderer="true"] .pod-sticker-art,
-html[data-slop-renderer="true"] .pod-icon-screen i { filter: none; }
+html[data-slop-capture] .pod-sticker-art,
+html[data-slop-capture] .pod-icon-screen i { filter: none; }

@@ -746,10 +746,6 @@
   }
 
   /* Static Export Mode */
-  html[data-slop-capture="static"] [data-slop-export="hide"] {
-    display: none !important;
-  }
-
   html[data-slop-capture="static"] .study-mask-card {
     display: none !important;
   }
@@ -764,7 +760,7 @@
     caret-color: transparent;
   }
 
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .cornell-page {
+  html[data-slop-capture="icon"] .cornell-page {
     display: none !important;
   }
 
@@ -793,7 +789,7 @@
     background: transparent;
   }
 
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .cornell-render {
+  html[data-slop-capture="icon"] .cornell-render {
     display: grid !important;
   }
 

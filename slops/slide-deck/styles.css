@@ -595,11 +595,6 @@ html, body {
   border: 0;
 }
 
-/* Static export styling */
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
-
 /* 512x512 Icon Render Target */
 .deck-render {
   display: none !important;
@@ -610,11 +605,11 @@ html[data-slop-capture="static"] [data-slop-export="hide"] {
   background: transparent;
 }
 
-html[data-slop-renderer="true"][data-slop-capture="icon"] .deck-canvas {
+html[data-slop-capture="icon"] .deck-canvas {
   display: none;
 }
 
-html[data-slop-renderer="true"][data-slop-capture="icon"] [data-slop-render="icon"] {
+html[data-slop-capture="icon"] [data-slop-render="icon"] {
   display: grid !important;
 }
 

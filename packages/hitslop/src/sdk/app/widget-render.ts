@@ -23,7 +23,7 @@ export function widgetRenderer(
         return {
           width: viewport.width,
           height: viewport.height,
-          html: `<html data-slop-renderer="true" data-slop-capture="widget"><body>${captureHTML(result.body, request.theme)}</body></html>`,
+          html: `<html data-slop-capture="widget"><body>${captureHTML(result.body, request.theme)}</body></html>`,
           css: `${css}\n:root{${theme}}\n${widgetCaptureCSS}`,
         };
       }),

@@ -6,19 +6,18 @@
   import sceneUrl from "./assets/little-lamp.riv?url";
   import license from "./assets/rive-license.txt?raw";
 
-  let { on, lookX = 0, lookY = 0, still = false }: { on: boolean; lookX?: number; lookY?: number; still?: boolean } = $props();
+  let { on, lookX = 0, lookY = 0 }: { on: boolean; lookX?: number; lookY?: number } = $props();
   let canvas: HTMLCanvasElement;
   let player = $state.raw<Rive>();
   let visible = $state(document.visibilityState !== "hidden");
   let previousOn: boolean | undefined;
   let remaining = 0;
   let frames = 0;
-  let captureTimer: ReturnType<typeof setInterval> | undefined;
 
   function wake(seconds: number) {
     remaining = Math.max(remaining, seconds);
     frames = 0;
-    if (visible || still) player?.startRendering();
+    if (visible) player?.startRendering();
   }
 
   onMount(() => {
@@ -38,18 +37,13 @@
         }
         rive.resizeDrawingSurfaceToCanvas();
         player = rive;
-        if (still) {
-          // Hidden WKWebView capture pages throttle requestAnimationFrame.
-          // The public drawFrame API also advances data bindings synchronously.
-          captureTimer = setInterval(() => { rive.stopRendering(); rive.drawFrame(); }, 16);
-        }
       },
       onLoadError: event => { if (!disposed) reportError(new Error(`Could not load Little Lamp: ${event.data}`)); },
       onAdvance: event => {
         remaining -= Number(event.data);
-        if (++frames >= 4 && captureTimer) { clearInterval(captureTimer); captureTimer = undefined; }
+        frames++;
         // Awake idle/blinks live inside Rive. Hidden, sleeping and reduced-motion lamps rest.
-        if (frames >= 4 && (still || (remaining <= 0 && (!on || prefersReducedMotion.current || !visible))))
+        if (frames >= 4 && remaining <= 0 && (!on || prefersReducedMotion.current || !visible))
           // Rive schedules its next frame after onAdvance returns.
           queueMicrotask(() => { if (!disposed) rive.stopRendering(); });
       },
@@ -58,21 +52,21 @@
       if (player) { rive.resizeDrawingSurfaceToCanvas(); wake(.1); }
     });
     observer.observe(canvas);
-    return () => { disposed = true; clearInterval(captureTimer); observer.disconnect(); rive.cleanup(); };
+    return () => { disposed = true; observer.disconnect(); rive.cleanup(); };
   });
 
   $effect(() => {
     if (!player) return;
-    const animate = previousOn !== undefined && previousOn !== on && !still && visible && !prefersReducedMotion.current;
+    const animate = previousOn !== undefined && previousOn !== on && visible && !prefersReducedMotion.current;
     previousOn = on;
     player.viewModelInstance!.boolean("animate")!.value = animate;
     player.viewModelInstance!.boolean("on")!.value = on;
-    if (visible || still) wake(animate ? 1.6 : .1);
+    if (visible) wake(animate ? 1.6 : .1);
     else player.stopRendering();
   });
   $effect(() => {
     if (!player) return;
-    const track = on && !still && !prefersReducedMotion.current;
+    const track = on && !prefersReducedMotion.current;
     player.viewModelInstance!.number("lookX")!.value = track ? lookX * 18 : 0;
     player.viewModelInstance!.number("lookY")!.value = track ? lookY * 9 : 0;
     player.viewModelInstance!.number("tilt")!.value = track ? lookX * .14 : 0;

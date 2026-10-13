@@ -333,14 +333,6 @@ body {
   color: var(--brass);
 }
 
-/* Export Rules */
-[data-slop-export="hide"] {
-  /* hidden during export */
-}
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
-
 /* Icon Target */
 .ivy-render {
   display: none !important;
@@ -354,11 +346,11 @@ html[data-slop-capture="static"] [data-slop-export="hide"] {
   background: transparent;
 }
 
-html[data-slop-renderer="true"][data-slop-capture="icon"] main {
+html[data-slop-capture="icon"] main {
   display: none !important;
 }
 
-html[data-slop-renderer="true"][data-slop-capture="icon"] [data-slop-render="icon"] {
+html[data-slop-capture="icon"] [data-slop-render="icon"] {
   display: flex !important;
 }
 

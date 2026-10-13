@@ -17,7 +17,7 @@
   }
   let { title, body, shapes, selected = null, interactive = false, fits = $bindable(true), onshapedown, onshapekey }: Props = $props();
 
-  // Nothing is measured until the poster face has loaded (view state, so captures load it too).
+  // Nothing is measured until the poster face has loaded.
   let fontsReady = $state(false);
   onMount(() => {
     let mounted = true;

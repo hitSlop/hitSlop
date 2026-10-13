@@ -24,7 +24,7 @@ export function viewRenderer(
         width: request.width,
         height: request.height,
         kind: request.kind,
-        html: `<html data-slop-renderer="true" data-slop-capture="${icon ? "icon" : "static"}"><body><div data-slop-capture-target="${request.kind}">${html}</div></body></html>`,
+        html: `<html data-slop-capture="${icon ? "icon" : "static"}"><body><div data-slop-capture-target="${request.kind}">${html}</div></body></html>`,
         css: `${css}\n:root{${theme}}\n${viewCaptureCSS(request.kind)}`,
       },
     ]);

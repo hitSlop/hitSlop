@@ -46,7 +46,7 @@ test("Preview, Export and Icon receive the frozen snapshot, attachment URLs and 
     expect(props.snapshot).toEqual(snapshot);
     expectDeeplyFrozen(props.snapshot);
     expect(frame.html).toStartWith(
-      `<html data-slop-renderer="true" data-slop-capture="${kind === "icon" ? "icon" : "static"}"><body><div data-slop-capture-target="${kind}">`,
+      `<html data-slop-capture="${kind === "icon" ? "icon" : "static"}"><body><div data-slop-capture-target="${kind}">`,
     );
     expect(frame.html).toContain("<h1>Saved</h1>");
     expect(frame.html).toContain('<img src="slop-attachment:photo"');

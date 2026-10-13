@@ -306,10 +306,6 @@ button:focus-visible, [data-toggle-group-item]:focus-visible, [data-tabs-trigger
   font-size: 11px;
 }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
-
 html[data-slop-capture="static"] .shell {
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   height: auto;

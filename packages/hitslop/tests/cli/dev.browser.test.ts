@@ -218,13 +218,12 @@ test("views switch between the editor and static layouts, keep edits and survive
       }, [width, height] as const);
     const mounted = () => app().evaluate(() => ({
       capture: document.documentElement.dataset.slopCapture ?? null,
-      renderer: document.documentElement.hasAttribute("data-slop-renderer"),
       editor: document.querySelectorAll("[data-slop-root]").length,
       preview: document.querySelectorAll('[data-slop-capture-target="preview"] [data-export]').length,
       icon: document.querySelectorAll('[data-slop-capture-target="icon"] svg').length,
       widget: document.querySelectorAll("[data-widget]").length,
     }));
-    const none = { renderer: false, editor: 0, preview: 0, icon: 0, widget: 0 };
+    const none = { editor: 0, preview: 0, icon: 0, widget: 0 };
     await frame.getByRole("textbox", {name: "Document title"}).fill("Saved preview edit");
     await frame.locator("[data-title]").filter({hasText: "Saved preview edit"}).waitFor();
     await page.getByText("slop build shows the final image").waitFor();

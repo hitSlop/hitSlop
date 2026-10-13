@@ -52,7 +52,7 @@ textarea { resize: none; }
 /* Wheel and people */
 .board { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; }
 .wheel { display: block; filter: drop-shadow(0 3px 4px rgba(38,50,58,0.18)); }
-html[data-slop-renderer="true"] .wheel { filter: none; }
+html[data-slop-capture] .wheel { filter: none; }
 .wheel-track { fill: var(--slop-paper); stroke: var(--slop-rule); stroke-width: 1; }
 .wheel-assigned { fill: color-mix(in srgb, var(--tone) 28%, var(--slop-paper)); }
 .wheel-done { fill: var(--tone); }

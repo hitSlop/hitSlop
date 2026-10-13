@@ -1034,9 +1034,6 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-checkbox-root]:
   color: var(--slop-cook) !important;
   background: var(--slop-herb) !important;
 }
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
 html[data-slop-capture="static"] input, html[data-slop-capture="static"] textarea {
   border-bottom-color: transparent;
   box-shadow: none;

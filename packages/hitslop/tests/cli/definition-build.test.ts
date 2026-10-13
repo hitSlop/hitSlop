@@ -63,7 +63,7 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
     const icon = JSON.parse(iconContext.__slopCapture(JSON.stringify({kind:"icon", width:512, height:512, snapshot: {title:"Saved icon"}, theme:{accent:"#123456"}})));
     expect(icon.frames).toHaveLength(1);
     expect(icon.frames[0].html).toContain("Saved icon");
-    expect(icon.frames[0].html).toContain('<html data-slop-renderer="true" data-slop-capture="icon">');
+    expect(icon.frames[0].html).toContain('<html data-slop-capture="icon">');
     expect(icon.frames[0].html).toContain('fill="#123456"');
     const literal = JSON.parse(iconContext.__slopCapture(JSON.stringify({kind:"icon",width:512,height:512,snapshot:{title:"var(--slop-accent)"},theme:{accent:"#123456"}})));
     expect(literal.frames[0].html).toContain("var(--slop-accent)</text>");
