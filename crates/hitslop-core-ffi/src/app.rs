@@ -171,7 +171,7 @@ pub struct HostLimits {
     pub max_window: u64,
     pub package_format: u64,
     pub runtime_abi: u64,
-    pub helper_protocol: u64,
+    pub engine_protocol: u64,
 }
 #[uniffi::export]
 pub fn host_limits() -> HostLimits {

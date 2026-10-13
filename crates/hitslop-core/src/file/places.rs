@@ -31,8 +31,8 @@ impl Places {
         let account = home.as_ref().map(|home| home.join(".hitslop/templates"));
         // A development app's catalog, which replaces the account's in the listing.
         let development = std::env::var_os("HITSLOP_TEMPLATES_ROOT").filter(|root| !root.is_empty()).map(PathBuf::from);
-        // The app's bundled starters, for the app itself (`Contents/MacOS`) and the tools
-        // beside its helper (`Contents/Helpers`).
+        // The app's bundled starters, for an executable inside the app (`Contents/MacOS`,
+        // `Contents/Helpers`).
         let contents = std::env::current_exe()
             .and_then(fs::canonicalize)
             .ok()
@@ -42,12 +42,12 @@ impl Places {
                     && contents.parent().and_then(Path::extension).is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
             });
         // The independently installed npm engine also discovers the installed app's
-        // starters. Explicit development helpers select their own bundle when present.
+        // starters. A development app that `HITSLOP_APP` names selects its own when present.
         let contents = contents.or_else(|| {
-            let named = std::env::var_os("HITSLOP_NATIVE_CLI")
-                .and_then(|path| fs::canonicalize(path).ok())
-                .and_then(|path| path.parent()?.parent().map(Path::to_owned))
-                .filter(|path| path.file_name().is_some_and(|name| name == "Contents"));
+            let named = std::env::var_os("HITSLOP_APP")
+                .filter(|app| !app.is_empty())
+                .and_then(|app| fs::canonicalize(app).ok())
+                .map(|app| app.join("Contents"));
             named
                 .into_iter()
                 .chain(
@@ -128,8 +128,8 @@ fn check_destination(path: &Path, places: &Places) -> Result<()> {
     }
     Ok(())
 }
-/// Refuses a document opened for writing where documents may not live. The app, its
-/// helper and the engine all open documents through the store, so they share the rule.
+/// Refuses a document opened for writing where documents may not live. The app and the
+/// engine both open documents through the store, so they share the rule.
 pub(crate) fn document_location(path: &Path) -> Result<()> {
     check_location(path, &Places::current())
 }

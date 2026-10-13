@@ -73,9 +73,9 @@ pub use wire::{
 };
 pub use wire::{Anchor, Batch, Hunk, Intent, OwnerState, PatchOp, Publication, Reading, Segment, Selection, ThemeFile};
 #[cfg(feature = "storage")]
-pub use wire::{HELPER_PROTOCOL, HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
+pub use wire::{ENGINE_PROTOCOL, HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
 #[cfg(feature = "storage")]
-pub use wire::{OutcomeCode, native, page as page_wire, preview, socket as socket_wire};
+pub use wire::{OutcomeCode, page as page_wire, preview, socket as socket_wire};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
 const MAX_JSON: usize =
@@ -150,5 +150,5 @@ fn integer(value: &Value) -> Option<i64> {
 }
 
 /// Identifies the core build (a hash of its sources and the lockfile), so a release can
-/// prove the app and its helper embed the same core.
+/// prove the app and the engine embed the same core.
 pub const BUILD_ID: &str = env!("HITSLOP_CORE_BUILD_ID");

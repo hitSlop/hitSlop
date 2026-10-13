@@ -138,9 +138,7 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
             if length > crate::ASSET_FILE_BYTES as u64 {
                 return Err(invalid("Artwork exceeds its byte limit"));
             }
-            let bytes = read(file, length as usize)?;
-            super::check_artwork(name, &bytes)?;
-            artwork.push((name, super::optimize_png(bytes, 2)));
+            artwork.push((name, super::pack_artwork(name, read(file, length as usize)?)?));
         }
     }
     assets.sort_by(|a, b| a.key.cmp(&b.key));

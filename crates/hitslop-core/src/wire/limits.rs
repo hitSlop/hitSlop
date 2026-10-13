@@ -19,7 +19,7 @@ pub const RUNTIME_ABI: u64 = 1;
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 const _: () = assert!(RUNTIME_ABI == hitslop_runner::RUNTIME_ABI, "core and runner runtime ABIs must agree");
 #[cfg(feature = "storage")]
-pub const HELPER_PROTOCOL: u64 = 1;
+pub const ENGINE_PROTOCOL: u64 = 1;
 /// The CSS `border-radius` of a window that names no shape. Package format 1 means this
 /// by an absent shape, so it never changes.
 pub(crate) const DEFAULT_WINDOW_RADIUS: &str = "22px";
@@ -123,7 +123,7 @@ pub struct HostLimits {
     pub max_window: u64,
     pub package_format: u64,
     pub runtime_abi: u64,
-    pub helper_protocol: u64,
+    pub engine_protocol: u64,
 }
 #[cfg(feature = "storage")]
 pub fn host_limits() -> HostLimits {
@@ -143,7 +143,7 @@ pub fn host_limits() -> HostLimits {
         max_window: WINDOW_MAX as u64,
         package_format: PACKAGE_FORMAT,
         runtime_abi: RUNTIME_ABI,
-        helper_protocol: HELPER_PROTOCOL,
+        engine_protocol: ENGINE_PROTOCOL,
     }
 }
 /// Attachments share the origin for canvas use, but are never script sources.

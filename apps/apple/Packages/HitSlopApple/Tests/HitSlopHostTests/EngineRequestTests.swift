@@ -10,79 +10,11 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
-  @Test func screenshotsRefuseDocumentDestinations() async throws {
-    let root = try contractFixture()
-    let before = try Data(contentsOf: root)
-    let folder = try Fixtures.folder()
-    defer {
-      try? FileManager.default.removeItem(at: root)
-      try? FileManager.default.removeItem(at: folder)
-    }
-    let other = folder.appendingPathComponent("other.SLOP")
-    let renamed = folder.appendingPathComponent("renamed.png")
-    let symbolic = folder.appendingPathComponent("symbolic.png")
-    let hard = folder.appendingPathComponent("hard.png")
-    try before.write(to: other)
-    try before.write(to: renamed)
-    try FileManager.default.createSymbolicLink(at: symbolic, withDestinationURL: root)
-    try FileManager.default.linkItem(at: root, to: hard)
-    for output in [root, other, renamed, symbolic, hard] {
-      let body = try JSONSerialization.data(withJSONObject: [
-        "method": "screenshot", "documentPath": root.path, "output": output.path,
-        "target": "preview", "ifPresent": false,
-      ])
-      let (_, json, _) = try await cli(input: body, tool: "hitslop-native")
-      let reply = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
-      #expect(reply["ok"] as? Bool == false)
-      #expect(reply["reason"] as? String == "invalid_request")
-      #expect(try Data(contentsOf: output) == before)
-    }
-  }
-
-  @Test func nativeWireCrossesFFIAsTypes() throws {
-    let request = try decodeNativeRequest(
-      input: Data(
-        #"{"method":"screenshot","documentPath":"x.slop","output":"x.png","target":"icon","ifPresent":true}"#.utf8))
-    guard case .screenshot(let path, let output, let target, let ifPresent) = request else {
-      Issue.record("Expected a typed screenshot request")
-      return
-    }
-    #expect(path == "x.slop" && output == "x.png" && target == .icon && ifPresent)
-    let reply = encodeNativeReply(reply: .screenshot(output: nil))
-    let fields = try #require(JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any])
-    #expect(fields["ok"] as? Bool == true && fields["method"] as? String == "screenshot")
-    #expect(fields["output"] is NSNull)
-    do {
-      _ = try decodeNativeRequest(input: Data(#"{"method":"open","documentPath":""}"#.utf8))
-      Issue.record("An empty path must be refused before host work")
-    } catch NativeRefusal.Refused(let reply) {
-      guard case .failure(_, let code, let reason, _) = reply else {
-        Issue.record("Expected a classified failure")
-        return
-      }
-      #expect(code == .rejected && reason == .invalidRequest)
-    }
-  }
-
   /// One request as `slop` sends it (`slop-engine`), and its reply.
   func request(_ body: [String: Any], isolation: isolated (any Actor)? = #isolation) async throws -> [String: Any] {
     let result = try await cli(input: try JSONSerialization.data(withJSONObject: body))
     try #require(result.0 == 0, "\(body["method"] ?? ""): \(result.2)")
     return try #require(JSONSerialization.jsonObject(with: Data(result.1.utf8)) as? [String: Any])
-  }
-
-  // The helper renders; documents are read and edited through slop-engine alone, so the
-  // helper is not a second way in. Oracle: the refusal's code and reason.
-  @Test func theHelperRefusesDocumentEdits() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let body = try JSONSerialization.data(withJSONObject: ["method": "get", "documentPath": root.path])
-    let (status, output, errors) = try await cli(input: body, tool: "hitslop-native")
-    try #require(status == 0, "\(errors)")
-    let reply = try #require(try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
-    #expect(reply["ok"] as? Bool == false)
-    #expect(reply["code"] as? String == "rejected")
-    #expect(reply["reason"] as? String == "invalid_request")
   }
 
   @Test(arguments: [false, true]) @MainActor func engineRequestsReadAndEditLiveAndClosedDocuments(live: Bool)
@@ -301,7 +233,7 @@ extension HostTests {
     let path = try #require(advertised["socket"] as? String)
     let documentPath = try #require(advertised["documentPath"] as? String)
     let newer = try JSONSerialization.data(withJSONObject: [
-      "protocol": HelperProtocol.version + 1, "method": "batch", "documentPath": documentPath,
+      "protocol": EngineProtocol.version + 1, "method": "batch", "documentPath": documentPath,
       "batch": [
         "intents": try JSONSerialization.jsonObject(
           with: Data((#"[{"type":"set","path":["title"],"value":"must not apply"}]"#).utf8))

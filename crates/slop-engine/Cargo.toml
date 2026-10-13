@@ -23,3 +23,4 @@ bundled-sqlite = ["hitslop-core/bundled-sqlite"]
 
 [dev-dependencies]
 tempfile = "3"
+png = "=0.18.1"

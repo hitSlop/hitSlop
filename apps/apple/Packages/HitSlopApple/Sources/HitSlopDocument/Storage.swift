@@ -5,7 +5,7 @@ import HitSlopCoreBinding
 /// The writer-lock registry the core keeps (`~/.hitslop/live`).
 public enum SlopRegistry {
   /// Debug builds use `HITSLOP_TEST_REGISTRY` when it is set, so test runs never fill a
-  /// person's registry. Release builds never read it, so the app and its helper always
+  /// person's registry. Release builds never read it, so the app and the CLI always
   /// share one registry.
   public static let prepared: Void = {
     #if DEBUG

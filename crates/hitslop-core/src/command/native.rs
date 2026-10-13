@@ -1,8 +1,9 @@
 //! Native socket routing and blocking CLI driver.
 use super::*;
+use crate::capture::CaptureFormat;
 use crate::wire::SocketRequest;
 use crate::wire::engine::{
-    AttachmentBytes, AttachmentInfo, EngineRequest, EngineSuccess, GetState, ThemeExportState, True,
+    AttachmentBytes, AttachmentInfo, EngineRequest, EngineSuccess, ExportFormat, GetState, ThemeExportState, True,
 };
 use crate::{file, lock, registry, socket};
 use serde::Deserialize;
@@ -299,33 +300,27 @@ fn prepare(mut request: EngineRequest, protocol: u64) -> Result<SocketRequest> {
 }
 /// Engine entry point, for a request written in `protocol`. A closed owner is created only
 /// after taking the writer lock; discovery is consulted only when that lock is busy.
-/// Exports alone may use a snapshot.
-pub fn request(input: &str, protocol: u64, exporter: Option<Arc<dyn ExportHandler>>) -> String {
+/// Exports alone use a snapshot: without an evaluator, a closed export is refused.
+pub fn request(input: &str, protocol: u64) -> String {
     if let Some(message) = protocol_mismatch(protocol) {
         return failure(Failure::rejected(Code::RequiresUpdate, message), false, false);
     }
     match wire::engine::EngineRequest::parse(input) {
-        Ok(request) => request_checked(request, protocol, exporter, None),
+        Ok(request) => request_checked(request, protocol, None),
         Err(error) => failure(invalid(error.to_string()), false, false),
     }
 }
 pub fn request_with_evaluator(
     input: wire::engine::EngineRequest,
     protocol: u64,
-    exporter: Option<Arc<dyn ExportHandler>>,
     evaluator: Option<owner::Evaluator>,
 ) -> String {
     if let Some(message) = protocol_mismatch(protocol) {
         return failure(Failure::rejected(Code::RequiresUpdate, message), false, false);
     }
-    request_checked(input, protocol, exporter, evaluator)
+    request_checked(input, protocol, evaluator)
 }
-fn request_checked(
-    input: EngineRequest,
-    protocol: u64,
-    exporter: Option<Arc<dyn ExportHandler>>,
-    evaluator: Option<owner::Evaluator>,
-) -> String {
+fn request_checked(input: EngineRequest, protocol: u64, evaluator: Option<owner::Evaluator>) -> String {
     let request = match prepare(input, protocol) {
         Ok(r) => r,
         Err(mut e) => {
@@ -344,16 +339,18 @@ fn request_checked(
             match discovery(&path) {
                 Ok(socket) => Connection::Live(socket),
                 Err(_) => {
-                    let EngineRequest::Export { document_path, format, output, .. } = request.request else {
-                        unreachable!()
+                    let EngineRequest::Export { format, output, .. } = request.request else { unreachable!() };
+                    let Some(evaluator) = &evaluator else {
+                        return failure(invalid("Export requires the capture renderer"), false, false);
                     };
-                    return match export(
-                        ExportRequest { document_path, format: Some(format), output },
-                        exporter.as_ref(),
-                        Instant::now() + COMMAND_TIMEOUT,
-                    ) {
-                        Ok(output) => success(EngineSuccess::Export { ok: True, output }),
-                        Err(error) => failure(error, false, false),
+                    let format = match format {
+                        ExportFormat::Png => CaptureFormat::Png,
+                        ExportFormat::Pdf => CaptureFormat::Pdf,
+                    };
+                    let deadline = Instant::now() + COMMAND_TIMEOUT;
+                    return match crate::capture::export_saved(&path, format, Path::new(&output), evaluator, deadline) {
+                        Ok(()) => success(EngineSuccess::Export { ok: True, output }),
+                        Err(error) => failure(error.into(), false, false),
                     };
                 }
             }
@@ -376,7 +373,7 @@ fn request_checked(
         };
         let answer = match &connection {
             Connection::Local(owner) => {
-                Ok(dispatch(owner, request.request.clone(), exporter.as_ref(), Instant::now() + COMMAND_TIMEOUT))
+                Ok(dispatch(owner, request.request.clone(), None, Instant::now() + COMMAND_TIMEOUT))
             }
             Connection::Live(socket) => match socket::call(Path::new(socket), &crate::encode(&request)) {
                 // Transport loss cannot confirm admission: its failure already has an

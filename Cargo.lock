@@ -2574,6 +2574,7 @@ dependencies = [
  "hitslop-core",
  "hitslop-runner",
  "libc",
+ "png",
  "serde_json",
  "tempfile",
 ]

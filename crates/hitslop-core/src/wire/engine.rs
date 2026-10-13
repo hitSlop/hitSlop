@@ -104,6 +104,9 @@ pub enum EngineRequest {
         file: String,
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         app: Box<RawValue>,
+        /// Render the Preview and Icon artwork the build does not supply before publishing.
+        #[serde(default)]
+        render_artwork: bool,
     },
     #[serde(rename = "validateApp")]
     ValidateApp {
@@ -124,15 +127,13 @@ pub enum EngineRequest {
     },
     #[serde(rename = "open")]
     Open { document_path: String },
-    #[serde(rename = "screenshot")]
-    Screenshot { document_path: String, output: String, target: ArtworkTarget, if_present: bool },
 }
 
-/// Which engine dispatcher owns a request. Native exports may still reach an owner.
+/// Which engine dispatcher owns a request: a document's owner (an export renders a closed
+/// document's saved state without one), or the engine's file operations.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
     Document,
-    Native,
     File,
 }
 
@@ -149,7 +150,6 @@ macro_rules! document_path {
             | EngineRequest::Describe { document_path }
             | EngineRequest::Call { document_path, .. }
             | EngineRequest::Open { document_path }
-            | EngineRequest::Screenshot { document_path, .. }
             | EngineRequest::Export { document_path, .. } => Some(document_path),
             _ => None,
         }
@@ -159,10 +159,10 @@ macro_rules! document_path {
 impl EngineRequest {
     pub fn route(&self) -> Route {
         match self {
-            Self::Open { .. } | Self::Screenshot { .. } | Self::Export { .. } => Route::Native,
             Self::Get { .. }
             | Self::Batch { .. }
             | Self::Copy { .. }
+            | Self::Export { .. }
             | Self::ThemeExport { .. }
             | Self::AttachmentsList { .. }
             | Self::AttachmentsRead { .. }
@@ -176,11 +176,12 @@ impl EngineRequest {
             | Self::Schema { .. }
             | Self::Pack { .. }
             | Self::ValidateApp { .. }
-            | Self::ValidateMetadata { .. } => Route::File,
+            | Self::ValidateMetadata { .. }
+            | Self::Open { .. } => Route::File,
         }
     }
     pub fn is_document(&self) -> bool {
-        self.route() == Route::Document || matches!(self, Self::Export { .. })
+        self.route() == Route::Document
     }
     pub fn document_path(&self) -> Option<&str> {
         document_path!(self).map(String::as_str)
@@ -209,19 +210,21 @@ impl EngineRequest {
             method: String,
         }
         let header: Header = serde_json::from_str(input)?;
-        // RawValue is read directly from the input, before serde's tagged-enum buffer.
+        // RawValue is read directly from the input, before serde's tagged-enum buffer. Flags
+        // are optional booleans, false when absent.
         macro_rules! build_request {
-            ($variant:ident, $($field:ident),+) => {{
+            ($variant:ident, $($field:ident),+ $(; $($flag:ident = $name:literal),+)?) => {{
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
-                struct Envelope { #[serde(rename="method")] _method:String, app:Box<RawValue>, $($field:String),+ }
+                struct Envelope { #[serde(rename="method")] _method:String, app:Box<RawValue>, $($field:String,)+
+                    $($(#[serde(default, rename=$name)] $flag:bool,)+)? }
                 let value:Envelope=serde_json::from_str(input)?;
-                Self::$variant {app:value.app, $($field:value.$field),+}
+                Self::$variant {app:value.app, $($field:value.$field,)+ $($($flag:value.$flag,)+)?}
             }};
         }
         let request = match header.method.as_str() {
             "validateApp" => build_request!(ValidateApp, stage),
-            "pack" => build_request!(Pack, stage, file),
+            "pack" => build_request!(Pack, stage, file; render_artwork = "renderArtwork"),
             _ => serde_json::from_str(input)?,
         };
         request.check().map_err(serde_json::Error::custom)?;
@@ -249,7 +252,6 @@ impl EngineRequest {
             Self::Describe { .. } => "describe",
             Self::Call { .. } => "call",
             Self::Open { .. } => "open",
-            Self::Screenshot { .. } => "screenshot",
         }
     }
 
@@ -280,7 +282,6 @@ impl EngineRequest {
             }
             Self::Copy { document_path, output }
             | Self::Export { document_path, output, .. }
-            | Self::Screenshot { document_path, output, .. }
             | Self::ArtworkExport { file: document_path, output, .. } => {
                 check_path(document_path)?;
                 check_path(output)?;
@@ -462,6 +463,27 @@ pub struct DescribeState {
     #[cfg_attr(feature = "ts", ts(type = "Record<string, { description: string; args: Record<string, unknown> }>"))]
     pub commands: Value,
 }
+/// Where a packed template's artwork image came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
+pub enum ArtworkSource {
+    /// Imported with the build.
+    Supplied,
+    /// Rendered from the app's view while packing.
+    Rendered,
+    /// Neither: not rendered, or an icon the app does not draw.
+    Absent,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
+pub struct PackedArtwork {
+    pub preview: ArtworkSource,
+    pub icon: ArtworkSource,
+}
 
 /// Every successful result names its method and carries all fields that method promises.
 #[derive(Debug, Serialize, Deserialize)]
@@ -512,7 +534,7 @@ pub enum EngineSuccess {
         schema: Value,
     },
     #[serde(rename = "pack")]
-    Pack { ok: True },
+    Pack { ok: True, artwork: PackedArtwork },
     #[serde(rename = "validateApp")]
     ValidateApp { ok: True, window: crate::app::WindowDefinition, capabilities: Vec<crate::app::Capability> },
     #[serde(rename = "validateMetadata")]
@@ -521,12 +543,6 @@ pub enum EngineSuccess {
     Describe { ok: True, state: DescribeState },
     #[serde(rename = "open")]
     Open { ok: True, document_path: String },
-    #[serde(rename = "screenshot")]
-    Screenshot {
-        ok: True,
-        #[serde(deserialize_with = "required_option")]
-        output: Option<String>,
-    },
 }
 
 /// Nullable fields still have to be present; absence is a malformed acknowledgement.

@@ -68,6 +68,77 @@ pub fn render_batch(
         .collect())
 }
 
+/// A staged template's artwork for `file::pack`: the `roles`, rendered in one batch from its
+/// initial values, as raw PNGs; an icon is `None` when the app draws none. Any role's failure
+/// fails the batch.
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub fn render_artwork(
+    path: &std::path::Path,
+    evaluator: &hitslop_runner::Evaluator,
+    roles: &[crate::file::Artwork],
+) -> crate::store::Result<Vec<(crate::file::Artwork, Option<Vec<u8>>)>> {
+    use crate::file::Artwork;
+    let outputs: Vec<_> = roles
+        .iter()
+        .map(|role| match role {
+            Artwork::Preview => CaptureOutput::Preview,
+            Artwork::Icon => CaptureOutput::Icon,
+        })
+        .collect();
+    render_batch(path, evaluator, &outputs)?
+        .into_iter()
+        .zip(roles)
+        .map(|(capture, &role)| match capture.result? {
+            CaptureValue::Image { bytes } => Ok((role, bytes)),
+            CaptureValue::Widgets { .. } => unreachable!("artwork renders images"),
+        })
+        .collect()
+}
+
+/// `slop export` of a closed document: its saved state, rendered without a lock, published
+/// at `output` without replacing anything there under any spelling, including a file made
+/// while it rendered. A template is refused, and a result after `deadline` is discarded.
+/// Closed export runs on macOS only, for now.
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub fn export_saved(
+    path: &std::path::Path,
+    format: CaptureFormat,
+    output: &std::path::Path,
+    evaluator: &hitslop_runner::Evaluator,
+    deadline: std::time::Instant,
+) -> crate::store::Result<()> {
+    use crate::error::{failed, invalid, rejected};
+    use std::io::Write;
+    if !cfg!(target_os = "macos") {
+        return Err(invalid("Export requires macOS; document edits and authoring run anywhere"));
+    }
+    let output = crate::file::resolve(output)?;
+    // Before rendering: no file, folder or link (even a dangling one) is ever replaced.
+    if std::fs::symlink_metadata(&output).is_ok() {
+        return Err(rejected(crate::Code::Exists, "A file already exists there"));
+    }
+    if crate::file::kind(path)? == crate::file::Kind::Template {
+        return Err(rejected(crate::Code::IsTemplate, "This is a template; create a document from it first"));
+    }
+    // `render_source` refuses an app without an Export view and checks the PNG or PDF.
+    let rendered = render_batch(path, evaluator, &[CaptureOutput::Export { format }])?;
+    let CaptureValue::Image { bytes: Some(bytes) } = rendered.into_iter().next().expect("one result").result? else {
+        return Err(invalid("This slop has no native capture view; rebuild its template"));
+    };
+    let staged = crate::file::Staged::beside(&output)?;
+    let write = || -> std::io::Result<()> {
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(staged.path())?;
+        file.write_all(&bytes)?;
+        file.sync_all()
+    };
+    write().map_err(|e| failed(format!("Cannot write the export: {e}")))?;
+    // Immediately before publishing: a late result is discarded with its staged file.
+    if std::time::Instant::now() >= deadline {
+        return Err(failed("Command timed out; output was not published"));
+    }
+    staged.publish_new(&output, true)
+}
+
 /// Inputs are prepared lazily after role admission, once for the entire batch. Even
 /// a preparation failure is shared; unsupported/absent roles keep their own outcome.
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]

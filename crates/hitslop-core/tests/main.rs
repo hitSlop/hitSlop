@@ -24,8 +24,6 @@ mod media;
 mod merge;
 mod metadata;
 mod model;
-#[cfg(feature = "storage")]
-mod native_wire;
 mod nested;
 mod owner;
 mod owner_commands;

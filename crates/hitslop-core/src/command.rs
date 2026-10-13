@@ -224,13 +224,13 @@ fn page_validated(
     );
 }
 pub fn protocol() -> String {
-    serde_json::json!({ "version": wire::HELPER_PROTOCOL }).to_string()
+    serde_json::json!({ "version": wire::ENGINE_PROTOCOL }).to_string()
 }
 /// What to say when a caller names `version`: nothing when this build serves it, otherwise
 /// which side is older. The wording is part of the permanent refusal path.
 pub fn protocol_mismatch(version: u64) -> Option<&'static str> {
     use std::cmp::Ordering::*;
-    match version.cmp(&wire::HELPER_PROTOCOL) {
+    match version.cmp(&wire::ENGINE_PROTOCOL) {
         Equal => None,
         Greater => Some("This command needs a newer hitSlop app; update hitSlop"),
         Less => Some("This hitSlop app needs a newer command line; update the hitSlop CLI"),

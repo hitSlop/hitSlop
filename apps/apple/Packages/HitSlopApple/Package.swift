@@ -11,7 +11,6 @@ let package = Package(
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
     .library(name: "HitSlopWidgets", targets: ["HitSlopWidgets"]),
-    .executable(name: "hitslop-native", targets: ["HitSlopNativeCLI"]),
   ],
   dependencies: [
     .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.19.2")
@@ -60,16 +59,6 @@ let package = Package(
         "HitSlopHost", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures",
       ],
       resources: [.process("Resources")],
-      linkerSettings: [.linkedFramework("AppKit")]
-    ),
-    .executableTarget(
-      name: "HitSlopNativeCLI",
-      dependencies: [
-        "HitSlopCore",
-        "HitSlopCoreBinding",
-        "HitSlopHost",
-        "HitSlopDocument",
-      ],
       linkerSettings: [.linkedFramework("AppKit")]
     ),
     .testTarget(

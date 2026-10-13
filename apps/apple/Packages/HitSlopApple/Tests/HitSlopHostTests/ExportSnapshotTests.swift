@@ -135,19 +135,15 @@ extension HostTests {
   // window's owner discards and closes.
   @Test @MainActor func acquiredExportSnapshotMayFinishAfterDiscardAndClose() async throws {
     let root = try contractFixture()
-    let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
-    defer {
-      try? FileManager.default.removeItem(at: root)
-      try? FileManager.default.removeItem(at: output)
-    }
+    defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()
-    try await session.withCaptureSnapshot { source in
+    let pdf = try await session.withCaptureSnapshot { source in
       try await session.discardPending()
       try await session.close()
-      try await SlopRenderer.exportClosed(source, format: .pdf, output: output)
+      return try await SlopRenderer.capture(url: source, output: .export(format: .pdf))
     }
-    #expect(FileManager.default.fileExists(atPath: output.path))
+    #expect(pdf.starts(with: Data("%PDF".utf8)))
   }
 }

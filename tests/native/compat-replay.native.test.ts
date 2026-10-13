@@ -1,4 +1,4 @@
-// Replays the compatibility corpus (tests/compat) through this build's CLI and helper: every
+// Replays the compatibility corpus (tests/compat) through this build's CLI and engine: every
 // saved document of every release reads as that release recorded, renders with its own old
 // app, keeps its attachments, takes a CLI edit and reopens to the recorded result; every
 // template master still creates documents. Old files are checked, not old programs. The Rust

@@ -31,9 +31,3 @@ final class NativeExports: NativeExportHandler {
     }
   }
 }
-
-final class CommandCompletion: NativeCommandCompletion {
-  private let reply: @Sendable (Data) -> Void
-  init(_ reply: @escaping @Sendable (Data) -> Void) { self.reply = reply }
-  func complete(replyJson: String) { reply(Data(replyJson.utf8)) }
-}

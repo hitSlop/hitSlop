@@ -241,7 +241,7 @@ public enum Fixtures {
       "method": "pack", "stage": stage.path, "file": template.path,
       "app": try JSONSerialization.jsonObject(with: Data(contentsOf: stage.appendingPathComponent("input.json"))),
     ])
-    let (status, output, errors) = try run(engine, ["--client-protocol", String(HelperProtocol.version)], input: input)
+    let (status, output, errors) = try run(engine, ["--client-protocol", String(EngineProtocol.version)], input: input)
     guard status == 0 else { throw SlopFailure(errors.trimmingCharacters(in: .whitespacesAndNewlines)) }
     guard let reply = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any],
       reply["ok"] as? Bool == true

@@ -76,7 +76,16 @@ pub fn write_app(stage: &std::path::Path, app: App) {
 }
 #[cfg(feature = "storage")]
 pub fn pack(stage: &std::path::Path, destination: &std::path::Path) -> Result<(), hitslop_core::store::Error> {
-    hitslop_core::file::pack(&std::fs::read_to_string(stage.join("input.json")).unwrap(), stage, destination)
+    pack_rendering(stage, destination, None).map(|_| ())
+}
+/// Packs, rendering the artwork the stage does not supply with `render`.
+#[cfg(feature = "storage")]
+pub fn pack_rendering(
+    stage: &std::path::Path,
+    destination: &std::path::Path,
+    render: Option<hitslop_core::file::RenderArtwork>,
+) -> Result<hitslop_core::engine::PackedArtwork, hitslop_core::store::Error> {
+    hitslop_core::file::pack(&std::fs::read_to_string(stage.join("input.json")).unwrap(), stage, destination, render)
 }
 pub fn edit_input(stage: &std::path::Path, edit: impl FnOnce(&mut Value)) {
     let path = stage.join("input.json");
@@ -107,6 +116,14 @@ pub fn add_asset(stage: &std::path::Path, key: &str, media_type: &str, bytes: &[
             input["roles"]["commands"] = key.into();
         }
     });
+}
+/// A stand-in capture renderer: it reads its job, runs the shell command `before`, then
+/// replies with one image, `bytes`, whatever it was asked for.
+#[cfg(feature = "storage")]
+pub fn renderer(before: &str, bytes: &[u8]) -> hitslop_core::owner::Evaluator {
+    let reply = json!({"ok": true, "images": [data_encoding::BASE64.encode(bytes)]});
+    let script = format!("/bin/cat >/dev/null; {before}; printf '%s' '{reply}'");
+    hitslop_core::owner::Evaluator::new("/bin/sh".into(), vec!["-c".into(), script]).unwrap()
 }
 #[cfg(feature = "storage")]
 pub fn media_key(bytes: &[u8], extension: &str) -> String {

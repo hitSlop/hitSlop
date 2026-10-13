@@ -11,39 +11,6 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
-  @Test @MainActor func screenshotPublicationProtectsDestinationsAndReplacesPNGs() throws {
-    let folder = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    let source = folder.appendingPathComponent("source.slop")
-    let output = folder.appendingPathComponent("screenshot.png")
-    let red = try Fixtures.png(width: 8, height: 8) {
-      NSColor.red.setFill()
-      $0.fill()
-    }
-    let blue = try Fixtures.png(width: 8, height: 8) {
-      NSColor.blue.setFill()
-      $0.fill()
-    }
-    try SlopScreenshotDestination(output: output, source: source).publish(red)
-    try SlopScreenshotDestination(output: output, source: source).publish(blue)
-    #expect(try Data(contentsOf: output) == blue)
-    let pending = try SlopScreenshotDestination(output: output, source: source)
-    try red.write(to: output, options: .atomic)
-    #expect(throws: (any Error).self) { try pending.publish(blue) }
-    #expect(try Data(contentsOf: output) == red)
-    let new = folder.appendingPathComponent("new.png")
-    let absent = try SlopScreenshotDestination(output: new, source: source)
-    try blue.write(to: new)
-    #expect(throws: (any Error).self) { try absent.publish(red) }
-    #expect(try Data(contentsOf: new) == blue)
-    let link = folder.appendingPathComponent("link.png")
-    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: output)
-    #expect(throws: (any Error).self) { _ = try SlopScreenshotDestination(output: link, source: source) }
-    let text = folder.appendingPathComponent("text.png")
-    try Data("Keep this file".utf8).write(to: text)
-    #expect(throws: (any Error).self) { _ = try SlopScreenshotDestination(output: text, source: source) }
-  }
-
   @Test(.nightly) @MainActor func largestDefaultPreviewStaysWithinRasterBudget() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in

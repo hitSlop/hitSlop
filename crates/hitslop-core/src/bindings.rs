@@ -69,7 +69,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("CoreErrorCodes", json!(Code::ALL)),
         ("PackageFormat", json!(PACKAGE_FORMAT)),
         ("RuntimeABI", json!(RUNTIME_ABI)),
-        ("HelperProtocol", json!({"version": HELPER_PROTOCOL})),
+        ("EngineProtocol", json!({"version": ENGINE_PROTOCOL})),
         ("OutcomeCodes", json!(OutcomeCode::ALL)),
     ]
 }

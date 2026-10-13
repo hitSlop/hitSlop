@@ -4,6 +4,8 @@ import HitSlopCore
 import HitSlopDocument
 
 extension SlopRenderer {
+  /// `slop export` of an open document: its saved state, rendered after its owner drains
+  /// pending edits. A closed document is exported by the engine.
   public static func exportDocument(
     session: DocumentSession, format: ExportFormat, output: URL,
     deadline: NativeCommandDeadline = NativeCommandDeadline()
@@ -11,19 +13,6 @@ extension SlopRenderer {
     try refuseExisting(output)
     try deadline.check()
     let data = try await exportData(session: session, format: format)
-    try publishExport(data, to: output, deadline: deadline)
-  }
-
-  /// `slop export` of a closed document (`DocumentCommand.run`'s renderer callback): its saved
-  /// state, rendered from a snapshot that takes no lock. An open document exports its
-  /// saved state after its owner drains pending edits.
-  public static func exportClosed(
-    _ root: URL, format: ExportFormat, output: URL,
-    deadline: NativeCommandDeadline = NativeCommandDeadline()
-  ) async throws {
-    let output = output.standardizedFileURL
-    try refuseExisting(output)
-    let data = try await capture(url: root, output: .export(format: format == .png ? .png : .pdf))
     try publishExport(data, to: output, deadline: deadline)
   }
 

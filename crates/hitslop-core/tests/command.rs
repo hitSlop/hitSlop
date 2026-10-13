@@ -37,7 +37,7 @@ fn document_declaring(capabilities: &[&str]) -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 /// The command protocol these requests are written in.
-const PROTOCOL: u64 = hitslop_core::HELPER_PROTOCOL;
+const PROTOCOL: u64 = hitslop_core::ENGINE_PROTOCOL;
 fn request(path: &Path, method: &str) -> Value {
     json!({"protocol":PROTOCOL,"method":method,"documentPath":std::fs::canonicalize(path).unwrap()})
 }
@@ -56,7 +56,7 @@ fn socket_request(mut value: Value) -> String {
 }
 fn run(mut value: Value) -> Value {
     value.as_object_mut().unwrap().remove("protocol");
-    checked(command::request(&value.to_string(), PROTOCOL, None))
+    checked(command::request(&value.to_string(), PROTOCOL))
 }
 fn call(owner: &Owner, request: Request) -> std::result::Result<Reply, Failure> {
     let (tx, rx) = mpsc::channel();
@@ -107,7 +107,7 @@ impl ExportHandler for NoExport {
 
 #[test]
 fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
-    let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1, None));
+    let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1));
     assert_eq!(reply["reason"], "requires_update");
     let (_dir, path) = document();
     let owner = open(&path);
@@ -387,7 +387,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
         let input = line(&mut edit);
         let applied = checked(command::serve(&actor, &input, None, Instant::now() + Duration::from_secs(5)));
         assert_eq!(applied["ok"], true);
-        drop(edit); // The committed reply never reaches the helper.
+        drop(edit); // The committed reply never reaches the client.
     });
     let answer = run(batch(&path));
     assert_eq!(answer["code"], "unknown_outcome");
@@ -641,6 +641,39 @@ fn a_client_that_panics_frees_its_place() {
     assert_eq!(checked(answer.expect("a place is free"))["method"], "get");
     close(&owner);
     server.stop();
+}
+
+// Failure: a closed export without a renderer did not refuse cleanly, or a closed export
+// took the writer lock to render. Oracle: a refusal, the live owner's own answer, and the
+// saved state exported while another writer holds the lock with no session to ask.
+#[test]
+fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
+    let (dir, path) = document();
+    let output = dir.path().join("closed.pdf");
+    let mut export = request(&path, "export");
+    export["format"] = "pdf".into();
+    export["output"] = output.to_str().unwrap().into();
+    // `command::request` has no evaluator to render with.
+    let refused = run(export.clone());
+    assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("invalid_request")));
+    let owner = open(&path);
+    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    assert_eq!(run(export.clone())["error"], "No export", "the live owner's renderer answers");
+    close(&owner);
+    server.stop();
+    assert!(!output.exists());
+    if cfg!(target_os = "macos") {
+        let before = std::fs::read(&path).unwrap();
+        let busy = registry::Lease::acquire(&path).unwrap();
+        let pdf = b"%PDF-1.7\n%%EOF".to_vec();
+        export.as_object_mut().unwrap().remove("protocol");
+        let request = hitslop_core::EngineRequest::parse(&export.to_string()).unwrap();
+        let rendered = command::request_with_evaluator(request, PROTOCOL, Some(support::renderer(":", &pdf)));
+        assert_eq!(checked(rendered), json!({"ok":true,"method":"export","output":output}));
+        assert_eq!(std::fs::read(&output).unwrap(), pdf);
+        drop(busy);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
 }
 
 #[test]
