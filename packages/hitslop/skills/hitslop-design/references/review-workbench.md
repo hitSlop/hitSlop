@@ -8,7 +8,7 @@ Exercise empty, typical, and long-content states through normal controls. Keep
 fake review content out of creation defaults. Verify reduced motion and that
 portal content remains styled when mounted outside the editor tree.
 
-Run `bun run check` and `bun run build`. On a Mac, build renders the preview and
+Run `bun run check` and `bun run build`. On macOS and Linux, build renders the preview and
 icon artwork you do not supply. Register, create a writable copy, and
 test close-after-type, reopen, theme overrides, and PNG/PDF export. The immutable
 template holds no document state, source, dependencies, or caches.

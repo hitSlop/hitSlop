@@ -87,7 +87,7 @@ Provide the required root `Icon.svelte`. It renders
 for capture and the `slop dev` Icon layout, centered on a transparent 512×512 surface. Pass progress or other saved data if useful; keep
 a strong silhouette, safe margins, and no essential small text. It refreshes
 a document's artwork and Finder icon on close; the template's icon remains as built.
-Build (or register) on a Mac and check the generated artwork (`slop inspect` lists it; Quick Look shows it), then verify native exports.
+Build (or register) on macOS or Linux and check the generated artwork (`slop inspect` lists it; Quick Look shows it on a Mac), then verify PNG/PDF exports.
 
 
 ## Widget compositions

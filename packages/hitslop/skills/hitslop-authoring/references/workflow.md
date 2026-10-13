@@ -9,8 +9,8 @@ Run the generated project's `bun run check` and `bun run dev`; refresh resets
 preview state. Vite watches source: component/CSS updates keep accepted edits, while a change to slop.ts, schema.ts, commands.ts, their dependencies or the root role inventory resets disposable state. In the repository,
 use `bun slop COMMAND SOURCE`.
 
-Run `bun run build`, then `bun run register`; a Mac renders the preview and icon artwork
-you do not supply, and elsewhere you supply both PNGs. Create a writable copy in the
+Run `bun run build`, then `bun run register`; macOS and Linux render the preview and icon artwork
+you do not supply. Create a writable copy in the
 Mac app's catalog. Manually review close-after-type, reopen,
 keyboard/IME, themes, duplication, and PNG/PDF. Inspect preview and icon artwork.
 Never edit a runtime master or publish private document state as a template.

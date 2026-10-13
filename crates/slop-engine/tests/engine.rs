@@ -239,7 +239,6 @@ fn template_and_document(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf)
 /// The engine exports a closed document's saved state itself, in its own restricted
 /// evaluator, and never replaces a file or writes the document.
 #[test]
-#[cfg(target_os = "macos")]
 fn the_engine_exports_a_closed_document_without_the_app() {
     let dir = tempfile::tempdir().unwrap();
     let (template, document) = template_and_document(dir.path());
@@ -277,22 +276,15 @@ fn open_refuses_a_template_and_a_missing_named_app() {
     assert!(refused["error"].as_str().unwrap().contains("HITSLOP_APP"), "{refused}");
 }
 
-/// Windows and closed exports need macOS; elsewhere both refuse and change nothing.
+/// Opening a window needs macOS and hitSlop.app; elsewhere it refuses and changes nothing.
 #[test]
 #[cfg(not(target_os = "macos"))]
-fn windows_and_exports_require_macos() {
+fn opening_a_window_requires_macos() {
     let dir = tempfile::tempdir().unwrap();
     let (_, document) = template_and_document(dir.path());
-    let output = dir.path().join("Export.png");
-    for body in [
-        json!({"method":"open","documentPath":document}),
-        json!({"method":"export","documentPath":document,"format":"png","output":output}),
-    ] {
-        let refused = request(body);
-        assert_eq!(refused["reason"], "invalid_request");
-        assert!(refused["error"].as_str().unwrap().contains("macOS"), "{refused}");
-    }
-    assert!(!output.exists());
+    let refused = request(json!({"method":"open","documentPath":document}));
+    assert_eq!(refused["reason"], "invalid_request");
+    assert!(refused["error"].as_str().unwrap().contains("macOS"), "{refused}");
 }
 
 #[test]

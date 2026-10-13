@@ -5,20 +5,15 @@ import { execute } from "./engine";
 import { stageProject } from "./build";
 import { defaultOutput } from "./fs";
 
-/** Whether a build renders the Preview and Icon artwork a project does not supply. On for
- * macOS. Linux stays off until its bounded qualification (the sandboxed engine rendering
- * text and an image) passes; then this turns on there too. */
-const rendersArtwork = process.platform === "darwin";
-
 /** Builds a project into a template file and returns its path: the stage, packed by the file
  * engine in one request. Artwork the project supplies (`defineSlop({ artwork })`) is stored as
- * given; with `renderArtwork`, the engine also renders the Preview and Icon it does not supply
- * and stores them in the same pack. The engine publishes only a complete, checked file and
+ * given; unless `renderArtwork` is false, the engine also renders the Preview and Icon it does not
+ * supply and stores them in the same pack. The engine publishes only a complete, checked file and
  * replaces only a template. */
 export async function buildTemplate(
   source: string,
   destination?: string | ((slug: string) => string),
-  { renderArtwork = rendersArtwork }: { renderArtwork?: boolean } = {},
+  { renderArtwork = true }: { renderArtwork?: boolean } = {},
 ) {
   source = resolve(source);
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-build-"));

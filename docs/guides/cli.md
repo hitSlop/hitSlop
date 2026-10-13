@@ -13,11 +13,11 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 | `bun slop COMMAND` | Run from this repository after [development setup](development.md). |
 
 `slop-engine` ships with the CLI for macOS and Linux. The executable creates, reads and edits documents without Bun,
-WebKit or a running app. On macOS it also exports a closed document as PNG/PDF and
+WebKit or a running app. On both platforms it also exports a closed document as PNG/PDF and
 renders template artwork, in its own restricted evaluator. The TypeScript CLI runs only
 the engine; opening a window is the one operation that starts hitSlop.app.
-`slop check` and `slop build` use the CLI's engine for validation and packing, and on
-macOS `slop build` and `slop register` render any Preview or Icon artwork the project
+`slop check` and `slop build` use the CLI's engine for validation and packing, and on both
+platforms `slop build` and `slop register` render any Preview or Icon artwork the project
 does not supply inside the same `pack` request (see
 [Finder artwork](../../apps/landing/src/content/docs/docs/guides/build-and-share.mdx#finder-artwork)).
 Add `--help` to a CLI command for its arguments. Package versions here reflect repository
@@ -130,7 +130,7 @@ A CLI-only release may reuse an installed app while the protocol and
 not CLI subcommands. `validateApp` checks evaluated app input, `validateMetadata` checks
 new-project metadata, and `pack` writes an immutable template from a build stage; with
 `renderArtwork` it also renders the Preview and Icon artwork the build does not supply,
-in the same request (the CLI asks for it on macOS).
+in the same request (the CLI asks for it on macOS and Linux).
 `templates` returns the catalog's folders, accepted templates and per-file issues;
 `create` takes `from` and `output`, creates parent folders and returns `documentPath`.
 A bare template slug resolves installed templates before bundled ones.
@@ -142,8 +142,8 @@ the live or in-process owner and wait for persistence as required. `copy` makes 
 copy; `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
 file and returns its hash, byte length, name and detected MIME type without opening a
 document. `export` renders a closed document in the engine, and routes an open one to its
-owner; `open` asks LaunchServices to open the document in hitSlop.app. Both are macOS
-only. See the Rust `EngineRequest` enum for the complete method and field inventory.
+owner on macOS. Closed export also works on Linux; `open` is macOS only and asks
+LaunchServices to open the document in hitSlop.app. See the Rust `EngineRequest` enum for the complete method and field inventory.
 
 The executable flags are `--client-protocol N`, `--protocol`, `--build-id`, the restricted
 `--evaluate-command` entry point and `--preview-owner PATH` (with a client protocol).

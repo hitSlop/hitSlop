@@ -9,8 +9,8 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
 - `hitslop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
 - `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
   `pack`, `inspect`, `schema`); `pack` also renders the artwork a build does not supply
-  when asked, and on a Mac the engine exports closed documents, rendering them in its own
-  restricted evaluator, and opens documents in hitSlop.app.
+  when asked. On macOS and Linux the engine exports closed documents in its own
+  restricted evaluator; on macOS it also opens documents in hitSlop.app.
 - `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with
   no storage dependency. The engine re-executes itself with `--evaluate-command`; the
   `hitslop-evaluator` binary provides the same child for native-host integration.

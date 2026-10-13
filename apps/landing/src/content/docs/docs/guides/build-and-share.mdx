@@ -21,19 +21,16 @@ svelte-check found 0 errors and 0 warnings
 /Users/you/my-slop/dist/my-slop.slop
 ```
 
-Where a build doesn't render artwork (anywhere but macOS) and you supply none, it also tells you which PNGs to import.
-
 Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
 Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` is newer than the CLI supports; update `hitslop` when it says so.
 
 ### Finder artwork
 
-A template's Finder preview and icon come from one of three places:
+A template's Finder preview and icon come from two sources:
 
 - **Your files.** Images you declare as `artwork: { preview, icon }` in `defineSlop` (imported like any asset) are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
-- **Rendered for you.** On macOS, `bun run build` and `bun run register` render whichever of the two you didn't supply from your `Preview.svelte` and `Icon.svelte` views, in the same step that packs the template. This needs only the CLI: no hitSlop app, Swift or Xcode. If a view can't render, the build fails.
-- **Neither.** Where artwork isn't rendered (anywhere but macOS) and you supply none, the template has no artwork, and Finder shows hitSlop's document icon. Documents created from it still get their own artwork when they are first closed in hitSlop.
+- **Rendered for you.** On macOS and Linux, `bun run build` and `bun run register` render whichever of the two you didn't supply from your `Preview.svelte` and `Icon.svelte` views, in the same step that packs the template. This needs only the CLI: no hitSlop app, Swift or Xcode. If a view can't render, the build fails.
 
 ## Register a local template
 

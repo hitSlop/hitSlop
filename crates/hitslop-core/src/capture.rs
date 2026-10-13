@@ -97,7 +97,6 @@ pub fn render_artwork(
 /// `slop export` of a closed document: its saved state, rendered without a lock, published
 /// at `output` without replacing anything there under any spelling, including a file made
 /// while it rendered. A template is refused, and a result after `deadline` is discarded.
-/// Closed export runs on macOS only, for now.
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub fn export_saved(
     path: &std::path::Path,
@@ -108,9 +107,6 @@ pub fn export_saved(
 ) -> crate::store::Result<()> {
     use crate::error::{failed, invalid, rejected};
     use std::io::Write;
-    if !cfg!(target_os = "macos") {
-        return Err(invalid("Export requires macOS; document edits and authoring run anywhere"));
-    }
     let output = crate::file::resolve(output)?;
     // Before rendering: no file, folder or link (even a dangling one) is ever replaced.
     if std::fs::symlink_metadata(&output).is_ok() {

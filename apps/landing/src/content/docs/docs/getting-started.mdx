@@ -7,7 +7,7 @@ A slop is a focused app and its document in one portable `.slop` package. Start 
 
 ## Install the tools
 
-Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking, building and registering an app, and creating or editing its documents, need only the CLI, which on macOS also renders Finder artwork and exports PNG/PDF. To open windows and pick your registered templates in the catalog, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
+Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking, building and registering an app, and creating or editing its documents, need only the CLI, which also renders template artwork and exports closed documents as PNG/PDF on both platforms. To open windows and pick your registered templates in the catalog, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
 
 The public CLI workflow is:
 
@@ -64,7 +64,10 @@ Replace the starter's data definition:
 
 ```ts title="schema.ts"
 import { defineDocument, s } from "hitslop";
-export default defineDocument({ title: s.text(), count: s.counter() }, { initial: { title: "Tiny Counter" } });
+export default defineDocument(
+  { title: s.text(), count: s.counter() },
+  { initial: { title: "Tiny Counter" } },
+);
 ```
 
 Then describe the counter in `slop.ts`. Its `theme` declares the colors `styles.css` uses below:
@@ -97,7 +100,9 @@ export default defineCommands(schema, {
   countOne: {
     description: "Count one more.",
     args: {},
-    run({ tx }) { tx.fields.count.increment(); },
+    run({ tx }) {
+      tx.fields.count.increment();
+    },
   },
 });
 ```
@@ -170,14 +175,41 @@ See [icons and exports](/docs/guides/icons-and-exports/) for capture authoring.
 Give it ordinary CSS, using the starter's declared tokens:
 
 ```css title="styles.css"
-* { box-sizing: border-box; }
-body { background: var(--slop-surface); color: var(--slop-ink); font-family: system-ui; }
-.counter { padding: 2rem; text-align: center; }
-.counter-title { font-size: 1.4rem; font-weight: 600; }
-.counter-value { font-size: 4rem; font-variant-numeric: tabular-nums; }
-.counter button { padding: .8rem 1.2rem; background: var(--slop-accent); color: white; border: 0; border-radius: .5rem; }
-.counter button:focus-visible { outline: 3px solid var(--slop-ink); outline-offset: 3px; }
-.counter-icon { font-size: 180px; color: var(--slop-accent); }
+* {
+  box-sizing: border-box;
+}
+body {
+  background: var(--slop-surface);
+  color: var(--slop-ink);
+  font-family: system-ui;
+}
+.counter {
+  padding: 2rem;
+  text-align: center;
+}
+.counter-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+.counter-value {
+  font-size: 4rem;
+  font-variant-numeric: tabular-nums;
+}
+.counter button {
+  padding: 0.8rem 1.2rem;
+  background: var(--slop-accent);
+  color: white;
+  border: 0;
+  border-radius: 0.5rem;
+}
+.counter button:focus-visible {
+  outline: 3px solid var(--slop-ink);
+  outline-offset: 3px;
+}
+.counter-icon {
+  font-size: 180px;
+  color: var(--slop-accent);
+}
 ```
 
 ## Build, register, and test persistence
@@ -196,12 +228,11 @@ svelte-check found 0 errors and 0 warnings
 /Users/you/.hitslop/templates/tiny-counter.slop
 ```
 
-On macOS, build also renders your Finder artwork; where it can't, it tells you which PNGs to import ([Finder artwork](/docs/guides/build-and-share/#finder-artwork)).
+Build also renders your [Finder artwork](/docs/guides/build-and-share/#finder-artwork) on macOS and Linux; a failed render fails the build.
 
 Build emits `dist/tiny-counter.slop`. Register builds it the same way and installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
 
 Edit that copy, close immediately after typing, reopen, duplicate it, and export PNG/PDF. Check keyboard focus and a narrower window. Read [styling](/docs/guides/styling/), [data and schemas](/docs/guides/data-and-schemas/), and [icons and exports](/docs/guides/icons-and-exports/) before expanding the app.
-
 
 ## Discover and run your action
 
@@ -228,7 +259,7 @@ bunx hitslop call "My Counter.slop" countOne
 ```
 
 ```json
-{"result":null,"ids":[]}
+{ "result": null, "ids": [] }
 ```
 
 This action returns no value and inserts no rows, but it increments the saved counter.
@@ -239,7 +270,7 @@ bunx hitslop get "My Counter.slop"
 ```
 
 ```json
-{"count":1,"title":"Tiny Counter"}
+{ "count": 1, "title": "Tiny Counter" }
 ```
 
 You can also edit the counter directly:
@@ -249,7 +280,7 @@ bunx hitslop apply "My Counter.slop" --op '{"type":"increment","path":["count"],
 ```
 
 ```json
-{"ids":[]}
+{ "ids": [] }
 ```
 
 The window now shows **2**. A named action lets an agent reuse your app’s behavior;

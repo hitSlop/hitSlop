@@ -44,6 +44,13 @@ In order, with the reasoning in [ideas](ideas.md):
   runs do not certify the current candidate.
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
+- Before that first freeze, bound the corpus's growth. Capture a new entry only when a
+  format marker or the persisted-format fingerprint (the `inputs` hash an entry already
+  records) changes, since an unchanged format is covered by the previous entry. Keep each
+  entry's documents in git (about 1.5 MB, and unchanged files are stored once), but stop
+  committing the 38 MB writer engine per entry: record its version and hash, fetch the
+  released engine from the published package for the randomized comparison against the
+  newest releases and any marker bump, or build a slim writer-only engine.
 - Give that entry boundary documents: limits at their maximums and every descriptor kind.
   The dev corpus already covers every window kind (1× and 2× skins, glass, transparent,
   path shapes), app media (font, image, audio) and agent commands. Opening checks only
@@ -113,8 +120,7 @@ In order, with the reasoning in [ideas](ideas.md):
   [the build workflow](guides/development.md#build-current-templates-with-the-app).
 - Rust owns edit admission, save scheduling, discard, close, command dispatch and the
   live socket. Swift delivers events and provides native UI and rendering.
-- The CLI's engine creates, edits and validates documents on macOS and Linux, and on
-  macOS renders template artwork and exports closed documents itself. The Mac app links
+- The CLI's engine creates, edits and validates documents on macOS and Linux, renders template artwork and exports closed documents itself. The Mac app links
   its core independently.
 - The CLI, SDK, contracts, templates and skills ship as one `hitslop` npm package with
   the Mac app's release version.

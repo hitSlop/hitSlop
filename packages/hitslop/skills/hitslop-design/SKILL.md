@@ -125,7 +125,7 @@ and PDF behavior.
 ## Review efficiently
 
 Use `bun run dev` for disposable browser preview. Review at the `window` size
-and a narrow width, with menus open and keyboard focus visible. Build on a Mac
+and a narrow width, with menus open and keyboard focus visible. Build on macOS or Linux
 to verify export and icon artwork. Read
 [references/review-workbench.md](references/review-workbench.md) for a short pass.
 

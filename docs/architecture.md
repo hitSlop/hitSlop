@@ -50,7 +50,7 @@ session, fences the page and attempts a bounded close; the browser must reload r
 than replay an edit with an unknown outcome.
 
 The typed TypeScript CLI invokes `slop-engine` as a separate process, once per request,
-and gets structured JSON back. On macOS, a closed document's export and the artwork a
+and gets structured JSON back. On macOS and Linux, a closed document's export and the artwork a
 build packs render inside the engine, in its restricted evaluator, with no app involved;
 an open document's export routes through the Rust command router to its live owner.
 `open` is the one request that starts hitSlop.app: the engine asks LaunchServices to open
@@ -62,8 +62,8 @@ in `App.svelte`. Required `Preview.svelte` and `Icon.svelte`, optional `Export.s
 fixed root roles. The UI and definition graphs share resolution: the page imports the
 schema and components, while the definition imports metadata, schema and commands.
 A private capture graph compiles synchronous Svelte SSR for every Preview.svelte,
-Icon.svelte, declared Export.svelte and Widget.svelte role. It includes each closure's component CSS and explicit global CSS imports from the
-UI graph, without copying other components' scoped styles. Takumi uses tolerant CSS
+Icon.svelte, declared Export.svelte and Widget.svelte role. It includes the UI graph's imported stylesheets in import order, then each
+closure's own imports and component CSS, without copying other components' scoped styles. Takumi uses tolerant CSS
 parsing, so unsupported declarations do not refuse a whole shared stylesheet.
 The graphs do not rewrite command bodies or substitute component tokens. The restricted
 definition evaluator returns a declaration for `BuildInput`. Rust checks that input and the explicit resource inventory before
@@ -125,7 +125,7 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
 | File | `crates/hitslop-core/src/file/` (feature `storage`, native and browser) | The `.slop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
 | Storage | `crates/hitslop-core/src/store/`, `registry.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
-| Engine | `crates/slop-engine` | Authoring validation and packing, including artwork rendering on macOS; document creation, inspection and requests; closed PNG/PDF export on macOS and app opening through `/usr/bin/open -a` |
+| Engine | `crates/slop-engine` | Authoring validation and packing, including artwork rendering on macOS and Linux; document creation, inspection and requests; closed PNG/PDF export on both platforms and macOS app opening through `/usr/bin/open -a` |
 | Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations, stored commands and native image capture; ABI-specific preludes, sandbox and execution limits |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
@@ -479,12 +479,12 @@ on bounded standard input and returns one method-specific `EngineReply`. Authori
 catalog, inspection, named commands and owner operations share this JSON boundary.
 `crates/hitslop-core/src/wire/engine.rs` defines the serde types and explicit checks;
 ts-rs exports the CLI's TypeScript. The engine renders for itself. `export` of a closed
-document (macOS only, for now) draws a read-only snapshot of its saved state in the
+document on macOS or Linux draws a read-only snapshot of its saved state in the
 engine's restricted evaluator, without the app or a lock. It refuses a template and an
 existing output of any kind (`rejected`, reason `exists`) before rendering, stages the
 result beside the destination, publishes it without replacing anything, and discards one
 that finishes after the 30-second command deadline. When the CLI asks, as it does on
-macOS, `pack` renders the Preview and Icon artwork a project does not supply in the same
+macOS and Linux, `pack` renders the Preview and Icon artwork a project does not supply in the same
 request that writes the template, so a failed render publishes nothing. Only `open` starts
 hitSlop.app (macOS only): it refuses a template, then has LaunchServices (`open -a`) open
 the document in the app that contains the running engine, else the one `HITSLOP_APP`

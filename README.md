@@ -93,7 +93,7 @@ so the catalog uses their latest changes.
 
 ## Make your own with an agent
 
-Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows and pick your registered templates in its catalog; on macOS the CLI renders template artwork and exports PNG/PDF itself.
+Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows and pick your registered templates in its catalog; on both platforms the CLI renders template artwork and exports closed documents as PNG/PDF itself.
 
 ```sh
 bunx hitslop@1.0.0 init weekend-kit
@@ -135,7 +135,7 @@ Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitsl
 | Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
 | Install agent guidance | `bun install -g hitslop`, then `slop skills install`; skills update with the global CLI |
 
-Document creation and editing run on macOS and Linux. The CLI carries its own engine, which on macOS also exports a closed document as PNG/PDF and renders template artwork; opening a window needs the Mac app. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
+Document creation and editing run on macOS and Linux. The CLI carries its own engine, which also exports a closed document as PNG/PDF and renders template artwork on both platforms; opening a window needs the Mac app. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
 
 ## Where it's going
 
@@ -293,7 +293,7 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 - Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
 - `Widget.svelte` supplies small, medium and large desktop images from saved data. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
 
-hitSlop refreshes the Finder preview and icon when you close the document. On macOS, build and register render the template's initial artwork from starting values.
+hitSlop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
 
 All capture views render with Takumi in the restricted Rust child, including selectable vector PDF. Capture components must be synchronous. Quick Look reads the saved artwork.
 
