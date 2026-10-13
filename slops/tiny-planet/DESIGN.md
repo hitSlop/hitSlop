@@ -12,9 +12,9 @@ Saved: name, seed, season, and each thing's kind, latitude and longitude. The te
 is a pure function of the seed, so a reopened document rebuilds the same world, and
 rolling a new one re-seats everything on it. Camera, tool and pop-in are presentation.
 Slow auto-spin pauses while you drag and stops for reduced motion; things appear
-without the grow animation. Rendering pauses when the window is hidden. Export is a fresh page: it builds an
-unspun still of the saved world from the seed, season and things (the editor's camera
-angle is not saved), then shows it with the name and count; the icon is a flat planet
+without the grow animation. Rendering pauses when the window is hidden. Export uses a synchronous SVG globe with the saved season and every placed thing
+projected from its latitude and longitude. It is a simpler illustration of the
+world, with seeded stars, its name and count; the icon is a flat planet
 with a tree, a house and a crystal.
 
 Edits live once in `world.ts` (placing refuses open water and a full planet there, for

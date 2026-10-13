@@ -189,16 +189,17 @@ extension HostTests {
     #expect(after?["title"] as? String == "User is still typing")
   }
 
-  @Test @MainActor func engineExportsSavedDefaultViewFromLiveAndClosedDocuments() async throws {
+  @Test @MainActor func engineExportsSavedCaptureViewFromLiveAndClosedDocuments() async throws {
     _ = NSApplication.shared
     let root = try contractFixture { stage in
-      let app = stage.appendingPathComponent("assets/ui.js")
-      let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
-        of: "const doc = ctx.document;",
-        with:
-          "const doc = ctx.document; ctx.capture.onPrepare(() => { if (doc.current.title === 'Capture fails') throw new Error('intentional capture failure'); });"
-      )
-      try Data(script.utf8).write(to: app)
+      let program = stage.appendingPathComponent("assets/export.js")
+      let script = try String(contentsOf: program, encoding: .utf8).replacingOccurrences(
+        of: "const request = JSON.parse(json);",
+        with: """
+          const request = JSON.parse(json);
+          if (request.snapshot.title === 'Capture fails') throw new Error('intentional capture failure');
+          """)
+      try Data(script.utf8).write(to: program)
     }
     let folder = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -232,7 +233,6 @@ extension HostTests {
       #expect(reply["output"] as? String == output.path)
     }
     let text = try #require(PDFDocument(data: Data(contentsOf: pdf))?.string)
-    #expect(text.contains("Default view"))
     #expect(!text.contains("Selected view"))
     #expect(text.contains("CLI export pending title"))
     #expect(NSImage(data: try Data(contentsOf: png)) != nil)
@@ -255,14 +255,16 @@ extension HostTests {
     // An export never replaces the document it renders.
     #expect(try await export("pdf", to: root)["ok"] as? Bool == false)
     try await controller.session.close()
-    // A closed document exports its saved state with the initial view, taking no lock:
+    // A closed document exports its saved capture view, taking no lock:
     // it renders even while another process holds the document.
     let saved = try Data(contentsOf: root)
     let holder = try DocumentOwner(url: root)
     let closed = folder.appendingPathComponent("closed.pdf")
     let reply = try await export("pdf", to: closed)
     #expect(reply["ok"] as? Bool == true, "\(reply)")
-    #expect(PDFDocument(data: try Data(contentsOf: closed))?.string?.contains("Selected view") == false)
+    let closedText = try #require(PDFDocument(data: Data(contentsOf: closed))?.string)
+    #expect(closedText.contains("CLI export pending title"))
+    #expect(!closedText.contains("Selected view"))
     #expect(try Data(contentsOf: root) == saved)
     try await holder.close()
   }

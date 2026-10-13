@@ -353,3 +353,8 @@ html[data-slop-capture="static"] .flask { height: auto; min-height: 100vh; overf
   background: var(--slop-surface);
   color: var(--slop-ink);
 }
+
+.exportFlask .chamber {
+  flex: none;
+  height: 380px;
+}

@@ -54,7 +54,8 @@ extension HostTests {
         "export default { mount(ctx, target) { target.textContent = 'Large preview'; } };", to: stage)
     }
     defer { try? FileManager.default.removeItem(at: root) }
-    let preview = try #require(NSBitmapImageRep(data: try await SlopRenderer.previewPNGData(url: root)))
+    let preview = try #require(
+      NSBitmapImageRep(data: try await SlopRenderer.capture(url: root, output: .previewPNG, provider: .webKit)))
     #expect(preview.pixelsWide == 4096 && preview.pixelsHigh == 4096)
     #expect(preview.pixelsWide * preview.pixelsHigh <= Limits.imagePixels)
   }
@@ -87,9 +88,11 @@ extension HostTests {
     session.load()
     try await session.waitUntilReady()
     do {
-      let png = try #require(NSBitmapImageRep(data: try await SlopRenderer.exportPNGData(session: session)))
+      let png = try #require(
+        NSBitmapImageRep(data: try await SlopRenderer.capture(session: session, output: .exportPNG, provider: .webKit)))
       #expect(png.pixelsWide == 1040)
-      let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
+      let pdf = try #require(
+        PDFDocument(data: try await SlopRenderer.capture(session: session, output: .pdf, provider: .webKit)))
       #expect(pdf.page(at: 0)?.bounds(for: .mediaBox).width == 520)
       #expect(pdf.string?.contains("Right edge") == true)
     } catch {
@@ -142,8 +145,7 @@ extension HostTests {
       let png = try #require(NSBitmapImageRep(data: collapsedPNG))
       let bounds = page.bounds(for: .mediaBox)
       #expect(abs(CGFloat(png.pixelsWide) - bounds.width * 2) <= 2)
-      // PNG and PDF use different font/layout engines. Both must include the
-      // long document; pixel-identical text height is not their contract.
+      // PNG and vector PDF share native layout and must include the long document.
       #expect(png.pixelsHigh > 0)
       if count == 40 {
         #expect(bounds.height > 1000)
@@ -220,7 +222,7 @@ extension HostTests {
           try await session.webView.evaluateJavaScript(
             "!document.documentElement.hasAttribute('data-slop-capture')") as? Bool == true)
       }
-      // Captures use a separate page; the editor remains mounted and interactive.
+      // Native captures leave the editor mounted and interactive.
       #expect(
         try await session.webView.evaluateJavaScript("!!document.querySelector('[data-editor]')") as? Bool == true)
     } catch {
@@ -318,7 +320,7 @@ extension HostTests {
     #expect(try liveDiscovery(path: root.path) == nil)
   }
 
-  // A window writes artwork from its page as it closes, when it changed the document or
+  // A window writes artwork from its saved state as it closes, when it changed the document or
   // the file has none; Finder, Quick Look and the catalog then show it as it closed, and
   // Finder's custom icon is a copy of it.
   @Test @MainActor func closingWritesArtworkOfTheChangedDocument() async throws {
@@ -393,13 +395,10 @@ extension HostTests {
       let artwork = stage.appendingPathComponent("artwork", isDirectory: true)
       try FileManager.default.createDirectory(at: artwork, withIntermediateDirectories: true)
       try Fixtures.addArtwork(stage, name: "preview", bytes: Fixtures.png())
-      let app = stage.appendingPathComponent("assets/ui.js")
-      let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
-        of: "const doc = ctx.document;",
-        with:
-          "const doc = ctx.document; ctx.capture.onPrepare(() => { if (ctx.capture.isRenderer()) throw new Error('capture test failure'); });"
-      )
-      try Data(script.utf8).write(to: app)
+      for role in ["icon", "preview", "export"] {
+        try Data("globalThis.__slopCapture = () => { throw new Error('capture test failure'); };".utf8)
+          .write(to: stage.appendingPathComponent("assets/\(role).js"))
+      }
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let session = try await DocumentSession.open(url: root)
@@ -449,14 +448,55 @@ extension HostTests {
           }))
       #expect(pdf.string?.contains("Snapshot draft") == true)
       #expect(pdf.string?.contains("Later edit") == false)
-      #expect(try await SlopRenderer.iconPNGData(url: source) == nil)
+      #expect(try await SlopRenderer.iconPNGData(url: source) != nil)
     }
     #expect(!FileManager.default.fileExists(atPath: try #require(sourceURL).path))
     #expect(try await savedValue(root)?["title"] as? String == "Later edit")
   }
 
-  @Test @MainActor func missingExportUsesFreshReadOnlyApp() async throws {
+  @Test @MainActor func nativeCapturesResolveSavedImageAttachments() async throws {
     let root = try contractFixture { stage in
+      try Data(
+        """
+        globalThis.__slopCapture = json => {
+          const request = JSON.parse(json), image = 'slop-attachment:' + request.snapshot.title;
+          if (!request.resources[request.snapshot.title]) throw new Error('Missing saved image');
+          return JSON.stringify({fonts:[],frames:[{
+            kind:request.kind,width:request.width,height:request.height,
+            html:'<html><body><p>Saved attachment</p><img src="'+image+'" width="100" height="100"></body></html>',
+            css:'html,body{margin:0;background:white}p{font-family:sans-serif;font-size:20px;height:40px;margin:0}'
+          }]});
+        };
+        """.utf8
+      ).write(to: stage.appendingPathComponent("assets/export.js"))
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let blob = try Fixtures.png(width: 100, height: 100) {
+      NSColor.blue.setFill()
+      $0.fill()
+    }
+    _ = try await attach(blob, at: ["title"], url: root)
+    let png = try #require(NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .exportPNG)))
+    let blue = try #require(png.colorAt(x: 50, y: 140)?.usingColorSpace(.sRGB))
+    #expect(blue.blueComponent > 0.9 && blue.redComponent < 0.1)
+    let pdf = try #require(PDFDocument(data: await SlopRenderer.capture(url: root, output: .pdf)))
+    #expect(pdf.string?.contains("Saved attachment") == true)
+    #expect(pdf.pageCount == 1)
+  }
+
+  @Test @MainActor func webKitProviderRemainsExplicitAndMissingNativeExportDoesNotFallback() async throws {
+    let root = try contractFixture { stage in
+      try Fixtures.updateInput(stage) { input in
+        var declaration = input["declaration"] as! [String: Any]
+        var views = declaration["views"] as! [String: Any]
+        views["export"] = false
+        declaration["views"] = views
+        input["declaration"] = declaration
+        var roles = input["roles"] as! [String: Any]
+        roles.removeValue(forKey: "export")
+        input["roles"] = roles
+        input["resources"] = (input["resources"] as! [[String: Any]]).filter { $0["key"] as? String != "export.js" }
+      }
       let script = """
         export default { mount(ctx, target) {
           const root = document.createElement('main'); root.dataset.slopRoot = '';
@@ -467,11 +507,17 @@ extension HostTests {
       try Data(script.utf8).write(to: stage.appendingPathComponent("assets/ui.js"))
     }
     defer { try? FileManager.default.removeItem(at: root) }
+    // Production export refuses the absent role. The explicitly requested internal
+    // WebKit provider can still capture the app for comparisons.
     let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()
     #expect(try await command("batch", url: root, setTitle("Saved fallback")).ok)
-    let pdf = try #require(PDFDocument(data: try await SlopRenderer.exportPDFData(session: session)))
+    await #expect(throws: (any Error).self) {
+      try await SlopRenderer.exportPDFData(session: session)
+    }
+    let pdf = try #require(
+      PDFDocument(data: try await SlopRenderer.capture(session: session, output: .pdf, provider: .webKit)))
     #expect(pdf.string?.contains("Fallback: Saved fallback") == true)
     try await session.close()
   }
@@ -513,5 +559,126 @@ extension HostTests {
     #expect(events.count == 3)
     #expect(events.last == .failed(.export, .init(.rejection, reason: .operationRejected, format: .png)))
     try await controller.session.close()
+  }
+}
+
+extension HostTests {
+  @Test @MainActor func previewAndExportUseTheirOwnSavedViews() async throws {
+    let root = try contractFixture { stage in
+      for (role, height, color, label) in [
+        ("preview", 120, "#ff0000", "Preview only"), ("export", 900, "#0000ff", "Full export"),
+      ] {
+        let program = """
+          globalThis.__slopCapture = json => {
+            const request = JSON.parse(json);
+            return JSON.stringify({fonts:[],frames:[{
+              kind:request.kind,width:request.width,height:request.height,
+              html:'<html><body>\(label)</body></html>',
+              css:'html,body{margin:0;padding:0;height:\(height)px;background:\(color);font-family:sans-serif}'
+            }]});
+          };
+          """
+        try Data(program.utf8).write(to: stage.appendingPathComponent("assets/\(role).js"))
+      }
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let preview = try #require(NSBitmapImageRep(data: await SlopRenderer.previewPNGData(url: root)))
+    let exported = try #require(NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .exportPNG)))
+    #expect(preview.pixelsHigh == 240)
+    #expect(exported.pixelsHigh == 1800)
+    let previewColor = try #require(preview.colorAt(x: 100, y: 100)?.usingColorSpace(.sRGB))
+    let exportColor = try #require(exported.colorAt(x: 100, y: 100)?.usingColorSpace(.sRGB))
+    #expect(previewColor.redComponent > 0.9 && previewColor.blueComponent < 0.1)
+    #expect(exportColor.blueComponent > 0.9 && exportColor.redComponent < 0.1)
+    let pdf = try #require(PDFDocument(data: await SlopRenderer.capture(url: root, output: .pdf)))
+    #expect(pdf.string?.contains("Full export") == true)
+    #expect(pdf.string?.contains("Preview only") == false)
+  }
+
+  @Test @MainActor func absentExportHidesActionsAndRefusesDirectAndCLIExports() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      try Fixtures.updateInput(stage) { input in
+        var declaration = input["declaration"] as! [String: Any]
+        var views = declaration["views"] as! [String: Any]
+        views["export"] = false
+        declaration["views"] = views
+        input["declaration"] = declaration
+        var roles = input["roles"] as! [String: Any]
+        roles.removeValue(forKey: "export")
+        input["roles"] = roles
+        input["resources"] = (input["resources"] as! [[String: Any]]).filter { $0["key"] as? String != "export.js" }
+      }
+    }
+    let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: output)
+    }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    await controller.waitForPresentation()
+    do {
+      #expect(!controller.canExport)
+      #expect(!controller.toolbarControls.canExport)
+      #expect(!controller.sharePopover.canExport)
+      #expect(controller.isAvailable(.shareSlop))
+      for command in [SlopDocumentCommand.sharePNG, .sharePDF, .exportPNG, .exportPDF] {
+        #expect(!controller.isAvailable(command))
+        await #expect(throws: (any Error).self) { _ = try await controller.perform(command) }
+      }
+      await #expect(throws: (any Error).self) { _ = try await controller.prepareShare(format: .png) }
+      await #expect(throws: (any Error).self) { try await SlopRenderer.exportPDFData(session: controller.session) }
+      #expect(try await SlopRenderer.previewPNGData(session: controller.session).count > 0)
+      #expect(try await SlopRenderer.iconPNGData(session: controller.session) != nil)
+      let live = try await request([
+        "method": "export", "documentPath": root.path, "format": "pdf", "output": output.path,
+      ])
+      #expect(live["ok"] as? Bool == false)
+      #expect(!FileManager.default.fileExists(atPath: output.path))
+      try await controller.finishClose()
+    } catch {
+      try? await controller.finishClose()
+      throw error
+    }
+    let closed = try await request([
+      "method": "export", "documentPath": root.path, "format": "pdf", "output": output.path,
+    ])
+    #expect(closed["ok"] as? Bool == false)
+    #expect(!FileManager.default.fileExists(atPath: output.path))
+  }
+}
+
+extension HostTests {
+  @Test(.nightly) @MainActor func explicitWebKitProviderSelectsDedicatedPreviewTarget() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      try Fixtures.writeApp(
+        """
+        export default { mount(ctx, target) {
+          const cleanup = [];
+          for (const [role, height, color] of [['preview',120,'red'],['export',900,'blue']]) {
+            const view = document.createElement('section');
+            view.style.cssText = `width:320px;height:${height}px;background:${color}`;
+            view.hidden = true; target.append(view);
+            const stop = ctx.capture.registerTarget(role, {
+              element:view, prepare(){ view.hidden=false; }, restore(){ view.hidden=true; }
+            });
+            cleanup.push(() => { stop(); view.remove(); });
+          }
+          return { unmount(){ for(const stop of cleanup) stop(); } };
+        } };
+        """, to: stage)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let preview = try #require(
+      NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .previewPNG, provider: .webKit)))
+    let exported = try #require(
+      NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .exportPNG, provider: .webKit)))
+    #expect(preview.pixelsHigh == 240)
+    #expect(exported.pixelsHigh == 1800)
+    let red = try #require(preview.colorAt(x: 100, y: 100)?.usingColorSpace(.sRGB))
+    let blue = try #require(exported.colorAt(x: 100, y: 100)?.usingColorSpace(.sRGB))
+    #expect(red.redComponent > 0.9 && red.blueComponent < 0.1)
+    #expect(blue.blueComponent > 0.9 && blue.redComponent < 0.1)
   }
 }

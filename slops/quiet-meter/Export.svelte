@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { meterView, ZONE_LABEL } from "./meter";
   import Gauge from "./Gauge.svelte";
@@ -27,7 +28,7 @@
     <Summary session={last} zone={lastZone} />
     {#if recent.length > 1}
       <ol class="qm-history">
-        {#each recent.slice(1) as row (row.$id)}
+        {#each (preview ? (recent.slice(1)).slice(0, 2) : recent.slice(1)) as row (row.$id)}
           <li><span>{row.date}</span><span>{row.episodes} {row.episodes === 1 ? "episode" : "episodes"}</span><span>peak {row.peak}</span></li>
         {/each}
       </ol>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { notesView } from "./notes";
   const view = $derived(notesView(doc.current));
@@ -20,15 +22,15 @@
     </header>
     <div class="cornell-grid">
       <div class="items-stream">
-        {#each view.items as item, index (item.$id)}
+        {#each (preview ? (view.items).slice(0, 3) : view.items) as item, index (item.$id)}
           <div class="cornell-entry">
-            <div class="cue-cell"><span class="cue-prefix">Q{index + 1}</span><p class="cue-textarea">{item.cue}</p></div>
+            <div class="cue-cell"><span class="cue-prefix">Q{index + 1}</span><p class="cue-textarea">{previewText(item.cue, preview, 80)}</p></div>
             <div class="margin-rule"></div>
-            <div class="notes-cell"><p class="notes-textarea">{item.notes}</p></div>
+            <div class="notes-cell"><p class="notes-textarea">{previewText(item.notes, preview, 200)}</p></div>
           </div>
         {/each}
       </div>
     </div>
-    <footer class="summary-box"><p class="summary-textarea">{doc.current.summary}</p></footer>
+    <footer class="summary-box"><p class="summary-textarea">{previewText(doc.current.summary, preview, 180)}</p></footer>
   </div>
 </main>

@@ -16,7 +16,7 @@ Read schema first. Supported types are text, boolean, string, number, integer, e
 Never open a .slop file with SQLite or another tool, and never keep a JSON copy of a document. The CLI routes to the live host or acquires exclusive ownership when closed.
 A refused batch prints `Refused ops[N] (reason): message` and then `Not applied.`: `N` is the zero-based index of the operation to fix, and nothing in the batch was applied. A failed transport can have an unknown outcome. Run slop get before issuing another edit; never automatically replay a mutation.
 
-get saves and returns the state the document owner has accepted; text still being typed in an open window is not included. A save failure returns an error. Native export flushes pending edits and renders saved state independently. Eligible PNG views use the Rust renderer; browser-dependent views and PDF use WebKit. Without an export component, capture uses the editor's default transient view state. Every export (native, theme and attachment) refuses an existing destination; use a new output path for another export.
+get saves and returns the state the document owner has accepted; text still being typed in an open window is not included. A save failure returns an error. Native export flushes pending edits and renders saved state independently. PNG and selectable vector PDF use the Rust renderer and the optional Export.svelte component; a slop without it cannot export PNG/PDF. Every export (native, theme and attachment) refuses an existing destination; use a new output path for another export.
 
 A theme is a palette of declared colors. Use `slop theme get PATH` to inspect the
 template's colors, the document's changes and the effective palette. Change declared

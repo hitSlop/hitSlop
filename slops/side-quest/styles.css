@@ -244,3 +244,7 @@ button.sq-placed { cursor: grab; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+.sq-export .sq-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+.sq-export .sq-subtitle { white-space: normal; overflow-wrap: anywhere; }
+.sq-export .sq-sticker-face, .sq-export .sq-monster { filter: none; }

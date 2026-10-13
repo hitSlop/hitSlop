@@ -15,6 +15,8 @@ run({tx},args){ const sentinel='BODY_ONLY_CHANGE'; tx.fields.title.set(args.titl
 <script lang="ts">import doc from './schema'; import './theme.css'; let result=$state('');</script>
 <h1>{doc.current.title}</h1><button onclick={async()=>{await doc.fields.title.set('New title');result='Accepted';}}>Run</button><output>{result}</output>
 <style>h1{color:rgb(20,40,60)}</style>`,
+    "Preview.svelte": `<script>import doc from "./schema";</script><h1>{doc.current.title}</h1>`,
+    "Icon.svelte": `<p>Fixture icon</p>`,
     "Export.svelte": `<script>import image from './export.svg';</script><img src={image} alt="Export image"/>`,
     "export.svg": '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>',
     "lib/paper.svg": '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><circle cx="5" cy="5" r="5" fill="blue"/></svg>',

@@ -12,5 +12,6 @@ Hovering a fish shows its name. Keys: F feed, K add, R repaint. There are at mos
 button wobbles, the old pond stays live, and the new one fades in when ready.
 
 With reduced motion, the pond holds still: no swimming, ripples or drift, and feeding just
-reports which koi ate. Exports show a still of the pond with names and the feed count. The icon
+reports which koi ate. Exports draw a synchronous SVG pond: saved koi patterns and sizes at seeded
+positions, with names and the feed count. The icon
 is two curled koi and a lily pad in a round pond.

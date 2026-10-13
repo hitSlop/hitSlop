@@ -3,7 +3,16 @@ import type { WindowDefinition } from "./app.generated";
 import type { Batch, Publication } from "./core.generated";
 import type { True } from "./engine.generated";
 
+export type CaptureCapability = "iconPng" | "previewPng" | "exportPng" | "vectorPdf" | "widgetBatch";
+
+/**
+ * Capture choices are host policy, independent of a document's persisted format.
+ */
+export type CaptureFormat = "png" | "pdf";
+
 export type CaptureMode = "preview" | "export" | "icon";
+
+export type CaptureProvider = "takumi" | "webKit";
 
 export type HostCaptureResult = { x: number, y: number, width: number, height: number, dedicated: boolean, };
 
@@ -37,13 +46,13 @@ export type SpeechUnavailable = "notDeclared" | "host" | "system" | "locale" | "
 
 export type ViewCaptureKind = "icon" | "preview" | "export";
 
-export type ViewRenderRequest = { kind: ViewCaptureKind, width: number, height: number, snapshot: unknown, theme: { [key in string]: string }, };
+export type ViewRenderRequest = { kind: ViewCaptureKind, format: CaptureFormat, resources: { [key in string]: string }, width: number, height: number, snapshot: unknown, theme: { [key in string]: string }, };
 
 export type WidgetFamily = "small" | "medium" | "large";
 
 /**
  * One immutable saved snapshot, never a second document engine.
  */
-export type WidgetRenderRequest = { snapshot: unknown, theme: { [key in string]: string }, viewports: Array<WidgetViewport>, };
+export type WidgetRenderRequest = { snapshot: unknown, theme: { [key in string]: string }, viewports: Array<WidgetViewport>, resources: { [key in string]: string }, };
 
 export type WidgetViewport = { family: WidgetFamily, width: number, height: number, };

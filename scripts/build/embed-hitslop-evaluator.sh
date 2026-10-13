@@ -17,5 +17,7 @@ fi
 /bin/chmod 755 "$app/Contents/Helpers/hitslop-evaluator"
 /bin/mkdir -p "$app/Contents/Resources/CaptureFontLicenses"
 /bin/cp "$repo_root"/crates/hitslop-runner/fonts/*LICENSE* "$repo_root/crates/hitslop-runner/fonts/README.md" "$app/Contents/Resources/CaptureFontLicenses/"
+/bin/mkdir -p "$app/Contents/Resources/CaptureRendererLicenses"
+/bin/cp "$repo_root"/crates/hitslop-runner/renderer-licenses/* "$app/Contents/Resources/CaptureRendererLicenses/"
 /usr/bin/codesign --force --options runtime --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$app/Contents/Helpers/hitslop-evaluator"
 echo "Embedded hitslop-evaluator in $app/Contents/Helpers"

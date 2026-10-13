@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 import { refuse, type Tx } from "hitslop";
 import type doc from "./schema";
 
@@ -21,7 +22,7 @@ export function addDays(key: string, days: number): string {
 
 export function formatDisplayDate(key: string): string {
   const [y, m, d] = key.split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d).toLocaleDateString(undefined, {
+  return dateLabel(new Date(y, (m ?? 1) - 1, d), {
     weekday: "long",
     month: "long",
     day: "numeric",
@@ -61,7 +62,7 @@ export function openPage(tx: Edit, data: Data, key: string) {
 /** Stamps the page the first time it reaches the target; later edits keep the first stamp. */
 export function markFinished(tx: Edit, page: Page, words: number, at: Date) {
   if (words < TARGET || page.completedAt) return;
-  tx.at(page).completedAt.set(at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  tx.at(page).completedAt.set(dateLabel(at, { hour: "2-digit", minute: "2-digit" }));
 }
 
 /** Replaces the open page's text and returns its word count. */

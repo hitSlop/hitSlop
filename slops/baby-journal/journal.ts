@@ -1,3 +1,4 @@
+import { dateLabel as formattedDate } from "../_shared/format";
 import { refuse, type Tx } from "hitslop";
 import type doc from "./schema";
 import type { kinds } from "./schema";
@@ -34,13 +35,13 @@ export function localInput(value: number): string {
 }
 export function timeLabel(value: number): string {
   return Number.isFinite(value)
-    ? new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    ? formattedDate(new Date(value), { hour: "numeric", minute: "2-digit" })
     : "Time unavailable";
 }
 export function dateLabel(day: string): string {
   const date = new Date(`${day}T12:00:00`);
   return Number.isFinite(date.getTime())
-    ? date.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })
+    ? formattedDate(date, { month: "long", day: "numeric", year: "numeric" })
     : "Choose a day";
 }
 export function duration(minutes: number): string {

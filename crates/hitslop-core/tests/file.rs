@@ -309,7 +309,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     let summary = file::inspect(&a).unwrap();
     assert!(matches!(summary.kind, hitslop_core::engine::FileKind::Template));
     let assets: Vec<&str> = summary.assets.iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(assets, [font_key().as_str(), "ui.css", "ui.js"]);
+    assert_eq!(assets, ["export.js", "icon.js", font_key().as_str(), "preview.js", "ui.css", "ui.js"]);
     // A rebuild replaces a template; it never replaces a document, or anything else.
     let folder = dir.path().join("Folder.slop");
     fs::create_dir(&folder).unwrap();

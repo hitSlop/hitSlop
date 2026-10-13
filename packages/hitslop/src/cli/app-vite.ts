@@ -7,6 +7,7 @@ const roleNames = [
   "schema.ts",
   "App.svelte",
   "Export.svelte",
+  "Preview.svelte",
   "Icon.svelte",
   "Widget.svelte",
   "commands.ts",
@@ -16,6 +17,7 @@ type AppRoles = {
   schema: string;
   view: string;
   export?: string;
+  preview?: string;
   icon?: string;
   widget?: string;
   commands?: string;
@@ -35,13 +37,14 @@ export async function discoverRoles(source: string): Promise<AppRoles> {
     if (role && file !== role)
       throw new Error(`${file}: did you mean ${role}? Role filenames are case-sensitive.`);
   }
-  for (const required of ["slop.ts", "schema.ts", "App.svelte"]) {
+  for (const required of ["slop.ts", "schema.ts", "App.svelte", "Icon.svelte", "Preview.svelte"]) {
     if (!files.has(required)) throw new Error(`Missing required ${required}`);
   }
   return {
     metadata: join(source, "slop.ts"),
     schema: join(source, "schema.ts"),
     view: join(source, "App.svelte"),
+    preview: join(source, "Preview.svelte"),
     ...(files.has("Export.svelte") ? { export: join(source, "Export.svelte") } : {}),
     ...(files.has("Widget.svelte") ? { widget: join(source, "Widget.svelte") } : {}),
     ...(files.has("Icon.svelte") ? { icon: join(source, "Icon.svelte") } : {}),
@@ -70,7 +73,7 @@ export function refuseRoleImport(
       /\.(?:svelte|css|scss|sass|less|styl)(?:\?|$)/.test(id))
   )
     error(
-      `Definition modules cannot import ${id} (from ${importer}); import it from App.svelte, Export.svelte or Icon.svelte`,
+      `Definition modules cannot import ${id} (from ${importer}); import it from App.svelte, Preview.svelte, Export.svelte, Icon.svelte or Widget.svelte`,
     );
 }
 export function refusePageRole(id: string, roles: AppRoles, error: (message: string) => never) {
@@ -82,10 +85,11 @@ export function refusePageRole(id: string, roles: AppRoles, error: (message: str
 export const uiEntrySource = (roles: AppRoles) => `import view from ${JSON.stringify(roles.view)};
 import document from ${JSON.stringify(roles.schema)};
 ${roles.export ? `import exportView from ${JSON.stringify(roles.export)};` : "const exportView = undefined;"}
+${roles.preview ? `import preview from ${JSON.stringify(roles.preview)};` : "const preview = undefined;"}
 ${roles.icon ? `import icon from ${JSON.stringify(roles.icon)};` : "const icon = undefined;"}
 ${roles.widget ? `import widget from ${JSON.stringify(roles.widget)};` : "const widget = undefined;"}
 import {svelteApp} from "hitslop/svelte";
-export default svelteApp(view,{schema:document,export:exportView,icon,widget});`;
+export default svelteApp(view,{schema:document,export:exportView,preview,icon,widget});`;
 export const sveltePlugin = () =>
   svelte({
     configFile: false,

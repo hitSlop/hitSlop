@@ -82,13 +82,17 @@ test("the relocated helper exports PNG and PDF", async () => {
 }, 120_000);
 
 // Last: it breaks the relocated bundle.
-test("a broken relocated page shell refuses to render, with no fallback to this checkout's", async () => {
+test("relocated native captures and closed edits do not require the page shell", async () => {
   const bundle = join(helpers, "HitSlopApple_HitSlopDocument.bundle");
   const shell = [join(bundle, "shell/index.js"), join(bundle, "Contents/Resources/shell/index.js")];
   const index = (await Promise.all(shell.map(async (path) => ((await Bun.file(path).exists()) ? path : undefined)))).find(Boolean);
   expect(index).toBeDefined();
   await rm(index!);
-  // Closed state edits need no JS resources; rendering must refuse the broken bundle.
+  // Saved-state native captures and closed reads are independent of browser resources.
   await value();
-  await refused({ method: "export", documentPath: document, format: "pdf", output: join(folder, "broken.pdf") }, "Incomplete page shell");
+  for (const format of ["png", "pdf"] as const) {
+    const output = join(folder, "without-shell." + format);
+    await engineRequest({ method: "export", documentPath: document, format, output }, placement);
+    await assertExport(output, format);
+  }
 }, 120_000);

@@ -110,7 +110,10 @@ export interface SlopContext {
         widget?: WidgetViewport,
       ) => void | Promise<void>,
     ): () => void;
-    registerTarget(kind: "icon" | "export" | "widget", target: CaptureTarget): () => void;
+    registerTarget(
+      kind: "icon" | "preview" | "export" | "widget",
+      target: CaptureTarget,
+    ): () => void;
   };
   readonly attachments: {
     /** Stores the file, then runs `reference` synchronously (like `change`) to write

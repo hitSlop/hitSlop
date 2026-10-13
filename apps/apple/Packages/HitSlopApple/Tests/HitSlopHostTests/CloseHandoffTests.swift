@@ -4,7 +4,6 @@ import HitSlopCore
 import HitSlopTestSupport
 import HitSlopWidgets
 import Testing
-import WebKit
 
 @testable import HitSlopDocument
 @testable import HitSlopHost
@@ -43,7 +42,9 @@ extension HostTests {
   private func widgetCloseFixture(brokenRenderer: Bool = false) throws -> URL {
     try contractFixture { stage in
       try Fixtures.addArtwork(stage, name: "preview", bytes: Fixtures.png())
-      try Fixtures.updateApp(stage) { $0["views"] = ["export": false, "icon": false, "widget": [:]] as [String: Any] }
+      try Fixtures.updateApp(stage) {
+        $0["views"] = ["export": true, "icon": true, "preview": true, "widget": [:]] as [String: Any]
+      }
       try Fixtures.addWidget(stage)
       if brokenRenderer {
         try Data("globalThis.__slopWidget = () => { throw new Error('capture unavailable'); };".utf8)
@@ -168,8 +169,8 @@ extension HostTests {
     #expect(cache.record(for: root)?.generation == caughtUp.generation, "unchanged state must not render again")
   }
 
-  // The capture page waits for this test to release it. The window must hand off before
-  // that wait ends, while retaining its owner; Dock reveal must not resurrect the editor.
+  // Hold capture work until the window hands off. Ownership must remain with the
+  // closing document, and Dock reveal must not resurrect the editor during that wait.
   @Test @MainActor func closeHandsOffBeforeArtworkAndKeepsOwnership() async throws {
     _ = NSApplication.shared
     for scenario in ["unchanged", "edited", "missing preview"] {
@@ -177,20 +178,6 @@ extension HostTests {
         if scenario != "missing preview" {
           try Fixtures.addArtwork(stage, name: "preview", bytes: Fixtures.png())
         }
-        let app = stage.appendingPathComponent("assets/ui.js")
-        let script = try String(contentsOf: app, encoding: .utf8).replacingOccurrences(
-          of: "const doc = ctx.document;",
-          with: """
-            const doc = ctx.document;
-            let held = false;
-            globalThis.closeArtworkScenario = '\(scenario)';
-            ctx.capture.onPrepare(() => {
-              if (!ctx.capture.isRenderer() || held) return;
-              held = true;
-              return new Promise(resolve => { globalThis.releaseCloseArtwork = resolve; });
-            });
-            """)
-        try Data(script.utf8).write(to: app)
       }
       defer { try? FileManager.default.removeItem(at: root) }
       var handedOff: ContinuousClock.Instant?
@@ -212,6 +199,16 @@ extension HostTests {
       if scenario == "edited" {
         #expect(try await command("batch", url: root, setTitle("Saved before handoff")).ok)
       }
+      let releaseCapture = DispatchSemaphore(value: 0)
+      defer { releaseCapture.signal() }
+      if scenario != "unchanged" {
+        let held = Locked(false)
+        SlopRenderer.captureQueue.async(flags: .barrier) {
+          held.modify { $0 = true }
+          releaseCapture.wait()
+        }
+        #expect(await eventually { held.value })
+      }
       let started = ContinuousClock.now
       let finished = Locked(false)
       let closing = Task { @MainActor in
@@ -219,23 +216,7 @@ extension HostTests {
         finished.modify { $0 = true }
       }
       if scenario != "unchanged" {
-        var capturePage: WKWebView?
-        let waiting = await eventually(timeout: .seconds(5)) {
-          for window in NSApp.windows {
-            guard let view = window.contentView as? WKWebView else { continue }
-            if (try? await view.evaluateJavaScript(
-              "globalThis.closeArtworkScenario === '\(scenario)' && typeof globalThis.releaseCloseArtwork === 'function'"
-            )) as? Bool
-              == true
-            {
-              capturePage = view
-              return true
-            }
-          }
-          return false
-        }
-        #expect(waiting, "artwork must be held by the capture page")
-        #expect(handedOff != nil, "the browser handoff must precede artwork completion")
+        #expect(await eventually { handedOff != nil }, "window handoff must precede artwork completion")
         #expect(!finished.value)
         #expect(Fixtures.isLocked(root))
         controller.revealFromDock()
@@ -245,8 +226,7 @@ extension HostTests {
         if scenario == "edited" {
           #expect(try await savedValue(root)?["title"] as? String == "Saved before handoff")
         }
-        _ = try await capturePage?.evaluateJavaScript("globalThis.releaseCloseArtwork(); true")
-        capturePage = nil
+        releaseCapture.signal()
       }
       try await closing.value
       #expect(handedOff != nil)

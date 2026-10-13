@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { numberLabel } from "../_shared/format";
   import { Progress } from "bits-ui";
   import doc from "./schema";
   import { intakeView } from "./intake";
@@ -36,7 +37,7 @@
         <span class="badge">Goal reached</span>
       {/if}
     {/if}
-    <strong class="digits">{intakeView(doc.current).total.toLocaleString()}</strong>
+    <strong class="digits">{numberLabel(intakeView(doc.current).total)}</strong>
     <span class="unit">{doc.current.unit}</span>
     <span class="percent">{percent}% of daily goal</span>
   </div>

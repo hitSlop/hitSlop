@@ -43,6 +43,26 @@ test("preparations installed while mounting a capture target settle its content"
   expect(result).toEqual({ text: "Prepared mounted content", restored: "", capturing: false });
 }));
 
+test("preview selects its own target independently of export", () => capturePage(async page => {
+  const result = await page.evaluate(async () => {
+    const capture = (window as any).capture;
+    const prepared: string[] = [];
+    for (const role of ["preview", "export"]) {
+      const element = document.createElement("main");
+      document.body.append(element);
+      capture.registerTarget(role, {
+        element, prepare() { prepared.push(role); }, restore() {},
+      });
+    }
+    await capture.begin("preview", "preview");
+    await capture.restore("preview");
+    await capture.begin("export", "export");
+    await capture.restore("export");
+    return prepared;
+  });
+  expect(result).toEqual(["preview", "export"]);
+}));
+
 test("cancelling a stalled preparation rejects promptly and restores the target", () => capturePage(async page => {
   const result = await page.evaluate(async () => {
     const capture = (window as any).capture;

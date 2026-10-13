@@ -1,5 +1,5 @@
 import { defineDocument, s } from "hitslop";
-import { stationIds } from "./stations";
+import { stationIds } from "./station-list";
 
 export const bands = ["preamp", "hz60", "hz170", "hz310", "hz600", "hz1000", "hz3000", "hz6000", "hz12000", "hz14000", "hz16000"] as const;
 

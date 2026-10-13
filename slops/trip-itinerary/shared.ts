@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 import { refuse, type RowRef, type Tx } from "hitslop";
 import type doc from "./schema";
 import type { stopTags } from "./schema";
@@ -47,7 +48,7 @@ export function tagCode(id: StopTag): string {
 export function formatDate(iso: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!match) return iso;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return dateLabel(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])),  { month: "short", day: "numeric" });
 }
 
 export function nextDate(from: string): string {

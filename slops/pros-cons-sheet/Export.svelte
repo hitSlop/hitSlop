@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { balanceView, clampWeight } from "./balance";
   import Scale from "./Scale.svelte";
@@ -29,7 +30,7 @@
         <span class="columnTotal">{proTotal}</span>
       </div>
       <ul class="list">
-        {#each pros as item (item.$id)}
+        {#each (preview ? (pros).slice(0, 4) : pros) as item (item.$id)}
           <li class="row">
             <span class="reason">{item.text.trim() || "Untitled reason"}</span>
             <span class="weightNum">{clampWeight(item.weight)}</span>
@@ -48,7 +49,7 @@
         <span class="columnTotal">{conTotal}</span>
       </div>
       <ul class="list">
-        {#each cons as item (item.$id)}
+        {#each (preview ? (cons).slice(0, 4) : cons) as item (item.$id)}
           <li class="row">
             <span class="reason">{item.text.trim() || "Untitled reason"}</span>
             <span class="weightNum">{clampWeight(item.weight)}</span>

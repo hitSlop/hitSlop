@@ -6,7 +6,7 @@ using the parameters stored in the document; `SCHEMA.md` explains every stored f
 
 ## Readout
 "N cards today" in large pencil numerals: the due and new cards that still fit today's budget,
-with due / new / done beside it. Under it, a forecast strip of daily load (Plot bars) for
+with due / new / done beside it. Under it, a forecast strip of daily load (synchronous SVG bars) for
 min(14 days, days until the exam), and a "Ready by exam" figure: expected recall on exam
 morning and how many cards reach the target retention. It is labelled an estimate and says
 it assumes the planned cards get studied; it is never worded as a promise. Without an exam
@@ -28,7 +28,7 @@ with graphite on hover or focus, each showing the next interval from `fsrs.ts` `
 ## Palette (slop.ts theme, every key read by the CSS)
 `paper` sheet, `fiber` paper flecks and icon edge, `form` printed ink (labels, rules, cap
 line, warnings), `tint` printed fills and new-card bars, `graphite` pencil marks, primary
-buttons and review bars, `pencil` secondary text, `timing` timing marks and shadows. Plot
+buttons and review bars, `pencil` secondary text, `timing` timing marks and shadows. The chart
 reads them as `var(--slop-*)`, so the theme panel recolors the chart. No dark mode: the
 object is paper.
 
@@ -66,7 +66,7 @@ budget" choice and the session's answer count; which dialog is open; the compose
 Export cannot see any of it: it shows the header, the Today readout, the forecast strip and
 the readiness estimate as of the moment it renders, with no session UI.
 
-## Size
-Built `dist/exam-deck.slop`: 352,256 bytes (344 KB). Inside it: `ui.js` 444,921 bytes
-before storage compression (Svelte, bits-ui, Plot with its d3 modules, ts-fsrs),
-`commands.js` 42,994, `ui.css` 19,109, Barlow Condensed 109,428 and Kalam 22,336.
+## Capture
+The forecast strip is synchronous SVG in both the editor and capture views. It
+uses the same FSRS values, daily cap and saved settings, without a browser chart
+library. Date labels are deterministic English in the editor and exports.

@@ -1017,6 +1017,17 @@
   padding: 35px;
   min-width: 320px;
 }
+.bj-export .bj-portrait {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.bj-export .bj-portrait img {
+  display: block;
+  flex: none;
+  width: 72px;
+  height: 72px;
+}
 .bj-export-header {
   display: flex;
   align-items: center;

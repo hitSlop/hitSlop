@@ -1,11 +1,13 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
+  import { moneyLabel } from "../_shared/format";
   import doc from "./schema";
   import { invoiceView } from "./items";
 
   const totals = $derived(invoiceView(doc.current));
 
   function money(value: number) {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: doc.current.currency }).format(value);
+    return moneyLabel(value, doc.current.currency);
   }
 </script>
 
@@ -25,7 +27,7 @@
   </section>
   <section class="invoice-lines">
     <div class="invoice-line-heading"><h2>Description</h2><span>Qty</span><span>Rate</span><span>Amount</span></div>
-    {#each doc.current.items as item (item.$id)}
+    {#each (preview ? (doc.current.items).slice(0, 5) : doc.current.items) as item (item.$id)}
       <div class="invoice-line"><span>{item.description}</span><span>{item.quantity}</span><span>{money(item.rate)}</span><span class="invoice-amount">{money(item.quantity * item.rate)}</span></div>
     {/each}
   </section>

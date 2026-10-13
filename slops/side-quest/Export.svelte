@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import BossReadout from "./BossReadout.svelte";
   import Monster from "./Monster.svelte";
@@ -21,7 +22,7 @@
   <div class="sq-body">
     {@render board()}
     {#if doc.current.sideQuests.length}
-      <aside class="sq-export-sides"><h2 class="sq-panel-title">Side quests</h2><ul>{#each doc.current.sideQuests as side (side.$id)}<li data-done={side.done}>{side.done ? "☑" : "☐"} {side.title}</li>{/each}</ul></aside>
+      <aside class="sq-export-sides"><h2 class="sq-panel-title">Side quests</h2><ul>{#each (preview ? (doc.current.sideQuests).slice(0, 4) : doc.current.sideQuests) as side (side.$id)}<li data-done={side.done}>{side.done ? "☑" : "☐"} {side.title}</li>{/each}</ul></aside>
     {/if}
   </div>
 </main>
@@ -47,8 +48,8 @@
         <defs><clipPath id="sq-past-export"><rect x="0" y="0" width={xOf(today) * 10} height="1000" /></clipPath></defs>
         {#each doc.current.courses as course, row (course.$id)}
           {@const d = trail(course, row)}
-          <path class="sq-trail-future" d={d} />
-          <path class="sq-trail-past" d={d} clip-path={`url(#sq-past-export)`} />
+          <path class="sq-trail-future" fill="none" stroke="var(--slop-pen)" stroke-width="2.5" stroke-dasharray="2 7" opacity="0.7" stroke-linecap="round" vector-effect="non-scaling-stroke" d={d} />
+          <path class="sq-trail-past" fill="none" stroke="var(--slop-pen)" stroke-width="3" stroke-linecap="round" vector-effect="non-scaling-stroke" d={d} clip-path={`url(#sq-past-export)`} />
         {/each}
       </svg>
       {#each doc.current.courses as course, row (course.$id)}

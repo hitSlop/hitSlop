@@ -6,6 +6,8 @@ import HitSlopDocument
 /// retry, close) go to the app, which runs them one at a time; pinning, the theme panel and
 /// the file's location only change the window, so the window does them at once.
 extension SlopDocumentWindowController {
+  public var canExport: Bool { session.file.views.export }
+
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
   /// follow. Closing, retrying and the save-failure sheet's choices always can; anything
   /// else waits for the app to accept commands and the page to show its content, and
@@ -13,6 +15,7 @@ extension SlopDocumentWindowController {
   public func isAvailable(_ command: SlopDocumentCommand) -> Bool {
     switch command {
     case .close, .retry, .retrySave, .discardUnsaved: true
+    case .sharePNG, .sharePDF, .exportPNG, .exportPDF: commandsEnabled && isContentReady && canExport
     case .importTheme: commandsEnabled && isContentReady && session.canEditTheme
     default: commandsEnabled && isContentReady
     }
@@ -31,6 +34,11 @@ extension SlopDocumentWindowController {
   public var canToggleTheme: Bool { isThemeShown || (isContentReady && session.canEditTheme) }
   public func toggleTheme() { setThemeShown(!isThemeShown) }
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
+    switch command {
+    case .sharePNG, .sharePDF, .exportPNG, .exportPDF:
+      guard canExport else { throw SlopFailure("This slop does not support PNG or PDF export") }
+    default: break
+    }
     switch command {
     case .importTheme: try await importTheme()
     case .exportTheme: try await exportTheme()
@@ -96,6 +104,7 @@ extension SlopDocumentWindowController {
   /// Prepares a saved-state export, or an independently editable slop, in staging owned
   /// by the share service. Neither path shares the live database.
   func prepareShare(format: ExportFormat?) async throws -> SlopShareOperation {
+    if format != nil, !canExport { throw SlopFailure("This slop does not support PNG or PDF export") }
     let filename =
       format.map { url.deletingPathExtension().lastPathComponent + "." + $0.fileExtension }
       ?? url.lastPathComponent
@@ -152,6 +161,7 @@ extension SlopDocumentWindowController {
   }
 
   private func export(_ format: ExportFormat) async throws {
+    guard canExport else { throw SlopFailure("This slop does not support PNG or PDF export") }
     sharePopover.dismiss()
     let panel = NSSavePanel()
     panel.allowedContentTypes = [format == .png ? .png : .pdf]

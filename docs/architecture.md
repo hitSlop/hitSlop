@@ -53,14 +53,14 @@ Native operations keep a separate process boundary: the typed TypeScript CLI inv
 Swift helper receives Rust-decoded requests through UniFFI and supplies AppKit/WebKit
 rendering; exports route through the Rust command router to a live owner or an independent
 saved-state render. Replies return as structured JSON. The restricted command evaluator's
-short execution budget does not govern WebKit rendering.
+short execution budget is separate from capture budgets.
 
 Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
-in `App.svelte`. Optional `Export.svelte`, `Icon.svelte`, `Widget.svelte` and agent-only `commands.ts` have
+in `App.svelte`. Required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and agent-only `commands.ts` have
 fixed root roles. The UI and definition graphs share resolution: the page imports the
 schema and components, while the definition imports metadata, schema and commands.
-A private capture graph compiles synchronous Svelte SSR for Widget.svelte and eligible
-Icon.svelte and Export.svelte roles. It includes each closure's component CSS and explicit global CSS imports from the
+A private capture graph compiles synchronous Svelte SSR for every Preview.svelte,
+Icon.svelte, declared Export.svelte and Widget.svelte role. It includes each closure's component CSS and explicit global CSS imports from the
 UI graph, without copying other components' scoped styles. Takumi uses tolerant CSS
 parsing, so unsupported declarations do not refuse a whole shared stylesheet.
 The graphs do not rewrite command bodies or substitute component tokens. The restricted
@@ -70,7 +70,7 @@ unimported files and `public/` are never copied.
 
 The immutable `app` row contains catalog columns, compatibility markers and one
 `definition_json`: the window, ordered theme, original document descriptor, views and
-command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`, `widget.js`, `icon.js` and `export.js`,
+command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`, `widget.js`, `icon.js`, `preview.js` and `export.js`,
 and media. Pack inserts assets before the app row, whose presence seals them. Attachments
 and artwork have their own mutable lifecycles. Initial values seed the history's first snapshot; the authored schema module also includes
 those creation defaults. There is no JSON mirror of saved document state.
@@ -349,13 +349,25 @@ enabled, so focus survives a cancelled barrier. Export, preview and icon renderi
 independent read-only renderers from saved state. For an open document, the core first backs up
 SQLite after the page drain and save; the temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
-rendering. Native icon and export programs run synchronous Svelte SSR and Takumi in
-the restricted Rust child. The build retains WebKit for browser-dependent capture
-closures, with a diagnostic; missing native programs use the embedded browser view.
-A declared native program failure is reported instead of silently changing engines.
-PDF remains on WebKit; the vector PDF backend is a separate local spike pending a
-product decision. A dedicated `export` view avoids mounting the editor; without
-one, a fresh `view` renders its default local UI state. Capture never changes the open
+rendering. Icons, preview artwork, widgets, PNG exports and vector PDFs use synchronous Svelte SSR
+and Takumi in the restricted Rust child. Production selects Takumi explicitly; a retained
+WebKit provider supports internal comparisons, with no automatic fallback or public
+`slop.ts` renderer override. The interactive editor continues to use WebKit.
+`Preview.svelte` and `Icon.svelte` are required when authoring; `Export.svelte` is optional.
+Preview supplies a compact overview for Quick Look and the catalog. Export supplies complete
+PNG/PDF output; without it, image/PDF share/save actions are hidden and CLI export is refused.
+Stored-file acceptance remains separate.
+Missing programs fail capture with a rebuild diagnostic. Rust owns output formats,
+provider capabilities and the selection policy; Swift providers consume an already
+saved source, leaving acquisition and publication at their existing boundaries.
+Image attachments resolve synchronously from a bounded immutable resource inventory;
+only PNG/JPEG/GIF/WebP bytes referenced by saved state enter the child, with no network or filesystem
+access. Imports, reads and writes are unavailable to capture components.
+PNG and PDF share layout, fonts and resources. PDF is one content-sized vector page,
+with selectable text and uniform scaling to 14,400 points per side through upstream viewport DPR.
+Takumi and its experimental PDF crate use one pinned Git revision; no local source fork
+or spike supplies production code. Distribution notices live in
+`crates/hitslop-runner/renderer-licenses`. Capture never changes the open
 editor's focus, selection, scroll, frame or selected tab.
 
 If the session changed the document, or the file has no preview, close captures its
@@ -397,7 +409,7 @@ missing cached images publishes the three images into a disposable App Group cac
 The running app watches cached source files, including saves made by a closed CLI
 owner. Events coalesce before comparing a core-produced freshness fingerprint
 with the version that produced the image. It combines the saved Loro version, the
-installed evaluator's bytes (including Takumi and bundled fonts), and widget canvases
+installed evaluator's bytes (including Takumi and bundled fonts), provider identity, and widget canvases
 and scale. Startup and reopen perform the same check, even without a refresh interval.
 Updating the renderer refreshes unchanged documents; artwork-only writes do not.
 The evaluator digest is computed off the main thread and cached against file identity,

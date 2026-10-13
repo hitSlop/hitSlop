@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
   // The export renders saved notes only. It never imports the recorder and never asks
   // for the microphone; recordings are listed, not played.
   import doc from "./schema";
@@ -20,14 +22,14 @@
         </p>
       </header>
       <ol class="vn-notes">
-        {#each view.notes as note (note.$id)}
+        {#each (preview ? (view.notes).slice(0, 3) : view.notes) as note (note.$id)}
           <li class="vn-note">
             <div class="vn-margin">
               <span class="vn-export-mark" data-kind={note.clip ? "clip" : "typed"} aria-hidden="true"></span>
             </div>
             <div class="vn-body">
               <div class="vn-note-head"><NoteMeta {note} /></div>
-              <p class="vn-transcript vn-transcript-static" data-empty={!note.transcript.trim()}>{note.transcript.trim() || "No transcript."}</p>
+              <p class="vn-transcript vn-transcript-static" data-empty={!note.transcript.trim()}>{previewText(note.transcript.trim() || "No transcript.", preview, 220)}</p>
               {#if note.clip}
                 <p class="vn-status vn-status-quiet">
                   Recording kept in this pad · {sizeLabel(note.clip.byteLength)}{#if note.transcribed} · transcribed on-device <span class="vn-nowrap">{note.transcribed.locale}</span>{/if}

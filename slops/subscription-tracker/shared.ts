@@ -1,3 +1,4 @@
+import { dateLabel as formattedDate, moneyLabel } from "../_shared/format";
 // Pure helpers: every date is passed in, so nothing here reads the clock.
 
 export function localDate(date: Date): string {
@@ -10,7 +11,7 @@ export function isDate(value: string): boolean {
 
 export function dateLabel(value: string): string {
   if (!isDate(value)) return "No date";
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${value}T12:00:00`));
+  return formattedDate(value, { month: "short", day: "numeric", year: "numeric" });
 }
 
 export function renewalState(value: string, today: string): "overdue" | "soon" | "normal" {
@@ -22,7 +23,7 @@ export function renewalState(value: string, today: string): "overdue" | "soon" |
 }
 
 export function money(value: number, currency: string): string {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
+  return moneyLabel(value, currency);
 }
 
 export function cadenceLabel(cadence: string): string {

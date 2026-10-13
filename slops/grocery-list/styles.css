@@ -539,3 +539,5 @@ html[data-slop-capture="static"] .row { grid-template-columns: 15px minmax(0, 1f
   padding: 16px;
   background: var(--slop-surface);
 }
+.export-door .notepad { flex: none; height: auto; min-height: 0; overflow: visible; }
+.export-door .list { flex: none; height: auto; overflow: visible; }

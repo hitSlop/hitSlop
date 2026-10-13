@@ -18,7 +18,7 @@ type Preparation = (
 
 /** Captures run in disposable read-only pages, never in the interactive editor. */
 export function createCaptureController() {
-  const targets = new Map<"icon" | "export" | "widget", Target>();
+  const targets = new Map<"icon" | "preview" | "export" | "widget", Target>();
   const preparations = new Set<Preparation>();
   /** The capture in progress; there is at most one. */
   let session: { token: string; state: CaptureState } | undefined;
@@ -133,7 +133,7 @@ export function createCaptureController() {
     return state.restoring;
   };
   return {
-    registerTarget(kind: "icon" | "export" | "widget", target: Target) {
+    registerTarget(kind: "icon" | "preview" | "export" | "widget", target: Target) {
       if (targets.has(kind)) throw new Error(`Expected one ${kind} capture target`);
       targets.set(kind, target);
       return () => {
@@ -166,9 +166,7 @@ export function createCaptureController() {
           "data-slop-capture",
           mode === "icon" ? "icon" : "static",
         );
-        state.target = targets.get(
-          mode === "icon" ? "icon" : mode === "widget" ? "widget" : "export",
-        );
+        state.target = targets.get(mode);
         if (state.target) {
           state.target.element.setAttribute("data-slop-active-target", "");
           style.textContent +=

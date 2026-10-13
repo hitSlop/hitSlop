@@ -1,3 +1,4 @@
+import { dateLabel, type DateLabelOptions } from "../_shared/format";
 import { refuse, type RowRef, type Tx } from "hitslop";
 import type doc from "./schema";
 import { KINDS } from "./schema";
@@ -21,10 +22,10 @@ export function localDate(value: Date): string {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
-export function formatDate(value: string, options: Intl.DateTimeFormatOptions): string {
+export function formatDate(value: string, options: DateLabelOptions): string {
   if (!validDate(value)) return "—";
   const parsed = new Date(`${value}T00:00:00`);
-  return Number.isNaN(parsed.valueOf()) ? "—" : parsed.toLocaleDateString(undefined, options);
+  return Number.isNaN(parsed.valueOf()) ? "—" : dateLabel(parsed, options);
 }
 
 export function toMinutes(value: string): number {

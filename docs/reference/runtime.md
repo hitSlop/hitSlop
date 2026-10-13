@@ -36,11 +36,11 @@ lists the host-internal names apps never read (`slop:render-error`, `data-slop-h
 
 `hitslop/svelte` is the Svelte adapter compiled into each app:
 the builder emits `svelteApp` from required root `schema.ts` and `App.svelte`, plus
-optional `Export.svelte`, `Icon.svelte` and `Widget.svelte`. These filenames are fixed and case-sensitive.
+required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte` and `Widget.svelte`. These filenames are fixed and case-sensitive.
 Metadata in `slop.ts` and agent-only `commands.ts` stay outside the UI graph. Authors
 import styles from their components. Once mounted, the schema's definition is the live document
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
-`ctx.document.observe`). `bindText`, `EditableText`, `capture`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
+`ctx.document.observe`). `bindText`, `EditableText`, `capture`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Authoring requires `Preview.svelte` and `Icon.svelte`; export and widget components remain optional.
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
@@ -58,7 +58,7 @@ metadata/window/theme values and never decodes the stored definition itself.
 
 ```text
 app          one row: package_format, runtime_abi, catalog columns, definition_json
-assets       key, media_type, encoding, size, bytes: ui.js, optional ui.css / commands.js / widget.js, media…
+assets       key, media_type, encoding, size, bytes: ui.js / preview.js / icon.js, optional ui.css / commands.js / export.js / widget.js, media…
 artwork      preview and icon PNGs: built, then rewritten as an edited document's window closes
 document     a document's identity; none in a template
 history      the saved Loro state in order: a snapshot (data and theme overrides; a template's
@@ -109,7 +109,7 @@ The declaration and host enforcement described below do not create a per-slop OS
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates the file, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
-The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`, `widget.js`, `icon.js` or `export.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
+The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`, `widget.js`, `icon.js`, `preview.js` or `export.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
 The native, browser and development-preview CSPs are defined in Rust
 (`crates/hitslop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
@@ -154,24 +154,27 @@ ends after the backup. Rendering then uses that independent copy, including its 
 attachments, data and theme. The editor's focus, selection, scroll and local selected
 view are not used or changed. No read transaction remains open during rendering.
 
-The CLI discovers optional `Export.svelte`, `Icon.svelte` and `Widget.svelte` beside `App.svelte`. The export view
-receives `mode: "preview" | "export"` and supplies the capture layout. Without it, a fresh
-rendering of `view` shows saved data using its default local UI state.
+The CLI requires `Preview.svelte` and `Icon.svelte` beside `App.svelte`; `Export.svelte` and `Widget.svelte` are optional.
+Preview supplies compact Quick Look/catalog artwork; Export supplies complete PNG/PDF layout.
+Without Export, native export/share-image actions are hidden and CLI exports are refused.
 State that should determine an export, such as a selected report, must be saved in the
 document. Capture components read the same document facade; they cannot change saved
 state to prepare their view.
 
-The builder emits separate synchronous SSR programs for eligible icons and exports.
+The builder emits separate synchronous SSR programs for every preview, icon and declared export.
 These read immutable `doc.current` in a fresh QuickJS realm and render with Takumi in
 the restricted Rust child. Icons are 512×512; export PNGs are 2× with measured natural
 height, and previews crop at the larger of the saved window height and three widths.
 Native capture preserves the saved viewport's layout while extending the image canvas
 to include horizontal overflow; viewport units retain the saved window dimensions.
-The build conservatively retains WebKit for closures using browser lifecycle/DOM,
-attachments, locale formatting, async code or host helpers, and names the reason.
-Native runtime failures reject capture; they do not trigger a hidden fallback.
+The build rejects retained browser lifecycle/DOM, locale formatting, async code or
+host helpers with a role/source diagnostic. `attachments.url(id)` resolves referenced
+PNG/JPEG/GIF/WebP images from the saved source; capture cannot import or read blobs.
+The inventory is capped at 24 MiB before base64 encoding. Missing or unsupported
+images fail capture and retain prior artwork. Native failures never change engines.
 
-WebKit mounts only the requested dedicated export or icon, without mounting a
+A retained WebKit provider is selected explicitly for internal comparisons only; no
+public per-slop override exists. It mounts the requested dedicated export or icon without a
 hidden editor. Without a dedicated export it mounts the editor for preview/export,
 including apps that declare only an icon. Capture preparation also runs hooks installed
 by the newly mounted component, then waits for fonts, visible images and stable layout.
@@ -195,18 +198,17 @@ The [macOS widget architecture](../architecture.md#macos-image-widgets)
 describes selection, opening and refresh policy. The extension never runs authored code.
 
 Dedicated PNG and PDF captures use the export's measured width, including compositions
-wider than the editor window. Preview rasterization prefers 2×; a large fallback window
-uses 1× when 2× exceeds the raster budget. Explicit PNG export remains 2×.
-PDF still uses WebKit and recomposes its internal pages into one continuous page when needed.
-It retains selectable text. The native vector backend remains an isolated spike;
-native PNG/Quick Look and browser PDF may differ in layout or typography. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
+wider than the editor window. Native previews and exports rasterize at 2×.
+PDF uses the experimental Takumi vector backend from the same pinned Git revision, sharing SSR, layout, fonts and resources
+with PNG. It keeps selectable text on one continuous page, with one CSS pixel mapping
+to one PDF point before uniform viewport scaling to at most 14,400 points per side.
+PDF has an independent 24 MiB output budget (36 MiB encoded reply), a 10-second wall watchdog and 8-second CPU limit; it is not bounded by PNG pixels. The child accepts at most 16 MiB of rendered markup and 24 MiB of image attachments referenced anywhere in saved state. This is a whole-document inventory, even for roles that display no photos; oversized or damaged inventories reject capture and preserve existing artwork. Image bytes travel once in the request and resolve through opaque attachment URLs; image decoding stays in the child. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
 
 The core stores artwork losslessly optimized with oxipng: `pack` at level 2, and a closing window's artwork at level 0, because the writer lock is released only after it is written ([measurements](../evidence/artwork-optimization-2026-10-05.md)). Pixels, dimensions and transparency are preserved, fully transparent pixels keep their colour, alpha is removed only from fully opaque images, and metadata that does not affect display is stripped. A result is kept only when it is smaller; artwork oxipng cannot read, or would decode past 64 MiB, is stored as it is. PNG and PDF exports are written as rendered.
 
 Build and register render artwork the project does not supply from a draft of the template, before packing it. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup in an independent read-only renderer; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
 
-Open and closed exports use independent saved-state renderers; browser fallbacks use
-default local UI state. An open export uses the flushed backup described above; a
+Open and closed exports use independent saved-state renderers. An open export uses the flushed backup described above; a
 closed export takes no writer lock and can render while another process holds the document.
 
 ## Telemetry

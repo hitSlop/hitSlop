@@ -45,9 +45,9 @@ const pile = $derived(
   <defs>
     <clipPath id={`${id}-glass`}><path d={body} /></clipPath>
     <linearGradient id={`${id}-sand`} x1="0" x2="1">
-      <stop offset="0.15" class="hourglass-sand-edge" />
-      <stop offset="0.5" class="hourglass-sand-middle" />
-      <stop offset="0.85" class="hourglass-sand-edge" />
+      <stop offset="0.15" class="hourglass-sand-edge" stop-color="var(--slop-sand)" />
+      <stop offset="0.5" class="hourglass-sand-middle" stop-color="var(--slop-sand)" />
+      <stop offset="0.85" class="hourglass-sand-edge" stop-color="var(--slop-sand)" />
     </linearGradient>
     <linearGradient id={`${id}-light`} x1="0" x2="0" y1="0" y2="1">
       <stop offset="0" stop-color="#fff" stop-opacity="0.32" />
@@ -67,21 +67,21 @@ const pile = $derived(
 
   {#if layer !== "glass"}
     {#each posts as post}
-      <rect class="hourglass-frame" x={post.x} y={post.y} width={post.width} height={post.height} rx="3" />
+      <rect class="hourglass-frame" fill="var(--slop-frame)" x={post.x} y={post.y} width={post.width} height={post.height} rx="3" />
       <rect x={post.x} y={post.y} width={post.width} height={post.height} rx="3" fill={`url(#${id}-post)`} />
     {/each}
   {/if}
 
   {#if layer !== "frame"}
-  {#if solid}<path class="hourglass-glass-solid" d={body} />{/if}
+  {#if solid}<path class="hourglass-glass-solid" fill="var(--slop-glass)" d={body} />{/if}
 
-  <g class="hourglass-sand" data-quiet={quiet} clip-path={`url(#${id}-glass)`}>
+  <g class="hourglass-sand" opacity={quiet ? 0.16 : 1} data-quiet={quiet} clip-path={`url(#${id}-glass)`}>
     {#if top}
       <path d={top} fill={`url(#${id}-sand)`} />
       <path d={top} fill={`url(#${id}-light)`} />
     {/if}
     {#if running}
-      <line class="hourglass-stream" x1={width / 2} y1={neck - 2} x2={width / 2} y2={levels.peak} />
+      <line class="hourglass-stream" stroke="var(--slop-sand)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="2 2.6" x1={width / 2} y1={neck - 2} x2={width / 2} y2={levels.peak} />
     {/if}
     {#if pile}
       <path d={pile} fill={`url(#${id}-sand)`} />
@@ -89,19 +89,19 @@ const pile = $derived(
     {/if}
   </g>
 
-  <path class="hourglass-rim-shade" d={body} />
-  <path class="hourglass-rim" d={body} />
-  <g class="hourglass-shine">
+  <path class="hourglass-rim-shade" fill="none" stroke="var(--slop-frame)" stroke-opacity="0.3" stroke-width="3" d={body} />
+  <path class="hourglass-rim" fill="none" stroke="#ffffffa6" stroke-width="1.4" d={body} />
+  <g class="hourglass-shine" fill="none" stroke="#ffffff80" stroke-width="5" stroke-linecap="round">
     <path d="M58 66 Q44 118 90 172" />
     <path d={`M58 ${height - 66} Q44 ${height - 118} 90 ${height - 172}`} />
-    <path class="hourglass-shine-soft" d="M228 76 Q238 98 233 122" />
-    <path class="hourglass-shine-soft" d={`M228 ${height - 76} Q238 ${height - 98} 233 ${height - 122}`} />
+    <path class="hourglass-shine-soft" stroke="#ffffff4d" stroke-width="3" d="M228 76 Q238 98 233 122" />
+    <path class="hourglass-shine-soft" stroke="#ffffff4d" stroke-width="3" d={`M228 ${height - 76} Q238 ${height - 98} 233 ${height - 122}`} />
   </g>
   {/if}
 
   {#if layer !== "glass"}
     {#each caps as d}
-      <path class="hourglass-frame" {d} />
+      <path class="hourglass-frame" fill="var(--slop-frame)" {d} />
       <path {d} fill={`url(#${id}-wood)`} />
     {/each}
   {/if}

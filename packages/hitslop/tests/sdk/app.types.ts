@@ -54,6 +54,9 @@ function exportRoles(plain: Component<Record<string, never>>, capture: Component
   const schema = defineDocument({ title: s.text() });
   svelteApp(plain, {schema, export:plain});
   svelteApp(plain, {schema, export:capture});
+  svelteApp(plain, {schema, preview:plain, icon:plain});
+  // @ts-expect-error A preview reads saved state without required component props.
+  svelteApp(plain, {schema, preview:needy});
   // @ts-expect-error An export receives only its capture mode.
   svelteApp(plain, {schema, export:needy});
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { subscriptionView, type Subscription } from "./items";
   import { cadenceLabel, dateLabel, money } from "./shared";
@@ -40,7 +41,7 @@
 {#snippet serviceRows(items: readonly Subscription[])}
   {#if items.length}
     <ol class="serviceList">
-      {#each items as item (item.$id)}
+      {#each (preview ? (items).slice(0, 5) : items) as item (item.$id)}
         <li class="row" data-paused={!item.active}>
           <div class="serviceCopy">
             <CategoryMark category={item.category} /><span class="serviceText"><strong>{item.name}</strong>

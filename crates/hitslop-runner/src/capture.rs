@@ -2,8 +2,9 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rquickjs::{CatchResultExt, Context, Function, Runtime};
 use serde::Deserialize;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use takumi::prelude::*;
+use takumi::unstable::base::viewport::MediaTarget;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -36,26 +37,30 @@ pub fn evaluate(
     interrupted: impl FnMut() -> bool + 'static,
 ) -> std::result::Result<String, String> {
     let Batch { frames, fonts } = evaluate_markup(bundle, request, "__slopWidget", interrupted)?;
+    let sources = resource_images(request)?;
     if frames.len() != 3
         || frames.iter().any(|f| f.width == 0 || f.height == 0 || f.width > 512 || f.height > 512 || f.kind.is_some())
     {
         return Err("Widget batch must contain three bounded canvases".into());
     }
-    render(frames, fonts, 2, crate::WIDGET_OUTPUT).map_err(|e| format!("Widget rendering failed: {e}"))
+    render(frames, fonts, sources, 2, crate::WIDGET_OUTPUT, false).map_err(|e| format!("Widget rendering failed: {e}"))
 }
 
 pub fn evaluate_view(
     bundle: &str,
     request: &str,
+    pdf: bool,
     interrupted: impl FnMut() -> bool + 'static,
 ) -> std::result::Result<String, String> {
     let Batch { frames, fonts } = evaluate_markup(bundle, request, "__slopCapture", interrupted)?;
+    let sources = resource_images(request)?;
     if frames.len() != 1 {
         return Err("Capture requires one canvas".into());
     }
     let frame = &frames[0];
     let icon = frame.kind.as_deref() == Some("icon");
-    if (icon && (frame.width != 512 || frame.height != 512))
+    if (pdf && frame.kind.as_deref() != Some("export"))
+        || (icon && (frame.width != 512 || frame.height != 512))
         || !matches!(frame.kind.as_deref(), Some("icon" | "preview" | "export"))
         || frame.width == 0
         || frame.height == 0
@@ -64,8 +69,41 @@ pub fn evaluate_view(
     {
         return Err("Invalid capture canvas".into());
     }
-    render(frames, fonts, if icon { 1 } else { 2 }, crate::CAPTURE_OUTPUT)
-        .map_err(|e| format!("Capture rendering failed: {e}"))
+    render(
+        frames,
+        fonts,
+        sources,
+        if icon || pdf { 1 } else { 2 },
+        if pdf { crate::PDF_OUTPUT } else { crate::CAPTURE_OUTPUT },
+        pdf,
+    )
+    .map_err(|e| format!("Capture rendering failed: {e}"))
+}
+
+/// Decode owner-supplied saved image bytes once, inside the restricted child.
+/// Takumi's browser-like missing-image behavior must not silently replace useful
+/// prior artwork when an attachment is damaged.
+fn resource_images(request: &str) -> std::result::Result<HashMap<Arc<str>, ImageSource>, String> {
+    #[derive(Deserialize)]
+    struct Resources<'a> {
+        #[serde(default, borrow)]
+        resources: HashMap<&'a str, &'a str>,
+    }
+    let request: Resources<'_> = serde_json::from_str(request).map_err(|e| e.to_string())?;
+    let mut images = HashMap::new();
+    for (id, url) in request.resources {
+        let (header, bytes) = url.split_once(',').ok_or_else(|| format!("Invalid image resource {id}"))?;
+        if !matches!(
+            header,
+            "data:image/png;base64" | "data:image/jpeg;base64" | "data:image/gif;base64" | "data:image/webp;base64"
+        ) {
+            return Err(format!("Unsupported image resource {id}"));
+        }
+        let bytes = STANDARD.decode(bytes).map_err(|e| format!("Invalid image resource {id}: {e}"))?;
+        let source = ImageSource::from_bytes(&bytes).map_err(|e| format!("Cannot decode image resource {id}: {e}"))?;
+        images.insert(Arc::from(format!("slop-attachment:{id}")), source);
+    }
+    Ok(images)
 }
 
 fn evaluate_markup(
@@ -100,8 +138,10 @@ fn evaluate_markup(
 fn render(
     frames: Vec<Frame>,
     packaged_fonts: Vec<Font>,
+    sources: HashMap<Arc<str>, ImageSource>,
     scale: u32,
     output_limit: usize,
+    pdf: bool,
 ) -> std::result::Result<String, Box<dyn std::error::Error>> {
     let mut fonts = Fonts::default();
     fonts.register(
@@ -152,6 +192,7 @@ fn render(
         let viewport = |width: u32, height: Option<u32>| {
             let mut viewport =
                 Viewport::new((Some(width * scale), height.map(|h| h * scale))).with_device_pixel_ratio(scale as f32);
+            viewport.media_target = if pdf { MediaTarget::Print } else { MediaTarget::Screen };
             // Unbounded layout still resolves vh against the saved window, just as
             // the browser capture does before extending its full-content canvas.
             let reference = viewport.unit_reference.get_or_insert_default();
@@ -166,22 +207,49 @@ fn render(
                 RenderOptions::builder()
                     .viewport(viewport(width, None))
                     .fonts(&fonts)
+                    .images(sources.clone())
                     .node(node.clone())
                     .stylesheet(stylesheet.clone())
                     .build(),
             )?;
-            if !measured.height.is_finite() || measured.height <= 0.0 {
-                return Err("Export has no measurable content".into());
+            if !measured.height.is_finite() || measured.height <= 0.0 || measured.height > 1_000_000.0 * scale as f32 {
+                return Err("Export content height is empty, non-finite or exceeds 1,000,000 CSS pixels".into());
             }
             height = (measured.height / scale as f32).ceil() as u32;
             let right = measured_right(&measured);
-            if !right.is_finite() || right > 16384.0 {
-                return Err("Export exceeds the image width limit".into());
+            if !right.is_finite() || right > if pdf { 1_000_000.0 } else { 16384.0 } {
+                return Err("Export exceeds the content width limit".into());
             }
             width = width.max((right / scale as f32).ceil() as u32);
             if frame.kind.as_deref() == Some("preview") {
                 height = height.min(frame.height.max(width * 3));
             }
+        }
+        if pdf {
+            // Upstream PDF maps renderer pixels to 0.75 points. A fractional DPR
+            // keeps ordinary output at one point per CSS pixel and uniformly
+            // scales long documents within the PDF page limit without a fork.
+            let dpr = (14_400.0 / width.max(height) as f32).min(1.0) / 0.75;
+            let pixels = |side: u32| ((side as f32 * dpr).round() as u32).clamp(1, 19_200);
+            let mut pdf_viewport = Viewport::new((pixels(width), pixels(height))).with_device_pixel_ratio(dpr);
+            pdf_viewport.media_target = MediaTarget::Print;
+            let reference = pdf_viewport.unit_reference.get_or_insert_default();
+            reference.width = frame.width as f32 * dpr;
+            reference.height = frame.height as f32 * dpr;
+            let bytes = takumi_pdf::render(
+                takumi_pdf::PdfOptions::builder()
+                    .viewport(pdf_viewport)
+                    .fonts(&fonts)
+                    .images(sources.clone())
+                    .node(node)
+                    .stylesheet(stylesheet)
+                    .build(),
+            )?;
+            if bytes.len() > crate::PDF_BYTES {
+                return Err("PDF exceeds its output byte limit".into());
+            }
+            images.push(STANDARD.encode(bytes));
+            continue;
         }
         if width as u64 * scale as u64 > 16384
             || height as u64 * scale as u64 > 16384
@@ -195,6 +263,7 @@ fn render(
             RenderOptions::builder()
                 .viewport(viewport(width, Some(height)))
                 .fonts(&fonts)
+                .images(sources.clone())
                 .node(node)
                 .stylesheet(stylesheet)
                 .build(),

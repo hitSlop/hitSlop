@@ -1,6 +1,6 @@
 <script lang="ts">
   import doc from "./schema";
-  import Chart from "./Chart.svelte";
+  import Chart from "./StaticChart.svelte";
   import { money } from "./money";
   import { planView } from "./plan";
 

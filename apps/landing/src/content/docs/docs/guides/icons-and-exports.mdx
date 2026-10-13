@@ -7,7 +7,7 @@ The editor, Finder artwork, and exported document should feel like the same obje
 
 ## Declare capture views
 
-Use `App.svelte` for the editor and optional root `Export.svelte` and `Icon.svelte` for captures. The CLI discovers these exact filenames. Export receives `mode: "preview" | "export"`:
+Use `App.svelte` for the editor, required root `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte` for captures. The CLI discovers these exact filenames. Preview supplies a compact overview; Export includes the complete document. Without `Export.svelte`, PNG/PDF share/save actions are hidden and CLI export is refused.
 
 ```svelte
 <main class="note-editor">
@@ -16,7 +16,7 @@ Use `App.svelte` for the editor and optional root `Export.svelte` and `Icon.svel
 </main>
 ```
 
-Captures render saved state independently of the editor, with transient state at its defaults. A dedicated export owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Without `Export.svelte`, preview and export mount `App.svelte`; mark composers, menus and tabs with `data-slop-export="hide"` and make any scrolling layout adjustments in your CSS. The default preview preserves the window silhouette, and Quick Look displays the saved artwork. An export component (`Export.svelte`):
+Captures render saved state independently of the editor, with transient state at its defaults. A dedicated export owns its static layout. For content that grows, such as a list or notes, use a thin export component with natural height and derive its content from saved state. Capture views must be synchronous and independent of browser APIs. Dedicated captures ignore the window silhouette; Quick Look displays the saved artwork. An optional export component (`Export.svelte`):
 
 ```svelte
 <script lang="ts">
@@ -27,6 +27,21 @@ Captures render saved state independently of the editor, with transient state at
   <ul>{#each doc.current.tasks as task (task.$id)}<li>{task.text}</li>{/each}</ul>
 </article>
 ```
+
+Required `Preview.svelte` can show a bounded selection and an honest total:
+
+```svelte
+<script lang="ts">
+  import doc from "./schema";
+</script>
+<article class="note-preview">
+  <h1>{doc.current.title}</h1>
+  <p>{doc.current.tasks.length} tasks</p>
+  <ul>{#each doc.current.tasks.slice(0, 5) as task (task.$id)}<li>{task.text}</li>{/each}</ul>
+</article>
+```
+
+Share components between Preview and Export where useful. Avoid generating a long document just to crop its top for the preview.
 
 `Icon.svelte`:
 
@@ -40,26 +55,39 @@ Captures render saved state independently of the editor, with transient state at
 Use the app's existing document facade in capture components. Captures render saved
 data in an independent read-only renderer. If an export should show a selected tab or report, save
 that choice in the document; transient editor state is not carried into the capture.
-Without `Export.svelte`, a fresh rendering of `App.svelte` with its default local state is the fallback.
 An export or icon component that throws fails that capture without changing the live
 editor. A later attempt gets a fresh renderer.
 
-Eligible icons, previews and PNG exports use synchronous Svelte rendering and Takumi
-in a restricted Rust process. Use `doc.current`, ordinary flexbox, numeric grid
+Icons, previews, widgets, PNG and selectable vector PDF exports use synchronous Svelte
+rendering and Takumi in a restricted Rust process. Use `doc.current`, ordinary flexbox, numeric grid
 placement, explicit font properties, and SVG attributes/currentColor. Container
 queries, named grid areas and page CSS inside inline SVG are unsupported; ignored
-CSS can change the result, so review native captures. Browser-dependent icon/export
-components retain WebKit, and the build explains why. Widgets require the native
-subset. A native rendering failure is reported rather than silently switching engines.
-PDF currently uses WebKit, so its typography or layout may differ from PNG.
+CSS can change the result, so review native captures. Browser-dependent capture
+components fail the build with a role/source diagnostic. Use static representations
+for canvas, animation or WebGL content. A rendering failure retains previous artwork;
+there is no automatic fallback or public renderer override.
+
+Use synchronous `attachments.url(id)` for referenced PNG/JPEG/GIF/WebP images in saved
+data. Capture currently loads the whole saved image inventory, capped at 24 MiB,
+including images that this role does not display. Blob reads,
+imports, remote loading and document writes are unavailable. Missing or unsupported
+images fail capture. PNG and PDF share the same native layout, fonts and resources.
 
 Default sans, serif, monospace, Apple color emoji and text-symbol fonts are bundled.
 Package additional fonts with `@font-face` and imported `url()` resources; system-font
 discovery and remote font loading are unavailable. Fonts need glyph coverage for the
-languages your document uses. Do not use Svelte's `css="injected"`; the build collects
+languages your document uses; vector PDF reports uncovered characters as an error.
+Do not use Svelte's `css="injected"`; the build collects
 the capture component's styles and global CSS.
 
 ## Design a macOS widget
+
+Quick Checklist, Water Tracker, Grocery List, Reading Tracker, Habit Heatmap,
+Daily Planner, Assignment Tracker and Countdown Milestones include small, medium
+and large widget views. Habit Heatmap, Assignment Tracker and Countdown request
+approximate 30-minute refreshes for date-dependent content. Daily Planner shows
+the date saved in its plan; Water Tracker shows the saved intake log and does not
+reset it at midnight. The other views refresh with saved edits.
 
 Add an optional root `Widget.svelte` to compose the same saved document for the desktop:
 
@@ -133,11 +161,11 @@ The artwork can be rectangular or another shape; only the canvas must be square.
 }
 ```
 
-An absent icon is optional. If `Icon.svelte` throws, capture fails rather than silently hiding the broken view.
+`Icon.svelte` is required when authoring. If `Icon.svelte` throws, capture fails rather than silently hiding the broken view.
 
 ## Make exports readable
 
-Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. With `Export.svelte`, the editor is never captured. Without it, a fresh `App.svelte` rendering saved data is the fallback: mark editing-only elements with `data-slop-export="hide"`, and native text inputs render as wrapping text. Dedicated exports and icons ignore the window's shape mask.
+Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. The optional `Export.svelte` supplies this complete static view; the editor is never captured. Dedicated exports and icons ignore the window's shape mask.
 
 The host sets `html[data-slop-capture="static"]` during capture. Use it for deliberate static layout adjustments:
 
@@ -166,12 +194,12 @@ Successful responses, respectively (your paths will differ):
 
 An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both use default local UI state and the saved theme. The open editor is not used as the rendering workspace.
 
-The editor barrier lasts through saving and copying; rendering then proceeds independently. Browser capture waits for fonts, visible images and a stable layout in its fresh page. Native capture loads packaged fonts and resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side.
+The editor barrier lasts through saving and copying; rendering then proceeds independently. Native capture loads packaged fonts and saved image resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF export is experimental. It keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side; complex layouts and long documents may need further refinement.
 
 Completed captures publish atomically before their deadline. If the acknowledgement is lost, inspect the destination before retrying.
 
 ## Quick Look and Finder artwork
 
-Registration, or `slop build --artwork native`, captures the initial preview and, when declared, icon into the template; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
+Registration, or `slop build --artwork native`, captures `Preview.svelte` and `Icon.svelte` as the initial preview and icon into the template; files you put in `artwork/preview.png` and `artwork/icon.png` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
 Test normal and narrow windows, empty and populated data, themed output, default local views, saved view choices, and exports from open and closed documents. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.

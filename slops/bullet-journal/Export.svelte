@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { journalView } from "./journal";
   import { symbolFor } from "./signifiers";
@@ -14,11 +16,11 @@
       <span class="pageNumWrap">pg. {doc.current.dailyPage.trim() || "—"}</span>
     </div>
     <ul class="list">
-      {#each entries as item (item.$id)}
+      {#each (preview ? (entries).slice(0, 6) : entries) as item (item.$id)}
         <li class="row" data-complete={item.type === "complete"}>
           <span class="exportStar" aria-hidden="true">{item.star ? "*" : ""}</span>
           <span class="exportMark" data-type={item.type}>{symbolFor(item.type)}</span>
-          <span class="exportText">{item.text.trim() || "Untitled"}</span>
+          <span class="exportText">{previewText(item.text.trim() || "Untitled", preview, 110)}</span>
         </li>
       {:else}
         <li class="empty"><h2>A blank page.</h2></li>
@@ -35,11 +37,11 @@
       <span class="pageNumWrap">pg. {doc.current.monthlyPage.trim() || "—"}</span>
     </div>
     <ul class="list">
-      {#each days as item (item.$id)}
+      {#each (preview ? (days).slice(0, 4) : days) as item (item.$id)}
         <li class="monthRow">
           <span class="monthDay">{String(item.day).padStart(2, "0")}</span>
           <span class="monthWeekday">{item.weekday.trim() || "—"}</span>
-          <span class="monthText">{item.text.trim() || ""}</span>
+          <span class="monthText">{previewText(item.text.trim() || "", preview, 80)}</span>
         </li>
       {:else}
         <li class="empty"><h2>No days indexed.</h2></li>

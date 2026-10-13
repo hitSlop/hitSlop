@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { formatDateStr, getTypeColor, semesterView } from "./shared";
 
@@ -19,7 +20,7 @@
       </div>
     </header>
     <section class="months-rail">
-      {#each view.months as month}
+      {#each (preview ? (view.months).slice(0, 3) : view.months) as month}
         <div class="month-column">
           <div class="month-header"><span class="month-name">{month.name}</span><span class="month-year">{month.year}</span></div>
           <div class="month-days-grid">
@@ -42,7 +43,7 @@
     <div class="agenda-container">
       <table class="agenda-table">
         <tbody>
-          {#each view.agenda as ms (ms.$id)}
+          {#each (preview ? (view.agenda).slice(0, 6) : view.agenda) as ms (ms.$id)}
             <tr class="agenda-row">
               <td class="date-cell">{ms.date}</td>
               <td><span class="course-badge" style="background-color: {view.courseColor(ms.courseCode)};">{ms.courseCode}</span></td>

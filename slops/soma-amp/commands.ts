@@ -1,7 +1,7 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
 import doc, { bands } from "./schema";
-import { stationIds } from "./stations";
+import { stationIds } from "./station-list";
 import { selectStation, setBalance, setBand, setEqualizerOn, setVolume, useBaseSkin } from "./settings";
 
 export default defineCommands(doc, {

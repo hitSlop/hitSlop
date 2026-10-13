@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { householdView, initials } from "./chores";
   import Wheel from "./Wheel.svelte";
@@ -14,7 +15,7 @@
   <section class="board">
     <Wheel people={doc.current.people} {totals} />
     <ul class="people">
-      {#each doc.current.people as person, index (person.$id)}
+      {#each (preview ? (doc.current.people).slice(0, 4) : doc.current.people) as person, index (person.$id)}
         <li class="person">
           <span class="magnet" data-tone={person.tone}>{initials(person.name)}</span>
           <div class="pname"><strong>{person.name || "Unnamed"}</strong><span>{totals[index]?.done ?? 0}/{totals[index]?.assigned ?? 0} this week · <b>{person.score ?? 0}</b> all-time</span></div>
@@ -24,7 +25,7 @@
   </section>
   <section class="chores">
     <ul class="notes">
-      {#each doc.current.chores as chore (chore.$id)}
+      {#each (preview ? (doc.current.chores).slice(0, 5) : doc.current.chores) as chore (chore.$id)}
         {@const owner = personById(chore.assignee)}
         <li class="note" data-done={chore.done}>
           <span class="pin" aria-hidden="true"></span>

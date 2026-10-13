@@ -128,14 +128,24 @@ public enum Fixtures {
       "declaration": [
         "metadata": metadata, "window": window, "document": ["kind": "object", "properties": [:]],
         "initial": [:], "theme": theme.map { ["token": $0.0, "color": $0.1] }, "commands": [],
-        "views": ["export": false, "icon": false],
+        "views": ["export": true, "icon": true, "preview": true],
       ],
-      "roles": ["ui": "ui.js"],
-      "resources": [["kind": "app", "key": "ui.js", "mediaType": "text/javascript", "path": "assets/ui.js"]],
+      "roles": ["ui": "ui.js", "export": "export.js", "icon": "icon.js", "preview": "preview.js"],
+      "resources": [
+        ["kind": "app", "key": "ui.js", "mediaType": "text/javascript", "path": "assets/ui.js"],
+        ["kind": "app", "key": "export.js", "mediaType": "text/javascript", "path": "assets/export.js"],
+        ["kind": "app", "key": "icon.js", "mediaType": "text/javascript", "path": "assets/icon.js"],
+        ["kind": "app", "key": "preview.js", "mediaType": "text/javascript", "path": "assets/preview.js"],
+      ],
       "artwork": [:],
     ]
     try JSONSerialization.data(withJSONObject: app).write(to: stage.appendingPathComponent("input.json"))
     try writeApp("export default { mount() { return {}; } };", to: stage)
+    for role in ["icon", "preview", "export"] {
+      try FileManager.default.copyItem(
+        at: repository.appendingPathComponent("tests/fixtures/scalars/document/assets/\(role).js"),
+        to: stage.appendingPathComponent("assets/\(role).js"))
+    }
     return stage
   }
 

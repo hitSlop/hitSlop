@@ -1,3 +1,4 @@
+import { moneyLabel } from "../_shared/format";
 export const currencies = ["USD", "EUR", "GBP", "JPY"] as const;
 export const tones = ["sky", "leaf", "sun", "rose", "violet", "slate"] as const;
 export type Currency = (typeof currencies)[number];
@@ -11,8 +12,7 @@ export const minorScale = (currency: Currency): number => 10 ** minorDigits[curr
 
 /** Amounts are stored as integer minor units; labels show whole major units. */
 export const money = (minor: number, currency: Currency): string =>
-  new Intl.NumberFormat(undefined, { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 })
-    .format(minor / minorScale(currency));
+  moneyLabel(minor / minorScale(currency), currency, 0);
 
 /** The major-unit number shown in an amount field. */
 export const toMajor = (minor: number, currency: Currency): number => minor / minorScale(currency);

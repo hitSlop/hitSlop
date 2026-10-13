@@ -116,9 +116,9 @@ and PDF behavior.
   `slop theme get/set/reset/export/import`.
   The host saves overrides in the document's database; never edit it or compiled assets
   directly. Layout changes require authoring source and a rebuild.
-- Keep exportable content in normal flow. Without `Export.svelte`, mark
-  editing-only UI with `data-slop-export="hide"`; with it, the editor is never
-  captured.
+- Keep exportable content in normal flow in the optional `Export.svelte`.
+  Render saved state synchronously and leave editing controls in `App.svelte`;
+  the editor is never captured.
 - Make each slop purpose-specific. Shared SDK patterns must not make unrelated
   objects look like one reskinned dashboard.
 

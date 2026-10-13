@@ -722,6 +722,13 @@ html[data-slop-capture="static"] .main, html[data-slop-capture="static"] .stub, 
 html[data-slop-capture="static"] .stop, .export-pass .stop {
   grid-template-columns: 5.4rem minmax(0, 1fr);
 }
+.export-pass .packing {
+  flex: none;
+  align-content: start;
+}
+.export-pass .stub-items {
+  align-content: start;
+}
 .export-pass .stub, .export-pass .stops, .export-pass .stub-items {
   overflow: visible;
 }

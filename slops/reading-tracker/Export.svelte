@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
 import BookOpen from "@lucide/svelte/icons/book-open";
 import Star from "@lucide/svelte/icons/star";
 import doc from "./schema";
@@ -28,7 +30,7 @@ const view = $derived(readingView(doc.current));
           <span>Status</span>
         </div>
         <ul class="list" aria-label="Reading list">
-          {#each doc.current.books as book (book.$id)}
+          {#each (preview ? (doc.current.books).slice(0, 4) : doc.current.books) as book (book.$id)}
             <li class="row exportRow">
               <span class="bookSpine" data-status={book.status} aria-hidden="true"><BookOpen size={19} strokeWidth={1.5} /></span>
               <div class="bookInfo">
@@ -41,7 +43,7 @@ const view = $derived(readingView(doc.current));
                 {/each}
               </span>
               <span class="statusPill" data-status={book.status}>{book.status || "To Read"}</span>
-              {#if book.notes?.trim()}<div class="exportNotes"><strong>Notes</strong><p>{book.notes}</p></div>{/if}
+              {#if book.notes?.trim()}<div class="exportNotes"><strong>Notes</strong><p>{previewText(book.notes, preview, 100)}</p></div>{/if}
             </li>
           {:else}
             <li class="empty"><h2>Your next chapter starts here.</h2></li>

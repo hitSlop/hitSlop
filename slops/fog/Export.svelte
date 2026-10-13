@@ -13,7 +13,15 @@
 
 <article class="fg-export">
   <div class="fg-export-glass" style:aspect-ratio={ratio}>
-    <Glass variant="export" image={view.snapshot ? attachments.url(view.snapshot.id) : null} alt="The fogged mirror, as saved" />
+    {#if view.snapshot}
+      <img class="fg-export-image" src={attachments.url(view.snapshot.id)} alt="The fogged mirror, as saved" width={view.snapshot.width} height={view.snapshot.height} />
+    {:else}
+      <Glass variant="export" />
+    {/if}
   </div>
   <p class="fg-export-caption"><span class="fg-export-name">Fog</span>{view.snapshot ? view.caption : "breathe on the mirror, then press S to keep a frame"}</p>
 </article>
+
+<style>
+  .fg-export-image { display: block; width: 100%; height: auto; }
+</style>

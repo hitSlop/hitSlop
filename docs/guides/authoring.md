@@ -36,12 +36,12 @@ adding a template and choosing which templates ship.
 - Declare a scalar's `default` in the schema instead of repeating it at every insert.
 - Use `EditableText` for text, `draft` for composers, `motion` for animated numbers and
   `notify` for messages (all from `hitslop/svelte`) rather than reimplementing them.
-- Use a thin dedicated export with natural height for growing content; derive its data
-  from `doc.current` and keep editor controls and effects out of it. For simple default
-  captures, mark editing controls `data-slop-export="hide"`.
+- Use required `Preview.svelte` for a compact overview and optional `Export.svelte` with natural height for complete growing content; derive their
+  data from `doc.current` and keep editor controls and effects out of it. All capture
+  views must render synchronously without browser APIs.
 - Import optional `hitslop/base.css` before app styles for low-specificity form, focus
   and reduced-motion defaults. App CSS still owns typography, layout and palette.
-- Capture views and export hooks never change saved state to prepare a view.
+- Capture views never change saved state to prepare a view.
 
 ## Design standards
 
@@ -148,8 +148,7 @@ Installing hitSlop does not replace a document's embedded app.
 `slop.ts` exports metadata through `defineSlop({ slug, title, description, author,
 categories, window, theme, artwork?, capabilities? })`. Required `schema.ts` default-exports
 `defineDocument(fields, { initial })`; `initial` is optional when all fields have defaults
-or may be omitted. Required `App.svelte` is the editor; `Export.svelte`, `Icon.svelte`, `Widget.svelte`
-and `commands.ts` are optional. These root names are case-sensitive. Import CSS from
+or may be omitted. Required `App.svelte` is the editor; required `Preview.svelte` supplies compact preview artwork, and required `Icon.svelte` supplies the icon. `Export.svelte`, `Widget.svelte` and `commands.ts` are optional. These root names are case-sensitive. Import CSS from
 components. The page imports `schema.ts`, so
 its creation defaults ship in the page bundle; metadata and command bodies do not.
 The window is either `{ kind: "standard", width, height, ... }` or
@@ -244,14 +243,16 @@ Widget rendering uses synchronous Svelte SSR in an isolated Rust child. Read `do
 document handles and writes are unavailable. Do not rely on `onMount`, DOM measurement,
 canvas, browser globals, async/await or capture preparation hooks for widget content.
 Use font longhands, flexbox or numeric grid placement, and SVG attributes/currentColor.
-The build collects CSS; omit `css="injected"` from Svelte options. This first native path
-supports bundled PNG and SVG images.
+The build collects CSS; omit `css="injected"` from Svelte options. Native capture supports bundled PNG/JPEG/GIF/WebP and SVG images, plus referenced
+image attachments through synchronous `attachments.url(id)`. Blob reads/imports and
+remote loading are unavailable in capture views.
 Container queries, named grid areas and page CSS inside inline SVG are not portable.
 Like Takumi's HTML API, native capture ignores unsupported CSS declarations and rules;
 review the native images, since a successful capture does not guarantee browser fidelity.
-Icons and synchronous export views use this same constrained renderer. Browser-dependent
-icon/export closures retain WebKit, with build diagnostics; widgets require native support.
-PDF stays on WebKit while the vector backend is evaluated separately.
+All icons, previews, exports and widgets use this constrained renderer. `Preview.svelte`
+and `Icon.svelte` are required at authoring; `Export.svelte` is optional; browser-dependent capture closures fail the build with a
+role/source diagnostic. PNG and selectable vector PDF share native layout. There is no
+public renderer override or automatic fallback; WebKit is retained internally for comparisons.
 
 The renderer bundles Geist (sans), Newsreader (serif), Geist Mono, converted Apple color emoji and Noto Sans Symbols 2 for text symbols.
 It does not discover platform fonts. Import additional fonts with `@font-face` and CSS
@@ -260,3 +261,4 @@ weights and normal/italic styles for each batch. Variable font ranges preserve t
 intrinsic weight range. You may switch between packaged families based on saved state.
 `local()`-only or remote font sources cannot render. Other scripts need a bundled font
 with the required glyphs; the default set does not promise universal Unicode coverage.
+Vector PDF refuses uncovered characters with a diagnostic naming the missing glyphs.

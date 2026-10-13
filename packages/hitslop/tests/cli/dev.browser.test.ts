@@ -75,13 +75,17 @@ test("HMR keeps one owner, accepted edits and row identity; definition resets an
       await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
       expect(await frame.locator("[data-probe]").count()).toBe(1);
     };
-    await roleChange(() => rm(join(source, "Export.svelte")));
-    await roleChange(() => writeFile(join(source, "Export.svelte"), "<p>Capture role</p>"));
-    await rename(join(source, "Export.svelte"), join(source, "export.tmp"));
-    await rename(join(source, "export.tmp"), join(source, "export.svelte"));
+    // A required capture role disappearing fences the preview until restored.
+    await rm(join(source, "Preview.svelte"));
     await frame.locator("vite-error-overlay").waitFor();
-    await rename(join(source, "export.svelte"), join(source, "export.tmp"));
-    await rename(join(source, "export.tmp"), join(source, "Export.svelte"));
+    await writeFile(join(source, "Preview.svelte"), "<p>Capture role</p>");
+    await frame.locator("vite-error-overlay").waitFor({ state: "detached" });
+    await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
+    await rename(join(source, "Preview.svelte"), join(source, "preview.tmp"));
+    await rename(join(source, "preview.tmp"), join(source, "preview.svelte"));
+    await frame.locator("vite-error-overlay").waitFor();
+    await rename(join(source, "preview.svelte"), join(source, "preview.tmp"));
+    await rename(join(source, "preview.tmp"), join(source, "Preview.svelte"));
     await frame.locator("vite-error-overlay").waitFor({ state: "detached" });
     await frame.getByRole("heading", { name: "Recovered" }).waitFor();
     // commands.ts was absent at startup; adding, fixing and removing it must all rebuild.

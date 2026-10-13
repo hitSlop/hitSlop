@@ -59,6 +59,8 @@ pub struct BuildDeclaration {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
 pub struct BuildRoles {
     #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
     pub export: Option<String>,
     #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,

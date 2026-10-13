@@ -89,6 +89,8 @@ test.if(nightly)("complete public slop.ts examples follow the current contract",
         await writeFile(join(project, "schema.ts"), schema!);
         await writeFile(join(project, "slop.ts"), slop);
         await writeFile(join(project, "App.svelte"), "<h1>Guide example</h1>");
+        await writeFile(join(project, "Icon.svelte"), "<strong>Guide</strong>");
+        await writeFile(join(project, "Preview.svelte"), "<h1>Guide example</h1>");
         const [commands] = blocks("commands.ts");
         if (commands) await writeFile(join(project, "commands.ts"), commands);
         await writeFile(join(project, "styles.css"), "");

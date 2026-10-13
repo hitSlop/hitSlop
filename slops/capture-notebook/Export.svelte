@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
   // The export renders saved photos and recordings only. It never asks for a camera or
   // microphone, and it shows every entry (the editor's open photo is view state).
   import { attachments } from "hitslop/svelte";
@@ -22,7 +24,7 @@
     <section class="cn-export-section" aria-label="Photos">
       <h2>Photos</h2>
       <div class="cn-export-grid">
-        {#each view.photos as entry (entry.$id)}
+        {#each (preview ? (view.photos).slice(0, 2) : view.photos) as entry (entry.$id)}
           {#if entry.file}
             <figure>
               <Print size="export" src={attachments.url(entry.file.id)} alt={entry.caption.trim() || `Photo from ${stamp(entry.at)}`} width={entry.width} height={entry.height} />
@@ -41,7 +43,7 @@
     <section class="cn-export-section" aria-label="Recordings">
       <h2>Recordings <small>{clock(view.totalSeconds)} in all</small></h2>
       <ol class="cn-entries">
-        {#each view.recordings as entry (entry.$id)}
+        {#each (preview ? (view.recordings).slice(0, 2) : view.recordings) as entry (entry.$id)}
           <li class="cn-entry" data-kind="audio">
             <span class="cn-mark cn-mark-audio" aria-hidden="true"><Mic size={20} /></span>
             <div class="cn-entry-body">
@@ -59,12 +61,12 @@
     <section class="cn-export-section" aria-label="Notes">
       <h2>Notes</h2>
       <ol class="cn-entries">
-        {#each view.notes as entry (entry.$id)}
+        {#each (preview ? (view.notes).slice(0, 3) : view.notes) as entry (entry.$id)}
           <li class="cn-entry" data-kind="note">
             <span class="cn-mark cn-mark-note" aria-hidden="true"><PenLine size={18} /></span>
             <div class="cn-entry-body">
               <p class="cn-stamp"><span>{stamp(entry.at)}</span></p>
-              <p class="cn-caption">{entry.caption.trim() || "Empty note"}</p>
+              <p class="cn-caption">{previewText(entry.caption.trim() || "Empty note", preview, 150)}</p>
             </div>
           </li>
         {/each}

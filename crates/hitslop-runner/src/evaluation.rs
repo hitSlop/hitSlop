@@ -37,9 +37,14 @@ pub fn evaluate(input: &[u8], interrupted: impl FnMut() -> bool + 'static) -> Re
         #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
         return Err("Native widget rendering is unavailable".into());
     }
-    if matches!(input.mode, Mode::Capture) {
+    if matches!(input.mode, Mode::Capture | Mode::Pdf) {
         #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
-        return crate::capture::evaluate_view(&input.bundle, &input.request, interrupted);
+        return crate::capture::evaluate_view(
+            &input.bundle,
+            &input.request,
+            matches!(input.mode, Mode::Pdf),
+            interrupted,
+        );
         #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
         return Err("Native capture rendering is unavailable".into());
     }
@@ -55,7 +60,7 @@ pub fn evaluate(input: &[u8], interrupted: impl FnMut() -> bool + 'static) -> Re
         let function = match input.mode {
             Mode::Command => "__slopRun",
             Mode::Definition => "__slopDescribe",
-            Mode::Widget | Mode::Capture => unreachable!("handled before the command realm"),
+            Mode::Widget | Mode::Capture | Mode::Pdf => unreachable!("handled before the command realm"),
         };
         let run: Function = ctx.globals().get(function).catch(&ctx).map_err(|e| e.to_string())?;
         run.call::<_, String>((input.request,)).catch(&ctx).map_err(|e| e.to_string())
@@ -64,4 +69,10 @@ pub fn evaluate(input: &[u8], interrupted: impl FnMut() -> bool + 'static) -> Re
         return Err("Command output is too large".into());
     }
     Ok(output)
+}
+
+/// Parse only the bounded envelope before sandboxing to choose the PDF CPU budget.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn pdf_input(input: &[u8]) -> bool {
+    serde_json::from_slice::<Input>(input).is_ok_and(|input| matches!(input.mode, Mode::Pdf))
 }

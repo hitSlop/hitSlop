@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, type Snippet } from "svelte";
   import type { SlopContext } from "../abi";
-  let { ctx, kind, content, assertRenderable }: { ctx: SlopContext; kind: "export" | "icon" | "widget"; content: Snippet; assertRenderable: () => void } = $props();
+  let { ctx, kind, content, assertRenderable }: { ctx: SlopContext; kind: "preview" | "export" | "icon" | "widget"; content: Snippet; assertRenderable: () => void } = $props();
   let active = $state(false);
   let failure: { error: unknown } | undefined;
   function register(element: HTMLDivElement) {

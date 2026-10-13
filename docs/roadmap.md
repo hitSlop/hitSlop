@@ -124,10 +124,11 @@ In order, with the reasoning in [ideas](ideas.md):
   relay source is outside this repository. The production relay and clients are
   [later](#later).
 - `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
-  `App.svelte` the editor, and optional root `Export.svelte`, `Icon.svelte`, `Widget.svelte` and
-  `commands.ts` the other roles. Widgets and eligible icon/preview/PNG captures use
-  saved-state Svelte SSR and Takumi in the restricted Rust child. Browser-dependent
-  captures and PDF retain fresh WebKit pages, with a fresh `App` as the export fallback.
+  `App.svelte` the editor, required `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte`, `Widget.svelte`
+  and `commands.ts` the other roles. All production captures use saved-state Svelte SSR
+  and Takumi in the restricted Rust child, including selectable vector PDF. WebKit is
+  retained behind an explicit internal provider for comparison and future policy;
+  there is no automatic fallback or public per-slop override.
   `slop dev` runs the native owner on a disposable copy per preview page.
 
 A historical summary of the ownership decisions and integration findings is retained in
@@ -136,11 +137,15 @@ the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10
 ## Later
 
 **Catalog capture fidelity.** The [76-slop visual review](evidence/slop-capture-review-2026-10-12.md)
-found six blank icons caused by capture-mode markup, lost SVG styling in four
-icons (also Household Chores export), and collapsed Grocery List and Pixel Art
-exports. Fix and visually recheck these before broad native-capture qualification.
-The review also proposes eight additional widgets; Quick Checklist remains the
-only implemented widget composition.
+initially found blank icons, lost SVG styling and collapsed exports. The Takumi-only
+pass repairs those cases and provides synchronous capture compositions for all 76
+bundled slops. Rich browser views use static compositions; Pixel Art preserves its
+saved cells, and image-based exports resolve saved attachments in the render child.
+Seven additions from that review now have widget compositions: Water Tracker,
+Grocery List, Reading Tracker, Habit Heatmap, Daily Planner, Assignment Tracker
+and Countdown Milestones, alongside Quick Checklist. Ivy Lee Method was not
+selected. Broader theme and populated-state coverage remains product qualification;
+successful rendering does not imply support for every browser CSS feature.
 
 **Widget qualification.** The macOS image-widget integration includes dedicated saved-state
 captures, document selection, bookmark opening and optional approximate refreshes.

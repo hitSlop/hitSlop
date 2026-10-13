@@ -1,3 +1,4 @@
+import { moneyLabel } from "../_shared/format";
 export function money(value: number): number {
   return Number.isFinite(value) ? value : 0;
 }
@@ -14,5 +15,5 @@ export function categoryPercent(cat: { allocated: number; spent: number }): numb
 }
 
 export function formatCurrency(num: number): string {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(num);
+  return moneyLabel(num, "USD");
 }

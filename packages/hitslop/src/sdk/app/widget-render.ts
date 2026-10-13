@@ -3,6 +3,7 @@ import type { Component } from "svelte";
 import type { SlopContext } from "../abi";
 import type { WidgetRenderRequest } from "../../wire/page.generated";
 import { activate, deactivate } from "./context";
+import { captureHTML } from "./capture-html";
 
 function freeze(value: unknown): unknown {
   if (value && typeof value === "object") {
@@ -21,7 +22,7 @@ const refuse = (): never => {
 export function widgetRenderer(definition: object, component: Component, css: string) {
   return (json: string) => {
     const request: WidgetRenderRequest = JSON.parse(json);
-    return withReadOnlyDocument(definition, request.snapshot, () => {
+    return withReadOnlyDocument(definition, request.snapshot, request.resources, () => {
       const theme = Object.entries(request.theme)
         .map(([key, value]) => `--slop-${key}:${value}`)
         .join(";");
@@ -31,7 +32,7 @@ export function widgetRenderer(definition: object, component: Component, css: st
           return {
             width: viewport.width,
             height: viewport.height,
-            html: `<html data-slop-capture><body>${result.body}</body></html>`,
+            html: `<html data-slop-renderer="true" data-slop-capture="widget"><body>${captureHTML(result.body, request.theme)}</body></html>`,
             css: `${css}\n:root{${theme}}\nhtml,body{margin:0;width:100%;height:100%;overflow:hidden}*{box-sizing:border-box}`,
           };
         }),
@@ -40,7 +41,12 @@ export function widgetRenderer(definition: object, component: Component, css: st
   };
 }
 
-export function withReadOnlyDocument<T>(definition: object, snapshot: unknown, body: () => T): T {
+export function withReadOnlyDocument<T>(
+  definition: object,
+  snapshot: unknown,
+  resources: Record<string, string>,
+  body: () => T,
+): T {
   const document = {
     current: freeze(snapshot),
     change: refuse,
@@ -52,7 +58,24 @@ export function withReadOnlyDocument<T>(definition: object, snapshot: unknown, b
       return refuse();
     },
   };
-  const context = { document } as unknown as SlopContext;
+  const images = Object.freeze({ ...resources });
+  const context = {
+    document,
+    attachments: {
+      url(id: string) {
+        if (
+          typeof id !== "string" ||
+          !Object.hasOwn(images, id) ||
+          typeof images[id] !== "string" ||
+          !images[id]
+        )
+          throw new Error(`Capture attachment ${id} is missing or is not a supported image`);
+        return `slop-attachment:${id}`;
+      },
+      import: refuse,
+      read: refuse,
+    },
+  } as unknown as SlopContext;
   activate(context, definition, document);
   try {
     return body();

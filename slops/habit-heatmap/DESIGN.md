@@ -20,3 +20,9 @@ Public theme tokens cover shell, paper, ink, muted text, four colors, rule and f
 
 Editing offers a four-column color palette and a separate removal action with
 a Bits UI confirmation. Routine save indicators belong outside the authored UI.
+
+The desktop widget keeps the plum shell and warm paper. Its header counts all
+habits completed today; the small and medium views show seven recent days for
+the first one or two habits, and the large view shows fourteen days for the first
+four. Check marks identify completed days and an outline marks today. A date range
+keeps the image understandable between approximate half-hour refreshes.

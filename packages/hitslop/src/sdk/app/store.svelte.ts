@@ -31,6 +31,7 @@ export function svelteApp(
   options: {
     schema: Definition<ObjectNode>;
     export?: Component<{ mode: "preview" | "export" }> | Component<Record<string, never>>;
+    preview?: Component;
     icon?: Component;
     widget?: Component<WidgetProps>;
   },
@@ -50,6 +51,7 @@ export function svelteApp(
           props: {
             App,
             Export: options.export as Component<{ mode: "preview" | "export" }> | undefined,
+            Preview: options.preview,
             Icon: options.icon,
             Widget: options.widget,
           },

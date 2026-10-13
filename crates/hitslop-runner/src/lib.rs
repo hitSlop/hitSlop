@@ -19,6 +19,10 @@ pub use child::child;
 mod capture;
 pub const WIDGET_OUTPUT: usize = 8 << 20;
 pub const CAPTURE_OUTPUT: usize = 36 << 20;
+pub const PDF_OUTPUT: usize = 36 << 20;
+pub const PDF_BYTES: usize = 24 << 20;
+pub const PDF_WATCHDOG_MS: u64 = 10_000;
+pub const PDF_CPU_SECONDS: u64 = 8;
 pub const INPUT: usize = 64 << 20;
 pub const OUTPUT: usize = 4 << 20;
 pub const WATCHDOG_MS: u64 = 3000;
@@ -42,6 +46,7 @@ pub(crate) enum Mode {
     Definition,
     Widget,
     Capture,
+    Pdf,
 }
 
 /// The bounded envelope used by both native and browser command drivers.

@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { cardView } from "./items";
 
@@ -14,7 +15,7 @@
     </header>
     <div class="perf" aria-hidden="true"></div>
     <ul class="grid">
-      {#each card.items as item, index (item.$id)}
+      {#each (preview ? (card.items).slice(0, 8) : card.items) as item, index (item.$id)}
         <li class="tile" data-revealed={item.revealed} data-done={item.done}>
           <span class="num">{index + 1}</span>
           {#if item.revealed}

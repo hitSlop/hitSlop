@@ -1,7 +1,5 @@
 <script lang="ts">
   // A fresh, read-only page: it renders saved frames only and never asks for the camera.
-  import { onMount, tick } from "svelte";
-  import { capture } from "hitslop/svelte";
   import doc from "./schema";
   import { dayKey, dayLabel, frameView, shortLabel, sizeLabel } from "./frames";
   import Photo from "./Photo.svelte";
@@ -11,14 +9,10 @@
   const view = $derived(frameView(doc.current, today));
   const hero = $derived(view.latest);
   // The most recent frames, oldest first, read like the flipbook.
-  const limit = $derived(mode === "preview" ? 8 : 48);
+  const limit = $derived(mode === "preview" ? 8 : view.stack.length);
   const sheet = $derived(view.stack.slice(-limit));
   const hidden = $derived(view.stack.length - sheet.length);
 
-  onMount(() => capture.onPrepare(async () => {
-    await tick();
-    await Promise.all(Array.from(document.images, image => image.decode().catch(() => undefined)));
-  }));
 </script>
 
 <article class="df-export">

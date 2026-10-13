@@ -1,7 +1,7 @@
 import { refuse, type Tx } from "hitslop";
 import type doc from "./schema";
 import { bands } from "./schema";
-import { stations, type Station } from "./stations";
+import { stations, type Station } from "./station-list";
 
 export type Receiver = typeof doc.current;
 export type Band = (typeof bands)[number];

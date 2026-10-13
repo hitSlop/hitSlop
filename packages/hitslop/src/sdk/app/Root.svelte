@@ -5,8 +5,9 @@
   import { current } from "./context";
   import { notice, notify } from "./notice.svelte";
 
-  let { App, Export, Icon, Widget }: {
+  let { App, Preview, Export, Icon, Widget }: {
     App: Component;
+    Preview?: Component;
     Export?: Component<{ mode: "preview" | "export" }>;
     Icon?: Component;
     Widget?: Component<WidgetProps>;
@@ -26,7 +27,7 @@
   onMount(() => ctx.capture.onPrepare(async (next, signal, viewport) => {
     if (next === "widget") widget = viewport;
     if (next === "preview" || next === "export") mode = next;
-    if (renderer && (next === "preview" || next === "export") && !Export) {
+    if (renderer && ((next === "preview" && !Preview) || (next === "export" && !Export))) {
       editor = true;
       signal.addEventListener("abort", () => { editor = false; renderFailure = undefined; }, { once: true });
       await tick();
@@ -66,6 +67,11 @@
 </svelte:boundary>
 {/if}
 <!-- Capture components mount only while capturing; their failures never replace the editor. -->
+{#if Preview}
+  <CaptureTarget {ctx} kind="preview" {assertRenderable}>
+    {#snippet content()}<Preview />{/snippet}
+  </CaptureTarget>
+{/if}
 {#if Export}
   <CaptureTarget {ctx} kind="export" {assertRenderable}>
     {#snippet content()}<Export {mode} />{/snippet}

@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 import { refuse, type Tx } from "hitslop";
 import type doc from "./schema";
 export type Countdown = typeof doc.current;
@@ -118,13 +119,13 @@ export function countdownState(
 export function displayDate(date: string, time: string) {
   const target = parseTarget(date, time);
   return target
-    ? new Intl.DateTimeFormat(undefined, {
+    ? dateLabel(target, {
         month: "short",
         day: "numeric",
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
-      }).format(target)
+      })
     : "Choose date & time";
 }
 

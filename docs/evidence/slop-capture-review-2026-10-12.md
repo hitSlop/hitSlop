@@ -1,10 +1,61 @@
 # Catalog capture review — 2026-10-12
 
+## Dedicated preview pass
+
+All 76 active slops now define required `Preview.svelte` and `Icon.svelte` roles.
+Preview supplies compact Quick Look/catalog artwork; optional `Export.svelte` keeps
+the complete content. All 76 previews and 76 full PNG exports rendered successfully
+through the native helper and were visually reviewed side by side. MASH's preview
+needed an explicit grid because CSS columns produced an overly tall result; the
+corrected preview was rendered and reviewed again.
+
+These 152 outputs and the comparison gallery are under
+`spikes/takumi-capture/out/native-previews/`. This pass uses the pinned upstream Git
+renderer. The icon, PDF, attachment and widget review below records the earlier
+integration build; it is not a repeat of that entire matrix after the dependency switch.
+
+## Takumi-only icon and export pass
+
+The subsequent Takumi-only pass builds all 76 bundled slops with synchronous icon
+and export programs. It repairs the blank capture-wrapper icons, standalone SVG
+styling, Grocery List sizing and Pixel Art's saved-cell rendering. Animated browser
+experiences use static saved-state compositions. The original findings below are
+retained as the baseline, not open defects.
+
+Native review artifacts are under ignored `spikes/takumi-capture/out/native-catalog/`:
+76 icon images, 76 PNG exports, 76 vector PDFs and eight three-size widget batches.
+The first full render exposed unsupported PDF drop shadows in Household Chores and
+Pocket Pod; capture-specific styling fixes and targeted rerenders resolved both.
+All 228 icon/PNG/PDF outputs and 24 widget images were visually inspected. Targeted
+rerenders repaired Pocket Sheet rows, Countdown and Departure Board fonts, Exam Deck
+typography, Hourglass SVG colors, Internship and Lab layouts, Soma Amp overlap,
+Water Tracker cropping, Trip packing spacing and Wrap Poster icon strokes. These
+are manual artifact checks, not per-slop regression tests.
+
+The subsequent `bun run build:templates` rebuilt all 76 shipped packages and their
+artwork through the integrated native helper with no failures (290.3 seconds,
+zero cache hits). This verifies production package/artwork generation separately
+from the direct-render visual review above.
+
+Seven populated saved-attachment documents (Moodboard, Daily Frame, Fog, Recipe,
+Contact Card, Baby Journal and Capture Notebook) were rendered to PNG and PDF.
+The fixture is a transparent PNG imported through the core and referenced from real
+saved state. The manual script calls the evaluator directly; it does not exercise
+Swift routing. Baby Journal portrait cropping and Daily Frame date sizing were
+repaired and visually rechecked. A separate shared native integration fixture covers
+saved-image resources through the host capture path.
+
+These checks do not qualify every theme, image encoding or possible saved state.
+Practice Sheet exports readable ABC source rather than browser notation engraving;
+custom Codex Pet ZIPs use an honest package card rather than reconstructing their
+animation. Browser apps retain their interactive rendering.
+
+## Original mixed-provider review (superseded)
+
 The catalog needs a focused capture-styling pass before broad native-rendering
 qualification. Most compositions remain recognizable, including the rich browser
 captures. The urgent findings are six blank icons, four icons with lost SVG
-styling, and two exports that lose their main content. These are open findings;
-this review does not change the slops or renderer routing.
+styling, and two exports that lose their main content. These were the findings at the initial review; the pass above repairs them.
 
 ## Scope and method
 
@@ -29,7 +80,7 @@ under ignored `spikes/takumi-capture/`: `catalog-review.ts`, `catalog-compare.ts
 the 76 pairs, routing results, two icon sheets, nine export sheets and three
 comparison sheets. These local artifacts are not required to build the repository.
 
-## Fix first
+## Original repairs identified
 
 | Slop / role | Observed result | Suggested repair |
 | --- | --- | --- |
@@ -48,7 +99,7 @@ comparison sheets. These local artifacts are not required to build the repositor
 
 The six blank icon views are styled as `display: none !important` until selectors
 matching `html[data-slop-renderer="true"][data-slop-capture="icon"]` reveal them.
-The native adapter currently emits `<html data-slop-capture>` without those values.
+The native adapter originally emitted `<html data-slop-capture>` without those values.
 This is a shared host-markup mismatch, not six unrelated design problems. Inspect
 [`capture-render.ts`](../../packages/hitslop/src/sdk/app/capture-render.ts) and the
 affected slops' `styles.css` together. A shared fix belongs at that boundary, with
@@ -116,3 +167,33 @@ Recommended order: fix the shared blank-icon boundary and the two content-losing
 exports, repair the SVG attributes, then add Water Tracker, Ivy Lee Method and
 Grocery List widgets. The remaining five are a second authoring pass, with the
 time-dependent ones receiving explicit stale-image review.
+
+## Selected widget follow-up
+
+The user selected Water Tracker, Grocery List, Reading Tracker, Habit Heatmap,
+Daily Planner, Assignment Tracker and Countdown Milestones. All seven now have
+dedicated small, medium and large widget compositions. Ivy Lee Method was not
+selected. This authoring pass does not change the icon/export routing or resolve
+the capture defects above.
+
+Native PNG review used the installed Rust evaluator at 2×: all seven slops across
+three families and four states (initial saved state, empty lists, long text, and
+completed items / water goal reached), 84 images total. The temporary variants are
+manual presentation inputs, not document mirrors or automated per-slop tests.
+Review caught and corrected Daily Planner's medium-row clipping, Grocery List's
+long heading wrap, and Reading Tracker's long-title and small empty-state overflow.
+Local images and browser comparison HTML are in
+`spikes/takumi-capture/out/widget-catalog-review/`.
+
+Habit Heatmap, Assignment Tracker and Countdown request 30-minute recaptures while
+the app runs. They display their render date; visible refresh is still controlled
+by WidgetKit. Daily Planner labels its saved plan date instead of following the
+clock. Water Tracker retains the saved log; its schema has no per-entry date or
+automatic midnight reset. New documents must be created from rebuilt templates
+to receive these views; existing documents retain their embedded app.
+
+All seven fresh definition builds emitted native `widget.js`. Final `bun run verify`
+passed the affected types and landing tiers: Svelte reported no errors or warnings,
+and Astro reported no errors, warnings or hints across 23 files. No Rust, Swift or
+FFI source changed in this widget authoring pass. Desktop placement and visible
+WidgetKit reload of these seven new compositions were not separately exercised.

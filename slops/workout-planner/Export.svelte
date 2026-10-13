@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
 import doc from "./schema";
 import { checked, sets, workoutView } from "./workout";
 const { total, done, ratio } = $derived(workoutView(doc.current));
@@ -10,7 +11,7 @@ const { total, done, ratio } = $derived(workoutView(doc.current));
       <div class="progress">
         <div class="fill" style:width={`${ratio}%`}></div>
       </div>
-      {#each doc.current.exercises as ex}
+      {#each (preview ? (doc.current.exercises).slice(0, 4) : doc.current.exercises) as ex}
         <section class="export-lift">
           <h2 class="export-title">{ex.name}</h2>
           <p class="description">{sets(ex)} sets × {ex.reps} reps · {ex.weight || "Bodyweight"}</p>

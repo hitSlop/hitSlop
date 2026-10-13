@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import Check from "@lucide/svelte/icons/check";
   import Plane from "@lucide/svelte/icons/plane";
@@ -38,7 +39,7 @@
       </div>
     </header>
 
-    {#each view.schedule as { day, stops } (day.$id)}
+    {#each (preview ? (view.schedule).slice(0, 1) : view.schedule) as { day, stops } (day.$id)}
       <section class="export-day" aria-label={day.title}>
         <div class="export-day-head">
           <strong>{day.title}</strong>
@@ -46,7 +47,7 @@
           <span>{day.subtitle}</span>
         </div>
         <ul class="stops">
-          {#each stops as event (event.$id)}
+          {#each (preview ? (stops).slice(0, 5) : stops) as event (event.$id)}
             <li class="stop" data-done={event.done}>
               <div class="time-stub">
                 <span data-checkbox-root data-state={event.done ? "checked" : "unchecked"}>{#if event.done}<Check size={12} strokeWidth={3.5} />{/if}</span>
@@ -92,7 +93,7 @@
     <div class="packing">
       <span class="stub-label">PACKING STUB · {view.packed}/{view.packedTotal}</span>
       <ul class="stub-items">
-        {#each doc.current.stubItems as stub (stub.$id)}
+        {#each (preview ? (doc.current.stubItems).slice(0, 6) : doc.current.stubItems) as stub (stub.$id)}
           <li class="stub-row" data-done={stub.done}>
             <span data-checkbox-root data-state={stub.done ? "checked" : "unchecked"}>{#if stub.done}<Check size={10} strokeWidth={3} />{/if}</span>
             <span class="stub-text">{stub.text || "Untitled item"}</span>

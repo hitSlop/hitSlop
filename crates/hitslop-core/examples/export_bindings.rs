@@ -15,6 +15,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     BuildInput::export_all(&config)?;
     hitslop_core::widgets::WidgetRenderRequest::export_all(&config)?;
     hitslop_core::capture::ViewRenderRequest::export_all(&config)?;
+    hitslop_core::capture::CaptureProvider::export_all(&config)?;
+    hitslop_core::capture::CaptureCapability::export_all(&config)?;
     Batch::export_all(&config)?;
     OwnerState::export_all(&config)?;
     Publication::export_all(&config)?;

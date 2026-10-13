@@ -33,6 +33,7 @@ struct SlopShareButton: NSViewRepresentable {
 }
 
 @MainActor final class SlopSharePopover: NSObject, ObservableObject, NSPopoverDelegate {
+  let canExport: Bool
   @Published var commandsEnabled = true
   @Published private(set) var preparing: String?
   private let filename: String
@@ -44,8 +45,12 @@ struct SlopShareButton: NSViewRepresentable {
   var isShown: Bool { popover.isShown }
   var window: NSWindow? { popover.contentViewController?.view.window }
 
-  init(filename: String, holdToolbar: @escaping (Bool) -> Void, select: @escaping (SlopDocumentCommand) -> Void) {
+  init(
+    filename: String, canExport: Bool, holdToolbar: @escaping (Bool) -> Void,
+    select: @escaping (SlopDocumentCommand) -> Void
+  ) {
     self.filename = filename
+    self.canExport = canExport
     self.holdToolbar = holdToolbar
     self.select = select
     super.init()
@@ -115,19 +120,22 @@ private struct SlopShareView: View {
         Text(filename).font(.subheadline).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
       }
       VStack(spacing: 6) {
-        Grid(horizontalSpacing: 6, verticalSpacing: 6) {
-          GridRow {
-            formatOption(
-              "Share PDF", hint: "Send a PDF using the sharing picker.", symbol: "doc.richtext", command: .sharePDF)
-            formatOption(
-              "Save PDF", hint: "Choose where to save a PDF.", symbol: "arrow.down.to.line", command: .exportPDF)
-          }
-          GridRow {
-            formatOption(
-              "Share Image", hint: "Send a PNG image using the sharing picker.", symbol: "photo", command: .sharePNG)
-            formatOption(
-              "Save Image", hint: "Choose where to save a PNG image.", symbol: "arrow.down.to.line", command: .exportPNG
-            )
+        if model.canExport {
+          Grid(horizontalSpacing: 6, verticalSpacing: 6) {
+            GridRow {
+              formatOption(
+                "Share PDF", hint: "Send a PDF using the sharing picker.", symbol: "doc.richtext", command: .sharePDF)
+              formatOption(
+                "Save PDF", hint: "Choose where to save a PDF.", symbol: "arrow.down.to.line", command: .exportPDF)
+            }
+            GridRow {
+              formatOption(
+                "Share Image", hint: "Send a PNG image using the sharing picker.", symbol: "photo", command: .sharePNG)
+              formatOption(
+                "Save Image", hint: "Choose where to save a PNG image.", symbol: "arrow.down.to.line",
+                command: .exportPNG
+              )
+            }
           }
         }
         option("Share Slop File", detail: "An editable copy for hitSlop.", symbol: "doc", command: .shareSlop)

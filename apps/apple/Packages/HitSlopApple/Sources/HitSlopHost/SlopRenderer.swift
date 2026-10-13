@@ -8,7 +8,7 @@ import WebKit
 
 @MainActor public enum SlopRenderer {
   enum CaptureOutput { case previewPNG, exportPNG, pdf }
-  private static let captureQueue = DispatchQueue(
+  static let captureQueue = DispatchQueue(
     label: "com.hitslop.capture-render", qos: .utility, attributes: .concurrent)
 
   public static func previewPNGData(url: URL) async throws -> Data {
@@ -18,10 +18,12 @@ import WebKit
     try await withSavedSource(session) { try await capture(url: $0, output: .previewPNG) }
   }
   public static func exportPNGData(session: DocumentSession) async throws -> Data {
-    try await withSavedSource(session) { try await capture(url: $0, output: .exportPNG) }
+    guard session.file.views.export else { throw SlopFailure("This slop does not support PNG or PDF export") }
+    return try await withSavedSource(session) { try await capture(url: $0, output: .exportPNG) }
   }
   public static func exportPDFData(session: DocumentSession) async throws -> Data {
-    try await withSavedSource(session) { try await capture(url: $0, output: .pdf) }
+    guard session.file.views.export else { throw SlopFailure("This slop does not support PNG or PDF export") }
+    return try await withSavedSource(session) { try await capture(url: $0, output: .pdf) }
   }
 
   private static func withSavedSource<T>(
@@ -32,21 +34,21 @@ import WebKit
     return try await session.withCaptureSnapshot(trace: trace, body)
   }
 
-  static func capture(url: URL, output: CaptureOutput) async throws -> Data {
-    if output == .pdf {
-      return try await withRenderSession(url: url) { try await capture(session: $0, output: output) }
-    }
-    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Capture renderer is missing") }
-    let kind: ViewCaptureKind = output == .previewPNG ? .preview : .export
-    let bytes = try await SlopPreparation.run(on: captureQueue) {
-      try renderSavedView(path: url.path, evaluatorPath: evaluator, kind: kind)
-    }
-    try Task.checkCancellation()
-    if let bytes {
-      let png = Data(bytes)
-      return png
-    }
-    return try await withRenderSession(url: url) { try await capture(session: $0, output: output) }
+  static func capture(
+    url: URL, output: CaptureOutput, provider: CaptureProvider? = nil
+  ) async throws -> Data {
+    let capability: CaptureCapability =
+      switch output {
+      case .previewPNG: .previewPng
+      case .exportPNG: .exportPng
+      case .pdf: .vectorPdf
+      }
+    return try await captureProvider(capability, requested: provider).render(url: url, output: output)
+  }
+
+  /// Explicit provider entry point for internal comparisons, with the same save barrier.
+  static func capture(session: DocumentSession, output: CaptureOutput, provider: CaptureProvider) async throws -> Data {
+    try await withSavedSource(session) { try await capture(url: $0, output: output, provider: provider) }
   }
 
   /// Renders artwork from a source already acquired by a copy operation.
@@ -152,10 +154,12 @@ import WebKit
   }
 
   public static func iconPNGData(url: URL) async throws -> Data? {
+    try await iconPNGData(url: url, provider: nil)
+  }
+  static func iconPNGData(url: URL, provider: CaptureProvider?) async throws -> Data? {
     let file = try await SlopPreparation.run(on: captureQueue) { try SlopFile(url: url) }
     guard file.views.icon else { return nil }
-    if let png = try await nativeIconPNGData(url: url) { return png }
-    return try await withRenderSession(url: url) { try await captureWebIcon(session: $0) }
+    return try await captureProvider(.iconPng, requested: provider).icon(url: url)
   }
 
   public static func iconPNGData(session: DocumentSession) async throws -> Data? {
@@ -164,16 +168,7 @@ import WebKit
     return try await session.withCaptureSnapshot { try await iconPNGData(url: $0) }
   }
 
-  private static func nativeIconPNGData(url: URL) async throws -> Data? {
-    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Capture renderer is missing") }
-    let bytes = try await SlopPreparation.run(on: captureQueue) {
-      try renderSavedIcon(path: url.path, evaluatorPath: evaluator)
-    }
-    try Task.checkCancellation()
-    return bytes.map { Data($0) }
-  }
-
-  private static func captureWebIcon(session: DocumentSession) async throws -> Data? {
+  static func captureWebIcon(session: DocumentSession) async throws -> Data? {
     try await withCapture(session) { view, token, originalFrame in
       view.frame.size = CGSize(width: max(512, originalFrame.width), height: max(512, originalFrame.height))
       let value = try await begin(view, token: token, mode: .icon)
@@ -214,7 +209,10 @@ import WebKit
     if session.isSnapshot { return try await widgetCapture(url: session.file.url) }
     return try await session.withCaptureSnapshot { try await widgetCapture(url: $0) }
   }
-  static func widgetCapture(url: URL) async throws -> WidgetCapture {
+  static func widgetCapture(url: URL, provider: CaptureProvider? = nil) async throws -> WidgetCapture {
+    try await captureProvider(.widgetBatch, requested: provider).widgets(url: url)
+  }
+  static func captureNativeWidgets(url: URL) async throws -> WidgetCapture {
     guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Widget renderer is missing") }
     let capture = try await SlopPreparation.run(on: captureQueue) {
       try renderSavedWidgets(path: url.path, evaluatorPath: evaluator)
@@ -253,7 +251,7 @@ import WebKit
     }
   }
 
-  private static func capture(session: DocumentSession, output: CaptureOutput) async throws -> Data {
+  static func captureWebView(session: DocumentSession, output: CaptureOutput) async throws -> Data {
     let isPreview = output == .previewPNG
     return try await withCapture(session) { view, token, originalFrame in
       var measurement = try await begin(view, token: token, mode: isPreview ? .preview : .export)
@@ -262,11 +260,11 @@ import WebKit
       var height =
         isPreview ? originalFrame.height : max(dedicated ? 1 : originalFrame.height, try geometry(measurement).height)
       var rect = CGRect(x: 0, y: 0, width: width, height: height)
-      // Dedicated exports are the object itself, independent of the native window mask.
+      // Dedicated capture views are the object itself, independent of the native window mask.
       // Re-measure after resizing; reject viewport-dependent layouts that never settle.
       // PDF captures offscreen content directly; avoid an enormous backing view.
       if isPreview && dedicated {
-        // Previews show the top of long exports: at most 3:1 portrait (or the window height).
+        // Previews show the top of long preview views: at most 3:1 portrait (or the window height).
         // Designed compositions stay whole; PNG/PDF export keeps the full length.
         func previewHeight(_ box: CGRect) -> CGFloat { max(originalFrame.height, 3 * max(box.width, 1)) }
         var box = try geometry(measurement)
@@ -301,7 +299,7 @@ import WebKit
           box = next
         }
         guard settled else {
-          throw SlopFailure("Preview export layout keeps changing with viewport size; use normal flow in Export.svelte")
+          throw SlopFailure("Preview layout keeps changing with viewport size; use normal flow in Preview.svelte")
         }
         width = max(box.width, 1)
         height = max(min(box.height, previewHeight(box)), 1)

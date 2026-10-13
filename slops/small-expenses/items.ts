@@ -1,3 +1,4 @@
+import { moneyLabel } from "../_shared/format";
 import { refuse, type Tx } from "hitslop";
 import type doc from "./schema";
 export type Data = typeof doc.current;
@@ -12,7 +13,7 @@ export function expenseView(data: Data) {
 }
 
 export function formatMoney(minor: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", { style: "currency", currency }).format(minor / 100);
+  return moneyLabel(minor / 100, currency);
 }
 
 /** Checks what a person typed; the editor shows the message inline. */

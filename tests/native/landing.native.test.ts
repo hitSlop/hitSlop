@@ -51,6 +51,9 @@ test.if(nightly)("a skinned template without artwork keeps its dimensions and fa
     const key = `media/${createHash("sha256").update(image).digest("hex")}.png`;
     await writeFile(join(stage, "skin.png"), image);
     await writeFile(join(stage, "ui.js"), "export default { mount() { return {}; } };");
+    await writeFile(join(stage, "preview.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
+    await writeFile(join(stage, "icon.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
+    await writeFile(join(stage, "export.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
     const file = join(folder, "skin.slop");
     await execute({ method: "pack", stage, file, app: {
       packageFormat: PackageFormat, runtimeABI: RuntimeABI,
@@ -58,11 +61,14 @@ test.if(nightly)("a skinned template without artwork keeps its dimensions and fa
         metadata: { slug: "skin", title: "Skin", description: "Landing fixture", author: { name: "hitSlop" }, categories: ["utilities"] },
         window: { kind: "skin", width: 320, height: 240, image: "/assets/" + key },
         document: { kind: "object", properties: {} }, initial: {},
-        theme: [{ token: "surface", color: "#112233" }], commands: [], views: { export: false, icon: false },
+        theme: [{ token: "surface", color: "#112233" }], commands: [], views: { preview: true, export: true, icon: true },
       },
-      roles: { ui: "ui.js", skin: key },
+      roles: { ui: "ui.js", preview: "preview.js", icon: "icon.js", export: "export.js", skin: key },
       resources: [
         { kind: "app", key: "ui.js", mediaType: "text/javascript", path: "ui.js" },
+        { kind: "app", key: "preview.js", mediaType: "text/javascript", path: "preview.js" },
+        { kind: "app", key: "icon.js", mediaType: "text/javascript", path: "icon.js" },
+        { kind: "app", key: "export.js", mediaType: "text/javascript", path: "export.js" },
         { kind: "app", key, mediaType: "image/png", path: "skin.png" },
       ], artwork: {},
     } });

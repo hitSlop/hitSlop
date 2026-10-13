@@ -24,6 +24,11 @@ export async function packPackages() {
     const fonts = resolve("crates/hitslop-runner/fonts");
     for (const name of await readdir(fonts))
       if (name.includes("LICENSE") || name === "README.md") await copyFile(join(fonts, name), join(notices, name));
+    const rendererNotices = join(engines, "renderer-licenses");
+    await mkdir(rendererNotices);
+    const rendererLicenseSource = resolve("crates/hitslop-runner/renderer-licenses");
+    for (const name of await readdir(rendererLicenseSource))
+      await copyFile(join(rendererLicenseSource, name), join(rendererNotices, name));
     const directory = resolve("packages/hitslop");
     const metadata = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
     for (const value of Object.values(metadata.dependencies ?? {}))

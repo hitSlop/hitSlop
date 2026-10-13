@@ -80,10 +80,10 @@ fn app(initial: Value) -> Value {
             "window":{"kind":"standard","width":320,"height":240},
             "document":{"kind":"object","properties":{"title":{"kind":"text"}}},
             "initial":initial,"theme":[{"token":"accent","color":"#335577"}],
-            "commands":[],"views":{"export":false,"icon":false}
+            "commands":[],"views":{"preview":true,"export":true,"icon":true}
         },
-        "roles":{"ui":"ui.js"},
-        "resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"}],
+        "roles":{"ui":"ui.js","preview":"preview.js","icon":"icon.js","export":"export.js"},
+        "resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"},{"kind":"app","key":"preview.js","mediaType":"text/javascript","path":"assets/preview.js"},{"kind":"app","key":"icon.js","mediaType":"text/javascript","path":"assets/icon.js"},{"kind":"app","key":"export.js","mediaType":"text/javascript","path":"assets/export.js"}],
         "artwork":{}
     })
 }
@@ -92,6 +92,13 @@ fn stage(dir: &Path) -> std::path::PathBuf {
     let stage = dir.join("stage");
     fs::create_dir_all(stage.join("assets")).unwrap();
     fs::write(stage.join("assets/ui.js"), "export default { mount() { return {}; } };").unwrap();
+    fs::write(
+        stage.join("assets/export.js"),
+        include_str!("../../../tests/fixtures/checklist/document/assets/export.js"),
+    )
+    .unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/preview.js")).unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/icon.js")).unwrap();
     stage
 }
 
@@ -109,7 +116,7 @@ fn packs_creates_and_reads_typed_results() {
     assert_eq!(inspected["info"]["metadata"]["categories"], json!(["utilities"]));
     assert_eq!(
         inspected["info"]["assets"],
-        json!([{"name":"ui.js","bytes":fs::metadata(dir.path().join("stage/assets/ui.js")).unwrap().len()}])
+        json!([{"name":"export.js","bytes":fs::metadata(dir.path().join("stage/assets/export.js")).unwrap().len()},{"name":"icon.js","bytes":fs::metadata(dir.path().join("stage/assets/icon.js")).unwrap().len()},{"name":"preview.js","bytes":fs::metadata(dir.path().join("stage/assets/preview.js")).unwrap().len()},{"name":"ui.js","bytes":fs::metadata(dir.path().join("stage/assets/ui.js")).unwrap().len()}])
     );
     assert_eq!(request(json!({"method":"schema","file":file}))["schema"]["properties"]["title"]["kind"], "text");
     let output = dir.path().join("-Document file.slop");

@@ -12,7 +12,9 @@ import Testing
 extension HostTests {
   @Test @MainActor func widgetCapturesSavedStateAtEveryFamilySize() async throws {
     let root = try contractFixture { stage in
-      try Fixtures.updateApp(stage) { $0["views"] = ["export": false, "icon": false, "widget": [:]] as [String: Any] }
+      try Fixtures.updateApp(stage) {
+        $0["views"] = ["export": true, "icon": true, "preview": true, "widget": [:]] as [String: Any]
+      }
       try Fixtures.addWidget(stage)
     }
     defer { try? FileManager.default.removeItem(at: root) }

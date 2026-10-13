@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
 import doc from "./schema";
 import { formatDisplayDate, pageView, TARGET } from "./model";
 const { active, wordsCount, progressPct, page1Done, page2Done, page3Done } = $derived(pageView(doc.current));
@@ -44,7 +46,7 @@ const text = $derived(active?.text ?? "");
       <span class={"mp-hole"}></span>
     </div>
     {#if text.trim()}
-      <p class={"mp-writing"}>{text}</p>
+      <p class={"mp-writing"}>{previewText(text, preview, 900)}</p>
     {:else}
       <p class={"mp-empty"}>Nothing written this morning.</p>
     {/if}

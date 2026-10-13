@@ -1,5 +1,76 @@
 # Native capture integration — 2026-10-12
 
+All production capture roles now use saved-state Svelte SSR and Takumi in the
+restricted child: icons, preview artwork, widgets, PNG and selectable vector PDF.
+Authoring requires `Preview.svelte` and `Icon.svelte`; `Export.svelte` and `Widget.svelte`
+are optional. Preview supplies compact Quick Look/catalog artwork. Without Export,
+image/PDF share/save actions are hidden and CLI export is refused. Browser-dependent
+capture closures fail authoring.
+WebKit remains an explicit internal provider for comparison and future policy;
+there is no public override or automatic fallback. Saved PNG/JPEG/GIF/WebP
+attachments are read and verified by the core, then decoded only in the child.
+
+The Takumi-only catalog pass and its qualifications are recorded in the
+[catalog review](slop-capture-review-2026-10-12.md). The results below describe earlier
+stages of this work. Their routing and distribution-size measurements are historical,
+not measurements of the newly integrated vector backend.
+
+## Separate preview and export roles
+
+All 76 active slops now have dedicated Preview and Icon roles. The native helper
+rendered 76 compact preview PNGs and 76 full export PNGs successfully. All 152 images
+were reviewed side by side; MASH's preview was changed to an explicit two-column grid
+after unsupported CSS columns made it too tall. Its full export remains complete.
+The local gallery and raw images are under
+`spikes/takumi-capture/out/native-previews/`.
+
+`bun run build:templates` rebuilt all 76 shipped packages and their artwork through
+the integrated native helper with no failures (699.5 seconds, zero cache hits).
+Public guide metadata examples also passed their existing build check.
+
+Seven focused Swift checks passed for separate preview/export routing, optional-export
+refusal, saved-state captures and explicit WebKit comparison behavior. The development
+compatibility corpus was recaptured and replayed successfully with the new roles and
+pinned Git dependency. PDF remains experimental; long-document optimization and
+pagination refinements are deferred.
+
+Final `bun run verify --native` passed, covering 335 default Rust tests, Swift host
+integration, 26 native CLI checks, packaged CLI checks, generated contracts, types and
+landing documentation. `bun run verify` then reported every tier already passed with
+the exact current inputs. The shared relocated-helper check now confirms both PNG and
+PDF export work without the browser page shell. No per-slop automated tests were added.
+
+`bun run apple:build` also passed. It validated raw and packaged app commands/reopen,
+all packaged starters, matching page shells, and editing/export without Bun or Node.
+The resulting development app is `generated/app/hitSlop.app`; this pass did not replace
+the installed `/Applications/hitSlop.app`.
+
+## Takumi-only vector and resource qualification
+
+The initial integration below used a vendored backend with a final-scale patch.
+It has since been replaced with upstream Git revision
+`e527358cbd9b4f5deb361f56ef2cb02a88759f2b` for both Takumi and PDF. Upstream viewport
+DPR handles single-page sizing without a source patch. Cargo.lock pins the graph;
+app/CLI packages retain the notices under `crates/hitslop-runner/renderer-licenses`.
+The detailed timings and byte sizes below belong to the earlier patched build.
+
+The production evaluator's manual mixed fixture renders an imported transparent PNG,
+inline SVG and six Apple emoji sequences. PNG and rasterized PDF were visually checked;
+PDF extraction preserves the exact text and emoji. Its one page is 600 × 290 points
+and 47,809 bytes. A 1,000-row fixture extracts every row exactly once in order on one
+240 × 14,400-point page (36,206 bytes). Single debug invocations took 208 ms and
+60 ms respectively; these are functional evidence, not comparable release benchmarks.
+Local outputs are `spikes/takumi-capture/out/vector-pdf-integration/`.
+
+Eight shared runner capture tests passed, including font mappings, print layout,
+bounded long-page geometry, damaged-image refusal and repeated opaque attachment
+URLs. New packaging checks require declared native programs at authoring time; stored
+opening acceptance remains separate. The whole saved image inventory currently has a
+24 MiB cap, including images not used by a particular role. Lazy per-role loading is
+not implemented; failure preserves previously published artwork.
+
+## Initial mixed-provider integration (superseded)
+
 Widgets render in the restricted Rust child. Eligible `Icon.svelte` and
 `Export.svelte` closures now use the same engine for icons, preview artwork and PNG
 export. The builder retains WebKit for closures that depend on browser lifecycle,
@@ -16,7 +87,7 @@ dependencies. The dependency fixture failed before that check and passed afterwa
 
 The subsequent [full catalog visual review](slop-capture-review-2026-10-12.md)
 completed 152 captures but found blank icons, lost SVG styling and two exports
-with collapsed content. Those findings remain open; compilation eligibility and
+with collapsed content. Those findings were subsequently repaired by the Takumi-only pass; compilation eligibility and
 the smaller comparisons below do not establish catalog-wide visual acceptance.
 
 Manual comparisons use Quick Checklist, Reading Tracker, Contact Card, Koi Pond,
@@ -47,9 +118,9 @@ The last image remains available while the app is fully quit; the app catches up
 when restarted. WidgetKit still controls when the requested timeline reload runs.
 The closed-edit/restart regression failed before the fix and passed afterward.
 
-## Separate vector PDF experiment
+## Separate vector PDF experiment (before adoption)
 
-Production PDF remains on WebKit. The isolated `takumi-pdf 0.16.1` experiment
+At this experiment stage, production PDF remained on WebKit. The isolated `takumi-pdf 0.16.1` experiment
 preserves embedded selectable text and Apple emoji with Unicode mappings. All six
 tested emoji sequences extract intact, including a skin-tone ZWJ sequence and a
 flag. All 1,000 numbered rows extract exactly once and in order from both a
@@ -61,11 +132,10 @@ Small combined SSR/PDF/PNG samples took 129–180 ms; PDF rendering alone took
 pagination took 422 ms and 130 MiB. macOS first-launch executable validation was
 completed before these samples and is excluded from those timings.
 
-The continuous long page exceeds the usual 14,400-point page-size bound. Adoption
-needs a pagination/physical-sizing policy and a reproducible dependency package:
+The continuous long page exceeds the usual 14,400-point page-size bound. Adoption required a physical-sizing policy and a reproducible dependency package:
 the PDF crate is unpublished and contains a vendored krilla fork. The backend
 explicitly refuses blur filters. The visual results support adoption for the
-constrained subset, but this experiment does not change production PDF routing.
+constrained subset, but this experiment did not change production PDF routing. The subsequent integration vendors the backend and uniformly scales a continuous page to the 14,400-point bound.
 
 Local scripts and visual evidence are under `spikes/takumi-capture/`:
 `capture-integration.ts`, `capture-css-survey.ts`, `vector-pdf.ts`,
@@ -118,8 +188,7 @@ the expected loop interruption, heap-exhaustion and recursion errors in 2.03 s,
 Takumi remains exactly pinned to `=2.15.1` with default features disabled and only
 raster/HTML/SVG/PNG/WOFF2 enabled. The locked graph still includes `libwebp-sys
 0.14.4` through `takumi-raster 0.5.3`, despite WebP output not being enabled; disabling
-our WebP feature does not remove that upstream dependency. Vector PDF and its
-vendored backend remain outside the production dependency graph.
+our WebP feature does not remove that upstream dependency. Vector PDF and its vendored backend were outside the production dependency graph at this stage; the current integration includes PDF from pinned upstream Git.
 
 ## Installed macOS build and verification
 

@@ -1,28 +1,20 @@
 <script lang="ts">
-  import { capture } from "hitslop/svelte";
-  import { onMount } from "svelte";
-  import { drawPetIcon } from "./icon-draw";
-  import { petView } from "./pet";
-  import { loadPet } from "./sheet";
+  import starterSheet from "./assets/bubu-spritesheet.webp";
   import doc from "./schema";
-
+  import { petView } from "./pet";
   let { label }: { label?: string } = $props();
-  let canvas: HTMLCanvasElement;
-
-  // Captures are fresh pages: load the saved pet's sheet here and hold the capture until it is painted.
-  onMount(() => {
-    let release = () => {};
-    let disposed = false;
-    const painted = loadPet(petView(doc.current).stored).then((loaded) => {
-      if (disposed) { loaded.release(); return; }
-      release = loaded.release;
-      drawPetIcon(canvas, loaded.image);
-    });
-    const stop = capture.onPrepare(() => painted);
-    return () => { disposed = true; stop(); release(); };
-  });
+  const view = $derived(petView(doc.current));
 </script>
-
-<div class="pet-icon" aria-label={label} aria-hidden={label ? undefined : "true"}>
-  <canvas bind:this={canvas} class="pet-icon-canvas" width="512" height="512"></canvas>
+<div class="pet-icon" aria-label={label} aria-hidden={label ? undefined : true}>
+  <div class="pet-capture-card">
+    {#if view.imported}
+      <span class="pet-capture-mark">🐾</span><h1>{view.displayName}</h1><p>{view.stored?.name}</p><small>Custom pet · animation in hitSlop</small>
+    {:else}
+      <svg width="400" height="400" viewBox="0 0 192 208" aria-label="Bubu"><image href={starterSheet} x="0" y="0" width="1536" height="1872" /></svg>
+    {/if}
+  </div>
 </div>
+<style>
+  .pet-capture-card { width: 464px; height: 464px; margin: 24px; padding: 20px; box-sizing: border-box; border: 10px solid #4b342b; border-radius: 52px; background: #fff1d9; color: #4b342b; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; }
+  .pet-capture-mark { font-size: 96px; } h1 { font: 700 38px/1.15 sans-serif; margin: 0; overflow-wrap: anywhere; } p { font: 18px/1.4 sans-serif; margin: 0; overflow-wrap: anywhere; } small { font: 14px/1.3 sans-serif; }
+</style>

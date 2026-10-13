@@ -11,7 +11,7 @@ fn definition() -> Value {
         "window":{"kind":"standard","width":320,"height":240},
         "document":{"kind":"object","properties":{"title":{"kind":"string","minLength":1,"description":"Document title"}}},
         "theme":[{"token":"zinc","color":"#777777"},{"token":"accent","color":"#123456"}],
-        "views":{"export":true,"icon":false},
+        "views":{"preview":true,"export":true,"icon":true},
         "commands":[{"name":"rename","description":"Rename the document","args":{
             "kind":"object","properties":{"title":{"kind":"string","minLength":1}}
         }}]
@@ -30,7 +30,8 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
     let app = read(&metadata(), &definition()).unwrap();
     assert_eq!(app.theme().iter().map(|t| t.token.as_str()).collect::<Vec<_>>(), ["zinc", "accent"]);
     assert!(app.views().export);
-    assert!(!app.views().icon);
+    assert!(app.views().preview);
+    assert!(app.views().icon);
     assert_eq!((app.window().width, app.window().height), (320, 240));
     assert!(matches!(
         app.window().frame,

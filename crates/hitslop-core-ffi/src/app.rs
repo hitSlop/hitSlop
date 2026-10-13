@@ -75,6 +75,7 @@ pub struct ThemeInput {
 }
 #[uniffi::remote(Record)]
 pub struct Views {
+    pub preview: bool,
     pub export: bool,
     pub icon: bool,
     pub widget: Option<WidgetOptions>,

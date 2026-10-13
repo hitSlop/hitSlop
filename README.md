@@ -247,7 +247,7 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 </main>
 ```
 
-`Export.svelte`:
+`Preview.svelte`:
 
 ```svelte
 <script lang="ts">
@@ -260,6 +260,15 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 </article>
 ```
 
+For this small counter, optional `Export.svelte` can reuse the complete preview:
+
+```svelte
+<script lang="ts">
+  import Preview from "./Preview.svelte";
+</script>
+<Preview />
+```
+
 `Icon.svelte`:
 
 ```svelte
@@ -269,15 +278,16 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 <div class="wins-icon">{doc.current.wins}</div>
 ```
 
-`App.svelte` is the editor. Optional files supply capture components:
+`App.svelte` is the editor. Separate components supply saved-state captures:
 
-- `Export.svelte` supplies the layout for previews and PNG/PDF exports. Use normal document flow so long content can expand. Without this component, hitSlop renders a fresh App from saved data with its default local view; mark controls with `data-slop-export="hide"` to leave them out.
-- `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Without it, Finder can use the saved preview or the generic document icon.
+- Required `Preview.svelte` supplies a compact overview for Quick Look and in-app previews.
+- Optional `Export.svelte` supplies complete PNG/PDF output. Use normal document flow so long content can expand. Without it, export actions are hidden.
+- Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
 - `Widget.svelte` supplies small, medium and large desktop images from saved data. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
 
 hitSlop refreshes the Finder preview and icon when you close the document. Register renders the template's initial artwork from starting values.
 
-Widgets and eligible icon/preview/PNG views render with Takumi in the restricted Rust child. Browser-dependent icon/export views and PDF use WebKit. Quick Look reads the saved artwork.
+All capture views render with Takumi in the restricted Rust child, including selectable vector PDF. Capture components must be synchronous. Quick Look reads the saved artwork.
 
 See [icons, previews, and exports](apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) for capture details and size limits.
 
@@ -313,7 +323,7 @@ main.wins-card { min-height: 100%; }
 ```
 
 The builder finds each part by its filename: `slop.ts`, `schema.ts` and `App.svelte`, plus
-optional `Export.svelte`, `Icon.svelte` and `commands.ts`. Stylesheets are imported from
+required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte` and `commands.ts`. Stylesheets are imported from
 components, as `App.svelte` does above. See the
 [runtime reference](docs/reference/runtime.md#page-shell-and-ctx) for the app interface.
 

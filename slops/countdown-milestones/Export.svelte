@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import CountdownFace from "./CountdownFace.svelte";
   import { countdownView } from "./countdown";
@@ -21,7 +22,7 @@
 
 {#snippet milestoneList(items: readonly Milestone[])}
   <ol class="list">
-    {#each items as item (item.$id)}
+    {#each (preview ? (items).slice(0, 5) : items) as item (item.$id)}
       <li class="row">
 
           <span class="check" data-state={item.done ? "checked" : "unchecked"} aria-label={item.done ? "Complete" : "Incomplete"}>{item.done ? "✓" : ""}</span>

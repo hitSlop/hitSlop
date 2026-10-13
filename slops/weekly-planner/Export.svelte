@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { minutes, label, duration, tasksByTime } from "./schedule";
 </script>
@@ -12,10 +13,10 @@
     <p>{doc.current.focus}</p>
   </header>
   <div class="exportDays">
-    {#each doc.current.days as day (day.$id)}
+    {#each (preview ? (doc.current.days).slice(0, 7) : doc.current.days) as day (day.$id)}
       <section class="exportDay">
         <h2>{day.name} <span class="date">{day.date}</span></h2>
-        {#each tasksByTime(day.tasks) as task (task.$id)}
+        {#each (preview ? (tasksByTime(day.tasks)).slice(0, 3) : tasksByTime(day.tasks)) as task (task.$id)}
           {@const start = minutes(task.time)}
           <div class="exportBlock" data-color={task.color} data-done={task.done}>
             <strong>{task.done ? "✓ " : ""}{task.title || "Untitled"}</strong><span class="blockTime">{start === null ? "Anytime" : `${label(start)} – ${label(Math.min(1440, start + duration(task)))}`}</span>

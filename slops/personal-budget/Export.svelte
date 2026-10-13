@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { budgetView } from "./budget";
   import { categoryPercent, formatCurrency, money } from "./shared";
@@ -41,7 +42,7 @@
     <div class="categories">
       <div class="catHead"><span class="catTitle">Categories</span></div>
       <ul class="catList">
-        {#each data.categories as cat (cat.$id)}
+        {#each (preview ? (data.categories).slice(0, 6) : data.categories) as cat (cat.$id)}
           {@const percent = categoryPercent(cat)}
           {@const isOver = money(cat.spent) > money(cat.allocated)}
           <li class="catRow">

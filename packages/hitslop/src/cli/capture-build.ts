@@ -11,7 +11,7 @@ import { portableAssetURLs } from "./asset-url-transform";
 
 /** Each capture closure is a classic synchronous script; it never mounts the editor. */
 export async function buildCapture(
-  role: "widget" | "icon" | "export",
+  role: "widget" | "icon" | "preview" | "export",
   source: string,
   sdk: string,
   ui: Map<string, Emitted>,
@@ -75,6 +75,19 @@ globalThis.${functionName} = json => ${renderer}(doc,Widget,globalThis.__slopCap
           );
         };
         visit(result.ast);
+        if (!id.startsWith(sdk) && !id.includes("/node_modules/")) {
+          const reasons = retainedCaptureReasons(result.js.code, id, [
+            "window",
+            "document",
+            "navigator",
+            "requestAnimationFrame",
+            "fetch",
+            "XMLHttpRequest",
+            "Image",
+            "Worker",
+          ]);
+          if (reasons.length) this.error(reasons.join("\n"));
+        }
         const style = id.replace(/\.svelte$/, ".widget.css");
         if (result.css) styles.set(style, result.css.code);
         return {
@@ -156,13 +169,7 @@ globalThis.${functionName} = json => ${renderer}(doc,Widget,globalThis.__slopCap
   const sheet = postcss.parse(inline(css));
   // A package can introduce a missing global even when authored modules do not
   // mention it. Inspect the retained SSR code after dependency tree-shaking.
-  const unavailable = new Set<string>();
-  const inspect = (node: ts.Node) => {
-    if (ts.isIdentifier(node) && node.text === "Intl")
-      unavailable.add("compiled capture dependency uses Intl, unavailable in QuickJS");
-    ts.forEachChild(node, inspect);
-  };
-  inspect(ts.createSourceFile(`${role}.js`, program, ts.ScriptTarget.Latest, false));
+  const unavailable = retainedCaptureReasons(program, `${role}.js`, ["Intl"]);
   const fonts: { family: string; bytes: string; weight?: number; italic: boolean }[] = [];
   sheet.walkAtRules("font-face", (rule) => {
     const properties: Record<string, string> = {};
@@ -207,11 +214,11 @@ const render = globalThis.${functionName};
 globalThis.${functionName} = json => JSON.stringify({frames:JSON.parse(render(json)),fonts:${JSON.stringify(fonts)}});
 }`),
     dependencies,
-    unavailable: [...unavailable],
+    unavailable,
   };
 }
 
-/** Conservatively keep browser-dependent capture closures on their browser renderer.
+/** Diagnose unsupported authored lifecycle calls before SSR can erase them.
  * Inspect source ASTs through the already resolved UI graph, before compiling SSR.
  * Strings and comments never choose the rendering engine.
  */
@@ -223,8 +230,7 @@ export async function browserCaptureReasons(
   const pending = [entry],
     seen = new Set<string>(),
     reasons = new Set<string>();
-  const names =
-    /^(onMount|onPrepare|window|document|navigator|requestAnimationFrame|attachments|capture|motion|draft|notify|Intl|toLocaleString|toLocaleDateString|toLocaleTimeString)$/;
+  const names = /^(onMount|onPrepare|capture|motion|draft|notify)$/;
   while (pending.length) {
     const id = pending.pop()!;
     if (seen.has(id) || id.startsWith("\0") || id.startsWith(sdk) || id.includes("/node_modules/"))
@@ -255,7 +261,78 @@ export async function browserCaptureReasons(
         ts.forEachChild(node, visit);
       };
       visit(ts.createSourceFile(id, code, ts.ScriptTarget.Latest, false));
+      for (const reason of retainedCaptureReasons(code, id, [
+        "window",
+        "document",
+        "navigator",
+        "requestAnimationFrame",
+        "fetch",
+        "XMLHttpRequest",
+        "Image",
+        "Worker",
+      ]))
+        reasons.add(reason);
     }
   }
+  return [...reasons];
+}
+
+/** Inspect retained code, not unused helpers in a shared source module. Binding the
+ * program distinguishes browser globals from local names such as `document`. */
+function retainedCaptureReasons(code: string, filename: string, names: string[]): string[] {
+  const scriptName = `${filename}.js`;
+  const file = ts.createSourceFile(
+    scriptName,
+    code,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.JS,
+  );
+  const host: ts.CompilerHost = {
+    getSourceFile: (name) => (name === scriptName ? file : undefined),
+    getDefaultLibFileName: () => "",
+    writeFile() {},
+    getCurrentDirectory: () => "",
+    getDirectories: () => [],
+    fileExists: (name) => name === scriptName,
+    readFile: (name) => (name === scriptName ? code : undefined),
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => "\n",
+  };
+  const checker = ts
+    .createProgram([scriptName], { allowJs: true, noLib: true }, host)
+    .getTypeChecker();
+  const globals = new Set(names);
+  const reasons = new Set<string>();
+  const inspect = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && globals.has(node.text)) {
+      const parent = node.parent;
+      const property =
+        (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+        ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) &&
+          parent.name === node);
+      const globalProperty =
+        ts.isPropertyAccessExpression(parent) &&
+        parent.name === node &&
+        ts.isIdentifier(parent.expression) &&
+        ["globalThis", "self", "window"].includes(parent.expression.text);
+      if (globalProperty || (!property && !checker.getSymbolAtLocation(node)))
+        reasons.add(
+          `${filename}: retained dependency uses ${node.text}, unavailable in synchronous capture rendering`,
+        );
+    }
+    if (
+      names.includes("Intl") &&
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      /^(toLocaleString|toLocaleDateString|toLocaleTimeString)$/.test(node.expression.name.text)
+    )
+      reasons.add(
+        `${filename}: ${node.expression.name.text} requires locale services unavailable in QuickJS`,
+      );
+    ts.forEachChild(node, inspect);
+  };
+  inspect(file);
   return [...reasons];
 }

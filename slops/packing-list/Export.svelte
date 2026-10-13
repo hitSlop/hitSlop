@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { packingView } from "./items";
 
@@ -44,7 +45,7 @@
     <div class="track"><div class="fill" data-complete={view.complete} style:width="{view.percent}%"></div></div>
   </section>
   <div class="export-list">
-    {#each view.sections as section (section.category.$id)}
+    {#each (preview ? (view.sections).slice(0, 3) : view.sections) as section (section.category.$id)}
       {#if section.items.length > 0}
         <section class="block" aria-label={section.category.name}>
           <div class="block-head">
@@ -52,7 +53,7 @@
             <span class="block-count">{section.packed} of {section.total} packed</span>
           </div>
           <ul class="list">
-            {#each section.items as item (item.$id)}
+            {#each (preview ? (section.items).slice(0, 4) : section.items) as item (item.$id)}
               <li class="row" data-packed={item.packed}>
                 <span data-checkbox-root data-state={item.packed ? "checked" : "unchecked"}>{#if item.packed}<span class="check-icon">✓</span>{/if}</span>
                 <span class="qty">×{item.quantity}</span>

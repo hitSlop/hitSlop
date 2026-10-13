@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 // The deck model: one view function for App, Export, Icon and commands, and every edit
 // written once over `Tx` so the page and an agent change the document the same way.
 // Nothing here reads the clock; callers pass `now` (epoch ms) and a UTC offset.
@@ -142,7 +143,7 @@ export function formatInterval(ms: number) {
 
 export function formatDay(day: string, style: "short" | "long" = "short") {
   const date = new Date(`${day}T12:00:00Z`);
-  return date.toLocaleDateString(undefined, style === "long"
+  return dateLabel(date, style === "long"
     ? { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }
     : { month: "short", day: "numeric", timeZone: "UTC" });
 }

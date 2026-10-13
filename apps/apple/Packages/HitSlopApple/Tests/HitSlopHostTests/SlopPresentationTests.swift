@@ -281,10 +281,10 @@ extension HostTests {
   @MainActor func shapeLabFallbackCapturesKeepNativeMask() async throws {
     for kind in try shapeLabKinds(fallback: true) {
       try await withPresentationSession(kind) { session in
-        let preview = try await SlopRenderer.previewPNGData(session: session)
+        let preview = try await SlopRenderer.capture(session: session, output: .previewPNG, provider: .webKit)
         let small = try #require(NSBitmapImageRep(data: preview))
         #expect(small.pixelsWide == (kind.contains("washer") ? 320 : 480) * 2)
-        let png = try await SlopRenderer.exportPNGData(session: session)
+        let png = try await SlopRenderer.capture(session: session, output: .exportPNG, provider: .webKit)
         let image = try #require(NSBitmapImageRep(data: png))
         #expect(image.pixelsWide == small.pixelsWide)
         for bitmap in [small, image] {
@@ -337,7 +337,7 @@ extension HostTests {
     session.load()
     try await session.waitUntilReady()
     do {
-      let png = try await SlopRenderer.exportPNGData(session: session)
+      let png = try await SlopRenderer.capture(session: session, output: .exportPNG, provider: .webKit)
       let image = try #require(NSBitmapImageRep(data: png))
       #expect(image.pixelsHigh > 2 * 360 * 2)
       #expect((image.colorAt(x: 0, y: 0)?.alphaComponent ?? 0) > 0.99)

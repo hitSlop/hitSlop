@@ -135,8 +135,8 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   sizes after a failure; it advances the saved version only on confirmed success.
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
 - Flush unsent text and pending writes before close or export. Captures render saved
-  state in a fresh read-only page; the optional root `Export.svelte` supplies the layout, otherwise
-  a fresh App uses its default local UI state. Successful close destroys WebViews.
+  state in an independent read-only renderer; required root `Preview.svelte` supplies preview artwork; optional `Export.svelte` supplies PNG/PDF output.
+  Production captures use Takumi, with WebKit retained as an explicit internal provider. Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`. The stored descriptor is not JSON Schema.
   Initial values are read only when a document is created. Descriptor kinds exist only once Rust,
   the SDK and a fixture implement them (today: text, boolean, string, number, integer, enum,

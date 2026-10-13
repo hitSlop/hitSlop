@@ -41,7 +41,9 @@ export async function appConfig(source: string): Promise<InlineConfig> {
     optimizeDeps: {
       entries: [
         roles.view,
-        ...[roles.export, roles.icon, roles.widget].filter((path): path is string => !!path),
+        ...[roles.preview, roles.export, roles.icon, roles.widget].filter(
+          (path): path is string => !!path,
+        ),
       ],
       exclude: ["hitslop"],
     },

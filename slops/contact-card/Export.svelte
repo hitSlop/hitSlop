@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { attachments } from "hitslop/svelte";
   import Mail from "@lucide/svelte/icons/mail";
@@ -28,7 +30,7 @@
       </div>
     </div>
     {#if data.bio.trim()}
-      <section class="bioBox"><p class="bioText">{data.bio}</p></section>
+      <section class="bioBox"><p class="bioText">{previewText(data.bio, preview, 200)}</p></section>
     {/if}
     <ul class="channels" aria-label="Contact channels">
       {#if data.email.trim()}

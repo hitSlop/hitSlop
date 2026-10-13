@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { categoryCode, formatDate } from "./shared";
   import { expenseView } from "./items";
@@ -64,7 +65,7 @@
 
 {#snippet receiptRows(items: readonly ExpenseItem[], editable: boolean)}
   <ul class="list">
-    {#each items as item (item.$id)}
+    {#each (preview ? (items).slice(0, 7) : items) as item (item.$id)}
       <li class="row">
         <div class="itemInfo">
             <span class="itemTitle">{item.title.trim() || "Untitled item"}</span>

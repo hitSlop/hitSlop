@@ -151,7 +151,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
   lazy var sharePopover = SlopSharePopover(
-    filename: url.lastPathComponent,
+    filename: url.lastPathComponent, canExport: canExport,
     holdToolbar: { [weak self] in self?.toolbar.holdForSharing($0) },
     select: { [weak self] in self?.request($0) })
   let fullscreen = FullscreenController()

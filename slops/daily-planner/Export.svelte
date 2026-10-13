@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { formatDate, plannedLabel, plannerView, toLabel } from "./schedule";
 
@@ -17,7 +19,7 @@
   <section class="priorities" style="max-height:none;overflow:visible">
     <h2 class="heading">Make room for</h2>
     <ol class="priorityList">
-      {#each doc.current.priorities as priority, index (priority.$id)}
+      {#each (preview ? (doc.current.priorities).slice(0, 3) : doc.current.priorities) as priority, index (priority.$id)}
         <li class="priority">
           <span class="checkbox">{priority.done ? "✓" : index + 1}</span>
           <span style:text-decoration={priority.done ? "line-through" : "none"}>{priority.text || "—"}</span>
@@ -30,7 +32,7 @@
     <span class="meta">{plannedLabel(view.booked)}</span>
   </div>
   <div class="exportList">
-    {#each view.placed as item (item.block.$id)}
+    {#each (preview ? (view.placed).slice(0, 5) : view.placed) as item (item.block.$id)}
       <section class="exportBlock" data-kind={item.block.kind}>
         <span class="meta">{toLabel(item.start)}–{toLabel(item.end)} · {item.block.kind}</span>
         <h3 class="exportTitle">{item.block.title || "Untitled block"}</h3>
@@ -41,6 +43,6 @@
   </div>
   <section class="exportNotes">
     <h2 class="heading">Day notes</h2>
-    {doc.current.notes || "Nothing noted."}
+    {previewText(doc.current.notes || "Nothing noted.", preview, 160)}
   </section>
 </article>

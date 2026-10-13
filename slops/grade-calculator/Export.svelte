@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { gradebookView } from "./gradebook";
 
@@ -20,7 +21,7 @@
         <div class="gpa-badge"><span class="gpa-val">{view.termGPA}</span><span class="gpa-label">TERM GPA</span></div>
       </div>
     </header>
-    {#each view.courses as { course, metrics } (course.$id)}
+    {#each (preview ? (view.courses).slice(0, 3) : view.courses) as { course, metrics } (course.$id)}
       <section class="course-detail-view">
         <div class="detail-header">
           <div class="course-info">
@@ -32,7 +33,7 @@
         </div>
         <table class="weights-table">
           <tbody>
-            {#each course.categories as category (category.$id)}
+            {#each (preview ? (course.categories).slice(0, 4) : course.categories) as category (category.$id)}
               <tr>
                 <td>{category.name}</td>
                 <td>{category.weightPercent}%</td>

@@ -1,4 +1,4 @@
-import { CalendarDate, getLocalTimeZone, today as getTodayDate, type DateValue } from "@internationalized/date";
+import type { DateValue } from "@internationalized/date";
 import { refuse, type RowRef, type Tx } from "hitslop";
 import type doc from "./schema";
 
@@ -22,32 +22,27 @@ export function formatISO(date: DateValue): string {
 
 /** The only clock read in this module. Pages call it; edits and commands never do. */
 export function todayISO(): string {
-  return formatISO(getTodayDate(getLocalTimeZone()));
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function parseISO(iso: string): CalendarDate | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
-  const [y, m, d] = iso.split("-").map(Number);
-  if (y < 1 || m < 1 || m > 12 || d < 1 || d > 31) return null;
-  try {
-    const date = new CalendarDate(y, m, d);
-    return formatISO(date) === iso ? date : null;
-  } catch {
-    return null;
-  }
+export function parseISO(iso: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || Number(iso.slice(0, 4)) < 1) return null;
+  const date = new Date(`${iso}T12:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === iso ? date : null;
 }
 
 export function daysUntil(iso: string, reference: string): number | null {
   const target = parseISO(iso);
   const today = parseISO(reference);
   if (!target || !today) return null;
-  return target.compare(today);
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
 }
 
 export function formatShort(iso: string): string {
   const d = parseISO(iso);
   return d
-    ? `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.month - 1]} ${d.day}`
+    ? `${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]} ${d.getUTCDate()}`
     : "Choose date";
 }
 

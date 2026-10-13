@@ -49,6 +49,7 @@ pub struct WidgetRenderRequest {
     pub snapshot: serde_json::Value,
     pub theme: std::collections::BTreeMap<String, String>,
     pub viewports: Vec<WidgetViewport>,
+    pub resources: std::collections::BTreeMap<String, String>,
 }
 
 pub struct WidgetImage {
@@ -68,7 +69,7 @@ fn source_version(document: &crate::Document, renderer: &fingerprint::Fingerprin
     // installed renderer/fonts and canvases so app updates refresh unchanged state.
     // Artwork writes and compaction still do not change the saved semantic version.
     let mut hash = Sha256::new();
-    hash.update(b"hitslop-widget-capture-v1\0");
+    hash.update(b"hitslop-widget-capture-v2:takumi\0");
     hash.update(renderer.digest);
     hash.update(widget_limits().scale.to_le_bytes());
     hash.update(crate::encode(&widget_viewports()).as_bytes());
@@ -110,6 +111,7 @@ pub fn render_saved(
         snapshot: serde_json::from_str(&document.value()).map_err(|e| invalid(e.to_string()))?,
         theme: document.theme_state().map_err(crate::store::Error::Rejected)?.effective.into_iter().collect(),
         viewports: widget_viewports(),
+        resources: crate::capture::resources(&store, &document)?,
     };
     let result = evaluator.widget(store.app().runtime_abi, program, &crate::encode(&request)).map_err(invalid)?;
     #[derive(Deserialize)]

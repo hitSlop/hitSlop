@@ -69,6 +69,8 @@ struct Command {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredViews {
+    #[serde(default)]
+    preview: bool,
     export: bool,
     icon: bool,
     #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
@@ -176,6 +178,9 @@ pub(super) fn decode(metadata_json: &str, definition_json: &str) -> Result<AppDe
 pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> Result<AppDefinition> {
     authoring(&input.metadata, &input.window, &input.commands)?;
     authoring_widget(input.views.widget)?;
+    if !input.views.preview || !input.views.icon {
+        return Err(err(Code::InvalidRequest, "Authoring requires Preview.svelte and Icon.svelte").at("views"));
+    }
     let window = match &input.window {
         WindowInput::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
             if skin.is_some() {
@@ -211,7 +216,12 @@ pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> 
             .iter()
             .map(|c| Command { name: c.name.clone(), description: c.description.clone(), args: c.args.clone() })
             .collect(),
-        views: StoredViews { export: input.views.export, icon: input.views.icon, widget: input.views.widget },
+        views: StoredViews {
+            preview: input.views.preview,
+            export: input.views.export,
+            icon: input.views.icon,
+            widget: input.views.widget,
+        },
         capabilities: {
             let mut declared = input.capabilities.clone();
             declared.sort();
@@ -262,7 +272,12 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     }
     let spec = AppSpec::of(node, &metadata_value.slug, tokens);
     let theme = stored.theme.iter().map(|t| ThemeInput { token: t.token.clone(), color: t.color.clone() }).collect();
-    let views = Views { export: stored.views.export, icon: stored.views.icon, widget: stored.views.widget };
+    let views = Views {
+        preview: stored.views.preview,
+        export: stored.views.export,
+        icon: stored.views.icon,
+        widget: stored.views.widget,
+    };
 
     let mut capabilities: Vec<_> = stored.capabilities.iter().filter_map(|name| stored_capability(name)).collect();
     capabilities.sort();

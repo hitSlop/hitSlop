@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  let { preview = false }: { preview?: boolean } = $props();
   import Check from "@lucide/svelte/icons/check";
   import Brand from "./Brand.svelte";
   import Progress from "./Progress.svelte";
@@ -16,12 +18,12 @@
       <Progress total={visible.length} {finished} fill={ratio} />
     </div>
     <ol class="checklist-list">
-      {#each visible as task (task.$id)}
+      {#each (preview ? (visible).slice(0, 7) : visible) as task (task.$id)}
         <li class="checklist-row" data-done={task.done}>
           <span class="checklist-box" aria-label={task.done ? "Complete" : "Incomplete"}>
             {#if task.done}<Check size={20} strokeWidth={3.5} />{/if}
           </span>
-          <span class="checklist-task-text">{task.text || "Untitled task"}</span>
+          <span class="checklist-task-text">{previewText(task.text || "Untitled task", preview, 110)}</span>
         </li>
       {/each}
     </ol>

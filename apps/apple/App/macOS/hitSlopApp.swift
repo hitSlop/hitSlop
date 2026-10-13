@@ -48,6 +48,7 @@ private struct UpdateSettingsView: View {
     return coordinator
   }()
   private var recentMenu: NSMenu?
+  private var exportMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -235,6 +236,7 @@ private struct UpdateSettingsView: View {
 
     let file = NSMenu(title: "File")
     fileItem.submenu = file
+    file.delegate = self
     item(file, "New from Template…", #selector(showCatalog), "n")
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
@@ -249,6 +251,7 @@ private struct UpdateSettingsView: View {
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
     export.submenu = exportMenu
+    exportMenuItem = export
     file.addItem(export)
     item(exportMenu, "Export PNG…", .exportPNG)
     item(exportMenu, "Export PDF…", .exportPDF)
@@ -292,6 +295,10 @@ private struct UpdateSettingsView: View {
     NSApp.mainMenu = main
   }
   func menuNeedsUpdate(_ menu: NSMenu) {
+    if menu === exportMenuItem?.menu {
+      exportMenuItem?.isHidden = coordinator.activeController?.canExport != true
+      return
+    }
     guard menu === recentMenu else { return }
     menu.removeAllItems()
     let urls = NSDocumentController.shared.recentDocumentURLs

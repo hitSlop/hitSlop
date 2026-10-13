@@ -772,11 +772,14 @@ button {
   padding: 28px;
 }
 .ps-export .ps-sheet {
+  height: auto;
+  max-height: none;
   max-width: 900px;
   margin: 0 auto;
   overflow: visible;
 }
 .ps-export .ps-score {
+  flex: none;
   overflow: visible;
   padding: 14px 26px 10px;
 }
@@ -908,3 +911,8 @@ button {
     transition-duration: 0s !important;
   }
 }
+
+/* Explicit capture typography also keeps the tempo badge legible in native output. */
+.ps-export .ps-stamp-note { display: flex; align-items: center; gap: 4px; font-family: var(--label); font-size: 13px; font-weight: 600; line-height: 1; }
+.ps-export .ps-stamp strong { font-family: var(--serif); font-size: 40px; font-weight: 600; line-height: 1; }
+.ps-export .ps-stamp small { font-family: var(--label); font-size: 11px; font-weight: 600; line-height: 1.2; }

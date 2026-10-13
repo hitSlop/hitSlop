@@ -146,8 +146,8 @@ test("only conventional roles are built; unrelated filenames are ignored", async
   try {
     const source = join(root,"source");
     await cp("tests/apps/document",source,{recursive:true});
-    // Keep the declared view distinct on case-insensitive filesystems too.
-    await rename(join(source, "Export.svelte"), join(source, "Capture.svelte"));
+    // A similarly named file is not a capture role; the required Export remains.
+    await cp(join(source, "Export.svelte"), join(source, "Capture.svelte"));
     await writeFile(join(source,"main.ts"), "this is not valid typescript");
     await writeFile(join(source,"Capture.svelte"), "<script>const = ;</script>");
     await stage(source,join(root,"built"));

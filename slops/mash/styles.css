@@ -109,6 +109,6 @@ html[data-slop-capture="static"] .page { height: auto; overflow: visible; }
 .icon-margin { position: absolute; inset: 0 auto 0 56px; width: 4px; background: var(--slop-margin); }
 .icon-spiral { position: absolute; left: 96px; top: 30px; width: 230px; height: 230px; }
 .icon-spiral path { fill: none; stroke: var(--slop-pink); stroke-width: 3.4; stroke-linecap: round; }
-.icon-logo { position: absolute; left: 96px; right: 20px; bottom: 36px; font: 700 74px/80px var(--hand); letter-spacing: 0.04em; color: var(--slop-ink); text-shadow: 3px 3px 0 var(--slop-highlight); }
+.icon-logo { position: absolute; left: 96px; right: 20px; bottom: 36px; font-family: var(--hand); font-weight: 700; font-size: 74px; line-height: 80px; letter-spacing: 0.04em; color: var(--slop-ink); text-shadow: 3px 3px 0 var(--slop-highlight); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

@@ -20,7 +20,8 @@ bun run slop dev tests/apps/shape-lab
 
 `open` uses `generated/app/hitSlop.app` (build with `bun run apple:build`) or
 `HITSLOP_APP`, and opens a new writable copy under `.hitslop/shape-lab/documents`.
-Generated masters are never edited. To preview a generated variant:
+Only disposable fallback fixtures are rewritten after their valid authoring build.
+To preview a generated variant:
 
 ```sh
 bun run shape:lab build washer
@@ -37,9 +38,11 @@ PNG masking. Browser preview uses the validated radius/path with real CSS clippi
 - Type in the note; export and return to the editor. The note and controls must survive.
 - Resize the rounded window using the native toolbar/window and the size buttons.
   The dimensions report the observed content size. Skins cannot resize.
-- Dedicated export is a rectangle with four orange corner markers. Icon is a fully
-  opaque square. `--fallback` removes only Export.svelte from generated source, so
-  PNG export must retain the native shape mask instead.
+- Dedicated preview and export are rectangles with four orange corner markers. Icon
+  is a fully opaque square. `--fallback` creates a test-only stored package without
+  Preview or Export programs and browser targets. Explicit WebKit provider tests use
+  it to check editor capture and native shape masking. Production Takumi capture
+  does not fall back to the editor, and no Export means no PNG/PDF export action.
 - For holes, place a different application's window behind the slop. Hole clicks
   must reach it; visible edge clicks must reach the slop. JS button activation and
   screenshots alone are not proof of native input routing.

@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 import { refuse, type Tx } from "hitslop";
 import type doc from "./schema";
 import { KEPT_SESSIONS, LEVEL, SUSTAIN } from "./schema";
@@ -56,7 +57,7 @@ export function localDay(date: Date) {
 export function dayLabel(day: string) {
   const [y, m, d] = day.split("-").map(Number);
   if (!y || !m || !d) return day;
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return dateLabel(new Date(y, m - 1, d), { weekday: "short", month: "short", day: "numeric" });
 }
 
 /** The editor and its captures read the same derived values. */

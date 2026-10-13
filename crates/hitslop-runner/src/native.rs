@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
-const TIME: Duration = Duration::from_millis(WATCHDOG_MS);
 /// A host-configured child, never an in-process evaluator. Every call starts a
 /// fresh process and QuickJS realm; the host retains all document authority.
 #[derive(Clone, Debug)]
@@ -64,7 +63,7 @@ impl Evaluator {
     }
     pub fn run(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
         let input = command_input(runtime_abi, bundle, request)?.into_bytes();
-        self.run_input(input, OUTPUT)
+        self.run_input(input, OUTPUT, WATCHDOG_MS)
     }
     /// A widget batch has its own bounded output; command limits remain unchanged.
     pub fn widget(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
@@ -73,14 +72,22 @@ impl Evaluator {
     pub fn capture(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
         self.render(runtime_abi, bundle, request, Mode::Capture)
     }
+    pub fn pdf(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
+        self.render(runtime_abi, bundle, request, Mode::Pdf)
+    }
     fn render(&self, runtime_abi: u64, bundle: &str, request: &str, mode: Mode) -> Result<String, String> {
         let input = serde_json::to_vec(&Sent { runtime_abi, bundle, request, mode }).map_err(|e| e.to_string())?;
         if input.len() > INPUT {
             return Err("Capture input is too large".into());
         }
-        self.run_input(input, if matches!(mode, Mode::Capture) { CAPTURE_OUTPUT } else { WIDGET_OUTPUT })
+        let (output_limit, watchdog_ms) = match mode {
+            Mode::Pdf => (PDF_OUTPUT, PDF_WATCHDOG_MS),
+            Mode::Capture => (CAPTURE_OUTPUT, WATCHDOG_MS),
+            _ => (WIDGET_OUTPUT, WATCHDOG_MS),
+        };
+        self.run_input(input, output_limit, watchdog_ms)
     }
-    fn run_input(&self, input: Vec<u8>, output_limit: usize) -> Result<String, String> {
+    fn run_input(&self, input: Vec<u8>, output_limit: usize, watchdog_ms: u64) -> Result<String, String> {
         let child = Command::new(&self.executable)
             .args(&self.arguments)
             .env_clear()
@@ -115,11 +122,16 @@ impl Evaluator {
                 })
                 .map_err(|e| format!("Cannot start command output worker: {e}"))?,
         );
-        let deadline = Instant::now() + TIME;
+        let deadline = Instant::now() + Duration::from_millis(watchdog_ms);
         let result = loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                break Err("Command execution timed out".into());
+                break Err(if output_limit > OUTPUT {
+                    "Capture rendering timed out"
+                } else {
+                    "Command execution timed out"
+                }
+                .into());
             }
             let interval = if output_limit > OUTPUT { remaining.min(Duration::from_millis(25)) } else { remaining };
             match receiver.recv_timeout(interval) {

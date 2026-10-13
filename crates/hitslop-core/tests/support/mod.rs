@@ -59,10 +59,18 @@ impl<'a> App<'a> {
 pub fn write_app(stage: &std::path::Path, app: App) {
     let parse = |value: &str| serde_json::from_str::<Value>(value).unwrap();
     let theme: serde_json::Map<String, Value> = serde_json::from_str(app.theme).unwrap();
+    std::fs::create_dir_all(stage.join("assets")).unwrap();
+    std::fs::write(
+        stage.join("assets/export.js"),
+        include_str!("../../../../tests/fixtures/checklist/document/assets/export.js"),
+    )
+    .unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/preview.js")).unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/icon.js")).unwrap();
     let input = json!({"packageFormat":app.format,"runtimeABI":app.abi,
         "declaration":{"metadata":parse(app.metadata),"window":parse(app.window),"document":parse(app.descriptor),"initial":parse(app.initial),
-            "theme":theme.into_iter().map(|(token,color)|json!({"token":token,"color":color})).collect::<Vec<_>>(),"commands":parse(app.commands),"views":{"export":false,"icon":false}},
-        "roles":{"ui":"ui.js"},"resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"}],"artwork":{}});
+            "theme":theme.into_iter().map(|(token,color)|json!({"token":token,"color":color})).collect::<Vec<_>>(),"commands":parse(app.commands),"views":{"preview":true,"export":true,"icon":true}},
+        "roles":{"ui":"ui.js","preview":"preview.js","icon":"icon.js","export":"export.js"},"resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"},{"kind":"app","key":"preview.js","mediaType":"text/javascript","path":"assets/preview.js"},{"kind":"app","key":"icon.js","mediaType":"text/javascript","path":"assets/icon.js"},{"kind":"app","key":"export.js","mediaType":"text/javascript","path":"assets/export.js"}],"artwork":{}});
     std::fs::write(stage.join("input.json"), input.to_string()).unwrap();
 }
 #[cfg(feature = "storage")]

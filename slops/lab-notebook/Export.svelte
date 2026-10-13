@@ -1,6 +1,6 @@
 <script lang="ts">
   import doc from "./schema";
-  import Chart from "./Chart.svelte";
+  import Chart from "./StaticChart.svelte";
   import { notebookView } from "./lab";
 
   const data = $derived(doc.current);

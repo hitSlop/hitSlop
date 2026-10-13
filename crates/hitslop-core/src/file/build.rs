@@ -54,14 +54,18 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
     if input.roles.widget.is_some() != app.views().widget.is_some() {
         return Err(invalid("Widget.svelte requires its private widget.js render program"));
     }
-    if input.roles.export.is_some() && !app.views().export {
-        return Err(invalid("An export render program requires Export.svelte"));
+    if input.roles.preview.is_some() != app.views().preview {
+        return Err(invalid("Preview.svelte requires its private preview.js render program"));
     }
-    if input.roles.icon.is_some() && !app.views().icon {
-        return Err(invalid("An icon render program requires Icon.svelte"));
+    if input.roles.export.is_some() != app.views().export {
+        return Err(invalid("Export.svelte requires its private export.js render program"));
+    }
+    if input.roles.icon.is_some() != app.views().icon {
+        return Err(invalid("Icon.svelte and its private icon.js render program must be present together"));
     }
     if input.roles.widget.as_deref().is_some_and(|key| key != "widget.js")
         || input.roles.icon.as_deref().is_some_and(|key| key != "icon.js")
+        || input.roles.preview.as_deref().is_some_and(|key| key != "preview.js")
         || input.roles.export.as_deref().is_some_and(|key| key != "export.js")
         || input.roles.ui != "ui.js"
         || input.roles.style.as_deref().is_some_and(|key| key != "ui.css")
@@ -104,6 +108,7 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
     }
     if keys.contains("widget.js") != input.roles.widget.is_some()
         || keys.contains("icon.js") != input.roles.icon.is_some()
+        || keys.contains("preview.js") != input.roles.preview.is_some()
         || keys.contains("export.js") != input.roles.export.is_some()
         || !keys.contains("ui.js")
         || keys.contains("ui.css") != input.roles.style.is_some()

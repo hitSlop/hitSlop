@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { webkit } from "playwright";
 import { buildTemplate } from "../../src/cli/template";
 import { execute, request } from "../../src/cli/engine";
 
@@ -21,29 +22,31 @@ function artwork(file: string, name: "preview" | "icon"): Buffer {
   }
 }
 
-// The shell applies theme defaults before mount, so the first view is never unstyled.
-// Existing controller tests do not mount apps.
-test("generated Svelte app mounts with theme defaults before native capture", async () => {
+// Inspect actual captured pixels: App onMount hooks never run in native capture.
+test("generated preview renders theme defaults through the native capture engine", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await cp("tests/apps/document", source, { recursive: true });
     await overrideSlop(source, { theme: '{ accent: "#123456" }' });
-    await writeFile(join(source, "App.svelte"), `
-      <script>
-        import { onMount } from "svelte";
-        import doc from "./schema";
-        let root;
-        onMount(() => {
-          if (getComputedStyle(root).backgroundColor !== "rgb(18, 52, 86)")
-            throw new Error("Theme defaults were not applied before mount");
-        });
-      </script>
-      <main bind:this={root} style="background:var(--slop-accent)">{doc.current.title}</main>
-    `);
+    await writeFile(join(source, "Preview.svelte"), '<div style="width:100%;height:240px;background:var(--slop-accent)"></div>');
     const output = await buildTemplate(source, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, join(root, "svelte.slop"));
     const png = artwork(output, "preview");
-    expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+    const browser = await webkit.launch();
+    try {
+      const page = await browser.newPage();
+      const pixel = await page.evaluate(async base64 => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${base64}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        return [...context.getImageData(0, 0, 1, 1).data];
+      }, png.toString("base64"));
+      expect(pixel).toEqual([18, 52, 86, 255]);
+    } finally { await browser.close(); }
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -75,11 +78,12 @@ test("dedicated capture components share the document and mode without mounting 
     `,
     );
     await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte";</script><Child /><Child />');
-    await writeFile(join(source, "Export.svelte"), `<script>
+    await writeFile(join(source, "Preview.svelte"), `<script>
       import Child from "./Child.svelte";
       let {mode} = $props();
       if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
     </script><Child />`);
+    await rm(join(source, "Export.svelte"));
     const output = await buildTemplate(source, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, join(root, "probe.slop"));
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(output, name);

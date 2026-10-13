@@ -112,3 +112,84 @@ fn capture_extends_canvas_without_reflowing_viewport_relative_overflow() {
     assert_eq!((info.width, info.height), (440, 200));
     assert_eq!(&pixels[400 * 4..401 * 4], &[0x12, 0x34, 0x56, 255]);
 }
+
+#[test]
+fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
+    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_hitslop-evaluator").into(), vec![]).unwrap();
+    for (height, expected) in [(200, [0.0, 0.0, 200.0, 200.0]), (20_000, [0.0, 0.0, 144.0, 14_400.0])] {
+        let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
+            "html":"<html><body><div>Selectable text 🌿<a href='#end'>Jump</a></div><div id='end'>Last line</div></body></html>",
+            "css":format!("html,body{{margin:0;padding:0;width:200px;height:80px;font-family:sans-serif}}@media print{{html,body{{height:{height}px}}}}")}]});
+        let bundle =
+            format!("globalThis.__slopCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
+        let reply: Value = serde_json::from_str(&evaluator.pdf(1, &bundle, "{}").unwrap()).unwrap();
+        assert_eq!(reply["ok"], true, "{reply}");
+        let bytes = STANDARD.decode(reply["images"][0].as_str().unwrap()).unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
+        let pdf = String::from_utf8_lossy(&bytes);
+        let media_box = pdf
+            .split("/MediaBox")
+            .nth(1)
+            .expect("a PDF page has bounds")
+            .trim_start()
+            .strip_prefix('[')
+            .unwrap()
+            .split(']')
+            .next()
+            .unwrap();
+        let bounds: Vec<f32> = media_box.split_whitespace().map(|number| number.parse().unwrap()).collect();
+        assert_eq!(bounds.len(), 4);
+        // Upstream PDF viewports use integer pixels, so point dimensions can round
+        // by a fraction of a point while retaining the page's proportions.
+        for (actual, expected) in bounds.iter().zip(expected) {
+            assert!((actual - expected).abs() < 0.5, "wrong point bounds: {bounds:?}");
+        }
+        assert!(bounds[2] <= 14_400.0 && bounds[3] <= 14_400.0, "page exceeds PDF bounds: {bounds:?}");
+        assert!(pdf.contains("/ToUnicode"), "vector text needs a Unicode map for selection");
+        assert!(pdf.contains("/FontFile"), "text uses embedded font subsets");
+    }
+}
+
+#[test]
+fn damaged_saved_image_refuses_capture_instead_of_publishing_a_blank() {
+    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_hitslop-evaluator").into(), vec![]).unwrap();
+    let url = format!("data:image/png;base64,{}", STANDARD.encode(b"damaged image"));
+    let request = json!({"resources":{"saved-image":url}}).to_string();
+    let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
+        "html":"<html><body><img src='slop-attachment:saved-image' width='100' height='100'></body></html>",
+        "css":"html,body{margin:0;width:200px;height:100px}"}]});
+    let bundle = format!("globalThis.__slopCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
+    for result in [evaluator.capture(1, &bundle, &request), evaluator.pdf(1, &bundle, &request)] {
+        let reply: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(reply["ok"], false);
+        assert!(reply["error"].as_str().unwrap().contains("Cannot decode image resource saved-image"));
+        assert!(reply.get("images").is_none());
+    }
+}
+
+#[test]
+fn repeated_attachment_tokens_share_saved_bytes_and_render_each_occurrence() {
+    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_hitslop-evaluator").into(), vec![]).unwrap();
+    let mut png = Vec::new();
+    let mut encoder = png::Encoder::new(&mut png, 1, 1);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header().unwrap().write_image_data(&[0x12, 0x34, 0x56, 255]).unwrap();
+    let request =
+        json!({"resources":{"saved-image":format!("data:image/png;base64,{}", STANDARD.encode(png))}}).to_string();
+    let batch = json!({"fonts":[],"frames":[{"kind":"export","width":100,"height":40,
+        "html":"<html><body><img src='slop-attachment:saved-image'><img src='slop-attachment:saved-image'></body></html>",
+        "css":"html,body{margin:0;padding:0;width:100px;height:40px}body{display:flex}img{width:50px;height:40px}"}]});
+    let bundle = format!("globalThis.__slopCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
+    let reply: Value = serde_json::from_str(&evaluator.capture(1, &bundle, &request).unwrap()).unwrap();
+    assert_eq!(reply["ok"], true, "{reply}");
+    let bytes = STANDARD.decode(reply["images"][0].as_str().unwrap()).unwrap();
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
+    let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+    let info = decoder.next_frame(&mut pixels).unwrap();
+    assert_eq!((info.width, info.height), (200, 80));
+    for x in [25, 175] {
+        let offset = (40 * 200 + x) * 4;
+        assert_eq!(&pixels[offset..offset + 4], &[0x12, 0x34, 0x56, 255]);
+    }
+}

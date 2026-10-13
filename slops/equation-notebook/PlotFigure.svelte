@@ -25,12 +25,12 @@
 </script>
 
 <svg class="plot-figure" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
-  <rect width={width} height={height} class="plot-paper" />
-  {#each xs as v (v)}<line x1={sx(v)} x2={sx(v)} y1="0" y2={height} class="plot-grid" />{/each}
-  {#each ys as v (v)}<line y1={sy(v)} y2={sy(v)} x1="0" x2={width} class="plot-grid" />{/each}
-  <line x1="0" x2={width} y1={axisX} y2={axisX} class="plot-axis" />
-  <line y1="0" y2={height} x1={axisY} x2={axisY} class="plot-axis" />
-  {#each xs as v (v)}{#if Math.abs(v) > 1e-9 && sx(v) > 10 && sx(v) < width - 10}<text x={sx(v)} y={Math.min(height - 4, axisX + 13)} text-anchor="middle" class="plot-label">{tickLabel(v)}</text>{/if}{/each}
-  {#each ys as v (v)}{#if Math.abs(v) > 1e-9 && sy(v) > 8 && sy(v) < height - 4}<text x={Math.max(4, axisY - 5)} y={sy(v) + 4} text-anchor={axisY - 5 < 4 ? "start" : "end"} class="plot-label">{tickLabel(v)}</text>{/if}{/each}
-  {#if path}<path d={path} class="plot-curve" />{/if}
+  <rect width={width} height={height} class="plot-paper" fill="var(--slop-plotPaper)" />
+  {#each xs as v (v)}<line x1={sx(v)} x2={sx(v)} y1="0" y2={height} class="plot-grid" stroke="var(--slop-grid)" stroke-width="1" />{/each}
+  {#each ys as v (v)}<line y1={sy(v)} y2={sy(v)} x1="0" x2={width} class="plot-grid" stroke="var(--slop-grid)" stroke-width="1" />{/each}
+  <line x1="0" x2={width} y1={axisX} y2={axisX} class="plot-axis" stroke="var(--slop-ink)" stroke-width="1.2" />
+  <line y1="0" y2={height} x1={axisY} x2={axisY} class="plot-axis" stroke="var(--slop-ink)" stroke-width="1.2" />
+  {#each xs as v (v)}{#if Math.abs(v) > 1e-9 && sx(v) > 10 && sx(v) < width - 10}<text x={sx(v)} y={Math.min(height - 4, axisX + 13)} text-anchor="middle" class="plot-label" fill="var(--slop-muted)" font-size="10" font-family="serif">{tickLabel(v)}</text>{/if}{/each}
+  {#each ys as v (v)}{#if Math.abs(v) > 1e-9 && sy(v) > 8 && sy(v) < height - 4}<text x={Math.max(4, axisY - 5)} y={sy(v) + 4} text-anchor={axisY - 5 < 4 ? "start" : "end"} class="plot-label" fill="var(--slop-muted)" font-size="10" font-family="serif">{tickLabel(v)}</text>{/if}{/each}
+  {#if path}<path d={path} class="plot-curve" fill="none" stroke="var(--slop-curve)" stroke-width="2.4" stroke-linejoin="round" />{/if}
 </svg>

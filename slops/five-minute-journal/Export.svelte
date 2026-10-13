@@ -1,7 +1,7 @@
 <script lang="ts">
   import doc from "./schema";
   import { displayDate, journalView } from "./journal";
-  import JournalPage from "./JournalPage.svelte";
+  import JournalPage from "./StaticJournalPage.svelte";
 
   const data = $derived(doc.current);
   const { hasThought } = $derived(journalView(doc.current));
@@ -12,8 +12,8 @@
     <h1 class={"fmj-title"}>Five Minute Journal</h1>
     <p class={"fmj-exportDate"}>{displayDate(data.date)}</p>
   </header>
-  <JournalPage period="am" staticView />
-  <JournalPage period="pm" staticView />
+  <JournalPage period="am" />
+  <JournalPage period="pm" />
   {#if hasThought}
     <blockquote class={"fmj-exportThought"}>
       {#if data.quote.trim()}<p class={"fmj-quoteText"}>{data.quote}</p>{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import Check from "@lucide/svelte/icons/check";
   import { QUADRANTS, matrixView } from "./shared";
@@ -41,7 +42,7 @@
           <span class="quadTag">{q.tag}</span>
         </div>
         <ul class="exportList">
-          {#each view.inZone(q.key) as task (task.$id)}
+          {#each (preview ? (view.inZone(q.key)).slice(0, 3) : view.inZone(q.key)) as task (task.$id)}
             <li class="row" data-done={task.done}>
               <span data-checkbox-root data-state={task.done ? "checked" : "unchecked"}>{#if task.done}<Check size={10} strokeWidth={3} />{/if}</span>
               <span class="exportText">{task.text.trim() || "Untitled task"}</span>
@@ -63,7 +64,7 @@
     </div>
     {#if view.inbox.length > 0}
       <ul class="trayList" aria-label="Holding pen">
-        {#each view.inbox as item (item.$id)}
+        {#each (preview ? (view.inbox).slice(0, 2) : view.inbox) as item (item.$id)}
           <li class="inboxRow">
             <span class="exportText">{item.text.trim() || "Untitled task"}</span>
           </li>

@@ -1,5 +1,5 @@
 //! Native sandbox and pipe adapter.
-use crate::{CAPTURE_OUTPUT, INPUT, sandbox};
+use crate::{CAPTURE_OUTPUT, INPUT, PDF_OUTPUT, sandbox};
 use std::io::Read;
 use std::time::{Duration, Instant};
 
@@ -10,12 +10,13 @@ pub fn child() {
         if input.len() > INPUT {
             return Err("Command input is too large".into());
         }
-        sandbox::restrict()?;
+        let pdf = crate::evaluation::pdf_input(&input);
+        sandbox::restrict(if pdf { crate::PDF_CPU_SECONDS } else { 3 })?;
         let deadline = Instant::now() + Duration::from_millis(crate::EXECUTION_MS);
         crate::evaluate(&input, move || Instant::now() > deadline)
     };
     let output = run().unwrap_or_else(|error| serde_json::json!({"ok":false,"error":error}).to_string());
-    if output.len() <= CAPTURE_OUTPUT {
+    if output.len() <= CAPTURE_OUTPUT.max(PDF_OUTPUT) {
         println!("{output}");
     }
 }

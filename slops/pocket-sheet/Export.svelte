@@ -12,14 +12,14 @@
   <div class="pocket-grid" style:grid-template-columns={template}
     role="grid" aria-readonly="true" aria-label={`${doc.current.title || "Pocket Sheet"} cells`}
     aria-rowcount={ROWS + 1} aria-colcount={COLUMNS + 1} tabindex="-1">
-    <div class="pocket-row" role="row">
+    <div class="pocket-row" role="row" style:grid-template-columns={template}>
       <span class="pocket-corner" role="columnheader" aria-label="Rows"></span>
       {#each Array.from({ length: COLUMNS }, (_, c) => c) as column}
         <span class="pocket-colhead" role="columnheader">{columnName(column)}</span>
       {/each}
     </div>
     {#each Array.from({ length: ROWS }, (_, r) => r) as row}
-      <div class="pocket-row" role="row">
+      <div class="pocket-row" role="row" style:grid-template-columns={template}>
         <span class="pocket-rowhead" role="rowheader">{row + 1}</span>
         {#each Array.from({ length: COLUMNS }, (_, c) => c) as column}
           {@const key = cellKey(column, row)}
@@ -35,3 +35,8 @@
     {/each}
   </div>
 </article>
+
+<style>
+  .pocket-export-view .pocket-grid { display: block; }
+  .pocket-export-view .pocket-row { display: grid; min-height: 28px; }
+</style>

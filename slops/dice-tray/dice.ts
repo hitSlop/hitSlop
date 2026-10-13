@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 import { refuse, type Tx } from "hitslop";
 import type doc from "./schema";
 import { kinds, maxDice, maxModifier, maxRolls, type Kind } from "./schema";
@@ -62,10 +63,10 @@ export type RollView = ReturnType<typeof rollView>;
 export function formatWhen(at: string, now: number): string {
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return "";
-  const time = when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const time = dateLabel(when, { hour: "numeric", minute: "2-digit" });
   return when.toDateString() === new Date(now).toDateString()
     ? time
-    : `${when.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+    : `${dateLabel(when, { month: "short", day: "numeric" })}, ${time}`;
 }
 
 /** The editor and its export derive the readout and history from the same snapshot. */

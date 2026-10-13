@@ -83,6 +83,7 @@ pub struct OpenedApp {
     pub widget: Option<std::sync::Arc<String>>,
     pub icon: Option<std::sync::Arc<String>>,
     pub export: Option<std::sync::Arc<String>>,
+    pub preview: Option<std::sync::Arc<String>>,
     pub bytes: u64,
 }
 pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<OpenedApp> {
@@ -107,6 +108,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
     let mut widget = None;
     let mut icon = None;
     let mut export = None;
+    let mut preview = None;
     for row in
         keys.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sqlite("read assets"))?
     {
@@ -139,6 +141,10 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         if key == "widget.js" {
             let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing widget program"))?;
             widget = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
+        }
+        if key == "preview.js" {
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing preview program"))?;
+            preview = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
         }
         if key == "export.js" {
             let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing export program"))?;
@@ -174,6 +180,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         widget,
         icon,
         export,
+        preview,
         bytes: summary.bytes,
     })
 }

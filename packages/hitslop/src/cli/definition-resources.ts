@@ -105,6 +105,7 @@ export async function stageResources(
     roles: {
       ui: "ui.js",
       ...(outputs.definition.has("widget.js") ? { widget: "widget.js" } : {}),
+      ...(outputs.definition.has("preview.js") ? { preview: "preview.js" } : {}),
       ...(outputs.definition.has("icon.js") ? { icon: "icon.js" } : {}),
       ...(outputs.definition.has("export.js") ? { export: "export.js" } : {}),
       ...(hasCommands ? { commands: "commands.js" } : {}),

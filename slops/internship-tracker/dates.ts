@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 // Dates are local YYYY-MM-DD strings. Nothing here reads the clock: callers pass "today".
 export function dateString(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -24,5 +25,5 @@ export function dueLabel(date: string | undefined, today: string): { text: strin
 export function shortDate(date: string | undefined): string {
   if (!date) return "";
   const [y, m, d] = date.split("-").map(Number);
-  return new Date(y!, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return dateLabel(new Date(y!, (m ?? 1) - 1, d ?? 1), { month: "short", day: "numeric" });
 }

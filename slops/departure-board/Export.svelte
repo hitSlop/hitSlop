@@ -1,4 +1,5 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import doc from "./schema";
   import { boardView } from "./board";
 
@@ -10,7 +11,7 @@
     <header class="head"><h1>{view.heading}</h1></header>
     <p class="labels" aria-hidden="true"><span>Time</span><span>Destination</span><span>Status</span></p>
     <ul class="rows">
-      {#each view.rows as { row, groups } (row.$id)}
+      {#each (preview ? (view.rows).slice(0, 6) : view.rows) as { row, groups } (row.$id)}
         <li>
           <div class="row" data-status={row.status}>
             {#each groups as group (group.kind)}

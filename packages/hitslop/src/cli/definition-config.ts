@@ -72,7 +72,7 @@ import document from ${JSON.stringify(roles.schema)};
 ${roles.commands ? `import commands from ${JSON.stringify(roles.commands)}; if (commands === undefined) throw new Error("commands.ts must default-export defineCommands(document, specs)");` : "const commands = undefined;"}
 import {describeApp} from ${JSON.stringify(join(sdk, "app-definition.ts"))};
 globalThis.__slopCommands = commands;
-globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app,document,commands,${JSON.stringify({ export: !!roles.export, icon: !!roles.icon, ...(roles.widget ? { widget: {} } : {}) })})});`
+globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app,document,commands,${JSON.stringify({ export: !!roles.export, icon: !!roles.icon, preview: !!roles.preview, ...(roles.widget ? { widget: {} } : {}) })})});`
               : uiEntrySource(roles);
         },
         transform(code, id) {
@@ -173,7 +173,7 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
     }
     // Captures render saved state in a fresh page, so a module the editor sets shows only
     // its initial value there, even when the editor is reused as the export component.
-    for (const role of ["export", "icon", "widget"] as const) {
+    for (const role of ["preview", "export", "icon", "widget"] as const) {
       const component = roles[role];
       if (!component) continue;
       const shared = sharedStateIn(component, uiImports, statefulModules);
@@ -182,25 +182,20 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
           `${component} (the ${role} view) imports ${relative(source, shared)}, whose $state is always its initial value in a capture. Captures render saved state in a fresh page: read doc.current there, and give a component shared with the editor that value as a prop.`,
         );
     }
-    const usesBrowser = (role: "widget" | "icon" | "export", reasons: string[]) => {
-      if (!reasons.length) return false;
-      if (role === "widget")
+    const refuseBrowser = (role: "widget" | "icon" | "preview" | "export", reasons: string[]) => {
+      if (reasons.length)
         throw new Error(
-          `Widget rendering is synchronous and cannot use browser services:\n${reasons.join("\n")}`,
+          `${roles[role]} (${role} capture) must render synchronously with Takumi:\n${reasons.join("\n")}`,
         );
-      console.warn(
-        `${role === "icon" ? "Icon" : "Export"}.svelte uses WebKit:\n${reasons.join("\n")}`,
-      );
-      return true;
     };
-    for (const role of ["widget", "icon", "export"] as const) {
+    for (const role of ["widget", "icon", "preview", "export"] as const) {
       if (roles[role]) {
         const reasons = await browserCaptureReasons(roles[role], uiImports, sdk);
-        if (usesBrowser(role, reasons)) continue;
+        refuseBrowser(role, reasons);
       }
       const capture = await buildCapture(role, source, sdk, outputs.ui, options, [...globalStyles]);
       if (!capture) continue;
-      if (usesBrowser(role, capture.unavailable)) continue;
+      refuseBrowser(role, capture.unavailable);
       outputs.definition.set(`${role}.js`, {
         key: `${role}.js`,
         bytes: capture.bytes,

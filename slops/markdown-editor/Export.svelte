@@ -1,6 +1,8 @@
 <script lang="ts">
+  let { preview = false }: { preview?: boolean } = $props();
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
   import doc from "./schema";
+  import { previewText } from "../_shared/preview";
   import { markdownView } from "./markdown";
 
   const { content } = $derived(doc.current);
@@ -15,7 +17,7 @@
   </header>
   <div class={`md-prose md-exportProse`}>
     {#if !view.blank}
-      <SvelteMarkdown source={content} />
+      <SvelteMarkdown source={previewText(content, preview, 1200)} />
     {:else}
       <p class={"md-empty"}>This page is blank.</p>
     {/if}
