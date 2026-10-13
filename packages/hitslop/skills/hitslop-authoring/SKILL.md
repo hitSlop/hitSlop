@@ -26,7 +26,7 @@ Edit text with `<EditableText class="…" field={row.text} label="…" placehold
 Writes are asynchronous, so avoid these patterns:
 - Read-modify-write from a snapshot (`set(qty + 1)`): await dependent writes before reading, or use `increment` on a counter. A synchronous `change(tx)` collector provides atomic writes, not fresh transactional reads.
 - Writes in `$effect` or on mount to "ensure" defaults: declare `default`s in the schema and put starting content in the `initial` option in schema.ts.
-- Using an insert's id, or reading `doc.current`, right after an unawaited write: `await` it (inside `change`, insert ids are synchronous).
+- Using an insert's id, or reading `doc.current`, right after an unawaited write: `await` it (inside `change`, insert ids are synchronous). To act on a write's outcome (a celebration, a sound, a notice), react to the state in `$effect` or `$derived` instead of reading it back in the handler.
 - `try/catch` around an unawaited write: `await` it so the catch sees the rejection.
 - Positions in a number field (`order: s.integer()`) that moves rewrite: two moves can produce the same number. Order rows by their place in the list and use `move`.
 - Moving a row between lists while expecting identity to survive: use one list plus a status/group field. SDK inserts mint new ids; only within-list moves preserve the Loro row container.
