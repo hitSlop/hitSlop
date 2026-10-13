@@ -1,8 +1,8 @@
 {
   "release": "dev",
   "frozen": false,
-  "commit": "52710db5514caca74df07b13f31f5ff8be5cdc30-dirty",
-  "captured": "2026-10-13T02:09:32.602Z",
+  "commit": "21b87079d329a7c5370ca882efa27bbc24ba4dbc-dirty",
+  "captured": "2026-10-13T02:43:32.639Z",
   "markers": {
     "packageFormat": 1,
     "runtimeABI": 1,
@@ -10,7 +10,7 @@
     "layout": 1,
     "protocol": 1
   },
-  "inputs": "e5bf8e9bcacd02c170e7e552d5d942309872dd3168cd617f6fa4f7d6dd94c12f",
+  "inputs": "d6465288423e5828c96a0c8db4abf95fec9ef09251adfd5625001da715a06602",
   "producer": {
     "coreBuildID": "433775ca67e7f870",
     "shell": "baaa55886b2edf6f8645e514026b65aafe9c411e4630c6ad48cf932dfdedb53e",
@@ -20,10 +20,10 @@
   },
   "files": {
     "commands/conformance.json": "85824ec9b0158e39311c993614753f446dc15bd303ca781361c6f509050d4051",
-    "documents/conformance-compacted.page.slop": "23dd234f9161aa7afd7dd7975929f79ce17363ba1211a64589e535959c17fdc5",
-    "documents/conformance-compacted.slop": "a7a29ab4af55039d4659ffe6c181bba60f5c80b921dc918a835c53b4ac39e575",
-    "documents/conformance.page.slop": "0d00e53e37ee0a608f9bb7396fb2aa071dabd8e16728e44cd8092c775c788cef",
-    "documents/conformance.slop": "16150883570fa428b524e4ea5910a3e3cdf698e8f9d56498042eba32f53c9e36",
+    "documents/conformance-compacted.page.slop": "984afd81209dddd36ef754f61b5330d6ee17cb94b16d4a4a26d719a918f84cd4",
+    "documents/conformance-compacted.slop": "8ad4f93f7e086f9f947eb79fd12c7ebe9e7f0136a6741b4c6a53ef3d2d29e850",
+    "documents/conformance.page.slop": "dadf660e7401421fbc148e5a61069a0830a6f4099d0723fbb574f453e8e46202",
+    "documents/conformance.slop": "58dd8b39bad684024231179e05de0d7fe0aead8fed1907165838d891b41bbe54",
     "engine/darwin-arm64/slop-engine": "57de0724bb06fa3ac28a1032c5d772247142dd9c8de19d509de28ecabfbe957b",
     "expected/conformance-compacted.json": "c4d8cb2bc9e015eea5deb275e8ac53c8fd7162c008723b8789b92a5acb54b81e",
     "expected/conformance-compacted.page.json": "b5258a19891182a5265a4c9bca6f683668f1cf616344be275a8ac5380963d0e1",
@@ -62,7 +62,7 @@
   },
   "writer": {
     "buildId": "433775ca67e7f870",
-    "commit": "52710db5514caca74df07b13f31f5ff8be5cdc30-dirty",
+    "commit": "21b87079d329a7c5370ca882efa27bbc24ba4dbc-dirty",
     "sha256": "57de0724bb06fa3ac28a1032c5d772247142dd9c8de19d509de28ecabfbe957b"
   },
   "toolchain": {
@@ -80,15 +80,15 @@
       "updates": 5
     },
     "conformance-compacted": {
-      "checkpointBytes": 2537,
+      "checkpointBytes": 2542,
       "updates": 0
     },
     "conformance.page": {
       "checkpointBytes": 1755,
-      "updates": 13
+      "updates": 14
     },
     "conformance-compacted.page": {
-      "checkpointBytes": 2537,
+      "checkpointBytes": 2542,
       "updates": 8
     }
   }

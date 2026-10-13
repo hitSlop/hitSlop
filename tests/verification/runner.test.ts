@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, readFile, mkdir, writeFile, rename } from "node:fs/promises";
+import { cp, mkdtemp, rm, readFile, readdir, mkdir, writeFile, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkoutLease, retainReport, shardTests, assertShardComplete, testInventory, changedPaths } from "../../scripts/lib/verification";
@@ -19,6 +19,32 @@ test("machine-readable selection lists native tiers without running tools or tes
     tiers: ["compat", "rust", "swift", "native"].map(name => ({ name, reason: "named" })),
   });
 });
+
+test("CI selection works before dependencies are installed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-selection-clean-"));
+  try {
+    await cp(join(repository, "scripts"), join(root, "scripts"), { recursive: true });
+    await mkdir(join(root, "packages/hitslop"), { recursive: true });
+    await cp(join(repository, "packages/hitslop/package.json"), join(root, "packages/hitslop/package.json"));
+    await cp(join(repository, "packages/hitslop/src"), join(root, "packages/hitslop/src"), { recursive: true });
+    const initialized = await exec(["git", "init", "--quiet"], { cwd: root });
+    expect(initialized.code).toBe(0);
+    const env = { ...process.env, HITSLOP_COMPAT_MODE: "smoke", HITSLOP_NIGHTLY: "", HITSLOP_COMPAT_RELEASE: "",
+      GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_BASE_REF: "", CHANGE_BASE: "" };
+    // Refuse auto-install so an eager build-tool import fails immediately, even offline.
+    const listing = await exec([process.execPath, "--no-install", "scripts/verify.ts", "--list", "--json", "--native", "--all"], { cwd: root, env });
+    expect(listing.code, listing.stderr).toBe(0);
+    const selected = await exec([process.execPath, "--no-install", "scripts/ci/select.ts"], { cwd: root, env });
+    expect(selected.code, selected.stderr).toBe(0);
+    const result = JSON.parse(selected.stdout);
+    expect(result.tiers).toEqual(JSON.parse(listing.stdout).tiers);
+    expect(result.jobs.native).toBe("swift,native");
+    expect(result.jobs.nativeRust).toBe("rust");
+    expect(await readdir(root)).not.toContain("node_modules");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
 
 const candidates = (Object.keys(tierInputs) as TierName[]).filter(name => name !== "app");
 const affected = (...paths: string[]) => affectedTiers(paths, candidates).map(tier => tier.name);

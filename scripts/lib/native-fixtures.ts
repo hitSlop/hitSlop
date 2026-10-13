@@ -6,9 +6,6 @@ import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { templateCache } from "../templates/build";
 import { debugHelper } from "./native";
 import { Database } from "bun:sqlite";
-import { build as viteBuild } from "vite";
-import { appConfig } from "../../packages/hitslop/src/cli/vite";
-import { discoverRoles, uiEntrySource } from "../../packages/hitslop/src/cli/app-vite";
 import { bytesOf, resourceKey, typeOf } from "../../packages/hitslop/src/cli/definition-resources";
 
 export const nativeFixtureSlugs = ["document-fixture"];
@@ -148,6 +145,13 @@ export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = fal
  * entry with one that actually omits Preview and Export. Flipping metadata alone would leave the
  * dedicated component registered by svelteApp and would not exercise App fallback. */
 async function makeShapeLabFallback(source: string, file: string) {
+  // CI imports fixture helpers while selecting tiers, before dependencies are installed.
+  // Load the browser compiler only when this fixture is actually built.
+  const [{ build: viteBuild }, { appConfig }, { discoverRoles, uiEntrySource }] = await Promise.all([
+    import("vite"),
+    import("../../packages/hitslop/src/cli/vite"),
+    import("../../packages/hitslop/src/cli/app-vite"),
+  ]);
   const entry = "\0hitslop-shape-lab-fallback";
   const roles = await discoverRoles(source);
   const config = await appConfig(source);
