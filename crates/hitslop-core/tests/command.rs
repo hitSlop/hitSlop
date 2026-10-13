@@ -1,5 +1,6 @@
 //! Shared live/closed command routing and bounded Unix transport. Fault peers exercise
 //! real socket loss and identity checks, not private call ordering.
+use crate::support;
 use hitslop_core::{
     command::{self, ExportCompletion, ExportHandler, ExportRequest},
     file,
@@ -14,7 +15,6 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
-mod support;
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
 fn document() -> (tempfile::TempDir, PathBuf) {
     document_declaring(&[])
@@ -442,6 +442,29 @@ fn page(owner: &Owner, view: &str, input: &str) -> command::PageDispatch {
 fn page_json(reply: &command::PageDispatch) -> Value {
     let command::PageDispatch::Reply { json, .. } = reply else { panic!("expected a JSON reply") };
     serde_json::from_str(json).unwrap()
+}
+
+#[test]
+fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
+    use command::PageDispatch;
+    use hitslop_core::page_wire::{HostAction, PageRequest};
+    let (_dir, path) = document();
+    let owner = open(&path);
+    owner.attach("page".into());
+    let request = |view: &str, width| {
+        let (tx, rx) = mpsc::channel();
+        command::page_typed(&owner, view.into(), PageRequest::WindowResize { width, height: 480 }, move |reply| {
+            tx.send(reply).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    };
+    assert!(matches!(
+        request("page", 640),
+        PageDispatch::Host { action: HostAction::WindowResize { width: 640, height: 480 } }
+    ));
+    assert_eq!(page_json(&request("page", 0))["reason"], "invalid_request");
+    assert_eq!(page_json(&request("retired", 640))["code"], "owner_replaced");
+    close(&owner);
 }
 // The page's document requests run through the core: replies the page reads, refusals it
 // can act on, and the owner's failure for the host. Oracle: literal replies and the value.

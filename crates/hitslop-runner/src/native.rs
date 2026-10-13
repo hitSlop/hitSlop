@@ -63,31 +63,34 @@ impl Evaluator {
     }
     pub fn run(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
         let input = command_input(runtime_abi, bundle, request)?.into_bytes();
-        self.run_input(input, OUTPUT, WATCHDOG_MS)
+        self.run_input(input, JobKind::Command)
     }
     /// A widget batch has its own bounded output; command limits remain unchanged.
     pub fn widget(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        self.render(runtime_abi, bundle, request, Mode::Widget)
+        self.render(runtime_abi, bundle, request, JobKind::Widget)
     }
     pub fn capture(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        self.render(runtime_abi, bundle, request, Mode::Capture)
+        self.render(runtime_abi, bundle, request, JobKind::Capture)
     }
     pub fn pdf(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        self.render(runtime_abi, bundle, request, Mode::Pdf)
+        self.render(runtime_abi, bundle, request, JobKind::Pdf)
     }
-    fn render(&self, runtime_abi: u64, bundle: &str, request: &str, mode: Mode) -> Result<String, String> {
-        let input = serde_json::to_vec(&Sent { runtime_abi, bundle, request, mode }).map_err(|e| e.to_string())?;
+    fn render(&self, runtime_abi: u64, bundle: &str, request: &str, mode: JobKind) -> Result<String, String> {
+        let input = serde_json::to_vec(&Job {
+            runtime_abi,
+            bundle: Cow::Borrowed(bundle),
+            request: Cow::Borrowed(request),
+            mode,
+        })
+        .map_err(|e| e.to_string())?;
         if input.len() > INPUT {
             return Err("Capture input is too large".into());
         }
-        let (output_limit, watchdog_ms) = match mode {
-            Mode::Pdf => (PDF_OUTPUT, PDF_WATCHDOG_MS),
-            Mode::Capture => (CAPTURE_OUTPUT, WATCHDOG_MS),
-            _ => (WIDGET_OUTPUT, WATCHDOG_MS),
-        };
-        self.run_input(input, output_limit, watchdog_ms)
+        self.run_input(input, mode)
     }
-    fn run_input(&self, input: Vec<u8>, output_limit: usize, watchdog_ms: u64) -> Result<String, String> {
+    fn run_input(&self, input: Vec<u8>, mode: JobKind) -> Result<String, String> {
+        let limits = mode.limits();
+        let output_limit = limits.output;
         let child = Command::new(&self.executable)
             .args(&self.arguments)
             .env_clear()
@@ -122,18 +125,14 @@ impl Evaluator {
                 })
                 .map_err(|e| format!("Cannot start command output worker: {e}"))?,
         );
-        let deadline = Instant::now() + Duration::from_millis(watchdog_ms);
+        let deadline = Instant::now() + Duration::from_millis(limits.watchdog_ms);
         let result = loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                break Err(if output_limit > OUTPUT {
-                    "Capture rendering timed out"
-                } else {
-                    "Command execution timed out"
-                }
-                .into());
+                break Err(mode.timeout_message().into());
             }
-            let interval = if output_limit > OUTPUT { remaining.min(Duration::from_millis(25)) } else { remaining };
+            let interval =
+                if limits.resident_bytes.is_some() { remaining.min(Duration::from_millis(25)) } else { remaining };
             match receiver.recv_timeout(interval) {
                 Ok((result, bytes)) => {
                     break result.map_err(|e| e.to_string()).and_then(|_| {
@@ -150,9 +149,9 @@ impl Evaluator {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) =>
                 {
                     #[cfg(target_os = "macos")]
-                    if output_limit > OUTPUT {
+                    if let Some(limit) = limits.resident_bytes {
                         match resident_bytes(running.child.id()) {
-                            Ok(Some(bytes)) if bytes > 512 << 20 => {
+                            Ok(Some(bytes)) if bytes > limit => {
                                 break Err("Capture renderer exceeds 512 MiB resident memory".into());
                             }
                             Err(error) => break Err(error),

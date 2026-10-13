@@ -4,7 +4,7 @@
 //! open-time acceptance refuses (the document would never open again), or replicas that read
 //! differently after holding the same edits. Inserted rows draw their IDs from a small
 //! pool, so replicas also create, remove and restore the same row concurrently.
-mod support;
+use crate::support;
 use hitslop_core::{Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;

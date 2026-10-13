@@ -121,9 +121,19 @@ import WidgetKit
 
   public func capture(renderer: DocumentSession, url: URL, identity: String, capturedAt: Date) async {
     guard enabled, let options = renderer.file.views.widget else { return }
+    await capture(url: url, identity: identity, capturedAt: capturedAt, options: options) {
+      try await SlopRenderer.widgetCapture(session: renderer)
+    }
+  }
+
+  func capture(
+    url: URL, identity: String, capturedAt: Date, options: WidgetOptions,
+    render: () async throws -> SlopRenderer.WidgetCapture
+  ) async {
+    guard enabled else { return }
     let started = lifetime
     do {
-      let capture = try await SlopRenderer.widgetCapture(session: renderer)
+      let capture = try await render()
       try Task.checkCancellation()
       guard lifetime == started else { return }
       try publish(

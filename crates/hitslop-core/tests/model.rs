@@ -1,6 +1,6 @@
 //! Descriptor-driven edits to one owner: atomic refusals, publication replay and reopen
 //! are independent observations of every step.
-mod support;
+use crate::support;
 use hitslop_core::Document;
 use serde_json::{Value, json};
 use support::ApplyJson;

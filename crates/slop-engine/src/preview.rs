@@ -94,32 +94,27 @@ pub fn serve(path: &Path) -> ExitCode {
                         }
                         let output = send.clone();
                         let pending = pending.clone();
-                        command::page(
-                            &owner,
-                            view.into(),
-                            &serde_json::to_string(&request).expect("page request"),
-                            move |result| {
-                                let reply = match result {
-                                    PageDispatch::Reply { json, .. } => json,
-                                    PageDispatch::Host { action } => match action {
-                                        HostAction::WindowResize { width, height } => {
-                                            HostReply::WindowResize { width: width.into(), height: height.into() }
-                                        }
-                                        HostAction::Ready => HostReply::Ready,
-                                        HostAction::PageRecovered => HostReply::PageRecovered,
-                                        HostAction::Failed { .. } => HostReply::Failed,
-                                        HostAction::PageError { .. } => HostReply::PageError,
-                                        // The preview has no speech service; the page says so.
-                                        HostAction::SpeechTranscribe { .. } => {
-                                            HostReply::SpeechTranscribe { outcome: SpeechOutcome::unsupported_host() }
-                                        }
+                        command::page_typed(&owner, view.into(), request, move |result| {
+                            let reply = match result {
+                                PageDispatch::Reply { json, .. } => json,
+                                PageDispatch::Host { action } => match action {
+                                    HostAction::WindowResize { width, height } => {
+                                        HostReply::WindowResize { width: width.into(), height: height.into() }
                                     }
-                                    .to_json(),
-                                };
-                                output.send(json!({"type":"reply","id":id,"reply":reply}));
-                                pending.fetch_sub(1, Ordering::SeqCst);
-                            },
-                        );
+                                    HostAction::Ready => HostReply::Ready,
+                                    HostAction::PageRecovered => HostReply::PageRecovered,
+                                    HostAction::Failed { .. } => HostReply::Failed,
+                                    HostAction::PageError { .. } => HostReply::PageError,
+                                    // The preview has no speech service; the page says so.
+                                    HostAction::SpeechTranscribe { .. } => {
+                                        HostReply::SpeechTranscribe { outcome: SpeechOutcome::unsupported_host() }
+                                    }
+                                }
+                                .to_json(),
+                            };
+                            output.send(json!({"type":"reply","id":id,"reply":reply}));
+                            pending.fetch_sub(1, Ordering::SeqCst);
+                        });
                     }
                 }
             }

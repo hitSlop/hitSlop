@@ -377,7 +377,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     switch request {
     case .windowResize(let width, let height):
       do {
-        guard file.isResizable, let delegate, !capturing, !closing, !closed
+        guard file.isResizable, let delegate, !closing, !closed
         else { throw SlopFailure("Window resizing unavailable") }
         let size = try delegate.pageSession(
           self, resizeContentTo: CGSize(width: CGFloat(width), height: CGFloat(height)))
@@ -512,8 +512,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   public func withCapture<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
     if capturing { await withCheckedContinuation { captureQueue.append($0) } }
     capturing = true
-    // An export or copy reads saved state; the page's transcriptions end now.
-    cancelSpeech()
     defer {
       if captureQueue.isEmpty { capturing = false } else { captureQueue.removeFirst().resume() }
     }
@@ -535,6 +533,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     filePicker.cancel()
     fileSaver.cancel()
     closing = true
+    cancelSpeech()
     do {
       if isReady {
         _ = try await webView.callHost(.prepareClose)
@@ -684,6 +683,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   ) {
     guard !closed, openingError == nil || reason == .webContentTerminated else { return }
     failureReason = reason
+    cancelSpeech()
     let wasReady = isReady
     let failed = Renderer.failed(message, terminated: reason == .webContentTerminated)
     phase = closing ? .closing(failed, prepared: false) : .active(failed)

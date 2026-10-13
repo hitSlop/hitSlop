@@ -3,12 +3,14 @@ name = "hitslop-runner"
 version = "0.0.0"
 edition.workspace = true
 publish.workspace = true
+autotests = false
 
 [lints]
 workspace = true
 
 [features]
 default = ["child", "capture"]
+ts = ["dep:ts-rs"]
 # The evaluator process itself. Hosts that only spawn it depend without default features.
 child = ["dep:rquickjs", "dep:seccompiler"]
 
@@ -17,6 +19,7 @@ capture = ["child", "dep:takumi", "dep:base64", "dep:png", "dep:takumi-pdf"]
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+ts-rs = { version = "=12.0.1", optional = true, features = ["no-serde-warnings"] }
 rquickjs = { version = "=0.14.0", optional = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"
@@ -36,3 +39,11 @@ png = "=0.18.1"
 name = "hitslop-evaluator"
 path = "src/main.rs"
 required-features = ["child"]
+
+[[test]]
+name = "runner"
+path = "tests/main.rs"
+
+[[test]]
+name = "broken_pipe"
+path = "tests/broken_pipe.rs"

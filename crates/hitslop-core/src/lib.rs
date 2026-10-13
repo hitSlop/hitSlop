@@ -81,7 +81,7 @@ pub use wire::{OutcomeCode, native, page as page_wire, preview, socket as socket
 const MAX_JSON: usize =
     if wire::APP_TEXT_BYTES > wire::PAGE_PAYLOAD { wire::APP_TEXT_BYTES } else { wire::PAGE_PAYLOAD };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 #[error("{code}: {message}")]
 pub struct Error {
     pub code: Code,

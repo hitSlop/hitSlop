@@ -1,4 +1,4 @@
-#![allow(dead_code, reason = "each integration test binary uses a different subset of these fixtures")]
+#![allow(dead_code, reason = "a build without `storage` uses a subset of these fixtures")]
 pub mod generate;
 pub mod relay;
 use hitslop_core::Origin;
@@ -15,8 +15,9 @@ pub fn isolate_registry() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| hitslop_core::registry::use_folder(&registry_folder()).unwrap());
 }
-/// This test binary running only its ignored test `name`, as a separate process, with
-/// `env`: a child test returns at once unless its variables are set. Output is discarded.
+/// This test binary running only its ignored test `name` (module-qualified: `file::…`), as
+/// a separate process, with `env`: a child test returns at once unless its variables are
+/// set. Output is discarded.
 pub fn child(name: &str, env: &[(&str, &str)]) -> std::process::Command {
     let mut command = std::process::Command::new(std::env::current_exe().unwrap());
     command.args(["--exact", name, "--ignored", "--nocapture"]);

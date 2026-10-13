@@ -39,6 +39,33 @@ extension HostTests {
     }
   }
 
+  @Test(arguments: [false, true]) @MainActor
+  func closeArtworkAndWidgetsKeepIndependentResults(brokenWidget: Bool) async throws {
+    _ = NSApplication.shared
+    let root = try widgetCloseFixture(brokenRenderer: brokenWidget)
+    let folder = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let cache = WidgetCache(root: folder)
+    let publisher = SlopWidgetPublisher.shared
+    publisher.start(cache: cache) { _ in nil }
+    defer { publisher.stop() }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    let artwork = await SlopRenderer.artwork(
+      session: session, telemetry: SlopTelemetry { _ in }, widgetURL: root)
+    #expect(artwork.preview != nil)
+    #expect(artwork.icon != nil)
+    #expect((cache.record(for: root) == nil) == brokenWidget)
+    try await session.close(artwork: artwork)
+    #expect(!Fixtures.isLocked(root))
+    #expect(Fixtures.pixels(SlopArtwork.png(root, .preview)) == Fixtures.pixels(artwork.preview))
+    #expect(Fixtures.pixels(SlopArtwork.png(root, .icon)) == Fixtures.pixels(artwork.icon))
+  }
+
   private func widgetCloseFixture(brokenRenderer: Bool = false) throws -> URL {
     try contractFixture { stage in
       try Fixtures.addArtwork(stage, name: "preview", bytes: Fixtures.png())

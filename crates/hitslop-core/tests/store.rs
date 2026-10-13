@@ -1,6 +1,7 @@
 //! Durable storage: identity, limits, crash outcomes and the writer lock, over one
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
+use crate::support;
 use hitslop_core::Document;
 use hitslop_core::Origin;
 use hitslop_core::file;
@@ -11,7 +12,6 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-mod support;
 use support::ApplyJson;
 use support::{App, isolate_registry, type_text, write_app};
 
@@ -998,7 +998,7 @@ fn a_committed_save_survives_its_process_being_killed() {
         let (store, _) = open(&path);
         store.close().unwrap();
         let status = support::child(
-            "save_then_die",
+            "store::save_then_die",
             &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_SAVE", save)],
         )
         .status()
@@ -1042,7 +1042,7 @@ fn a_save_killed_before_its_commit_leaves_the_saved_state() {
     held.execute_batch("BEGIN IMMEDIATE").unwrap();
     let marker = dir.path().join("saving");
     let mut child = support::child(
-        "save_while_held",
+        "store::save_while_held",
         &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_MARKER", marker.to_str().unwrap())],
     )
     .spawn()

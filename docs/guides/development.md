@@ -49,6 +49,11 @@ named commands such as Quick Checklist's add, file, restore and remove actions. 
 Run does not require `HITSLOP_EVALUATOR`; that override is for isolated tests. The native
 renderer is embedded for Release and the packaged development artifact separately.
 
+Local optimized Rust builds use the incremental `release` profile. Distribution builds
+use `dist`, which keeps incremental compilation disabled, fat LTO and one codegen unit.
+Rust compilation and full verification can outlast a terminal timeout; keep them running
+in a background session, and use filtered verification while iterating.
+
 ## Workspace responsibilities
 
 | Area | Responsibility |

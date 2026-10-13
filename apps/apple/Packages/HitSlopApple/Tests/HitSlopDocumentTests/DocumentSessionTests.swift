@@ -272,13 +272,13 @@ import WebKit
       let accepted = try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
       #expect(accepted as? Bool == resizable)
       #expect(resized == resizable)
-      // The acquisition barrier prevents a page resize until the source has been copied.
+      // Saved-source acquisition does not change live window eligibility.
       resized = false
       let duringCapture = try await session.withCapture {
         try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
       }
-      #expect(duringCapture as? Bool == false)
-      #expect(!resized)
+      #expect(duringCapture as? Bool == resizable)
+      #expect(resized == resizable)
       try await session.close()
     } catch {
       try? await session.close()
@@ -330,7 +330,7 @@ import WebKit
       #expect(!admits(.cameraAndMicrophone, session), "a combined request needs both declared")
       #expect(!admits(.camera, session, main: false), "embedded frames never capture")
       #expect(!admits(.camera, session, origins: app + [(protocol: "https", host: "example.com")]))
-      #expect(await session.withCapture { admits(.camera, session) } == false, "not while a capture reads the page")
+      #expect(await session.withCapture { admits(.camera, session) }, "saved-source capture leaves live media eligible")
       // A background renderer of the same document runs the app but never captures.
       let snapshot = try await DocumentSession.open(url: root, storage: .snapshot)
       let hidden = NSWindow(

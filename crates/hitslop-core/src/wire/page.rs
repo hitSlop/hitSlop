@@ -190,7 +190,7 @@ pub enum SpeechOutcome {
         reason: SpeechUnavailable,
         message: String,
     },
-    /// The page was replaced or closed, or an export began, before the transcript was ready.
+    /// The page was replaced, closed or lost its renderer before the transcript was ready.
     Cancelled {
         message: String,
     },

@@ -7,23 +7,22 @@ import HitSlopWidgets
 import WebKit
 
 @MainActor public enum SlopRenderer {
-  enum CaptureOutput { case previewPNG, exportPNG, pdf }
   static let captureQueue = DispatchQueue(
     label: "com.hitslop.capture-render", qos: .utility, attributes: .concurrent)
 
   public static func previewPNGData(url: URL) async throws -> Data {
-    try await capture(url: url, output: .previewPNG)
+    try await capture(url: url, output: .preview)
   }
   static func previewPNGData(session: DocumentSession) async throws -> Data {
-    try await withSavedSource(session) { try await capture(url: $0, output: .previewPNG) }
+    try await withSavedSource(session) { try await capture(url: $0, output: .preview) }
   }
   public static func exportPNGData(session: DocumentSession) async throws -> Data {
     guard session.file.views.export else { throw SlopFailure("This slop does not support PNG or PDF export") }
-    return try await withSavedSource(session) { try await capture(url: $0, output: .exportPNG) }
+    return try await withSavedSource(session) { try await capture(url: $0, output: .export(format: .png)) }
   }
   public static func exportPDFData(session: DocumentSession) async throws -> Data {
     guard session.file.views.export else { throw SlopFailure("This slop does not support PNG or PDF export") }
-    return try await withSavedSource(session) { try await capture(url: $0, output: .pdf) }
+    return try await withSavedSource(session) { try await capture(url: $0, output: .export(format: .pdf)) }
   }
 
   private static func withSavedSource<T>(
@@ -37,13 +36,7 @@ import WebKit
   static func capture(
     url: URL, output: CaptureOutput, provider: CaptureProvider? = nil
   ) async throws -> Data {
-    let capability: CaptureCapability =
-      switch output {
-      case .previewPNG: .previewPng
-      case .exportPNG: .exportPng
-      case .pdf: .vectorPdf
-      }
-    return try await captureProvider(capability, requested: provider).render(url: url, output: output)
+    return try await captureProvider(output, requested: provider).render(url: url, output: output)
   }
 
   /// Explicit provider entry point for internal comparisons, with the same save barrier.
@@ -53,13 +46,28 @@ import WebKit
 
   /// Renders artwork from a source already acquired by a copy operation.
   static func artwork(url: URL, telemetry: SlopTelemetry) async -> SlopRenderedArtwork? {
+    do {
+      return artwork(from: try await captureNative(url: url, outputs: [.preview, .icon]), telemetry: telemetry)
+    } catch {
+      reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
+      return nil
+    }
+  }
+
+  private static func artwork(from results: [CaptureResult], telemetry: SlopTelemetry) -> SlopRenderedArtwork {
     var preview: Data?
     var icon: Data?
-    do { preview = try await previewPNGData(url: url) } catch {
-      reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
-    }
-    do { icon = try await iconPNGData(url: url) } catch {
-      reportArtworkFailure(error, reason: .icon, telemetry: telemetry)
+    for capture in results where capture.output == .preview || capture.output == .icon {
+      switch capture.result {
+      case .image(let bytes):
+        if capture.output == .preview { preview = bytes.map { Data($0) } }
+        if capture.output == .icon { icon = bytes.map { Data($0) } }
+      case .failed(let failure):
+        reportArtworkFailure(
+          CoreError.Failure(failure: failure), reason: capture.output == .icon ? .icon : .preview,
+          telemetry: telemetry)
+      case .widgets: break
+      }
     }
     return SlopRenderedArtwork(preview: preview, icon: icon)
   }
@@ -83,29 +91,26 @@ import WebKit
     }
     do {
       return try await withSavedSource(session, trace: trace) { source in
-        var preview: Data?
-        var icon: Data?
-        if renderArtwork {
-          do {
-            let interval = trace?.begin("Preview capture")
-            defer { trace?.end("Preview capture", interval) }
-            preview = try await capture(url: source, output: .previewPNG)
-          } catch {
-            reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
-          }
-          do {
-            let interval = trace?.begin("Icon capture")
-            defer { trace?.end("Icon capture", interval) }
-            icon = try await iconPNGData(url: source)
-          } catch {
-            reportArtworkFailure(error, reason: .icon, telemetry: telemetry)
-          }
-        }
-        if let widgetURL, let widgetIdentity, session.file.views.widget != nil {
+        if let widgetURL, let widgetIdentity, let options = session.file.views.widget,
+          SlopWidgetPublisher.shared.enabled
+        {
+          var artwork = SlopRenderedArtwork(preview: nil, icon: nil)
+          // The publisher captures its lifetime before any asynchronous rendering.
+          // A widget failure must not discard successful preview/icon output.
           await SlopWidgetPublisher.shared.capture(
-            renderer: session, url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt)
+            url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt, options: options
+          ) {
+            let results: [CaptureResult]
+            do { results = try await captureNative(url: source, outputs: [.preview, .icon, .widgets]) } catch {
+              reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
+              throw error
+            }
+            artwork = self.artwork(from: results, telemetry: telemetry)
+            return try nativeWidgets(results[2].result)
+          }
+          return artwork
         }
-        return SlopRenderedArtwork(preview: preview, icon: icon)
+        return await artwork(url: source, telemetry: telemetry) ?? SlopRenderedArtwork(preview: nil, icon: nil)
       }
     } catch {
       reportArtworkFailure(error, reason: .preview, telemetry: telemetry)
@@ -159,7 +164,7 @@ import WebKit
   static func iconPNGData(url: URL, provider: CaptureProvider?) async throws -> Data? {
     let file = try await SlopPreparation.run(on: captureQueue) { try SlopFile(url: url) }
     guard file.views.icon else { return nil }
-    return try await captureProvider(.iconPng, requested: provider).icon(url: url)
+    return try await captureProvider(.icon, requested: provider).icon(url: url)
   }
 
   public static func iconPNGData(session: DocumentSession) async throws -> Data? {
@@ -200,9 +205,9 @@ import WebKit
     let images: [WidgetImage]
   }
   static func widgetSourceVersion(url: URL) async throws -> String {
-    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Widget renderer is missing") }
+    let runtime = try nativeRuntime.get()
     return try await SlopPreparation.run(on: captureQueue) {
-      try savedWidgetVersion(path: url.path, evaluatorPath: evaluator)
+      try runtime.savedWidgetVersion(path: url.path)
     }
   }
   static func widgetCapture(session: DocumentSession) async throws -> WidgetCapture {
@@ -210,17 +215,21 @@ import WebKit
     return try await session.withCaptureSnapshot { try await widgetCapture(url: $0) }
   }
   static func widgetCapture(url: URL, provider: CaptureProvider? = nil) async throws -> WidgetCapture {
-    try await captureProvider(.widgetBatch, requested: provider).widgets(url: url)
+    try await captureProvider(.widgets, requested: provider).widgets(url: url)
   }
   static func captureNativeWidgets(url: URL) async throws -> WidgetCapture {
-    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Widget renderer is missing") }
-    let capture = try await SlopPreparation.run(on: captureQueue) {
-      try renderSavedWidgets(path: url.path, evaluatorPath: evaluator)
+    let result = try await captureNative(url: url, outputs: [.widgets])[0].result
+    return try nativeWidgets(result)
+  }
+  private static func nativeWidgets(_ result: RenderedOutput) throws -> WidgetCapture {
+    switch result {
+    case .widgets(let capture):
+      return WidgetCapture(
+        sourceVersion: capture.sourceVersion,
+        images: capture.images.map { WidgetImage(family: WidgetImageFamily($0.family), png: Data($0.png)) })
+    case .failed(let failure): throw CoreError.Failure(failure: failure)
+    case .image: throw SlopFailure("Unexpected capture result")
     }
-    try Task.checkCancellation()
-    return WidgetCapture(
-      sourceVersion: capture.sourceVersion,
-      images: capture.images.map { WidgetImage(family: WidgetImageFamily($0.family), png: Data($0.png)) })
   }
 
   /// Capture only a disposable read-only page. Reset the render viewport between
@@ -252,7 +261,10 @@ import WebKit
   }
 
   static func captureWebView(session: DocumentSession, output: CaptureOutput) async throws -> Data {
-    let isPreview = output == .previewPNG
+    guard output == .preview || output == .export(format: .png) || output == .export(format: .pdf) else {
+      throw SlopFailure("This output requires its dedicated capture path")
+    }
+    let isPreview = output == .preview
     return try await withCapture(session) { view, token, originalFrame in
       var measurement = try await begin(view, token: token, mode: isPreview ? .preview : .export)
       let dedicated = measurement.dedicated
@@ -304,12 +316,12 @@ import WebKit
         width = max(box.width, 1)
         height = max(min(box.height, previewHeight(box)), 1)
         rect = CGRect(x: box.minX, y: box.minY, width: width, height: height)
-      } else if output == .exportPNG || (output == .pdf && dedicated) {
+      } else if output == .export(format: .png) || (output == .export(format: .pdf) && dedicated) {
         var settled = false
         for _ in 0..<4 {
-          try validateSize(width: width, height: height, output: output, scale: output == .pdf ? 1 : 2)
+          try validateSize(width: width, height: height, output: output, scale: output == .export(format: .pdf) ? 1 : 2)
           try await resizeAndSettle(
-            view, to: CGSize(width: width, height: output == .pdf ? originalFrame.height : height),
+            view, to: CGSize(width: width, height: output == .export(format: .pdf) ? originalFrame.height : height),
             token: token, measurement: &measurement)
           let box = try geometry(measurement)
           let nextWidth = dedicated ? max(1, box.width) : originalFrame.width
@@ -331,11 +343,11 @@ import WebKit
       let doubleSizeFits =
         width * 2 <= CGFloat(Limits.imageSide)
         && height * 2 <= CGFloat(Limits.imageSide) && width * height * 4 <= CGFloat(Limits.imagePixels)
-      let scale: CGFloat = output == .exportPNG || (isPreview && (dedicated || doubleSizeFits)) ? 2 : 1
+      let scale: CGFloat = output == .export(format: .png) || (isPreview && (dedicated || doubleSizeFits)) ? 2 : 1
       try validateSize(width: width, height: height, output: output, scale: scale)
       let data: Data
       switch output {
-      case .previewPNG, .exportPNG:
+      case .preview, .export(format: .png):
         let configuration = WKSnapshotConfiguration()
         configuration.rect = rect
         configuration.snapshotWidth = NSNumber(value: Double(width * scale))
@@ -348,11 +360,13 @@ import WebKit
           dedicated || !windowSized
           ? try SlopPreviewImage.png(from: image)
           : try SlopPreviewImage.png(from: image, file: session.file, scale: scale)
-      case .pdf:
+      case .export(format: .pdf):
         let configuration = WKPDFConfiguration()
         configuration.rect = rect
         configuration.allowTransparentBackground = false
         data = try continuousPDF(try await view.pdf(configuration: configuration), size: rect.size)
+      case .icon, .widgets:
+        throw SlopFailure("This output requires its dedicated capture path")
       }
       return data
     }
@@ -407,7 +421,7 @@ import WebKit
       throw SlopFailure("Invalid capture dimensions")
     }
     // PDF is vector output: a raster pixel budget would reject valid long documents.
-    guard output != .pdf else { return }
+    guard output != .export(format: .pdf) else { return }
     guard width * scale <= CGFloat(Limits.imageSide), height * scale <= CGFloat(Limits.imageSide),
       width * height * scale * scale <= CGFloat(Limits.imagePixels)
     else {

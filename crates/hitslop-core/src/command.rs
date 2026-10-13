@@ -98,14 +98,36 @@ fn speech(owner: &Owner, attachment: String, locale: Option<String>) -> PageDisp
 /// Runs one validated request from `view`. Edits answer on acceptance; flush waits for
 /// persistence. Host actions pass the same serial view/lifecycle fence before delivery.
 pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDispatch) + Send + 'static) {
+    match PageRequest::decode(input) {
+        Ok(request) => page_validated(owner, view, request, reply),
+        Err(error) => reply(page_failure(error.into(), false)),
+    }
+}
+
+/// Trusted transports that have already decoded their envelope still use all page
+/// bounds and the serial owner fence, without encoding JSON just to parse it again.
+pub fn page_typed(
+    owner: &Owner,
+    view: String,
+    request: PageRequest,
+    reply: impl FnOnce(PageDispatch) + Send + 'static,
+) {
+    match request.check() {
+        Ok(()) => page_validated(owner, view, request, reply),
+        Err(error) => reply(page_failure(error.into(), false)),
+    }
+}
+
+fn page_validated(
+    owner: &Owner,
+    view: String,
+    request: PageRequest,
+    reply: impl FnOnce(PageDispatch) + Send + 'static,
+) {
     use owner::{Reply, Request};
     use wire::engine::True;
     use wire::page::{HostAction, PageSuccess as Success};
     type Answer = Box<dyn FnOnce(Reply) -> Option<Success> + Send>;
-    let request = match PageRequest::decode(input) {
-        Ok(request) => request,
-        Err(error) => return reply(page_failure(error.into(), false)),
-    };
     let storage = matches!(request, PageRequest::AttachmentsPut { .. });
     let (request, answer): (Request, Answer) = match request {
         PageRequest::Open {} => (

@@ -44,12 +44,12 @@ pub fn widget_viewports() -> Vec<WidgetViewport> {
 /// One immutable saved snapshot, never a second document engine.
 #[derive(Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub struct WidgetRenderRequest {
+pub struct WidgetRenderRequest<'a> {
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-    pub snapshot: serde_json::Value,
-    pub theme: std::collections::BTreeMap<String, String>,
+    pub snapshot: &'a serde_json::Value,
+    pub theme: &'a std::collections::BTreeMap<String, String>,
     pub viewports: Vec<WidgetViewport>,
-    pub resources: std::collections::BTreeMap<String, String>,
+    pub resources: &'a std::collections::BTreeMap<String, String>,
 }
 
 pub struct WidgetImage {
@@ -94,9 +94,19 @@ pub fn render_saved(
     evaluator: &hitslop_runner::Evaluator,
 ) -> crate::store::Result<WidgetCapture> {
     use crate::store::{Mode, Store};
+    let store = Store::open(path, Mode::Snapshot)?;
+    render_source(&crate::capture::RenderSource::new(&store, &store.document()?), evaluator)
+}
+
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub(crate) fn render_source(
+    source: &crate::capture::RenderSource<'_>,
+    evaluator: &hitslop_runner::Evaluator,
+) -> crate::store::Result<WidgetCapture> {
+    let store = source.store;
+    let document = source.document;
     let invalid = |message: String| crate::store::Error::Rejected(crate::err(crate::Code::InvalidRequest, message));
     let renderer = fingerprint::renderer(evaluator.executable_path()).map_err(crate::error::failed)?;
-    let store = Store::open(path, Mode::Snapshot)?;
     if store.app().app.views().widget.is_none() {
         return Err(invalid("This slop has no Widget.svelte".into()));
     }
@@ -105,26 +115,18 @@ pub fn render_saved(
         .widget
         .as_deref()
         .ok_or_else(|| invalid("Rebuild this pre-launch slop to include its widget render program".into()))?;
-    let document = store.document()?;
-    let source_version = source_version(&document, &renderer);
+    let source_version = source_version(document, &renderer);
+    let input = source.input()?;
     let request = WidgetRenderRequest {
-        snapshot: serde_json::from_str(&document.value()).map_err(|e| invalid(e.to_string()))?,
-        theme: document.theme_state().map_err(crate::store::Error::Rejected)?.effective.into_iter().collect(),
+        snapshot: &input.snapshot,
+        theme: &input.theme,
         viewports: widget_viewports(),
-        resources: crate::capture::resources(&store, &document)?,
+        resources: &input.resources,
     };
     let result = evaluator.widget(store.app().runtime_abi, program, &crate::encode(&request)).map_err(invalid)?;
-    #[derive(Deserialize)]
-    struct Reply {
-        ok: bool,
-        images: Option<Vec<String>>,
-        error: Option<String>,
-    }
-    let reply: Reply = serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid widget reply: {e}")))?;
-    if !reply.ok {
-        return Err(invalid(reply.error.unwrap_or_else(|| "Widget renderer failed".into())));
-    }
-    let images = reply.images.ok_or_else(|| invalid("Widget renderer returned no images".into()))?;
+    let reply: hitslop_runner::RenderReply =
+        serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
+    let images = reply.into_images().map_err(invalid)?;
     if images.len() != request.viewports.len() {
         return Err(invalid("Widget renderer returned an incomplete batch".into()));
     }

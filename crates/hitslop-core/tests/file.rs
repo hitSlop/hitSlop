@@ -1,5 +1,6 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
+use crate::support;
 use hitslop_core::file::{self, Artwork, Kind, TemplateSource};
 use hitslop_core::registry::{self, Lease};
 use hitslop_core::store::{Error, Mode, Store};
@@ -7,13 +8,76 @@ use hitslop_core::{Code, Origin};
 use rusqlite::{Connection, config::DbConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
-mod support;
 use support::ApplyJson;
 use support::{App, isolate_registry, registry_folder, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
+
+#[test]
+fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
+    use hitslop_core::capture::{CaptureFormat, CaptureOutput, CaptureValue, render_batch};
+    for has_widget in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let source = stage(directory.path());
+        if has_widget {
+            support::edit_input(&source, |input| {
+                input["declaration"]["views"]["widget"] = serde_json::json!({});
+                input["roles"]["widget"] = "widget.js".into();
+            });
+            support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+        }
+        let template = directory.path().join("template.slop");
+        support::pack(&source, &template).unwrap();
+        let document = directory.path().join("document.slop");
+        file::create_document(&template, &document).unwrap();
+        let saved = fs::read(&document).unwrap();
+        let image = png(512, 512, 6);
+        let reply = serde_json::json!({"ok": true, "images": [data_encoding::BASE64.encode(&image)]});
+        let widget_images: Vec<_> =
+            hitslop_core::widgets::widget_viewports().iter().map(|v| png(v.width * 2, v.height * 2, 6)).collect();
+        let widgets = serde_json::json!({"ok": true, "images": widget_images.iter()
+            .map(|bytes| data_encoding::BASE64.encode(bytes)).collect::<Vec<_>>()});
+        let evaluator = hitslop_core::owner::Evaluator::new(
+            "/bin/sh".into(),
+            vec!["-c".into(), format!(r#"input=$(/bin/cat); case "$input" in *'"mode":"widget"'*) printf '%s' '{widgets}';; *) printf '%s' '{reply}';; esac"#)],
+        ).unwrap();
+        let outputs = [
+            CaptureOutput::Preview,
+            CaptureOutput::Widgets,
+            CaptureOutput::Export { format: CaptureFormat::Pdf }, // Child returned the wrong media.
+            CaptureOutput::Icon,
+        ];
+        let results = render_batch(&document, &evaluator, &outputs).unwrap();
+        assert_eq!(results.iter().map(|result| result.output).collect::<Vec<_>>(), outputs);
+        for result in &results {
+            match result.output {
+                CaptureOutput::Preview | CaptureOutput::Icon => {
+                    let Ok(CaptureValue::Image { bytes: Some(bytes) }) = &result.result else {
+                        panic!("valid image must survive another role's failure")
+                    };
+                    assert_eq!(bytes, &image);
+                }
+                CaptureOutput::Widgets if has_widget => {
+                    let Ok(CaptureValue::Widgets { capture }) = &result.result else {
+                        panic!("valid widgets must survive another role's failure")
+                    };
+                    assert_eq!(
+                        capture.images.iter().map(|i| &i.png).collect::<Vec<_>>(),
+                        widget_images.iter().collect::<Vec<_>>()
+                    );
+                    assert_eq!(
+                        capture.source_version,
+                        hitslop_core::widgets::saved_version(&document, &evaluator).unwrap()
+                    );
+                }
+                _ => assert!(result.result.is_err()),
+            }
+        }
+        assert_eq!(fs::read(&document).unwrap(), saved);
+    }
+}
 
 #[test]
 fn widget_program_is_required_at_pack_and_private_when_opened() {
@@ -1249,8 +1313,9 @@ fn a_newer_file_with_a_crashed_write_is_restored_then_refused() {
     store.close().unwrap();
     raw(&doc).execute_batch(&raised(&doc)[0]).unwrap();
     let committed = fs::read(&doc).unwrap();
-    let status =
-        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status = support::child("file::crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the file");
@@ -1287,9 +1352,10 @@ fn taking_the_writer_lock_never_drops_this_process_sqlite_locks() {
     reader.execute_batch("BEGIN").unwrap();
     reader.query_row("SELECT count(*) FROM app", [], |r| r.get::<_, i64>(0)).unwrap();
     let lease = Lease::acquire(&doc).unwrap();
-    let status = support::child("exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
-        .status()
-        .unwrap();
+    let status =
+        support::child("file::exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
+            .status()
+            .unwrap();
     assert_eq!(status.code(), Some(0), "another writer must find the file busy while this process reads it");
     reader.execute_batch("COMMIT").unwrap();
     drop(lease);
@@ -1314,8 +1380,9 @@ fn a_crash_mid_commit_is_recovered_by_the_next_writer() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     let attachment = store.put_attachment(&vec![7u8; 4 << 20]).unwrap();
     store.close().unwrap();
-    let status =
-        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status = support::child("file::crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the document");

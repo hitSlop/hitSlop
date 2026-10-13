@@ -6,16 +6,30 @@ import HitSlopDocument
 /// Providers consume an already saved source. Acquisition and publication stay with
 /// the owner and caller; choosing a provider never retries through another engine.
 @MainActor protocol SlopCaptureProviding {
-  func render(url: URL, output: SlopRenderer.CaptureOutput) async throws -> Data
+  func render(url: URL, output: CaptureOutput) async throws -> Data
   func icon(url: URL) async throws -> Data?
   func widgets(url: URL) async throws -> SlopRenderer.WidgetCapture
 }
 
 extension SlopRenderer {
+  static let nativeRuntime: Result<CaptureRuntime, Error> = Result {
+    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Capture renderer is missing") }
+    return try CaptureRuntime(evaluatorPath: evaluator)
+  }
+
+  static func captureNative(url: URL, outputs: [CaptureOutput]) async throws -> [CaptureResult] {
+    let runtime = try nativeRuntime.get()
+    let results = try await SlopPreparation.run(on: captureQueue) {
+      try runtime.renderSaved(path: url.path, outputs: outputs)
+    }
+    try Task.checkCancellation()
+    return results
+  }
+
   static func captureProvider(
-    _ capability: CaptureCapability, requested: CaptureProvider? = nil
+    _ output: CaptureOutput, requested: CaptureProvider? = nil
   ) throws -> any SlopCaptureProviding {
-    switch try selectCaptureProvider(capability: capability, requested: requested) {
+    switch try selectCaptureProvider(output: output, requested: requested) {
     case .takumi: TakumiCaptureProvider()
     case .webKit: WebKitCaptureProvider()
     }
@@ -23,23 +37,20 @@ extension SlopRenderer {
 }
 
 @MainActor struct TakumiCaptureProvider: SlopCaptureProviding {
-  private func view(url: URL, kind: ViewCaptureKind, format: CaptureFormat) async throws -> Data? {
-    guard let evaluator = DocumentOwner.evaluatorPath else { throw SlopFailure("Capture renderer is missing") }
-    let bytes = try await SlopPreparation.run(on: SlopRenderer.captureQueue) {
-      try renderSavedView(path: url.path, evaluatorPath: evaluator, kind: kind, format: format)
+  private func view(url: URL, output: CaptureOutput) async throws -> Data? {
+    let result = try await SlopRenderer.captureNative(url: url, outputs: [output])[0].result
+    switch result {
+    case .image(let bytes): return bytes.map { Data($0) }
+    case .failed(let failure): throw CoreError.Failure(failure: failure)
+    case .widgets: throw SlopFailure("Unexpected capture result")
     }
-    try Task.checkCancellation()
-    return bytes.map { Data($0) }
   }
-  func render(url: URL, output: SlopRenderer.CaptureOutput) async throws -> Data {
-    guard
-      let bytes = try await view(
-        url: url, kind: output == .previewPNG ? .preview : .export,
-        format: output == .pdf ? .pdf : .png)
+  func render(url: URL, output: CaptureOutput) async throws -> Data {
+    guard let bytes = try await view(url: url, output: output)
     else { throw SlopFailure("This slop has no native capture view; rebuild its template") }
     return bytes
   }
-  func icon(url: URL) async throws -> Data? { try await view(url: url, kind: .icon, format: .png) }
+  func icon(url: URL) async throws -> Data? { try await view(url: url, output: .icon) }
   func widgets(url: URL) async throws -> SlopRenderer.WidgetCapture {
     try await SlopRenderer.captureNativeWidgets(url: url)
   }
@@ -48,7 +59,7 @@ extension SlopRenderer {
 /// Retained for explicit internal comparison and future host policy. Production
 /// selection is Takumi; there is no authored override or automatic fallback.
 @MainActor struct WebKitCaptureProvider: SlopCaptureProviding {
-  func render(url: URL, output: SlopRenderer.CaptureOutput) async throws -> Data {
+  func render(url: URL, output: CaptureOutput) async throws -> Data {
     try await SlopRenderer.withRenderSession(url: url) {
       try await SlopRenderer.captureWebView(session: $0, output: output)
     }

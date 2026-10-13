@@ -1,7 +1,7 @@
 //! History-trimmed documents. Failure: a trimmed checkpoint opened with another value or
 //! version, a refused batch rolled a trimmed document back to nothing, or a saved update
 //! that is itself trimmed was accepted. Oracle: literal values and the full document.
-mod support;
+use crate::support;
 use hitslop_core::Origin;
 use hitslop_core::{Code, Document};
 use loro::{ExportMode, LoroDoc};

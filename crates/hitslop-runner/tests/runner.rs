@@ -3,14 +3,17 @@
 use hitslop_runner::Evaluator;
 use serde_json::{Value, json};
 fn evaluate(code: &str) -> Value {
+    run(code).unwrap()
+}
+fn run(code: &str) -> Result<Value, String> {
     let args = json!({});
     let bundle = format!(
         "globalThis.__slopCommands = {{[Symbol.for('slop.command-set')]:{{specs:{{probe:{{args:{args},run(ctx){{{code}}}}}}}}}}};"
     );
     let request = json!({"name":"probe","args":{},"value":{"count":0},"descriptor":{"kind":"object","properties":{"count":{"kind":"counter"}}},"now":1234,"seed":[1,2,3,4]});
     let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_hitslop-evaluator").into(), vec![]).unwrap();
-    let output = evaluator.run(1, &bundle, &request.to_string()).unwrap();
-    serde_json::from_str(&output).unwrap_or_else(|e| panic!("{e}: {output}"))
+    let output = evaluator.run(1, &bundle, &request.to_string())?;
+    serde_json::from_str(&output).map_err(|e| format!("{e}: {output}"))
 }
 #[test]
 fn restricted_commands_collect_intents_with_only_host_time_and_seed() {
@@ -62,7 +65,14 @@ fn runner_bounds_cpu_and_memory() {
         "const a=[]; while(true) a.push(new Array(100000).fill('x'));",
         "return (function recurse(){return recurse()})()",
     ] {
-        let result = evaluate(code);
-        assert_eq!(result["ok"], false, "{result}");
+        let start = std::time::Instant::now();
+        match run(code) {
+            Ok(result) => assert_eq!(result["ok"], false, "{result}"),
+            // The parent watchdog is also a valid limit outcome when process startup
+            // leaves too little time for the child's interruption reply to arrive.
+            Err(error) => assert_eq!(error, "Command execution timed out", "{code}"),
+        }
+        assert!(start.elapsed() < std::time::Duration::from_millis(hitslop_runner::WATCHDOG_MS * 2));
+        assert_eq!(evaluate("return 42")["result"], 42, "the host remains usable after a bounded failure");
     }
 }

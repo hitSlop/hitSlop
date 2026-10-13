@@ -3,7 +3,7 @@
 // steps, an agent's mistake erased the history, or the page's view fell behind the
 // document. Oracle: literal values, and every publication applied to the page's view
 // equals a fresh snapshot.
-mod support;
+use crate::support;
 use hitslop_core::{Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;

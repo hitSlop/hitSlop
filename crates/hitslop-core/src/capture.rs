@@ -19,6 +19,94 @@ pub enum CaptureFormat {
     Pdf,
 }
 
+/// Outputs requested together use the same saved document and accepted app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum CaptureOutput {
+    Preview,
+    Icon,
+    Export { format: CaptureFormat },
+    Widgets,
+}
+
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub enum CaptureValue {
+    Image { bytes: Option<Vec<u8>> },
+    Widgets { capture: crate::widgets::WidgetCapture },
+}
+
+/// A rendering failure is local to its output, not a failure to save the document.
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub struct CaptureResult {
+    pub output: CaptureOutput,
+    pub result: crate::store::Result<CaptureValue>,
+}
+
+/// The source must already have crossed the owner's page drain/save/copy boundary.
+/// This function neither acquires a writer nor publishes artwork or widget caches.
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub fn render_batch(
+    path: &std::path::Path,
+    evaluator: &hitslop_runner::Evaluator,
+    outputs: &[CaptureOutput],
+) -> crate::store::Result<Vec<CaptureResult>> {
+    let store = crate::store::Store::open(path, crate::store::Mode::Snapshot)?;
+    let document = store.document()?;
+    let source = RenderSource::new(&store, &document);
+    Ok(outputs
+        .iter()
+        .map(|&output| {
+            let result = match output {
+                CaptureOutput::Widgets => {
+                    crate::widgets::render_source(&source, evaluator).map(|capture| CaptureValue::Widgets { capture })
+                }
+                _ => render_source(&source, evaluator, output).map(|bytes| CaptureValue::Image { bytes }),
+            };
+            CaptureResult { output, result }
+        })
+        .collect())
+}
+
+/// Inputs are prepared lazily after role admission, once for the entire batch. Even
+/// a preparation failure is shared; unsupported/absent roles keep their own outcome.
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub(crate) struct RenderSource<'a> {
+    pub store: &'a crate::store::Store,
+    pub document: &'a crate::Document,
+    input: std::cell::OnceCell<crate::store::Result<RenderInput>>,
+}
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub(crate) struct RenderInput {
+    pub resources: std::collections::BTreeMap<String, String>,
+    pub snapshot: serde_json::Value,
+    pub theme: std::collections::BTreeMap<String, String>,
+}
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+impl<'a> RenderSource<'a> {
+    pub fn new(store: &'a crate::store::Store, document: &'a crate::Document) -> Self {
+        Self { store, document, input: std::cell::OnceCell::new() }
+    }
+    pub fn input(&self) -> crate::store::Result<&RenderInput> {
+        self.input
+            .get_or_init(|| {
+                Ok(RenderInput {
+                    resources: resources(self.store, self.document)?,
+                    snapshot: serde_json::from_str(&self.document.value()).map_err(crate::error::invalid)?,
+                    theme: self
+                        .document
+                        .theme_state()
+                        .map_err(crate::store::Error::Rejected)?
+                        .effective
+                        .into_iter()
+                        .collect(),
+                })
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
@@ -27,32 +115,19 @@ pub enum CaptureProvider {
     WebKit,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub enum CaptureCapability {
-    IconPng,
-    PreviewPng,
-    ExportPng,
-    VectorPdf,
-    WidgetBatch,
-}
-
-pub fn capture_capabilities(provider: CaptureProvider) -> Vec<CaptureCapability> {
-    use CaptureCapability::*;
-    match provider {
-        CaptureProvider::Takumi => vec![IconPng, PreviewPng, ExportPng, VectorPdf, WidgetBatch],
-        CaptureProvider::WebKit => vec![IconPng, PreviewPng, ExportPng, VectorPdf],
+pub fn capture_outputs(provider: CaptureProvider) -> Vec<CaptureOutput> {
+    use CaptureOutput::*;
+    let mut outputs = vec![Icon, Preview, Export { format: CaptureFormat::Png }, Export { format: CaptureFormat::Pdf }];
+    if provider == CaptureProvider::Takumi {
+        outputs.push(Widgets);
     }
+    outputs
 }
 
 /// One selection point for production and explicit internal comparisons. No fallback.
-pub fn select_provider(
-    capability: CaptureCapability,
-    requested: Option<CaptureProvider>,
-) -> crate::Result<CaptureProvider> {
+pub fn select_provider(output: CaptureOutput, requested: Option<CaptureProvider>) -> crate::Result<CaptureProvider> {
     let provider = requested.unwrap_or(CaptureProvider::Takumi);
-    if !capture_capabilities(provider).contains(&capability) {
+    if !capture_outputs(provider).contains(&output) {
         return Err(crate::err(crate::Code::InvalidRequest, "Capture provider does not support this output"));
     }
     Ok(provider)
@@ -60,31 +135,32 @@ pub fn select_provider(
 
 #[derive(Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub struct ViewRenderRequest {
+pub struct ViewRenderRequest<'a> {
     pub kind: ViewCaptureKind,
     pub format: CaptureFormat,
-    pub resources: std::collections::BTreeMap<String, String>,
+    pub resources: &'a std::collections::BTreeMap<String, String>,
     pub width: u32,
     pub height: u32,
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-    pub snapshot: serde_json::Value,
-    pub theme: std::collections::BTreeMap<String, String>,
+    pub snapshot: &'a serde_json::Value,
+    pub theme: &'a std::collections::BTreeMap<String, String>,
 }
 
 /// A stored app without an icon produces no artwork. A missing native program is an error.
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub fn render_saved(
-    path: &std::path::Path,
+fn render_source(
+    source: &RenderSource<'_>,
     evaluator: &hitslop_runner::Evaluator,
-    kind: ViewCaptureKind,
-    format: CaptureFormat,
+    output: CaptureOutput,
 ) -> crate::store::Result<Option<Vec<u8>>> {
-    use crate::store::{Mode, Store};
     let invalid = |message: String| crate::store::Error::Rejected(crate::err(crate::Code::InvalidRequest, message));
-    if format == CaptureFormat::Pdf && kind != ViewCaptureKind::Export {
-        return Err(invalid("PDF requires the export role".into()));
-    }
-    let store = Store::open(path, Mode::Snapshot)?;
+    let store = source.store;
+    let (kind, format) = match output {
+        CaptureOutput::Icon => (ViewCaptureKind::Icon, CaptureFormat::Png),
+        CaptureOutput::Preview => (ViewCaptureKind::Preview, CaptureFormat::Png),
+        CaptureOutput::Export { format } => (ViewCaptureKind::Export, format),
+        CaptureOutput::Widgets => return Err(invalid("Widgets require a widget batch".into())),
+    };
     let icon = kind == ViewCaptureKind::Icon;
     if kind == ViewCaptureKind::Export && !store.app().app.views().export {
         return Err(invalid("This slop does not support PNG or PDF export (no Export.svelte)".into()));
@@ -100,32 +176,24 @@ pub fn render_saved(
         }
         return Err(invalid("Rebuild this pre-launch slop with a synchronous native capture view".into()));
     };
-    let document = store.document()?;
+    let input = source.input()?;
     let request = ViewRenderRequest {
         kind,
         format,
-        resources: resources(&store, &document)?,
+        resources: &input.resources,
         width: if icon { 512 } else { store.app().app.window().width },
         height: if icon { 512 } else { store.app().app.window().height },
-        snapshot: serde_json::from_str(&document.value()).map_err(|e| invalid(e.to_string()))?,
-        theme: document.theme_state().map_err(crate::store::Error::Rejected)?.effective.into_iter().collect(),
+        snapshot: &input.snapshot,
+        theme: &input.theme,
     };
     let result = match format {
         CaptureFormat::Png => evaluator.capture(store.app().runtime_abi, program, &crate::encode(&request)),
         CaptureFormat::Pdf => evaluator.pdf(store.app().runtime_abi, program, &crate::encode(&request)),
     }
     .map_err(invalid)?;
-    #[derive(serde::Deserialize)]
-    struct Reply {
-        ok: bool,
-        images: Option<Vec<String>>,
-        error: Option<String>,
-    }
-    let reply: Reply = serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
-    if !reply.ok {
-        return Err(invalid(reply.error.unwrap_or_else(|| "Capture renderer failed".into())));
-    }
-    let mut images = reply.images.ok_or_else(|| invalid("Capture renderer returned no image".into()))?;
+    let reply: hitslop_runner::RenderReply =
+        serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
+    let mut images = reply.into_images().map_err(invalid)?;
     if images.len() != 1 {
         return Err(invalid("Capture renderer returned an invalid batch".into()));
     }
@@ -188,11 +256,15 @@ mod tests {
     use super::*;
     #[test]
     fn provider_selection_is_explicit_and_refuses_unsupported_outputs() {
-        assert_eq!(select_provider(CaptureCapability::VectorPdf, None).unwrap(), CaptureProvider::Takumi);
         assert_eq!(
-            select_provider(CaptureCapability::ExportPng, Some(CaptureProvider::WebKit)).unwrap(),
+            select_provider(CaptureOutput::Export { format: CaptureFormat::Pdf }, None).unwrap(),
+            CaptureProvider::Takumi
+        );
+        assert_eq!(
+            select_provider(CaptureOutput::Export { format: CaptureFormat::Png }, Some(CaptureProvider::WebKit))
+                .unwrap(),
             CaptureProvider::WebKit
         );
-        assert!(select_provider(CaptureCapability::WidgetBatch, Some(CaptureProvider::WebKit)).is_err());
+        assert!(select_provider(CaptureOutput::Widgets, Some(CaptureProvider::WebKit)).is_err());
     }
 }

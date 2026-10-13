@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 use support::ApplyJson;
 use support::{Edit, View, app, apply_patches, fixture, snapshot, type_text, updates_since};
 // Failure: the core accepts a wrong edit or publishes part of a rejected batch.

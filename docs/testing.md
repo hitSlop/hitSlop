@@ -33,6 +33,19 @@ openable, so its frozen entries never change.
 | Landing/docs | `apps/landing`, `verify landing` | Public documentation and website checks; release includes the build |
 | Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
 
+The core and runner Rust integration tests each build as one binary, `tests/main.rs` (`autotests = false`),
+so a change links once rather than once per file; a new test file is a `mod` there, or it
+never compiles. Test names carry their file as a module (`store::…`). `hitslop-runner`'s
+`broken_pipe.rs` stays its own binary because it changes the process's SIGPIPE handling.
+
+Capture regressions cover mixed-success batches and unchanged source bytes in Rust, and
+speech, media admission, file selection, downloads, resize and close in Swift. Saved-source
+capture must preserve live page eligibility; retiring the page cancels transcription.
+Runner budget tests accept either the child interrupt or parent watchdog winning, then
+verify a fresh job succeeds. The budgets themselves remain fixed by job kind.
+The native CLI preview test uses Playwright WebKit to inspect captured PNG pixels, so
+native CI installs WebKit even when browser qualification is not selected.
+
 `tests/fixtures/*` are small host apps (`document/`, a build stage, with `expected.json` and
 `scenario.json`) replayed by both the Bun fast tier and the Swift host-path test, which
 packs each stage and creates a document from it.

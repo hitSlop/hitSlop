@@ -2,7 +2,7 @@
 // or text were recreated, so an open text field was clobbered, or a refused replace left
 // part of its change. Oracle: literal values, identity proven by later edits, and the
 // page's view equal to a fresh snapshot after every publication.
-mod support;
+use crate::support;
 use hitslop_core::{Applied, Code, Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;

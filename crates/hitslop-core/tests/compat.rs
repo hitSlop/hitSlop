@@ -1,11 +1,11 @@
 //! The compatibility corpus (`tests/compat`): every document file a release saved opens in
 //! this core and reads as that release recorded, takes the release's recorded edit, saves,
 //! trims its history on close and reopens to the recorded result. See docs/testing.md.
+use crate::support;
 use hitslop_core::Origin;
 use hitslop_core::store::{Mode, Store};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-mod support;
 use support::ApplyJson;
 
 fn corpus() -> PathBuf {

@@ -25,9 +25,10 @@ allow_attributes_without_reason = "deny"
 
 # Development builds (`bun run build`, the Bun, Swift and native tiers): optimized, since the
 # core's wall-clock budgets (the text diff's timeout, save scheduling, deadlines) assume it.
-# Panics unwind: the owner contains them.
+# Panics unwind: the owner contains them. Incremental, so an edit recompiles only what changed.
 [profile.release]
 panic = "unwind"
+incremental = true
 
 # What ships (`HITSLOP_CARGO_PROFILE=dist`): the release gate, compatibility capture, the
 # Xcode archive and the Engines workflow. Measured: engine 10.4→8.1 MB, app core 9.6→7.4 MB,
@@ -36,6 +37,7 @@ panic = "unwind"
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+incremental = false
 
 # Test builds keep file and line in backtraces, not full debug info: less to write, link
 # and keep in `target/`.

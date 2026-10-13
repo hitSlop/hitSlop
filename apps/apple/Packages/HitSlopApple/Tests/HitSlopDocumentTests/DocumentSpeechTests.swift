@@ -18,6 +18,7 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
     var prompts = 0
     var recordings: [(bytes: Data, name: String)] = []
     var cancelled = 0
+    var waiting: [AsyncStream<Void>.Continuation] = []
   }
   private let lock = NSLock()
   private var state = State()
@@ -41,6 +42,15 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
   var recordings: [(bytes: Data, name: String)] { locked { $0.recordings } }
   var cancelled: Int { locked { $0.cancelled } }
 
+  func finish() {
+    let waiting = locked {
+      let waiting = $0.waiting
+      $0.waiting.removeAll()
+      return waiting
+    }
+    for continuation in waiting { continuation.finish() }
+  }
+
   func fileExtension(for mediaType: String) -> String? { locked { $0.formats[mediaType] } }
   func support(for locale: Locale?) async -> SpeechSupport { locked { $0.support } }
   func authorize() async -> SpeechAuthorization {
@@ -51,12 +61,17 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
   }
   func transcribe(_ recording: URL, locale: Locale) async throws -> String {
     let bytes = try Data(contentsOf: recording)
+    let (stream, continuation) = AsyncStream<Void>.makeStream()
     let waits = locked {
       $0.recordings.append((bytes, recording.lastPathComponent))
+      if $0.waits { $0.waiting.append(continuation) }
       return $0.waits
     }
     if waits {
-      do { try await Task.sleep(for: .seconds(60)) } catch {
+      do {
+        for await _ in stream {}
+        try Task.checkCancellation()
+      } catch {
         locked { $0.cancelled += 1 }
         throw error
       }
@@ -191,9 +206,7 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
     }
   }
 
-  // A transcription belongs to the page that asked: an export starting cancels it and the
-  // page hears `cancelled`; replacing the page cancels it too, and nothing outlives it.
-  @Test @MainActor func aTranscriptionEndsWhenAnExportBeginsOrItsPageIsReplaced() async throws {
+  @Test @MainActor func aTranscriptionSurvivesSavedSourceCapture() async throws {
     let (session, speech, root) = try await Self.open(declaring: ["speech"])
     defer { try? FileManager.default.removeItem(at: root) }
     do {
@@ -201,24 +214,48 @@ final class ScriptedSpeech: SpeechRecognizing, @unchecked Sendable {
       let clip = try await Self.store(Self.wav, in: session)
       let pending = Task { try await Self.transcribe(clip, in: session) }
       #expect(await eventually { speech.recordings.count == 1 })
-      await session.withCapture {}
-      let cancelled = try await pending.value
-      #expect(cancelled["status"] == "cancelled")
-      #expect(speech.cancelled == 1)
-      // While a capture holds the page, no new transcription starts.
+      try await session.withCaptureSnapshot { source in
+        #expect(FileManager.default.fileExists(atPath: source.path))
+      }
+      speech.finish()
+      #expect(try await pending.value["status"] == "transcribed")
+      #expect(speech.cancelled == 0)
+      speech.script()
       let duringCapture = try await session.withCapture { try await Self.transcribe(clip, in: session) }
-      #expect(duringCapture["reason"] == "host")
-      #expect(speech.recordings.count == 1)
+      #expect(duringCapture["status"] == "transcribed")
+      try await session.close()
+    } catch {
+      speech.finish()
+      try? await session.close()
+      throw error
+    }
+  }
 
-      // Replacing the page cancels what it started; its reply has nowhere to go.
+  @Test(arguments: ["close", "renderer", "replace"])
+  @MainActor func retiringPageServicesCancelsTranscription(reason: String) async throws {
+    let (session, speech, root) = try await Self.open(declaring: ["speech"])
+    defer {
+      speech.finish()
+      try? FileManager.default.removeItem(at: root)
+    }
+    do {
+      speech.script(waits: true)
+      let clip = try await Self.store(Self.wav, in: session)
       session.webView.callAsyncJavaScript(
         "webkit.messageHandlers.hitslop.postMessage(JSON.stringify({method:'speech.transcribe',attachment}))",
         arguments: ["attachment": clip], in: nil, in: .page, completionHandler: nil)
-      #expect(await eventually { speech.recordings.count == 2 })
-      try await session.discardPending()
-      #expect(await eventually { speech.cancelled == 2 })
+      #expect(await eventually { speech.recordings.count == 1 })
+      switch reason {
+      case "close": try await session.prepareClose()
+      case "renderer": session.webViewWebContentProcessDidTerminate(session.webView)
+      default: try await session.discardPending()
+      }
+      #expect(await eventually { speech.cancelled == 1 })
+      speech.finish()
       #expect(await eventually { session.speechTasks.isEmpty })
-      try await session.waitUntilReady()
+      if reason == "close" { await session.cancelClose() }
+      if reason == "renderer" { try await session.reopenSavedDocument() }
+      if reason == "replace" { try await session.waitUntilReady() }
       try await session.close()
     } catch {
       try? await session.close()

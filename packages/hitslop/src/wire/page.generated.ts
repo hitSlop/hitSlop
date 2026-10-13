@@ -3,14 +3,17 @@ import type { WindowDefinition } from "./app.generated";
 import type { Batch, Publication } from "./core.generated";
 import type { True } from "./engine.generated";
 
-export type CaptureCapability = "iconPng" | "previewPng" | "exportPng" | "vectorPdf" | "widgetBatch";
-
 /**
  * Capture choices are host policy, independent of a document's persisted format.
  */
 export type CaptureFormat = "png" | "pdf";
 
 export type CaptureMode = "preview" | "export" | "icon";
+
+/**
+ * Outputs requested together use the same saved document and accepted app.
+ */
+export type CaptureOutput = "preview" | "icon" | { "export": { format: CaptureFormat, } } | "widgets";
 
 export type CaptureProvider = "takumi" | "webKit";
 

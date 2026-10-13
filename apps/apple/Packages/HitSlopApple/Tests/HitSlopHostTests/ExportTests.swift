@@ -55,7 +55,7 @@ extension HostTests {
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let preview = try #require(
-      NSBitmapImageRep(data: try await SlopRenderer.capture(url: root, output: .previewPNG, provider: .webKit)))
+      NSBitmapImageRep(data: try await SlopRenderer.capture(url: root, output: .preview, provider: .webKit)))
     #expect(preview.pixelsWide == 4096 && preview.pixelsHigh == 4096)
     #expect(preview.pixelsWide * preview.pixelsHigh <= Limits.imagePixels)
   }
@@ -89,10 +89,12 @@ extension HostTests {
     try await session.waitUntilReady()
     do {
       let png = try #require(
-        NSBitmapImageRep(data: try await SlopRenderer.capture(session: session, output: .exportPNG, provider: .webKit)))
+        NSBitmapImageRep(
+          data: try await SlopRenderer.capture(session: session, output: .export(format: .png), provider: .webKit)))
       #expect(png.pixelsWide == 1040)
       let pdf = try #require(
-        PDFDocument(data: try await SlopRenderer.capture(session: session, output: .pdf, provider: .webKit)))
+        PDFDocument(
+          data: try await SlopRenderer.capture(session: session, output: .export(format: .pdf), provider: .webKit)))
       #expect(pdf.page(at: 0)?.bounds(for: .mediaBox).width == 520)
       #expect(pdf.string?.contains("Right edge") == true)
     } catch {
@@ -476,10 +478,10 @@ extension HostTests {
       $0.fill()
     }
     _ = try await attach(blob, at: ["title"], url: root)
-    let png = try #require(NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .exportPNG)))
+    let png = try #require(NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .export(format: .png))))
     let blue = try #require(png.colorAt(x: 50, y: 140)?.usingColorSpace(.sRGB))
     #expect(blue.blueComponent > 0.9 && blue.redComponent < 0.1)
-    let pdf = try #require(PDFDocument(data: await SlopRenderer.capture(url: root, output: .pdf)))
+    let pdf = try #require(PDFDocument(data: await SlopRenderer.capture(url: root, output: .export(format: .pdf))))
     #expect(pdf.string?.contains("Saved attachment") == true)
     #expect(pdf.pageCount == 1)
   }
@@ -517,7 +519,8 @@ extension HostTests {
       try await SlopRenderer.exportPDFData(session: session)
     }
     let pdf = try #require(
-      PDFDocument(data: try await SlopRenderer.capture(session: session, output: .pdf, provider: .webKit)))
+      PDFDocument(
+        data: try await SlopRenderer.capture(session: session, output: .export(format: .pdf), provider: .webKit)))
     #expect(pdf.string?.contains("Fallback: Saved fallback") == true)
     try await session.close()
   }
@@ -583,14 +586,15 @@ extension HostTests {
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let preview = try #require(NSBitmapImageRep(data: await SlopRenderer.previewPNGData(url: root)))
-    let exported = try #require(NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .exportPNG)))
+    let exported = try #require(
+      NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .export(format: .png))))
     #expect(preview.pixelsHigh == 240)
     #expect(exported.pixelsHigh == 1800)
     let previewColor = try #require(preview.colorAt(x: 100, y: 100)?.usingColorSpace(.sRGB))
     let exportColor = try #require(exported.colorAt(x: 100, y: 100)?.usingColorSpace(.sRGB))
     #expect(previewColor.redComponent > 0.9 && previewColor.blueComponent < 0.1)
     #expect(exportColor.blueComponent > 0.9 && exportColor.redComponent < 0.1)
-    let pdf = try #require(PDFDocument(data: await SlopRenderer.capture(url: root, output: .pdf)))
+    let pdf = try #require(PDFDocument(data: await SlopRenderer.capture(url: root, output: .export(format: .pdf))))
     #expect(pdf.string?.contains("Full export") == true)
     #expect(pdf.string?.contains("Preview only") == false)
   }
@@ -671,9 +675,9 @@ extension HostTests {
     }
     defer { try? FileManager.default.removeItem(at: root) }
     let preview = try #require(
-      NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .previewPNG, provider: .webKit)))
+      NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .preview, provider: .webKit)))
     let exported = try #require(
-      NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .exportPNG, provider: .webKit)))
+      NSBitmapImageRep(data: await SlopRenderer.capture(url: root, output: .export(format: .png), provider: .webKit)))
     #expect(preview.pixelsHigh == 240)
     #expect(exported.pixelsHigh == 1800)
     let red = try #require(preview.colorAt(x: 100, y: 100)?.usingColorSpace(.sRGB))

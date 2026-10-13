@@ -23,7 +23,7 @@ extension SlopRenderer {
   ) async throws {
     let output = output.standardizedFileURL
     try refuseExisting(output)
-    let data = try await capture(url: root, output: format == .png ? .exportPNG : .pdf)
+    let data = try await capture(url: root, output: .export(format: format == .png ? .png : .pdf))
     try publishExport(data, to: output, deadline: deadline)
   }
 

@@ -101,6 +101,12 @@ In order, with the reasoning in [ideas](ideas.md):
   Declared `speech` enables native on-device transcription of stored recordings; it is
   unavailable in previews and browser copies. There is no per-slop permission UI or
   server fallback. [Capabilities](reference/runtime.md#security-boundaries) records the boundary.
+- Saved-source capture preserves live speech, file selection, downloads and resize eligibility;
+  close preparation, page replacement and renderer loss cancel pending transcription.
+  Native capture uses a shared Rust runtime and per-output batch results; close batches
+  artwork and widgets with shared prepared inputs. Moving live capture coordination
+  fully into Rust, production-renderer dev previews, and a shared service admission/completion
+  API remain in progress; no new personal-data services are included in that work.
 - Active templates are discovered under `slops/`; `bundled.json` chooses the starters.
   Xcode's embedding phase refreshes `generated/templates/` through the template cache
   before copying selected starters into the app. Prepare changed tooling first; see

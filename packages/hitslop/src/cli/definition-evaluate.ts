@@ -1,6 +1,7 @@
 import { findEngine } from "./engine";
 import { exec } from "./process";
 import { RuntimeABI } from "../schema/constants";
+import type { Job } from "../wire/runner.generated";
 
 export async function evaluateDefinition(program: Uint8Array) {
   const evaluated = await exec([await findEngine(), "--evaluate-command"], {
@@ -12,7 +13,7 @@ export async function evaluateDefinition(program: Uint8Array) {
       mode: "definition",
       bundle: new TextDecoder().decode(program),
       request: "{}",
-    }),
+    } satisfies Job),
   });
   if (evaluated.code) throw new Error(`Definition evaluator failed: ${evaluated.stderr}`);
   const reply = JSON.parse(evaluated.stdout) as

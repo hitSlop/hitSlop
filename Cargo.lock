@@ -975,6 +975,7 @@ dependencies = [
  "takumi",
  "takumi-pdf",
  "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

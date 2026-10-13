@@ -95,11 +95,11 @@ import WebKit
     #expect(!engine.fileSaver.hasActiveTransfers)
     #expect(try Data(contentsOf: target) == Data("hi!".utf8))
 
-    // A capture never presents a panel.
+    // Saved-source acquisition leaves live downloads eligible.
     try await engine.withCapture {
-      _ = try await engine.webView.evaluateJavaScript(offer)
-      try await Task.sleep(for: .milliseconds(300))
-      #expect(!engine.fileSaver.hasPendingSave)
+      try await offerAndWait()
+      #expect(engine.fileSaver.hasPendingSave)
+      reply?(nil)
     }
 
     // Closing dismisses a pending panel.
@@ -107,7 +107,7 @@ import WebKit
     #expect(engine.fileSaver.hasPendingSave)
     try await engine.close()
     #expect(!engine.fileSaver.hasPendingSave)
-    #expect(names.count == 5)
+    #expect(names.count == 6)
     reply?(target)
     #expect(!engine.fileSaver.hasActiveTransfers)
     #expect(try Data(contentsOf: target) == Data("hi!".utf8))

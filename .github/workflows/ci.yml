@@ -111,6 +111,8 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         with:
           nextest: "false"
+      # The native preview test decodes captured PNG pixels in WebKit.
+      - run: bun node_modules/playwright/cli.js install webkit
       - uses: ./.github/actions/native-cache
         with:
           templates: fixtures

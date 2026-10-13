@@ -82,6 +82,8 @@ for visual changes. `_vibe` is inspiration only.
   inputs changed since they last passed. Iterate with one tier (`bun run verify rust
   store::`); run `bun run verify` before calling a step done, and `bun run verify --native`
   once at the end when Swift, the FFI or the helper changed. Release: `bun run release:check`.
+- Rust builds and a full `bun run verify` can outlast an agent's command timeout: run
+  them in the background and iterate with a filtered tier.
 
 ## Commit and PR attribution
 

@@ -90,7 +90,9 @@ Rust owns wire types, errors, limits and app metadata. ts-rs generates TypeScrip
 UniFFI carries typed app definitions, summaries, window geometry and host actions to
 Swift. Swift never decodes the app definition, theme or page-message JSON. Rust decodes a page
 request once, applies its lifecycle fence, answers document requests, or returns a
-native host action. Document JSON remains opaque text through the bridge. TypeBox,
+native host action. The development preview supplies an already typed request through
+`page_typed`, which checks the same bounds and owner view fence without a JSON round trip.
+Document JSON remains opaque text through the bridge. TypeBox,
 quicktype, handwritten contract generators and production JSON Schema validators are gone.
 
 Agent commands through `slop call` send a name and arguments to the owner. Rust
@@ -358,8 +360,17 @@ Preview supplies a compact overview for Quick Look and the catalog. Export suppl
 PNG/PDF output; without it, image/PDF share/save actions are hidden and CLI export is refused.
 Stored-file acceptance remains separate.
 Missing programs fail capture with a rebuild diagnostic. Rust owns output formats,
-provider capabilities and the selection policy; Swift providers consume an already
-saved source, leaving acquisition and publication at their existing boundaries.
+renderer support and the selection policy through one `CaptureOutput` type; Swift
+providers consume an already saved source, leaving acquisition and publication at their
+existing boundaries.
+Native callers reuse a Rust `CaptureRuntime` for evaluator configuration. A Rust batch
+loads one saved document and lazily prepares its snapshot, theme and image resources once
+for its requested outputs, reporting each result independently. One failed output does not
+discard the others. Close requests artwork and eligible widgets in the same batch.
+Each output still starts a fresh restricted child, using shared QuickJS realm setup,
+a typed job envelope and explicit command, definition, widget, PNG and PDF budgets.
+Parent and child share render replies and typed failure serialization; the parent
+validates reply combinations. Job payloads still carry serialized request JSON.
 Image attachments resolve synchronously from a bounded immutable resource inventory;
 only PNG/JPEG/GIF/WebP bytes referenced by saved state enter the child, with no network or filesystem
 access. Imports, reads and writes are unavailable to capture components.
@@ -369,6 +380,9 @@ Takumi and its experimental PDF crate use one pinned Git revision; no local sour
 or spike supplies production code. Distribution notices live in
 `crates/hitslop-runner/renderer-licenses`. Capture never changes the open
 editor's focus, selection, scroll, frame or selected tab.
+Source acquisition preserves speech, media access, file selection, downloads and resize
+eligibility. Its native queue still coordinates close, discard, reload and reopen.
+Close preparation, page replacement and renderer loss cancel pending transcription.
 
 If the session changed the document, or the file has no preview, close captures its
 preview and optional icon from that saved source. The owner writes successful artwork

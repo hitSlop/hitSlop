@@ -1,6 +1,6 @@
 //! Native saved-view rendering. Called only after the child installs its sandbox.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use rquickjs::{CatchResultExt, Context, Function, Runtime};
+use rquickjs::{CatchResultExt, Function};
 use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
 use takumi::prelude::*;
@@ -112,11 +112,7 @@ fn evaluate_markup(
     entry: &str,
     interrupted: impl FnMut() -> bool + 'static,
 ) -> std::result::Result<Batch, String> {
-    let runtime = Runtime::new().map_err(|e| e.to_string())?;
-    runtime.set_memory_limit(256 << 20);
-    runtime.set_max_stack_size(512 << 10);
-    runtime.set_interrupt_handler(Some(Box::new(interrupted)));
-    let context = Context::full(&runtime).map_err(|e| e.to_string())?;
+    let (runtime, context) = crate::realm::create(interrupted)?;
     let json = context.with(|ctx| {
         ctx.eval::<(), _>(bundle.as_bytes()).catch(&ctx).map_err(|e| e.to_string())?;
         let render: Function = ctx.globals().get(entry).catch(&ctx).map_err(|e| e.to_string())?;
@@ -277,7 +273,7 @@ fn render(
         encoder.write_header()?.write_image_data(image.as_raw())?;
         images.push(STANDARD.encode(png));
     }
-    let output = serde_json::json!({"ok": true, "images": images}).to_string();
+    let output = serde_json::to_string(&crate::RenderReply { ok: true, images: Some(images), error: None })?;
     if output.len() > output_limit {
         return Err("Capture output exceeds its byte limit".into());
     }
