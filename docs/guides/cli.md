@@ -176,9 +176,11 @@ are needed.
 ## Project version selection
 
 Use `bun run check`, `bun run dev` and `bun run build` in a project. These scripts run
-its pinned package. A global authoring command refuses a different installed project
-version and directs you to those scripts. `slop --project=DIR build .` explicitly delegates
-to that install. Merely changing cwd never redirects document commands.
+its pinned package. `slop check` runs the project's own svelte-check and TypeScript, which
+the starter pins as devDependencies; a project without them is told what to install. A
+global authoring command refuses a different installed project version and directs you to
+those scripts. `slop --project=DIR build .` explicitly delegates to that install. Merely
+changing cwd never redirects document commands.
 
 ## Domain commands
 

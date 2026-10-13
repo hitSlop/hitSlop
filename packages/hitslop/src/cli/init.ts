@@ -123,11 +123,14 @@ export async function initProject(target: string, options: InitOptions = {}, str
   slop = setField(slop, "description", JSON.stringify(description));
   slop = setField(slop, "author", `{ name: ${JSON.stringify(author)} }`);
   slop = setField(slop, "categories", JSON.stringify(categories));
-  const project: Record<string, unknown> = JSON.parse(
-    await readFile(join(cliRoot, "templates/checklist/package.json"), "utf8"),
-  );
+  const project: {
+    name: string;
+    devDependencies: Record<string, string>;
+    scripts?: Record<string, string>;
+  } = JSON.parse(await readFile(join(cliRoot, "templates/checklist/package.json"), "utf8"));
   project.name = slug;
-  project.devDependencies = { hitslop: metadata.version };
+  // Beside this CLI, the starter pins the checker and TypeScript that `slop check` runs.
+  project.devDependencies.hitslop = metadata.version;
   project.scripts = {
     dev: "slop dev .",
     check: "slop check .",

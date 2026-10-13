@@ -214,25 +214,13 @@ export const app = new Crust("slop", {
   .add(
     defineCommand(
       "check",
-      { description: "Check Svelte and TypeScript authoring source, and slop.ts as a build does" },
+      {
+        description:
+          "Check Svelte and TypeScript authoring source with the project's own checker, and slop.ts as a build does",
+      },
       (c) =>
         c.args(source).action(async ({ args }) => {
-          const { createRequire } = await import("node:module");
-          const require = createRequire(import.meta.url);
-          const { exec } = await import("./process");
-          const svelte = await exec(
-            [
-              process.execPath,
-              require.resolve("svelte-check/bin/svelte-check"),
-              "--workspace",
-              args.source,
-            ],
-            {
-              inherit: ["stdout", "stderr"],
-            },
-          );
-          await (await import("./build")).checkProject(args.source);
-          if (svelte.code) throw new Error("Authoring checks failed");
+          await (await import("./check")).check(args.source);
         }),
     ),
   )

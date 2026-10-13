@@ -109,6 +109,13 @@ In order, with the reasoning in [ideas](ideas.md):
   rely on `styles.css` that only `App.svelte` imports. Let each view (or `slop.ts`) name
   the stylesheets it needs, so a capture depends on what it declares and the editor's CSS
   stops leaking into it.
+- **Revisit the native Svelte checker.** `svelte-check-native` (Rust, TypeScript 7's native
+  compiler) matched `svelte-check` on every slop and 14 of 15 injected mistakes, and runs
+  about 8 to 10 times faster, but it has one maintainer, ships unsigned binaries without
+  release CI, trails `svelte-check` by weeks, and by default exits 0 on CSS and some markup
+  syntax errors. Look again when TypeScript 7.1 gives `svelte-check` a JS API (which lets
+  everything move to TypeScript 7) or when the native checker has provenance, CI and a
+  maintainer team. The repo itself type-checks cleanly on TypeScript 7 already.
 - **Dead capture CSS.** Eight icon-mode rules select nothing in any capture
   (`main` in choice-point, ivy-lee-method and three-three-three; `.cornell-page`,
   `.grade-app`, `.semester-app`, slide-deck's `.deck-canvas`, `[data-slop-render]`
