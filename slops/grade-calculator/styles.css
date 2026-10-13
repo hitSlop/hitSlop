@@ -578,10 +578,6 @@
     background: transparent !important;
   }
 
-  html[data-slop-capture="icon"] .grade-app {
-    display: none;
-  }
-
 .grade-render {
     display: none !important;
     width: 512px;

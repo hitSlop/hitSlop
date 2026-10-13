@@ -425,10 +425,6 @@ li:hover .cp-remove,
   display: none !important;
 }
 
-html[data-slop-capture="icon"] main {
-  display: none !important;
-}
-
 html[data-slop-capture="icon"] [data-slop-render="icon"] {
   display: grid !important;
   place-items: center;

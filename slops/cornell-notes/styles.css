@@ -760,10 +760,6 @@
     caret-color: transparent;
   }
 
-  html[data-slop-capture="icon"] .cornell-page {
-    display: none !important;
-  }
-
   /* Focus rings */
   input:focus-visible,
   textarea:focus-visible,

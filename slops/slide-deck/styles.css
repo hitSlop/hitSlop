@@ -596,23 +596,6 @@ html, body {
 }
 
 /* 512x512 Icon Render Target */
-.deck-render {
-  display: none !important;
-  width: 512px;
-  height: 512px;
-  place-items: center;
-  overflow: hidden;
-  background: transparent;
-}
-
-html[data-slop-capture="icon"] .deck-canvas {
-  display: none;
-}
-
-html[data-slop-capture="icon"] [data-slop-render="icon"] {
-  display: grid !important;
-}
-
 .deck-icon {
   width: 512px;
   height: 512px;
