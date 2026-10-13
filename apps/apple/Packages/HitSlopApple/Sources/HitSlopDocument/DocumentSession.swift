@@ -41,7 +41,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     return false
   }
   /// New page work is admitted only while the renderer is ready and the session active.
-  var acceptsPageWork: Bool {
+  public var acceptsPageWork: Bool {
     if case .active(.ready) = phase { return true }
     return false
   }
@@ -84,11 +84,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
   public private(set) var failureReason: SlopFailureContext.Reason?
   public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
-  public private(set) var capturing = false
+  private(set) var capturing = false
   /// Captures queued behind the one in progress (`withCapture`).
   private var captureQueue: [CheckedContinuation<Void, Never>] = []
-  /// An owner selects and saves files; a snapshot rendered in the background never does.
-  var allowsFileSelection: Bool { owner.mode == .document }
   /// The system panels, which tests replace with scripted presenters.
   var filePicker = DocumentFilePicker()
   var fileSaver = DocumentFileSaver() {
@@ -98,13 +96,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   var speechRecognizer: any SpeechRecognizing = SystemSpeechRecognizer()
   /// Transcriptions the attached page started (`serveSpeech`).
   var speechTasks: [UUID: Task<Void, Never>] = [:]
-  /// Every read-only snapshot page is a disposable renderer.
-  private func markRenderTarget(_ configuration: WKWebViewConfiguration) {
-    configuration.userContentController.addUserScript(
-      WKUserScript(
-        source: "document.documentElement.setAttribute('data-slop-renderer','true')",
-        injectionTime: .atDocumentStart, forMainFrameOnly: true))
-  }
   /// The window that shows this session.
   public weak var delegate: DocumentSessionDelegate?
   /// Whether Edit ▸ Undo and Redo have anything to do in this document.
@@ -124,9 +115,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     let shell: URL
     let owner: DocumentOwner
 
-    init(url: URL, storage mode: StoreMode = .document) throws {
+    init(url: URL) throws {
       shell = try DocumentSession.pageShell()
-      owner = try DocumentOwner(url: url, mode: mode)
+      owner = try DocumentOwner(url: url)
     }
   }
 
@@ -179,8 +170,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   // MARK: Theme panel
 
-  /// Whether this window may change its document's palette.
-  public var canEditTheme: Bool { acceptsPageWork && owner.mode == .document }
   /// The palette now; later changes arrive through `pageSession(_:themeChanged:)`.
   public func currentTheme() async throws -> SlopThemeState {
     SlopThemeState(try await owner.loadTheme())
@@ -242,18 +231,15 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
   }
 
-  /// Opens the document at `url`: as its owner, or as a snapshot of its saved state for a
-  /// background render, which selects and saves no files.
-  public static func open(
-    url: URL, storage: StoreMode = .document
-  ) async throws -> DocumentSession {
-    try await finishOpening(try await prepare(url: url, storage: storage))
+  /// Opens the document at `url` as its owner.
+  public static func open(url: URL) async throws -> DocumentSession {
+    try await finishOpening(try await prepare(url: url))
   }
 
-  private static func prepare(url: URL, storage mode: StoreMode = .document) async throws -> Prepared {
+  private static func prepare(url: URL) async throws -> Prepared {
     try await SlopPreparation.run {
       // The owner's store opens and checks the file once; the session shows it from that.
-      do { return try Prepared(url: SlopFile.documentRoot(url), storage: mode) } catch let error as SlopError {
+      do { return try Prepared(url: SlopFile.documentRoot(url)) } catch let error as SlopError {
         throw SlopDiagnosticError(error, diagnostic: .init(.rejection, reason: .invalidFile))
       }
     }
@@ -314,7 +300,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
             webkit.messageHandlers.hitslop.postMessage(JSON.stringify({method:'failed',error})).catch(()=>{});
           }, true);
           """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
-    if isSnapshot { markRenderTarget(configuration) }
     let spec = file
     let view = WKWebView(
       frame: CGRect(x: 0, y: 0, width: spec.width, height: spec.height),
@@ -447,7 +432,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   public func artwork(_ name: SlopArtwork.Name) async -> Data? {
     try? await owner.artwork(name)
   }
-  public var isSnapshot: Bool { owner.mode == .snapshot }
 
   /// Saves accepted edits and acquires one source for the artwork and clean copy.
   /// The copy has a new identity, no history, only referenced attachments and the
@@ -507,9 +491,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   /// Whether this session saved any change, so its document's artwork may be out of date.
   public var edited: Bool { owner.edited }
 
-  /// Serializes source acquisition in an editor or rendering in a disposable page.
-  /// The flag stays set across queued acquisitions so close cannot release the source.
-  public func withCapture<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
+  /// Serializes saved-source acquisition: the barrier `withCaptureSnapshot` and `copy`
+  /// hold while they save and copy, never while they render. The flag stays set across
+  /// queued acquisitions so close cannot release the source.
+  func withCapture<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
     if capturing { await withCheckedContinuation { captureQueue.append($0) } }
     capturing = true
     defer {
@@ -661,7 +646,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   /// The socket and discovery file live as long as the owner, not the page.
   func startDiscovery() throws {
-    guard server == nil, owner.mode == .document else { return }
+    guard server == nil else { return }
     server = try owner.startServer(
       exporter: NativeExports(copy: { [weak self] output, deadline in
         guard let self, acceptsPageWork else { throw OwnerFailure.closing }

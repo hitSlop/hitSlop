@@ -82,8 +82,7 @@ extension HostTests {
             const button = document.querySelector('.editor button'), before = button.textContent;
             button.click();
             await globalThis.__slop.flush();
-            return button.isConnected && !button.disabled && button.textContent !== before &&
-                !document.documentElement.hasAttribute('data-slop-capture');
+            return button.isConnected && !button.disabled && button.textContent !== before;
             """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
       }
     }
@@ -119,9 +118,7 @@ extension HostTests {
             button.click();
             await globalThis.__slop.flush();
             return button.isConnected && button.textContent !== before &&
-                !document.querySelector('[role="alert"]') &&
-                !document.documentElement.hasAttribute('data-slop-capture') &&
-                [...document.querySelectorAll('[data-slop-capture-target]')].every(e => e.hidden && !e.childElementCount);
+                !document.querySelector('[role="alert"]');
             """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
         #expect(issues.isEmpty)
         let data =
@@ -157,7 +154,7 @@ extension HostTests {
   }
 
   @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
-  @MainActor func falsyEditorFailuresRejectReloadAndCapture() async throws {
+  @MainActor func falsyEditorFailuresRejectReload() async throws {
     try await withPresentationSession { (session: DocumentSession) async throws in
       var recoveries = 0
       let events = SessionEvents()
@@ -171,11 +168,7 @@ extension HostTests {
             globalThis.__presentationFailure = {kind:'editor',error:\(value)};
             let rejected = false;
             try { await __slop.reloadInterface(); } catch { rejected = true; }
-            if (!rejected || !document.querySelector('[role="alert"]')) return false;
-            const capture = globalThis.__slop.capture;
-            try { await capture.begin('falsy-test', 'export'); return false; }
-            catch { return !document.documentElement.hasAttribute('data-slop-capture'); }
-            finally { await capture.restore('falsy-test'); }
+            return rejected && !!document.querySelector('[role="alert"]');
             """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
         #expect(recoveries == before)
         _ = try await session.webView.callAsyncJavaScript(
@@ -199,13 +192,12 @@ extension HostTests {
   for kind in ["standard", "ellipse", "washer"] {
     let path = try #require(paths[kind])
     let url = URL(fileURLWithPath: path)
-    let exported = try await SlopRenderer.withRenderSession(url: url) {
-      try await SlopRenderer.exportPNGData(session: $0)
-    }
+    let exported = try await SlopRenderer.capture(url: url, output: .export(format: .png))
     let bitmap = try #require(NSBitmapImageRep(data: exported))
     #expect(bitmap.pixelsWide == 640)
     #expect(bitmap.pixelsHigh == 480)
-    // Dedicated export corners remain opaque even for an ellipse or holed skin.
+    // The window's shape never masks an export: its corners remain opaque even for an
+    // ellipse or holed skin.
     #expect((bitmap.colorAt(x: 2, y: 2)?.alphaComponent ?? 0) > 0.99)
     let icon = try #require(await SlopRenderer.iconPNGData(url: url))
     let image = try #require(NSBitmapImageRep(data: icon))
@@ -223,10 +215,10 @@ extension HostTests {
   }
 }
 
-private func shapeLabKinds(fallback: Bool) throws -> [String] {
+private func shapeLabKinds() throws -> [String] {
   let source = try #require(ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"])
   let paths = try JSONDecoder().decode([String: String].self, from: Data(source.utf8))
-  let kinds = paths.keys.filter { $0.hasPrefix("shape-lab-") && $0.hasSuffix("-fallback") == fallback }.sorted()
+  let kinds = paths.keys.filter { $0.hasPrefix("shape-lab-") }.sorted()
   #expect(kinds.count == 6)
   return kinds
 }
@@ -234,7 +226,7 @@ private func shapeLabKinds(fallback: Bool) throws -> [String] {
 extension HostTests {
   @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func shapeLabCapturesPreserveCornersAndAcceptedInput() async throws {
-    for kind in try shapeLabKinds(fallback: false) {
+    for kind in try shapeLabKinds() {
       try await withPresentationSession(kind) { session in
         let accepted = try await session.webView.callAsyncJavaScript(
           """
@@ -258,7 +250,9 @@ extension HostTests {
         }
         let pdf = try #require(PDFDocument(data: await SlopRenderer.exportPDFData(session: session)))
         #expect(pdf.string?.contains("Typed before capture") == true)
-        #expect(pdf.page(at: 0)?.bounds(for: .mediaBox).width == (kind.contains("washer") ? 320 : 480))
+        // PDF pages land on 0.75 pt renderer pixels: 320 CSS pixels is a 320.25 pt page.
+        let pdfWidth = try #require(pdf.page(at: 0)?.bounds(for: .mediaBox).width)
+        #expect(abs(pdfWidth - (kind.contains("washer") ? 320 : 480)) <= 0.75)
         let icon = try #require(await SlopRenderer.iconPNGData(session: session))
         let square = try #require(NSBitmapImageRep(data: icon))
         #expect(square.pixelsWide == 512 && square.pixelsHigh == 512)
@@ -270,82 +264,9 @@ extension HostTests {
             document.querySelector('.shape-lab-east').click();
             await __slop.flush();
             return input.value === 'Typed before capture' &&
-              document.querySelector('.shape-lab-readout strong').textContent === '2' &&
-              !document.documentElement.hasAttribute('data-slop-capture');
+              document.querySelector('.shape-lab-readout strong').textContent === '2';
             """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
       }
-    }
-  }
-
-  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
-  @MainActor func shapeLabFallbackCapturesKeepNativeMask() async throws {
-    for kind in try shapeLabKinds(fallback: true) {
-      try await withPresentationSession(kind) { session in
-        let preview = try await SlopRenderer.capture(session: session, output: .preview, provider: .webKit)
-        let small = try #require(NSBitmapImageRep(data: preview))
-        #expect(small.pixelsWide == (kind.contains("washer") ? 320 : 480) * 2)
-        let png = try await SlopRenderer.capture(session: session, output: .export(format: .png), provider: .webKit)
-        let image = try #require(NSBitmapImageRep(data: png))
-        #expect(image.pixelsWide == small.pixelsWide)
-        for bitmap in [small, image] {
-          #expect((bitmap.colorAt(x: 0, y: 0)?.alphaComponent ?? 1) == 0)
-          let scale = Double(bitmap.pixelsWide) / 480
-          if kind.contains("hole") || kind.contains("locked") {
-            // SVG coordinates are top-down. The mirrored point must remain opaque.
-            #expect((bitmap.colorAt(x: Int(350 * scale), y: Int(88 * scale))?.alphaComponent ?? 1) == 0)
-            #expect((bitmap.colorAt(x: Int(350 * scale), y: Int(272 * scale))?.alphaComponent ?? 0) > 0.99)
-          }
-          if kind.contains("concave") {
-            #expect((bitmap.colorAt(x: Int(465 * scale), y: Int(156 * scale))?.alphaComponent ?? 1) == 0)
-            #expect((bitmap.colorAt(x: Int(420 * scale), y: Int(156 * scale))?.alphaComponent ?? 0) > 0.99)
-          }
-          let x = bitmap.pixelsWide / 2
-          let y = bitmap.pixelsHigh / 2
-          if kind.contains("washer") { #expect((bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 1) == 0) }
-        }
-        let centre = image.colorAt(x: image.pixelsWide / 2, y: image.pixelsHigh / 2)?.alphaComponent ?? -1
-        if kind.contains("washer") { #expect(centre == 0) } else { #expect(centre > 0.99) }
-      }
-    }
-  }
-}
-
-extension HostTests {
-  // Failure: a full-length fallback PNG export was clipped by the window silhouette
-  // stretched to the export's height. The silhouette describes the window: only a
-  // window-sized capture is masked, and longer exports are unmasked, like PDF.
-  @Test(.nightly) @MainActor func longFallbackExportsAreNotMaskedByTheWindowSilhouette() async throws {
-    let root = try contractFixture { stage in
-      try Fixtures.updateApp(stage) {
-        $0["window"] = ["kind": "standard", "width": 480, "height": 360, "shape": "50%"]
-      }
-      try Fixtures.writeApp(
-        """
-        export default { mount(ctx, target) {
-            document.body.style.margin = '0';
-            const content = document.createElement('main');
-            content.dataset.slopRoot = '';
-            content.style.cssText = 'height:1600px;background:white';
-            content.textContent = ctx.document.current.title;
-            target.append(content);
-            return { unmount() { content.remove(); } };
-        } };
-        """, to: stage)
-    }
-    defer { try? FileManager.default.removeItem(at: root) }
-    let session = try await DocumentSession.open(url: root)
-    session.load()
-    try await session.waitUntilReady()
-    do {
-      let png = try await SlopRenderer.capture(session: session, output: .export(format: .png), provider: .webKit)
-      let image = try #require(NSBitmapImageRep(data: png))
-      #expect(image.pixelsHigh > 2 * 360 * 2)
-      #expect((image.colorAt(x: 0, y: 0)?.alphaComponent ?? 0) > 0.99)
-      #expect((image.colorAt(x: 0, y: image.pixelsHigh - 1)?.alphaComponent ?? 0) > 0.99)
-      try await session.close()
-    } catch {
-      try? await session.close()
-      throw error
     }
   }
 }

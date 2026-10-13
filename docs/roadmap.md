@@ -133,9 +133,8 @@ In order, with the reasoning in [ideas](ideas.md):
 - `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
   `App.svelte` the editor, required `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte`, `Widget.svelte`
   and `commands.ts` the other roles. All production captures use saved-state Svelte SSR
-  and Takumi in the restricted Rust child, including selectable vector PDF. WebKit is
-  retained behind an explicit internal provider for comparison and future policy;
-  there is no automatic fallback or public per-slop override.
+  and Takumi in the restricted Rust child, including selectable vector PDF; there is no
+  WebKit capture, automatic fallback or public per-slop override.
   `slop dev` runs the native owner on a disposable copy per preview page.
 
 A historical summary of the ownership decisions and integration findings is retained in

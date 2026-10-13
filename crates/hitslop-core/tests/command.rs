@@ -685,7 +685,6 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     owner.attach("page".into());
     let config = page_json(&page(&owner, "page", r#"{"method":"config"}"#));
     assert_eq!(config["ok"], true);
-    assert_eq!(config["readOnly"], false);
     assert_eq!(config["window"]["frame"]["kind"], "standard");
     assert_eq!(config["window"]["frame"]["frame"]["resizable"], true);
     assert_eq!(config["descriptor"], serde_json::from_str::<Value>(SCHEMA).unwrap());
@@ -701,14 +700,10 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     }
     close(&owner);
     assert_eq!(page_json(&page(&owner, "replacement", r#"{"method":"ready"}"#))["code"], "closing");
-    let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
-    snapshot.attach("capture".into());
-    assert_eq!(page_json(&page(&snapshot, "capture", r#"{"method":"config"}"#))["readOnly"], true);
-    close(&snapshot);
 }
 
-// Speech reaches the host only for an owner's page whose stored app declared it; every
-// other page learns why it is unavailable without a host being asked. The host then reads
+// Speech reaches the host only for a page whose stored app declared it; every other
+// page learns why it is unavailable without a host being asked. The host then reads
 // the verified recording through the owner's reader and decides what it can decode.
 #[test]
 fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
@@ -751,15 +746,7 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     let malformed = page(&owner, "page", &json!({"method":"speech.transcribe","attachment":"clip.m4a"}).to_string());
     assert_eq!(page_json(&malformed)["reason"], "invalid_request");
     assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
-
     close(&owner);
-
-    // A background renderer of the same document never transcribes.
-    let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
-    snapshot.attach("capture".into());
-    let outcome = page_json(&page(&snapshot, "capture", &request))["outcome"].clone();
-    assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("host")));
-    close(&snapshot);
 }
 
 #[test]

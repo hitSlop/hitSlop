@@ -7,8 +7,6 @@ public enum Limits {
   public static let themeFile = Int(host.themeFile)
   public static let pushItems = Int(host.pushItems)
   public static let pushBytes = Int(host.pushBytes)
-  public static let imageSide = Int(host.imageSide)
-  public static let imagePixels = Int(host.imagePixels)
 }
 public enum WindowBounds {
   public static let minWidth = Int(host.minWidth)

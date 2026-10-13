@@ -11,12 +11,12 @@ extension SlopDocumentWindowController {
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
   /// follow. Closing, retrying and the save-failure sheet's choices always can; anything
   /// else waits for the app to accept commands and the page to show its content, and
-  /// importing a palette needs a document whose theme can change.
+  /// importing a palette needs a page that accepts work.
   public func isAvailable(_ command: SlopDocumentCommand) -> Bool {
     switch command {
     case .close, .retry, .retrySave, .discardUnsaved: true
     case .sharePNG, .sharePDF, .exportPNG, .exportPDF: commandsEnabled && isContentReady && canExport
-    case .importTheme: commandsEnabled && isContentReady && session.canEditTheme
+    case .importTheme: commandsEnabled && isContentReady && session.acceptsPageWork
     default: commandsEnabled && isContentReady
     }
   }
@@ -30,8 +30,8 @@ extension SlopDocumentWindowController {
     guard canPin else { return }
     setPinned(!isPinned)
   }
-  /// The theme panel opens for a page whose palette can change, and always closes.
-  public var canToggleTheme: Bool { isThemeShown || (isContentReady && session.canEditTheme) }
+  /// The theme panel opens for a page that accepts work, and always closes.
+  public var canToggleTheme: Bool { isThemeShown || (isContentReady && session.acceptsPageWork) }
   public func toggleTheme() { setThemeShown(!isThemeShown) }
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
     switch command {

@@ -16,8 +16,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     hitslop_runner::Job::export_all(&config)?;
     hitslop_core::widgets::WidgetRenderRequest::export_all(&config)?;
     hitslop_core::capture::ViewRenderRequest::export_all(&config)?;
-    hitslop_core::capture::CaptureProvider::export_all(&config)?;
-    hitslop_core::capture::CaptureOutput::export_all(&config)?;
     Batch::export_all(&config)?;
     OwnerState::export_all(&config)?;
     Publication::export_all(&config)?;
@@ -26,7 +24,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     hitslop_core::page_wire::PageSuccess::export_all(&config)?;
     hitslop_core::page_wire::PagePush::<Publication>::export_all(&config)?;
     hitslop_core::page_wire::HostRequest::export_all(&config)?;
-    hitslop_core::page_wire::HostCaptureResult::export_all(&config)?;
     let mut constants = String::from("// Generated from hitslop-core's contracts. Do not edit.\n");
     for (name, value) in hitslop_core::bindings::constants() {
         constants.push_str(&format!("export const {name} = {} as const;\n", serde_json::to_string(&value)?));

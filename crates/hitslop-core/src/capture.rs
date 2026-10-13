@@ -22,7 +22,6 @@ pub enum CaptureFormat {
 /// Outputs requested together use the same saved document and accepted app.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
 pub enum CaptureOutput {
     Preview,
     Icon,
@@ -178,32 +177,6 @@ impl<'a> RenderSource<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub enum CaptureProvider {
-    Takumi,
-    WebKit,
-}
-
-pub fn capture_outputs(provider: CaptureProvider) -> Vec<CaptureOutput> {
-    use CaptureOutput::*;
-    let mut outputs = vec![Icon, Preview, Export { format: CaptureFormat::Png }, Export { format: CaptureFormat::Pdf }];
-    if provider == CaptureProvider::Takumi {
-        outputs.push(Widgets);
-    }
-    outputs
-}
-
-/// One selection point for production and explicit internal comparisons. No fallback.
-pub fn select_provider(output: CaptureOutput, requested: Option<CaptureProvider>) -> crate::Result<CaptureProvider> {
-    let provider = requested.unwrap_or(CaptureProvider::Takumi);
-    if !capture_outputs(provider).contains(&output) {
-        return Err(crate::err(crate::Code::InvalidRequest, "Capture provider does not support this output"));
-    }
-    Ok(provider)
-}
-
 #[derive(Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
 pub struct ViewRenderRequest<'a> {
@@ -320,22 +293,4 @@ pub(crate) fn resources(
         resources.insert(item.id, format!("data:{};base64,{}", item.media_type, data_encoding::BASE64.encode(&bytes)));
     }
     Ok(resources)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn provider_selection_is_explicit_and_refuses_unsupported_outputs() {
-        assert_eq!(
-            select_provider(CaptureOutput::Export { format: CaptureFormat::Pdf }, None).unwrap(),
-            CaptureProvider::Takumi
-        );
-        assert_eq!(
-            select_provider(CaptureOutput::Export { format: CaptureFormat::Png }, Some(CaptureProvider::WebKit))
-                .unwrap(),
-            CaptureProvider::WebKit
-        );
-        assert!(select_provider(CaptureOutput::Widgets, Some(CaptureProvider::WebKit)).is_err());
-    }
 }

@@ -33,69 +33,6 @@ private final class PublicationTimes: @unchecked Sendable {
 }
 
 @Suite(.serialized) struct BenchmarkTests {
-  @Test(.enabled(if: ProcessInfo.processInfo.environment["HITSLOP_BENCH_CAPTURE"] == "1")) @MainActor
-  func previewCaptureCost() async throws {
-    _ = NSApplication.shared
-    let repository = Fixtures.repository.path
-    let folder = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    var records: [[String: Any]] = []
-    for rows in [1000, 5000] {
-      let stage = try Fixtures.nativeStage()
-      try Fixtures.updateApp(stage) {
-        $0["initial"] = [
-          "title": "Capture measurement",
-          "tasks": (0..<rows).map { ["text": "Task \($0)", "done": false, "archived": false] as [String: Any] },
-        ]
-      }
-      let root = try Fixtures.document(stage: stage, at: folder.appendingPathComponent("\(rows).slop"))
-      let session = try await DocumentSession.open(url: root)
-      session.load()
-      try await session.waitUntilReady()
-      do {
-        var total: [Double] = []
-        var preparation: [[String: Any]] = []
-        for sample in 0..<6 {
-          let start = Date()
-          _ = try await SlopRenderer.previewPNGData(session: session)
-          let elapsed = Date().timeIntervalSince(start) * 1000
-          if sample > 0 { total.append(elapsed) }
-        }
-        // Measure preparation in fresh saved renderers, separate from total capture cost.
-        for sample in 0..<6 {
-          let measurement = try await session.withCaptureSnapshot { source in
-            try await SlopRenderer.withRenderSession(url: source) { renderer in
-              return try await renderer.webView.callAsyncJavaScript(
-                """
-                const token = crypto.randomUUID(), start = performance.now();
-                try {
-                  const box = await globalThis.__slop.capture.begin(token, "preview");
-                  return {preview_prepare_ms: performance.now() - start, height_css_px: box.height, dedicated: box.dedicated};
-                } finally { await globalThis.__slop.capture.restore(token); }
-                """, arguments: [:], in: nil, contentWorld: .page) as! [String: Any]
-            }
-          }
-          if sample > 0 { preparation.append(measurement) }
-        }
-        let sorted = total.sorted()
-        records.append([
-          "rows": rows, "windows": 1, "preview_total_ms": total,
-          "preview_total_median_ms": sorted[2], "preview_total_max_ms": sorted.last!,
-          "preparations": preparation,
-        ])
-      } catch {
-        try await session.close()
-        throw error
-      }
-      try await session.close()
-    }
-    let output = URL(fileURLWithPath: repository + "/.hitslop/evidence/preview-capture.json")
-    try FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try JSONSerialization.data(
-      withJSONObject: ["build": "Debug native test bundle", "warmup": 1, "samples": 5, "results": records],
-      options: [.prettyPrinted, .sortedKeys]
-    ).write(to: output)
-  }
   private func footprint(_ pid: Int32) -> UInt64? {
     var usage = rusage_info_v4()
     let result = withUnsafeMutablePointer(to: &usage) { ptr in
@@ -121,7 +58,7 @@ private final class PublicationTimes: @unchecked Sendable {
         withJSONObject: [
           "loro": "c00c9fa501f8",
           "method":
-            "Frameless window controllers with hover panels in the Host test harness, not the catalog application. One sequential run per cell, fully rendered rows, host plus identified WebContent physical footprints; excludes GPU/network processes. Creation plus opening, warm machine. Checkbox acceptance, rendering and durable drain. Owner publication callback to JS arrival matched by sequence using epoch clocks (approximately millisecond precision); includes test timestamp/JSON decoding overhead. Only the first 100 edits enter publication phase samples; save-status pushes are excluded. Debug helper/test bundle, not an optimized app. Absolute memory only; no leak or matched-control percentage claim.",
+            "Frameless window controllers with hover panels in the Host test harness, not the catalog application. One sequential run per cell, fully rendered rows, host plus identified WebContent physical footprints; excludes GPU/network processes. Creation plus opening, warm machine. Checkbox acceptance, rendering and durable drain. Owner publication callback to JS arrival matched by sequence using epoch clocks (approximately millisecond precision); includes test timestamp/JSON decoding overhead. Only the first 100 edits enter publication phase samples; save-status pushes are excluded. Debug test bundle, not an optimized app. Absolute memory only; no leak or matched-control percentage claim.",
           "results": records, "failure": failure as Any? ?? NSNull(),
           "variant": ["label": label, "noDOM": noDOM],
         ], options: [.prettyPrinted, .sortedKeys]

@@ -14,13 +14,11 @@ bun run shape:lab list
 bun run shape:lab build rounded
 bun run shape:lab open rounded
 bun run shape:lab open washer
-bun run shape:lab open washer --fallback
 bun run slop dev tests/apps/shape-lab
 ```
 
 `open` uses `generated/app/hitSlop.app` (build with `bun run apple:build`) or
 `HITSLOP_APP`, and opens a new writable copy under `.hitslop/shape-lab/documents`.
-Only disposable fallback fixtures are rewritten after their valid authoring build.
 To preview a generated variant:
 
 ```sh
@@ -29,8 +27,8 @@ bun run slop dev generated/shape-lab/sources/shape-lab-washer
 ```
 
 The launcher builds all six cases: rounded, radii, concave, hole, locked and washer.
-The same production geometry contract drives native clipping, hit testing and fallback
-PNG masking. Browser preview uses the validated radius/path with real CSS clipping.
+The same production geometry contract drives native clipping and hit testing. Browser
+preview uses the validated radius/path with real CSS clipping.
 
 ## Observe
 
@@ -39,10 +37,8 @@ PNG masking. Browser preview uses the validated radius/path with real CSS clippi
 - Resize the rounded window using the native toolbar/window and the size buttons.
   The dimensions report the observed content size. Skins cannot resize.
 - Dedicated preview and export are rectangles with four orange corner markers. Icon
-  is a fully opaque square. `--fallback` creates a test-only stored package without
-  Preview or Export programs and browser targets. Explicit WebKit provider tests use
-  it to check editor capture and native shape masking. Production Takumi capture
-  does not fall back to the editor, and no Export means no PNG/PDF export action.
+  is a fully opaque square. Takumi capture never falls back to the editor, and no
+  Export means no PNG/PDF export action.
 - For holes, place a different application's window behind the slop. Hole clicks
   must reach it; visible edge clicks must reach the slop. JS button activation and
   screenshots alone are not proof of native input routing.
@@ -56,8 +52,8 @@ PNG masking. Browser preview uses the validated radius/path with real CSS clippi
 bun run swift:test --filter 'shapeLab|presentationFixturesExport'
 ```
 
-The normal native fixture builder includes dedicated and fallback versions of each
-case. It retains the pre-existing standard, ellipse and PNG-skin fixtures.
+The normal native fixture builder includes each case. It retains the pre-existing
+standard, ellipse and PNG-skin fixtures.
 The shape contract is in the [runtime reference](../../../docs/reference/runtime.md)
 and [manifest and windows](../../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx);
 remaining acceptance work is listed in the [roadmap](../../../docs/roadmap.md).

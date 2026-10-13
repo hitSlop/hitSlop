@@ -171,10 +171,6 @@ extension HostTests {
     #expect(view.frame.size == originalSize)
     #expect(try NSBitmapImageRep(data: Data(contentsOf: png))?.pixelsWide == 960)
     #expect(try await view.evaluateJavaScript("globalThis.selectedView === 'Selected view'") as? Bool == true)
-    #expect(
-      try await view.evaluateJavaScript(
-        "[...document.querySelectorAll('[data-slop-capture-target]')].every(e=>e.hidden && e.childElementCount===0)"
-      ) as? Bool == true)
     let previous = try Data(contentsOf: pdf)
     #expect(try await command("batch", url: root, setTitle("Capture fails")).ok)
     let failed = folder.appendingPathComponent("failed.pdf")

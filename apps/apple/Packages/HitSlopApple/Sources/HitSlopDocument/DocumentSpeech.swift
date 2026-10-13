@@ -113,7 +113,7 @@ extension DocumentSession {
   func serveSpeech(
     attachment: String, locale: String?, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void
   ) {
-    guard admitsPageServices else {
+    guard acceptsPageWork else {
       return reply(
         encodeHostReply(
           reply: .speechTranscribe(

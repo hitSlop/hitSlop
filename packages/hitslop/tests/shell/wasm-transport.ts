@@ -46,7 +46,6 @@ export function wasmTransport(core: any): OwnerTransport {
     }
   };
   return {
-    readOnly: false,
     open: async () => JSON.parse(core.state()),
     apply: async (batch) => {
       const { sequence, ids, selectionStart, selectionEnd } = execute(() =>

@@ -1,10 +1,7 @@
 //! Page transport stays opaque in Swift; only native actions cross as typed values.
-use crate::CoreError;
 use hitslop_core::command::PageDispatch;
 use hitslop_core::owner::Failure;
-use hitslop_core::page_wire::{
-    CaptureMode, HostAction, HostCaptureResult, HostReply, HostRequest, PageErrorKind, SpeechOutcome, SpeechUnavailable,
-};
+use hitslop_core::page_wire::{HostAction, HostReply, HostRequest, PageErrorKind, SpeechOutcome, SpeechUnavailable};
 
 #[uniffi::remote(Enum)]
 pub enum PageErrorKind {
@@ -60,24 +57,6 @@ pub enum HostRequest {
     CancelClose,
     Close,
     ReloadInterface,
-    CaptureBegin { token: String, mode: CaptureMode },
-    CaptureWidget { token: String, viewport: hitslop_core::widgets::WidgetViewport },
-    CaptureSettle { token: String },
-    CaptureRestore { token: String },
-}
-#[uniffi::remote(Enum)]
-pub enum CaptureMode {
-    Preview,
-    Export,
-    Icon,
-}
-#[uniffi::remote(Record)]
-pub struct HostCaptureResult {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub dedicated: bool,
 }
 #[uniffi::export]
 pub fn encode_host_reply(reply: HostReply) -> String {
@@ -86,8 +65,4 @@ pub fn encode_host_reply(reply: HostReply) -> String {
 #[uniffi::export]
 pub fn encode_host_request(request: HostRequest) -> String {
     request.to_json()
-}
-#[uniffi::export]
-pub fn decode_host_capture_result(json: String) -> Result<HostCaptureResult, CoreError> {
-    Ok(HostCaptureResult::decode(&json)?)
 }

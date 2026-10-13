@@ -1,6 +1,6 @@
 // Native platform probe over the conformance schema. Not sealed: Swift tests swap it
 // into disposable copies of tests/fixtures/checklist to drive host behavior (drafts,
-// capture, toolbar, save ordering). Sealed ABI behavior lives in the consumer fixtures.
+// live export, toolbar, save ordering). Sealed ABI behavior lives in the consumer fixtures.
 export default {
   mount(ctx, target) {
     const doc = ctx.document;
@@ -27,33 +27,11 @@ export default {
     const stop = doc.subscribe(render);
     render();
     root.append(heading, input, edit);
-    // A dedicated export surface, prepared only during capture.
-    globalThis.selectedView = "Default view";
-    const surface = document.createElement("section");
-    surface.hidden = true;
-    surface.style.cssText = "width:100vw;min-height:300px;background:white";
-    const unregister = ctx.capture.registerTarget("export", {
-      element: surface,
-      prepare() {
-        surface.hidden = false;
-        const title = document.createElement("h1");
-        title.textContent = doc.current.title;
-        const selection = document.createElement("p");
-        selection.textContent = globalThis.selectedView;
-        surface.replaceChildren(title, selection);
-      },
-      restore() {
-        surface.hidden = true;
-        surface.replaceChildren();
-      },
-    });
-    surface.dataset.slopCaptureTarget = "";
-    target.append(root, surface);
+    target.append(root);
     const binding = ctx.bind.text(input, doc.fields.title);
     return {
       unmount() {
         binding.destroy();
-        unregister();
         stop();
         target.replaceChildren();
       },

@@ -1,26 +1,10 @@
-use hitslop_core::capture::{CaptureFormat, CaptureOutput, CaptureProvider, CaptureValue};
+use hitslop_core::capture::{CaptureFormat, CaptureOutput, CaptureValue};
 use hitslop_core::widgets::{WidgetFamily, WidgetLimits, WidgetViewport};
 
 #[uniffi::remote(Enum)]
 pub enum CaptureFormat {
     Png,
     Pdf,
-}
-#[uniffi::remote(Enum)]
-pub enum CaptureProvider {
-    Takumi,
-    WebKit,
-}
-#[uniffi::export]
-pub fn select_capture_provider(
-    output: CaptureOutput,
-    requested: Option<CaptureProvider>,
-) -> Result<CaptureProvider, crate::CoreError> {
-    Ok(hitslop_core::capture::select_provider(output, requested).map_err(hitslop_core::store::Error::Rejected)?)
-}
-#[uniffi::export]
-pub fn capture_outputs(provider: CaptureProvider) -> Vec<CaptureOutput> {
-    hitslop_core::capture::capture_outputs(provider)
 }
 
 #[uniffi::remote(Enum)]

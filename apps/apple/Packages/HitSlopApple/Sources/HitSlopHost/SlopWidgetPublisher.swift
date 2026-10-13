@@ -77,7 +77,7 @@ import WidgetKit
   /// A successful save refreshes the widget even while its editor stays open.
   /// Coalesce bursts; capture still crosses the owner's flush/snapshot boundary.
   func saved(_ session: DocumentSession) {
-    guard enabled, !session.isSnapshot, session.file.views.widget != nil,
+    guard enabled, session.file.views.widget != nil,
       let identity = try? WidgetCache.identity(session.file.url)
     else { return }
     savedCaptures[identity]?.cancel()

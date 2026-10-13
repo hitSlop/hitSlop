@@ -43,11 +43,9 @@ documents stay openable: follow AGENTS.md's Compatibility rules, and keep
 `tests/compat` passing (`CompatCorpusTests`, `bun run verify native compat-replay`).
 
 **Windows and captures.** `SlopSilhouette` builds paths from the core's parsed shape and
-is the one mask for clipping, hit testing and window-sized PNG captures. Dedicated
-`export`/`icon` view captures are never masked. Flush and copy saved state before
-rendering in an independent read-only renderer. All icons, preview artwork, PNG and vector PDF exports use synchronous Svelte SSR and
-Takumi in the restricted Rust child. `Preview.svelte` and `Icon.svelte` are required for authoring; `Export.svelte` is optional. WebKit
-remains an explicit internal provider for comparison; there is no automatic fallback.
+is the one mask for window clipping and hit testing; captures are never masked. Flush and
+copy saved state before rendering in an independent read-only renderer. All icons, preview artwork, PNG and vector PDF exports use synchronous Svelte SSR and
+Takumi in the restricted Rust child. `Preview.svelte` and `Icon.svelte` are required for authoring; `Export.svelte` is optional.
 The editor holds `capturing` only while acquiring the copy; rendering can continue
 after it closes. Capture attachment URLs resolve a bounded saved image inventory. Theme overrides live in
 Loro and use the same publication, undo and saving path as data edits.

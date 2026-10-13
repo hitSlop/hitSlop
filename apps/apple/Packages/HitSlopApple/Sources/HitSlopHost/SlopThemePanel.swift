@@ -29,7 +29,7 @@ extension SlopDocumentWindowController {
   public var isThemeShown: Bool { themePanel != nil }
 
   func setThemeShown(_ shown: Bool) {
-    guard shown, let window, isContentReady, session.canEditTheme else { return closeThemePanel() }
+    guard shown, let window, isContentReady, session.acceptsPageWork else { return closeThemePanel() }
     let editor =
       themeEditor
       ?? SlopThemeEditorModel(

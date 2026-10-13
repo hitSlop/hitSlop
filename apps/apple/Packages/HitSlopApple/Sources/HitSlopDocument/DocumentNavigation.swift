@@ -20,8 +20,7 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     initiatedByFrame frame: WKFrameInfo,
     completionHandler: @escaping @MainActor ([URL]?) -> Void
   ) {
-    guard isCurrent(webView), allowsFileSelection,
-      acceptsPageWork,
+    guard isCurrent(webView), acceptsPageWork,
       frame.isMainFrame, frame.securityOrigin.protocol == "slop",
       frame.securityOrigin.host == "app", let window = webView.window,
       window.isVisible
@@ -48,26 +47,19 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     decisionHandler(admitted ? .grant : .deny)
   }
 
-  /// The interactive page of an owned document, shown in a visible window, may capture what
-  /// its app declared. Snapshot, export and icon renderers, embedded frames, a replaced
-  /// page, and any device the app did not declare are refused.
+  /// The ready page of an owned document, shown in a visible window, may capture what its
+  /// app declared. A page that is opening, closing or retired, embedded frames, and any
+  /// device the app did not declare are refused.
   func admitsMediaCapture(
     _ type: WKMediaCaptureType, isMainFrame: Bool, origins: [(protocol: String, host: String)],
     in webView: WKWebView
   ) -> Bool {
-    guard isCurrent(webView), admitsPageServices, isMainFrame,
+    guard isCurrent(webView), acceptsPageWork, isMainFrame,
       origins.allSatisfy({ $0.protocol == "slop" && $0.host == "app" }),
       webView.window?.isVisible == true,
       let required = Self.capabilities(capturing: type)
     else { return false }
     return required.isSubset(of: file.capabilities)
-  }
-
-  /// Device and host services (capture, speech) serve only the ready page of an owned
-  /// document: never a snapshot, export or icon renderer, or one
-  /// that is opening, closing or retired.
-  var admitsPageServices: Bool {
-    acceptsPageWork && owner.mode == .document
   }
 
   /// The declaration a capture needs: both devices for a combined request.
@@ -83,9 +75,7 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
   public func webView(
     _ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload
   ) {
-    guard isCurrent(webView), allowsFileSelection,
-      acceptsPageWork
-    else {
+    guard isCurrent(webView), acceptsPageWork else {
       download.cancel { _ in }
       return
     }
@@ -112,7 +102,7 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     }
     // Authored `<a download>` of in-page bytes: native asks where to save them.
     if action.shouldPerformDownload, let url = action.request.url, ["blob", "data"].contains(url.scheme),
-      isCurrent(webView), allowsFileSelection, acceptsPageWork,
+      isCurrent(webView), acceptsPageWork,
       action.sourceFrame.isMainFrame, action.sourceFrame.securityOrigin.protocol == "slop",
       action.sourceFrame.securityOrigin.host == "app"
     {

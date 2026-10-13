@@ -8,21 +8,10 @@ import type { True } from "./engine.generated";
  */
 export type CaptureFormat = "png" | "pdf";
 
-export type CaptureMode = "preview" | "export" | "icon";
-
-/**
- * Outputs requested together use the same saved document and accepted app.
- */
-export type CaptureOutput = "preview" | "icon" | { "export": { format: CaptureFormat, } } | "widgets";
-
-export type CaptureProvider = "takumi" | "webKit";
-
-export type HostCaptureResult = { x: number, y: number, width: number, height: number, dedicated: boolean, };
-
 /**
  * Private host-to-shell calls. Authored apps only receive ctx.
  */
-export type HostRequest = { "method": "publish", payload: string, } | { "method": "flush" } | { "method": "undo" } | { "method": "redo" } | { "method": "prepareClose" } | { "method": "cancelClose" } | { "method": "close" } | { "method": "reloadInterface" } | { "method": "capture.begin", token: string, mode: CaptureMode, } | { "method": "capture.widget", token: string, viewport: WidgetViewport, } | { "method": "capture.settle", token: string, } | { "method": "capture.restore", token: string, };
+export type HostRequest = { "method": "publish", payload: string, } | { "method": "flush" } | { "method": "undo" } | { "method": "redo" } | { "method": "prepareClose" } | { "method": "cancelClose" } | { "method": "close" } | { "method": "reloadInterface" };
 
 export type PageErrorKind = "operation" | "application";
 
@@ -30,7 +19,7 @@ export type PagePush = { "type": "publication", publication: Publication, } | { 
 
 export type PageRequest = { "method": "open", } | { "method": "apply", batch: Batch, } | { "method": "flush", } | { "method": "undo", } | { "method": "redo", } | { "method": "config", } | { "method": "attachments.put", bytes: string, } | { "method": "window.resize", width: number, height: number, } | { "method": "speech.transcribe", attachment: string, locale?: string, } | { "method": "ready", } | { "method": "pageRecovered", } | { "method": "failed", error: string, } | { "method": "pageError", kind: PageErrorKind, error: string, };
 
-export type PageSuccess = { "method": "open", ok: True, state: string, } | { "method": "apply", ok: True, sequence: number, ids: Array<string>, selectionStart?: number, selectionEnd?: number, } | { "method": "flush", ok: True, } | { "method": "undo", ok: True, sequence: number, } | { "method": "redo", ok: True, sequence: number, } | { "method": "config", ok: True, readOnly: boolean, runtimeABI: number, style: boolean, window: WindowDefinition, descriptor: object, } | { "method": "attachments.put", ok: True, id: string, byteLength: number, mimeType: string, } | { "method": "window.resize", ok: True, width: number, height: number, } | { "method": "speech.transcribe", ok: True, outcome: SpeechOutcome, } | { "method": "ready", ok: True, } | { "method": "pageRecovered", ok: True, } | { "method": "failed", ok: True, } | { "method": "pageError", ok: True, };
+export type PageSuccess = { "method": "open", ok: True, state: string, } | { "method": "apply", ok: True, sequence: number, ids: Array<string>, selectionStart?: number, selectionEnd?: number, } | { "method": "flush", ok: True, } | { "method": "undo", ok: True, sequence: number, } | { "method": "redo", ok: True, sequence: number, } | { "method": "config", ok: True, runtimeABI: number, style: boolean, window: WindowDefinition, descriptor: object, } | { "method": "attachments.put", ok: True, id: string, byteLength: number, mimeType: string, } | { "method": "window.resize", ok: True, width: number, height: number, } | { "method": "speech.transcribe", ok: True, outcome: SpeechOutcome, } | { "method": "ready", ok: True, } | { "method": "pageRecovered", ok: True, } | { "method": "failed", ok: True, } | { "method": "pageError", ok: True, };
 
 /**
  * What a transcription came to. Everything but `transcribed` reaches the author as a
@@ -40,7 +29,7 @@ export type SpeechOutcome = { "status": "transcribed", text: string, locale: str
 
 /**
  * Why this host cannot transcribe: the app did not declare `speech`; this host has no
- * speech service (`slop dev`, a browser copy, a background renderer); the OS cannot
+ * speech service (`slop dev`, a browser copy); the OS cannot
  * (too old, or recognition is off); this locale has no on-device recognizer, and the
  * host never sends a recording off the device instead; the person declined; or the
  * provider cannot decode this recording's format.

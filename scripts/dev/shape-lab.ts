@@ -9,7 +9,7 @@ import { createDocument } from "../lib/native";
 import { buildPresentationFixtures, buildShapeLabVariant, shapeLabVariants, type ShapeLabVariant } from "../lib/native-fixtures";
 
 if (import.meta.main) {
-  const [command = "list", name = "rounded", mode] = process.argv.slice(2);
+  const [command = "list", name = "rounded", extra] = process.argv.slice(2);
   if (command === "list") {
     for (const [key, value] of Object.entries(shapeLabVariants))
       console.log(`${key.padEnd(9)} ready — ${value.name}`);
@@ -19,12 +19,10 @@ if (import.meta.main) {
     if (
       !["build", "open"].includes(command) ||
       !Object.hasOwn(shapeLabVariants, name) ||
-      (mode !== undefined && mode !== "--fallback")
+      extra !== undefined
     )
-      throw new Error(
-        "Usage: bun run shape:lab [list | fixtures | build VARIANT | open VARIANT] [--fallback]",
-      );
-    const master = await buildShapeLabVariant(name as ShapeLabVariant, mode === "--fallback");
+      throw new Error("Usage: bun run shape:lab [list | fixtures | build VARIANT | open VARIANT]");
+    const master = await buildShapeLabVariant(name as ShapeLabVariant);
     console.log(master);
     if (command === "open") {
       const app = resolve(

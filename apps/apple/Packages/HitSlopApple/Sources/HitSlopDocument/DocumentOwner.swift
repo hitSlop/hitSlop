@@ -17,7 +17,6 @@ public struct UndoState: Sendable, Equatable {
 /// and the writer lease live in Rust; Swift delivers events and hosts native services.
 public final class DocumentOwner: Sendable {
   public let file: SlopFile
-  let mode: StoreMode
   let assets: ResourceReader
   private let native: NativeOwner
   private let events: Events
@@ -45,8 +44,8 @@ public final class DocumentOwner: Sendable {
   /// Whether this session published any change, so its document's artwork may be out of date.
   var edited: Bool { events.facts.withLock { $0.published } }
 
+  /// A `.snapshot` owner reads the saved document without the writer lock and never writes it.
   public init(url: URL, mode: StoreMode = .document) throws {
-    self.mode = mode
     let events = Events()
     let owner = try storeCall {
       try SlopFile.opening {

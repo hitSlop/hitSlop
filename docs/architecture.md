@@ -364,17 +364,15 @@ independent read-only renderers from saved state. For an open document, the core
 SQLite after the page drain and save; the temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
 rendering. Icons, preview artwork, widgets, PNG exports and vector PDFs use synchronous Svelte SSR
-and Takumi in the restricted Rust child. Production selects Takumi explicitly; a retained
-WebKit provider supports internal comparisons, with no automatic fallback or public
-`slop.ts` renderer override. The interactive editor continues to use WebKit.
+and Takumi in the restricted Rust child; there is no renderer choice, fallback or `slop.ts`
+override. The interactive editor continues to use WebKit.
 `Preview.svelte` and `Icon.svelte` are required when authoring; `Export.svelte` is optional.
 Preview supplies a compact overview for Quick Look and the catalog. Export supplies complete
 PNG/PDF output; without it, image/PDF share/save actions are hidden and CLI export is refused.
 Stored-file acceptance remains separate.
-Missing programs fail capture with a rebuild diagnostic. Rust owns output formats,
-renderer support and the selection policy through one `CaptureOutput` type; Swift
-providers consume an already saved source, leaving acquisition and publication at their
-existing boundaries.
+Missing programs fail capture with a rebuild diagnostic. Rust owns output formats
+through one `CaptureOutput` type; Swift consumes an already saved source, leaving
+acquisition and publication at their existing boundaries.
 Native callers reuse a Rust `CaptureRuntime` for evaluator configuration. A Rust batch
 loads one saved document and lazily prepares its snapshot, theme and image resources once
 for its requested outputs, reporting each result independently. One failed output does not

@@ -4,8 +4,6 @@ import { basename, dirname, join } from "node:path";
 import { stageProject } from "../../packages/hitslop/src/cli/build";
 import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { templateCache } from "../templates/build";
-import { Database } from "bun:sqlite";
-import { bytesOf, resourceKey, typeOf } from "../../packages/hitslop/src/cli/definition-resources";
 
 export const nativeFixtureSlugs = ["document-fixture"];
 const output = join(repository, "generated/native-fixtures");
@@ -116,15 +114,14 @@ async function withVariant(fixture: string, source: string, value: unknown) {
   await writeFile(join(source, "variant.ts"), code);
 }
 
-export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = false, build = direct) {
+export async function buildShapeLabVariant(kind: ShapeLabVariant, build = direct) {
   const variant = shapeLabVariants[kind];
-  const key = `${kind}${fallback ? "-fallback" : ""}`;
   // The folder's name is the slug.
-  const source = join(shapeLabRoot, "sources", `shape-lab-${key}`);
+  const source = join(shapeLabRoot, "sources", `shape-lab-${kind}`);
   await withVariant(join(repository, "tests/apps/shape-lab"), source, {
     kind,
     name: variant.name,
-    title: `Shape Lab · ${variant.name}${fallback ? " · fallback" : ""}`,
+    title: `Shape Lab · ${variant.name}`,
     presentation: variant.presentation,
     skin: kind === "washer",
     expectation: variant.expectation,
@@ -133,76 +130,7 @@ export async function buildShapeLabVariant(kind: ShapeLabVariant, fallback = fal
     await mkdir(join(source, "assets"), { recursive: true });
     await cp(join(repository, "tests/presentation/assets/washer.png"), join(source, "assets/washer.png"));
   }
-  const file = await build(source, `shape-lab-${key}`, join(shapeLabRoot, key + ".slop"));
-  if (fallback) await makeShapeLabFallback(source, file);
-  return file;
-}
-
-/** A disposable stored-app fixture for the explicit WebKit provider. Authoring requires
- * Preview.svelte: first build/cache a valid package, then replace its browser
- * entry with one that actually omits Preview and Export. Flipping metadata alone would leave the
- * dedicated component registered by svelteApp and would not exercise App fallback. */
-async function makeShapeLabFallback(source: string, file: string) {
-  // CI imports fixture helpers while selecting tiers, before dependencies are installed.
-  // Load the browser compiler only when this fixture is actually built.
-  const [{ build: viteBuild }, { appConfig }, { discoverRoles, uiEntrySource }] = await Promise.all([
-    import("vite"),
-    import("../../packages/hitslop/src/cli/vite"),
-    import("../../packages/hitslop/src/cli/app-vite"),
-  ]);
-  const entry = "\0hitslop-shape-lab-fallback";
-  const roles = await discoverRoles(source);
-  const config = await appConfig(source);
-  const result = await viteBuild({
-    ...config,
-    base: "/assets/",
-    plugins: [{
-      name: "shape-lab-fallback-fixture",
-      resolveId(id) { if (id === entry) return entry; },
-      load(id) { if (id === entry) return uiEntrySource({ ...roles, preview: undefined, export: undefined }); },
-    }, ...(config.plugins ?? [])],
-    build: {
-      write: false, target: "safari17", minify: "oxc", assetsInlineLimit: 0,
-      cssCodeSplit: false, modulePreload: false,
-      rolldownOptions: {
-        input: entry, preserveEntrySignatures: "strict",
-        output: {
-          format: "es", codeSplitting: false, entryFileNames: "ui.js",
-          assetFileNames(asset) {
-            return asset.names.some(name => name.endsWith(".css"))
-              ? "ui.css" : resourceKey(asset.source, asset.names[0] ?? "asset.bin");
-          },
-        },
-      },
-    },
-  });
-  if ("on" in result) throw new Error("Shape Lab fixtures cannot use a watch build");
-  const outputs = (Array.isArray(result) ? result : [result]).flatMap(output => output.output);
-  if (!outputs.some(output => output.type === "chunk" && output.fileName === "ui.js"))
-    throw new Error("Shape Lab fallback did not emit its browser entry");
-
-  // Like Swift Fixtures.sql, only test fixture construction bypasses the app seal.
-  // The template cache retains the valid package; this generated copy is disposable.
-  const database = new Database(file);
-  try {
-    const triggers = database.query("SELECT name,sql FROM sqlite_master WHERE type='trigger'").all() as { name: string; sql: string }[];
-    const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
-    database.transaction(() => {
-      for (const trigger of triggers) database.exec(`DROP TRIGGER ${quote(trigger.name)}`);
-      const app = database.query("SELECT definition_json FROM app WHERE id=1").get() as { definition_json: string };
-      const definition = JSON.parse(app.definition_json);
-      definition.views.export = false;
-      definition.views.preview = false;
-      database.query("UPDATE app SET definition_json=? WHERE id=1").run(JSON.stringify(definition));
-      database.query("DELETE FROM assets WHERE key IN ('export.js', 'preview.js')").run();
-      const put = database.query("INSERT OR REPLACE INTO assets(key,media_type,encoding,size,bytes) VALUES(?,?,'identity',?,?)");
-      for (const output of outputs) {
-        const bytes = bytesOf(output.type === "chunk" ? output.code : output.source);
-        put.run(output.fileName, typeOf(output.fileName)[0]!, bytes.length, bytes);
-      }
-      for (const trigger of triggers) database.exec(trigger.sql);
-    })();
-  } finally { database.close(); }
+  return build(source, `shape-lab-${kind}`, join(shapeLabRoot, kind + ".slop"));
 }
 
 const presentationFixtures = {
@@ -219,7 +147,7 @@ const presentationFixtures = {
 };
 
 /** Every presentation fixture, by name: the standard, ellipse, glass, notch and washer controls, and
- * each Shape Lab variant with a dedicated and a fallback export. */
+ * each Shape Lab variant. */
 export async function buildPresentationFixtures(build = direct) {
   const parent = join(repository, "generated/presentation");
   const paths: Record<string, string> = {};
@@ -229,7 +157,6 @@ export async function buildPresentationFixtures(build = direct) {
     paths[kind] = await build(source, `presentation-${kind}`, join(parent, kind + ".slop"));
   }
   for (const kind of Object.keys(shapeLabVariants) as ShapeLabVariant[])
-    for (const fallback of [false, true])
-      paths[`shape-lab-${kind}${fallback ? "-fallback" : ""}`] = await buildShapeLabVariant(kind, fallback, build);
+    paths[`shape-lab-${kind}`] = await buildShapeLabVariant(kind, build);
   return paths;
 }

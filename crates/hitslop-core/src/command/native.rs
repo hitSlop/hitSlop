@@ -5,7 +5,7 @@ use crate::wire::SocketRequest;
 use crate::wire::engine::{
     AttachmentBytes, AttachmentInfo, EngineRequest, EngineSuccess, ExportFormat, GetState, ThemeExportState, True,
 };
-use crate::{file, lock, registry, socket};
+use crate::{file, lock, registry, socket, store};
 use serde::Deserialize;
 use serde_json::json;
 use std::path::Path;

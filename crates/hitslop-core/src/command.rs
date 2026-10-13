@@ -2,7 +2,6 @@
 use crate::{
     Code,
     owner::{self, Failure, FailureKind, Owner},
-    store,
     wire::{self, OutcomeCode, PageRequest},
 };
 use serde_json::value::RawValue;
@@ -67,28 +66,22 @@ fn page_config(owner: &Owner) -> Result<wire::page::PageSuccess> {
         ok: wire::engine::True,
         runtime_abi: app.runtime_abi,
         style: app.style,
-        read_only: owner.mode() == store::Mode::Snapshot,
         window: app.app.window().clone(),
         descriptor: raw(app.app.document_json().into())?,
     })
 }
-/// A transcription reaches the host only for an owner's page whose stored app declared
-/// `speech`; otherwise the page learns why it is unavailable, and no host is asked.
+/// A transcription reaches the host only for a page whose stored app declared `speech`;
+/// otherwise the page learns why it is unavailable, and no host is asked.
 fn speech(owner: &Owner, attachment: String, locale: Option<String>) -> PageDispatch {
     use wire::page::{HostAction, PageSuccess, SpeechOutcome, SpeechUnavailable};
-    let unavailable = |reason, message: &str| {
+    if !owner.app().app.capabilities().contains(&crate::app::Capability::Speech) {
         page_success(PageSuccess::SpeechTranscribe {
             ok: wire::engine::True,
-            outcome: SpeechOutcome::Unavailable { reason, message: message.into() },
+            outcome: SpeechOutcome::Unavailable {
+                reason: SpeechUnavailable::NotDeclared,
+                message: r#"This app does not declare speech; add "speech" to capabilities in slop.ts"#.into(),
+            },
         })
-    };
-    if owner.mode() == store::Mode::Snapshot {
-        unavailable(SpeechUnavailable::Host, "Exports and background renders do not transcribe speech")
-    } else if !owner.app().app.capabilities().contains(&crate::app::Capability::Speech) {
-        unavailable(
-            SpeechUnavailable::NotDeclared,
-            r#"This app does not declare speech; add "speech" to capabilities in slop.ts"#,
-        )
     } else {
         PageDispatch::Host {
             action: HostAction::SpeechTranscribe { attachment, locale: locale.map(|locale| locale.replace('_', "-")) },

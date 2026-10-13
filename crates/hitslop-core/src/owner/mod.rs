@@ -180,7 +180,6 @@ fn take(callback: &mut Option<Completion>) -> Completion {
 /// A queue handle, independent of any page lifetime. Its store retains the writer lock
 /// until a successful close; a failed save never releases it.
 pub struct Owner {
-    mode: store::Mode,
     sender: mpsc::Sender<Message>,
     store: Arc<store::Store>,
     path: PathBuf,
@@ -210,10 +209,7 @@ impl Owner {
                 return Err(failure);
             }
         };
-        Ok(Self { sender, store, path, mode, epoch })
-    }
-    pub fn mode(&self) -> store::Mode {
-        self.mode
+        Ok(Self { sender, store, path, epoch })
     }
     /// Serial admission for host actions, including immutable page configuration.
     /// The host still fences the WebView when the asynchronous result arrives.

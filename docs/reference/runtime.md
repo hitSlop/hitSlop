@@ -11,10 +11,10 @@ imports the app's `assets/ui.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell supplies the runtime. The single `hitslop` npm package ships
 the CLI, author SDK, contracts, templates, skills and locally served runtime. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
-`bind.text`, capture hooks, attachments, `speech.transcribe`, `window.resize` and
+`bind.text`, attachments, `speech.transcribe`, `window.resize` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view may supply `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
-native readiness, themes, attachments and capture coordination stay in the page shell.
+native readiness, themes and attachments stay in the page shell.
 
 `subscribe` supports multiple listeners and idempotent disposal. `observe` is the single
 framework dependency hook: replacing it installs the new adapter, and disposing the old
@@ -22,7 +22,7 @@ adapter cannot detach the replacement. Text composition, caret transforms and me
 stay in the host binding. Draft submission, motion and notice presentation are SDK
 helpers compiled into the app, without separate host APIs.
 
-The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture/renderer and
+The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture and
 controls attributes, the notice region, `--slop-*` variables, `__slopCommands`,
 `__slopDescribe` and `__slopRun`. Command sets use `Symbol.for("slop.command-set")` with `{ document, specs }`. A
 `slop.operation-error` branded `DocumentError` carries document outcomes across bundles;
@@ -124,9 +124,9 @@ and a new document, never a data edit. Playback, file selection, attachments and
 HTTPS requests do not acquire a capability requirement. A declaration restricts admission;
 it is not consent. Code-bound permissions remain a [proposal](../ideas.md#permissions-bound-to-the-apps-code).
 
-Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The native host's WebKit media delegate grants a request only for the current, ready, owned document page (never a snapshot, export or icon renderer), from the main frame at `slop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for hitSlop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-slop prompt yet. WebKit exposes `navigator.mediaDevices` at `slop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
+Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The native host's WebKit media delegate grants a request only for the current, ready, owned document page, from the main frame at `slop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for hitSlop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-slop prompt yet. WebKit exposes `navigator.mediaDevices` at `slop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
 
-Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, normalizes locale separators from `_` to `-`, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`) or the owner is a snapshot renderer (`host`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document, reads and verifies the recording through the owner's resource reader, checks the provider's format support, and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. The Mac provider accepts m4a, mp3, wav, flac, mp4 and mov; other formats return `unavailable` (`format`). Missing or damaged attachments return `failed`. Format and on-device locale support are checked before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: close preparation, page replacement, interface reload, renderer loss or teardown cancels it, and the page receives `cancelled` when its transport remains available. Saved-source exports, copies and widget refreshes do not cancel transcription. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
+Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, normalizes locale separators from `_` to `-`, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document, reads and verifies the recording through the owner's resource reader, checks the provider's format support, and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. The Mac provider accepts m4a, mp3, wav, flac, mp4 and mov; other formats return `unavailable` (`format`). Missing or damaged attachments return `failed`. Format and on-device locale support are checked before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: close preparation, page replacement, interface reload, renderer loss or teardown cancels it, and the page receives `cancelled` when its transport remains available. Saved-source exports, copies and widget refreshes do not cancel transcription. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
 
 Transcripts are returned without being saved; authors write them through document handles
 and guard against the recording changing during recognition. `isSpeechError` recognizes
@@ -144,7 +144,7 @@ An export never replaces the document it renders. Capture stages output and publ
 
 Slop-initiated blob/data downloads require a native save confirmation. Download bytes receive quarantine metadata before atomic installation, including replacement of existing files; a quarantine write failure leaves the destination unchanged.
 
-Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell, development preview and browser host. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping, hit testing and fallback PNG masking; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
+Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell, development preview and browser host. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping and hit testing; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
 
 ## Capture and Finder integration
 
@@ -177,23 +177,18 @@ PNG/JPEG/GIF/WebP images from the saved source; capture cannot import or read bl
 The inventory is capped at 24 MiB before base64 encoding. Missing or unsupported
 images fail capture and retain prior artwork. Native failures never change engines.
 
-A retained WebKit provider is selected explicitly for internal comparisons only; no
-public per-slop override exists. It mounts the requested dedicated export or icon without a
-hidden editor. Without a dedicated export it mounts the editor for preview/export,
-including apps that declare only an icon. Capture preparation also runs hooks installed
-by the newly mounted component, then waits for fonts, visible images and stable layout.
-Cancellation or failed preparation restores the target and host state. A dedicated
-export does not inherit the native window mask. The App
-fallback can hide `data-slop-export="hide"` controls and replace native text inputs with
-wrapping text. The icon target owns a transparent 512×512 canvas and centers authored
-artwork. The host's window-filling sizing rules are disabled during capture; the page
-reset remains. Rendering errors reject the capture, and the disposable page is closed.
+A dedicated export does not inherit the native window mask. Preview, Export and Icon
+captures append a platform stylesheet after the app's CSS and theme: it resets the page
+instead of applying the editor's window-filling sizing, hides `data-slop-export="hide"`
+elements, and gives the icon target a transparent 512×512 canvas that centers authored
+artwork. The static HTML carries `data-slop-capture` (`static` or `icon`) and wraps the
+view in `data-slop-capture-target`. A rendering error rejects the capture.
 
 Widget capture requires `Widget.svelte`: it has no App or Export fallback. The component
 receives the Rust-generated `WidgetProps` (`family`, `width`, `height`). A private synchronous
 Svelte SSR program reads the saved `snapshot` prop in a fresh QuickJS realm. Takumi renders the
 three fixed canvases at 2× in the same restricted child, using bundled fonts and resources.
-No browser preparation hooks run during native widget capture. The browser authoring
+No browser code runs during native widget capture. The browser authoring
 preview still mounts the component normally. The host publishes PNGs outside the document.
 Widget freshness includes saved state, renderer/font bytes and canvas configuration;
 startup refreshes stale images even when the document has not been edited. Failed

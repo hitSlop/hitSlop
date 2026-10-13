@@ -241,7 +241,7 @@ requests approximate refresh while the app runs; authoring accepts 15–1440 min
 
 Widget rendering uses synchronous Svelte SSR in an isolated Rust child. Read the `snapshot` prop;
 document handles and writes are unavailable. Do not rely on `onMount`, DOM measurement,
-canvas, browser globals, async/await or capture preparation hooks for widget content.
+canvas, browser globals or async/await for widget content.
 Use font longhands, flexbox or numeric grid placement, and SVG attributes/currentColor.
 The build collects CSS; omit `css="injected"` from Svelte options. Native capture supports bundled PNG/JPEG/GIF/WebP and SVG images, plus referenced
 image attachments through the `attachmentURL(id)` prop. Blob reads/imports and
@@ -252,7 +252,7 @@ review the native images, since a successful capture does not guarantee browser 
 All icons, previews, exports and widgets use this constrained renderer. `Preview.svelte`
 and `Icon.svelte` are required at authoring; `Export.svelte` is optional; browser-dependent capture closures fail the build with a
 role/source diagnostic. PNG and selectable vector PDF share native layout. There is no
-public renderer override or automatic fallback; WebKit is retained internally for comparisons.
+public renderer override or automatic fallback.
 
 The renderer bundles Geist (sans), Newsreader (serif), Geist Mono, converted Apple color emoji and Noto Sans Symbols 2 for text symbols.
 It does not discover platform fonts. Import additional fonts with `@font-face` and CSS

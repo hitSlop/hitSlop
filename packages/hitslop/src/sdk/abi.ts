@@ -28,10 +28,10 @@ import type { LiveDocument } from "./schema";
  *   `Symbol.for("slop.speech-error")` brands a `SpeechError` from `ctx.speech`; its
  *   `code` and `reason` may grow the same way.
  * - Markup the host styles: `[data-slop-root]` (the app's root, sized to the window),
- *   `[data-slop-capture-target]` and `[data-slop-active-target]` (capture targets,
- *   children of `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the
- *   attributes the host sets on `<html>`: `data-slop-presentation`, `data-slop-capture`,
- *   `data-slop-resizable`, `data-slop-renderer`, `data-slop-controls`. The Svelte root renders
+ *   `[data-slop-capture-target]` (the wrapper of a static view's markup, child of
+ *   `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the attributes the
+ *   host sets on `<html>`: `data-slop-presentation`, `data-slop-capture`,
+ *   `data-slop-resizable`, `data-slop-controls`. The Svelte root renders
  *   `[data-slop-notice]`, a status region holding the current notice as a `<p>`.
  * - CSS variables: `--slop-<token>` for each theme color and `--slop-window-radius`,
  *   `--slop-window-width` and `--slop-window-height`.
@@ -44,12 +44,10 @@ import type { LiveDocument } from "./schema";
  * expose the accepted immutable snapshot, not a promise of DOM paint. subscribe allows
  * multiple listeners; observe allows one adapter, with identity-safe cleanup so an old
  * adapter cannot detach its replacement. Text merge/IME/caret behavior stays in the host.
- * Capture detection, AbortSignal preparations and one target per role remain host APIs;
- * preparation includes hooks registered by the capture view itself, and cleanup pairs
- * with failed or canceled preparation. Draft, motion and notice presentation stay in
- * the SDK. They do not add host APIs. Rust owns the capture enum and shared limits.
- * The conformance app in the frozen corpus (`tests/abi/owner-svelte`) exercises these
- * against every later shell.
+ * Draft, motion and notice presentation stay in the SDK. They do not add host APIs.
+ * Static views (Preview, Export, Icon, Widget) render from their props and never meet
+ * `ctx`. Rust owns the capture kinds and shared limits. The conformance app in the frozen
+ * corpus (`tests/abi/owner-svelte`) exercises these against every later shell.
  */
 /** The runtime ABI this SDK's app-side code needs; `slop build` stamps it. */
 export { RuntimeABI } from "../schema/constants";
@@ -74,9 +72,6 @@ export interface SpeechTranscript {
   /** The locale the recognizer used. */
   locale: string;
 }
-import type { CaptureMode as HostCaptureMode, WidgetViewport } from "../wire/page.generated";
-/** Author preparation hooks include the dedicated widget request. */
-export type CaptureMode = HostCaptureMode | "widget";
 
 export interface SlopApp {
   /** The document descriptor the app was built for (`svelteApp` declares its schema's); the
@@ -99,22 +94,6 @@ export interface SlopContext {
   readonly bind: {
     /** Two-way text binding with IME composition and remote-edit transforms. */
     text(element: HTMLInputElement | HTMLTextAreaElement, handle: TextHandle): Binding<TextHandle>;
-  };
-  // The SDK no longer uses capture (static views render from props); phase 5 removes it.
-  readonly capture: {
-    /** True inside the host's export renderer. */
-    isRenderer(): boolean;
-    onPrepare(
-      handler: (
-        mode: CaptureMode,
-        signal: AbortSignal,
-        widget?: WidgetViewport,
-      ) => void | Promise<void>,
-    ): () => void;
-    registerTarget(
-      kind: "icon" | "preview" | "export" | "widget",
-      target: CaptureTarget,
-    ): () => void;
   };
   readonly attachments: {
     /** Stores the file, then runs `reference` synchronously (like `change`) to write
@@ -143,11 +122,6 @@ export interface SlopContext {
 export interface Binding<H> {
   update(next: H): void;
   destroy(): void;
-}
-export interface CaptureTarget {
-  element: HTMLElement;
-  prepare(): void | Promise<void>;
-  restore(): void | Promise<void>;
 }
 
 export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {

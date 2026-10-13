@@ -217,11 +217,6 @@ release builds one) it also kills a running app after an acknowledged CLI edit.
 shell on macOS or Linux; `HITSLOP_RENDER=all`
 renders every bundled template (release).
 
-Capture timing (one warmup and five samples at 1k/5k rows):
-`HITSLOP_BENCH_CAPTURE=1 bun run swift:test --filter previewCaptureCost`.
-This writes `.hitslop/evidence/preview-capture.json`; preparation and total native
-capture are measured separately with the complete authored DOM.
-
 Startup diagnostics: Debug `HITSLOP_STARTUP_TIMINGS=1` logs native preparation, page
 readiness (fonts included), presentation and page-relative `hitslop:*` boot marks, without
 document values or paths. `HITSLOP_STARTUP_BENCH=1 bun run swift:test --filter documentStartupTimings`
@@ -489,8 +484,8 @@ and source-image scaling ([qualification evidence](evidence/native-fullscreen-20
 - Rust owns semantic matrices, refusals, model checks, storage, writer ownership and
   real I/O failures. Replaying literal fixtures through WASM or Swift additionally
   proves those bindings; this is not a reason to repeat the matrix through every UI.
-- SDK/shell tests own handles, async publication, composition, recovery and capture
-  coordination. Minimal browser fixtures own component interaction and rendering.
+- SDK/shell tests own handles, async publication, composition and recovery. Minimal
+  browser fixtures own component interaction and rendering.
 - CLI tests own compilation, declaration discovery, assets, command separation and
   protocol translation. Syntax permutations belong to the transform table; full
   builds retain module resolution, registration and emitted-artifact cases.

@@ -135,7 +135,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
 - Flush unsent text and pending writes before close or export. Captures render saved
   state in an independent read-only renderer; required root `Preview.svelte` supplies preview artwork; optional `Export.svelte` supplies PNG/PDF output.
-  Production captures use Takumi, with WebKit retained as an explicit internal provider. Successful close destroys WebViews.
+  Production captures use Takumi. Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`: the export is definition data. Editors acquire
   their document with `getDocument(schema)` during component initialization; static views
   receive saved snapshot and attachment URL props. The stored descriptor is not JSON Schema.
