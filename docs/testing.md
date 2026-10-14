@@ -51,9 +51,9 @@ need no Playwright browsers. Browser and release qualification install their bro
 `scenario.json`) replayed by both the Bun fast tier and the Swift host-path test, which
 packs each stage and creates a document from it.
 `tests/abi/{owner-svelte,probe}` are Svelte and probe consumers used by Swift tests.
-`tests/apps` holds authored infrastructure fixtures: a small document app, an
-`EditableText` consumer and the Shape Lab instrument. They are never shipped as
-starter templates. Test media belongs to fixtures, not examples or the landing page.
+`tests/apps` holds authored infrastructure fixtures: a small document app and an
+`EditableText` consumer. They are never shipped as starter templates. Test media
+belongs to fixtures, not examples or the landing page.
 
 ## Running tests
 
@@ -246,9 +246,9 @@ row fast path with the original reconciler; shared-machine timing variation limi
 the comparison.
 
 Other performance diagnostics:
-`HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`,
-`scripts/dev/bench-webkit.ts` (Playwright WebKit) and `scripts/dev/bench-wkwebview.swift`
-(plain system WebKit). `HITSLOP_BENCH_CSS` appends CSS to the measured checklist and
+`HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`
+and `scripts/dev/bench-wkwebview.swift` (a preview URL in a plain system WebKit view).
+`HITSLOP_BENCH_CSS` appends CSS to the measured checklist and
 `HITSLOP_BENCH_LABEL` names the report, for attributing a cost to one rule; the
 `row_text_split_ms` field separates style from layout. Record a result under
 `docs/evidence/` when a doc cites it. Superseded runs may be kept locally under

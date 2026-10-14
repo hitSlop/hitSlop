@@ -115,8 +115,6 @@ Test locations, including `tests/release`, `tests/presentation`, `tests/verifica
 
 `bun run release:check` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/HitSlopApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
 
-`bun run shape:lab fixtures` builds and prints the standard, ellipse, glass and washer controls plus all six Shape Lab variants. `bun run shape:lab open hole` opens a fresh writable vector-hole lab; `locked`, `radii`, `concave`, `rounded` and `washer` select the other variants. Open writable copies in the development app to inspect layout, toolbar dragging, focus, native clipping, and desktop click-through. These are test fixtures, not catalog entries. Automated tests verify dedicated exports ignore native masks and icons preserve transparency.
-
 `bun run bench:windows` runs the opt-in window matrix. Startup diagnostics are described in [testing](../testing.md#native-macos). Performance measurements are not CI latency thresholds.
 
 ## Change discipline

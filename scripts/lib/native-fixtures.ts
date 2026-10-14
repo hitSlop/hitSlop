@@ -37,68 +37,8 @@ export async function stageNativeFixtures() {
   }
 }
 
-// These are presentation inputs to the production geometry parser, not a second renderer.
-export const shapeLabVariants = {
-  rounded: {
-    name: "Rounded baseline",
-    presentation: { width: 480, height: 360 },
-    expectation: "Corners clip; the centre receives input.",
-  },
-  radii: {
-    name: "Unequal elliptical corners",
-    presentation: { width: 480, height: 360, shape: "48px 8px 72px 0 / 24px 32px 18px 0" },
-    expectation: "Four different corners; orientation must match the labels.",
-  },
-  concave: {
-    name: "Concave silhouette",
-    presentation: {
-      width: 480,
-      height: 360,
-      shape: {
-        path: "M24 0 H456 Q480 0 480 24 V132 L432 156 L480 180 V336 Q480 360 456 360 H0 V48 Z",
-        viewBox: [480, 360],
-      },
-    },
-    expectation: "The right-hand notch sends clicks to the receiver.",
-  },
-  hole: {
-    name: "Offset hole / free resize",
-    presentation: {
-      width: 480,
-      height: 360,
-      shape: {
-        path: "M24 0 H456 Q480 0 480 24 V336 Q480 360 456 360 H0 V48 Z M350 56 a44 32 0 1 0 0 64 a44 32 0 1 0 0 -64 Z",
-        viewBox: [480, 360],
-        fillRule: "evenodd",
-      },
-    },
-    expectation: "The upper-right hole sends clicks to the receiver; proportions can change.",
-  },
-  locked: {
-    name: "Offset hole / locked aspect",
-    presentation: {
-      width: 480,
-      height: 360,
-      lockAspect: true,
-      shape: {
-        path: "M24 0 H456 Q480 0 480 24 V336 Q480 360 456 360 H0 V48 Z M350 56 a44 32 0 1 0 0 64 a44 32 0 1 0 0 -64 Z",
-        viewBox: [480, 360],
-        fillRule: "evenodd",
-      },
-    },
-    expectation: "The hole stays proportional; the window remains 4:3.",
-  },
-  washer: {
-    name: "PNG washer control",
-    presentation: { width: 320, height: 320, skin: "assets/washer.png" },
-    expectation: "The centre receives no input; this PNG skin cannot resize.",
-  },
-} as const;
-export type ShapeLabVariant = keyof typeof shapeLabVariants;
-const shapeLabRoot = join(repository, "generated/shape-lab");
 /** Builds the project `source` (whose folder name is its slug) into `destination`. */
-export type Builder = (source: string, slug: string, destination: string) => Promise<string>;
-const direct: Builder = (source, _, destination) => buildTemplate(source, destination, { renderArtwork: false });
+type Builder = (source: string, slug: string, destination: string) => Promise<string>;
 
 /** A copy of `fixture` at `source` with this `variant.ts`: the fixtures vary only there. */
 async function withVariant(fixture: string, source: string, value: unknown) {
@@ -114,25 +54,7 @@ async function withVariant(fixture: string, source: string, value: unknown) {
   await writeFile(join(source, "variant.ts"), code);
 }
 
-export async function buildShapeLabVariant(kind: ShapeLabVariant, build = direct) {
-  const variant = shapeLabVariants[kind];
-  // The folder's name is the slug.
-  const source = join(shapeLabRoot, "sources", `shape-lab-${kind}`);
-  await withVariant(join(repository, "tests/apps/shape-lab"), source, {
-    kind,
-    name: variant.name,
-    title: `Shape Lab · ${variant.name}`,
-    presentation: variant.presentation,
-    skin: kind === "washer",
-    expectation: variant.expectation,
-  });
-  if (kind === "washer") {
-    await mkdir(join(source, "assets"), { recursive: true });
-    await cp(join(repository, "tests/presentation/assets/washer.png"), join(source, "assets/washer.png"));
-  }
-  return build(source, `shape-lab-${kind}`, join(shapeLabRoot, kind + ".slop"));
-}
-
+// These are presentation inputs to the production geometry parser, not a second renderer.
 const presentationFixtures = {
   standard: { width: 320, height: 320 },
   ellipse: { width: 320, height: 320, shape: "50%", lockAspect: true, background: "transparent" },
@@ -146,9 +68,8 @@ const presentationFixtures = {
   "washer-2x": { width: 320, height: 320, skin: "assets/washer@2x.png" },
 };
 
-/** Every presentation fixture, by name: the standard, ellipse, glass, notch and washer controls, and
- * each Shape Lab variant. */
-export async function buildPresentationFixtures(build = direct) {
+/** Every presentation fixture, by name: the standard, ellipse, glass, notch and washer controls. */
+async function buildPresentationFixtures(build: Builder) {
   const parent = join(repository, "generated/presentation");
   const paths: Record<string, string> = {};
   for (const [kind, presentation] of Object.entries(presentationFixtures)) {
@@ -156,7 +77,5 @@ export async function buildPresentationFixtures(build = direct) {
     await withVariant(join(repository, "tests/presentation"), source, { title: `Presentation ${kind}`, presentation });
     paths[kind] = await build(source, `presentation-${kind}`, join(parent, kind + ".slop"));
   }
-  for (const kind of Object.keys(shapeLabVariants) as ShapeLabVariant[])
-    paths[`shape-lab-${kind}`] = await buildShapeLabVariant(kind, build);
   return paths;
 }

@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import HitSlopDocument
 import HitSlopTestSupport
-import PDFKit
 import Testing
 
 @testable import HitSlopHost
@@ -28,47 +27,6 @@ import Testing
 }
 
 extension HostTests {
-  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
-  @MainActor func shapeLabNativeResizeHonorsAspectAndKeepsEditorOperable() async throws {
-    let source = try #require(ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"])
-    let paths = try JSONDecoder().decode([String: String].self, from: Data(source.utf8))
-    for kind in ["hole", "locked"] {
-      let root = try Fixtures.document(from: URL(fileURLWithPath: try #require(paths["shape-lab-" + kind])))
-      defer { try? FileManager.default.removeItem(at: root) }
-      let controller = try await SlopDocumentWindowController.open(url: root)
-      do {
-        try await controller.session.waitUntilReady()
-        let window = try #require(controller.window)
-        let resized = try await controller.session.webView.callAsyncJavaScript(
-          """
-          [...document.querySelectorAll('button')].find(b => b.textContent === '600 × 400').click();
-          for (let i = 0; i < 100; i++) {
-              await new Promise(resolve => setTimeout(resolve, 20));
-              if (innerWidth === 600) return true;
-          }
-          return false;
-          """, arguments: [:], in: nil, contentWorld: .page)
-        #expect(resized as? Bool == true)
-        let size = try #require(window.contentView).bounds.size
-        #expect(abs(size.width - 600) < 1)
-        #expect(abs(size.height - (kind == "locked" ? 450 : 400)) < 1)
-        #expect(
-          try await controller.session.webView.callAsyncJavaScript(
-            """
-            document.querySelector('.shape-lab-west').click();
-            await __slop.flush();
-            return document.querySelector('.shape-lab-readout strong').textContent === '1';
-            """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
-        try await controller.session.close()
-        controller.close()
-      } catch {
-        try await controller.session.close()
-        controller.close()
-        throw error
-      }
-    }
-  }
-
   @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
   @MainActor func captureLeavesTheEditorOperable() async throws {
     for kind in ["standard", "ellipse", "glass", "washer"] {
@@ -212,61 +170,5 @@ extension HostTests {
     #expect(ring.redComponent > ring.blueComponent + 0.5)
     #expect((image.colorAt(x: 256, y: 431)?.alphaComponent ?? 0) > 0.99)
     #expect((image.colorAt(x: 256, y: 30)?.alphaComponent ?? 1) == 0)
-  }
-}
-
-private func shapeLabKinds() throws -> [String] {
-  let source = try #require(ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"])
-  let paths = try JSONDecoder().decode([String: String].self, from: Data(source.utf8))
-  let kinds = paths.keys.filter { $0.hasPrefix("shape-lab-") }.sorted()
-  #expect(kinds.count == 6)
-  return kinds
-}
-
-extension HostTests {
-  @Test(.nightly, .enabled(if: ProcessInfo.processInfo.environment["HITSLOP_PRESENTATION_FIXTURES"] != nil))
-  @MainActor func shapeLabCapturesPreserveCornersAndAcceptedInput() async throws {
-    for kind in try shapeLabKinds() {
-      try await withPresentationSession(kind) { session in
-        let accepted = try await session.webView.callAsyncJavaScript(
-          """
-          document.querySelector('.shape-lab-west').click();
-          const input = document.querySelector('input[aria-label="Capture note"]');
-          input.value = 'Typed before capture';
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          await __slop.flush();
-          return document.querySelector('.shape-lab-readout strong').textContent === '1';
-          """, arguments: [:], in: nil, contentWorld: .page)
-        #expect(accepted as? Bool == true)
-        let png = try await SlopRenderer.exportPNGData(session: session)
-        let image = try #require(NSBitmapImageRep(data: png))
-        #expect(image.pixelsWide == (kind.contains("washer") ? 640 : 960))
-        for (x, y) in [
-          (2, 2), (image.pixelsWide - 3, 2), (2, image.pixelsHigh - 3), (image.pixelsWide - 3, image.pixelsHigh - 3),
-        ] {
-          let color = try #require(image.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
-          #expect(color.alphaComponent > 0.99)
-          #expect(color.redComponent > color.greenComponent + 0.2)
-        }
-        let pdf = try #require(PDFDocument(data: await SlopRenderer.exportPDFData(session: session)))
-        #expect(pdf.string?.contains("Typed before capture") == true)
-        // PDF pages land on 0.75 pt renderer pixels: 320 CSS pixels is a 320.25 pt page.
-        let pdfWidth = try #require(pdf.page(at: 0)?.bounds(for: .mediaBox).width)
-        #expect(abs(pdfWidth - (kind.contains("washer") ? 320 : 480)) <= 0.75)
-        let icon = try #require(await SlopRenderer.iconPNGData(session: session))
-        let square = try #require(NSBitmapImageRep(data: icon))
-        #expect(square.pixelsWide == 512 && square.pixelsHigh == 512)
-        #expect((square.colorAt(x: 2, y: 2)?.alphaComponent ?? 0) > 0.99)
-        #expect(
-          try await session.webView.callAsyncJavaScript(
-            """
-            const input = document.querySelector('input[aria-label="Capture note"]');
-            document.querySelector('.shape-lab-east').click();
-            await __slop.flush();
-            return input.value === 'Typed before capture' &&
-              document.querySelector('.shape-lab-readout strong').textContent === '2';
-            """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true)
-      }
-    }
   }
 }

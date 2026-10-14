@@ -72,8 +72,8 @@ In order, with the reasoning in [ideas](ideas.md):
   them, with the corpus passing.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
-- Shape Lab: the production-window shadow refresh, and the opening-only black strip, which
-  was not reproduced and has no confirmed cause
+- The production-window shadow refresh, and an opening-only black strip beneath a window's
+  content, which was not reproduced and has no confirmed cause
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
 - A long-lived memory study across windows, captures and close/reopen cycles. The window
   benchmarks record footprints only and make no leak claim.
@@ -112,10 +112,6 @@ In order, with the reasoning in [ideas](ideas.md):
   syntax errors. Look again when TypeScript 7.1 gives `svelte-check` a JS API (which lets
   everything move to TypeScript 7) or when the native checker has provenance, CI and a
   maintainer team. The repo itself type-checks cleanly on TypeScript 7 already.
-- **Dead capture CSS.** Eight icon-mode rules select nothing in any capture
-  (`main` in choice-point, ivy-lee-method and three-three-three; `.cornell-page`,
-  `.grade-app`, `.semester-app`, slide-deck's `.deck-canvas`, `[data-slop-render]`
-  and `.deck-render`). Delete them.
 
 ## Implemented foundation
 

@@ -1,5 +1,5 @@
-// Loads a preview URL in a plain system WKWebView and runs the same click split
-// as scripts/dev/bench-webkit.ts. Usage: swift scripts/dev/bench-wkwebview.swift [url] [rows]
+// Loads a preview URL in a plain system WKWebView and measures the click split: click → DOM
+// mutation (JS), style, forced layout, rest. Usage: swift scripts/dev/bench-wkwebview.swift [url] [rows]
 import AppKit
 import WebKit
 
