@@ -16,6 +16,69 @@ const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
 
 #[test]
+fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
+    use std::os::unix::ffi::OsStrExt;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let saved = fs::read(&doc).unwrap();
+    let missing = dir.path().join("missing.slop");
+    let link = dir.path().join("link.slop");
+    let dangling = dir.path().join("dangling.slop");
+    let folder = dir.path().join("folder.slop");
+    let fifo = dir.path().join("fifo.slop");
+    std::os::unix::fs::symlink(&doc, &link).unwrap();
+    std::os::unix::fs::symlink(&missing, &dangling).unwrap();
+    fs::create_dir(&folder).unwrap();
+    let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    // SAFETY: `name` is a valid NUL-terminated path for this call.
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    type Entry = (&'static str, fn(&Path) -> Result<(), Error>);
+    let entries: [Entry; 6] = [
+        ("kind", |path| file::kind(path).map(|_| ())),
+        ("inspect", |path| file::inspect(path).map(|_| ())),
+        ("descriptor", |path| file::descriptor(path).map(|_| ())),
+        ("snapshot", |path| Store::open(path, Mode::Snapshot)?.close()),
+        ("document", |path| Store::open(path, Mode::Document)?.close()),
+        ("lease", |path| Lease::acquire(path).map(drop)),
+    ];
+    let mut failures = Vec::new();
+    for path in [link, dangling, folder, fifo, missing] {
+        // A refused leaf must not get a registry lock or discovery entry.
+        use std::os::unix::fs::MetadataExt;
+        let key = fs::symlink_metadata(&path).ok().map(|meta| format!("{:x}-{:x}", meta.dev(), meta.ino()));
+        for (entry, open) in entries {
+            let (tx, rx) = mpsc::channel();
+            let supplied = path.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(open(&supplied));
+            });
+            match rx.recv_timeout(Duration::from_secs(2)) {
+                Ok(Err(Error::Rejected(error)))
+                    if error.code == Code::InvalidRequest && error.message == "A document must be a regular file" => {}
+                result => failures.push(format!("{entry}: {}: {result:?}", path.display())),
+            }
+        }
+        if let Some(key) = key {
+            for extension in ["lock", "json", "json.tmp"] {
+                assert!(!registry_folder().join(format!("{key}.{extension}")).exists());
+            }
+        }
+        assert!(!path.with_extension("slop-journal").exists());
+    }
+    let parent = dir.path().join("parent");
+    std::os::unix::fs::symlink(dir.path(), &parent).unwrap();
+    let linked_parent = parent.join(doc.file_name().unwrap());
+    for (entry, open) in entries {
+        open(&linked_parent).unwrap_or_else(|error| panic!("{entry}: {error}"));
+    }
+    assert_eq!(fs::read(&doc).unwrap(), saved);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
 fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
     use hitslop_core::capture::{CaptureFormat, CaptureOutput, CaptureValue, render_batch};
     for has_widget in [false, true] {

@@ -39,9 +39,15 @@ pub(crate) use copy::{Staged, copy};
 #[cfg(not(target_arch = "wasm32"))]
 pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
 #[cfg(not(target_arch = "wasm32"))]
-pub use places::{TemplateSource, template_roots};
+pub(crate) use places::document_destination;
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) use places::{document_destination, document_location};
+pub use places::{TemplateSource, template_roots};
+
+/// Refuses a document opened for writing where documents may not live.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn document_location(path: &std::path::Path) -> crate::store::Result<()> {
+    places::document_location(path)
+}
 
 pub(crate) const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
 /// These tables. A compatibility requirement, not a release number: a build refuses a
@@ -67,6 +73,8 @@ pub enum Kind {
 }
 
 pub(crate) use check::{attachments_fit, check};
+#[cfg(not(target_arch = "wasm32"))]
+pub use connection::existing;
 pub(crate) use connection::{begin_write, configure_writer};
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use connection::{initialize, reader, resolve, writer};

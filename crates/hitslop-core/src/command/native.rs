@@ -289,8 +289,7 @@ fn prepare(mut request: EngineRequest, protocol: u64) -> Result<SocketRequest> {
         return Err(invalid("Not a document command"));
     }
     let path = request.document_path_mut().expect("document request");
-    let resolved = file::resolve(Path::new(path))?;
-    registry::identity(&resolved)?;
+    let resolved = file::existing(Path::new(path))?;
     *path = resolved.to_string_lossy().into_owned();
     request.check().map_err(invalid)?;
     let limit = request.socket_limit();

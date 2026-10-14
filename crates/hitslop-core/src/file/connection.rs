@@ -23,15 +23,22 @@ pub(crate) fn resolve(path: &Path) -> Result<PathBuf> {
     let folder = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
     Ok(fs::canonicalize(folder).map_err(|e| failed(format!("Cannot resolve the document's folder: {e}")))?.join(name))
 }
+/// An existing regular document leaf, resolving only its parent folders so linked
+/// parents remain valid and a linked leaf is refused before SQLite opens it.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn existing(path: &Path) -> Result<PathBuf> {
+    let path = resolve(path)?;
+    crate::registry::regular(&path)?;
+    Ok(path)
+}
 /// Every connection: no symbolic links, defensive mode, no trusted schema, cell checks, no
 /// memory mapping, and values no longer than the largest stored one.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn connect(path: &Path, flags: OpenFlags, busy: Duration) -> Result<Connection> {
-    let conn = Connection::open_with_flags(
-        resolve(path)?,
-        flags | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_NOFOLLOW,
-    )
-    .map_err(sqlite("open"))?;
+    let path = if flags.contains(OpenFlags::SQLITE_OPEN_CREATE) { resolve(path)? } else { existing(path)? };
+    let conn =
+        Connection::open_with_flags(path, flags | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_NOFOLLOW)
+            .map_err(sqlite("open"))?;
     conn.busy_timeout(busy).map_err(sqlite("open"))?;
     configure_connection(&conn)?;
     Ok(conn)

@@ -77,6 +77,38 @@ fn open(path: &Path) -> Arc<Owner> {
 }
 
 #[test]
+fn document_commands_refuse_a_link_with_the_regular_file_reason() {
+    let (dir, path) = document();
+    let saved = std::fs::read(&path).unwrap();
+    let link = dir.path().join("link.slop");
+    std::os::unix::fs::symlink(&path, &link).unwrap();
+    for method in ["get", "describe", "batch", "call", "copy", "export"] {
+        // Do not canonicalize the supplied leaf before sending the request.
+        let mut request = json!({"method":method,"documentPath":link});
+        match method {
+            "batch" => request["batch"] = json!({"intents":[]}),
+            "call" => {
+                request["command"] = "missing".into();
+                request["args"] = json!({});
+            }
+            "copy" | "export" => {
+                request["output"] = json!(dir.path().join("output.slop"));
+                if method == "export" {
+                    request["format"] = "png".into();
+                }
+            }
+            _ => {}
+        }
+        let refused = run(request);
+        assert_eq!(refused["code"], "rejected", "{method}: {refused}");
+        assert_eq!(refused["reason"], "invalid_request", "{method}: {refused}");
+        assert_eq!(refused["error"], "A document must be a regular file", "{method}: {refused}");
+    }
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    assert!(!dir.path().join("output.slop").exists());
+}
+
+#[test]
 fn browser_snapshot_is_a_clean_independent_document_and_never_overwrites() {
     let (dir, path) = document();
     assert_eq!(run(batch(&path))["ok"], true);

@@ -290,12 +290,39 @@ fn open_refuses_a_linked_document_but_accepts_a_linked_parent() {
     std::os::unix::fs::symlink(&document, &link).unwrap();
     let refused = open(&link);
     assert_eq!(refused["code"], "rejected");
+    assert_eq!(refused["reason"], "invalid_request");
+    assert_eq!(refused["error"], "A document must be a regular file");
     assert!(!refused["error"].as_str().unwrap().contains("HITSLOP_APP"), "{refused}");
+    for method in ["inspect", "schema"] {
+        let refused = request(json!({"method":method,"file":link}));
+        assert_eq!(refused["code"], "rejected", "{refused}");
+        assert_eq!(refused["reason"], "invalid_request", "{refused}");
+        assert_eq!(refused["error"], "A document must be a regular file", "{refused}");
+    }
     let parent = dir.path().join("Linked parent");
     std::os::unix::fs::symlink(dir.path(), &parent).unwrap();
     let admitted = open(&parent.join(document.file_name().unwrap()));
     assert!(admitted["error"].as_str().unwrap().contains("HITSLOP_APP"), "{admitted}");
+    for method in ["inspect", "schema"] {
+        assert_eq!(request(json!({"method":method,"file":parent.join(document.file_name().unwrap())}))["ok"], true);
+    }
     assert_eq!(fs::read(&document).unwrap(), saved);
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn open_refuses_a_regular_file_without_the_document_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, document) = template_and_document(dir.path());
+    let notes = dir.path().join("notes.txt");
+    fs::copy(&document, &notes).unwrap();
+    let saved = fs::read(&notes).unwrap();
+    let refused =
+        reply(&json!({"method":"open","documentPath":notes}).to_string(), Some(&dir.path().join("Missing.app")));
+    assert_eq!(refused["code"], "rejected");
+    assert_eq!(refused["reason"], "invalid_request");
+    assert_eq!(refused["error"], "A document's name must end in .slop");
+    assert_eq!(fs::read(&notes).unwrap(), saved);
 }
 
 /// Opening a window needs macOS and hitSlop.app; elsewhere it refuses and changes nothing.
