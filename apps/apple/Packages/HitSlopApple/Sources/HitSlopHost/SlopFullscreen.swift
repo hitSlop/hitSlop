@@ -92,11 +92,11 @@ final class SlopFullscreenSurface: NSView {
     surface.needsLayout = true
   }
 
-  func restore(window: NSWindow, composition: ShapedView, page: WKWebView) {
+  func restore(window: NSWindow, composition: ShapedView, page: WKWebView?) {
     guard let restore = saved else { return }
     composition.removeFromSuperview()
     composition.compositionScale = 1
-    page.pageZoom = 1
+    page?.pageZoom = 1
     composition.bounds = NSRect(origin: .zero, size: restore.frame.size)
     window.contentView = composition
     window.styleMask = restore.style
@@ -146,7 +146,7 @@ extension SlopDocumentWindowController {
   private func restoreDesktop() {
     guard let window, fullscreen.saved != nil, let composition = documentComposition else { return }
     toolbar.hide()
-    fullscreen.restore(window: window, composition: composition, page: session.webView)
+    fullscreen.restore(window: window, composition: composition, page: session.isReady ? session.webView : nil)
     toolbar.update()
     toolbar.refresh()
   }

@@ -59,7 +59,7 @@ public struct SlopFailureContext: Equatable, Sendable {
     }
   }
   public enum Reason: String, Sendable {
-    case unknown, storage, webContentTerminated, navigation, startup, presentation
+    case unknown, storage, webContentTerminated, navigation, startup, presentation, unresponsive
     // Reported under its earlier name, so the analytics series continues.
     case invalidFile = "invalidPackage"
     case missingFile, permission, diskFull, busy
@@ -84,6 +84,7 @@ public struct SlopFailureContext: Equatable, Sendable {
       case .icon: 15
       case .destinationExists: 17
       case .requiresUpdate: 18
+      case .unresponsive: 19
       }
     }
   }

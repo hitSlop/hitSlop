@@ -8,14 +8,7 @@ extension WKWebView {
 
   /// The host and shell share a generated command vocabulary and one JavaScript entry. Both directions carry opaque JSON strings.
   @MainActor
-  public func callHost(_ request: HostRequest) async throws -> Any? {
-    try await callAsyncJavaScript(
-      Self.hostDispatch,
-      arguments: ["request": encodeHostRequest(request: request)], in: nil, contentWorld: .page)
-  }
-
-  @MainActor
-  public func callHost(_ request: HostRequest, completion: @escaping @MainActor (Result<Any, Error>) -> Void) {
+  func callHost(_ request: HostRequest, completion: @escaping @MainActor (Result<Any, Error>) -> Void) {
     callAsyncJavaScript(
       Self.hostDispatch,
       arguments: ["request": encodeHostRequest(request: request)], in: nil, in: .page, completionHandler: completion)

@@ -461,7 +461,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     window?.makeFirstResponder(nil)
     do {
       try await session.prepareClose()
-      closeState = .prepared(.saved)
+      closeState = .prepared(session.isReady ? .saved : .unavailable)
     } catch {
       reportLifecycleFailure(operation, error: error)
       await cancelPreparedClose()

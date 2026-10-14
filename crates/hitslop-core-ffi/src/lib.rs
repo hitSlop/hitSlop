@@ -122,13 +122,22 @@ pub enum Kind {
 #[derive(uniffi::Record)]
 pub struct OpenedFile {
     pub kind: Kind,
+    pub package_format: u64,
+    pub runtime_abi: u64,
     pub app: AppDefinition,
     pub skin_png: Option<Vec<u8>>,
     pub byte_count: u64,
 }
 impl From<&file::OpenedApp> for OpenedFile {
     fn from(p: &file::OpenedApp) -> Self {
-        Self { kind: p.kind, app: AppDefinition::from(&p.app), skin_png: p.skin.clone(), byte_count: p.bytes }
+        Self {
+            kind: p.kind,
+            package_format: p.package_format,
+            runtime_abi: p.runtime_abi,
+            app: AppDefinition::from(&p.app),
+            skin_png: p.skin.clone(),
+            byte_count: p.bytes,
+        }
     }
 }
 #[uniffi::export]

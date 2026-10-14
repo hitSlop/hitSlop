@@ -2,10 +2,10 @@ import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
-import HitSlopDocument
 import HitSlopTestSupport
 import Testing
 
+@testable import HitSlopDocument
 @testable import HitSlopHost
 
 extension HostTests {
@@ -178,6 +178,52 @@ extension HostTests {
     #expect(controller.window?.isVisible == true)
     try await controller.session.close()
     controller.close()
+  }
+
+  @Test @MainActor func aReadyTimeoutShowsOneFailureContextAndReopenRecovers() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      let script = stage.appendingPathComponent("assets/ui.js")
+      let probe = try Fixtures.addAsset(
+        stage, bytes: Data(contentsOf: script), ext: "js", mediaType: "text/javascript")
+      try Fixtures.writeApp(
+        """
+        import probe from "\(probe)";
+        export default { mount(ctx, target) {
+          if (ctx.document.current.title !== "Recovered fonts") {
+            Object.defineProperty(document, 'fonts', {value: {
+              size: 1, status: 'loading', forEach(){}, ready: new Promise(() => {})
+            }});
+          }
+          return probe.mount(ctx, target);
+        } };
+        """, to: stage)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    var contexts: [SlopFailureContext] = []
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed(.renderer, let context) = $0 { contexts.append(context) } })
+    controller.window?.moveOffScreen()
+    defer { controller.window?.orderOut(nil) }
+    await #expect(throws: (any Error).self) { try await controller.session.waitUntilReady(timeout: .seconds(1)) }
+    #expect(controller.session.rendererDead)
+    let notice = try #require(controller.failedOverlay?.rootView.screen.notice)
+    #expect(notice.title == "This slop stopped responding")
+    #expect(contexts == [.init(reason: .unresponsive)])
+    let context = try #require(contexts.first)
+    #expect(
+      notice.report.contains("Reason: \(context.reason.rawValue)\nClassification: \(context.classification.rawValue)"))
+    // Reopening with the same stalled fonts must return to the screen too.
+    controller.session.readyTimeout = .milliseconds(300)
+    await #expect(throws: (any Error).self) { _ = try await controller.perform(.retry) }
+    #expect(controller.session.rendererDead && controller.failedOverlay != nil)
+    controller.session.readyTimeout = Timeouts.pageReady
+    #expect(try await command("batch", url: root, setTitle("Recovered fonts")).ok)
+    _ = try await controller.perform(.retry)
+    await controller.waitForPresentation()
+    #expect(controller.isContentReady && controller.failedOverlay == nil)
+    #expect(Fixtures.isLocked(root))
+    try await controller.session.close()
   }
 
   @Test @MainActor func hiddenOpenDoesNotPresentProgressOrDocument() async throws {

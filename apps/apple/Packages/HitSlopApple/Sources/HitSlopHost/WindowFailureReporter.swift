@@ -8,14 +8,13 @@ import HitSlopDocument
   private var saveFailed = false
   private var rendererFailed = false
 
-  func renderer(_ error: Error, reason: SlopFailureContext.Reason?, telemetry: SlopTelemetry) {
+  func renderer(_ diagnostic: SlopFailureContext, telemetry: SlopTelemetry) {
     guard !rendererFailed else { return }
     rendererFailed = true
-    let diagnostic =
-      (error as? any SlopDiagnosticProviding)?.diagnostic
-      ?? SlopFailureContext(reason: reason ?? .presentation)
     telemetry.send(.breadcrumb(.renderer, .failed))
-    if !saveFailed || diagnostic.reason == .webContentTerminated { telemetry.send(.failed(.renderer, diagnostic)) }
+    if !saveFailed || diagnostic.reason == .webContentTerminated || diagnostic.reason == .unresponsive {
+      telemetry.send(.failed(.renderer, diagnostic))
+    }
   }
   func rendererRecovered(telemetry: SlopTelemetry) {
     if rendererFailed { telemetry.send(.breadcrumb(.renderer, .recovered)) }

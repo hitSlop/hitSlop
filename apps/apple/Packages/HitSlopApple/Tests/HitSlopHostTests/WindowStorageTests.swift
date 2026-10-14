@@ -131,7 +131,7 @@ extension HostTests {
     #expect(try liveDiscovery(path: root.path) != nil)
     #expect(Fixtures.isLocked(root))
     _ = try await controller.perform(.retry)
-    #expect(oldWebView == nil)
+    #expect(await eventually(timeout: .seconds(5)) { oldWebView == nil })
     #expect(try await savedValue(root)?["title"] as? String == "Committed before renderer death")
     try await controller.session.close()
     try await controller.session.close()
@@ -153,6 +153,7 @@ extension HostTests {
     let hold = try Fixtures.DatabaseHold(root)
     defer { hold.release() }
     #expect(try await command("batch", url: root, setTitle("Saved after the page stopped")).code == .saveFailed)
+    #expect(await eventually { controller.window?.attachedSheet != nil })
     let sheet = try #require(controller.window?.attachedSheet)
     #expect(sheet.sheetParent === controller.window)
 
@@ -169,7 +170,7 @@ extension HostTests {
     hold.release()
     _ = try await controller.perform(.retrySave)
     #expect(session.rendererDead, "saving must not depend on reopening the page")
-    #expect(controller.window?.attachedSheet == nil)
+    #expect(await eventually { controller.window?.attachedSheet == nil })
     #expect(Fixtures.isLocked(root))
     try await session.close()
     #expect(!Fixtures.isLocked(root))
@@ -396,4 +397,128 @@ extension HostTests {
     }
     return buttons(in: subview)
   }
+}
+
+extension HostTests {
+  @Test @MainActor func aWedgedPageFailsCaptureAndReopensWithOwnership() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var contexts: [SlopFailureContext] = []
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed(.renderer, let context) = $0 { contexts.append(context) } })
+    let session = controller.session
+    try await session.waitUntilReady()
+    #expect(try await command("batch", url: root, setTitle("Committed before wedge")).ok)
+    try await session.flush()
+    session.pageCallTimeout = .milliseconds(300)
+    weak var retired = session.webView
+    let pid = try await wedge(session)
+    defer { if Darwin.kill(pid, 0) == 0 { Darwin.kill(pid, SIGKILL) } }
+    var failure: Error?
+    var rendered = false
+    try #require(
+      try await finishesPageWork(within: .seconds(5)) {
+        do { try await session.withCaptureSnapshot { _ in rendered = true } } catch { failure = error }
+      })
+    #expect(failure != nil)
+    #expect(!rendered && !session.capturing)
+    #expect(session.rendererDead)
+    let notice = try #require(controller.failedOverlay?.rootView.screen.notice)
+    #expect(notice.title == "This slop stopped responding")
+    #expect(notice.report.contains("Reason: unresponsive\nClassification: platform"))
+    #expect(contexts == [.init(reason: .unresponsive)])
+    #expect(
+      notice.report.contains(
+        "Slop needs: package format \(session.file.packageFormat), runtime ABI \(session.file.runtimeABI)"))
+    #expect(Fixtures.isLocked(root))
+    session.pageCallTimeout = Timeouts.pageCall
+    _ = try await controller.perform(.retry)
+    #expect(session.isReady && controller.failedOverlay == nil)
+    #expect(Fixtures.isLocked(root))
+    #expect(try await savedValue(root)?["title"] as? String == "Committed before wedge")
+    #expect(await eventually(timeout: .seconds(5)) { retired == nil })
+    #expect(await eventually(timeout: .seconds(5)) { Darwin.kill(pid, 0) != 0 && errno == ESRCH })
+    try await session.close()
+  }
+
+  @Test @MainActor func aWedgedPageClosesOnceAndReleasesTheWriter() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    let session = controller.session
+    try await session.waitUntilReady()
+    #expect(try await command("batch", url: root, setTitle("Saved before wedged close")).ok)
+    try await session.flush()
+    session.pageCallTimeout = .milliseconds(300)
+    let pid = try await wedge(session)
+    defer { if Darwin.kill(pid, 0) == 0 { Darwin.kill(pid, SIGKILL) } }
+    try #require(try await finishesPageWork(within: .seconds(5)) { _ = try await controller.perform(.close) })
+    #expect(!Fixtures.isLocked(root))
+    #expect(try await savedValue(root)?["title"] as? String == "Saved before wedged close")
+    #expect(await eventually(timeout: .seconds(5)) { Darwin.kill(pid, 0) != 0 && errno == ESRCH })
+  }
+
+  @Test @MainActor func anUnansweredCloseStillShowsSaveRecovery() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    var handedOff = false
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, routing: SlopDocumentRouting(command: { _ in }, closeHidden: { handedOff = true }))
+    controller.window?.moveOffScreen()
+    defer { controller.window?.orderOut(nil) }
+    let session = controller.session
+    try await session.waitUntilReady()
+    session.pageCallTimeout = .milliseconds(300)
+    let hold = try Fixtures.DatabaseHold(root)
+    defer { hold.release() }
+    #expect(try await command("batch", url: root, setTitle("Saved after unanswered close")).code == .saveFailed)
+    _ = try await session.webView.callAsyncJavaScript(
+      "const dispatch = globalThis.__slop.dispatch; globalThis.__slop.dispatch = request => request.method === 'prepareClose' ? new Promise(r => setTimeout(r, 3600000)) : dispatch(request); return true",
+      arguments: [:], in: nil, contentWorld: .page)
+    var failure: SlopDocumentFailure?
+    try #require(
+      try await finishesPageWork(within: .seconds(8)) {
+        do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(error) }
+      })
+    #expect(session.rendererDead)
+    #expect(failure == .save)
+    #expect(!handedOff, "the owner must save before a failed renderer can hand off its window")
+    #expect(await eventually { controller.window?.attachedSheet != nil })
+    #expect(Fixtures.isLocked(root))
+    hold.release()
+    _ = try await controller.perform(.retrySave)
+    #expect(await eventually { controller.window?.attachedSheet == nil })
+    _ = try await controller.perform(.close)
+    #expect(!Fixtures.isLocked(root))
+    #expect(try await savedValue(root)?["title"] as? String == "Saved after unanswered close")
+  }
+}
+
+@MainActor private func wedge(_ session: DocumentSession) async throws -> Int32 {
+  let pid = try #require(session.webView.value(forKey: "_webProcessIdentifier") as? Int32)
+  try #require(pid > 0 && Darwin.kill(pid, 0) == 0)
+  // Do not await the script acknowledgement: its timer can wedge WebKit before that reply.
+  func start() {
+    session.webView.evaluateJavaScript("setTimeout(() => { for (;;) {} }, 0); true", completionHandler: nil)
+  }
+  start()
+  try await Task.sleep(for: .milliseconds(50))
+  return pid
+}
+
+// Poll so a missing deadline fails the assertion instead of hanging the test runner.
+@MainActor private func finishesPageWork(
+  within limit: Duration, _ work: @escaping @MainActor () async throws -> Void
+) async throws -> Bool {
+  var finished = false
+  let task = Task { @MainActor in
+    defer { finished = true }
+    try await work()
+  }
+  guard await eventually(timeout: limit, { finished }) else { return false }
+  try await task.value
+  return true
 }

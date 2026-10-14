@@ -50,7 +50,7 @@ extension HostTests {
       // Finishing at the controller boundary must also close native chrome and release WebKit.
       try await controller.finishClose()
       #expect(controller.window?.isVisible == false)
-      #expect(webView == nil)
+      #expect(await eventually(timeout: .seconds(5)) { webView == nil })
       #expect(try await command("batch", url: root, setTitle("Closed edit")).ok)
       #expect(try await savedValue(root)?["title"] as? String == "Closed edit")
       // An interactive reopen reads back exactly the saved state (the probe app writes nothing).

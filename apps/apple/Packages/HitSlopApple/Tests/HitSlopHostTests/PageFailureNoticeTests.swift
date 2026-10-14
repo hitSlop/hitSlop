@@ -11,14 +11,14 @@ import Testing
 // renderer is `SlopFullscreenTests` and `WindowEditingTests`.
 
 private let testHost = PageFailureNotice.Host(
-  app: "1.3.0 (45)", core: "core-1", system: "macOS 15.2.0", architecture: "arm64")
+  app: "1.3.0 (45)", core: "core-1", system: "macOS 15.2.0", architecture: "arm64", packageFormat: 7, runtimeABI: 9)
 
 private func makeNotice(
-  _ message: String = "TypeError: boom", reason: SlopFailureContext.Reason?,
-  classification: SlopFailureContext.Classification = .platform
+  _ message: String = "TypeError: boom", context: SlopFailureContext = .init()
 ) -> PageFailureNotice {
   PageFailureNotice(
-    message: message, reason: reason, classification: classification, slopTitle: "Pomodoro", slopSlug: "pomodoro",
+    message: message, context: context, slopTitle: "Pomodoro", slopSlug: "pomodoro",
+    packageFormat: 3, runtimeABI: 5,
     host: testHost)
 }
 
@@ -30,23 +30,31 @@ private let oldSlopError: String = {
 }()
 
 @Test func eachFailureSaysWhatHappenedInItsOwnWords() {
-  let authored = makeNotice(reason: .authoredException, classification: .authored)
+  let authored = makeNotice(context: .init(.authored, reason: .authoredException))
   #expect(authored.title == "This slop couldn't open")
   #expect(
     authored.explanation
       == "Its own code failed while starting. If it opened before, a hitSlop update may have broken it, and we'd like to know."
   )
 
-  let terminated = makeNotice(reason: .webContentTerminated)
+  let terminated = makeNotice(context: .init(reason: .webContentTerminated))
   #expect(terminated.title == "This slop's view stopped")
   #expect(terminated.explanation.contains("quit unexpectedly"))
   #expect(terminated.explanation.contains("Reopening it usually fixes this"))
   #expect(terminated.explanation.contains("please tell us"))
 
-  // Every other reason, and a failure without one, keeps the original title.
-  let others: [SlopFailureContext.Reason?] = [.startup, .navigation, .presentation, .unknown, nil]
+  let unresponsive = makeNotice(context: .init(reason: .unresponsive))
+  #expect(unresponsive.title == "This slop stopped responding")
+  #expect(
+    unresponsive.explanation
+      == "The view that shows this slop stopped answering. Reopening it usually fixes this. "
+      + "Edits you already made are kept; text you were still typing may be lost. If it keeps happening, please tell us."
+  )
+
+  // Every other reason keeps the original title.
+  let others: [SlopFailureContext.Reason] = [.startup, .navigation, .presentation, .unknown]
   for reason in others {
-    let other = makeNotice(reason: reason)
+    let other = makeNotice(context: .init(reason: reason))
     #expect(other.title == "This slop stopped responding")
     #expect(other.explanation.contains("tell us if it keeps happening"))
   }
@@ -55,10 +63,12 @@ private let oldSlopError: String = {
 // The owner outlives the view and keeps every edit it accepted, so a stopped view says so. A
 // slop whose own code failed to open may have written before it threw, so it promises nothing.
 @Test func onlyAStoppedViewReassuresAboutEdits() {
-  #expect(makeNotice(reason: .webContentTerminated).explanation.contains("Edits you already made are kept"))
-  let silent: [SlopFailureContext.Reason?] = [.authoredException, .startup, .presentation, nil]
+  #expect(
+    makeNotice(context: .init(reason: .webContentTerminated)).explanation.contains("Edits you already made are kept"))
+  #expect(makeNotice(context: .init(reason: .unresponsive)).explanation.contains("Edits you already made are kept"))
+  let silent: [SlopFailureContext.Reason] = [.authoredException, .startup, .presentation]
   for reason in silent {
-    let explanation = makeNotice(reason: reason).explanation.lowercased()
+    let explanation = makeNotice(context: .init(reason: reason)).explanation.lowercased()
     #expect(!explanation.contains("kept") && !explanation.contains("saved") && !explanation.contains("safe"))
   }
 }
@@ -67,7 +77,7 @@ private let oldSlopError: String = {
 // the page's own error text.
 @Test func theReportNamesTheBuildTheSlopAndTheFailureAndNothingElse() {
   let notice = makeNotice(
-    "TypeError: boom\nrender@slop://app/assets/ui.js:1:2", reason: .authoredException, classification: .authored)
+    "TypeError: boom\nrender@slop://app/assets/ui.js:1:2", context: .init(.authored, reason: .authoredException))
   #expect(
     notice.report
       == """
@@ -76,17 +86,19 @@ private let oldSlopError: String = {
       Core build: core-1
       System: macOS 15.2.0, arm64
       Slop: Pomodoro (pomodoro)
+      Slop needs: package format 3, runtime ABI 5
+      This build runs: package format 7, runtime ABI 9
       Reason: authoredException
       Classification: authored
 
       TypeError: boom
       render@slop://app/assets/ui.js:1:2
       """)
-  #expect(makeNotice(reason: nil).report.contains("Reason: unknown\nClassification: platform"))
+  #expect(makeNotice().report.contains("Reason: unknown\nClassification: platform"))
 }
 
 @Test func aLongStackIsTrimmedInTheReportAndWholeInTheDetails() {
-  let notice = makeNotice(oldSlopError, reason: .authoredException, classification: .authored)
+  let notice = makeNotice(oldSlopError, context: .init(.authored, reason: .authoredException))
   #expect(notice.details == oldSlopError)
   let lines = notice.report.split(separator: "\n", omittingEmptySubsequences: false)
   let frames = lines.filter { $0.hasPrefix("mr@") }
@@ -96,13 +108,15 @@ private let oldSlopError: String = {
   #expect(notice.report.hasSuffix("\n…"))
 
   // One endless line is bounded too.
-  let endless = makeNotice(String(repeating: "x", count: 10_000), reason: nil)
+  let endless = makeNotice(String(repeating: "x", count: 10_000), context: .init())
   #expect(endless.report.count < PageFailureNotice.excerptCharacters + 500)
 }
 
 @Test func theCurrentHostIsThisBuildOnThisMac() {
   let current = PageFailureNotice.Host.current
   #expect(current.core == DocumentOwner.coreBuildID)
+  #expect(current.packageFormat == PackageFormat.level)
+  #expect(current.runtimeABI == RuntimeABI.level)
   #expect(current.system.hasPrefix("macOS \(ProcessInfo.processInfo.operatingSystemVersion.majorVersion)."))
   #expect(["arm64", "x86_64"].contains(current.architecture))
 }
@@ -110,7 +124,7 @@ private let oldSlopError: String = {
 @MainActor @Test func copyDetailsPutsTheReportOnTheClipboardAndConfirmsBriefly() async {
   var copied: [String] = []
   let screen = FailureScreen(
-    notice: makeNotice(reason: .startup), reopen: {}, copy: { copied.append($0) }, open: { _ in },
+    notice: makeNotice(context: .init(reason: .startup)), reopen: {}, copy: { copied.append($0) }, open: { _ in },
     confirmation: .milliseconds(50))
   #expect(!screen.copied)
   screen.copyDetails()
@@ -124,7 +138,7 @@ private let oldSlopError: String = {
   var opened: [URL] = []
   var reopened = 0
   let screen = FailureScreen(
-    notice: makeNotice(reason: nil), reopen: { reopened += 1 }, copy: { _ in }, open: { opened.append($0) })
+    notice: makeNotice(), reopen: { reopened += 1 }, copy: { _ in }, open: { opened.append($0) })
   // The technical details start out of the way.
   #expect(!screen.showsDetails)
   screen.getHelp()

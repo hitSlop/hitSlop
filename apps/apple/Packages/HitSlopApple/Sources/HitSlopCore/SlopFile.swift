@@ -44,6 +44,8 @@ public struct SlopFile: Sendable {
   /// The `.slop` file.
   public let url: URL
   public let kind: FileKind
+  public let packageFormat: Int
+  public let runtimeABI: Int
   /// The app's document descriptor (JSON), for the page and `slop schema`.
   public let descriptor: String
   /// The declared colors in the order the author wrote them.
@@ -75,6 +77,8 @@ public struct SlopFile: Sendable {
   public init(url root: URL, opened: OpenedFile) throws {
     self.url = root
     kind = opened.kind
+    packageFormat = Int(opened.packageFormat)
+    runtimeABI = Int(opened.runtimeAbi)
     descriptor = opened.app.descriptorJson
     themeTokens = opened.app.theme
     byteCount = Int64(opened.byteCount)
