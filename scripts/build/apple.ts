@@ -49,6 +49,7 @@ await run([
 await run([
   process.execPath,
   "scripts/release/artifact.ts",
+  "--unsigned",
   resolve("generated/app/hitSlop.app"),
 ]);
 // A development build never claims .slop in Finder; open it explicitly (`open -a`).

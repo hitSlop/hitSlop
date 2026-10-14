@@ -314,7 +314,10 @@ possible authored apps.
 
 `bun run compat:capture VERSION --frozen --writer generated/engines/darwin-arm64/slop-engine` builds the producing tools, records their
 `sourceInputs` (the producing source fingerprint) and identities, and captures into a temporary directory. It records
-template digests, per-file hashes and the required case inventory. The entry also records
+template file digests, each template and saved document's producing-reader `appDigest`,
+per-file hashes and the required case inventory. Replay pins app identity independently
+of file hashes through edit/save/close/reopen.
+The entry also records
 `limits` (each opening/reading/saving bound and its direction), raw stored app rows in
 `acceptance/*.json`, and the producing reader's typed re-encoding of those rows. The
 row payloads are Brotli-compressed JSON encoded as base64 within each vector file;
@@ -333,12 +336,11 @@ to be recorded or explicitly classified as not persisted. The physical `storage-
 definition remains hash-pinned; format-reader source is free to refactor and authoring
 rules are free to tighten while recorded acceptance remains unchanged. Only a completed
 capture is published and frozen. Recording an existing frozen entry is refused. Before launch `dev`
-may be recaptured. The expanded pre-freeze fixture and replay checks require a final
-`dev` recapture; the current replaceable entry is not evidence for the new coverage
-until that capture and its replay pass.
+may be recaptured with `bun run compat:capture dev` (without `--frozen`).
 
 - Rust (`crates/hitslop-core/tests/compat.rs`, in every `verify rust`) replays saved
-  values, themes, edits, save/close and reopen. It also checks every entry’s limits ratchet
+  values, themes, app digests, edits, save/close and reopen. It also checks every entry’s
+  limits ratchet
   and decodes its raw acceptance vectors, comparing typed re-encoding semantically with
   the producing reader’s known members; later readers may expose additional optional
   members that were unknown when captured. ResourceReader checks every recorded app
@@ -366,6 +368,8 @@ until that capture and its replay pass.
   frozen entry.
 - Swift (`CompatCorpusTests`) runs the old conformance app's own scenario, which includes a
   page edit and a live agent command, requires an actual saved edit and checks reopen.
+  With producing tools already built, run it with
+  `bun scripts/verify.ts --no-build swift --filter CompatCorpusTests`.
 
 Each storage-version bump adds two Rust tests: a frozen file migrated by a write equals a
 newly created file in exact layout and value, and an interrupted migration leaves the
@@ -494,7 +498,7 @@ owner, exercises HMR and command calls, checks attachment URL ranges/types, and 
 owner to prove the page fences further edits. The local `slop open --browser` host uses the durable WASM build; `slop dev`
 continues to use the native owner. The SDK tests use a separate WASM adapter.
 
-Rust package tests cover the seven-table layout, app-row seal and replacement bypasses,
+Rust package tests cover the exact table layout, app-row seal and replacement bypasses,
 marker-first refusals, streaming PNG checks, descriptor argument validation, the JSON
 Schema output projection, resource inventory and first-touch attachment hashes. A SQLite
 authorizer proves `summary` never reads definition or asset/attachment payloads. Swift's

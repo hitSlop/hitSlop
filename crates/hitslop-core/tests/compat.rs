@@ -55,6 +55,22 @@ fn attachments(store: &Store) -> Value {
     )
 }
 
+#[test]
+fn every_template_keeps_its_recorded_app_digest() {
+    let mut cases = 0;
+    for entry in entries(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
+        let release = json_file(&entry.join("release.json")).unwrap();
+        let recorded = release["templateAppDigests"].as_object().expect("missing template app digests; recapture dev");
+        for template in entries(&entry.join("templates")) {
+            let slug = template.file_stem().unwrap().to_string_lossy();
+            let digest = hitslop_core::file::inspect(&template).unwrap().app_digest;
+            assert_eq!(digest, recorded[slug.as_ref()].as_str().unwrap(), "{}: app digest changed", template.display());
+            cases += 1;
+        }
+    }
+    assert!(cases > 0, "tests/compat has no template app digests to replay");
+}
+
 /// Read every public resource through the same range reader the page uses. Private
 /// capture/command programs must stay inaccessible in the app URL namespace.
 fn resources(root: &Path, expected: &Value) {
@@ -151,6 +167,11 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
             let root = dir.path().join("Document.slop");
             std::fs::copy(&saved, &root).unwrap();
             hitslop_core::file::open(&root, true).unwrap_or_else(|e| panic!("{label}: the document is refused: {e}"));
+            assert_eq!(
+                hitslop_core::file::inspect(&root).unwrap().app_digest,
+                expected["appDigest"].as_str().expect("missing document app digest; recapture dev"),
+                "{label}: app digest changed"
+            );
             let (state, theme) = read(&root);
             assert_eq!(state, expected["value"], "{label}: the saved document reads differently");
             assert_eq!(theme["overrides"], expected["theme"]["overrides"], "{label}: theme overrides");
@@ -189,6 +210,11 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
                 store.close().unwrap();
                 let (state, _) = read(&root);
                 assert_eq!(state, scenario["value"], "{label}: the edit did not reopen");
+                assert_eq!(
+                    hitslop_core::file::inspect(&root).unwrap().app_digest,
+                    expected["appDigest"].as_str().unwrap(),
+                    "{label}: app digest after edit/save/close/reopen"
+                );
                 let reopened = Store::open(&root, Mode::Snapshot).unwrap();
                 assert_eq!(
                     reopened.attachments().unwrap(),

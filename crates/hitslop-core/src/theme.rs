@@ -1,6 +1,6 @@
 //! Theme rules shared by authoring validation and native writes. A theme is a palette:
 //! the colors an app declares, with overrides in the document's own Loro history.
-use crate::wire::{THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIX, THEME_TOKENS, ThemeFile};
+use crate::wire::{THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIXES, THEME_TOKENS, ThemeFile};
 use crate::{Code, Result, encode, err, parse};
 use loro::{LoroMap, LoroValue, ValueOrContainer};
 use std::collections::{BTreeMap, HashSet};
@@ -11,7 +11,7 @@ fn valid_name(name: &str) -> bool {
     name.len() <= THEME_NAME_LIMIT
         && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        && !name.starts_with(THEME_RESERVED_PREFIX)
+        && !THEME_RESERVED_PREFIXES.iter().any(|prefix| name.starts_with(prefix))
 }
 /// Lowercase `#rrggbb` or `#rrggbbaa`. An opaque color omits `ff`, so two values name the
 /// same color only when they are the same string.
@@ -271,6 +271,8 @@ mod tests {
             json!({"bad key":"#ffffff"}),
             json!({"1accent":"#ffffff"}),
             json!({"window-radius":"#ffffff"}),
+            json!({"host-accent":"#ffffff"}),
+            json!({"platform-accent":"#ffffff"}),
             json!({"a".repeat(65): "#ffffff"}),
         ] {
             assert!(validate_defaults(&values.to_string()).is_err(), "{values}");

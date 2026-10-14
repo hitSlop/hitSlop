@@ -616,3 +616,57 @@ test("an author folder named src/shell is ordinary app code", async () => {
     expect(input.roles.ui).toBe("ui.js");
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);
+
+test("legal dependency notices survive UI, command and capture minification", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-legal-comments-"));
+  try {
+    const options = await definitionFixture(root);
+    const dependency = join(root, "node_modules", "licensed-helper");
+    await mkdir(dependency, { recursive: true });
+    await writeFile(
+      join(dependency, "package.json"),
+      JSON.stringify({
+        name: "licensed-helper",
+        type: "module",
+        exports: "./index.js",
+        license: "MIT",
+      }),
+    );
+    const notices = [
+      "/*! licensed-helper MIT license: Copyright (c) Fixture Authors; permission is hereby granted. */",
+      "/** @license licensed-helper MIT: The above copyright and permission notice shall be included. */",
+    ];
+    await writeFile(
+      join(dependency, "index.js"),
+      notices.join("\n") + "\nexport const label = value => 'Licensed: ' + value;",
+    );
+    const app = await readFile(join(root, "App.svelte"), "utf8");
+    await writeFile(
+      join(root, "App.svelte"),
+      app
+        .replace('<script lang="ts">', '<script lang="ts">import {label} from "licensed-helper";')
+        .replace("{doc.current.title}", "{label(doc.current.title)}"),
+    );
+    const commands = await readFile(join(root, "commands.ts"), "utf8");
+    await writeFile(
+      join(root, "commands.ts"),
+      'import {label} from "licensed-helper";\n' +
+        commands.replace("return sentinel", "return label(sentinel)"),
+    );
+    await writeFile(
+      join(root, "Icon.svelte"),
+      '<script>import {label} from "licensed-helper";</script><p>{label("Icon")}</p>',
+    );
+    const { outputs } = await buildGraphs(root, options);
+    for (const artifact of [
+      outputs.ui.get("ui.js"),
+      outputs.definition.get("commands.js"),
+      outputs.definition.get("icon.js"),
+    ]) {
+      const code = new TextDecoder().decode(artifact!.bytes);
+      for (const notice of notices) expect(code).toContain(notice);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);

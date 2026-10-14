@@ -181,10 +181,9 @@ fn a_second_conflict_and_invalid_results_are_not_replayed() {
     }
     assert_eq!(receive(reply).unwrap_err().reason, Some(Code::StaleBase));
     assert_eq!(title(&owner), "Concurrent 1");
-    for (attempt, output) in [
-        (2, json!({"ok":true,"intents":[],"result":null,"extra":true})),
-        (3, json!({"ok":false,"error":"Runtime failed"})),
-    ] {
+    for (attempt, output) in
+        [(2, json!({"ok":true,"intents":{},"result":null})), (3, json!({"ok":false,"error":"Runtime failed"}))]
+    {
         let reply = submit(&owner, command(json!({"title":"Command"})), None);
         fixture.input(attempt);
         fixture.reply(attempt, output);
@@ -192,6 +191,46 @@ fn a_second_conflict_and_invalid_results_are_not_replayed() {
         assert_eq!(title(&owner), "Concurrent 1");
     }
     assert!(!fixture.dir.path().join("started-4").exists());
+    close(&owner);
+}
+
+#[test]
+fn command_envelopes_ignore_unknown_members_but_keep_required_fields_and_intents_strict() {
+    let fixture = Fixture::new();
+    let owner = fixture.open(true);
+    let reply = submit(&owner, command(json!({"title":"Command"})), None);
+    fixture.input(0);
+    let mut output = accepted("Command");
+    output["extra"] = json!(1);
+    fixture.reply(0, output);
+    assert!(matches!(receive(reply).unwrap(), Reply::Command { sequence: 1, .. }));
+    assert_eq!(title(&owner), "Command");
+
+    let reply = submit(&owner, command(json!({"title":"Ignored"})), None);
+    fixture.input(1);
+    fixture.reply(1, json!({"ok":false,"error":"Enter a title.","refused":true,"extra":1}));
+    let failure = receive(reply).unwrap_err();
+    assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(Code::Refused)));
+    assert_eq!(failure.message, "Enter a title.");
+
+    for (attempt, output) in [
+        json!({"ok":true,"intents":[{"type":"set","path":["title"],"value":"Ignored","extra":1}],"result":null,"extra":1}),
+        json!({"ok":true,"intents":[]}),
+        json!({"ok":true,"result":null}),
+        json!({"ok":"true","intents":[],"result":null}),
+        json!({"ok":true,"intents":{},"result":null}),
+        json!({"ok":false,"refused":true,"extra":1}),
+        json!({"ok":false,"error":1,"refused":true,"extra":1}),
+        json!({"ok":false,"error":"Enter a title.","refused":1,"extra":1}),
+    ].into_iter().enumerate() {
+        let reply = submit(&owner, command(json!({"title":"Ignored"})), None);
+        fixture.input(attempt + 2);
+        fixture.reply(attempt + 2, output);
+        let failure = receive(reply).unwrap_err();
+        assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(Code::EngineError)));
+        assert!(failure.message.contains("it returned an invalid reply"));
+        assert_eq!(title(&owner), "Command");
+    }
     close(&owner);
 }
 

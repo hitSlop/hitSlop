@@ -8,7 +8,10 @@ import { tmpdir } from "node:os";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { createDocument, engineRequest } from "../lib/native";
 import { verifyAppCommands } from "./app-commands";
-const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
+import { verifyArtifactCapabilities } from "./artifact-capabilities";
+const args = process.argv.slice(2);
+const unsigned = args.includes("--unsigned");
+const app = resolve(args.find((arg) => arg !== "--unsigned") ?? "generated/app/hitSlop.app");
 // Both bundles compile the intent directly. A package reference to a statically
 // linked module extracts JSON but cannot be resolved by macOS's intent registry.
 for (const bundle of [app, join(app, "Contents/PlugIns/hitSlop-Widgets.appex")]) {
@@ -49,6 +52,7 @@ try {
   // which read the file with the same core.
   const plist = async (path: string) => JSON.parse(await installed(["-convert", "json", "-o", "-", path], "/usr/bin/plutil"));
   const info = await plist(join(app, "Contents/Info.plist"));
+  await verifyArtifactCapabilities(info, app, unsigned);
   const type = info.UTExportedTypeDeclarations?.find((t: { UTTypeIdentifier: string }) => t.UTTypeIdentifier === "com.hitslop.slop");
   assert.ok(type?.UTTypeConformsTo?.includes("public.data"), "The .slop type must be a plain data file");
   const badge = type?.UTTypeIcons?.UTTypeIconBadgeName;

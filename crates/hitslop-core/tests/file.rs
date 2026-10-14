@@ -391,6 +391,93 @@ fn a_closed_export_past_its_deadline_publishes_nothing() {
     assert!(temporaries(dir.path()).is_empty());
 }
 
+#[test]
+fn capture_export_bytes_are_complete_and_existing_outputs_are_never_replaced() {
+    use hitslop_core::capture::publish_export;
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("Export.png");
+    let bytes = png(64, 48, 6);
+    publish_export(&bytes, &output, || true).unwrap();
+    assert_eq!(fs::read(&output).unwrap(), bytes);
+    assert_eq!(code(publish_export(b"replacement", &output, || true).unwrap_err()), Code::Exists);
+    assert_eq!(fs::read(&output).unwrap(), bytes);
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+#[test]
+fn capture_export_accepts_long_destination_names_without_leaving_staging_files() {
+    for length in [240, 255] {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join(format!("{}.png", "e".repeat(length - 4)));
+        let bytes = png(64, 48, 6);
+        hitslop_core::capture::publish_export(&bytes, &output, || true).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), bytes);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert!(temporaries(dir.path()).is_empty());
+    }
+}
+
+#[test]
+fn document_copy_accepts_long_destination_names_without_leaving_staging_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = template(dir.path());
+    for length in [240, 255] {
+        let folder = dir.path().join(length.to_string());
+        fs::create_dir(&folder).unwrap();
+        let output = folder.join(format!("{}.slop", "d".repeat(length - 5)));
+        file::create_document(&source, &output).unwrap();
+        assert_eq!(file::kind(&output).unwrap(), Kind::Document);
+        assert_eq!(fs::read_dir(&folder).unwrap().count(), 1);
+        assert!(temporaries(&folder).is_empty());
+    }
+}
+
+#[test]
+fn capture_export_cancelled_after_staging_publishes_nothing() {
+    use hitslop_core::capture::publish_export;
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("Late.png");
+    let result = publish_export(b"complete staged bytes", &output, || {
+        assert!(!output.exists());
+        let paths: Vec<_> = fs::read_dir(dir.path()).unwrap().map(|entry| entry.unwrap().path()).collect();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(fs::read(&paths[0]).unwrap(), b"complete staged bytes");
+        false
+    });
+    assert!(result.unwrap_err().to_string().contains("not published"));
+    assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn capture_export_failed_write_removes_the_partial_staging_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let status = support::child(
+        "file::capture_export_write_limit_child",
+        &[("HITSLOP_EXPORT_WRITE_LIMIT", dir.path().to_str().unwrap())],
+    )
+    .status()
+    .unwrap();
+    assert!(status.success(), "limited writer failed: {status}");
+    assert!(fs::read_dir(dir.path()).unwrap().next().is_none(), "no destination or partial staging file");
+}
+
+#[test]
+#[ignore = "child process with a file-size limit"]
+fn capture_export_write_limit_child() {
+    let Ok(folder) = std::env::var("HITSLOP_EXPORT_WRITE_LIMIT") else { return };
+    // A real write fault after four bytes; isolate this process-wide limit in a child.
+    // SAFETY: SIG_IGN is valid; the limit points to an initialized rlimit.
+    unsafe {
+        libc::signal(libc::SIGXFSZ, libc::SIG_IGN);
+        assert_eq!(libc::setrlimit(libc::RLIMIT_FSIZE, &libc::rlimit { rlim_cur: 4, rlim_max: 4 }), 0);
+    }
+    let result =
+        hitslop_core::capture::publish_export(b"more than four bytes", &Path::new(&folder).join("Export.png"), || {
+            panic!("a failed write must never reach publication")
+        });
+    assert!(result.unwrap_err().to_string().contains("Cannot write the export"));
+}
+
 /// A file made at the output while the export rendered wins: the export refuses rather
 /// than replace it.
 #[test]
@@ -677,6 +764,51 @@ fn document_uuid_is_immutable_and_malformed_identities_are_refused_without_write
         assert!(Store::open(&path, Mode::Document).is_err());
         assert!(file::summary(&path).is_err());
         assert_eq!(fs::read(&path).unwrap(), before);
+    }
+}
+
+#[test]
+fn freshly_packed_pragmas_and_writer_journal_mode_are_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let packed = template(dir.path());
+    let conn = Connection::open(&packed).unwrap();
+    for (pragma, expected) in
+        [("application_id", 0x4853_4c50), ("user_version", 1), ("page_size", 4096), ("auto_vacuum", 1)]
+    {
+        assert_eq!(
+            conn.query_row(&format!("PRAGMA {pragma}"), [], |r| r.get::<_, i64>(0)).unwrap(),
+            expected,
+            "{pragma}"
+        );
+    }
+    assert_eq!(conn.query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0)).unwrap(), "delete");
+    drop(conn);
+    let path = dir.path().join("Writer.slop");
+    file::create_document(&packed, &path).unwrap();
+    // Persist WAL first, so this observes the writer applying its rollback-journal policy.
+    raw(&path).query_row("PRAGMA journal_mode=WAL", [], |_| Ok(())).unwrap();
+    let store = Store::open(&path, Mode::Document).unwrap();
+    assert_eq!(
+        Connection::open(&path).unwrap().query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0)).unwrap(),
+        "delete"
+    );
+    store.close().unwrap();
+}
+
+#[test]
+fn app_digest_changes_with_embedded_app_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = document(dir.path());
+    let original = file::inspect(&path).unwrap().app_digest;
+    for change in [
+        "UPDATE app SET title='Changed title'",
+        "UPDATE assets SET bytes=x'626f6479207b207d',size=8 WHERE key='ui.css'",
+        "UPDATE assets SET key='media/0000000000000000000000000000000000000000000000000000000000000000.woff2' WHERE media_type='font/woff2'",
+    ] {
+        let changed = dir.path().join("Changed.slop");
+        fs::copy(&path, &changed).unwrap();
+        raw(&changed).execute_batch(change).unwrap();
+        assert_ne!(file::inspect(&changed).unwrap().app_digest, original, "{change}");
     }
 }
 /// Each marker raised one past what this build writes.
@@ -1051,6 +1183,8 @@ fn a_skin_must_be_an_rgba_asset_at_one_or_two_times_the_window_size() {
 fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
     for ddl in [
         "CREATE TABLE extra(x)",
+        "DROP TABLE share",
+        "ALTER TABLE share ADD COLUMN extra BLOB",
         "CREATE INDEX extra_index ON assets(bytes)",
         "CREATE VIEW extra_view AS SELECT 1",
         "CREATE TRIGGER extra_trigger AFTER INSERT ON history BEGIN DELETE FROM attachments; END",

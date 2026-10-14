@@ -1,6 +1,7 @@
 //! Shared page admission and replies; native socket routing lives in `native`.
 use crate::{
     Code,
+    app::Capability,
     owner::{self, Failure, FailureKind, Owner},
     wire::{self, OutcomeCode, PageRequest},
 };
@@ -70,23 +71,38 @@ fn page_config(owner: &Owner) -> Result<wire::page::PageSuccess> {
         descriptor: raw(app.app.document_json().into())?,
     })
 }
-/// A transcription reaches the host only for a page whose stored app declared `speech`;
-/// otherwise the page learns why it is unavailable, and no host is asked.
-fn speech(owner: &Owner, attachment: String, locale: Option<String>) -> PageDispatch {
-    use wire::page::{HostAction, PageSuccess, SpeechOutcome, SpeechUnavailable};
-    if !owner.app().app.capabilities().contains(&crate::app::Capability::Speech) {
-        page_success(PageSuccess::SpeechTranscribe {
+fn not_declared(capability: Capability) -> PageDispatch {
+    use wire::page::{PageSuccess, SpeechOutcome, SpeechUnavailable};
+    match capability {
+        Capability::Speech => page_success(PageSuccess::SpeechTranscribe {
             ok: wire::engine::True,
             outcome: SpeechOutcome::Unavailable {
                 reason: SpeechUnavailable::NotDeclared,
                 message: r#"This app does not declare speech; add "speech" to capabilities in slop.ts"#.into(),
             },
-        })
-    } else {
-        PageDispatch::Host {
-            action: HostAction::SpeechTranscribe { attachment, locale: locale.map(|locale| locale.replace('_', "-")) },
+        }),
+        // Camera and microphone are admitted by the host delegate, never page requests.
+        Capability::Camera | Capability::Microphone => {
+            page_failure(invalid("This app does not declare the required capability"), false)
         }
     }
+}
+
+fn admit_page_dispatch(
+    owner: &Owner,
+    view: String,
+    dispatch: Result<PageDispatch>,
+    reply: impl FnOnce(PageDispatch) + Send + 'static,
+) {
+    owner.admit_page(
+        view,
+        Box::new(move |admitted| {
+            reply(match admitted.and(dispatch) {
+                Ok(dispatch) => dispatch,
+                Err(error) => page_failure(error, false),
+            })
+        }),
+    );
 }
 /// Runs one validated request from `view`. Edits answer on acceptance; flush waits for
 /// persistence. Host actions pass the same serial view/lifecycle fence before delivery.
@@ -121,6 +137,12 @@ fn page_validated(
     use wire::engine::True;
     use wire::page::{HostAction, PageSuccess as Success};
     type Answer = Box<dyn FnOnce(Reply) -> Option<Success> + Send>;
+    if let Some(capability) = request.requires()
+        && !owner.app().app.capabilities().contains(&capability)
+    {
+        admit_page_dispatch(owner, view, Ok(not_declared(capability)), reply);
+        return;
+    }
     let storage = matches!(request, PageRequest::AttachmentsPut { .. });
     let (request, answer): (Request, Answer) = match request {
         PageRequest::Open {} => (
@@ -177,7 +199,13 @@ fn page_validated(
             ),
             Err(_) => return reply(page_failure(invalid("Invalid attachment bytes"), false)),
         },
-        request => {
+        request @ (PageRequest::Config {}
+        | PageRequest::WindowResize { .. }
+        | PageRequest::Ready {}
+        | PageRequest::PageRecovered {}
+        | PageRequest::Failed { .. }
+        | PageRequest::PageError { .. }
+        | PageRequest::SpeechTranscribe { .. }) => {
             let dispatch = match request {
                 PageRequest::Config {} => page_config(owner).map(page_success),
                 PageRequest::WindowResize { width, height } => {
@@ -189,18 +217,20 @@ fn page_validated(
                 PageRequest::PageError { kind, error } => {
                     Ok(PageDispatch::Host { action: HostAction::PageError { kind, error } })
                 }
-                PageRequest::SpeechTranscribe { attachment, locale } => Ok(speech(owner, attachment, locale)),
-                _ => unreachable!("document requests routed above"),
-            };
-            owner.admit_page(
-                view,
-                Box::new(move |admitted| {
-                    reply(match admitted.and(dispatch) {
-                        Ok(dispatch) => dispatch,
-                        Err(error) => page_failure(error, false),
-                    })
+                PageRequest::SpeechTranscribe { attachment, locale } => Ok(PageDispatch::Host {
+                    action: HostAction::SpeechTranscribe {
+                        attachment,
+                        locale: locale.map(|locale| locale.replace('_', "-")),
+                    },
                 }),
-            );
+                PageRequest::Open {}
+                | PageRequest::Apply { .. }
+                | PageRequest::Flush {}
+                | PageRequest::Undo {}
+                | PageRequest::Redo {}
+                | PageRequest::AttachmentsPut { .. } => unreachable!("document requests routed above"),
+            };
+            admit_page_dispatch(owner, view, dispatch, reply);
             return;
         }
     };

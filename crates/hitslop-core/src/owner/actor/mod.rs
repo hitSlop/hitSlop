@@ -43,7 +43,9 @@ pub(super) fn spawn(
             let completion = sender.clone();
             std::thread::Builder::new()
                 .name("hitslop.commands".into())
-                .spawn(move || commands::worker(evaluator, evaluations, completion))
+                .spawn(move || {
+                    commands::worker(|abi, bundle, input| evaluator.run(abi, bundle, input), evaluations, completion)
+                })
                 .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
             Some(evaluate)
         }

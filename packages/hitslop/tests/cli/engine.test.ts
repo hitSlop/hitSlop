@@ -34,9 +34,9 @@ test("one JSON transport validates results and never retries ambiguous invocatio
     { ok: true, method: "templates", catalog: { folders: [], templates: [], issues: [] } },
     { ok: true, method: "call", result: null, ids: [1] },
     { ok: true, method: "call", ids: [] },
-    { ok: false, code: "future_outcome", error: "Unclassified" },
     { ok: false, code: "rejected" },
     { ok: false, error: "No code" },
+    { ok: false, code: 7, error: "Invalid code" },
   ]) {
     await writeFile(binary, `#!${process.execPath}
 const body = await Bun.stdin.json();
@@ -107,4 +107,62 @@ await Bun.stdin.json(); console.log(JSON.stringify({ok:false,code:"rejected",rea
   await expect(request({ method: "templates" }, { binary })).rejects.toBeInstanceOf(ExitStatus);
   await writeFile(binary, '#!/bin/sh\nexit 19\n', { mode: 0o755 });
   await expect(request({ method: "templates" }, { binary })).rejects.toThrow("Outcome unknown");
+});
+
+test("unfamiliar outcome codes preserve the message and advise inspection before retrying", async () => {
+  const { execute, request } = await import("../../src/cli/engine");
+  const root = await mkdtemp(join(tmpdir(), "hitslop-future-outcome-"));
+  roots.push(root);
+  const binary = join(root, "engine");
+  const reply = { ok: false, code: "future_outcome", error: "Unclassified failure" } as const;
+  await writeFile(
+    binary,
+    `#!${process.execPath}
+await Bun.stdin.json(); console.log(${JSON.stringify(JSON.stringify(reply))});
+`,
+    { mode: 0o755 },
+  );
+  const batch = { method: "batch" as const, documentPath: "a.slop", batch: { intents: [] } };
+  expect(await request(batch, { binary })).toEqual(reply);
+  await expect(execute(batch, { binary })).rejects.toThrow(
+    "Unclassified failure\nOutcome not recognized. Run slop get before issuing another edit.",
+  );
+  await expect(
+    execute({ method: "call", documentPath: "a.slop", command: "rename", args: {} }, { binary }),
+  ).rejects.toThrow(
+    "Unclassified failure\nOutcome not recognized. Run slop get before issuing another edit.",
+  );
+  await expect(
+    execute(
+      { method: "export", documentPath: "a.slop", format: "png", output: "a.png" },
+      { binary },
+    ),
+  ).rejects.toThrow(
+    "Unclassified failure\nOutcome not recognized. Inspect the document and output before retrying.",
+  );
+});
+
+test("known outcome guidance stays unchanged", async () => {
+  const { unwrap } = await import("../../src/cli/engine");
+  const guidance = {
+    rejected: "Not applied.",
+    owner_replaced: "Not applied. Run slop get before issuing another edit.",
+    closing: "Not applied. Run slop get before issuing another edit.",
+    owner_invalidated: "Not applied.",
+    save_failed: "Applied, but not yet saved. Run slop get before issuing another edit.",
+    unknown_outcome: "Outcome unknown. Run slop get before issuing another edit.",
+  };
+  for (const [code, outcome] of Object.entries(guidance)) {
+    const reply = { ok: false, code, error: "Failure" } as const;
+    expect(() => unwrap(reply, "batch")).toThrow(`Failure\n${outcome}`);
+    expect(() => unwrap(reply, "export")).toThrow(
+      code === "unknown_outcome"
+        ? "Failure\nOutcome unknown. Inspect the document and output before retrying."
+        : /^Failure$/,
+    );
+  }
+  for (const code of ["toString", "__proto__"])
+    expect(() => unwrap({ ok: false, code, error: "Future failure" }, "batch")).toThrow(
+      "Future failure\nOutcome not recognized. Run slop get before issuing another edit.",
+    );
 });

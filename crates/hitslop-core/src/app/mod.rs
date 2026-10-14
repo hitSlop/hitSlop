@@ -89,7 +89,24 @@ pub enum Capability {
     Speech,
 }
 impl Capability {
-    pub const ALL: &[Self] = &[Self::Camera, Self::Microphone, Self::Speech];
+    pub const ALL: &[Self] = &Self::all();
+
+    const fn all() -> [Self; 3] {
+        let mut all = [Self::Camera; 3];
+        let mut next = Some(Self::Camera);
+        let mut index = 0;
+        while let Some(capability) = next {
+            all[index] = capability;
+            index += 1;
+            next = match capability {
+                Self::Camera => Some(Self::Microphone),
+                Self::Microphone => Some(Self::Speech),
+                Self::Speech => None,
+            };
+        }
+        assert!(index == all.len());
+        all
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

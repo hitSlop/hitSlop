@@ -122,6 +122,7 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
             preserveEntrySignatures: "strict",
             output: {
               format: headless ? "iife" : "es",
+              comments: { legal: true },
               codeSplitting: false,
               entryFileNames: headless ? "commands.js" : "ui.js",
               assetFileNames(asset) {

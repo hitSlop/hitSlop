@@ -210,7 +210,9 @@ read as `from`. No version names the starting point, so no edit is ever too old 
   carries the merged selection. If the user kept typing, the next batch goes from the
   text this one sent.
 - During IME composition nothing is sent. Close and export commit a composition.
-  Retargeting or unmounting a binding sends its unsent text first.
+  Retargeting or unmounting a binding sends its unsent text first. If that send has an
+  uncertain outcome that cannot be resolved, the text is reported and is not kept once
+  the control is gone.
 
 A text set without `from` (a text handle's `set(value)`, or the CLI without it) replaces
 the whole field as it is when the owner applies it, through the same script.
@@ -293,12 +295,29 @@ its operations from the live Loro document.
   keeps the native save-recovery sheet above the failure screen; only a save or an explicit
   discard clears it. Retry saves through the retained owner without reopening the page.
 
-Storage is `document(id, uuid)`, `history(seq, bytes)` (a snapshot, then the updates saved
-after it) and, for a shared document, `share(room, endpoint)`. A shared document keeps its
-whole history and every attachment, because another replica's edits can depend on any of
-it; a clean copy drops the share. Creating a document validates the template's complete saved state in the
-source read transaction, then atomically writes a fresh UUID and initial snapshot before
-publishing the file.
+The SQLite schema has seven tables:
+
+| Table | Contents | Written by |
+|---|---|---|
+| `app` | Sealed catalog row, compatibility markers and app definition | Pack, once |
+| `assets` | Sealed app resources | Pack, before the app row seals them |
+| `artwork` | Preview and icon PNGs | Pack; refreshed at close or supplied for a clean copy |
+| `document` | Identity singleton: UUID | Document creation and independent copies |
+| `history` | Loro snapshot, then updates: the saved state | Pack seeds it; saves, checkpoints and close-time trims update it; clean copies replace it with current state |
+| `share` | Singleton room and relay endpoint of a shared document | The sync path; empty until sharing ships, cleared on clean copies |
+| `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unreferenced blobs are reclaimed |
+
+The schema check is exact. A new table or column requires a storage version bump and a
+lazy migration under the writer lock. An older build refuses that file with
+`requires_update` (“update hitSlop”) before comparing its tables. Optional additions
+that need no bump live in open surfaces: definition JSON members, Loro containers and
+artwork rows. [App identity](engineering-contract.md#app-identity) uses a fixed encoding
+of the sealed app and assets.
+
+A shared document keeps its whole history and every attachment, because another
+replica's edits can depend on any of it; a clean copy drops the share. Creating a
+document validates the template's complete saved state in the source read transaction,
+then atomically writes a fresh UUID and initial snapshot before publishing the file.
 The UUID names the logical document, not its writer or its inode-based lease. Open,
 save, rename, capture snapshots and internal backups preserve it; explicit Duplicate
 and independent editable copies receive a new UUID. Templates have no UUID. The core

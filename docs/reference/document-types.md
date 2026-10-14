@@ -175,7 +175,8 @@ neither side's typing is lost.
 - **`bindText(input, handle)`** keeps the user's text in the field and sends each change
   as "the field was X, now it is Y". The owner merges it with edits made elsewhere, and
   the caret stays put, including through IME composition. Retargeting or unmounting a
-  binding sends its unsent text first.
+  binding sends its unsent text first. If that send has an uncertain outcome that cannot
+  be resolved, the text is reported and is not kept once the control is gone.
 - **`EditableText`** (from `hitslop/svelte`, `field={handle}`) is that binding for any
   text, including a field in every row: it shows the text and mounts a textarea only
   while edited, since WebKit form controls are too expensive to mount by the thousand.

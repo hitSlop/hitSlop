@@ -1,7 +1,7 @@
 // Guards authored titles escaping the preview title/iframe attribute without injecting elements.
 import { expect, test } from "bun:test";
 import { previewFrame } from "../../src/cli/preview";
-import { capabilityPermissionsPolicy } from "../../src/schema/policy";
+import { capabilityFeatures, capabilityPermissionsPolicy } from "../../src/schema/policy";
 
 const window = {
   width: 480, height: 620, fullscreenable: false,
@@ -54,4 +54,22 @@ test("the preview delegates only declared devices to the app frame", async () =>
   expect(await allowOf(["speech", "microphone"])).toBe("microphone");
   expect(capabilityPermissionsPolicy(["speech", "microphone"])).toBe("camera=(), microphone=(self)");
   expect(await allowOf(["microphone", "camera"])).toBe("camera; microphone");
+});
+
+test.each([
+  [[], [], "camera=(), microphone=()"],
+  [["speech"], [], "camera=(), microphone=()"],
+  [["camera"], ["camera"], "camera=(self), microphone=()"],
+  [["microphone"], ["microphone"], "camera=(), microphone=(self)"],
+  [["camera", "speech"], ["camera"], "camera=(self), microphone=()"],
+  [["microphone", "speech"], ["microphone"], "camera=(), microphone=(self)"],
+  [["microphone", "camera"], ["camera", "microphone"], "camera=(self), microphone=(self)"],
+  [
+    ["speech", "microphone", "camera"],
+    ["camera", "microphone"],
+    "camera=(self), microphone=(self)",
+  ],
+] as const)("browser permission bytes for %j", (capabilities, features, header) => {
+  expect(capabilityFeatures(capabilities)).toEqual([...features]);
+  expect(capabilityPermissionsPolicy(capabilities)).toBe(header);
 });

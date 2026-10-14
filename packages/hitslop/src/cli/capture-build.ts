@@ -265,7 +265,12 @@ globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCapt
       cssCodeSplit: false,
       rolldownOptions: {
         input: entry,
-        output: { format: "iife", codeSplitting: false, entryFileNames: `${role}.js` },
+        output: {
+          format: "iife",
+          comments: { legal: true },
+          codeSplitting: false,
+          entryFileNames: `${role}.js`,
+        },
       },
     },
   }).catch((error) => {

@@ -30,7 +30,7 @@ pub(crate) const THEME_FILE_LIMIT: usize = 66560;
 /// prefix the host reserves.
 pub(crate) const THEME_NAME_LIMIT: usize = 64;
 pub(crate) const THEME_TOKENS: usize = 256;
-pub(crate) const THEME_RESERVED_PREFIX: &str = "window-";
+pub(crate) const THEME_RESERVED_PREFIXES: &[&str] = &["window-", "host-", "platform-"];
 /// The lowercase Crockford alphabet of minted and derived row IDs.
 pub(crate) const ID_ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
 /// A document's saved checkpoint plus updates, in bytes, and its update rows.
@@ -344,8 +344,8 @@ pub fn open_limits() -> Vec<Limit> {
         kind: LimitKind::Exact,
     });
     limits.push(Limit {
-        name: "THEME_RESERVED_PREFIX".into(),
-        value: spelling(THEME_RESERVED_PREFIX),
+        name: "THEME_RESERVED_PREFIXES".into(),
+        value: spelling(&THEME_RESERVED_PREFIXES.join(",")),
         kind: LimitKind::Exact,
     });
     // Positive IEEE-754 encodings preserve order, including these fractional minima.

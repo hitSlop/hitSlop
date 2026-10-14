@@ -1,8 +1,8 @@
 {
   "release": "dev",
   "frozen": false,
-  "commit": "0e505dfde5f74a6aa54df7d562df23be21377461-dirty",
-  "captured": "2026-10-14T15:22:07.811Z",
+  "commit": "fa75baa0073ffd92355b7c2a8a88be28ab92952f-dirty",
+  "captured": "2026-10-14T20:55:45.855Z",
   "markers": {
     "packageFormat": 1,
     "runtimeABI": 1,
@@ -10,9 +10,9 @@
     "layout": 1,
     "protocol": 1
   },
-  "sourceInputs": "b506a9b9bc9224db9e5569c0e0b4d152a8713a361fd68687a734ce4718e302fd",
+  "sourceInputs": "d9dcab91fc3438241dcdf5ba25bc2d7823f03648e0c340a502ee4d94ddab4199",
   "producer": {
-    "coreBuildID": "0058b951f67807e2",
+    "coreBuildID": "e5e34561efcf0cb2",
     "shell": "832f03fd0993ec7954e745efc199cdcb975f6809a1020836ac7d3ff0ecca393f",
     "runner": {
       "1": "7ed32199cdab6aa4983cc6ea6c4c70dc7bfedb8570e0bf90915bb1012ea36a25"
@@ -44,14 +44,14 @@
     "acceptance/window-theme-capability-bytes-max.json": "58a93195be5415a8e01b8046f24f093403ad683184d57360a940459947009947",
     "commands/conformance-compacted.json": "4e255a130835b925e6c0435b4cee90b41d53ae5c633d694cd5b62519fc96a1ad",
     "commands/conformance.json": "4e255a130835b925e6c0435b4cee90b41d53ae5c633d694cd5b62519fc96a1ad",
-    "documents/conformance-compacted.page.slop": "ffcee15634273ed067a9575512e21b7b0dd6af65b6eb2e16b3b51165c51325dd",
-    "documents/conformance-compacted.slop": "2a12bd07e0bd62245772af41cb69c81abbef1ae6da6da65176cd87fa6ad3351f",
-    "documents/conformance.page.slop": "fe3d8e3b6442ac1c224d690ecaeb185eed410cec2941f4b6ba874884288f5a97",
-    "documents/conformance.slop": "539719a79a8721cadce319267cd6212f7ccebcac7f61c782deabd36f2203ebde",
-    "expected/conformance-compacted.json": "2f1d19dbdc9db775afcffb2c65b6dc944af2bfe7376209fd4018fae77619725a",
-    "expected/conformance-compacted.page.json": "861d9bd1c9bcd8aaad98bee4779d9ce929ef340fdaa137e19e55169046cf0bc0",
-    "expected/conformance.json": "2f1d19dbdc9db775afcffb2c65b6dc944af2bfe7376209fd4018fae77619725a",
-    "expected/conformance.page.json": "861d9bd1c9bcd8aaad98bee4779d9ce929ef340fdaa137e19e55169046cf0bc0",
+    "documents/conformance-compacted.page.slop": "4d52ac354e9f41878972a741f193fc82bf44ef12a596f71f60e718fe2c4ffb87",
+    "documents/conformance-compacted.slop": "31cc82b59f7d13bf2b6296c081cae7027a9282c43de3d590d1947d390ed7b2ea",
+    "documents/conformance.page.slop": "47104c723609038afa631e0b030dd59b3bb10be79b50911c2f14e0037665a37e",
+    "documents/conformance.slop": "baf4e66048e29dc77ddcb9914bb8cca6079f9bc2d4e31c44e8a723c6379f6904",
+    "expected/conformance-compacted.json": "6230023fca74c42392d563aa3f121669f495f2532408d2546656c382426455d0",
+    "expected/conformance-compacted.page.json": "8e466e3d81b7599ddbf8b9a2ceab2cec7d5ba2d9fd84a286632219ca09d00257",
+    "expected/conformance.json": "6230023fca74c42392d563aa3f121669f495f2532408d2546656c382426455d0",
+    "expected/conformance.page.json": "8e466e3d81b7599ddbf8b9a2ceab2cec7d5ba2d9fd84a286632219ca09d00257",
     "expected/new-conformance.json": "a4cbe3ecece0a355a44ef598d0f0618ce78b112557be29c49dd47280a7a671d9",
     "expected/new-presentation-capabilities.json": "a4cbe3ecece0a355a44ef598d0f0618ce78b112557be29c49dd47280a7a671d9",
     "expected/new-presentation-ellipse.json": "ca75868ed0f7bec3345d96ffa522649b2219fb4def0600bee070cea4bc9ba8e1",
@@ -63,14 +63,14 @@
     "expected/new-presentation-radii.json": "ca75868ed0f7bec3345d96ffa522649b2219fb4def0600bee070cea4bc9ba8e1",
     "expected/new-presentation-washer-2x.json": "ca75868ed0f7bec3345d96ffa522649b2219fb4def0600bee070cea4bc9ba8e1",
     "expected/new-presentation-washer.json": "ca75868ed0f7bec3345d96ffa522649b2219fb4def0600bee070cea4bc9ba8e1",
-    "exports/conformance-compacted.json": "c4787c67213e3bcd34b7d43429ba83c8cc5928480a79c8c77136480d477ab113",
-    "exports/conformance-compacted.page.json": "e2d94dc32357b838806f44fdfc9599a9d1c44feaa2fa773a98d97f036517824b",
+    "exports/conformance-compacted.json": "4efd5fa046e0c10be72563cdecd531f8f41847a354ddecca2f2895e6c9893f5c",
+    "exports/conformance-compacted.page.json": "e72b9b0daf878d7e1a838773abe2e1cc4a9b84819202e3b6a0302b8f89a3dac8",
     "exports/conformance-compacted.page.pdf": "576cc2d9b32049af0f536d0111783128ef5427b26672f48966782d7c71f694bf",
     "exports/conformance-compacted.page.png": "ba71a533e3215f9e0be5d065467670c5925a379820ba13ddd383f76fe4264fcc",
     "exports/conformance-compacted.pdf": "bfb46a22cb356eea9ab574a774775378a8f9f7176a740f690d7fd091d357023c",
     "exports/conformance-compacted.png": "91ed5a986e316252ea0f731d23f156775e7dff64cb4b4aca19608d2efe67d961",
-    "exports/conformance.json": "df4b7e1bee3353b73d4494a78ddfb49f8e7a20c367a9877cda84f3d9ad98c95b",
-    "exports/conformance.page.json": "932730af11d41dd912952f697d167d2ceecd654e60109d0601da7e73cbe2374e",
+    "exports/conformance.json": "31baa786ff841e8d81ff2d847b77b3da2f4260b9ffe648bcf84f2b74f1a0d44e",
+    "exports/conformance.page.json": "99690ef9879642badb59975e11c247c907264e3a37d97a28d7231ac71b9a5be9",
     "exports/conformance.page.pdf": "576cc2d9b32049af0f536d0111783128ef5427b26672f48966782d7c71f694bf",
     "exports/conformance.page.png": "ba71a533e3215f9e0be5d065467670c5925a379820ba13ddd383f76fe4264fcc",
     "exports/conformance.pdf": "bfb46a22cb356eea9ab574a774775378a8f9f7176a740f690d7fd091d357023c",
@@ -359,8 +359,8 @@
       "kind": "Max"
     },
     {
-      "name": "THEME_RESERVED_PREFIX",
-      "value": "6921445787841890480",
+      "name": "THEME_RESERVED_PREFIXES",
+      "value": "7635384820919984111",
       "kind": "Exact"
     },
     {
@@ -390,11 +390,24 @@
     "presentation-lock-aspect": "69e1bfdf8f534257f4012cf49fbd300b4a814881509e8354f1e86c181438fe79",
     "presentation-capabilities": "effe5275c607be49336dc31df5f0684e940e57aca720a35a505bdad630b4f56d"
   },
+  "templateAppDigests": {
+    "conformance": "7df0e5efb546d9de77e4957d02d5762d29dfb77cb8afb246283c85268dbb2f93",
+    "presentation-washer": "748e3065fc7b60f544928cab32d55a94de44858b75cc2b22d34424b3db63c34f",
+    "presentation-washer-2x": "c307d865f766ed5c95c94f13da149069fc2684fc6016d4e31ff083b42e65d278",
+    "presentation-glass": "800d06fcd4973e3e554dfc51b095d76d822de771c53bc127ad9fc0d8e3f709bf",
+    "presentation-ellipse": "c943350b9ca2da1383194c50e7fdd9ec6e5b687ad675983a667aee4aa697a116",
+    "presentation-notch": "ecc77bd0e86dda6f0f5354d3b3011cde13d4332bacc376336b377a1411574708",
+    "presentation-fixed": "d7d8dbab9d3c281d1b58e3cae7d8010c7b1a6da2b047b6a287b8193760fc5724",
+    "presentation-evenodd": "b898928f86c50db70ff738f69329ce7de7ea6dfe6a64c8ae45fe11edc99e31cd",
+    "presentation-radii": "55b9d8faeb7e5d67c3ee3f7d9ad0f987c1ddff61c3de8f25ddf6447b6a37ca0c",
+    "presentation-lock-aspect": "c58be17adee934ae02d630a14da555a298fbfb2895974a9e8bc917493b0031ea",
+    "presentation-capabilities": "4efdf7bed981d49ab5b0a864f505bfd32fb5901ec5f3a5fc8e87bb4171fff3ca"
+  },
   "writer": {
     "version": "dev",
     "platform": "darwin-arm64",
-    "buildId": "0058b951f67807e2",
-    "sha256": "c5fbe943a9804ffc4875ac78724aa9114bf8aa8974d6082a692e89b8a74aae12"
+    "buildId": "e5e34561efcf0cb2",
+    "sha256": "bc1ec76a4dd9a533bd997c8e69982ef32fe5ab35d7cfccbef100f1f7341a6098"
   },
   "toolchain": {
     "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
@@ -411,7 +424,7 @@
       "updates": 24
     },
     "conformance-compacted": {
-      "checkpointBytes": 5299,
+      "checkpointBytes": 5318,
       "updates": 0
     },
     "conformance.page": {
@@ -419,8 +432,8 @@
       "updates": 37
     },
     "conformance-compacted.page": {
-      "checkpointBytes": 5299,
-      "updates": 14
+      "checkpointBytes": 5318,
+      "updates": 13
     }
   }
 }

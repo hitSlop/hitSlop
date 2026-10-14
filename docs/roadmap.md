@@ -42,6 +42,11 @@ In order, with the reasoning in [ideas](ideas.md):
   Complete-value replacement, template acceptance, command declaration checks,
   dedicated captures and document UUID copy rules are implemented. Historical foundation
   runs do not certify the current candidate.
+- Before the first public release, finish the bundled-library license review. App bundles
+  retain library license comments; fonts and other non-JS media rely on the review because
+  those comments do not cover them.
+- Requalify every widget family and size on the release candidate before capturing the
+  first corpus entry; the earlier hands-on reviews predate the two-stage capture ABI.
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; capture one permanent entry per released version thereafter, even when markers
   stay unchanged. From then on every released document stays openable.
@@ -54,12 +59,18 @@ In order, with the reasoning in [ideas](ideas.md):
 - Check Quick Look by hand on a document received by Mail and AirDrop. Quarantined copies,
   a file another process is writing and a crashed write (the document icon until the app
   recovers it) are checked.
-- Decide whether Time Machine copying a whole document at the current attachment limits
-  is acceptable, or lower the limits for launch.
+- The first release ships with the current attachment, asset and storage limits; raising
+  them later requires a storage-version bump. Qualify whole-document Time Machine copies
+  at those limits.
 - Exercise the release engines on darwin-arm64, linux-x64 and linux-arm64 (Windows isn't planned).
 - Loro is pinned to a git commit of its main branch (`c00c9fa`), because the fixes undo
   relies on are not on crates.io. Return to an exact crates.io version once one ships
-  them, with the corpus passing.
+  them, with the corpus passing. Re-check crates.io immediately before tagging: on
+  2026-10-14 the pin was 41 commits ahead of the latest release, 1.16.2. Capture the first
+  corpus entry only with the final pin. Re-checked the same day: crates.io still ends at
+  1.16.2, and Loro's main is three unreleased commits past the pin (history and import
+  hardening, about 5,400 added lines, five days old), so the pin stays. Check again
+  immediately before the first frozen capture.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
 - The production-window shadow refresh, and an opening-only black strip beneath a window's
@@ -78,11 +89,8 @@ In order, with the reasoning in [ideas](ideas.md):
 - **Review the restored examples in the app.** The archived examples now live in
   `slops/` in the current format, with model modules and commands. They have been checked
   in the dev preview; individual native checks do not qualify the entire collection.
-  Check each in the built app and PNG/PDF export, review the bundled selection, and review the licenses of bundled libraries
-  (one example stays archived because its engine is AGPL).
-- **Third-party notices in bundles.** Minified app scripts drop library license comments.
-  Emit a notices file with each template, or keep the comments, so bundled libraries
-  keep their required notices.
+  Check each in the built app and PNG/PDF export, and review the bundled selection.
+  One example stays archived because its engine is AGPL.
 - **Preview asset serving.** `slop dev` serves only the slop folder and the CLI, so
   assets inside packages (fonts, models) must be copied into the slop to preview.
 - **Worker and worklet assets.** The shared page CSP is defined in Rust for native and
@@ -91,16 +99,16 @@ In order, with the reasoning in [ideas](ideas.md):
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
   understandable. WebKit does not isolate `slop:` pages, so there is no
   `SharedArrayBuffer`.
-- **Failure hardening.** Bound close-time artwork rendering, which runs under the writer
-  lock with no stage deadline; contain a panicking command evaluator that can hold close
-  forever; publish app-side exports atomically; consider a cap on concurrent restricted
-  children after measurement. The page-call deadline, Reopen recovery and report markers
-  are implemented.
-- **Cheaper extension.** Adding a capability touches about 23 source files and ten of them
-  fail silently if forgotten, notably the per-action capability gate. Make the gate one
-  exhaustive match, derive the device-feature list from the capability enum, assert the
-  Info.plist and entitlement keys in the release check, lint switches for exhaustiveness
-  and name variants instead of `_` on closed enums.
+- **Failure hardening.** Add an aggregate close-time artwork deadline; rendering under
+  the writer lock is currently bounded only by per-child watchdogs. Consider a cap on
+  concurrent restricted children after measurement. Unresolved detached-text recovery remains open above.
+- **Platform drivers and feature discovery.** Define a driver seam for the registry,
+  socket, exclusive rename and evaluator, including an in-process evaluator story for
+  iOS. Add a feature list to CLI `hello` and a host/feature handshake to page config;
+  reply readers already allow these additive members.
+- **Storage evolution.** Give lazy migration a "needed by this write" parameter, split
+  `user_version` into read/write versions, and rename `artwork.png`. Keep the storage-2
+  backup and interruption checklist above.
 - **Revisit the native Svelte checker.** `svelte-check-native` (Rust, TypeScript 7's native
   compiler) matched `svelte-check` on every slop and 14 of 15 injected mistakes, and runs
   about 8 to 10 times faster, but it has one maintainer, ships unsigned binaries without
@@ -110,6 +118,16 @@ In order, with the reasoning in [ideas](ideas.md):
   maintainer team. The repo itself type-checks cleanly on TypeScript 7 already.
 
 ## Implemented foundation
+
+- Live and closed CLI exports share one staged, synced, exclusive publisher; a failed
+  write leaves no destination file and an unsynced folder after publishing is an unknown
+  outcome. Command evaluator panics complete as `host_fault` and leave the worker usable. Page
+  admission uses one exhaustive capability gate; browser permissions policy has a record
+  for every capability, and release checks assert required usage-description and
+  entitlement keys. Command envelope readers ignore unknown members, the CLI handles
+  unfamiliar outcome codes conservatively, and theme tokens reserve host namespaces.
+- App identity uses a fixed encoding; see the
+  [app identity contract](engineering-contract.md#app-identity).
 
 - The native failure screen retains accepted edits and offers Reopen, Copy details and
   Get help; a pending save keeps its recovery sheet. Page-call deadlines and never-ready

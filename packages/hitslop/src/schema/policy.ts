@@ -18,11 +18,23 @@ export const previewHostPolicy = (origin: string) =>
 
 /** The browser permission features a declared capability delegates to the app's frame.
  * `speech` is a host service, not a browser permission, so it delegates nothing. */
-const deviceFeatures = ["camera", "microphone"] as const satisfies readonly Capability[];
+const browserFeatures = {
+  camera: "camera",
+  microphone: "microphone",
+  speech: null,
+} satisfies Record<Capability, string | null>;
+const deviceFeatures = Object.entries(browserFeatures).filter(
+  (entry): entry is [Capability, string] => entry[1] !== null,
+);
 export const capabilityFeatures = (capabilities: readonly Capability[]) =>
-  deviceFeatures.filter((feature) => capabilities.includes(feature));
+  deviceFeatures
+    .filter(([capability]) => capabilities.includes(capability))
+    .map(([, feature]) => feature);
 /** A `Permissions-Policy` header that admits only the declared devices, to the app's origin. */
 export const capabilityPermissionsPolicy = (capabilities: readonly Capability[]) =>
   deviceFeatures
-    .map((feature) => `${feature}=${capabilities.includes(feature) ? "(self)" : "()"}`)
+    .map(
+      ([capability, feature]) =>
+        `${feature}=${capabilities.includes(capability) ? "(self)" : "()"}`,
+    )
     .join(", ");
