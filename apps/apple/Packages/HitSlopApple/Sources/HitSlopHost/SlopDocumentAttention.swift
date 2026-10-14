@@ -9,7 +9,9 @@ extension SlopDocumentWindowController {
     presentation.ready = false
     stopLoading()
     failures.renderer(error, reason: session.failureReason, telemetry: telemetry)
-    updatePageFailure(error.localizedDescription)
+    updatePageFailure(
+      error.localizedDescription, reason: session.failureReason,
+      classification: SlopFailureContext.classify(error).classification)
   }
 
   public func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) {
@@ -90,7 +92,12 @@ extension SlopDocumentWindowController {
     }
   }
 
-  func updatePageFailure(_ message: String?) {
+  /// Shows the failure screen for `message`, or removes it. The reason and classification say
+  /// what the screen tells the person and what Copy details reports.
+  func updatePageFailure(
+    _ message: String?, reason: SlopFailureContext.Reason? = nil,
+    classification: SlopFailureContext.Classification = .platform
+  ) {
     guard presentedPageError != message else { return }
     presentedPageError = message
     failedOverlay?.removeFromSuperview()
@@ -99,8 +106,18 @@ extension SlopDocumentWindowController {
     sharePopover.dismiss()
     stopLoading()
     if session.rendererDead { apply(saveAttention.clear()) }
-    let overlay = NSHostingView(
-      rootView: FailureOverlay(message: message, retry: { [weak self] in self?.request(.retry) }))
+    let metadata = session.file.metadata
+    let screen = FailureScreen(
+      notice: PageFailureNotice(
+        message: message, reason: reason, classification: classification, slopTitle: metadata.title,
+        slopSlug: metadata.slug),
+      reopen: { [weak self] in self?.request(.retry) },
+      copy: { text in
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+      },
+      open: { NSWorkspace.shared.open($0) })
+    let overlay = NSHostingView(rootView: FailureOverlay(screen: screen))
     overlay.frame = content.bounds
     overlay.autoresizingMask = [.width, .height]
     content.addSubview(overlay)
@@ -203,14 +220,95 @@ struct SaveAttention: Equatable {
   }
 }
 
+/// The failure screen's state and buttons. The controller injects the system calls (reopening,
+/// the pasteboard, the browser), so what the buttons do is tested without a window.
+@MainActor @Observable final class FailureScreen {
+  let notice: PageFailureNotice
+  let reopen: () -> Void
+  /// Technical details are open.
+  var showsDetails = false
+  /// Copy details has just run: its button says so for a moment.
+  private(set) var copied = false
+  private let copy: (String) -> Void
+  private let open: (URL) -> Void
+  private let confirmation: Duration
+  @ObservationIgnored private var revert: Task<Void, Never>?
+
+  init(
+    notice: PageFailureNotice, reopen: @escaping () -> Void, copy: @escaping (String) -> Void,
+    open: @escaping (URL) -> Void, confirmation: Duration = .milliseconds(1_500)
+  ) {
+    self.notice = notice
+    self.reopen = reopen
+    self.copy = copy
+    self.open = open
+    self.confirmation = confirmation
+  }
+
+  func copyDetails() {
+    copy(notice.report)
+    copied = true
+    revert?.cancel()
+    revert = Task { [weak self, confirmation] in
+      try? await Task.sleep(for: confirmation)
+      if !Task.isCancelled { self?.copied = false }
+    }
+  }
+  func getHelp() { open(SlopLinks.discord) }
+}
+
+/// Covers a document whose page failed: what happened in plain words, a way back, a way to
+/// report it, and the raw error out of the way.
 struct FailureOverlay: View {
-  let message: String, retry: () -> Void
+  @Bindable var screen: FailureScreen
   var body: some View {
-    VStack(spacing: 12) {
-      Image(systemName: "exclamationmark.triangle").font(.title)
-      Text("This slop stopped responding").font(.headline)
-      Text(message).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-      Button("Reopen interface", action: retry).buttonStyle(.borderedProminent)
-    }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(.regularMaterial)
+    GeometryReader { proxy in
+      ScrollView {
+        VStack(spacing: 20) {
+          VStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.secondary)
+              .accessibilityHidden(true)
+            Text(screen.notice.title).font(.title3.weight(.semibold))
+            Text(screen.notice.explanation).font(.callout).foregroundStyle(.secondary)
+              .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+          }
+          VStack(spacing: 10) {
+            Button("Reopen interface", action: screen.reopen).buttonStyle(.borderedProminent).controlSize(.large)
+            Button(action: screen.copyDetails) {
+              // The label keeps its size when it says Copied, so nothing around it moves.
+              Label {
+                Text(screen.copied ? "Copied" : "Copy details")
+              } icon: {
+                Image(systemName: screen.copied ? "checkmark" : "doc.on.doc").frame(width: 14, height: 14)
+              }.frame(minWidth: 108)
+            }
+            .buttonStyle(.bordered)
+            .onChange(of: screen.copied) { _, copied in
+              if copied { AccessibilityNotification.Announcement("Copied").post() }
+            }
+            Button(action: screen.getHelp) {
+              HStack(spacing: 3) {
+                Text("Get help on Discord")
+                Image(systemName: "arrow.up.right").font(.caption.weight(.semibold)).accessibilityHidden(true)
+              }
+            }.buttonStyle(.link).accessibilityHint("Opens Discord in your browser")
+          }
+          DisclosureGroup(isExpanded: $screen.showsDetails) {
+            ScrollView {
+              Text(screen.notice.details).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(8)
+            }
+            // Bounded, and smaller in a small window, so opening it still fits.
+            .frame(maxHeight: min(140, max(64, proxy.size.height / 4)))
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+          } label: {
+            Text("Technical details").font(.callout).foregroundStyle(.secondary)
+          }
+        }
+        .frame(maxWidth: 420).padding(24).frame(maxWidth: .infinity, minHeight: proxy.size.height)
+        // Opening the details recenters the screen: ease it rather than jump.
+        .animation(.easeInOut(duration: 0.2), value: screen.showsDetails)
+      }.scrollBounceBehavior(.basedOnSize)
+    }.background(.regularMaterial)
   }
 }

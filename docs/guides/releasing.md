@@ -224,7 +224,7 @@ Record commit, version/build, OS, and results. Test macOS 15.2 and the current s
 - Failed save retains ownership; retry works and cancelled quit preserves other documents.
 - Kill WebContent, reopen saved state, and continue editing.
 - PNG/PDF, Finder preview/icon, keyboard focus, narrow windows, repeated open/close, and menu commands.
-- GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite.
+- GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite, and that "Get help on Discord" on the slop failure screen (kill WebContent) opens the same one.
 - Gatekeeper launch from downloaded DMG and ZIP; the installed app works without Node/Bun.
 - Sparkle update from the previous signed release, verifying publisher and resulting version.
   With an isolated reachable appcast, confirm the versioned Markdown loads in the update

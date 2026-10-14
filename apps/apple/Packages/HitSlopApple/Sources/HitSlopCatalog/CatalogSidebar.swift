@@ -42,8 +42,8 @@ struct CatalogSidebar: View {
         .padding(.horizontal, 12).padding(.bottom, 12)
 
       HStack(spacing: 2) {
-        BrandLink(name: "github", label: "GitHub", destination: CatalogLinks.github)
-        BrandLink(name: "discord", label: "Discord", destination: CatalogLinks.discord)
+        BrandLink(name: "github", label: "GitHub", destination: SlopLinks.github)
+        BrandLink(name: "discord", label: "Discord", destination: SlopLinks.discord)
       }
       .padding(.horizontal, 12).padding(.vertical, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,7 +57,7 @@ private struct AuthoringLink: View {
   @State private var isHovering = false
 
   var body: some View {
-    Link(destination: CatalogLinks.authoring) {
+    Link(destination: SlopLinks.authoring) {
       HStack(alignment: .top, spacing: 8) {
         Text("Learn how to make your own slop")
           .font(.callout.weight(.medium))
