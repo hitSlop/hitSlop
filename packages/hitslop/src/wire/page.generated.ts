@@ -38,13 +38,13 @@ export type SpeechUnavailable = "notDeclared" | "host" | "system" | "locale" | "
 
 export type ViewCaptureKind = "icon" | "preview" | "export";
 
-export type ViewRenderRequest = { kind: ViewCaptureKind, format: CaptureFormat, resources: { [key in string]: string }, width: number, height: number, snapshot: unknown, theme: { [key in string]: string }, };
+export type ViewRenderRequest = { kind: ViewCaptureKind, format: CaptureFormat, attachments: { [key in string]: string }, width: number, height: number, snapshot: unknown, theme: { [key in string]: string }, };
 
 export type WidgetFamily = "small" | "medium" | "large";
 
 /**
  * One immutable saved snapshot, never a second document engine.
  */
-export type WidgetRenderRequest = { snapshot: unknown, theme: { [key in string]: string }, viewports: Array<WidgetViewport>, resources: { [key in string]: string }, };
+export type WidgetRenderRequest = { snapshot: unknown, theme: { [key in string]: string }, viewports: Array<WidgetViewport>, attachments: { [key in string]: string }, };
 
 export type WidgetViewport = { family: WidgetFamily, width: number, height: number, };

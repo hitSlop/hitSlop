@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import { previewText } from "../_shared/preview";
   import type { CaptureProps } from "hitslop/svelte";
   // The export renders saved notes only. It never imports the recorder and never asks

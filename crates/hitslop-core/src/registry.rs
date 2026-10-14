@@ -64,13 +64,18 @@ fn lookup_home() -> Option<PathBuf> {
         return Some(PathBuf::from(std::ffi::OsStr::from_bytes(directory.to_bytes())));
     }
 }
+/// Refuses any document leaf that is missing, linked or not a regular file. This is a
+/// stat, never a descriptor: closing a second descriptor would release SQLite's locks.
+pub(crate) fn regular(path: &Path) -> Result<fs::Metadata> {
+    fs::symlink_metadata(path)
+        .ok()
+        .filter(fs::Metadata::is_file)
+        .ok_or_else(|| invalid("A document must be an existing regular file"))
+}
 /// The device, inode and link count of the regular file at `path`; `Moved` for anything
 /// else. The device and inode name the file in the registry.
 pub(crate) fn identity(path: &Path) -> Result<(u64, u64, u64)> {
-    let meta = fs::symlink_metadata(path).map_err(|_| Error::Moved)?;
-    if !meta.is_file() {
-        return Err(Error::Moved);
-    }
+    let meta = regular(path).map_err(|_| Error::Moved)?;
     Ok((meta.dev() as u64, meta.ino(), meta.nlink() as u64))
 }
 fn name(dev: u64, ino: u64) -> String {
@@ -92,10 +97,7 @@ impl Lease {
         // A stat, never a descriptor on the database: POSIX record locks belong to the
         // process, so closing any descriptor on the file would release every lock SQLite
         // holds on it through this process's other connections.
-        let meta = fs::symlink_metadata(path).map_err(|e| failed(format!("Cannot open the document: {e}")))?;
-        if !meta.is_file() {
-            return Err(failed("A document must be a regular file"));
-        }
+        let meta = regular(path)?;
         if meta.nlink() > 1 {
             return Err(invalid("This document has another hard link; duplicate it to edit a copy"));
         }

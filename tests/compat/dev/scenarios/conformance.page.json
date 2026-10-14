@@ -1,11 +1,19 @@
 {
   "ops": [
     {
+      "type": "insert",
+      "path": [
+        "booleans"
+      ],
+      "value": true,
+      "index": 0
+    },
+    {
       "type": "set",
       "path": [
-        "attachment"
+        "ceiling"
       ],
-      "value": "compat 3"
+      "value": 3
     },
     {
       "type": "set",
@@ -14,6 +22,7 @@
         "compat-3"
       ],
       "value": {
+        "hits": 0,
         "input": "Compat 3 ✓ café 🦊"
       }
     },
@@ -50,9 +59,24 @@
     {
       "type": "set",
       "path": [
+        "enabled"
+      ],
+      "value": true
+    },
+    {
+      "type": "set",
+      "path": [
         "epoch"
       ],
       "value": 3
+    },
+    {
+      "type": "insert",
+      "path": [
+        "extremes"
+      ],
+      "value": 3,
+      "index": 0
     },
     {
       "type": "increment",
@@ -76,11 +100,34 @@
       "value": "todo"
     },
     {
+      "type": "insert",
+      "path": [
+        "lanes"
+      ],
+      "value": "done",
+      "index": 0
+    },
+    {
       "type": "set",
       "path": [
         "lastHit"
       ],
       "value": 3
+    },
+    {
+      "type": "set",
+      "path": [
+        "lower"
+      ],
+      "value": 0.75
+    },
+    {
+      "type": "set",
+      "path": [
+        "measurements",
+        "compat-3"
+      ],
+      "value": 0.75
     },
     {
       "type": "set",
@@ -97,11 +144,22 @@
       "value": "compat 3"
     },
     {
+      "type": "insert",
+      "path": [
+        "numbers"
+      ],
+      "value": 0.75,
+      "index": 0
+    },
+    {
       "type": "set",
       "path": [
-        "photo"
+        "place"
       ],
-      "value": "compat 3"
+      "value": {
+        "name": "compat 3",
+        "visits": 3
+      }
     },
     {
       "type": "set",
@@ -118,6 +176,7 @@
       "id": "compat-3",
       "value": {
         "done": true,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Compat 3 ✓ café 🦊"
@@ -130,8 +189,16 @@
       ],
       "id": "compat-1",
       "at": {
-        "after": "kawhbp1r6fx2g9vf2n8dne7td4"
+        "after": "v365q3hxchm8ta9f7qvznjpfpw"
       }
+    },
+    {
+      "type": "increment",
+      "path": [
+        "settings",
+        "hits"
+      ],
+      "by": 4
     },
     {
       "type": "set",
@@ -167,8 +234,31 @@
       ],
       "id": "compat-1",
       "at": {
-        "after": "rh1t4jdssr7ta5v8pqs4whygy4"
+        "after": "9nv4eq7tpbnc3cgawaf88xyq60"
       }
+    },
+    {
+      "type": "set",
+      "path": [
+        "stage"
+      ],
+      "value": "done"
+    },
+    {
+      "type": "set",
+      "path": [
+        "stages",
+        "compat-3"
+      ],
+      "value": "done"
+    },
+    {
+      "type": "set",
+      "path": [
+        "switches",
+        "compat-3"
+      ],
+      "value": true
     },
     {
       "type": "set",
@@ -180,57 +270,151 @@
     {
       "type": "set",
       "path": [
+        "upper"
+      ],
+      "value": 0.75
+    },
+    {
+      "type": "set",
+      "path": [
         "version"
       ],
       "value": "compat 3"
+    },
+    {
+      "type": "set",
+      "path": [
+        "weight"
+      ],
+      "value": 0.75
     }
   ],
   "value": {
-    "attachment": "compat 3",
+    "attachment": "6c1d6cedf276ea3fd7486a212fd62b32fbb9ecaa4dea70545486737199dd24ed",
+    "booleans": [
+      true,
+      false,
+      true,
+      true
+    ],
+    "ceiling": 3,
     "cells": {
       "A1": {
+        "hits": 0,
         "input": "Fresh entry edited"
       },
       "compat-1": {
+        "hits": 0,
         "input": "Compat 1 ✓ café 🦊"
       },
       "compat-2": {
+        "hits": 0,
         "input": "Replay 2 é 中文"
       },
       "compat-3": {
+        "hits": 0,
         "input": "Compat 3 ✓ café 🦊"
+      },
+      "seed": {
+        "hits": 5,
+        "input": "Seed record",
+        "width": 12
       }
     },
     "checkins": {
       "2026-10-02": 2,
       "compat-1": 1,
       "compat-2": 2,
-      "compat-3": 3
+      "compat-3": 3,
+      "seed": 1,
+      "tx": 3
     },
     "colors": [
       "compat 3",
-      "#111111",
-      "#eeeeee"
+      "tx"
     ],
     "count": 3,
     "done": true,
+    "enabled": true,
     "epoch": 3,
-    "hits": 12,
+    "extremes": [
+      3,
+      2,
+      1,
+      -9007199254740991,
+      9007199254740991
+    ],
+    "files": [
+      "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+      "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+      "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+      "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+      "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+      "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+      "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+      "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+      "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+      "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+      "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+      "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+      "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+      "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+      "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+      "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+      "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+    ],
+    "hits": 16,
     "label": "compat 3",
     "lane": "todo",
+    "lanes": [
+      "done",
+      "todo",
+      "done",
+      "todo"
+    ],
     "lastHit": 3,
+    "lower": 0.75,
+    "measurements": {
+      "compat-1": 0.25,
+      "compat-2": 0.5,
+      "compat-3": 0.75,
+      "seed": 0.5
+    },
     "memo": "Compat 3 ✓ café 🦊",
     "note": "compat 3",
-    "photo": "compat 3",
+    "numbers": [
+      0.75,
+      0.5,
+      0.25,
+      0.25
+    ],
+    "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
     "place": {
-      "name": "Café",
-      "visits": 2
+      "name": "compat 3",
+      "visits": 3
     },
     "ratio": 0.75,
     "rows": [
       {
+        "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+        "done": false,
+        "hits": 2,
+        "notes": {
+          "seed": "Seed note"
+        },
+        "tags": [
+          "seed",
+          "tag"
+        ],
+        "text": "Seed row 中文 😀"
+      },
+      {
         "$id": "compat-2",
         "done": false,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Replay 2 é 中文"
@@ -238,6 +422,7 @@
       {
         "$id": "w65p807jzt5155j62eerx7h6ww",
         "done": true,
+        "hits": 0,
         "notes": {
           "k": "w"
         },
@@ -245,32 +430,36 @@
           "y",
           "z"
         ],
-        "text": "First ✓"
+        "text": "Transaction row"
       },
       {
-        "$id": "acpyd98gxnb64vh0sbef5m0kmg",
+        "$id": "rh1t4jdssr7ta5v8pqs4whygy4",
         "done": false,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Board C ✓"
       },
       {
-        "$id": "vnr54bf611cx9q54925zktszdg",
+        "$id": "mmvscns1ywfyymp18htb6228cg",
         "done": false,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Board A ✓"
       },
       {
-        "$id": "mmvscns1ywfyymp18htb6228cg",
+        "$id": "acpyd98gxnb64vh0sbef5m0kmg",
         "done": false,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Board B ✓"
       },
       {
-        "$id": "kawhbp1r6fx2g9vf2n8dne7td4",
+        "$id": "v365q3hxchm8ta9f7qvznjpfpw",
         "done": true,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Added"
@@ -278,6 +467,7 @@
       {
         "$id": "compat-1",
         "done": true,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Compat 1 ✓ café 🦊"
@@ -285,12 +475,14 @@
       {
         "$id": "compat-3",
         "done": true,
+        "hits": 0,
         "notes": {},
         "tags": [],
         "text": "Compat 3 ✓ café 🦊"
       }
     ],
     "settings": {
+      "hits": 13,
       "muted": true,
       "volume": 3
     },
@@ -315,14 +507,14 @@
         "title": "Replay 2 é 中文"
       },
       {
-        "$id": "rh1t4jdssr7ta5v8pqs4whygy4",
+        "$id": "9nv4eq7tpbnc3cgawaf88xyq60",
         "blocks": [
           {
-            "$id": "mxb473vh7fyve7znjrjtdfgn3m",
+            "$id": "kawhbp1r6fx2g9vf2n8dne7td4",
             "text": "Block B"
           },
           {
-            "$id": "9nv4eq7tpbnc3cgawaf88xyq60",
+            "$id": "mxb473vh7fyve7znjrjtdfgn3m",
             "text": "Block A edited"
           }
         ],
@@ -339,7 +531,22 @@
         "title": "Compat 3 ✓ café 🦊"
       }
     ],
+    "stage": "done",
+    "stages": {
+      "compat-1": "done",
+      "compat-2": "todo",
+      "compat-3": "done",
+      "seed": "todo"
+    },
+    "switches": {
+      "compat-1": true,
+      "compat-2": false,
+      "compat-3": true,
+      "seed": true
+    },
     "title": "Compat 3 ✓ café 🦊",
-    "version": "compat 3"
+    "upper": 0.75,
+    "version": "compat 3",
+    "weight": 0.75
   }
 }

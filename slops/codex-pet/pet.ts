@@ -68,12 +68,12 @@ export function petView(data: PetDocument) {
 export function adoptPackage(tx: Edit, ref: PackageRef, displayName: string) {
   const name = displayName.trim();
   if (!name || name.length > NAME_LIMIT) refuse("The pet needs a name of 1 to 80 characters.");
-  tx.fields.package.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType, byteLength: ref.byteLength });
+  tx.fields.package.$set({ id: ref.id, name: ref.name, mimeType: ref.mimeType, byteLength: ref.byteLength });
   tx.fields.displayName.set(name);
 }
 
 export function restoreStarter(tx: Edit, data: PetDocument) {
   if (!data.package) refuse("Bubu is already the pet.");
-  tx.fields.package.clear();
+  tx.fields.package.$clear();
   tx.fields.displayName.set(STARTER.displayName);
 }

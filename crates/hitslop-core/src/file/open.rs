@@ -36,11 +36,7 @@ fn scalar_metadata(conn: &Connection) -> Result<AppMetadata> {
         "SELECT slug,title,description,author_name,author_url,category_primary,category_secondary FROM app WHERE id=1", [],
         |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get::<_,String>(5)?,r.get::<_,Option<String>>(6)?))
     ).map_err(sqlite("read metadata"))?;
-    use crate::app::package_format_1::column_category;
-    let mut categories = vec![column_category(&primary).map_err(Error::Rejected)?];
-    if let Some(secondary) = secondary {
-        categories.push(column_category(&secondary).map_err(Error::Rejected)?);
-    }
+    let categories = crate::app::package_format_1::column_categories(&primary, secondary.as_deref());
     Ok(AppMetadata { slug, title, description, author: Author { name, url }, categories })
 }
 /// Common display preamble: marker dispatch, exact layout and bounded catalog fields.

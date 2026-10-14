@@ -52,16 +52,16 @@ fn check_template(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Renders artwork for the staged template at a path, every role asked for in one batch from
-/// its initial values: a PNG per role, or `None` for an icon the app does not draw. A closure,
-/// so the file format does not depend on capture.
+/// Checks the staged template's views and returns only artwork requested for storage,
+/// from its initial values: a PNG per role, or `None` for an absent icon. Called even when
+/// no artwork needs storing. A closure, so the file format does not depend on capture.
 pub type RenderArtwork<'a> = &'a dyn Fn(&Path, &[Artwork]) -> Result<Vec<(Artwork, Option<Vec<u8>>)>>;
 
 /// The compiler provides the declaration and inventory as JSON; resource files are
 /// opened beneath stage exactly once. No directory discovery or app.json is accepted.
-/// With `render`, the preview and icon the build does not supply are rendered from the
-/// staged template and stored as supplied artwork is: a preview is required, an icon only
-/// when the app draws one. Any failure leaves `dest` as it was.
+/// With `render`, every declared view is checked from the staged template. Only preview
+/// and icon artwork the build does not supply is stored: a preview is required, an icon
+/// only when the app draws one. Any failure leaves `dest` as it was.
 pub fn pack(input: &str, stage: &Path, dest: &Path, render: Option<RenderArtwork>) -> Result<PackedArtwork> {
     let build = accept(input, stage)?;
     let staged = Staged::beside(dest)?;
@@ -71,7 +71,7 @@ pub fn pack(input: &str, stage: &Path, dest: &Path, render: Option<RenderArtwork
     let source = |name| if supplied(name) { ArtworkSource::Supplied } else { ArtworkSource::Absent };
     let mut packed = PackedArtwork { preview: source(Artwork::Preview), icon: source(Artwork::Icon) };
     let missing: Vec<_> = Artwork::ALL.into_iter().filter(|&name| !supplied(name)).collect();
-    if let Some(render) = render.filter(|_| !missing.is_empty()) {
+    if let Some(render) = render {
         let mut rendered = Vec::new();
         for (name, png) in render(staged.path(), &missing)? {
             if let Some(png) = png {
@@ -102,7 +102,7 @@ pub fn validate_app(input: &str, stage: &Path) -> Result<(crate::app::WindowDefi
 
 pub(super) fn initial_checkpoint(app: &crate::AppSpec, initial: &str) -> Result<Vec<u8>> {
     let checkpoint = crate::Document::initial_checkpoint(app, initial).map_err(Error::Rejected)?;
-    if checkpoint.len() + 512 > crate::STORAGE_BYTES {
+    if checkpoint.len() + crate::wire::STORAGE_ROW_OVERHEAD > crate::STORAGE_BYTES {
         return Err(invalid("The app's initial values are too large"));
     }
     Ok(checkpoint)

@@ -174,6 +174,51 @@ extension HostTests {
     #expect(cache.record(id: first.id) == nil)
   }
 
+  @Test @MainActor func aWidgetLocationFailureDoesNotSkipChangedSavedPixels() async throws {
+    _ = NSApplication.shared
+    let root = try widgetCloseFixture()
+    let folder = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let cache = WidgetCache(root: folder)
+    let capture = try await SlopRenderer.widgetCapture(url: root)
+    let first = try cache.publish(
+      url: root, title: "Old location", images: capture.images, capturedAt: Date(),
+      refreshMinutes: nil, sourceVersion: capture.sourceVersion)
+    let before = try #require(cache.imageData(first, .small))
+    #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
+    let publisher = SlopWidgetPublisher.shared
+    let original = publisher.refreshLocation
+    var failedLocation = false
+    publisher.refreshLocation = { cache, id, url in
+      let bookmark = folder.appendingPathComponent(id).appendingPathComponent("document.bookmark")
+      let saved = try Data(contentsOf: bookmark)
+      try FileManager.default.removeItem(at: bookmark)
+      try FileManager.default.createDirectory(at: bookmark, withIntermediateDirectories: false)
+      defer {
+        try? FileManager.default.removeItem(at: bookmark)
+        try? saved.write(to: bookmark)
+      }
+      do { return try cache.refreshLocation(id: id, url: url) } catch {
+        failedLocation = true
+        throw error
+      }
+    }
+    publisher.start(cache: cache, openSession: { _ in nil })
+    defer {
+      publisher.stop()
+      publisher.refreshLocation = original
+    }
+    await publisher.refresh(ids: [first.id], scheduledIDs: [])
+    #expect(failedLocation)
+    let current = try #require(cache.record(for: root))
+    #expect(current.generation != first.generation)
+    #expect(current.sourceVersion == (try await SlopRenderer.widgetSourceVersion(url: root)))
+    #expect(Fixtures.pixels(cache.imageData(current, .small)) != Fixtures.pixels(before))
+  }
+
   @Test @MainActor func savedEditsPublishNewWidgetPixelsAndRequestReloadWithoutClosing() async throws {
     _ = NSApplication.shared
     let root = try widgetCloseFixture()
@@ -317,7 +362,7 @@ extension HostTests {
         "Close timing [\(scenario)]: handoff=\(started.duration(to: handedOff ?? completed)), total=\(started.duration(to: completed))"
       )
       #expect(!Fixtures.isLocked(root))
-      #expect(editor == nil)
+      #expect(await eventually(timeout: .seconds(5)) { editor == nil })
       #expect(SlopArtwork.png(root, .preview) != nil)
     }
   }

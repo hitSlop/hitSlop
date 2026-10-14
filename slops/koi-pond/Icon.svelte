@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <svg class="koi-icon" viewBox="0 0 400 400" aria-hidden="true">
   <circle cx="200" cy="200" r="182" fill="var(--slop-stone)" />
   <circle cx="200" cy="200" r="158" fill="var(--slop-water)" />

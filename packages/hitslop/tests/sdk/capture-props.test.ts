@@ -23,9 +23,9 @@ const View = await component("View", `<script module>export const seen = [];</sc
 const Mutating = await component("Mutating", `<script>let { snapshot } = $props(); snapshot.rows[0].text = "Changed";</script><p>Changed</p>`);
 
 const snapshot = { title: "Saved", cover: { id: "photo" }, rows: [{ $id: "r1", text: "Row", tags: ["a"] }] };
-const resources = { photo: "data:image/png;base64,iVBORw0KGgo=" };
+const attachments = { photo: "image/png" };
 const view = (kind: string, values: object = {}) =>
-  JSON.stringify({ kind, format: "png", width: 320, height: 240, snapshot, theme: {}, resources, ...values });
+  JSON.stringify({ kind, format: "png", width: 320, height: 240, snapshot, theme: {}, attachments, ...values });
 const viewports = [
   { family: "small", width: 164, height: 164 },
   { family: "medium", width: 344, height: 164 },
@@ -55,7 +55,7 @@ test("Preview, Export and Icon receive the frozen snapshot, attachment URLs and 
 
 test("each widget viewport receives one frozen snapshot, attachment URLs and its family and size", () => {
   const frames = JSON.parse(
-    widgetRenderer(View.default, "")(JSON.stringify({ snapshot, theme: {}, resources, viewports })),
+    widgetRenderer(View.default, "")(JSON.stringify({ snapshot, theme: {}, attachments, viewports })),
   );
   expect(frames.map(({ width, height }: { width: number; height: number }) => [width, height])).toEqual(
     viewports.map(({ width, height }) => [width, height]),
@@ -73,7 +73,7 @@ test("each widget viewport receives one frozen snapshot, attachment URLs and its
 test("a view cannot change its snapshot", () => {
   expect(() => viewRenderer(Mutating.default, "")(view("export"))).toThrow(TypeError);
   expect(() =>
-    widgetRenderer(Mutating.default, "")(JSON.stringify({ snapshot, theme: {}, resources, viewports })),
+    widgetRenderer(Mutating.default, "")(JSON.stringify({ snapshot, theme: {}, attachments, viewports })),
   ).toThrow(TypeError);
   viewRenderer(View.default, "")(view("preview"));
   const { snapshot: frozen } = View.seen.at(-1);
@@ -90,9 +90,9 @@ test("attachment URLs resolve only the supported images the request supplies", (
   // The host supplies stored images only: a recording or a removed file has no entry.
   for (const id of ["recording", "toString", "", 7, undefined])
     expect(() => attachmentURL(id)).toThrow(`Capture attachment ${id} is missing or is not a supported image`);
-  // An entry that is not an image's data is refused too, and so is a missing inventory.
-  for (const supplied of [{ photo: "" }, { photo: null }, { photo: 7 }, null]) {
-    expect(() => viewRenderer(View.default, "")(view("export", { resources: supplied }))).toThrow(
+  // Unsupported media labels and image bytes are refused, as is a missing inventory.
+  for (const supplied of [{ photo: "image/avif" }, { photo: "data:image/png;base64," }, { photo: "" }, { photo: null }, { photo: 7 }, null]) {
+    expect(() => viewRenderer(View.default, "")(view("export", { attachments: supplied }))).toThrow(
       "Capture attachment photo is missing or is not a supported image",
     );
     const { attachmentURL } = View.seen.at(-1);

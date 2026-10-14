@@ -290,12 +290,39 @@ fn open_refuses_a_linked_document_but_accepts_a_linked_parent() {
     std::os::unix::fs::symlink(&document, &link).unwrap();
     let refused = open(&link);
     assert_eq!(refused["code"], "rejected");
+    assert_eq!(refused["reason"], "invalid_request");
+    assert_eq!(refused["error"], "A document must be an existing regular file");
     assert!(!refused["error"].as_str().unwrap().contains("HITSLOP_APP"), "{refused}");
+    for method in ["inspect", "schema"] {
+        let refused = request(json!({"method":method,"file":link}));
+        assert_eq!(refused["code"], "rejected", "{refused}");
+        assert_eq!(refused["reason"], "invalid_request", "{refused}");
+        assert_eq!(refused["error"], "A document must be an existing regular file", "{refused}");
+    }
     let parent = dir.path().join("Linked parent");
     std::os::unix::fs::symlink(dir.path(), &parent).unwrap();
     let admitted = open(&parent.join(document.file_name().unwrap()));
     assert!(admitted["error"].as_str().unwrap().contains("HITSLOP_APP"), "{admitted}");
+    for method in ["inspect", "schema"] {
+        assert_eq!(request(json!({"method":method,"file":parent.join(document.file_name().unwrap())}))["ok"], true);
+    }
     assert_eq!(fs::read(&document).unwrap(), saved);
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn open_refuses_a_regular_file_without_the_document_extension() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, document) = template_and_document(dir.path());
+    let notes = dir.path().join("notes.txt");
+    fs::copy(&document, &notes).unwrap();
+    let saved = fs::read(&notes).unwrap();
+    let refused =
+        reply(&json!({"method":"open","documentPath":notes}).to_string(), Some(&dir.path().join("Missing.app")));
+    assert_eq!(refused["code"], "rejected");
+    assert_eq!(refused["reason"], "invalid_request");
+    assert_eq!(refused["error"], "A document's name must end in .slop");
+    assert_eq!(fs::read(&notes).unwrap(), saved);
 }
 
 /// Opening a window needs macOS and hitSlop.app; elsewhere it refuses and changes nothing.
@@ -421,7 +448,7 @@ fn fixture(dir: &Path, body: &str, css: &str) -> std::path::PathBuf {
     }
     let template = dir.join("Fixture.slop");
     let packed = request(
-        json!({"method":"pack","stage":stage,"file":template,"app":app(json!({"title":"Fixture"})),"renderArtwork":true}),
+        json!({"method":"pack","stage":stage,"file":template,"app":app(json!({"title":"Fixture"})),"renderViews":true}),
     );
     assert_eq!(packed["artwork"], json!({"preview":"rendered","icon":"rendered"}), "{packed}");
     template
@@ -441,6 +468,118 @@ fn artwork(template: &Path, role: &str) -> ((u32, u32), impl Fn(u32, u32) -> [u8
         let pixel = &pixels[(y * width + x) as usize * channels..][..channels];
         [pixel[0], pixel[1], pixel[2], if channels == 4 { pixel[3] } else { 255 }]
     })
+}
+
+fn widget(app: &mut Value, stage: &Path, program: &str) {
+    app["declaration"]["views"]["widget"] = json!({"refreshMinutes":60});
+    app["roles"]["widget"] = json!("widget.js");
+    app["resources"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"kind":"app","key":"widget.js","mediaType":"text/javascript","path":"assets/widget.js"}));
+    fs::write(stage.join("assets/widget.js"), program).unwrap();
+}
+
+fn supplied_artwork(app: &mut Value, stage: &Path, role: &str) {
+    let mut png = Vec::new();
+    let mut encoder = png::Encoder::new(&mut png, 512, 512);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header().unwrap().write_image_data(&[0x33, 0x55, 0x77, 255].repeat(512 * 512)).unwrap();
+    let path = format!("{role}.png");
+    fs::write(stage.join(&path), &png).unwrap();
+    app["artwork"][role] = json!(path);
+}
+
+fn refuses_view(app: Value, stage: &Path, destination: &Path, view: &str, cause: &str) {
+    let packed = request(json!({"method":"pack","stage":stage,"file":destination,"app":app,"renderViews":true}));
+    assert_eq!(packed["ok"], false, "{packed}");
+    let error = packed["error"].as_str().unwrap();
+    assert!(error.contains(&format!("{view}.svelte could not render:")), "{packed}");
+    assert!(error.contains(cause), "{packed}");
+    assert!(!destination.exists(), "a failed view must publish nothing");
+    assert!(
+        fs::read_dir(destination.parent().unwrap())
+            .unwrap()
+            .all(|entry| { !entry.unwrap().file_name().to_string_lossy().ends_with(".slop") }),
+        "a failed pack must clean its staged template"
+    );
+}
+
+#[test]
+fn pack_refuses_an_export_dependency_that_uses_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    fs::write(stage.join("assets/export.js"), "globalThis.__slopCapture = json => new URL('x');").unwrap();
+    refuses_view(app(json!({"title":"Fixture"})), &stage, &dir.path().join("Broken.slop"), "Export", "URL");
+}
+
+#[test]
+fn pack_checks_the_pdf_export_as_well_as_png() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let program = fs::read_to_string(stage.join("assets/export.js")).unwrap();
+    fs::write(stage.join("assets/export.js"), format!("{program}\nconst render = __slopCapture; globalThis.__slopCapture = json => {{ if (JSON.parse(json).format === 'pdf') throw new Error('PDF failed'); return render(json); }};")).unwrap();
+    refuses_view(app(json!({"title":"Fixture"})), &stage, &dir.path().join("Broken.slop"), "Export", "PDF failed");
+}
+
+#[test]
+fn pack_refuses_a_widget_that_throws() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let mut app = app(json!({"title":"Fixture"}));
+    widget(&mut app, &stage, "globalThis.__slopWidget = json => { throw new Error('Widget failed'); };");
+    refuses_view(app, &stage, &dir.path().join("Broken.slop"), "Widget", "Widget failed");
+}
+
+#[test]
+fn pack_checks_views_even_when_both_artwork_images_are_supplied() {
+    for role in ["preview", "icon"] {
+        let dir = tempfile::tempdir().unwrap();
+        let stage = stage(dir.path());
+        let mut app = app(json!({"title":"Fixture"}));
+        for supplied in ["preview", "icon"] {
+            supplied_artwork(&mut app, &stage, supplied);
+        }
+        fs::write(
+            stage.join(format!("assets/{role}.js")),
+            "globalThis.__slopCapture = json => { throw new Error('Supplied view failed'); };",
+        )
+        .unwrap();
+        refuses_view(
+            app,
+            &stage,
+            &dir.path().join("Broken.slop"),
+            if role == "preview" { "Preview" } else { "Icon" },
+            "Supplied view failed",
+        );
+    }
+}
+
+#[test]
+fn pack_checks_all_views_and_stores_only_unsupplied_artwork() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let mut app = app(json!({"title":"Fixture"}));
+    widget(
+        &mut app,
+        &stage,
+        "globalThis.__slopWidget = json => { const r = JSON.parse(json); return JSON.stringify({fonts:[],frames:r.viewports.map(v => ({width:v.width,height:v.height,html:'<p>'+r.snapshot.title+'</p>',css:'p{color:#335577}'}))}); };",
+    );
+    supplied_artwork(&mut app, &stage, "icon");
+    let supplied_only = dir.path().join("Supplied.slop");
+    let without_render = request(json!({"method":"pack","stage":stage,"file":supplied_only,"app":app}));
+    assert_eq!(without_render["artwork"], json!({"preview":"absent","icon":"supplied"}));
+    let template = dir.path().join("Healthy.slop");
+    let packed = request(json!({"method":"pack","stage":stage,"file":template,"app":app,"renderViews":true}));
+    assert_eq!(packed["artwork"], json!({"preview":"rendered","icon":"supplied"}), "{packed}");
+    let (_, stored) = hitslop_core::file::artwork(&template, &[hitslop_core::file::Artwork::Icon]).unwrap().unwrap();
+    // Supplied artwork is optimized by pack, retaining its pixels.
+    assert_eq!(
+        stored,
+        hitslop_core::file::artwork(&supplied_only, &[hitslop_core::file::Artwork::Icon]).unwrap().unwrap().1
+    );
+    assert!(hitslop_core::file::artwork(&template, &[hitslop_core::file::Artwork::Preview]).unwrap().is_some());
 }
 
 #[test]

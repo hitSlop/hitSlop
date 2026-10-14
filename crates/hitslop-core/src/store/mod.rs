@@ -246,7 +246,9 @@ impl Store {
     /// and every attachment.
     pub fn set_share(&self, share: &Share) -> Result<()> {
         self.check(true)?;
-        if !(1..=128).contains(&share.room.len()) || !(1..=2048).contains(&share.endpoint.len()) {
+        if !(1..=crate::wire::SHARE_ROOM_BYTES).contains(&share.room.len())
+            || !(1..=crate::wire::SHARE_ENDPOINT_BYTES).contains(&share.endpoint.len())
+        {
             return Err(rejected(crate::Code::InvalidRequest, "Invalid room or endpoint"));
         }
         self.connected(&mut lock(&self.backing).conn, |conn| {

@@ -85,16 +85,20 @@ import Testing
     #expect(try Data(contentsOf: template) == before)
   }
 
-  /// Only a file the core refuses reads as an invalid hitSlop file; a storage failure,
-  /// such as a document that is no longer there, keeps its own message.
-  @Test func storageFailuresAreNotReportedAsInvalidFiles() throws {
-    let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+  /// A busy writer is a storage failure, not a refused file.
+  @Test func storageFailuresAreNotReportedAsInvalidFiles() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(url: root)
     do {
-      _ = try DocumentOwner(url: missing)
-      Issue.record("A missing document opened")
+      _ = try DocumentOwner(url: root)
+      Issue.record("A second writer opened")
     } catch let error as SlopError {
       Issue.record("A storage failure was reported as an invalid file: \(error.localizedDescription)")
-    } catch {}
+    } catch let failure as OwnerFailure {
+      #expect(failure.kind == .locked)
+    }
+    try await owner.close()
   }
 
   @Test func savesAndReopensWithoutWebKitOrAuthoredCode() async throws {

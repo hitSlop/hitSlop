@@ -45,24 +45,25 @@ fn paths_and_command_names_keep_their_bounds() {
     }
 }
 
-/// Only `pack` takes `renderArtwork`: a boolean, false when absent.
+/// Only `pack` takes `renderViews`: a boolean, false when absent.
 #[test]
-fn only_pack_renders_artwork() {
+fn only_pack_renders_views() {
     for (flag, expected) in [(None, false), (Some(json!(false)), false), (Some(json!(true)), true)] {
         let mut request = json!({"method":"pack","stage":"x","file":"y","app":{}});
         if let Some(flag) = flag {
-            request["renderArtwork"] = flag;
+            request["renderViews"] = flag;
         }
-        let Ok(EngineRequest::Pack { render_artwork, .. }) = EngineRequest::parse(&request.to_string()) else {
+        let Ok(EngineRequest::Pack { render_views, .. }) = EngineRequest::parse(&request.to_string()) else {
             panic!("{request}")
         };
-        assert_eq!(render_artwork, expected, "{request}");
+        assert_eq!(render_views, expected, "{request}");
     }
     for value in [
-        json!({"method":"pack","stage":"x","file":"y","app":{},"renderArtwork":null}),
-        json!({"method":"pack","stage":"x","file":"y","app":{},"renderArtwork":"true"}),
-        json!({"method":"validateApp","stage":"x","app":{},"renderArtwork":true}),
-        json!({"method":"inspect","file":"x","renderArtwork":true}),
+        json!({"method":"pack","stage":"x","file":"y","app":{},"renderArtwork":true}),
+        json!({"method":"pack","stage":"x","file":"y","app":{},"renderViews":null}),
+        json!({"method":"pack","stage":"x","file":"y","app":{},"renderViews":"true"}),
+        json!({"method":"validateApp","stage":"x","app":{},"renderViews":true}),
+        json!({"method":"inspect","file":"x","renderViews":true}),
     ] {
         assert!(!accepts(value.clone()), "{value}");
     }

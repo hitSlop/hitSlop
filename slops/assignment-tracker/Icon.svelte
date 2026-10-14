@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import Check from "@lucide/svelte/icons/check";
 
   

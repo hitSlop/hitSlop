@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <section class="cp-render" data-slop-render="icon" aria-hidden="true">
   <div class="cp-icon">
     <svg viewBox="0 0 240 240">

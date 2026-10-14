@@ -52,7 +52,7 @@ beforeAll(async () => {
   await createFixture(process.cwd(), source);
   const declaration = join(source, "slop.ts");
   await writeFile(declaration, (await readFile(declaration, "utf8")).replace('window: { kind: "standard",', 'window: { kind: "standard", fullscreenable: true,'));
-  const template = await buildTemplate(source, join(directory, "fixture.slop"), { renderArtwork: false });
+  const template = await buildTemplate(source, join(directory, "fixture.slop"), { renderViews: false });
   const original = join(directory, "original.slop");
   await execute({ method: "create", from: template, output: original });
   await execute({ method: "batch", documentPath: original, batch: { intents: [{ type: "setTheme", values: { accent: "#123456" } }] } });

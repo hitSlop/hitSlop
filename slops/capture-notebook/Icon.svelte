@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <!-- The instrument and its notebook: a lens, a record light, a shutter and a page edge. -->
 <div class="cn-icon" aria-hidden="true">
   <div class="cn-icon-page"><i></i><i></i><i></i></div>

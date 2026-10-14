@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   // A corner of the sheet on felt: five staff lines, a phrase with the cursor on it,
   // and the brass tempo stamp showing the current tempo.
   import type { CaptureProps } from "hitslop/svelte";

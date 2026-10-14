@@ -31,7 +31,7 @@ test("init creates a buildable source and refuses to overwrite it", async () => 
     expect(await run()).toBe(1);
     const metadata = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
     expect(metadata.devDependencies["hitslop"]).not.toContain("__HITSLOP");
-    const built = await inspect(await buildTemplate(source, join(root, "starter.slop"), { renderArtwork: false }));
+    const built = await inspect(await buildTemplate(source, join(root, "starter.slop"), { renderViews: false }));
     expect(built.kind).toBe("template");
     expect(built.metadata.slug).toBeTruthy();
     // The file names the levels it needs beside its authored manifest, so an older app
@@ -50,13 +50,13 @@ test("a portable build copies supplied artwork", async () => {
   try {
     const source = join(root, "source");
     await cp("tests/apps/document", source, { recursive: true });
-    const bare = await buildTemplate(source, join(root, "bare.slop"), { renderArtwork: false });
+    const bare = await buildTemplate(source, join(root, "bare.slop"), { renderViews: false });
     expect((await inspect(bare)).artwork).toEqual([]);
     await mkdir(join(source, "artwork"));
     await writeFile(join(source, "artwork/preview.png"), png(640, 480));
     await writeFile(join(source, "artwork/icon.png"), png(512, 512));
     await overrideSlop(source, { artwork: "{ preview, icon }" }, 'import preview from "./artwork/preview.png"; import icon from "./artwork/icon.png";');
-    const output = await buildTemplate(source, join(root, "art.slop"), { renderArtwork: false });
+    const output = await buildTemplate(source, join(root, "art.slop"), { renderViews: false });
     expect((await inspect(output)).artwork.map((artwork: { name: string }) => artwork.name)).toEqual(["icon", "preview"]);
     const icon = read<{ png: Uint8Array }>(output, "SELECT png FROM artwork WHERE name = 'icon'").png;
     expect(Buffer.from(icon).readUInt32BE(16)).toBe(512);
@@ -72,7 +72,7 @@ test("a portable build refuses templates the app would refuse and keeps the prev
   try {
     const fixture = join(root, "fixture");
     await cp("tests/apps/document", fixture, { recursive: true });
-    const output = await buildTemplate(fixture, join(root, "out.slop"), { renderArtwork: false });
+    const output = await buildTemplate(fixture, join(root, "out.slop"), { renderViews: false });
     const before = await readFile(output);
     const cases: [string, (source: string) => Promise<unknown>, string][] = [
       ["artwork", async (source) => {

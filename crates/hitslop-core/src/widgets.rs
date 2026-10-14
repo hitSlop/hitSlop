@@ -49,7 +49,7 @@ pub struct WidgetRenderRequest<'a> {
     pub snapshot: &'a serde_json::Value,
     pub theme: &'a std::collections::BTreeMap<String, String>,
     pub viewports: Vec<WidgetViewport>,
-    pub resources: &'a std::collections::BTreeMap<String, String>,
+    pub attachments: &'a std::collections::BTreeMap<String, String>,
 }
 
 pub struct WidgetImage {
@@ -69,7 +69,9 @@ fn source_version(document: &crate::Document, renderer: &fingerprint::Fingerprin
     // installed renderer/fonts and canvases so app updates refresh unchanged state.
     // Artwork writes and compaction still do not change the saved semantic version.
     let mut hash = Sha256::new();
-    hash.update(b"hitslop-widget-capture-v2:takumi\0");
+    // The version hashes the evaluator binary, but core-side capture preparation
+    // (image inventory, per-output budget) is outside that digest; changes there bump this tag.
+    hash.update(b"hitslop-widget-capture-v3:takumi\0");
     hash.update(renderer.digest);
     hash.update(widget_limits().scale.to_le_bytes());
     hash.update(crate::encode(&widget_viewports()).as_bytes());
@@ -121,9 +123,12 @@ pub(crate) fn render_source(
         snapshot: &input.snapshot,
         theme: &input.theme,
         viewports: widget_viewports(),
-        resources: &input.resources,
+        attachments: &input.attachments,
     };
-    let result = evaluator.widget(store.app().runtime_abi, program, &crate::encode(&request)).map_err(invalid)?;
+    let batch = evaluator.markup(store.app().runtime_abi, program, &crate::encode(&request), true).map_err(invalid)?;
+    let images = source.images(&batch, crate::capture::CaptureOutput::Widgets)?;
+    let result =
+        evaluator.raster(store.app().runtime_abi, batch, images, hitslop_runner::JobKind::Widget).map_err(invalid)?;
     let reply: hitslop_runner::RenderReply =
         serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
     let images = reply.into_images().map_err(invalid)?;

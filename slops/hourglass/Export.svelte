@@ -1,4 +1,5 @@
 <script lang="ts">
+import "./styles.css";
 import type schema from "./schema";
 import Vessel from "./Vessel.svelte";
 import { read } from "./model";

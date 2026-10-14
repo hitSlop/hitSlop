@@ -102,7 +102,7 @@ try {
   // Mutation semantics use a deliberate fixture, independent of bundled selection
   // and of the fields provided by any newly authored template.
   const mutation = join(folder, "mutation.slop");
-  const fixture = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderArtwork: false });
+  const fixture = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderViews: false });
   await createDocument(fixture, mutation, placement);
   await engineRequest({ method: "batch", documentPath: mutation, batch: { intents: [{ type: "set", path: ["title"], value: "Installed engine verified" }] } }, placement);
   assert.ok(String((await value(mutation) as { title: unknown }).title).startsWith("Installed engine verified"));

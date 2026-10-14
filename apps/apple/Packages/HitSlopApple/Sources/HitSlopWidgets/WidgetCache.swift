@@ -73,8 +73,9 @@ public struct WidgetCache: Sendable {
   }
 
   /// App-only metadata maintenance after a bookmark follows a rename or move. Preserve
-  /// the image generation and its capture time; callers serialize this with publications.
-  @discardableResult public func refreshLocation(id: String, url: URL) throws -> Bool {
+  /// the image generation and its capture time. This and `publish` run on the main actor
+  /// without awaiting between reading and writing the record.
+  @MainActor @discardableResult public func refreshLocation(id: String, url: URL) throws -> Bool {
     guard let current = record(id: id) else { return false }
     let canonical = url.resolvingSymlinksInPath().standardizedFileURL
     guard try Self.identity(url) == current.fileIdentity,
@@ -161,8 +162,9 @@ public struct WidgetCache: Sendable {
   }
 
   /// Write every image and the bookmark before replacing the one visible pointer. A
-  /// failure leaves the previous generation readable. Callers serialize publications.
-  @discardableResult public func publish(
+  /// failure leaves the previous generation readable. Main-actor calls do not await
+  /// between reading and writing the record, including during `refreshLocation`.
+  @MainActor @discardableResult public func publish(
     url: URL, title: String, images: [WidgetImage], capturedAt: Date, refreshMinutes: UInt32?,
     sourceVersion: String? = nil
   ) throws -> WidgetRecord {

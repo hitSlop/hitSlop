@@ -21,6 +21,7 @@ import WidgetKit
   private var changedCaptures: [String: Task<Void, Never>] = [:]
   private var changedVersions: [String: UUID] = [:]
   private var lifetime = UUID()
+  var refreshLocation: (WidgetCache, String, URL) throws -> Bool = { try $0.refreshLocation(id: $1, url: $2) }
   private var reload: () -> Void = { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
   private let logger = Logger(subsystem: "com.hitslop.app", category: "widgets")
 
@@ -195,7 +196,11 @@ import WidgetKit
         let url = try cache.resolve(record)
         // Location is independent of rendered content, and must catch up even when the
         // source token is unchanged or a subsequent capture fails.
-        if try cache.refreshLocation(id: id, url: url) { reload() }
+        do {
+          if try refreshLocation(cache, id, url) { reload() }
+        } catch {
+          logger.error("Widget location could not be refreshed: \(error.localizedDescription, privacy: .private)")
+        }
         watch(record)
         let version = try await SlopRenderer.widgetSourceVersion(url: url)
         guard enabled, lifetime == started else { return }

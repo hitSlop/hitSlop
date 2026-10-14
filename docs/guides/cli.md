@@ -62,7 +62,7 @@ A text `set` may carry `from`, the field's text as you read it (`slop get --snap
 | `remove` | `{"type":"remove","path":[...],"index":0,"count":1}` | Scalar lists; `count` defaults to 1 |
 | `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |
 | `increment` | `{"type":"increment","path":[...],"by":1}` | Counters (negative values decrement) |
-| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter takes the value, and an optional or record entry the value leaves out is removed |
+| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter takes the value within its [exactness envelope](../reference/document-types.md#counter) (about 9×10^15 in summed absolute increments; beyond it off-by-one is possible and exactness is not guaranteed), and an optional or record entry the value leaves out is removed |
 
 `slop import PATH FILE [--path JSON]` sends one `replace` with the file's JSON (up to just
 under 1 MiB), so `slop get` output, edited or from another document of the same
@@ -100,7 +100,8 @@ non-executable override fails, and an engine that ran is never retried through a
 binary. File markers protect saved documents; the exact command protocol protects
 communication with a live owner.
 
-`open` (macOS only; a template is refused) is the one operation that starts hitSlop.app.
+`open` (macOS only) is the one operation that starts hitSlop.app.
+`open` refuses a template, a link and any file that is not a regular file; a linked parent folder is fine.
 It opens the document with `/usr/bin/open -a` in the app that contains the running
 engine, else the app `HITSLOP_APP` names, else `/Applications/hitSlop.app`, then
 `~/Applications/hitSlop.app`; a `HITSLOP_APP` that names no app is an error rather than a

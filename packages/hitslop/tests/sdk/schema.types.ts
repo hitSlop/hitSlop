@@ -122,8 +122,11 @@ export async function scalarTypes(doc: LiveDocument<typeof scalars.descriptor>) 
   // @ts-expect-error Required fields cannot be cleared.
   await doc.fields.amount.clear();
   doc.fields.amount.preview(3);
-  await doc.fields.photo.set({ id: "a" });
+  await doc.fields.photo.$set({ id: "a" });
   await doc.fields.photo.id.set("b");
+  await doc.fields.photo.$clear();
+  // @ts-expect-error An optional object's members start with $, so fields keep every plain name.
+  await doc.fields.photo.set({ id: "a" });
   // Optional keys may be omitted from inserts, and so may text, which starts empty.
   await doc.fields.rows.insert({ text: "row" });
   await doc.fields.rows.insert({ limit: 3 });

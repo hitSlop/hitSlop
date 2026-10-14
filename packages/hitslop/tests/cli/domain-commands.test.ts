@@ -26,7 +26,7 @@ test("stored commands validate arguments, return typed results and refuse atomic
       failing: { description: "Fail after collecting", args: {}, run({tx}) { tx.fields.title.set("Must roll back"); throw new Error("Deliberate failure"); } },
       ambient: { description: "No host APIs", args: {}, run() { return [typeof process, typeof fetch, typeof Bun]; } },
     `));
-    const template = await buildTemplate(source, join(root, "master.slop"), { renderArtwork: false });
+    const template = await buildTemplate(source, join(root, "master.slop"), { renderViews: false });
     const document = join(root, "Working.slop");
     await execute({ method: "create", from: template, output: document });
     const run = (command: string, args: unknown) => request({ method: "call", documentPath: document, command, args });

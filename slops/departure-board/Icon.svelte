@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <div class="icon-surface" aria-hidden="true">
   <div class="icon-board">
     {#each ["GO", "NOW", "OK"] as word}

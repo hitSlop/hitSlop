@@ -79,5 +79,5 @@ export function setField(tx: Edit, field: DetailField, value: string) {
   setters[field](tx, value);
 }
 export function setPortrait(tx: Edit, ref: { id: string; mimeType: string }) {
-  tx.fields.avatar.set({ id: ref.id, mimeType: ref.mimeType });
+  tx.fields.avatar.$set({ id: ref.id, mimeType: ref.mimeType });
 }

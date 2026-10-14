@@ -8,10 +8,9 @@ extension SlopDocumentWindowController {
   public func pageSession(_ session: DocumentSession, didFail error: Error) {
     presentation.ready = false
     stopLoading()
-    failures.renderer(error, reason: session.failureReason, telemetry: telemetry)
-    updatePageFailure(
-      error.localizedDescription, reason: session.failureReason,
-      classification: SlopFailureContext.classify(error).classification)
+    let context = SlopFailureContext.classify(error)
+    failures.renderer(context, telemetry: telemetry)
+    updatePageFailure(error.localizedDescription, context: context)
   }
 
   public func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) {
@@ -95,8 +94,7 @@ extension SlopDocumentWindowController {
   /// Shows the failure screen for `message`, or removes it. The reason and classification say
   /// what the screen tells the person and what Copy details reports.
   func updatePageFailure(
-    _ message: String?, reason: SlopFailureContext.Reason? = nil,
-    classification: SlopFailureContext.Classification = .platform
+    _ message: String?, context: SlopFailureContext = .init()
   ) {
     guard presentedPageError != message else { return }
     presentedPageError = message
@@ -108,8 +106,8 @@ extension SlopDocumentWindowController {
     let metadata = session.file.metadata
     let screen = FailureScreen(
       notice: PageFailureNotice(
-        message: message, reason: reason, classification: classification, slopTitle: metadata.title,
-        slopSlug: metadata.slug),
+        message: message, context: context, slopTitle: metadata.title,
+        slopSlug: metadata.slug, packageFormat: session.file.packageFormat, runtimeABI: session.file.runtimeABI),
       reopen: { [weak self] in self?.request(.retry) },
       copy: { text in
         NSPasteboard.general.clearContents()

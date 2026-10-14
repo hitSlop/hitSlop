@@ -1,4 +1,7 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./mathlive-static.css";
+  import "./styles.css";
   import { previewText } from "../_shared/preview";
   import type { CaptureProps } from "hitslop/svelte";
   // The worked solution as a clean sheet: the same title block, numbered typeset lines,

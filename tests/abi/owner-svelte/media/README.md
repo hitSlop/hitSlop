@@ -30,3 +30,14 @@ The resulting file is 1,836 bytes, with SHA-256
 Builds use this checked-in subset directly; neither `_docs` nor fontTools is a
 build dependency. This is fixture coverage for these two characters, not a general
 CJK font distribution.
+
+## Registry assets
+
+`sample.*` files are minimal complete app-asset fixtures, retained by explicit
+`?url` imports in `../media.ts`. Images are 16×16 solid RGB (51, 85, 119) patches
+encoded with Pillow/HEIF; audio and videos were encoded with FFmpeg from the
+existing tone or a matching solid-color frame. The TTF, WOFF and CFF OTF are
+original empty-space fonts generated with fontTools FontBuilder; they have no
+external font dependencies. The PDF is an original empty 16×16 page; WASM is an
+empty version-1 module. Text/code/vector/data fixtures are original minimal files.
+Both `.js` and `.mjs` exercise the registry's canonical `.js` asset output.

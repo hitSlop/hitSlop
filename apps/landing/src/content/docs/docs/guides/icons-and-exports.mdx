@@ -143,11 +143,13 @@ between monochrome and full color. On older macOS versions, choose **Widget styl
 Full-color** instead. This is a system-wide setting; it doesn't change the captured
 image or the document's theme. See [Apple's widget settings](https://support.apple.com/guide/mac-help/add-and-customize-widgets-mchl52be5da5/mac).
 
+Each static role imports its own shared stylesheets (directly or through a component), in import order; captures do not inherit the editor's stylesheets. Build and register render every declared view, including Export PNG/PDF and all Widget families, even when artwork is supplied.
+
 ### Preview and refresh
 
 In `slop dev`, use the Preview selector to switch between the editor, the preview, the
 icon and each widget family. Accepted edits survive switching, and component/CSS changes
-update the view live. These are browser layouts: review built preview/icon artwork with
+update the view live. Static views still mount inside the editor page and share its CSS cascade. These are browser layouts: review built preview/icon artwork with
 `slop build` and widget images in the Mac app. Icon and widget canvases clip overflow; the preview warns when content
 extends beyond its canvas.
 

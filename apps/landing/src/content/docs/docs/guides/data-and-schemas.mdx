@@ -27,7 +27,7 @@ Choose each field by how edits from several places should merge:
 | --- | --- | --- |
 | `s.text()` | Anything a person types | Character edits merge |
 | `s.string({ minLength?, maxLength? })`, `s.number({ min?, max? })`, `s.integer({ min?, max? })`, `s.boolean()`, `s.enum([...])` | Settings, amounts, dates, states | Last writer wins |
-| `s.optional(scalar, text or object)` | Values that may be absent | `set` gives a value, `clear()` removes it |
+| `s.optional(scalar, text or object)` | Values that may be absent | `set` gives a value, `clear()` removes it (an optional object uses `$set` and `$clear()`) |
 | `s.object({...})` | Fixed groups of fields | Per field |
 | `s.list(s.object({...}))` | Rows with identity | Insert, remove and move keep `$id` |
 | `s.list(s.string())` (any scalar) | Small lists of plain values: tags, a pixel grid | Inserts are kept; one element: last writer wins |
@@ -38,7 +38,7 @@ Choose each field by how edits from several places should merge:
 
 A field that inserts and initial values leave out takes its default: text starts empty, lists and records start empty, counters start at 0, and a scalar takes the `default` it declares, such as `s.boolean({ default: false })` or `s.enum(["low", "high"], { default: "low" })`. A scalar without a default must be given. Optional fields are left absent. An unset optional text shows as empty in a bound field, and typing creates it.
 
-An optional object uses `set`; a record uses `put(key, value)`, `delete(key)` and `entry(key)`. Creating an absent object or entry applies creation defaults. Replacing an existing one requires a complete value, including required fields with defaults, and preserves surviving text, lists and row identities. Omitted optional fields are removed. Record keys are 1–256 UTF-16 units and can't be `$id`, `__proto__`, `constructor` or `prototype`.
+An optional object uses `$set(value)` and `$clear()`, because its handle also holds the object's fields (any field name is free except `constructor`, `prototype` and the `Object.prototype` method names); a record uses `put(key, value)`, `delete(key)` and `entry(key)`. Creating an absent object or entry applies creation defaults. Replacing an existing one requires a complete value, including required fields with defaults, and preserves surviving text, lists and row identities. Omitted optional fields are removed. Record keys are 1–256 UTF-16 units and can't be `$id`, `__proto__`, `constructor` or `prototype`.
 
 Scalar lists are addressed by position: `insert(value, index?)`, `set(index, value)`, `preview(index, value)`, `remove(index, count?)` and `replace(values)`. Trees and rich text are not available. Keep transient view state (selection, hover, flipped cards) in component state; anything an export or icon shows must be a field, because they render from the saved document.
 

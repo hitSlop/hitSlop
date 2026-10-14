@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
 
 const FACE = new Set([8, 9, 14, 15, 16, 17, 22, 23, 25, 26, 29, 30, 33, 34, 37, 38, 41, 42, 43, 44, 45, 46, 49, 54]);
 </script>

@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <section class="deck-icon" aria-hidden="true">
       <div class="icon-projector-shell">
         <div class="icon-screen-bezel">

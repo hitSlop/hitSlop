@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <svg class="flow-icon" viewBox="0 0 400 400" aria-hidden="true">
   <rect width="400" height="400" fill="var(--slop-card)" />
   <rect x="60" y="90" width="26" height="220" rx="6" fill="var(--slop-income)" />

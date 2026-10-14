@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <div class="iconSurface" aria-hidden="true">
   <div class="iconPlate">
     <span class="iconRibbon"></span>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import Star from "@lucide/svelte/icons/star";
 
     const columns = [

@@ -288,8 +288,14 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
                 }
                 hash.update(&chunk[..count]);
             }
-            if data_encoding::HEXLOWER.encode(&hash.finalize()) != key || media != row.info.media_type {
+            if data_encoding::HEXLOWER.encode(&hash.finalize()) != key {
                 return Err(failed("An attachment is damaged; keep the file for recovery"));
+            }
+            // `application/octet-stream` is the fallback label: a later classifier may name bytes
+            // an earlier one could not, and the intact attachment still serves under what it
+            // was stored as. Any other label must be what the content is.
+            if row.info.media_type != "application/octet-stream" && media != row.info.media_type {
+                return Err(failed("An attachment's stored type does not match its content"));
             }
             crate::lock(&self.cache).verified.insert(key.into());
         }

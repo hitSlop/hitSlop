@@ -349,7 +349,7 @@ extension HostTests {
         """
         globalThis.__slopCapture = json => {
           const request = JSON.parse(json), image = 'slop-attachment:' + request.snapshot.title;
-          if (!request.resources[request.snapshot.title]) throw new Error('Missing saved image');
+          if (!request.attachments[request.snapshot.title]) throw new Error('Missing saved image');
           return JSON.stringify({fonts:[],frames:[{
             kind:request.kind,width:request.width,height:request.height,
             html:'<html><body><p>Saved attachment</p><img src="'+image+'" width="100" height="100"></body></html>',

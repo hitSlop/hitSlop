@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { stageProject } from "../../packages/hitslop/src/cli/build";
 import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { templateCache } from "../templates/build";
+import { declaredCapabilities, presentationVariants } from "./presentation-variants";
 
 export const nativeFixtureSlugs = ["document-fixture"];
 const output = join(repository, "generated/native-fixtures");
@@ -13,17 +14,44 @@ const output = join(repository, "generated/native-fixtures");
  * none of their inputs only copies them. */
 export async function prepareNativeFixtures() {
   const cache = await templateCache("fixtures", false);
-  // Only the document fixture needs initial artwork for catalog and save/close tests.
+  // The document and conformance fixtures retain Preview/Icon artwork for native replay.
   const build: Builder = async (source, slug, destination) => {
     await mkdir(dirname(destination), { recursive: true });
     await rm(destination, { force: true });
-    const artwork = slug === "document-fixture";
-    await cache.build(source, slug, destination, () => buildTemplate(source, destination, { renderArtwork: artwork }), artwork);
+    const artwork = ["document-fixture", "owner-svelte", "conformance-capabilities"].includes(slug);
+    await cache.build(
+      source,
+      slug,
+      destination,
+      () => buildTemplate(source, destination, { renderViews: artwork }),
+      artwork,
+    );
     return destination;
   };
-  await build(join(repository, "tests/apps/document"), "document-fixture", join(output, "document-fixture.slop"));
-  await build(join(repository, "tests/abi/owner-svelte"), "owner-svelte", join(repository, "generated/abi/owner-svelte.slop"));
-  return buildPresentationFixtures(build);
+  await build(
+    join(repository, "tests/apps/document"),
+    "document-fixture",
+    join(output, "document-fixture.slop"),
+  );
+  await build(
+    join(repository, "tests/abi/owner-svelte"),
+    "owner-svelte",
+    join(repository, "generated/abi/owner-svelte.slop"),
+  );
+  const paths = await buildPresentationFixtures(build);
+  const source = join(repository, "generated/abi/conformance-capabilities");
+  await rm(source, { recursive: true, force: true });
+  await cp(join(repository, "tests/abi/owner-svelte"), source, { recursive: true });
+  await writeFile(
+    join(source, "variant.ts"),
+    `export default ${JSON.stringify({ ...declaredCapabilities, slug: "conformance-capabilities" })} as const;\n`,
+  );
+  paths.capabilities = await build(
+    source,
+    "conformance-capabilities",
+    join(repository, "generated/presentation/capabilities.slop"),
+  );
+  return paths;
 }
 
 /** The document fixture's build stage beside it (`generated/native-fixtures/<slug>`), which
@@ -46,8 +74,12 @@ async function withVariant(fixture: string, source: string, value: unknown) {
   await rm(source, { recursive: true, force: true });
   await cp(fixture, source, { recursive: true });
   const { presentation, ...fields } = value as any;
-  const {skin, ...window} = presentation;
-  const declaration = {...fields,slug:basename(source),window:{kind:skin ? "skin" : "standard",...window}};
+  const { skin, ...window } = presentation;
+  const declaration = {
+    ...fields,
+    slug: basename(source),
+    window: { kind: skin ? "skin" : "standard", ...window },
+  };
   const code = skin
     ? `import image from ${JSON.stringify("./" + skin)};\nconst variant = ${JSON.stringify(declaration)} as const;\nexport default {...variant,window:{...variant.window,image}};\n`
     : `export default ${JSON.stringify(declaration)} as const;\n`;
@@ -62,19 +94,31 @@ const presentationFixtures = {
   notch: {
     width: 320,
     height: 320,
-    shape: { path: "M16 0 H304 Q320 0 320 16 V120 L280 160 L320 200 V304 Q320 320 304 320 H0 V32 Z", viewBox: [320, 320] },
+    shape: {
+      path: "M16 0 H304 Q320 0 320 16 V120 L280 160 L320 200 V304 Q320 320 304 320 H0 V32 Z",
+      viewBox: [320, 320],
+    },
   },
   washer: { width: 320, height: 320, skin: "assets/washer.png" },
   "washer-2x": { width: 320, height: 320, skin: "assets/washer@2x.png" },
+  ...Object.fromEntries(
+    Object.entries(presentationVariants).map(([name, { kind: _kind, ...window }]) => [
+      name === "lockAspect" ? "lock-aspect" : name,
+      window,
+    ]),
+  ),
 };
 
-/** Every presentation fixture, by name: the standard, ellipse, glass, notch and washer controls. */
+/** Every presentation fixture, including the conformance geometry variants. */
 async function buildPresentationFixtures(build: Builder) {
   const parent = join(repository, "generated/presentation");
   const paths: Record<string, string> = {};
   for (const [kind, presentation] of Object.entries(presentationFixtures)) {
     const source = join(parent, "sources", `presentation-${kind}`);
-    await withVariant(join(repository, "tests/presentation"), source, { title: `Presentation ${kind}`, presentation });
+    await withVariant(join(repository, "tests/presentation"), source, {
+      title: `Presentation ${kind}`,
+      presentation,
+    });
     paths[kind] = await build(source, `presentation-${kind}`, join(parent, kind + ".slop"));
   }
   return paths;

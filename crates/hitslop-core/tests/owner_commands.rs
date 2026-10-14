@@ -195,6 +195,38 @@ fn a_second_conflict_and_invalid_results_are_not_replayed() {
     close(&owner);
 }
 
+// A command's reply stays raw JSON until the arm for its runtime ABI decodes the intents, so
+// an intent this core cannot decode is the evaluator's fault: a definite refusal, applied to
+// nothing, and the owner is left as it was.
+#[test]
+fn an_intent_that_does_not_decode_is_an_invalid_reply_and_applies_nothing() {
+    let fixture = Fixture::new();
+    let owner = fixture.open(true);
+    let undecodable = [
+        json!({"type":"teleport","path":["title"]}),
+        json!({"type":"set","path":["title"],"value":"Command","unexpected":1}),
+        json!({"type":"increment","path":["title"],"by":"1"}),
+        json!({"type":"set","value":"Command"}),
+        json!("set"),
+    ];
+    for (attempt, intent) in undecodable.into_iter().enumerate() {
+        let reply = submit(&owner, command(json!({"title":"Command"})), None);
+        fixture.input(attempt);
+        fixture.reply(attempt, json!({"ok":true,"intents":[intent],"result":null}));
+        let failure = receive(reply).unwrap_err();
+        assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(Code::EngineError)), "{attempt}");
+        assert!(failure.message.contains("it returned an invalid reply"), "{attempt}: {}", failure.message);
+        assert_eq!(title(&owner), "Saved");
+    }
+    // Nothing was applied, so the next accepted command is the document's first edit.
+    let reply = submit(&owner, command(json!({"title":"Command"})), None);
+    fixture.input(5);
+    fixture.reply(5, accepted("Command"));
+    assert!(matches!(receive(reply).unwrap(), Reply::Command { sequence: 1, .. }));
+    assert_eq!(title(&owner), "Command");
+    close(&owner);
+}
+
 #[test]
 fn a_refusal_for_the_person_keeps_its_message_under_its_own_reason() {
     let fixture = Fixture::new();

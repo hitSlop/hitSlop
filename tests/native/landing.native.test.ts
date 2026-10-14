@@ -55,7 +55,7 @@ test.if(nightly)("a skinned template without artwork keeps its dimensions and fa
     await writeFile(join(stage, "icon.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
     await writeFile(join(stage, "export.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
     const file = join(folder, "skin.slop");
-    await execute({ method: "pack", stage, file, renderArtwork: false, app: {
+    await execute({ method: "pack", stage, file, renderViews: false, app: {
       packageFormat: PackageFormat, runtimeABI: RuntimeABI,
       declaration: {
         metadata: { slug: "skin", title: "Skin", description: "Landing fixture", author: { name: "hitSlop" }, categories: ["utilities"] },

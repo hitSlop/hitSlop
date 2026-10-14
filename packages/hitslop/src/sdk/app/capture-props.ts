@@ -31,9 +31,9 @@ export type CaptureProps<D extends Definition<ObjectNode>> = {
 /** One render request's props: its snapshot frozen in place, and its images by ID. */
 export function captureProps(
   snapshot: unknown,
-  resources: Record<string, string>,
+  attachments: Record<string, string>,
 ): CaptureProps<Definition<ObjectNode>> {
-  const images = Object.freeze({ ...resources });
+  const images = Object.freeze({ ...attachments });
   return {
     snapshot: deepFreeze(snapshot) as Value<ObjectNode>,
     attachmentURL(id) {
@@ -41,7 +41,7 @@ export function captureProps(
         typeof id !== "string" ||
         !Object.hasOwn(images, id) ||
         typeof images[id] !== "string" ||
-        !images[id]
+        !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(images[id])
       )
         throw new Error(`Capture attachment ${id} is missing or is not a supported image`);
       return `slop-attachment:${id}`;

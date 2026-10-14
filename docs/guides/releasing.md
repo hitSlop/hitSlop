@@ -77,14 +77,34 @@ npm bootstrap/deprecations and public release changes are separate release work.
    `scripts/build/platforms.json`: darwin-arm64, linux-x64 and linux-arm64. Download
    the artifacts into `generated/engines/<platform>/`. Each records its commit and core
    build; packing refuses mixed candidates.
-3. Capture `bun run compat:capture VERSION --frozen` from the clean candidate. It
+3. Capture `bun run compat:capture VERSION --frozen --writer generated/engines/darwin-arm64/slop-engine`
+   from the clean candidate. `--writer` is the CI-built darwin-arm64 engine destined
+   for the npm tarball; capture checks its build ID against the current core and uses
+   it for CLI writes. The native page uses the same core build. It
    covers the runtime: the conformance app's documents (saved updates, a compacted
    snapshot, attachments, its page scenario and a stored command) and a template per
-   window kind. The entry records acceptance-rule
-   hashes and producing inputs. Commit only the corpus. Frozen entries are permanent;
-   the prelaunch `dev` entry may be replaced and is never frozen. Each public version
+   window kind. The producing engine writes self-checked raw acceptance vectors with
+   `--acceptance-vectors DIR` and records its `--limits` table. Rust replay must accept
+   every vector and preserve its typed re-encoding; no recorded open/read/save limit may
+   become stricter. The entry pins physical storage SQL hashes and `sourceInputs` (the producing source fingerprint),
+   while format-reader source and authoring rules may change. Commit only the corpus.
+   Frozen entries are permanent; the prelaunch `dev` entry may be replaced and is never frozen. Each public version
    gets its own entry even when all format markers remain at 1. Keep the original
    `.slop` bytes and expectations in the test repository, not the installed app.
+   `release.json.writer` records `{version, platform: "darwin-arm64", sha256, buildId}`;
+   no engine binary belongs in the corpus. `bun scripts/compat/writers.ts` resolves
+   writers before Rust replay into `~/.cache/hitslop/compat-writers/<sha256>` (override
+   with `HITSLOP_COMPAT_WRITERS`). It uses `HITSLOP_ENGINE` or the checkout engine only
+   when both build ID and SHA-256 match; otherwise it downloads `hitslop@VERSION`
+   from npm and extracts and verifies the shipped engine. Cached bytes are checked
+   again. Missing or corrupt writers fail replay. The release gate verifies that
+   the packed tarball's darwin-arm64 engine has exactly the captured SHA-256.
+   For the unpublished prelaunch `dev` entry, omit `--writer` to capture with the
+   fresh local dist build (`target/dist/slop-engine`); capture populates the hash cache.
+   To resolve it again, run `HITSLOP_ENGINE=target/dist/slop-engine bun scripts/compat/writers.ts`.
+   There is no registry fallback for dev: retain that build
+   or its verified cache entry, use `HITSLOP_ENGINE` to select it, or recapture dev
+   after producing changes. Never recapture a frozen public entry.
    Required affected PR checks replay all entries through Rust and the native host
    (open, render, edit, save, reopen); Playwright qualification is separate.
 4. Run Engines again on the corpus-only commit and replace the downloaded artifacts
@@ -222,9 +242,16 @@ Record commit, version/build, OS, and results. Test macOS 15.2 and the current s
 - Install an external template file; confirm categories and selection update when it is removed. Invalid files report local issues without hiding valid templates. Open a template received by Mail: it offers to create a document. Check Quick Look's thumbnail and Space preview on a document sent by AirDrop.
 - Type then close, reorder rows, commit IME, and quit with multiple documents.
 - Failed save retains ownership; retry works and cancelled quit preserves other documents.
-- Kill WebContent, reopen saved state, and continue editing.
+- Kill WebContent: the failure screen says edits are kept; Reopen restores them; a pending
+  save keeps its Retry Save sheet; Copy details holds no document values (it lists the
+  slop's and the build's package format and runtime ABI); Get help opens the Discord invite.
+- Wedge a page with a busy loop: after 15 s the failure screen appears and the page's
+  WebContent process ends (it stops using CPU), Reopen recovers, Close and Quit do not hang;
+  note a WebContent kill and a wedge show different titles/reasons.
+- Widgets: exercise all sizes, rename and same-volume move, edit and save, and confirm
+  images regenerate once after a Sparkle update.
 - PNG/PDF, Finder preview/icon, keyboard focus, narrow windows, repeated open/close, and menu commands.
-- GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite, and that "Get help on Discord" on the slop failure screen (kill WebContent) opens the same one.
+- GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite.
 - Gatekeeper launch from downloaded DMG and ZIP; the installed app works without Node/Bun.
 - Sparkle update from the previous signed release, verifying publisher and resulting version.
   With an isolated reachable appcast, confirm the versioned Markdown loads in the update

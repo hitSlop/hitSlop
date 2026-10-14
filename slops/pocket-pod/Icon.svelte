@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <div class="pod-icon" aria-hidden="true">
   <div class="pod-icon-body pod-surface">
     <div class="pod-icon-bezel"><div class="pod-icon-screen"><i></i></div></div>

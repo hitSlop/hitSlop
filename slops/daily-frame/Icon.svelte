@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   // A fanned stack of three prints, the newest on top with its date imprint.
   import type { CaptureProps } from "hitslop/svelte";
   import type schema from "./schema";

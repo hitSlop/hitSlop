@@ -1,3 +1,9 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./mathlive-static.css";
+  import "./styles.css";
+</script>
+
 <!-- A corner of the pad: green engineering grid, the margin rule, a numbered line and its red curve. -->
 <svg class="pad-icon" viewBox="0 0 400 400" aria-hidden="true">
   <defs>

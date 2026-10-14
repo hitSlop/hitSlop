@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import { previewText } from "../_shared/preview";
   import Check from "@lucide/svelte/icons/check";
   import type { CaptureProps } from "hitslop/svelte";

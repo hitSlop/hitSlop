@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <div class="icon-surface" aria-hidden="true">
   <div class="icon-chart">
     {#each [0, 1, 2, 3, 4, 5, 6, 7, 8] as index}

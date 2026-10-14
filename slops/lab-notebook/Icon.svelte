@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <svg class="lab-icon" viewBox="0 0 400 400" aria-hidden="true">
   <rect width="400" height="400" fill="var(--slop-paper)" />
   <rect x="44" y="44" width="312" height="312" rx="10" fill="var(--slop-card)" />

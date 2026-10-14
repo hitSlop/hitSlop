@@ -54,8 +54,10 @@ boundary and marker, are in the [engineering contract](docs/engineering-contract
 - Installing hitSlop never replaces the app inside an existing document. Only a write
   under the writer lock migrates a file; display reads never do.
 - Public boundaries (`ctx`, handles, error codes, `--slop-*`, host markup, the embed relay,
-  the command protocol's refusal path) grow additively. A change an old app cannot run
-  raises `runtimeABI` and keeps the old behavior through an adapter.
+  the command protocol's refusal path, capture program requests and replies) grow additively.
+  A change an old app cannot run raises `runtimeABI` and keeps the old behavior through an adapter.
+  Stored capture programs are governed by runtimeABI. Requests grow additively; reply readers
+  ignore unknown hints. Captures remain faithful and usable, while renderer fixes may change pixels.
 - Upgrade Loro (pinned exactly) only with the corpus passing.
 
 ## Authoring

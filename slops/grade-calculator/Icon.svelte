@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <section class="grade-render grade-icon" data-slop-render="icon" aria-hidden="true">
   <div class="icon-instrument">
     <div class="icon-header">

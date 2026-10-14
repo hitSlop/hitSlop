@@ -1,59 +1,27 @@
 //! Native saved-view rendering. Called only after the child installs its sandbox.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rquickjs::{CatchResultExt, Function};
-use serde::Deserialize;
 use std::{collections::HashMap, sync::Arc};
 use takumi::prelude::*;
 use takumi::unstable::base::viewport::MediaTarget;
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Frame {
-    html: String,
-    css: String,
-    width: u32,
-    height: u32,
-    #[serde(default)]
-    kind: Option<String>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Font {
-    family: String,
-    bytes: String,
-    weight: Option<f32>,
-    italic: bool,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Batch {
-    frames: Vec<Frame>,
-    fonts: Vec<Font>,
-}
+use crate::{Batch, Font, Frame, JobKind, RasterRequest};
 
-pub fn evaluate(
-    bundle: &str,
-    request: &str,
-    interrupted: impl FnMut() -> bool + 'static,
-) -> std::result::Result<String, String> {
-    let Batch { frames, fonts } = evaluate_markup(bundle, request, "__slopWidget", interrupted)?;
-    let sources = resource_images(request)?;
-    if frames.len() != 3
-        || frames.iter().any(|f| f.width == 0 || f.height == 0 || f.width > 512 || f.height > 512 || f.kind.is_some())
-    {
-        return Err("Widget batch must contain three bounded canvases".into());
+pub fn raster(request: RasterRequest, mode: JobKind) -> std::result::Result<String, String> {
+    let Batch { frames, fonts } = request.batch;
+    let sources = resource_images(request.images)?;
+    if matches!(mode, JobKind::Widget) {
+        if frames.len() != 3
+            || frames
+                .iter()
+                .any(|f| f.width == 0 || f.height == 0 || f.width > 512 || f.height > 512 || f.kind.is_some())
+        {
+            return Err("Widget batch must contain three bounded canvases".into());
+        }
+        return render(frames, fonts, sources, 2, crate::WIDGET_OUTPUT, false)
+            .map_err(|e| format!("Widget rendering failed: {e}"));
     }
-    render(frames, fonts, sources, 2, crate::WIDGET_OUTPUT, false).map_err(|e| format!("Widget rendering failed: {e}"))
-}
-
-pub fn evaluate_view(
-    bundle: &str,
-    request: &str,
-    pdf: bool,
-    interrupted: impl FnMut() -> bool + 'static,
-) -> std::result::Result<String, String> {
-    let Batch { frames, fonts } = evaluate_markup(bundle, request, "__slopCapture", interrupted)?;
-    let sources = resource_images(request)?;
+    let pdf = matches!(mode, JobKind::Pdf);
     if frames.len() != 1 {
         return Err("Capture requires one canvas".into());
     }
@@ -83,15 +51,12 @@ pub fn evaluate_view(
 /// Decode owner-supplied saved image bytes once, inside the restricted child.
 /// Takumi's browser-like missing-image behavior must not silently replace useful
 /// prior artwork when an attachment is damaged.
-fn resource_images(request: &str) -> std::result::Result<HashMap<Arc<str>, ImageSource>, String> {
-    #[derive(Deserialize)]
-    struct Resources<'a> {
-        #[serde(default, borrow)]
-        resources: HashMap<&'a str, &'a str>,
-    }
-    let request: Resources<'_> = serde_json::from_str(request).map_err(|e| e.to_string())?;
+fn resource_images(
+    resources: std::collections::BTreeMap<String, String>,
+) -> std::result::Result<HashMap<Arc<str>, ImageSource>, String> {
     let mut images = HashMap::new();
-    for (id, url) in request.resources {
+    let mut total = 0usize;
+    for (id, url) in resources {
         let (header, bytes) = url.split_once(',').ok_or_else(|| format!("Invalid image resource {id}"))?;
         if !matches!(
             header,
@@ -100,35 +65,33 @@ fn resource_images(request: &str) -> std::result::Result<HashMap<Arc<str>, Image
             return Err(format!("Unsupported image resource {id}"));
         }
         let bytes = STANDARD.decode(bytes).map_err(|e| format!("Invalid image resource {id}: {e}"))?;
+        total += bytes.len();
+        if total > crate::IMAGE_BYTES {
+            return Err("Capture images exceed the 24 MiB resource limit".into());
+        }
         let source = ImageSource::from_bytes(&bytes).map_err(|e| format!("Cannot decode image resource {id}: {e}"))?;
         images.insert(Arc::from(format!("slop-attachment:{id}")), source);
     }
     Ok(images)
 }
 
-fn evaluate_markup(
+pub fn evaluate_markup(
     bundle: &str,
     request: &str,
     entry: &str,
     interrupted: impl FnMut() -> bool + 'static,
-) -> std::result::Result<Batch, String> {
+) -> std::result::Result<String, String> {
     let (runtime, context) = crate::realm::create(interrupted)?;
     let json = context.with(|ctx| {
         ctx.eval::<(), _>(bundle.as_bytes()).catch(&ctx).map_err(|e| e.to_string())?;
         let render: Function = ctx.globals().get(entry).catch(&ctx).map_err(|e| e.to_string())?;
         render.call::<_, String>((request,)).catch(&ctx).map_err(|e| e.to_string())
     })?;
-    // SSR is finished. Release its heap before font registration and rasterization.
+    // SSR is finished. Release its heap before returning markup to the owner.
     drop(context);
     drop(runtime);
-    if json.len() > 16 << 20 {
-        return Err("Capture markup exceeds 16 MiB".into());
-    }
-    let Batch { frames, fonts } = serde_json::from_str(&json).map_err(|e| format!("Invalid capture markup: {e}"))?;
-    if fonts.len() > 64 {
-        return Err("Capture uses more than 64 font faces".into());
-    }
-    Ok(Batch { frames, fonts })
+    Batch::decode(&json)?;
+    Ok(json)
 }
 
 fn render(
@@ -159,12 +122,6 @@ fn render(
     // font. Register after Apple emoji so colored emoji retain their chosen face.
     fonts.register(FontResource::new(include_bytes!("../fonts/NotoSansSymbols2-Regular.ttf").as_slice()))?;
     for font in packaged_fonts {
-        if font.family.is_empty()
-            || font.family.len() > 256
-            || font.weight.is_some_and(|weight| !weight.is_finite() || !(1.0..=1000.0).contains(&weight))
-        {
-            return Err("Invalid packaged font metadata".into());
-        }
         fonts.register(FontResource::new(STANDARD.decode(font.bytes)?).override_info(FontOverride {
             family_name: Some(font.family.into()),
             weight: font.weight,

@@ -63,15 +63,18 @@ export function handleFactory(host: HandleHost, mint: () => string = newID) {
         return Object.freeze(
           text({ set: (value: string) => send({ type: "set", path, value }), clear }),
         );
-      // An optional object: its fields, plus `set` to create or replace it and `clear`.
+      // An optional object: its fields, plus `$set` to create or replace it and `$clear`.
+      // This handle shares its names with the author's fields, so its own members start
+      // with `$`, which no field name can; the other optionals carry no fields and keep
+      // `set` and `clear`.
       const fields = make(node.inner, path, collect);
       const handle = Object.create(null);
       for (const name of Object.keys(fields))
         Object.defineProperty(handle, name, { enumerable: true, get: () => fields[name] });
-      Object.defineProperty(handle, "set", {
+      Object.defineProperty(handle, "$set", {
         value: (value: unknown) => send({ type: "set", path, value }),
       });
-      Object.defineProperty(handle, "clear", { value: clear });
+      Object.defineProperty(handle, "$clear", { value: clear });
       return Object.freeze(handle);
     }
     if (isScalar(node)) return Object.freeze(bindable(scalar(), false));

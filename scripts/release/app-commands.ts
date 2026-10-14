@@ -21,7 +21,7 @@ export async function verifyAppCommands(app: string) {
   const document = join(folder, "Commands.slop");
   let host: ReturnType<typeof testProcess> | undefined;
   try {
-    const template = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderArtwork: false });
+    const template = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderViews: false });
     await createDocument(template, document, placement);
     host = testProcess([join(app, "Contents/MacOS/hitSlop"), document], { ...placement, timeout: 60_000 });
     let exited = false;

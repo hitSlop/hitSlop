@@ -32,10 +32,11 @@ test("one JSON transport validates results and never retries ambiguous invocatio
   for (const reply of [
     { ok: true, method: "call" },
     { ok: true, method: "templates", catalog: { folders: [], templates: [], issues: [] } },
-    { ok: true, method: "call", result: null, ids: [], unexpected: true },
     { ok: true, method: "call", result: null, ids: [1] },
     { ok: true, method: "call", ids: [] },
     { ok: false, code: "future_outcome", error: "Unclassified" },
+    { ok: false, code: "rejected" },
+    { ok: false, error: "No code" },
   ]) {
     await writeFile(binary, `#!${process.execPath}
 const body = await Bun.stdin.json();
@@ -52,6 +53,41 @@ console.log(${JSON.stringify(JSON.stringify(reply))});
 await Bun.stdin.json(); console.log(JSON.stringify({ok:true,method:"artwork.export",output:null}));
 `, { mode: 0o755 });
   expect(await request({ method: "artwork.export", file: "a.slop", target: "icon", output: "a.png" }, { binary })).toEqual({ ok: true, method: "artwork.export", output: null });
+});
+
+// A newer engine may add members to its replies; an older CLI reads the ones it knows and
+// ignores the rest, so a mutation that applied is never reported as an unknown outcome.
+test("replies may carry members this CLI does not know", async () => {
+  const { execute, request } = await import("../../src/cli/engine");
+  const root = await mkdtemp(join(tmpdir(), "hitslop-open-reply-")); roots.push(root);
+  const binary = join(root, "engine");
+  const answer = (reply: unknown) =>
+    writeFile(binary, `#!${process.execPath}
+await Bun.stdin.json(); console.log(${JSON.stringify(JSON.stringify(reply))});
+`, { mode: 0o755 });
+  const body = { method: "call" as const, documentPath: "a.slop", command: "addTask", args: {} };
+  await answer({ ok: true, method: "call", result: { n: 1 }, ids: ["r1"], later: { added: [true] } });
+  const applied = await execute(body, { binary });
+  expect(applied.ids).toEqual(["r1"]);
+  expect(applied.result).toEqual({ n: 1 });
+  await answer({ ok: true, method: "artwork.export", output: null, later: 1 });
+  expect((await request({ method: "artwork.export", file: "a.slop", target: "icon", output: "a.png" }, { binary })).ok).toBe(true);
+  // A refusal with extra members is still the refusal, with its outcome.
+  await answer({ ok: false, code: "rejected", error: "No such row", reason: "path_not_found", opIndex: 2, later: [1] });
+  await expect(execute(body, { binary })).rejects.toThrow("Refused ops[2] (path_not_found): No such row\nNot applied.");
+  await answer({ ok: false, code: "save_failed", error: "Disk full", later: {} });
+  await expect(execute(body, { binary })).rejects.toThrow("Disk full\nApplied, but not yet saved.");
+  // Extra members never stand in for the ones a reply needs.
+  for (const reply of [
+    { ok: true, method: "call", result: null, later: 1 },
+    { ok: true, method: "call", ids: [], later: 1 },
+    { ok: true, later: 1 },
+    { ok: false, code: "rejected", later: 1 },
+    { ok: false, error: "No code", later: 1 },
+  ]) {
+    await answer(reply);
+    await expect(request(body, { binary })).rejects.toThrow("Outcome unknown");
+  }
 });
 
 test("only protocol refusals suggest updating the CLI", async () => {

@@ -2,8 +2,6 @@ import HitSlopCore
 import HitSlopCoreBinding
 
 private let host = hostLimits()
-public enum PackageFormat { public static let level = Int(host.packageFormat) }
-public enum RuntimeABI { public static let level = Int(host.runtimeAbi) }
 extension Limits {
   public static let socketAttachment = Int(host.socketAttachment)
 }

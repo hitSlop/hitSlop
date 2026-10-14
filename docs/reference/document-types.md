@@ -46,7 +46,7 @@ export default defineDocument({
 | [`s.integer({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
 | [`s.enum([...])`](#scalars) | one of the values | last writer wins | `set`, `preview`, `value` |
 | [`s.counter()`](#counter) | `number` | increments add up | `increment` |
-| [`s.optional(inner)`](#optional) | the inner value, or absent | per inner kind | `set`, `clear` |
+| [`s.optional(inner)`](#optional) | the inner value, or absent | per inner kind | `set`, `clear` (`$set`, `$clear` for an object) |
 | [`s.object({...})`](#object) | object | per field | its fields' handles |
 | [`s.list(s.object({...}))`](#rows) | array of rows with `$id` | inserts, removes and moves keep identity | `insert`, `remove`, `move`, `item` |
 | [`s.list(scalar)`](#scalar-lists) | array of values | by position; one element: last writer wins | `insert`, `set`, `preview`, `remove`, `replace` |
@@ -228,8 +228,9 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 - **Handle:** `increment(by = 1)`; a negative `by` subtracts. There is no reset.
 - **Snapshot:** a safe integer. An increment that would leave the safe range is refused
   (`out_of_range`). Concurrent increments from several devices add up. The total is kept
-  as a Loro counter, exact for any realistic count (until increments summed as absolute
-  values reach about 9×10^15, as with a JavaScript number).
+  as a Loro counter, exact while increments summed as absolute values over its whole
+  history stay below 2^53 (about 9×10^15). Beyond that envelope an off-by-one result
+  is possible, including after replacement, undo or reopen; no exactness is guaranteed.
 - **CLI:** `{"type":"increment","path":["visits"],"by":1}`.
 
 ## Optional
@@ -240,15 +241,17 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 - **Setting and clearing:**
   - `set(value)` gives it a value;
   - `clear()` removes it (clearing an unset field does nothing);
+  - an optional object's handle also carries the object's fields, so its own members are
+    `$set(value)` and `$clear()`, and a field may be named `set` or `clear`;
   - inserts and initial values may leave it out.
   - `null` is never a value.
 - **Optional objects:**
-  - `set` creates an absent object with creation defaults, or reconciles a complete
+  - `$set` creates an absent object with creation defaults, or reconciles a complete
     replacement with the existing object. Surviving text, lists and rows keep identity.
   - Fields of an unset object are `path_not_found`.
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
-- `set` on an object that is already set writes only the fields that differ.
+- `$set` on an object that is already set writes only the fields that differ.
 - Clearing and then setting writes the new value over the field's earlier content. A
   text edit from the old text merges into the field that is there now; while the field is
   cleared it is `path_not_found`.
@@ -258,6 +261,16 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 
 `s.object({...})` groups fields, each edited through its handle. An object always exists
 (unless it is optional). The CLI's `replace` can reconcile its complete value in place.
+
+- **Field names:** ASCII letters, digits and `_`, starting with a letter. `constructor`,
+  `prototype` and the `Object.prototype` method names (`toString`, `toLocaleString`,
+  `valueOf`, `hasOwnProperty`, `isPrototypeOf`, `propertyIsEnumerable`) are refused
+  (`invalid_schema`); every other name is free, including `set`, `clear`, `path` and `node`.
+- **Handle members:** a handle that carries an object's fields (an object, a row, a
+  record entry, an optional object) names any member of its own with a leading `$`, which
+  no field name can have, so a member never shadows a field. Only an optional object has
+  members today: `$set` and `$clear`. Handles without fields (scalars, text, lists,
+  records, counters) keep plain names.
 
 ## Rows
 

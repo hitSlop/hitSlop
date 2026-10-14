@@ -102,7 +102,7 @@ export function setTranscript(tx: Edit, note: RowRef, text: string) {
 export function saveTranscription(tx: Edit, note: RowRef, result: { text: string; locale: string; at: string }) {
   const row = tx.fields.notes.item(note);
   row.transcript.set(result.text);
-  row.transcribed.set({ locale: result.locale, at: checkInstant(result.at) });
+  row.transcribed.$set({ locale: result.locale, at: checkInstant(result.at) });
 }
 export function removeNote(tx: Edit, note: RowRef) {
   tx.fields.notes.remove(note);

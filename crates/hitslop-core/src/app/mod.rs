@@ -254,7 +254,7 @@ impl AppDefinition {
                     resizable: *resizable,
                     lock_aspect: *lock_aspect,
                     background: background.map(Into::into),
-                    shape: shape.clone(),
+                    shape: shape.clone().map(Into::into),
                 }
             }
             Window::Skin { width, height, fullscreenable, skin } => crate::build::WindowInput::Skin {

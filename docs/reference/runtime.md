@@ -42,7 +42,7 @@ import styles from their components. During component initialization, `getDocume
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
 `ctx.document.observe`). `bindText`, `EditableText`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Authoring requires `Preview.svelte` and `Icon.svelte`; export and widget components remain optional.
 
-An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
+An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Native host-to-page calls must finish within the page-call deadline; a page that does not answer counts as a dead renderer ([recovery](../architecture.md#layers)). Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
 The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. See the [roadmap](../roadmap.md#later) for deferred catalog and sharing work.
 
@@ -148,8 +148,52 @@ Rust resolves window defaults, frame capabilities and silhouettes once for the n
 
 ## Capture and Finder integration
 
+### Stored capture program ABI (runtimeABI 1)
+
+The private Preview, Icon and Export programs expose `__slopCapture(json)`;
+Widget exposes `__slopWidget(json)`. Each is synchronous and returns a JSON string
+containing `{frames, fonts}`. A view request contains `kind` (`preview`, `icon` or
+`export`), `format` (`png` or `pdf`), `width`, `height`, `snapshot`, `theme` and
+`attachments`. A widget request contains `snapshot`, `theme`, `attachments` and
+`viewports` (each with `family`, `width`, `height`). `attachments` maps referenced
+supported image IDs to media types (`image/png`, `image/jpeg`, `image/gif`,
+`image/webp`), never bytes. The host request grows only additively.
+
+Frames contain `{html, css, width, height, kind?}`; views return one frame with
+their kind, widgets three without a kind. Fonts contain `{family, bytes, weight?,
+italic}`, with base64 packaged font bytes. Hosts read the batch, frames and fonts
+openly, ignoring unknown members while checking required fields and bounds.
+`attachmentURL(id)` returns `slop-attachment:<id>` for an inventoried image and
+throws for anything else. IDs are 64 lowercase hexadecimal SHA-256 characters.
+The host scans frame HTML and CSS, verifies and loads only the attachments they
+reference, then sends markup and those images to a separate raster child. Authored
+JavaScript never receives attachment image bytes; the raster child never executes JavaScript.
+A failed output does not discard successful sibling outputs.
+
+Programs run in bare QuickJS, without `window`, `document`, `navigator`,
+`requestAnimationFrame`, `fetch`, `XMLHttpRequest`, `Image`, `Worker`, `URL`,
+`URLSearchParams`, `TextEncoder`, `TextDecoder`, `AbortController`, `Blob` or
+`structuredClone`. The SDK emits `data-slop-capture` (`static`, `icon`, `widget`),
+`data-slop-capture-target` (the view kind). Static view captures hide
+`[data-slop-export="hide"]`.
+
+Released behavior includes a 512 × 512 icon, widget canvases at most 512 per side
+(164 × 164, 344 × 164, 344 × 344), at most 16 MiB of serialized markup including
+fonts, 64 font faces (family names at most 256 bytes; weights 1–1000), and 24 MiB
+of referenced images per output. Initial canvases are at most 16,384 per side.
+PNG is bounded to 16,384 pixels per side and 24 megapixels, with a 36 MiB encoded
+reply; widgets have an 8 MiB encoded reply. PDF allows measured content up to
+1,000,000 CSS pixels, uniformly scales to 14,400 points per side, and has a 24 MiB
+byte budget and 36 MiB encoded reply. Each child has a 64 MiB input and 512 MiB
+resident-memory guard; markup and PNG have a 3-second wall/CPU budget, PDF raster
+has a 10-second wall and 8-second CPU budget. QuickJS execution is interrupted
+after 2 seconds. Captures must remain faithful and usable; renderer fixes may
+change pixels. Pixel equality is evidence for a renderer refactor, not the ABI
+guarantee.
+
 Every host capture uses synchronous Svelte SSR and Takumi in the restricted Rust child. An open document first drains its
-page writes, saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
+page writes within the page-call deadline; a page that does not answer counts as a dead
+renderer. It saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
 ends after the backup. Rendering then uses that independent copy, including its app,
 attachments, data and theme. The editor's focus, selection, scroll and local selected
 view are not used or changed. No read transaction remains open during rendering.
@@ -157,6 +201,10 @@ Source acquisition leaves speech, media access, file selection, downloads and re
 eligible under their normal page policy. The native acquisition queue still coordinates
 close, discard, reload and reopen. Close batches preview, icon and eligible widgets from
 one source; Rust prepares shared inputs once and returns independent output results.
+
+A capture's CSS is exactly what its own Preview/Export/Icon/Widget role imports, in
+import order, including component CSS. Captures no longer inherit the editor's
+stylesheets; `slop dev` still mounts static views inside the editor page.
 
 The CLI requires `Preview.svelte` and `Icon.svelte` beside `App.svelte`; `Export.svelte` and `Widget.svelte` are optional.
 Preview supplies compact Quick Look/catalog artwork; Export supplies complete PNG/PDF layout.
@@ -201,11 +249,11 @@ wider than the editor window. Native previews and exports rasterize at 2×.
 PDF uses the experimental Takumi vector backend from the same pinned Git revision, sharing SSR, layout, fonts and resources
 with PNG. It keeps selectable text on one continuous page, with one CSS pixel mapping
 to one PDF point before uniform viewport scaling to at most 14,400 points per side.
-PDF has an independent 24 MiB output budget (36 MiB encoded reply), a 10-second wall watchdog and 8-second CPU limit; it is not bounded by PNG pixels. The child accepts at most 16 MiB of rendered markup and 24 MiB of image attachments referenced anywhere in saved state. This is a whole-document inventory, even for roles that display no photos; oversized or damaged inventories reject capture and preserve existing artwork. Image bytes travel once in the request and resolve through opaque attachment URLs; image decoding stays in the child. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
+PDF has an independent 24 MiB output budget (36 MiB encoded reply), a 10-second wall watchdog and 8-second CPU limit; it is not bounded by PNG pixels. The markup child accepts at most 16 MiB of rendered markup. Each output loads only the image attachments its HTML and CSS reference, with a separate 24 MiB budget; unrelated damage never prevents capture. Images are verified by the core and decoded in the restricted raster child. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
 
 The core stores artwork losslessly optimized with oxipng: `pack` at level 2, and a closing window's artwork at level 0, because the writer lock is released only after it is written ([measurements](../evidence/artwork-optimization-2026-10-05.md)). Pixels, dimensions and transparency are preserved, fully transparent pixels keep their colour, alpha is removed only from fully opaque images, and metadata that does not affect display is stripped. A result is kept only when it is smaller; artwork oxipng cannot read, or would decode past 64 MiB, is stored as it is. PNG and PDF exports are written as rendered.
 
-On macOS and Linux, build and register render artwork the project does not supply from the staged template, inside the same `pack` request that writes it, and store it as supplied artwork is stored; a failed render publishes nothing. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup through Svelte SSR and Takumi in the restricted Rust child; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
+On macOS and Linux, build and register render every declared view from the staged template inside the same `pack` request that writes it: Preview, Icon, Export PNG/PDF and all Widget families. Supplied artwork does not bypass this gate. Only unsupplied Preview/Icon artwork is stored; a failed view render publishes nothing. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup through Svelte SSR and Takumi in the restricted Rust child; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
 
 Open and closed exports use independent saved-state renderers. An open export uses the flushed backup described above; a
 closed export takes no writer lock and can render while another process holds the document.

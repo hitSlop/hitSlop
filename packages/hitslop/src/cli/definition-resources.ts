@@ -16,6 +16,37 @@ export function resourceKey(source: string | Uint8Array, name: string) {
 }
 export type Emitted = { key: string; bytes: Uint8Array; mediaType: string };
 
+/** Vite finalizes CSS after choosing filenames; address the final bytes and their dependencies. */
+export function addressResources(outputs: Map<string, Emitted>) {
+  const addressed = new Map<string, Emitted>();
+  const visiting = new Set<string>();
+  const fixed = new Set(["ui.js", "ui.css", "commands.js"]);
+  const address = (key: string): Emitted => {
+    const cached = addressed.get(key);
+    if (cached) return cached;
+    if (visiting.has(key)) throw new Error(`Circular emitted resource reference: ${key}`);
+    visiting.add(key);
+    const resource = outputs.get(key)!;
+    const bytes = /\.(?:js|css|json)$/.test(key)
+      ? bytesOf(
+          new TextDecoder()
+            .decode(resource.bytes)
+            .replace(/\/assets\/([a-zA-Z0-9_./-]+)/g, (url, dependency: string) =>
+              outputs.has(dependency) ? `/assets/${address(dependency).key}` : url,
+            ),
+        )
+      : resource.bytes;
+    const value = { ...resource, bytes, key: fixed.has(key) ? key : resourceKey(bytes, key) };
+    addressed.set(key, value);
+    visiting.delete(key);
+    return value;
+  };
+  for (const key of outputs.keys()) address(key);
+  outputs.clear();
+  for (const resource of addressed.values()) outputs.set(resource.key, resource);
+  return new Map([...addressed].map(([key, resource]) => [key, resource.key]));
+}
+
 /** Validate portable resources before writing the packer's stage. */
 export async function stageResources(
   source: string,

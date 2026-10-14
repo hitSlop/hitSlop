@@ -43,7 +43,7 @@ export type EnumNode<V extends readonly string[] = readonly string[]> = Descript
   default?: V[number];
 };
 export type Scalar = StringNode | NumberNode | IntegerNode | BooleanNode | EnumNode;
-/** An exact checked integer counter in the single-writer owner. It starts at 0. */
+/** An integer counter. It starts at 0; increments are checked and add up exactly while the sum of their magnitudes stays under about 9e15 (the Loro counter is a float). */
 export type CounterNode = Description & { kind: "counter" };
 export interface ObjectNode<
   P extends Record<string, Node> = Record<string, Node>,

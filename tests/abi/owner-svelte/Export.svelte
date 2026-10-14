@@ -1,16 +1,7 @@
 <script lang="ts">
-import type { CaptureMode, CaptureProps } from "hitslop/svelte";
-import type schema from "./schema";
-let { snapshot, mode }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import CaptureContent from "./CaptureContent.svelte";
+  let { snapshot, attachmentURL, mode }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
-
-<main data-capture-mode={mode}>
-  <h1>{snapshot.title}</h1>
-  <p>{snapshot.rows.length} rows</p>
-  {#each snapshot.slides as slide (slide.$id)}
-    <section aria-label={slide.title}>
-      <h2>{slide.title}</h2>
-      {#each slide.blocks as block (block.$id)}<p>{block.text}</p>{/each}
-    </section>
-  {/each}
-</main>
+<main data-capture-mode={mode}><h1>{snapshot.title}</h1><CaptureContent {snapshot} {attachmentURL} /></main>

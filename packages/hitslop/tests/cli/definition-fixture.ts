@@ -15,7 +15,7 @@ run({tx},args){ const sentinel='BODY_ONLY_CHANGE'; tx.fields.title.set(args.titl
 <script lang="ts">import {getDocument} from 'hitslop/svelte'; import schema from './schema'; import './theme.css'; const doc=getDocument(schema); let result=$state('');</script>
 <h1>{doc.current.title}</h1><button onclick={async()=>{await doc.fields.title.set('New title');result='Accepted';}}>Run</button><output>{result}</output>
 <style>h1{color:rgb(20,40,60)}</style>`,
-    "Preview.svelte": `<script lang="ts">import type {CaptureProps} from "hitslop/svelte"; import type schema from "./schema"; let {snapshot}: CaptureProps<typeof schema> = $props();</script><h1>{snapshot.title}</h1>`,
+    "Preview.svelte": `<script lang="ts">import './theme.css'; import type {CaptureProps} from "hitslop/svelte"; import type schema from "./schema"; let {snapshot}: CaptureProps<typeof schema> = $props();</script><h1>{snapshot.title}</h1>`,
     "Icon.svelte": `<p>Fixture icon</p>`,
     "Export.svelte": `<script>import image from './export.svg';</script><img src={image} alt="Export image"/>`,
     "export.svg": '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>',

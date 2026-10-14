@@ -12,6 +12,8 @@ struct PageFailureNotice: Equatable {
     var core: String
     var system: String
     var architecture: String
+    var packageFormat: Int
+    var runtimeABI: Int
 
     static var current: Self {
       let bundle = Bundle.main.infoDictionary
@@ -26,7 +28,7 @@ struct PageFailureNotice: Equatable {
       return Self(
         app: "\(version) (\(build))", core: DocumentOwner.coreBuildID,
         system: "macOS \(system.majorVersion).\(system.minorVersion).\(system.patchVersion)",
-        architecture: architecture)
+        architecture: architecture, packageFormat: PackageFormat.level, runtimeABI: RuntimeABI.level)
     }
   }
 
@@ -35,7 +37,8 @@ struct PageFailureNotice: Equatable {
   /// The error and stack as the page reported them, for the collapsed technical details.
   let details: String
   /// Plain text for the clipboard: the build, the system, the slop and the failure, then the
-  /// error and the top of its stack. It carries no document values.
+  /// error and the top of its stack. The report fields contain no document values; the
+  /// page's error excerpt is arbitrary text.
   let report: String
 
   /// The report keeps the error and the top of its stack: enough to find the failure, short
@@ -44,10 +47,10 @@ struct PageFailureNotice: Equatable {
   static let excerptCharacters = 1_500
 
   init(
-    message: String, reason: SlopFailureContext.Reason?, classification: SlopFailureContext.Classification = .platform,
-    slopTitle: String, slopSlug: String, host: Host = .current
+    message: String, context: SlopFailureContext,
+    slopTitle: String, slopSlug: String, packageFormat: Int, runtimeABI: Int, host: Host = .current
   ) {
-    switch reason {
+    switch context.reason {
     case .authoredException:
       title = "This slop couldn't open"
       explanation =
@@ -61,6 +64,11 @@ struct PageFailureNotice: Equatable {
       explanation =
         "The view that shows this slop quit unexpectedly. Reopening it usually fixes this. "
         + "Edits you already made are kept; text you were still typing may be lost. If it keeps happening, please tell us."
+    case .unresponsive:
+      title = "This slop stopped responding"
+      explanation =
+        "The view that shows this slop stopped answering. Reopening it usually fixes this. "
+        + "Edits you already made are kept; text you were still typing may be lost. If it keeps happening, please tell us."
     default:
       title = "This slop stopped responding"
       explanation = "Something went wrong while showing this slop. Try reopening it, and tell us if it keeps happening."
@@ -72,8 +80,10 @@ struct PageFailureNotice: Equatable {
       Core build: \(host.core)
       System: \(host.system), \(host.architecture)
       Slop: \(slopTitle) (\(slopSlug))
-      Reason: \(reason?.rawValue ?? "unknown")
-      Classification: \(classification.rawValue)
+      Slop needs: package format \(packageFormat), runtime ABI \(runtimeABI)
+      This build runs: package format \(host.packageFormat), runtime ABI \(host.runtimeABI)
+      Reason: \(context.reason.rawValue)
+      Classification: \(context.classification.rawValue)
 
       \(Self.excerpt(message))
       """

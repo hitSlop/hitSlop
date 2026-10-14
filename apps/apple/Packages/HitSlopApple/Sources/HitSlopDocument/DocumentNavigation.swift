@@ -10,7 +10,7 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     filePicker.cancel()
     fileSaver.cancel()
     failOpening(
-      "The document renderer stopped. Accepted edits remain in the native owner. Reopen the interface to continue; unsubmitted input may be unavailable.",
+      "The document renderer stopped.",
       reason: .webContentTerminated
     )
   }

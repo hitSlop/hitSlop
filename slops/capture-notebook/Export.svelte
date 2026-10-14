@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   // The export renders saved photos and recordings only. It never asks for a camera or
   // microphone, and it shows every entry (the editor's open photo is view state).
   import type { CaptureProps } from "hitslop/svelte";

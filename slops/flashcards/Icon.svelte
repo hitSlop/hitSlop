@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <div class="icon-surface" aria-hidden="true">
   <svg class="icon-graphic" viewBox="0 0 512 512" fill="none">
     <rect x="30" y="30" width="452" height="452" rx="104" fill="var(--slop-wood)" />

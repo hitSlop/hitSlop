@@ -116,6 +116,8 @@ const replyFields = {
   describe: ["state"],
   open: ["documentPath"],
 } satisfies Record<EngineMethod, readonly string[]>;
+/** A reply must carry the members its method needs; members it does not know are ignored, so a
+ * newer engine may add some without making an applied mutation read as an unknown outcome. */
 function acknowledged(value: unknown, method: EngineMethod): value is EngineReply {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const reply = value as Record<string, unknown>;
@@ -126,17 +128,11 @@ function acknowledged(value: unknown, method: EngineMethod): value is EngineRepl
       (OutcomeCodes as readonly string[]).includes(reply.code) &&
       (reply.reason === undefined || typeof reply.reason === "string") &&
       (reply.opIndex === undefined ||
-        (Number.isSafeInteger(reply.opIndex) && (reply.opIndex as number) >= 0)) &&
-      Object.keys(reply).every((key) => ["ok", "error", "code", "reason", "opIndex"].includes(key))
+        (Number.isSafeInteger(reply.opIndex) && (reply.opIndex as number) >= 0))
     );
   }
   if (reply.ok !== true || reply.method !== method) return false;
-  const fields = ["ok", "method", ...replyFields[method]];
-  if (
-    fields.some((key) => !Object.hasOwn(reply, key)) ||
-    Object.keys(reply).some((key) => !fields.includes(key))
-  )
-    return false;
+  if (replyFields[method].some((key) => !Object.hasOwn(reply, key))) return false;
   if (method === "batch" || method === "call")
     return Array.isArray(reply.ids) && reply.ids.every((id) => typeof id === "string");
   if (method === "export" || method === "copy") return typeof reply.output === "string";

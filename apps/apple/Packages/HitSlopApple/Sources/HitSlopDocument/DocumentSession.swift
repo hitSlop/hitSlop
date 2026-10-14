@@ -82,7 +82,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       phase = .closing(renderer, prepared: newValue)
     }
   }
-  public private(set) var failureReason: SlopFailureContext.Reason?
+  var pageCallTimeout = Timeouts.pageCall
+  var readyTimeout = Timeouts.pageReady
   public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
   private(set) var capturing = false
   /// Captures queued behind the one in progress (`withCapture`).
@@ -203,12 +204,12 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     while true {
       guard let batch = pushes.peek() else { return }
       // A not-yet-attached or retired page reads current state on its next open.
-      guard !rendererDead, let webView = liveWebView, batch.view == view else {
+      guard !rendererDead, liveWebView != nil, batch.view == view else {
         pushes.acknowledge(batch)
         continue
       }
       do {
-        _ = try await webView.callHost(.publish(payload: "[" + batch.items.joined(separator: ",") + "]"))
+        try await callPage(.publish(payload: "[" + batch.items.joined(separator: ",") + "]"))
         pushes.acknowledge(batch)
         retryMS = 100
       } catch {
@@ -269,7 +270,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     // The remounted app starts without the old one's camera and microphone.
     await webView.setCameraCaptureState(.none)
     await webView.setMicrophoneCaptureState(.none)
-    _ = try await webView.callHost(.reloadInterface)
+    try await callPage(.reloadInterface)
   }
   private func makeWebView() {
     // Each page gets its own view token; requests from a replaced page are refused.
@@ -312,7 +313,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   public func load() { liveWebView?.load(URLRequest(url: URL(string: "slop://app/")!)) }
 
-  public func waitUntilReady(timeout: Duration = Timeouts.pageReady) async throws {
+  public func waitUntilReady(timeout: Duration? = nil) async throws {
+    let timeout = timeout ?? readyTimeout
     if isReady { return }
     if closed || rendererDead || openingError != nil {
       throw SlopFailure(openingError ?? "Document page unavailable")
@@ -320,7 +322,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     let id = UUID()
     let timer = Task { [weak self] in
       try await Task.sleep(for: timeout)
-      self?.waiters.removeValue(forKey: id)?.resume(throwing: SlopFailure("Document page did not become ready"))
+      guard let self, waiters[id] != nil else { return }
+      failOpening("Document page did not become ready", reason: .unresponsive)
     }
     defer { timer.cancel() }
     try await withTaskCancellationHandler {
@@ -399,11 +402,64 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
   }
 
+  /// A page call may outlive its view; only the current view can fail this session.
+  private func callPage(_ request: HostRequest) async throws {
+    guard let page = liveWebView else { throw SlopFailure("Document renderer unavailable") }
+    let name: String
+    switch request {
+    case .publish: name = "publish"
+    case .reloadInterface: name = "reloadInterface"
+    case .flush: name = "flush"
+    case .undo: name = "undo"
+    case .redo: name = "redo"
+    case .prepareClose: name = "prepareClose"
+    case .cancelClose: name = "cancelClose"
+    case .close: name = "close"
+    }
+    let timeout: Duration
+    if case .reloadInterface = request { timeout = readyTimeout } else { timeout = pageCallTimeout }
+    enum Outcome: Sendable {
+      case settled, expired
+      case failed(Error)
+    }
+    let (outcomes, result) = AsyncStream<Outcome>.makeStream()
+    page.callHost(request) { reply in
+      switch reply {
+      case .success: result.yield(.settled)
+      case .failure(let error): result.yield(.failed(error))
+      }
+    }
+    let timer = Task {
+      try await Task.sleep(for: timeout)
+      result.yield(.expired)
+    }
+    defer {
+      timer.cancel()
+      result.finish()
+    }
+    let outcome = await withTaskCancellationHandler {
+      var first = outcomes.makeAsyncIterator()
+      return await first.next()
+    } onCancel: {
+      result.finish()
+    }
+    switch outcome {
+    case .settled: return
+    case .failed(let error): throw error
+    case .expired:
+      let elapsed = String(format: "%g s", timeout / .seconds(1))
+      let message = "Page did not answer \(name) within \(elapsed)"
+      if isCurrent(page) { failOpening(message, reason: .unresponsive) }
+      throw SlopDiagnosticError(SlopFailure(message), diagnostic: .init(reason: .unresponsive))
+    case nil: throw CancellationError()
+    }
+  }
+
   /// Saves every accepted edit before an export, a duplicate or a close reads it.
   public func flush() async throws {
     guard isReady else { throw SlopFailure("Document renderer unavailable") }
     do {
-      _ = try await webView.callHost(.flush)
+      try await callPage(.flush)
     } catch {
       if let failure = owner.saveFailure { throw failure }
       throw error
@@ -417,7 +473,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       _ = try await owner.undo(redo: redo)
       return
     }
-    _ = try await webView.callHost(redo ? .redo : .undo)
+    try await callPage(redo ? .redo : .undo)
   }
 
   /// Retries saving on the owner directly; works whether or not the page is alive.
@@ -521,10 +577,14 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     cancelSpeech()
     do {
       if isReady {
-        _ = try await webView.callHost(.prepareClose)
+        try await callPage(.prepareClose)
       }
       closePrepared = true
     } catch {
+      if rendererDead {
+        closePrepared = true
+        return
+      }
       closing = false
       if let failure = owner.saveFailure { throw failure }
       throw error
@@ -534,7 +594,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   public func cancelClose() async {
     closePrepared = false
     if isReady {
-      _ = try? await webView.callHost(.cancelClose)
+      try? await callPage(.cancelClose)
     }
     closing = false
   }
@@ -612,7 +672,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   /// The OS writer lease stays owned while replacing a failed renderer.
   public func reopenSavedDocument() async throws {
-    guard !closed, !closing, !capturing, rendererDead || openingError != nil else {
+    guard !closed, !closing else { throw SlopFailure("Document is closing or closed") }
+    guard !capturing else { throw SlopFailure("Document is capturing; try again when it finishes") }
+    guard rendererDead || openingError != nil else {
       throw SlopFailure("Renderer is still active; retry saving instead")
     }
     replaceWebView()
@@ -621,7 +683,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   private func replaceWebView() {
     destroyWebView()
-    failureReason = nil
     phase = .active(.opening)
     makeWebView()
     delegate?.pageSession(self, didReplace: webView)
@@ -636,10 +697,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     liveWebView?.setCameraCaptureState(.none)
     liveWebView?.setMicrophoneCaptureState(.none)
     liveWebView?.uiDelegate = nil
+    liveWebView?.navigationDelegate = nil
+    if let liveWebView { WebViewProcess.terminate(liveWebView) }
     liveWebView?.stopLoading()
     liveWebView?.configuration.userContentController.removeScriptMessageHandler(
       forName: "hitslop", contentWorld: .page)
-    liveWebView?.navigationDelegate = nil
     liveWebView?.removeFromSuperview()
     liveWebView = nil
   }
@@ -666,20 +728,23 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     _ message: String, reason: SlopFailureContext.Reason = .startup,
     classification: SlopFailureContext.Classification = .platform
   ) {
-    guard !closed, openingError == nil || reason == .webContentTerminated else { return }
-    failureReason = reason
+    let terminated = reason == .webContentTerminated || reason == .unresponsive
+    guard !closed, openingError == nil || (terminated && !rendererDead) else { return }
     cancelSpeech()
     let wasReady = isReady
-    let failed = Renderer.failed(message, terminated: reason == .webContentTerminated)
+    let failed = Renderer.failed(message, terminated: terminated)
     phase = closing ? .closing(failed, prepared: false) : .active(failed)
     // The owner is fully loaded before the page starts, so it keeps the writer lock and
     // the socket; a retry reattaches a new page to the same owner.
-    if !wasReady { destroyWebView() }
-    completeWaiters(.failure(SlopFailure(message)))
-    delegate?.pageSession(
-      self,
-      didFail: SlopDiagnosticError(
-        SlopFailure(message), diagnostic: .init(classification, reason: reason)))
+    if !wasReady {
+      destroyWebView()
+    } else if reason == .unresponsive, let liveWebView {
+      // A wedged page keeps its process spinning until Reopen or close replaces the view.
+      WebViewProcess.terminate(liveWebView)
+    }
+    let error = SlopDiagnosticError(SlopFailure(message), diagnostic: .init(classification, reason: reason))
+    completeWaiters(.failure(error))
+    delegate?.pageSession(self, didFail: error)
   }
   private func report(_ issue: SlopPageIssue) { delegate?.pageSession(self, didReport: issue) }
 
@@ -692,5 +757,14 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
   public static func set(_ value: Bool, on view: WKWebView) {
     view.setValue(value, forKey: "drawsBackground")
+  }
+}
+
+/// Releasing a spinning view does not reliably stop its dedicated WebContent process.
+/// WebKit has no public process-termination API; keep this exception isolated.
+@MainActor private enum WebViewProcess {
+  static func terminate(_ view: WKWebView) {
+    let selector = NSSelectorFromString("_killWebContentProcessAndResetState")
+    if view.responds(to: selector) { view.perform(selector) }
   }
 }

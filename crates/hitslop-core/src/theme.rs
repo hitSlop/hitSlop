@@ -366,7 +366,6 @@ mod tests {
             (elsewhere.clone(), Code::InvalidRequest),
             (json!({"template":"kanban-board","values":{"missing":"#000000"}}).to_string(), Code::InvalidKey),
             (json!({"template":"kanban-board","values":{"ink":"black"}}).to_string(), Code::OutOfRange),
-            (json!({"template":"kanban-board","values":{},"extra":1}).to_string(), Code::InvalidRequest),
             ("not json".to_owned(), Code::InvalidRequest),
             (" ".repeat(THEME_FILE_LIMIT + 1), Code::TooLarge),
         ];
@@ -376,6 +375,21 @@ mod tests {
         assert_eq!(target.overrides(), before);
         let message = target.import(&elsewhere).unwrap_err().message;
         assert_eq!(message, "This theme is for habit-heatmap");
+    }
+
+    // Failure: a theme file a later build wrote with one more member was refused whole, though
+    // people share these files between versions. Oracle: it imports as the file without it.
+    #[test]
+    fn a_theme_file_ignores_members_it_does_not_know() {
+        let mut target = theme();
+        let file = json!({"template":"kanban-board","values":{"ink":"#111111"},"made-by":{"build":2},"note":"hi"});
+        assert!(target.import(&file.to_string()).unwrap());
+        assert_eq!(target.overrides(), r##"{"ink":"#111111"}"##);
+        // What the file does define is still required and exact.
+        for file in [json!({"values":{}}), json!({"template":"kanban-board"}), json!({"template":1,"values":{}})] {
+            assert_eq!(code(target.import(&file.to_string())), Code::InvalidRequest, "{file}");
+        }
+        assert_eq!(target.overrides(), r##"{"ink":"#111111"}"##);
     }
 
     #[test]

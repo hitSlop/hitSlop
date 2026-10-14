@@ -34,7 +34,7 @@ test("release acceptance compares presentation fixtures at their built location"
     const fixture = join(folder, "generated/presentation/ellipse.slop");
     await writeFile(fixture, "captured presentation bytes");
     const release = {
-      inputs: await sourceFingerprint(folder),
+      sourceInputs: await sourceFingerprint(folder),
       templates: { "presentation-ellipse": await fileDigest(fixture) },
     };
     await verifyCandidate(release, folder);
