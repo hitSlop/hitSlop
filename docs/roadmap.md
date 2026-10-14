@@ -43,18 +43,8 @@ In order, with the reasoning in [ideas](ideas.md):
   dedicated captures and document UUID copy rules are implemented. Historical foundation
   runs do not certify the current candidate.
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
-  entry; from then on every released document stays openable.
-- Before that first freeze, bound the corpus's growth. Capture a new entry only when a
-  format marker or the persisted-format fingerprint (the `inputs` hash an entry already
-  records) changes, since an unchanged format is covered by the previous entry. Keep each
-  entry's documents in git (about 1.5 MB, and unchanged files are stored once), but stop
-  committing the 38 MB writer engine per entry: record its version and hash, fetch the
-  released engine from the published package for the randomized comparison against the
-  newest releases and any marker bump, or build a slim writer-only engine.
-- Give that entry boundary documents: limits at their maximums and every descriptor kind.
-  The dev corpus already covers every window kind (1× and 2× skins, glass, transparent,
-  path shapes), app media (font, image, audio) and agent commands. Opening checks only
-  what format 1 accepts, so tightening authoring rules never rejects a saved document.
+  entry; capture one permanent entry per released version thereafter, even when markers
+  stay unchanged. From then on every released document stays openable.
 - Storage version 2, whenever it comes, ships with: a backup of each file before its first
   migration (a clean copy, `file/copy.rs`); a test that a frozen version-1 file migrated by
   a write equals a newly created version-2 file in layout and value; and a test that an
@@ -75,7 +65,8 @@ In order, with the reasoning in [ideas](ideas.md):
 - The production-window shadow refresh, and an opening-only black strip beneath a window's
   content, which was not reproduced and has no confirmed cause
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
-- A long-lived memory study across windows, captures and close/reopen cycles. The window
+- A long-lived memory study across windows, captures and close/reopen cycles, including
+  owner-queue growth and capture concurrency before choosing admission caps. The window
   benchmarks record footprints only and make no leak claim.
 - Recover unresolved text after its field unmounts. A draft whose outcome is unknown is
   reported and dropped when its control unmounts. Recovering it needs a UI outside the
@@ -100,11 +91,18 @@ In order, with the reasoning in [ideas](ideas.md):
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
   understandable. WebKit does not isolate `slop:` pages, so there is no
   `SharedArrayBuffer`.
-- **Static views declare their own stylesheets.** A capture imports the editor's
-  stylesheets, in the editor's import order, because most slops' Preview, Export and Icon
-  rely on `styles.css` that only `App.svelte` imports. Let each view (or `slop.ts`) name
-  the stylesheets it needs, so a capture depends on what it declares and the editor's CSS
-  stops leaking into it.
+- **Failure hardening.** Calls from the app into a page have no deadline: `prepareClose`,
+  `flush` and captures wait on a page that stopped answering, and the close-time artwork
+  render runs under the writer lock with no stage deadline. Give those calls a deadline
+  (expiry takes the renderer-death path, so accepted edits are kept), bound the close-time
+  render, let "Reopen" recover from the 15 s page-never-ready timeout, contain a panicking
+  command evaluator so close cannot hang, and publish app-side exports atomically as the
+  CLI does.
+- **Cheaper extension.** Adding a capability touches about 23 source files and ten of them
+  fail silently if forgotten, notably the per-action capability gate. Make the gate one
+  exhaustive match, derive the device-feature list from the capability enum, assert the
+  Info.plist and entitlement keys in the release check, lint switches for exhaustiveness
+  and name variants instead of `_` on closed enums.
 - **Revisit the native Svelte checker.** `svelte-check-native` (Rust, TypeScript 7's native
   compiler) matched `svelte-check` on every slop and 14 of 15 injected mistakes, and runs
   about 8 to 10 times faster, but it has one maintainer, ships unsigned binaries without
@@ -124,8 +122,16 @@ In order, with the reasoning in [ideas](ideas.md):
   close preparation, page replacement and renderer loss cancel pending transcription.
   Native capture uses a shared Rust runtime and per-output batch results; close batches
   artwork and widgets with shared prepared inputs. Moving live capture coordination
-  fully into Rust, production-renderer dev previews, and a shared service admission/completion
-  API remain in progress; no new personal-data services are included in that work.
+  fully into Rust, production-renderer dev previews, role-isolated dev previews, and a
+  shared service admission/completion API remain deferred; no new personal-data services are included in that work.
+- Compatibility readers ignore unknown members; versioned open/read/save limits and
+  positive acceptance vectors are pinned by the corpus. Each release records its shipped
+  writer by hash and `sourceInputs`; replay resolves verified engines rather than
+  committing binaries. The conformance fixture covers public data, command, media,
+  presentation and capture boundaries; final candidate replay still requires capture.
+- Static roles import their own CSS in import order, without editor stylesheet inheritance.
+  Pack renders every declared view, including Export PNG/PDF and all Widget families,
+  even with supplied artwork. `slop dev` still mounts static views inside the editor page.
 - Active templates are discovered under `slops/`; `bundled.json` chooses the starters.
   Xcode's embedding phase refreshes `generated/templates/` through the template cache
   before copying selected starters into the app. Prepare changed tooling first; see

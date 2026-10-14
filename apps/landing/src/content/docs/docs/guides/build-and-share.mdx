@@ -25,7 +25,9 @@ svelte-check found 0 errors and 0 warnings
 
 Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
-Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` is newer than the CLI supports; update `hitslop` when it says so.
+Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` SDK version differs from the CLI's; use the project's scripts so they match. The build stamps the runtime ABI.
+
+Packing renders every declared view from the staged template: Preview, Icon, Export as PNG and PDF, and all Widget families. Supplied preview or icon PNGs do not bypass this check. A view failure names its role and prevents publication.
 
 ### Finder artwork
 

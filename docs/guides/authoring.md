@@ -41,8 +41,14 @@ adding a template and choosing which templates ship.
   views must render synchronously without browser APIs.
 - Import optional `hitslop/base.css` before app styles for low-specificity form, focus
   and reduced-motion defaults. App CSS still owns typography, layout and palette. Of two
-  equally specific rules, the later import wins; captures load the editor's stylesheets in
-  its import order, then their own.
+  equally specific rules, the later import wins. A capture's CSS is exactly what its own
+  Preview/Export/Icon/Widget role imports, in import order, including component CSS.
+  Captures no longer inherit the editor's stylesheets; import shared CSS in each role
+  or a component it imports. `slop dev` still mounts static views inside the editor page.
+- Optional-object handles use `$set(value)` and `$clear()` because they also carry
+  authored fields; scalar and text handles keep `set` and `clear`.
+- Build and register render every declared view during pack, including Export PNG/PDF
+  and all Widget families, even with supplied artwork. A failed render publishes nothing.
 - Capture views never change saved state to prepare a view.
 
 For shared editing controls in static views, follow the platform's

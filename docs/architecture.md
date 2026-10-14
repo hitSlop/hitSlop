@@ -62,12 +62,17 @@ in `App.svelte`. Required `Preview.svelte` and `Icon.svelte`, optional `Export.s
 fixed root roles. The UI and definition graphs share resolution: the page imports the
 schema and components, while the definition imports metadata, schema and commands.
 A private capture graph compiles synchronous Svelte SSR for every Preview.svelte,
-Icon.svelte, declared Export.svelte and Widget.svelte role. It includes the UI graph's imported stylesheets in import order, then each
-closure's own imports and component CSS, without copying other components' scoped styles. Takumi uses tolerant CSS
+Icon.svelte, declared Export.svelte and Widget.svelte role. A capture's CSS is exactly what its own
+Preview/Export/Icon/Widget role imports, in import order, including component CSS.
+Captures no longer inherit the editor's stylesheets; `slop dev` still mounts static
+views inside the editor page. Takumi uses tolerant CSS
 parsing, so unsupported declarations do not refuse a whole shared stylesheet.
 The graphs do not rewrite command bodies or substitute component tokens. The restricted
 definition evaluator returns a declaration for `BuildInput`. Rust checks that input and the explicit resource inventory before
-packing. Imported images, fonts and CSS URLs become content-addressed media resources;
+packing. Persisted and exchanged JSON readers ignore unknown members, while executing
+requests, descriptor/arguments grammars and authoring input remain strict. Opening,
+reading and saving limits are versioned by their owning marker and pinned by the corpus
+ratchet; acceptance vectors pin positive decoding behavior. Imported images, fonts and CSS URLs become content-addressed media resources;
 unimported files and `public/` are never copied.
 
 The immutable `app` row contains catalog columns, compatibility markers and one
@@ -374,16 +379,19 @@ Missing programs fail capture with a rebuild diagnostic. Rust owns output format
 through one `CaptureOutput` type; Swift consumes an already saved source, leaving
 acquisition and publication at their existing boundaries.
 Native callers reuse a Rust `CaptureRuntime` for evaluator configuration. A Rust batch
-loads one saved document and lazily prepares its snapshot, theme and image resources once
+loads one saved document and lazily prepares its snapshot, theme and image inventory once
 for its requested outputs, reporting each result independently. One failed output does not
 discard the others. Close requests artwork and eligible widgets in the same batch.
-Each output still starts a fresh restricted child, using shared QuickJS realm setup,
-a typed job envelope and explicit command, definition, widget, PNG and PDF budgets.
+Each output starts two restricted children: Markup evaluates synchronous QuickJS SSR;
+Raster receives frames, fonts and selected images and never executes JavaScript.
+A typed job envelope supplies separate markup, widget, PNG and PDF budgets.
 Parent and child share render replies and typed failure serialization; the parent
-validates reply combinations. Job payloads still carry serialized request JSON.
-Image attachments resolve synchronously from a bounded immutable resource inventory;
-only PNG/JPEG/GIF/WebP bytes referenced by saved state enter the child, with no network or filesystem
-access. Imports, reads and writes are unavailable to capture components.
+validates reply combinations. Authored requests carry serialized JSON with image IDs
+and media types, never image bytes. The core scans frame HTML and CSS for attachment
+URLs, verifies only those blobs and enforces a 24 MiB image budget per output. Only
+inventoried PNG/JPEG/GIF/WebP images enter Raster, with no network or filesystem
+access. Imports, reads and writes are unavailable to capture components. The stored
+program contract is [runtimeABI 1](reference/runtime.md#stored-capture-program-abi-runtimeabi-1).
 PNG and PDF share layout, fonts and resources. PDF is one content-sized vector page,
 with selectable text and uniform scaling to 14,400 points per side through upstream viewport DPR.
 Takumi and its experimental PDF crate use one pinned Git revision; no local source fork
@@ -417,12 +425,12 @@ refuses, leaves the blob unreferenced until the document closes.
 An optional embedded `Widget.svelte` renders small, medium and large PNGs from one
 saved snapshot, with family and viewport props and the document's effective theme.
 It never falls back to an export or preview. A private synchronous Svelte bundle runs in
-QuickJS, then Takumi renders all three canvases in the same restricted child. The owner
+QuickJS, then Takumi renders all three canvases in a separate restricted child. The owner
 supplies one saved source; authored execution and rasterization never run in the owner
 or WidgetKit extension. The renderer uses portable default fonts and color emoji;
 packaged @font-face fonts are registered with their authored family aliases per batch.
 It does not discover system fonts or fetch remote resources. Each batch retains the
-3-second process watchdog and CPU limit, a 256 MiB QuickJS heap and an 8 MiB reply cap.
+3-second process watchdog and CPU limit per stage, a 256 MiB QuickJS heap and an 8 MiB raster reply cap.
 Linux additionally limits address space to 2 GiB; on macOS the parent samples resident
 memory and terminates a widget child above 512 MiB. This is a polling threshold, not a
 hard allocation ceiling.
@@ -484,8 +492,10 @@ engine's restricted evaluator, without the app or a lock. It refuses a template 
 existing output of any kind (`rejected`, reason `exists`) before rendering, stages the
 result beside the destination, publishes it without replacing anything, and discards one
 that finishes after the 30-second command deadline. When the CLI asks, as it does on
-macOS and Linux, `pack` renders the Preview and Icon artwork a project does not supply in the same
-request that writes the template, so a failed render publishes nothing. Only `open` starts
+macOS and Linux, `pack` renders every declared view from the staged template: Preview,
+Icon, Export as PNG and PDF, and all Widget families, even when preview/icon artwork
+is supplied. It stores only the Preview and Icon artwork a project does not supply;
+a failed view render publishes nothing. Only `open` starts
 hitSlop.app (macOS only): it refuses a template, then has LaunchServices (`open -a`) open
 the document in the app that contains the running engine, else the one `HITSLOP_APP`
 names, else `/Applications` or `~/Applications`.
@@ -598,7 +608,8 @@ Accepted limits, chosen for mini apps over heavier machinery:
 - **Container creation and undo** follow the conflict semantics of the
   [storage layout](reference/document-types.md#storage-layout).
 - **Counters** are Loro counters, exact until a counter's increments, summed as absolute
-  values, reach about 9×10^15.
+  values over its whole history, reach 2^53 (about 9×10^15). Beyond that envelope an
+  off-by-one result is possible; no exactness is guaranteed.
 - **Live history** can grow through a long session despite the undo step limit and saved
   data limits. Live compaction remains deferred; unshared documents attempt pruning on
   close under the size and edit conditions above.

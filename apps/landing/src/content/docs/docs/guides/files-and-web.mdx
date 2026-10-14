@@ -56,7 +56,7 @@ show a picker. Validate the chosen file in your app before storing it.
 import { attachments } from "hitslop/svelte";
 
 await attachments.import(file, (tx, ref) => {
-  tx.fields.cover.set(ref);
+  tx.fields.cover.$set(ref);
 });
 ```
 

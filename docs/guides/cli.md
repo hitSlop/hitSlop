@@ -62,7 +62,7 @@ A text `set` may carry `from`, the field's text as you read it (`slop get --snap
 | `remove` | `{"type":"remove","path":[...],"index":0,"count":1}` | Scalar lists; `count` defaults to 1 |
 | `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |
 | `increment` | `{"type":"increment","path":[...],"by":1}` | Counters (negative values decrement) |
-| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter takes the value, and an optional or record entry the value leaves out is removed |
+| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter takes the value within its [exactness envelope](../reference/document-types.md#counter) (about 9×10^15 in summed absolute increments; beyond it off-by-one is possible and exactness is not guaranteed), and an optional or record entry the value leaves out is removed |
 
 `slop import PATH FILE [--path JSON]` sends one `replace` with the file's JSON (up to just
 under 1 MiB), so `slop get` output, edited or from another document of the same

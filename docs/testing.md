@@ -124,7 +124,7 @@ markers or embedded apps does not prove saved scenarios behave equivalently.
 | Nightly and release only | Where it is selected |
 |---|---|
 | Presentation, pixel and telemetry checks: window shapes, toolbar, glass, theme panel, export size and colour, catalog thumbnails, telemetry wiring | Swift `.nightly` trait (`HitSlopTestSupport/Nightly.swift`) |
-| Storage-growth and history-trim budgets, a busy display read | `default-filter` in `.config/nextest.toml` (`--ignore-default-filter` adds them) |
+| Storage-growth and history-trim budgets, a busy display read, acceptance vectors above 1 MiB of decompressed JSON | `default-filter` in `.config/nextest.toml` (`--ignore-default-filter` adds them) |
 | Full randomized budgets: model 8 seeds (4 otherwise), merge 40 seeds (8), compat writers 2 seeds (1), publications 100 rounds (10) | `scripts/verify.ts` |
 | Large live/closed replies over 48 MiB with near-limit batches | `DocumentOwnerTests.largeDocumentsReadTheSameLiveAndClosed` |
 | The type fixtures' fresh native render (their saved documents are replayed every time) | `tests/native/render.native.test.ts` |
@@ -286,35 +286,73 @@ many releases; release versions and format requirements are different things.
 
 Old files are checked, not old programs. `tests/compat/<release>/` stores original built
 templates, saved documents (with their attachments), expected state, page scenarios,
-and the candidate writer: the darwin-arm64 `slop-engine` the release built
-and wrote its documents with (`engine/darwin-arm64/slop-engine`, with its build ID, commit
-and hash in `release.json`). Its documents are written both ways a release writes them:
+and writer metadata `{version, platform, sha256, buildId}` in `release.json`. The
+darwin-arm64 writer is the engine shipped in that release's npm package; engine binaries
+are not committed in the corpus. Before Rust replay, `scripts/compat/writers.ts` resolves
+it into `~/.cache/hitslop/compat-writers/<sha256>` (`HITSLOP_COMPAT_WRITERS` overrides the
+cache). A local `HITSLOP_ENGINE` or checkout engine must match both build ID and SHA-256;
+otherwise the resolver extracts the shipped engine from `hitslop@VERSION` and verifies it.
+Cached bytes are checked again; missing or corrupt writers fail replay. Unpublished
+`dev` has no registry fallback: retain its matching `target/dist/slop-engine` or verified
+cache, select the matching build with `HITSLOP_ENGINE`, or recapture dev last.
+
+Documents are written both ways a release writes them:
 through its CLI, and by its own app's page (`NAME.page.slop`, saved by the page
 scenario, so text splices against older versions and page-minted IDs are replayed too). It
 covers the runtime, not individual slops: the conformance app (every `ctx` member and
-descriptor kind, a stored command, app media: font, image and audio, and two attachment
-types) with its saved, page-saved and compacted documents, and a template for each window
+descriptor kind, stored commands covering every intent emitted by the prelude,
+all 26 app asset types and all 16 attachment types, dedicated Preview/Icon/Export/Widget
+views, theme variants and independent content assertions) with its saved, page-saved
+and compacted documents, and a template for each window
 kind (1× and 2× PNG skins, glass, a transparent ellipse and a path shape), which later
 builds create, edit and render documents from. Shipped templates are not in it; the
 template render checks cover what ships now. It is regression evidence, not proof of all
 possible authored apps.
 
-`bun run compat:capture VERSION --frozen` builds the producing tools, records their
-source fingerprint and identities, and captures into a temporary directory. It records
-template digests, per-file hashes and the required case inventory. Only a completed capture
-is published and frozen. Recording an existing frozen entry is refused. Before launch `dev`
-may be recaptured.
+`bun run compat:capture VERSION --frozen --writer generated/engines/darwin-arm64/slop-engine` builds the producing tools, records their
+`sourceInputs` (the producing source fingerprint) and identities, and captures into a temporary directory. It records
+template digests, per-file hashes and the required case inventory. The entry also records
+`limits` (each opening/reading/saving bound and its direction), raw stored app rows in
+`acceptance/*.json`, and the producing reader's typed re-encoding of those rows. The
+row payloads are Brotli-compressed JSON encoded as base64 within each vector file;
+replay checks the decoded rows, preserving full byte-bound cases within a 3 MiB
+aggregate vector budget. Vectors above 1 MiB of decompressed JSON run only in
+nightly/release checks (`large_acceptance_vectors_`); ordinary runs retain small
+vectors and the limits ratchet, and capture self-checks every vector. Every entry,
+including the replaceable `dev` entry, must carry these records. Vectors cover
+open readers with future optional members, window kinds, widgets, capability spellings,
+and boundary-sized metadata, definitions, descriptors, themes and commands. Resource and
+saved-state size/count bounds are pinned by the limits table; raw app rows do not contain
+resource blobs or saved Loro state. A later build may only raise a maximum, lower a
+minimum, or retain an exact bound. A recorded limit may disappear only through the
+explicit retired-limit list. The limits-module completeness test requires every constant
+to be recorded or explicitly classified as not persisted. The physical `storage-1.sql`
+definition remains hash-pinned; format-reader source is free to refactor and authoring
+rules are free to tighten while recorded acceptance remains unchanged. Only a completed
+capture is published and frozen. Recording an existing frozen entry is refused. Before launch `dev`
+may be recaptured. The expanded pre-freeze fixture and replay checks require a final
+`dev` recapture; the current replaceable entry is not evidence for the new coverage
+until that capture and its replay pass.
 
 - Rust (`crates/hitslop-core/tests/compat.rs`, in every `verify rust`) replays saved
-  values, themes, edits, save/close and reopen.
+  values, themes, edits, save/close and reopen. It also checks every entry’s limits ratchet
+  and decodes its raw acceptance vectors, comparing typed re-encoding semantically with
+  the producing reader’s known members; later readers may expose additional optional
+  members that were unknown when captured. ResourceReader checks every recorded app
+  asset and attachment for bytes, media type, ranges and security headers, including
+  retained attachments after edit/save/close/reopen. Stored command probes run in the
+  current evaluator with the frozen prelude, clock and seed, then cross owner admission
+  and saving; invalid arguments must never reach the evaluator.
 - Rust (`compat_writers.rs`) also replays every release's writer, not only its sample: each
   entry's candidate writer creates documents from the entry's templates and applies
   generated batches in its own protocol, and this core must read exactly what that engine
-  reads, then edit, save, trim and reopen them. Requests in older protocols live only in
+  reads, then edit, save, trim and reopen them. This differential replay runs only on
+  darwin-arm64 and prints a visible skip elsewhere. Requests in older protocols live only in
   this test. 2 seeds × 8 batches per template by default (1 seed on an ordinary `verify`); the weekly `Core model` run uses
   16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
 - Native replay (`tests/native/compat-replay.native.test.ts`) checks original app
-  rendering, PNG/PDF, attachments and template creation, through this build's CLI
+  rendering, PNG/PDF content, attachments, theme changes/reset, stored
+  Preview/Icon/Widget programs and template creation, through this build's CLI
   (the `compat` tier checks inventory and hashes). Full coverage exports every saved
   document, including different values saved with the same app. Smoke coverage samples the
   entries `replayedEntries` chooses and renders each embedded app once; its other documents
@@ -332,7 +370,8 @@ older file intact.
 
 The `compat` tier compares frozen entries with protected Git history and verifies their content
 hashes. Release checks additionally require the tagged entry to match current producing
-inputs and window-kind templates, and its writer to come from the captured core. A
+`sourceInputs` and window-kind templates, and its writer to come from the captured core
+and match the darwin-arm64 engine in the packed npm tarball byte for byte. A
 corpus-only commit does not change the input fingerprint. Historical entries never need
 current build identities. The CLI and the app meet only through the command protocol, whose
 refusal path is fixed and tested in each build; old CLIs are never run against new apps.

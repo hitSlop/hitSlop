@@ -10,7 +10,10 @@ preview state. Vite watches source: component/CSS updates keep accepted edits, w
 use `bun slop COMMAND SOURCE`.
 
 Run `bun run build`, then `bun run register`; macOS and Linux render the preview and icon artwork
-you do not supply. Create a writable copy in the
+you do not supply. Pack also renders every declared view, including Export PNG/PDF
+and all Widget families, even with supplied artwork; any view failure prevents publication.
+Each static role imports its own stylesheets in import order; `slop dev` still mounts
+static views inside the editor page. Create a writable copy in the
 Mac app's catalog. Manually review close-after-type, reopen,
 keyboard/IME, themes, duplication, and PNG/PDF. Inspect preview and icon artwork.
 Never edit a runtime master or publish private document state as a template.
