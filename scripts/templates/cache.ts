@@ -4,7 +4,6 @@ import { join, relative } from "node:path";
 import { localImports } from "./imports";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { fileDigest, publishFolder, sha256 } from "../lib/artifacts";
-import { run } from "../../packages/hitslop/src/cli/process";
 
 const ignored = new Set([
   "node_modules",
@@ -47,15 +46,12 @@ async function compilerSources(repository: string, entries: string[]) {
   return files.map((file) => relative(repository, file));
 }
 
-async function version(command: string[]) {
-  return (await run(command, { failure: `Cannot fingerprint ${command[0]}` })).trim();
-}
-
 /** Files every template build reads: compiler, SDK, page shell, file engine and
  * renderer. */
 export async function sharedTemplatePaths(repository: string, sources: string[], includeExamples = true) {
   const paths = [
     ".cargo/config.toml",
+    "rust-toolchain.toml",
     "bun.lock",
     "Cargo.lock",
     "crates/hitslop-core/Cargo.toml",
@@ -89,11 +85,10 @@ export async function sharedTemplatePaths(repository: string, sources: string[],
   return paths;
 }
 
-/** Shared files plus the toolchain that compiles and renders every template. */
+/** Shared files (the pinned Rust toolchain among them) plus the platform that compiles and renders every template. */
 export async function sharedTemplateInputs(repository: string, sources: string[], includeExamples = true): Promise<Inputs> {
   return {
     ...(await inputs(repository, await sharedTemplatePaths(repository, sources, includeExamples))),
-    "@rust": await version(["rustc", "--version"]),
     "@platform": process.platform,
     "@arch": process.arch,
     "@bun": Bun.version,

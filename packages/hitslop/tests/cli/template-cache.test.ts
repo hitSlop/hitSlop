@@ -183,3 +183,22 @@ test.each(["crates/hitslop-core/src/file/mod.rs", "bun.lock"])(
     }
   },
 );
+
+// The Mac app's build phases run the template cache with the system and Homebrew paths only
+// (no ~/.cargo/bin), so its fingerprint may not need a Rust or Swift tool on PATH.
+test("the shared template fingerprint needs no development tool on PATH", async () => {
+  const repository = join(import.meta.dir, "../../../..");
+  const probe = Bun.spawn(
+    [
+      process.execPath,
+      "-e",
+      `import { sharedTemplateInputs } from ${JSON.stringify(join(repository, "scripts/templates/cache.ts"))};
+       const inputs = await sharedTemplateInputs(${JSON.stringify(repository)}, []);
+       if (!("rust-toolchain.toml" in inputs)) throw new Error("The pinned toolchain is not fingerprinted");`,
+    ],
+    { env: { HOME: process.env.HOME!, PATH: "/usr/bin:/bin" }, stdout: "pipe", stderr: "pipe" },
+  );
+  const [code, stderr] = await Promise.all([probe.exited, new Response(probe.stderr).text()]);
+  expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+}, 60_000);
+
