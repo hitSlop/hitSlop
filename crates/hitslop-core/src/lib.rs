@@ -78,8 +78,7 @@ pub use wire::{ENGINE_PROTOCOL, HostLimits, NATIVE_RESOURCE_POLICY, host_limits}
 pub use wire::{OutcomeCode, page as page_wire, preview, socket as socket_wire};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
-const MAX_JSON: usize =
-    if wire::APP_TEXT_BYTES > wire::PAGE_PAYLOAD { wire::APP_TEXT_BYTES } else { wire::PAGE_PAYLOAD };
+use wire::JSON_BYTES as MAX_JSON;
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{code}: {message}")]

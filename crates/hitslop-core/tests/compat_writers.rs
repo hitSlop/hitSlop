@@ -1,5 +1,5 @@
 //! Documents a released engine wrote, opened by this core. Every corpus entry (`tests/compat`)
-//! keeps its candidate writer: the darwin-arm64 engine its release built and wrote its
+//! resolves its candidate writer by hash: the darwin-arm64 engine its release built and wrote its
 //! documents with. That engine creates documents from the entry's templates and applies
 //! generated batches through its own request protocol (these requests are the only adapter
 //! for older protocols, and they live here, in the test); this core must then read exactly
@@ -21,7 +21,9 @@ use support::generate::intent;
 use support::next;
 
 fn corpus() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/compat")
+    std::env::var_os("HITSLOP_COMPAT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/compat"))
 }
 fn sorted(path: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> =
@@ -29,10 +31,30 @@ fn sorted(path: &Path) -> Vec<PathBuf> {
     found.sort();
     found
 }
-/// The entry's candidate writer, copied into `into` and made executable.
+/// The hash-resolved writer, copied into `into` and made executable.
 fn released_engine(entry: &Path, into: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
-    let writer = entry.join("engine/darwin-arm64/slop-engine");
+    let release: Value = serde_json::from_slice(&std::fs::read(entry.join("release.json")).unwrap()).unwrap();
+    let hash = release["writer"]["sha256"].as_str().expect("missing writer SHA-256; recapture dev");
+    assert!(hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()), "invalid writer SHA-256");
+    let cache = std::env::var_os("HITSLOP_COMPAT_WRITERS").map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from(std::env::var_os("HOME").expect("HOME is required for the writer cache"))
+            .join(".cache/hitslop/compat-writers")
+    });
+    let writer = cache.join(hash);
+    let bytes = std::fs::read(&writer).unwrap_or_else(|error| {
+        panic!(
+            "{}: missing resolved writer {}: {error}; run bun scripts/compat/writers.ts before Rust replay",
+            entry.display(),
+            writer.display()
+        )
+    });
+    use sha2::{Digest, Sha256};
+    assert_eq!(
+        Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
+        hash,
+        "cached writer hash differs from release.json"
+    );
     let copy = into.join("slop-engine");
     std::fs::copy(&writer, &copy).unwrap_or_else(|e| panic!("{}: no candidate writer: {e}", entry.display()));
     std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -73,6 +95,9 @@ fn value_here(document: &Path) -> Value {
 #[test]
 fn documents_each_release_writes_read_the_same_here_and_take_edits() {
     if !(cfg!(target_os = "macos") && cfg!(target_arch = "aarch64")) {
+        eprintln!(
+            "SKIP: compatibility writer replay requires darwin-arm64; shipped Mac writers cannot run on this platform"
+        );
         return;
     }
     support::isolate_registry();

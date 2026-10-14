@@ -38,7 +38,7 @@ pub(super) struct Work {
 pub(in crate::owner) struct Evaluation {
     #[serde(rename = "ok")]
     _ok: True,
-    intents: Vec<crate::Intent>,
+    intents: Vec<Value>,
     result: Value,
 }
 #[derive(Deserialize)]
@@ -51,12 +51,17 @@ struct Refusal {
     #[serde(default)]
     refused: bool,
 }
-/// The intents a command built for `abi` returns, in the core's current vocabulary. ABI 1's
-/// are today's. A later ABI that changes the vocabulary translates an older one here; the
-/// core never loosens what it accepts to admit them.
-fn current_intents(abi: u64, intents: Vec<crate::Intent>) -> Result<Vec<crate::Intent>> {
+/// The intents a command built for `abi` returns, decoded into the core's current
+/// vocabulary. The reply stays raw JSON until this arm decodes it, so a later ABI whose
+/// vocabulary differs translates its own reply here before decoding. ABI 1's are today's:
+/// they change only additively (see the engineering contract), and the core never loosens
+/// what it accepts to admit them.
+fn current_intents(abi: u64, intents: Vec<Value>) -> Result<Vec<crate::Intent>> {
     match abi {
-        1 => Ok(intents),
+        1 => intents
+            .into_iter()
+            .map(|intent| serde_json::from_value(intent).map_err(|_| host_fault("it returned an invalid reply")))
+            .collect(),
         _ => Err(rejected("Unsupported command runtime ABI")),
     }
 }

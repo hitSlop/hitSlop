@@ -59,13 +59,7 @@ fn widget_role_and_refresh_policy_survive_pack_and_reopen() {
         let reopened = AppDefinition::decode(1, 1, &metadata().to_string(), &app.definition_json()).unwrap();
         assert_eq!(serde_json::to_value(reopened.views().widget).unwrap(), options);
     }
-    for bad in [
-        json!(true),
-        json!(null),
-        json!({"refreshMinutes":15.5}),
-        json!({"refreshMinutes":null}),
-        json!({"unknown":30}),
-    ] {
+    for bad in [json!(true), json!(null), json!({"refreshMinutes":15.5}), json!({"refreshMinutes":null})] {
         let mut value = definition();
         value["views"]["widget"] = bad.clone();
         assert!(read(&metadata(), &value).is_err(), "{bad}");
@@ -154,16 +148,11 @@ fn metadata_errors_are_located_and_do_not_echo_authored_text() {
 }
 
 #[test]
-fn closed_types_refuse_unknown_fields_null_and_mixed_windows() {
+fn null_and_mistyped_members_are_refused() {
     for (path, extra) in [
-        ("", json!({"future":true})),
-        ("/window", json!({"future":true})),
-        ("/views", json!({"future":true})),
         ("/window", json!({"resizable":null})),
         ("/window", json!({"fullscreenable":null})),
         ("/window", json!({"fullscreenable":"true"})),
-        ("/theme/0", json!({"future":true})),
-        ("/commands/0", json!({"future":true})),
     ] {
         let mut value = definition();
         value.pointer_mut(path).unwrap().as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
@@ -178,11 +167,116 @@ fn closed_types_refuse_unknown_fields_null_and_mixed_windows() {
     let mut value = definition();
     value["window"] = json!({"kind":"skin","width":320,"height":240,"skin":key});
     assert!(matches!(read(&metadata(), &value).unwrap().window().frame, WindowFrame::Skin { .. }));
-    value["window"]["resizable"] = true.into();
-    assert!(read(&metadata(), &value).is_err());
-    value["window"].as_object_mut().unwrap().remove("resizable");
     value["window"]["skin"] = "media/../skin.png".into();
     assert_eq!(read(&metadata(), &value).unwrap_err().pointer(), "/window/skin");
+    // A kind of window this build does not know cannot be read at all.
+    value["window"]["kind"] = "future".into();
+    assert!(read(&metadata(), &value).is_err());
+}
+
+/// A definition that reaches every container the stored reader owns.
+fn rich() -> Value {
+    let mut value = definition();
+    value["window"] = json!({"kind":"standard","width":320,"height":240,"fullscreenable":true,"resizable":false,
+        "lockAspect":true,"background":"glass",
+        "shape":{"path":"M0 0L100 100Z","viewBox":[100,100],"fillRule":"evenodd"}});
+    value["views"]["widget"] = json!({"refreshMinutes":30});
+    value["capabilities"] = json!(["camera"]);
+    value
+}
+/// `value` with a member no build defines in the container at JSON pointer `path`.
+fn with_member(mut value: Value, path: &str) -> Value {
+    let member = json!({"nested":[1,{"deeper":null}],"flag":true});
+    value.pointer_mut(path).unwrap().as_object_mut().unwrap().insert("future".into(), member);
+    value
+}
+/// Everything an opened app exposes, so two reads of it can be compared.
+fn reading(app: &AppDefinition) -> Value {
+    json!({
+        "stored": app.definition_json(),
+        "document": app.document_json(),
+        "window": app.window(),
+        "page": app.page_window(),
+        "views": app.views(),
+        "theme": app.theme(),
+        "commands": app.command_metadata(),
+        "capabilities": app.capabilities(),
+    })
+}
+
+// Failure: every container of the stored definition refused a member it did not know, so a
+// later build could not add an optional one without a new package format. Oracle: the read
+// of the row with the member equals the read without it.
+#[test]
+fn unknown_members_of_the_stored_definition_are_ignored() {
+    let known = reading(&read(&metadata(), &rich()).unwrap());
+    let mut refused = vec![];
+    for path in ["", "/window", "/window/shape", "/views", "/views/widget", "/theme/0", "/commands/0"] {
+        match read(&metadata(), &with_member(rich(), path)) {
+            Ok(app) => assert_eq!(reading(&app), known, "{path}"),
+            Err(error) => refused.push(format!("{path}: {error}")),
+        }
+    }
+    assert!(refused.is_empty(), "{refused:#?}");
+    // A skin window ignores what only a standard window defines, as it does any other member.
+    let mut skin = definition();
+    skin["window"] = json!({"kind":"skin","width":320,"height":240,"fullscreenable":true,
+        "skin":format!("media/{}.png", "a".repeat(64))});
+    let known = reading(&read(&metadata(), &skin).unwrap());
+    for (name, member) in [("future", json!({"deeper":[1]})), ("resizable", json!(true))] {
+        let mut value = skin.clone();
+        value["window"][name] = member;
+        assert_eq!(reading(&read(&metadata(), &value).unwrap()), known, "{name}");
+    }
+    // What is known stays checked; only an unknown member is passed over.
+    let mut widget = with_member(rich(), "/views/widget");
+    widget["views"]["widget"]["refreshMinutes"] = "soon".into();
+    assert!(read(&metadata(), &widget).is_err());
+}
+
+// The grammars that decide what a value may be stay exact: an option this build does not
+// know would weaken validation if it were ignored.
+#[test]
+fn an_unknown_option_inside_a_descriptor_is_still_refused() {
+    for path in ["/document", "/document/properties/title", "/commands/0/args", "/commands/0/args/properties/title"] {
+        let value = with_member(definition(), path);
+        assert!(read(&metadata(), &value).is_err(), "{path}");
+    }
+}
+
+// Authoring input is not a saved file: a member the engine does not know there is an SDK
+// newer than the engine, which must be told so rather than have its output dropped.
+#[test]
+fn authoring_input_stays_exact_about_unknown_members() {
+    let mut input = rich();
+    input["metadata"] = metadata();
+    input["initial"] = json!({"title":"Initial"});
+    serde_json::from_value::<BuildDeclaration>(input.clone()).unwrap();
+    for path in ["", "/window", "/window/shape", "/views", "/views/widget", "/theme/0", "/commands/0"] {
+        let declaration = serde_json::from_value::<BuildDeclaration>(with_member(input.clone(), path));
+        assert!(declaration.is_err(), "{path}");
+    }
+}
+
+// The stored definition is persisted bytes. Reading it into the format's own types and back
+// reproduces them exactly, so what a writer stored does not depend on the host model.
+#[test]
+fn an_accepted_definition_re_encodes_to_the_bytes_it_was_stored_as() {
+    let skin = format!("media/{}.png", "a".repeat(64));
+    let standard = r##"{"kind":"standard","width":320.0,"height":240.0,"fullscreenable":true,"resizable":false,"lockAspect":true,"background":"glass","shape":{"path":"M0 0L100 100Z","viewBox":[100.0,100.0],"fillRule":"evenodd"}}"##;
+    let skinned = format!(r#"{{"kind":"skin","width":320.0,"height":240.0,"fullscreenable":true,"skin":"{skin}"}}"#);
+    for (window, widget) in [(standard, r#","widget":{"refreshMinutes":30}"#), (skinned.as_str(), r#","widget":{}"#)] {
+        let stored = [
+            r#"{"window":"#,
+            window,
+            r##","document":{"kind":"object","properties":{"title":{"kind":"string","minLength":1,"description":"Document title"}}},"theme":[{"token":"zinc","color":"#777777"},{"token":"accent","color":"#123456"}],"commands":[{"name":"rename","description":"Rename the document","args":{"kind":"object","properties":{"title":{"kind":"string","minLength":1}}}}],"views":{"preview":true,"export":true,"icon":true"##,
+            widget,
+            r#"},"capabilities":["camera"]}"#,
+        ]
+        .concat();
+        let app = AppDefinition::decode(1, 1, &metadata().to_string(), &stored).unwrap();
+        assert_eq!(app.definition_json(), stored);
+    }
 }
 
 #[test]

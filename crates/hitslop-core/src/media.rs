@@ -229,7 +229,7 @@ fn webm(bytes: &[u8]) -> bool {
     };
     let start = 4 + size;
     // Real headers are small; refuse oversized/unknown-length headers for sniffing.
-    if length > 4096 || length as usize > bytes.len().saturating_sub(start) {
+    if length > crate::wire::WEBM_HEADER_BYTES || length as usize > bytes.len().saturating_sub(start) {
         return false;
     }
     let mut header = &bytes[start..start + length as usize];

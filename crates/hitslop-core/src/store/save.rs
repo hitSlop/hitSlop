@@ -29,7 +29,7 @@ pub(super) fn within(rows: i64, bytes: i64) -> bool {
 }
 /// A checkpoint row's size: SQLite bounds the whole row, its header too.
 pub(super) fn checkpoint_row(bytes: usize) -> i64 {
-    bytes as i64 + 512
+    bytes as i64 + crate::wire::STORAGE_ROW_OVERHEAD as i64
 }
 pub(super) fn bounds(conn: &Connection) -> Result<Metadata> {
     let (rows, update_bytes, checkpoint_bytes) = rows::state_sizes(conn)?;

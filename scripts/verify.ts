@@ -26,6 +26,7 @@ import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artif
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftTests } from "./lib/swift-tests";
 import { releases, replayedEntries, compatibilityMode } from "./compat/corpus";
+import { resolveWriters } from "./compat/writers";
 
 import { prerequisites, type Build } from "./build/preparation";
 type Tier = {
@@ -186,6 +187,8 @@ const tiers: Tier[] = [
   },
   {
     name: "rust",
+    // The corpus replay evaluates stored commands with the engine this build produces.
+    needs: ["engine"],
     inputs: tierInputs.rust,
     // A full run compiles and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
@@ -206,6 +209,7 @@ const tiers: Tier[] = [
         }
         await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
       });
+      await prepare("Compatibility writers", resolveWriters);
       await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {

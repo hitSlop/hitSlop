@@ -37,11 +37,10 @@ pub enum Silhouette {
     Path { segments: Vec<Segment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
 }
 
-use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX, present_option};
-const MAX_COMMANDS: usize = 512;
-const MAX_SEGMENTS: usize = 2048;
 /// Approximation target in logical points at the declared window size.
-const ARC_TOLERANCE: f64 = 0.1;
+use crate::wire::SHAPE_ARC_TOLERANCE as ARC_TOLERANCE;
+use crate::wire::{SHAPE_COMMANDS as MAX_COMMANDS, SHAPE_SEGMENTS as MAX_SEGMENTS};
+use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX, present_option};
 
 fn invalid() -> Error {
     err(Code::InvalidShape, "Invalid window silhouette")
@@ -102,7 +101,8 @@ pub(crate) fn normalize(shape: Shape, width: f64, height: f64) -> Result<Silhoue
         Shape::Radius(value) => radii(&value),
         Shape::Path(shape) => {
             let view_box = shape.view_box.unwrap_or([width, height]);
-            if !view_box.iter().all(|n| n.is_finite() && (1.0..=SHAPE_VIEW_BOX).contains(n)) {
+            if !view_box.iter().all(|n| n.is_finite() && (crate::wire::SHAPE_VIEW_BOX_MIN..=SHAPE_VIEW_BOX).contains(n))
+            {
                 return Err(invalid());
             }
             let even_odd = matches!(shape.fill_rule, Some(FillRule::Evenodd));
@@ -302,7 +302,9 @@ impl Normalizer {
         // Kurbo treats tiny radii as lines, even when SVG radii correction would draw
         // a visible arc. Refuse those inputs rather than silently changing their shape.
         // A subnormal chord can also underflow its endpoint-to-center calculation.
-        if svg.radii.x.min(svg.radii.y) <= 1e-5 || (svg.to - svg.from).hypot() < 1e-100 {
+        if svg.radii.x.min(svg.radii.y) <= crate::wire::SHAPE_ARC_MIN_RADIUS
+            || (svg.to - svg.from).hypot() < crate::wire::SHAPE_ARC_MIN_CHORD
+        {
             return Err(invalid());
         }
         let Some(arc) = Arc::from_svg_arc(&svg) else { return self.line(svg.to) };

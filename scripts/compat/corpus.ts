@@ -9,24 +9,38 @@ import type { AttachmentInfo } from "../../packages/hitslop/src/wire/engine.gene
 
 export const corpus = join(repository, "tests/compat");
 /** The checkout engine. */
-export const documentEngine = () => resolve(process.env.HITSLOP_ENGINE ?? `target/${process.env.HITSLOP_CARGO_PROFILE || "release"}/slop-engine`);
+export const documentEngine = () =>
+  resolve(
+    process.env.HITSLOP_ENGINE ??
+      `target/${process.env.HITSLOP_CARGO_PROFILE || "release"}/slop-engine`,
+  );
 
-/** `release.json`: what captured the entry, and whether it is permanent. */
+/** `release.json`: producing inputs, saved artifacts, storage-schema hashes and open-limit
+ * directions. Raw acceptance vectors freeze reader behavior; source code is not frozen. */
 export type Release = {
   release: string;
   frozen: boolean;
   commit: string;
   captured: string;
   /** The compatibility markers the entry's build wrote. */
-  markers: { packageFormat: number; runtimeABI: number; storage: number; layout: number; protocol: number };
-  inputs: string;
+  markers: {
+    packageFormat: number;
+    runtimeABI: number;
+    storage: number;
+    layout: number;
+    protocol: number;
+  };
+  sourceInputs: string;
   producer: { coreBuildID: string; shell: string; runner?: Record<string, string> };
   files: Record<string, string>;
-  acceptance?: Record<string, string>;
+  /** Physical storage definitions are immutable; later layouts add migrations. */
+  storageSchemas: Record<string, string>;
+  /** Every bound used when opening, reading or saving stored data. Values are decimal
+   * u64 strings so capture never rounds them through a JavaScript number. */
+  limits: { name: string; value: string; kind: "Max" | "Min" | "Exact" }[];
   templates: Record<string, string>;
-  /** The candidate writer: the darwin-arm64 engine that wrote the entry's documents, kept at
-   * `engine/darwin-arm64/slop-engine` so later builds can run it (`compat_writers.rs`). */
-  writer: { buildId: string; commit: string; sha256: string };
+  /** The shipped darwin-arm64 writer, resolved by hash outside the corpus. */
+  writer: { version: string; platform: "darwin-arm64"; sha256: string; buildId: string };
   toolchain: Record<string, string>;
   /** Page scenarios run with this clock, so date-dependent apps behave the same later. */
   clock: number;
@@ -39,7 +53,30 @@ export type Expected = {
   theme: Pick<ThemeState, "overrides" | "effective">;
   attachments: AttachmentInfo[];
 };
-type ThemeState = { overrides: Record<string,string>; effective: Record<string,string> };
+export type ThemeState = { overrides: Record<string, string>; effective: Record<string, string> };
+/** `exports/<name>.json`: rendered content produced by the captured build. The PNG digest
+ * covers decoded row-major RGBA8 pixels, excluding encoder metadata. PDF text is PDFKit's
+ * page text, with its whitespace preserved. */
+export type ExportGolden = {
+  png: { width: number; height: number; rgbaSha256: string };
+  pdf: { pages: { width: number; height: number; text: string }[] };
+};
+/** `themes/<name>.json`: ordered theme edits and the palettes to replay. */
+export type ThemeScenario = {
+  steps: { values?: Record<string, string>; reset?: string; state: ThemeState }[];
+};
+/** `commands/<name>.json`: independent probes, each starting from the saved document.
+ * Stored evaluation replies and owner call refusals are distinct protocol boundaries. */
+export type CommandProbe = {
+  name: string;
+  args: unknown;
+  channel: "evaluate" | "call";
+  expected: { ok: boolean; refused?: boolean; code?: string; errorIncludes?: string };
+  now: number;
+  seed: number[];
+  evaluated: unknown;
+  value: unknown;
+};
 /** `scenarios/<name>.json`: a CLI edit replayed on the frozen document, and its result. */
 export type Scenario = { ops: unknown[]; value: unknown };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
@@ -62,16 +99,23 @@ export type CompatibilityMode = "smoke" | "full";
  * appropriate; nightly and required-release replay cannot inherit a smoke restriction. */
 export function compatibilityMode(env: Record<string, string | undefined>): CompatibilityMode {
   const mode = env.HITSLOP_COMPAT_MODE;
-  if (mode && mode !== "smoke" && mode !== "full") throw new Error(`Invalid HITSLOP_COMPAT_MODE: ${mode}`);
-  return env.HITSLOP_NIGHTLY === "1" || env.HITSLOP_COMPAT_RELEASE || mode !== "smoke" ? "full" : "smoke";
+  if (mode && mode !== "smoke" && mode !== "full")
+    throw new Error(`Invalid HITSLOP_COMPAT_MODE: ${mode}`);
+  return env.HITSLOP_NIGHTLY === "1" || env.HITSLOP_COMPAT_RELEASE || mode !== "smoke"
+    ? "full"
+    : "smoke";
 }
 
 /** Smoke samples recent entries from each marker generation; it does not establish
  * equivalence between their apps or saved scenarios. Full replay retains every entry.
  * Rust replays every entry in both modes. */
-export function replayedEntries<T extends { name: string; release: Release }>(entries: T[], all: boolean): T[] {
+export function replayedEntries<T extends { name: string; release: Release }>(
+  entries: T[],
+  all: boolean,
+): T[] {
   if (all || entries.length <= 1) return entries;
-  const newest = (list: T[]) => list.reduce((a, b) => (b.release.captured > a.release.captured ? b : a));
+  const newest = (list: T[]) =>
+    list.reduce((a, b) => (b.release.captured > a.release.captured ? b : a));
   const byMarkers = new Map<string, T[]>();
   for (const entry of entries) {
     const key = JSON.stringify(entry.release.markers);
@@ -115,5 +159,9 @@ export async function savedState(document: string): Promise<Expected> {
   const state = await slopJSON(["get", document, "--snapshot"]);
   const theme: ThemeState = await slopJSON(["theme", "get", document]);
   const attachments: AttachmentInfo[] = await slopJSON(["attachments", "list", document]);
-  return { value: state.value, theme: { overrides: theme.overrides, effective: theme.effective }, attachments };
+  return {
+    value: state.value,
+    theme: { overrides: theme.overrides, effective: theme.effective },
+    attachments,
+  };
 }
