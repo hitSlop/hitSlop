@@ -242,9 +242,15 @@ Record commit, version/build, OS, and results. Test macOS 15.2 and the current s
 - Install an external template file; confirm categories and selection update when it is removed. Invalid files report local issues without hiding valid templates. Open a template received by Mail: it offers to create a document. Check Quick Look's thumbnail and Space preview on a document sent by AirDrop.
 - Type then close, reorder rows, commit IME, and quit with multiple documents.
 - Failed save retains ownership; retry works and cancelled quit preserves other documents.
-- Kill WebContent, reopen saved state, and continue editing.
+- Kill WebContent: the failure screen says edits are kept; Reopen restores them; a pending
+  save keeps its Retry Save sheet; Copy details holds no document values (it lists the
+  slop's and the build's package format and runtime ABI); Get help opens the Discord invite.
+- Wedge a page with a busy loop: after 15 s the failure screen appears, Reopen recovers,
+  Close and Quit do not hang; note a WebContent kill and a wedge show different titles/reasons.
+- Widgets: exercise all sizes, rename and same-volume move, edit and save, and confirm
+  images regenerate once after a Sparkle update.
 - PNG/PDF, Finder preview/icon, keyboard focus, narrow windows, repeated open/close, and menu commands.
-- GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite, and that "Get help on Discord" on the slop failure screen (kill WebContent) opens the same one.
+- GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite.
 - Gatekeeper launch from downloaded DMG and ZIP; the installed app works without Node/Bun.
 - Sparkle update from the previous signed release, verifying publisher and resulting version.
   With an isolated reachable appcast, confirm the versioned Markdown loads in the update

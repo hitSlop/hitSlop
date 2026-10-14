@@ -42,7 +42,7 @@ import styles from their components. During component initialization, `getDocume
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
 `ctx.document.observe`). `bindText`, `EditableText`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Authoring requires `Preview.svelte` and `Icon.svelte`; export and widget components remain optional.
 
-An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
+An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Native host-to-page calls must finish within the page-call deadline; a page that does not answer counts as a dead renderer ([recovery](../architecture.md#layers)). Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
 The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. See the [roadmap](../roadmap.md#later) for deferred catalog and sharing work.
 
@@ -192,7 +192,8 @@ change pixels. Pixel equality is evidence for a renderer refactor, not the ABI
 guarantee.
 
 Every host capture uses synchronous Svelte SSR and Takumi in the restricted Rust child. An open document first drains its
-page writes, saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
+page writes within the page-call deadline; a page that does not answer counts as a dead
+renderer. It saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
 ends after the backup. Rendering then uses that independent copy, including its app,
 attachments, data and theme. The editor's focus, selection, scroll and local selected
 view are not used or changed. No read transaction remains open during rendering.

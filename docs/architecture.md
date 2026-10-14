@@ -54,7 +54,8 @@ and gets structured JSON back. On macOS and Linux, a closed document's export an
 build packs render inside the engine, in its restricted evaluator, with no app involved;
 an open document's export routes through the Rust command router to its live owner.
 `open` is the one request that starts hitSlop.app: the engine asks LaunchServices to open
-the document in it. The restricted command evaluator's short execution budget is
+the document in it. `open` refuses a template, a link and any file that is not a regular file;
+a linked parent folder is fine. The restricted command evaluator's short execution budget is
 separate from capture budgets.
 
 Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
@@ -137,12 +138,19 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | Sync | `crates/hitslop-core/src/sync/`, `owner/actor/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
 | Owner | `crates/hitslop-core/src/owner/` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
 | Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
-| Window | `HitSlopHost/SlopWindow.swift` | How a document looks: shape, toolbar, pin level, theme panel, page-failure overlay, the save-failure sheet (from the owner's save status); its document operations go to the app |
+| Window | `HitSlopHost/SlopWindow.swift`, `SlopDocumentAttention.swift`, `PageFailureNotice.swift` | How a document looks: shape, toolbar, pin level, theme panel, failure screen (Reopen, Copy details, Get help) and the save-failure sheet (from the owner's save status); its document operations go to the app |
 | Quick Look | `apps/apple/App/QuickLook{Thumbnail,Preview}` | Finder, Mail and share-sheet thumbnails and previews from the file's artwork, read through the core in a sandbox |
 | App | `HitSlopFeatures` (`AppModel`, `CommandQueue`, `CatalogModel`), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one document operation at a time per document (a close or a save recovery requested meanwhile runs next), quit, the catalog, and alerts for failures that are not save failures |
 | Author SDK | `packages/hitslop/src/sdk` | Descriptors, public types, errors, Svelte adapter; no host runtime |
 | Page shell | `packages/hitslop/src/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
 | Contracts | `crates/hitslop-core/src/wire` and `packages/hitslop/src/schema` | Rust owns wire and app types and shared limits; ts-rs exports TypeScript and UniFFI carries native types |
+
+The window's failure screen (Reopen, Copy details, Get help) and the save-failure sheet
+are presented by `SlopDocumentAttention.swift` and `PageFailureNotice.swift`. Native
+host-to-page calls (publish, reload, flush, undo/redo, prepareClose, cancelClose and every
+capture's acquisition) have a 15 s deadline. On expiry the session takes the renderer-death
+path with its own unresponsive reason: the screen says the slop stopped responding,
+accepted edits are kept, and the save sheet stays. Reopen recovers the interface.
 
 ## An edit
 
@@ -280,8 +288,9 @@ its operations from the live Loro document.
   `owner_replaced`.
 - Save status flows one way, owner to window: the edited mark and the failure sheet. The
   page learns durability only through `flush`, which resolves once saved and rejects
-  when the save fails. A renderer failure keeps the native save-recovery sheet above the
-  page's failure screen; retry saves through the retained owner without reopening the page.
+  when the save fails. A renderer failure, including a page call that exceeds its deadline,
+  keeps the native save-recovery sheet above the failure screen; only a save or an explicit
+  discard clears it. Retry saves through the retained owner without reopening the page.
 
 Storage is `document(id, uuid)`, `history(seq, bytes)` (a snapshot, then the updates saved
 after it) and, for a shared document, `share(room, endpoint)`. A shared document keeps its
@@ -331,7 +340,9 @@ document copies a template and adds its identity and initial Loro checkpoint in 
 transaction; nothing is ever unpacked. The core decides where a document may live, for
 the app and the engine alike: opening one for writing needs a `.slop` name outside iCloud
 Drive, and creating or copying one also refuses the installed and bundled templates
-(`file::document_location`, `file::document_destination`). Swift adds only what
+(`file::document_location`, `file::document_destination`). The regular-file, no-link-leaf
+rule has one owner in the core (`file::existing` / `registry::regular`), used by every
+document request, `open` included. Swift adds only what
 Foundation alone can tell, a folder iCloud syncs such as Desktop and Documents. The writer
 lock is an `flock` on a registry file outside the document (`~/.hitslop/live`, named by
 the file's device and inode), never on the database: closing any second descriptor on a
@@ -367,7 +378,8 @@ The page barrier sends unsent text, waits for queued writes and attachment impor
 flushes; it never joins a flush that already passed its drain point. Inputs stay
 enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
 saved state independently of the editor. For an open document, the core first backs up
-SQLite after the page drain and save; the temporary copy owns its app, attachments,
+SQLite after the page drain (within the page-call deadline) and save; a page that does
+not answer counts as a dead renderer. The temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
 rendering. Icons, preview artwork, widgets, PNG exports and vector PDFs use synchronous Svelte SSR
 and Takumi in the restricted Rust child; there is no renderer choice, fallback or `slop.ts`
@@ -444,7 +456,8 @@ owner. Events coalesce before comparing a core-produced freshness fingerprint
 with the version that produced the image. It combines the saved Loro version, the
 installed evaluator's bytes (including Takumi and bundled fonts), provider identity, and widget canvases
 and scale. Startup and reopen perform the same check, even without a refresh interval.
-Updating the renderer refreshes unchanged documents; artwork-only writes do not.
+A renderer or capture-ABI change refreshes every cached image once; a core-side change
+that alters pixels bumps the provider tag. Artwork-only writes do not refresh images.
 The evaluator digest is computed off the main thread and cached against file identity,
 size and modification/change times. An evaluator changed during capture cannot publish.
 The fingerprint travels with the rendered snapshot, so a newer save cannot be marked
@@ -468,9 +481,10 @@ expired pointer. App-side maintenance prunes confirmed missing/replaced files wh
 retaining cached images when their source is temporarily unavailable.
 
 Each choice has a host-minted ID and bookmark, with local file identity checked on
-resolution. Renames and moves refresh the choice's title, source location and bookmark
+resolution. Renames and same-volume moves refresh the choice's title, source location and bookmark
 without replacing its images or capture time, and request a WidgetKit reload even when
-the content fingerprint is unchanged. Copies get different choices even when their content matches. A
+the content fingerprint is unchanged. A cross-volume move drops the choice by design.
+Copies get different choices even when their content matches. A
 `hitslop://widget/<id>` URL resolves the source and routes through the existing document
 coordinator, which focuses an open document. Unavailable files report a native error.
 
@@ -499,7 +513,8 @@ macOS and Linux, `pack` renders every declared view from the staged template: Pr
 Icon, Export as PNG and PDF, and all Widget families, even when preview/icon artwork
 is supplied. It stores only the Preview and Icon artwork a project does not supply;
 a failed view render publishes nothing. Only `open` starts
-hitSlop.app (macOS only): it refuses a template, then has LaunchServices (`open -a`) open
+hitSlop.app (macOS only). `open` refuses a template, a link and any file that is not a regular
+file; a linked parent folder is fine. LaunchServices (`open -a`) opens
 the document in the app that contains the running engine, else the one `HITSLOP_APP`
 names, else `/Applications` or `~/Applications`.
 

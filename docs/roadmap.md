@@ -91,13 +91,11 @@ In order, with the reasoning in [ideas](ideas.md):
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
   understandable. WebKit does not isolate `slop:` pages, so there is no
   `SharedArrayBuffer`.
-- **Failure hardening.** Calls from the app into a page have no deadline: `prepareClose`,
-  `flush` and captures wait on a page that stopped answering, and the close-time artwork
-  render runs under the writer lock with no stage deadline. Give those calls a deadline
-  (expiry takes the renderer-death path, so accepted edits are kept), bound the close-time
-  render, let "Reopen" recover from the 15 s page-never-ready timeout, contain a panicking
-  command evaluator so close cannot hang, and publish app-side exports atomically as the
-  CLI does.
+- **Failure hardening.** Bound close-time artwork rendering, which runs under the writer
+  lock with no stage deadline; contain a panicking command evaluator that can hold close
+  forever; publish app-side exports atomically; consider a cap on concurrent restricted
+  children after measurement. The page-call deadline, Reopen recovery and report markers
+  are implemented.
 - **Cheaper extension.** Adding a capability touches about 23 source files and ten of them
   fail silently if forgotten, notably the per-action capability gate. Make the gate one
   exhaustive match, derive the device-feature list from the capability enum, assert the
@@ -112,6 +110,12 @@ In order, with the reasoning in [ideas](ideas.md):
   maintainer team. The repo itself type-checks cleanly on TypeScript 7 already.
 
 ## Implemented foundation
+
+- The native failure screen retains accepted edits and offers Reopen, Copy details and
+  Get help; a pending save keeps its recovery sheet. Page-call deadlines and never-ready
+  recovery use the same renderer-death path. Reports include the slop's and build's format
+  and runtime markers. Widget location refresh follows renames and same-volume moves
+  without replacing cached images.
 
 - Declared `camera` and `microphone` capabilities gate web capture in native documents,
   development previews and local browser copies, with OS/browser consent still required.
@@ -181,16 +185,15 @@ successful rendering does not imply support for every browser CSS feature.
 captures, document selection, bookmark opening and optional approximate refreshes.
 Saved edits and renderer/font changes invalidate image generations; the app watches
 cached sources and catches up at startup. Shared tests cover publication, reload requests,
-restart catch-up and retaining prior images on failure. The signed app is installed and
-all three review images were generated, and the user reported the installed widget
-working after hands-on review. That report does not qualify every size or lifecycle
-scenario. See [native capture evidence](evidence/takumi-capture-2026-10-12.md) for measured
+restart catch-up and retaining prior images on failure. Hands-on reviews of the signed
+installation (Oct 12 images; Oct 13 edit, layering, dragging, rename/move) predate the
+two-stage capture ABI and do not qualify every size or lifecycle; repeat them on the
+release candidate. See [native capture evidence](evidence/takumi-capture-2026-10-12.md) for measured
 macOS costs and the review checklist.
 Finish signed product testing of all sizes, appearance modes, refresh budgets and
 sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrower evidence.
-The [October 13 widget review](evidence/widget-review-2026-10-13.md) fixed rename/move
-metadata and refreshed the signed installation; the user confirmed Edit, desktop layering
-and dragging after stale development registrations were removed.
+The [October 13 widget review](evidence/widget-review-2026-10-13.md) records the location
+metadata fixes and removal of stale development registrations.
 The `slop dev` composition selector previews all three widget families with HMR. Broader desktop qualification, cache management UI and iOS hosting are pending.
 
 **Permissions and device services.** Code-bound grants and per-slop consent remain a

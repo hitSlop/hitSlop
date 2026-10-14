@@ -100,7 +100,8 @@ non-executable override fails, and an engine that ran is never retried through a
 binary. File markers protect saved documents; the exact command protocol protects
 communication with a live owner.
 
-`open` (macOS only; a template is refused) is the one operation that starts hitSlop.app.
+`open` (macOS only) is the one operation that starts hitSlop.app.
+`open` refuses a template, a link and any file that is not a regular file; a linked parent folder is fine.
 It opens the document with `/usr/bin/open -a` in the app that contains the running
 engine, else the app `HITSLOP_APP` names, else `/Applications/hitSlop.app`, then
 `~/Applications/hitSlop.app`; a `HITSLOP_APP` that names no app is an error rather than a
