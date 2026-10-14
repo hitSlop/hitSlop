@@ -736,7 +736,12 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     phase = closing ? .closing(failed, prepared: false) : .active(failed)
     // The owner is fully loaded before the page starts, so it keeps the writer lock and
     // the socket; a retry reattaches a new page to the same owner.
-    if !wasReady { destroyWebView() }
+    if !wasReady {
+      destroyWebView()
+    } else if reason == .unresponsive, let liveWebView {
+      // A wedged page keeps its process spinning until Reopen or close replaces the view.
+      WebViewProcess.terminate(liveWebView)
+    }
     let error = SlopDiagnosticError(SlopFailure(message), diagnostic: .init(classification, reason: reason))
     completeWaiters(.failure(error))
     delegate?.pageSession(self, didFail: error)

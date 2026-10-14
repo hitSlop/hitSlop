@@ -245,8 +245,9 @@ Record commit, version/build, OS, and results. Test macOS 15.2 and the current s
 - Kill WebContent: the failure screen says edits are kept; Reopen restores them; a pending
   save keeps its Retry Save sheet; Copy details holds no document values (it lists the
   slop's and the build's package format and runtime ABI); Get help opens the Discord invite.
-- Wedge a page with a busy loop: after 15 s the failure screen appears, Reopen recovers,
-  Close and Quit do not hang; note a WebContent kill and a wedge show different titles/reasons.
+- Wedge a page with a busy loop: after 15 s the failure screen appears and the page's
+  WebContent process ends (it stops using CPU), Reopen recovers, Close and Quit do not hang;
+  note a WebContent kill and a wedge show different titles/reasons.
 - Widgets: exercise all sizes, rename and same-volume move, edit and save, and confirm
   images regenerate once after a Sparkle update.
 - PNG/PDF, Finder preview/icon, keyboard focus, narrow windows, repeated open/close, and menu commands.

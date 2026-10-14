@@ -424,6 +424,8 @@ extension HostTests {
     #expect(failure != nil)
     #expect(!rendered && !session.capturing)
     #expect(session.rendererDead)
+    // A page declared dead stops running; it must not keep spinning behind the failure screen.
+    #expect(await eventually(timeout: .seconds(5)) { Darwin.kill(pid, 0) != 0 && errno == ESRCH })
     let notice = try #require(controller.failedOverlay?.rootView.screen.notice)
     #expect(notice.title == "This slop stopped responding")
     #expect(notice.report.contains("Reason: unresponsive\nClassification: platform"))

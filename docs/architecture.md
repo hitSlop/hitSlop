@@ -149,8 +149,9 @@ The window's failure screen (Reopen, Copy details, Get help) and the save-failur
 are presented by `SlopDocumentAttention.swift` and `PageFailureNotice.swift`. Native
 host-to-page calls (publish, reload, flush, undo/redo, prepareClose, cancelClose and every
 capture's acquisition) have a 15 s deadline. On expiry the session takes the renderer-death
-path with its own unresponsive reason: the screen says the slop stopped responding,
-accepted edits are kept, and the save sheet stays. Reopen recovers the interface.
+path with its own unresponsive reason and ends the page's process: the screen says the slop
+stopped responding, accepted edits are kept, and the save sheet stays. Reopen recovers the
+interface.
 
 ## An edit
 
