@@ -169,7 +169,11 @@ extension HostTests {
       let controller = try await SlopDocumentWindowController.open(url: root)
       try await controller.session.waitUntilReady()
       let old = controller.session.webView
-      if dead { controller.session.webViewWebContentProcessDidTerminate(old) }
+      if dead {
+        controller.session.webViewWebContentProcessDidTerminate(old)
+        // The window tells the person what stopped: the session's reason reaches the failure screen.
+        #expect(controller.failedOverlay?.rootView.screen.notice.title == "This slop's view stopped")
+      }
       try await controller.session.discardPending()
       #expect(controller.session.webView !== old)
       #expect(controller.session.webView.superview != nil)

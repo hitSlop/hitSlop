@@ -58,6 +58,9 @@ extension HostTests {
     let time = Date()
     let first = try cache.publish(url: source, title: "First", images: images, capturedAt: time, refreshMinutes: nil)
     #expect(cache.records().count == 1)
+    let linkedFolder = folder.appendingPathComponent("linked-parent")
+    try FileManager.default.createSymbolicLink(at: linkedFolder, withDestinationURL: folder)
+    #expect(try !cache.refreshLocation(id: first.id, url: linkedFolder.appendingPathComponent("First.slop")))
     #expect(WidgetCache.selectionID(from: WidgetCache.openURL(id: first.id)) == first.id)
     #expect(WidgetCache.selectionID(from: URL(string: "hitslop://widget/../../other")!) == nil)
     #expect(throws: (any Error).self) {
@@ -85,9 +88,17 @@ extension HostTests {
     try FileManager.default.moveItem(at: source, to: renamed)
     #expect(try cache.resolve(first).resolvingSymlinksInPath() == renamed.resolvingSymlinksInPath())
     #expect(cache.record(for: renamed)?.id == first.id)
+    #expect(try cache.refreshLocation(id: first.id, url: renamed))
+    #expect(cache.record(id: first.id)?.title == "Renamed")
+    #expect(cache.record(id: first.id)?.generation == newest.generation)
+    #expect(FileManager.default.fileExists(atPath: cache.imageURL(next, .small).path))
+    #expect(try !cache.refreshLocation(id: first.id, url: renamed))
+    #expect(throws: (any Error).self) { try cache.refreshLocation(id: first.id, url: copy) }
+    #expect(cache.record(id: first.id)?.title == "Renamed")
     try FileManager.default.removeItem(at: renamed)
     try Data("replacement".utf8).write(to: renamed)
     #expect(throws: (any Error).self) { try cache.resolve(first) }
+    #expect(throws: (any Error).self) { try cache.refreshLocation(id: first.id, url: renamed) }
     #expect(cache.pruneUnavailable())
     #expect(cache.record(id: first.id) == nil)
     #expect(cache.record(id: second.id) != nil)

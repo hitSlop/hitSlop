@@ -13,11 +13,18 @@ pub(super) fn document(path: &Path) -> store::Result<String> {
             "Opening windows requires macOS and hitSlop.app; document edits and authoring run anywhere.",
         ));
     }
-    let document = std::fs::canonicalize(path)
+    // Check the supplied leaf before canonicalizing: resolving it first would turn a
+    // forbidden document symlink into an ordinary file. Linked parent folders are fine.
+    let metadata = std::fs::symlink_metadata(path)
         .map_err(|e| refusal(Code::InvalidRequest, format!("Cannot open {}: {e}", path.display())))?;
-    if file::kind(&document)? == file::Kind::Template {
+    if !metadata.is_file() {
+        return Err(refusal(Code::InvalidRequest, "A document must be a regular file"));
+    }
+    if file::kind(path)? == file::Kind::Template {
         return Err(refusal(Code::IsTemplate, "This is a template; create a document from it first"));
     }
+    let document = std::fs::canonicalize(path)
+        .map_err(|e| refusal(Code::InvalidRequest, format!("Cannot open {}: {e}", path.display())))?;
     let executable = std::env::current_exe().and_then(std::fs::canonicalize).ok();
     let named = std::env::var_os("HITSLOP_APP").filter(|app| !app.is_empty()).map(PathBuf::from);
     let home = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Applications/hitSlop.app"));

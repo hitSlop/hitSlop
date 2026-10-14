@@ -193,6 +193,9 @@ import WidgetKit
       await serialized { [self] in
         guard enabled, lifetime == started, let cache, let record = cache.record(id: id) else { return }
         let url = try cache.resolve(record)
+        // Location is independent of rendered content, and must catch up even when the
+        // source token is unchanged or a subsequent capture fails.
+        if try cache.refreshLocation(id: id, url: url) { reload() }
         watch(record)
         let version = try await SlopRenderer.widgetSourceVersion(url: url)
         guard enabled, lifetime == started else { return }

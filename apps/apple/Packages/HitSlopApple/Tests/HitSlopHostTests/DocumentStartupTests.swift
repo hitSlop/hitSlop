@@ -374,6 +374,8 @@ extension HostTests {
     #expect(failures.count == 1)
     #expect(failures.first?.classification == .authored)
     #expect(failures.first?.reason == .authoredException)
+    // The failure screen owns up: the slop's own code failed while it started.
+    #expect(controller.failedOverlay?.rootView.screen.notice.title == "This slop couldn't open")
     try await controller.session.close()
   }
 }

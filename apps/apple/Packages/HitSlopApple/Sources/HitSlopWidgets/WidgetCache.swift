@@ -72,6 +72,38 @@ public struct WidgetCache: Sendable {
     }
   }
 
+  /// App-only metadata maintenance after a bookmark follows a rename or move. Preserve
+  /// the image generation and its capture time; callers serialize this with publications.
+  @discardableResult public func refreshLocation(id: String, url: URL) throws -> Bool {
+    guard let current = record(id: id) else { return false }
+    let canonical = url.resolvingSymlinksInPath().standardizedFileURL
+    guard try Self.identity(url) == current.fileIdentity,
+      try resolve(current).resolvingSymlinksInPath().standardizedFileURL == canonical
+    else { throw CocoaError(.fileNoSuchFile) }
+    let title = url.deletingPathExtension().lastPathComponent
+    let volumePath = try url.resourceValues(forKeys: [.volumeURLKey]).volume?.path
+    // A bookmark may normalize linked parent folders without the document moving.
+    let previousLocation = current.sourcePath.map {
+      URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL
+    }
+    guard current.title != title || previousLocation != canonical || current.volumePath != volumePath else {
+      return false
+    }
+    let updated = WidgetRecord(
+      id: current.id, title: title, fileIdentity: current.fileIdentity, generation: current.generation,
+      updatedAt: current.updatedAt, refreshMinutes: current.refreshMinutes,
+      sourcePath: url.path, volumePath: volumePath, previousGeneration: current.previousGeneration,
+      sourceVersion: current.sourceVersion)
+    guard updated.isValid else { throw CocoaError(.fileWriteInvalidFileName) }
+    let json = try JSONEncoder().encode(updated)
+    guard json.count <= 16384 else { throw CocoaError(.fileWriteInvalidFileName) }
+    let bookmark = try url.bookmarkData(
+      options: [.minimalBookmark], includingResourceValuesForKeys: nil, relativeTo: nil)
+    try bookmark.write(to: folder(id).appendingPathComponent("document.bookmark"), options: .atomic)
+    try json.write(to: folder(id).appendingPathComponent("current.json"), options: .atomic)
+    return true
+  }
+
   /// Own the bytes before returning; cleanup may remove the file after a pointer read.
   public func imageData(_ record: WidgetRecord, _ family: WidgetImageFamily) -> Data? {
     if let data = try? Data(contentsOf: imageURL(record, family)) { return data }
