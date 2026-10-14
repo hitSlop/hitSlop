@@ -291,13 +291,13 @@ fn open_refuses_a_linked_document_but_accepts_a_linked_parent() {
     let refused = open(&link);
     assert_eq!(refused["code"], "rejected");
     assert_eq!(refused["reason"], "invalid_request");
-    assert_eq!(refused["error"], "A document must be a regular file");
+    assert_eq!(refused["error"], "A document must be an existing regular file");
     assert!(!refused["error"].as_str().unwrap().contains("HITSLOP_APP"), "{refused}");
     for method in ["inspect", "schema"] {
         let refused = request(json!({"method":method,"file":link}));
         assert_eq!(refused["code"], "rejected", "{refused}");
         assert_eq!(refused["reason"], "invalid_request", "{refused}");
-        assert_eq!(refused["error"], "A document must be a regular file", "{refused}");
+        assert_eq!(refused["error"], "A document must be an existing regular file", "{refused}");
     }
     let parent = dir.path().join("Linked parent");
     std::os::unix::fs::symlink(dir.path(), &parent).unwrap();

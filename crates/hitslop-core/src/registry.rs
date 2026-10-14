@@ -70,7 +70,7 @@ pub(crate) fn regular(path: &Path) -> Result<fs::Metadata> {
     fs::symlink_metadata(path)
         .ok()
         .filter(fs::Metadata::is_file)
-        .ok_or_else(|| invalid("A document must be a regular file"))
+        .ok_or_else(|| invalid("A document must be an existing regular file"))
 }
 /// The device, inode and link count of the regular file at `path`; `Moved` for anything
 /// else. The device and inode name the file in the registry.

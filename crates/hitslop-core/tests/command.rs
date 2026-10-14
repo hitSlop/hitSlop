@@ -102,7 +102,7 @@ fn document_commands_refuse_a_link_with_the_regular_file_reason() {
         let refused = run(request);
         assert_eq!(refused["code"], "rejected", "{method}: {refused}");
         assert_eq!(refused["reason"], "invalid_request", "{method}: {refused}");
-        assert_eq!(refused["error"], "A document must be a regular file", "{method}: {refused}");
+        assert_eq!(refused["error"], "A document must be an existing regular file", "{method}: {refused}");
     }
     assert_eq!(std::fs::read(&path).unwrap(), saved);
     assert!(!dir.path().join("output.slop").exists());
