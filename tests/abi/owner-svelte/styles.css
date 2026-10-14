@@ -1,3 +1,34 @@
 @import "./fonts.css";
-body { font-family: system-ui, "Conformance CJK"; margin: 0; } main { padding: 24px; } textarea { display: block; }
-h2 { font-family: "Conformance Hand", system-ui, "Conformance CJK"; }
+body {
+  font-family: system-ui, "Conformance CJK";
+  margin: 0;
+  color: var(--slop-ink);
+  background: var(--slop-paper-tint);
+}
+main {
+  padding: 24px;
+}
+textarea {
+  display: block;
+}
+h2,
+.hand {
+  font-family: "Conformance Hand", "Conformance CJK", system-ui;
+}
+.cjk {
+  font-family: "Conformance CJK", system-ui;
+}
+.accent-patch {
+  width: 32px;
+  height: 32px;
+  background: var(--slop-accent);
+}
+.icon {
+  background: var(--slop-accent);
+  color: var(--slop-ink);
+  display: flex;
+  flex-direction: column;
+}
+.icon strong {
+  font-size: 64px;
+}

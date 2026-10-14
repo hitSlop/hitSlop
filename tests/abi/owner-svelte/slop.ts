@@ -1,4 +1,5 @@
 import { defineSlop } from "hitslop";
+import variant from "./variant";
 
 export default defineSlop({
   slug: "owner-svelte",
@@ -7,5 +8,7 @@ export default defineSlop({
   author: { name: "hitSlop" },
   categories: ["utilities"],
   window: { kind: "standard", width: 480, height: 480 },
-  theme: { accent: "#335577" },
+  theme: { accent: "#335577", ink: "#112233", "paper-tint": "#eef4ffaa" },
+  widget: { refreshMinutes: 60 },
+  ...variant,
 });
