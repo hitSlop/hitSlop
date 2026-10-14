@@ -94,7 +94,8 @@ extension HostTests {
       let png = try Fixtures.png()
       let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
       let first = try cache.publish(
-        url: root, title: "Previous renderer", images: images, capturedAt: Date(timeIntervalSince1970: 1),
+        url: root, title: root.deletingPathExtension().lastPathComponent, images: images,
+        capturedAt: Date(timeIntervalSince1970: 1),
         refreshMinutes: nil, sourceVersion: scenario == "missing token" ? nil : "prior-renderer")
       let saved = try Data(contentsOf: root)
       var reloads = 0
@@ -117,6 +118,60 @@ extension HostTests {
       }
       #expect(try Data(contentsOf: root) == saved, "widget refresh must never save or migrate the document")
     }
+  }
+
+  // A rename or move changes the widget choice's label and location even when its
+  // saved-state token is unchanged. Metadata maintenance must not need a working renderer.
+  @Test(arguments: ["move", "rename", "failed capture"]) @MainActor
+  func widgetMovesRefreshMetadataWithoutRecapturing(scenario: String) async throws {
+    _ = NSApplication.shared
+    let root = try widgetCloseFixture(brokenRenderer: true)
+    let folder = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let sourceFolder = folder.appendingPathComponent("source", isDirectory: true)
+    let destinationFolder = folder.appendingPathComponent("destination", isDirectory: true)
+    try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
+    let source = sourceFolder.appendingPathComponent("Before.slop")
+    try FileManager.default.moveItem(at: root, to: source)
+    let cache = WidgetCache(root: folder.appendingPathComponent("cache", isDirectory: true))
+    let png = try Fixtures.png()
+    let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
+    let version =
+      scenario == "failed capture" ? "prior-renderer" : try await SlopRenderer.widgetSourceVersion(url: source)
+    let first = try cache.publish(
+      url: source, title: "Before", images: images, capturedAt: Date(timeIntervalSince1970: 1),
+      refreshMinutes: 15, sourceVersion: version)
+    let saved = try Data(contentsOf: source)
+    let title = scenario == "move" ? "Before" : "After"
+    let destination = destinationFolder.appendingPathComponent(title + ".slop")
+    try FileManager.default.moveItem(at: source, to: destination)
+    try FileManager.default.removeItem(at: sourceFolder)
+    #expect(try cache.resolve(first).standardizedFileURL == destination.standardizedFileURL)
+    var reloads = 0
+    let publisher = SlopWidgetPublisher.shared
+    publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
+    defer { publisher.stop() }
+    await publisher.refresh(ids: [first.id], scheduledIDs: [])
+    let current = try #require(cache.record(for: destination))
+    #expect(current.title == title)
+    #expect(current.id == first.id)
+    #expect(current.generation == first.generation)
+    #expect(current.updatedAt == first.updatedAt)
+    #expect(current.sourceVersion == first.sourceVersion)
+    #expect(current.refreshMinutes == first.refreshMinutes)
+    for family in WidgetImageFamily.allCases { #expect(cache.imageData(current, family) == png) }
+    #expect(reloads == 1, "location changes must reload the widget without capturing new pixels")
+    await publisher.refresh(ids: [first.id], scheduledIDs: [])
+    #expect(reloads == 1)
+    #expect(try Data(contentsOf: destination) == saved)
+    // Pruning must use the new parent, even after the original parent disappears.
+    try FileManager.default.removeItem(at: destination)
+    #expect(cache.pruneUnavailable())
+    #expect(cache.record(id: first.id) == nil)
   }
 
   @Test @MainActor func savedEditsPublishNewWidgetPixelsAndRequestReloadWithoutClosing() async throws {

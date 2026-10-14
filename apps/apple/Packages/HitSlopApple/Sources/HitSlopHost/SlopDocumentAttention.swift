@@ -105,7 +105,6 @@ extension SlopDocumentWindowController {
     guard let message, let content = documentComposition else { return }
     sharePopover.dismiss()
     stopLoading()
-    if session.rendererDead { apply(saveAttention.clear()) }
     let metadata = session.file.metadata
     let screen = FailureScreen(
       notice: PageFailureNotice(
@@ -147,7 +146,7 @@ struct SaveAttention: Equatable {
     case dismiss
   }
 
-  /// The latest failure, until a save or a renderer death clears it.
+  /// The latest failure, until the owner saves or explicitly discards the pending edits.
   private(set) var failure: SaveFailure?
   /// An unrelated sheet held the window when the failure arrived.
   private(set) var waiting = false
@@ -185,11 +184,6 @@ struct SaveAttention: Equatable {
   }
   /// The alert ended, by a button or by the window.
   mutating func alertEnded() { presented = false }
-  /// The renderer died: its overlay replaces the alert.
-  mutating func clear() -> Effect {
-    failure = nil
-    return presented ? .dismiss : .none
-  }
   /// The window closed.
   mutating func windowClosed() {
     waiting = false
