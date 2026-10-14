@@ -246,8 +246,7 @@ row fast path with the original reconciler; shared-machine timing variation limi
 the comparison.
 
 Other performance diagnostics:
-`HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`
-and `scripts/dev/bench-wkwebview.swift` (a preview URL in a plain system WebKit view).
+`HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`.
 `HITSLOP_BENCH_CSS` appends CSS to the measured checklist and
 `HITSLOP_BENCH_LABEL` names the report, for attributing a cost to one rule; the
 `row_text_split_ms` field separates style from layout. Record a result under
