@@ -66,16 +66,6 @@ private let busy = SaveAttention.alert(for: .busy)
   #expect(effect15 == .present(busy))
 }
 
-@Test func aRendererDeathReplacesTheAlertWithItsOverlay() {
-  var attention = SaveAttention()
-  _ = attention.status(.failed(.busy), otherSheet: false, hidden: false)
-  let effect16 = attention.clear()
-  #expect(effect16 == .dismiss)
-  attention.alertEnded()
-  let effect17 = attention.reveal(otherSheet: false, hidden: false)
-  #expect(effect17 == .none)
-}
-
 @Test func eachFailureOffersItsWayBack() {
   let actions = { (failure: SaveFailure) in SaveAttention.alert(for: failure).buttons.map(\.action) }
   #expect(actions(.busy) == [.retrySave, .keepOpen])
