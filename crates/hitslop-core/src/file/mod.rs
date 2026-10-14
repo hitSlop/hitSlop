@@ -23,7 +23,7 @@ pub(crate) mod rows;
 
 pub use artwork::Artwork;
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) use artwork::{check_artwork, optimize_png};
+pub(crate) use artwork::{check_artwork, optimize_png, pack_artwork};
 #[cfg(target_arch = "wasm32")]
 pub(crate) use assets::ResourceCache;
 pub use assets::{
@@ -33,11 +33,11 @@ pub use assets::{
 #[cfg(not(target_arch = "wasm32"))]
 pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) use copy::copy;
-#[cfg(not(target_arch = "wasm32"))]
 pub use copy::create_document;
 #[cfg(not(target_arch = "wasm32"))]
-pub use pack::{APP_INPUT_BYTES, pack, validate_app};
+pub(crate) use copy::{Staged, copy};
+#[cfg(not(target_arch = "wasm32"))]
+pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
 #[cfg(not(target_arch = "wasm32"))]
 pub use places::{TemplateSource, template_roots};
 #[cfg(not(target_arch = "wasm32"))]

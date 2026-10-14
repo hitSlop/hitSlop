@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { cleanRun, logPractice, removeSession, replaceAbc, restartLadder, setLadder, setTempo } from "./practice";
 
 const bpm = (description: string) => s.integer({ min: 20, max: 300, description });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setTempo: {
     description: "Set the practice tempo in beats per minute and return it.",
     args: { bpm: bpm("The new tempo.") },

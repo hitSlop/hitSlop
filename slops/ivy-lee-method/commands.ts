@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { moveTask, rollover, setDate, setDone, setNotes, setTaskText } from "./tasks";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setDone: {
     description: "Mark one of the six tasks finished or unfinished and return nothing.",
     args: {

@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { clearHistory, rename, roll, rollAgain, rollFormula, setFormula, setModifier } from "./dice";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   roll: {
     description: "Roll the dice pool, or first make the given formula (like '2d6+3' or '1d20+5') the pool, save the roll to the history and return its $id, total and values.",
     args: { formula: s.optional(s.string({ description: "Dice such as '1d8 + 3d6 + 4'; d4, d6, d8, d10, d12 and d20 only." })) },

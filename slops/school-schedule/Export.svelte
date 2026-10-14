@@ -1,8 +1,11 @@
 <script lang="ts">
-  import doc, { DAYS } from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { DAYS } from "./schema";
   import { DAY_NAMES, activitiesOn, classAt, clockLabel, scheduleView } from "./schedule";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const data = $derived(doc.current);
+  const data = $derived(snapshot);
   const { periods } = $derived(scheduleView(data));
 </script>
 
@@ -20,7 +23,7 @@
   <div class={"sch-exportDays"}>
     {#each DAYS as day}<section class={"sch-exportDay"}>
         <h2 class={"sch-exportDayTitle"}>{DAY_NAMES[day]}</h2>
-        {#each periods as p}{@const c = classAt(data, day, p.periodKey)}
+        {#each (preview ? (periods).slice(0, 6) : periods) as p}{@const c = classAt(data, day, p.periodKey)}
           <section class={"sch-exportClass"} data-color={c?.color}>
             <p class={"sch-exportMeta"}>
               {p.name} · {clockLabel(p.start)}–{clockLabel(p.end)}
@@ -29,7 +32,7 @@
             {#if c}<p class={"sch-exportMeta"}>{c.room}<br />{c.teacher}</p>{/if}
           </section>{/each}
         <h3 class={"sch-heading"}>After class</h3>
-        {#each activitiesOn(data, day) as a}<section
+        {#each (preview ? (activitiesOn(data, day)).slice(0, 2) : activitiesOn(data, day)) as a}<section
             class={"sch-exportClass"}
           >
             <p class={"sch-exportMeta"}>

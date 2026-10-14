@@ -1,9 +1,11 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { trayView } from "./dice";
 
+  let { snapshot }: CaptureProps<typeof schema> = $props();
   // The tray from above: walnut rim, felt well, a d20 showing the last total's die and a d6.
-  const view = $derived(trayView(doc.current));
+  const view = $derived(trayView(snapshot));
   const face = $derived(view.lastView?.values.find((die) => die.kind === "d20")?.value ?? 20);
 </script>
 

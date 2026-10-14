@@ -3,12 +3,14 @@
   import Sun from "@lucide/svelte/icons/sun";
   import Moon from "@lucide/svelte/icons/moon";
   import Check from "@lucide/svelte/icons/check";
-  import doc from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { journalView, setWritten } from "./journal";
   import WritingField from "./WritingField.svelte";
 
-  let { period, staticView = false }: { period: "am" | "pm"; staticView?: boolean } = $props();
+  let { period }: { period: "am" | "pm" } = $props();
   const id = $props.id();
+  const doc = getDocument(schema);
   const view = $derived(journalView(doc.current));
   const morning = $derived(period === "am");
   const done = $derived(morning ? view.morningDone : view.eveningDone);
@@ -32,43 +34,39 @@
     <div class={"fmj-prompt"} role="group" aria-labelledby="{id}-gratitudes">
       <h3 class={"fmj-promptLabel"} id="{id}-gratitudes">I am grateful for…</h3>
       {#each gratitudes as line, index}
-        <WritingField value={line.value} text={staticView ? undefined : line.text} label="Gratitude {index + 1}" prefix={String(index + 1)} placeholder={line.placeholder} {staticView} />
+        <WritingField value={line.value} text={line.text} label="Gratitude {index + 1}" prefix={String(index + 1)} placeholder={line.placeholder} />
       {/each}
     </div>
     <div class={"fmj-prompt"} role="group" aria-labelledby="{id}-intentions">
       <h3 class={"fmj-promptLabel"} id="{id}-intentions">What would make today great?</h3>
       {#each intentions as line, index}
-        <WritingField value={line.value} text={staticView ? undefined : line.text} label="Intention {index + 1}" prefix={String(index + 1)} placeholder={line.placeholder} {staticView} />
+        <WritingField value={line.value} text={line.text} label="Intention {index + 1}" prefix={String(index + 1)} placeholder={line.placeholder} />
       {/each}
     </div>
     <div class={"fmj-prompt"}>
       <h3 class={"fmj-promptLabel"}>Daily affirmation</h3>
-      <WritingField value={doc.current.affirmation} text={staticView ? undefined : doc.fields.affirmation} label="Daily affirmation" prefix="I am" placeholder="Give yourself a few kind words…" {staticView} />
+      <WritingField value={doc.current.affirmation} text={doc.fields.affirmation} label="Daily affirmation" prefix="I am" placeholder="Give yourself a few kind words…" />
     </div>
   {:else}
     <div class={"fmj-prompt"} role="group" aria-labelledby="{id}-highlights">
       <h3 class={"fmj-promptLabel"} id="{id}-highlights">Three amazing things today…</h3>
       {#each highlights as line, index}
-        <WritingField value={line.value} text={staticView ? undefined : line.text} label="Highlight {index + 1}" prefix={String(index + 1)} placeholder={line.placeholder} {staticView} />
+        <WritingField value={line.value} text={line.text} label="Highlight {index + 1}" prefix={String(index + 1)} placeholder={line.placeholder} />
       {/each}
     </div>
     <div class={"fmj-prompt"}>
       <h3 class={"fmj-promptLabel"}>How could today have been even better?</h3>
-      <WritingField value={doc.current.lesson} text={staticView ? undefined : doc.fields.lesson} label="How could today have been even better?" placeholder="A lesson, a boundary, a gentler next time…" {staticView} />
+      <WritingField value={doc.current.lesson} text={doc.fields.lesson} label="How could today have been even better?" placeholder="A lesson, a boundary, a gentler next time…" />
     </div>
   {/if}
 
   <footer class={"fmj-pageFooter"}>
-    {#if staticView}
-      <span class={"fmj-writtenNote"}>{#if done}<Check size={16} />{/if}{done ? "Written" : "Still unfolding"}</span>
-    {:else}
-      <Checkbox.Root class={"fmj-completion"} checked={done} onCheckedChange={(checked) => doc.change(tx => setWritten(tx, period, checked === true))} aria-label="{done ? 'Written' : 'Mark as written'}: {morning ? 'Morning' : 'Evening'}">
-        {#snippet children({ checked })}
-          <span class={"fmj-checkBox"}>{#if checked}<Check size={15} strokeWidth={2.5} />{/if}</span>
-          {checked ? "Written" : "Mark as written"}
-        {/snippet}
-      </Checkbox.Root>
-    {/if}
+    <Checkbox.Root class={"fmj-completion"} checked={done} onCheckedChange={(checked) => doc.change(tx => setWritten(tx, period, checked === true))} aria-label="{done ? 'Written' : 'Mark as written'}: {morning ? 'Morning' : 'Evening'}">
+      {#snippet children({ checked })}
+        <span class={"fmj-checkBox"}>{#if checked}<Check size={15} strokeWidth={2.5} />{/if}</span>
+        {checked ? "Written" : "Mark as written"}
+      {/snippet}
+    </Checkbox.Root>
     <span class={"fmj-closing"}>{morning ? "Carry this into your day." : "Let the rest wait until tomorrow."}</span>
   </footer>
 </section>

@@ -4,7 +4,6 @@ import { join, relative } from "node:path";
 import { localImports } from "./imports";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { fileDigest, publishFolder, sha256 } from "../lib/artifacts";
-import { run } from "../../packages/hitslop/src/cli/process";
 
 const ignored = new Set([
   "node_modules",
@@ -47,16 +46,12 @@ async function compilerSources(repository: string, entries: string[]) {
   return files.map((file) => relative(repository, file));
 }
 
-async function version(command: string[]) {
-  return (await run(command, { failure: `Cannot fingerprint ${command[0]}` })).trim();
-}
-
-/** Files every template build reads: compiler, SDK, page shell, file engine and native
+/** Files every template build reads: compiler, SDK, page shell, file engine and
  * renderer. */
 export async function sharedTemplatePaths(repository: string, sources: string[], includeExamples = true) {
-  const native = "apps/apple/Packages/HitSlopApple";
   const paths = [
     ".cargo/config.toml",
+    "rust-toolchain.toml",
     "bun.lock",
     "Cargo.lock",
     "crates/hitslop-core/Cargo.toml",
@@ -70,11 +65,6 @@ export async function sharedTemplatePaths(repository: string, sources: string[],
     "packages/hitslop/shell",
     "scripts/templates/build.ts",
     "scripts/templates/cache.ts",
-    `${native}/Package.swift`,
-    `${native}/Package.resolved`,
-    ...["HitSlopCore", "HitSlopDocument", "HitSlopHost", "HitSlopNativeCLI"].map(
-      (name) => `${native}/Sources/${name}`,
-    ),
     ...(await compilerSources(repository, [
       "packages/hitslop/src/cli/template.ts",
       "packages/hitslop/src/cli/stage-worker.ts",
@@ -95,18 +85,11 @@ export async function sharedTemplatePaths(repository: string, sources: string[],
   return paths;
 }
 
-/** Shared files plus the toolchain that compiles and renders every template. */
+/** Shared files (the pinned Rust toolchain among them) plus the platform that compiles and renders every template. */
 export async function sharedTemplateInputs(repository: string, sources: string[], includeExamples = true): Promise<Inputs> {
-  const [build, xcode, swift] = await Promise.all([
-    version(["/usr/bin/sw_vers", "-buildVersion"]),
-    version(["xcodebuild", "-version"]),
-    version(["swift", "--version"]),
-  ]);
   return {
     ...(await inputs(repository, await sharedTemplatePaths(repository, sources, includeExamples))),
-    "@macos": build,
-    "@xcode": xcode,
-    "@swift": swift,
+    "@platform": process.platform,
     "@arch": process.arch,
     "@bun": Bun.version,
     "@debug": String(process.env.HITSLOP_DEBUG_BUILD === "1"),
@@ -123,9 +106,9 @@ function changedInputs(previous: Inputs = {}, current: Inputs, limit = 5) {
     : changed;
 }
 
-/** Checks shared by cache reads and signed-app verification: a regular template file the
- * engine opens, built for `slug`, with preview artwork unless `artwork` is false (the icon
- * is optional: a build without an icon view has none). Returns the file's checksum. */
+/** Checks shared by cache publication and signed-app verification: a regular template file
+ * the engine opens, built for `slug`, with preview artwork unless `artwork` is false.
+ * Icon artwork is not required by this check. Returns the file's checksum. */
 export async function validateTemplate(path: string, slug: string, artwork = true) {
   const info = await lstat(path);
   if (!info.isFile()) throw new Error(`Invalid template file: ${slug}`);

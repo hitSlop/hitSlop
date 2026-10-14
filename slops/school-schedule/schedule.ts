@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { COLORS, DAYS } from "./schema";
 
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export type Period = Data["periods"][number];
 export type ClassEntry = Data["classes"][number];
 export type Activity = Data["activities"][number];

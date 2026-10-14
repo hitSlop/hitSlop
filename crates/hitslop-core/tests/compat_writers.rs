@@ -9,13 +9,13 @@
 //! Oracle: the released engine's own reading of its own document.
 //! Runs where the shipped engine runs (darwin-arm64); `HITSLOP_COMPAT_SEEDS` and
 //! `HITSLOP_COMPAT_STEPS` size it.
+use crate::support;
 use hitslop_core::Origin;
 use hitslop_core::store::{Mode, Store};
 use serde_json::{Value, json};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-mod support;
 use support::ApplyJson;
 use support::generate::intent;
 use support::next;

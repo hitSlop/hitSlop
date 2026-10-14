@@ -1,6 +1,6 @@
 // Version tokens: opaque, compared for equality by a command's `ifVersion`, and stable
 // across reopen and replay.
-mod support;
+use crate::support;
 use hitslop_core::Document;
 use serde_json::json;
 use support::{Edit, app, fixture, snapshot, updates_since};

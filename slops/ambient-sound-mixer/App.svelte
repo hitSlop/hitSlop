@@ -2,18 +2,19 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { CHANNELS } from "./shared";
-  import { capture } from "hitslop/svelte";
-  import { onMount, tick, untrack } from "svelte";
+  import { getDocument } from "hitslop/svelte";
+  import { onMount, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Select, Toggle, Button } from "bits-ui";
   import Power from "@lucide/svelte/icons/power";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Check from "@lucide/svelte/icons/check";
-  import doc, { CHANNEL_IDS } from "./schema";
+  import schema, { CHANNEL_IDS } from "./schema";
   import { AmbientEngine } from "./engine";
   import { applyPreset, mixerView, PRESET_NAMES, setLevel, setMuted, setSoloed, type ChannelID } from "./mixer";
 
+  const doc = getDocument(schema);
   const PRESET_ITEMS = PRESET_NAMES.map((name) => ({ value: name, label: name }));
   const travel = {
     rain: new Tween(untrack(() => doc.current.channels.rain), { duration: 0, easing: cubicOut }),
@@ -28,7 +29,6 @@
   const engine = new AmbientEngine();
   let playing = $state(false);
   let glide = false;
-  let freezeVu = false;
   let vuLevel = $state(0);
   let vuTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -73,7 +73,6 @@
   });
 
   function paintVu(): void {
-    if (freezeVu) return;
     const energy = mixerView(doc.current, playing).energy;
     if (!playing || prefersReducedMotion.current) {
       vuLevel = Math.round(energy * 10);
@@ -84,16 +83,8 @@
 
   onMount(() => {
     vuTimer = setInterval(paintVu, 120);
-    const unregister = capture.onPrepare(async () => {
-      freezeVu = true;
-      vuLevel = Math.round(mixerView(doc.current, playing).energy * 10);
-      glide = false;
-      for (const id of CHANNEL_IDS) await travel[id].set(doc.current.channels[id], { duration: 0, delay: 0 });
-      await tick();
-    });
     return () => {
       if (vuTimer) clearInterval(vuTimer);
-      unregister();
       for (const id of CHANNEL_IDS) void travel[id].set(travel[id].target, { duration: 0, delay: 0 });
       engine.close();
     };

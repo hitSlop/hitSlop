@@ -1,7 +1,8 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Countdown = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { dateLabel } from "../_shared/format";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Countdown = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export const maxMilestones = 25;
 
 export function isoDate(date: Date) {
@@ -118,13 +119,13 @@ export function countdownState(
 export function displayDate(date: string, time: string) {
   const target = parseTarget(date, time);
   return target
-    ? new Intl.DateTimeFormat(undefined, {
+    ? dateLabel(target, {
         month: "short",
         day: "numeric",
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
-      }).format(target)
+      })
     : "Choose date & time";
 }
 

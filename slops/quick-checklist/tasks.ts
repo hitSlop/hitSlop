@@ -1,7 +1,7 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Checklist = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Checklist = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /** The editor and its captures derive their lists, counts and ordering from the same snapshot. */
 export function checklistView(data: Checklist) {

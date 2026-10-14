@@ -3,19 +3,20 @@
   import "./mathlive-static.css";
   import "./styles.css";
   import { tick } from "svelte";
-  import { EditableText, notify } from "hitslop/svelte";
+  import { EditableText, getDocument, notify } from "hitslop/svelte";
   import { DropdownMenu } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import Sigma from "@lucide/svelte/icons/sigma";
   import Pilcrow from "@lucide/svelte/icons/pilcrow";
   import ChartSpline from "@lucide/svelte/icons/chart-spline";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
-  import doc, { type Kind } from "./schema";
+  import schema, { type Kind } from "./schema";
   import { addCell, moveCell, notebookView, paramValues, plotCaption, setLatex, setParam, setPlot, setWindow, type Cell, type Line } from "./notebook";
   import MathField from "./MathField.svelte";
   import Graph from "./Graph.svelte";
   import Params from "./Params.svelte";
 
+  const doc = getDocument(schema);
   const view = $derived(notebookView(doc.current));
   // View state only: the line being worked on, slider values mid-drag, the open menu.
   let active = $state<string | null>(null);

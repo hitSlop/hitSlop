@@ -1,12 +1,15 @@
 <script lang="ts">
+  import { previewText } from "../_shared/preview";
+  import type { CaptureProps } from "hitslop/svelte";
   // The worked solution as a clean sheet: the same title block, numbered typeset lines,
   // notes, and each graph drawn as SVG from its saved window and parameters.
-  import doc from "./schema";
+  import type schema from "./schema";
   import { notebookView, paramValues, plotCaption } from "./notebook";
   import StaticMath from "./StaticMath.svelte";
   import PlotFigure from "./PlotFigure.svelte";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(notebookView(doc.current));
+  const view = $derived(notebookView(snapshot));
   const shown = (value: number) => (Math.round(value * 100) / 100).toString().replace("-", "−");
 </script>
 
@@ -21,13 +24,13 @@
   </header>
   <div class="sheet">
     <ol class="lines">
-      {#each view.lines as line (line.cell.$id)}
+      {#each (preview ? (view.lines).slice(0, 4) : view.lines) as line (line.cell.$id)}
         {@const cell = line.cell}
         {@const values = line.plot?.ok ? paramValues(cell, line.plot.params) : {}}
         <li class="line" data-kind={cell.kind}>
           <div class="line-body" data-graphed={line.graphed || undefined}>
             {#if cell.kind === "note"}
-              <p class="note">{cell.note}</p>
+              <p class="note">{previewText(cell.note, preview, 160)}</p>
             {:else}
               {#if line.graphed && cell.kind === "graph"}
                 <figure class="export-graph" data-size="large">

@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addDays, dateKey, openPage, writePage } from "./model";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   writePage: {
     description: "Replace the open page's text, stamping it when it reaches 750 words; returns the word count.",
     args: { text: s.string({ description: "The full text of the open page." }) },

@@ -1,6 +1,7 @@
 //! Durable storage: identity, limits, crash outcomes and the writer lock, over one
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
+use crate::support;
 use hitslop_core::Document;
 use hitslop_core::Origin;
 use hitslop_core::file;
@@ -11,7 +12,6 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-mod support;
 use support::ApplyJson;
 use support::{App, isolate_registry, type_text, write_app};
 
@@ -959,7 +959,7 @@ fn readers_beside_an_open_document_never_fail_its_saves() {
 // Crash outcomes at each kind of save, with real processes: what a save commits survives
 // the death of the process that wrote it, and its lock dies with it. The rollback of a
 // write interrupted mid-commit is SQLite's journal (`a_crash_mid_commit_is_recovered_by_the_next_writer`
-// in `file.rs`); the timed helper kills in `tests/native/crash.native.test.ts` are stress coverage.
+// in `file.rs`); the timed engine kills in `tests/native/crash.native.test.ts` are stress coverage.
 const SAVES: [&str; 3] = ["append", "checkpoint", "theme"];
 
 /// Runs only as the child of `a_committed_save_survives_its_process_being_killed`: makes
@@ -998,7 +998,7 @@ fn a_committed_save_survives_its_process_being_killed() {
         let (store, _) = open(&path);
         store.close().unwrap();
         let status = support::child(
-            "save_then_die",
+            "store::save_then_die",
             &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_SAVE", save)],
         )
         .status()
@@ -1042,7 +1042,7 @@ fn a_save_killed_before_its_commit_leaves_the_saved_state() {
     held.execute_batch("BEGIN IMMEDIATE").unwrap();
     let marker = dir.path().join("saving");
     let mut child = support::child(
-        "save_while_held",
+        "store::save_while_held",
         &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_MARKER", marker.to_str().unwrap())],
     )
     .spawn()

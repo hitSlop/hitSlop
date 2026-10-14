@@ -6,10 +6,11 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import { bindText, draft } from "hitslop/svelte";
-  import doc from "./schema";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { addAction, addAgendaTopic, addAttendee, addDecision, meetingView, removeAction, removeAgendaTopic, removeAttendee, removeDecision } from "./meeting";
 
+  const doc = getDocument(schema);
   const view = $derived(meetingView(doc.current));
   const newAttendee = draft((name) => doc.change((tx) => addAttendee(tx, name)));
 </script>

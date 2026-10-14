@@ -1,13 +1,15 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { subscriptionView, type Subscription } from "./items";
   import { cadenceLabel, dateLabel, money } from "./shared";
   import CategoryMark from "./CategoryMark.svelte";
   import Repeat2 from "@lucide/svelte/icons/repeat-2";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   // A fresh page: it cannot see the window's view, so it lists every service.
-  const { rows, activeCount, totalCount, pace, yearly } = $derived(subscriptionView(doc.current, "all"));
-  const currency = $derived(doc.current.currency);
+  const { rows, activeCount, totalCount, pace, yearly } = $derived(subscriptionView(snapshot, "all"));
+  const currency = $derived(snapshot.currency);
 </script>
 
 <article class="exportLedger" aria-label="Exported subscription ledger">
@@ -40,7 +42,7 @@
 {#snippet serviceRows(items: readonly Subscription[])}
   {#if items.length}
     <ol class="serviceList">
-      {#each items as item (item.$id)}
+      {#each (preview ? (items).slice(0, 5) : items) as item (item.$id)}
         <li class="row" data-paused={!item.active}>
           <div class="serviceCopy">
             <CategoryMark category={item.category} /><span class="serviceText"><strong>{item.name}</strong>

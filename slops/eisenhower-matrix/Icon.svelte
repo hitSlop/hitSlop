@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { matrixView } from "./shared";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const view = $derived(matrixView(doc.current));
+  const view = $derived(matrixView(snapshot));
 </script>
 
 <div class="iconSurface" aria-hidden="true">

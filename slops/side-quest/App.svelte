@@ -2,7 +2,7 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { Checkbox, ToggleGroup } from "bits-ui";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
   import Check from "@lucide/svelte/icons/check";
   import Minus from "@lucide/svelte/icons/minus";
   import Plus from "@lucide/svelte/icons/plus";
@@ -13,7 +13,7 @@
   import DuePicker from "./DuePicker.svelte";
   import Monster from "./Monster.svelte";
   import StickerFace from "./StickerFace.svelte";
-  import doc, { sprites, stickers } from "./schema";
+  import schema, { sprites, stickers } from "./schema";
   import { courseLabel, mapGeometry, questLabel } from "./map";
   import {
     addCourse as addCourseEdit, addDays, addQuest as addQuestEdit, addSideQuest, cleared, cycleSprite as cycleSpriteEdit,
@@ -22,6 +22,7 @@
     setSideDone, spriteFace, when, type Course, type Kind, type Placed, type Quest, type Sticker,
   } from "./quest";
 
+  const doc = getDocument(schema);
   const today = isoDay(new Date());
   let selectedId = $state<string | null>(null);
   let announcement = $state("");

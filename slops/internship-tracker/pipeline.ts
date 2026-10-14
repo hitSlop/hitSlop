@@ -1,11 +1,11 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { stages } from "./schema";
 import { daysFromToday } from "./dates";
 
-export type Tracker = typeof doc.current;
+export type Tracker = Value<typeof schema.descriptor>;
 export type Stage = (typeof stages)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** The badge and the export derive counts, nudges and rows from the same snapshot. */
 export function trackerView(data: Tracker, today: string) {

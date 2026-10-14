@@ -7,6 +7,7 @@ export default defineSlop({
   author: { name: "hitSlop", url: "https://hitslop.com" },
   categories: ["utilities", "productivity"],
   window: { kind: "standard", width: 440, height: 580 },
+  widget: { refreshMinutes: 30 },
   theme: {
     paper: "#b9dcff",
     page: "#edf6ff",

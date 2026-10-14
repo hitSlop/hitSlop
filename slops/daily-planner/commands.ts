@@ -1,13 +1,13 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { KINDS } from "./schema";
+import schema, { KINDS } from "./schema";
 import {
   addBlock, editBlock, moveBlock, removeBlock, setDate, setNotes, setPriorityDone, setPriorityText,
 } from "./schedule";
 
 const time = (description: string) => s.string({ description });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setDate: {
     description: "Show another day, as YYYY-MM-DD.",
     args: { date: s.string() },

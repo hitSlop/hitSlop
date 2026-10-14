@@ -1,9 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { Handle, StringNode } from "hitslop";
   import { formatDay, type DeckView } from "./deck";
 
-  interface Props { view: DeckView; editable?: boolean; onexam?: () => void }
-  const { view, editable = false, onexam }: Props = $props();
+  // The editor passes the title's field handle and `onexam`; a static view passes only `title`.
+  interface Props { view: DeckView; title: string; field?: Handle<StringNode>; onexam?: () => void }
+  const { view, title, field, onexam }: Props = $props();
   const exam = $derived(view.forecast?.exam);
   const when = $derived.by(() => {
     if (!exam) return "";
@@ -21,15 +22,15 @@
   <div class="deck-fields">
     <label class="deck-field deck-field-subject">
       <span class="deck-field-label">Subject</span>
-      {#if editable}
-        <input class="deck-pencil-input" aria-label="Subject" maxlength="80" bind:value={doc.fields.title.value} />
+      {#if field}
+        <input class="deck-pencil-input" aria-label="Subject" maxlength="80" bind:value={field.value} />
       {:else}
-        <span class="deck-pencil">{doc.current.title}</span>
+        <span class="deck-pencil">{title}</span>
       {/if}
     </label>
     <div class="deck-field deck-field-exam">
       <span class="deck-field-label">Exam date</span>
-      {#if editable}
+      {#if field}
         <button class="deck-exam-button" onclick={onexam} aria-label="Exam date: {exam ? `${exam.assumed ? "not set" : formatDay(exam.date, "long")}, ${when}` : "not set"}. Change in settings.">
           {#if exam && !exam.assumed}
             <span class="deck-pencil">{formatDay(exam.date, "long")}</span><small>{when}</small>

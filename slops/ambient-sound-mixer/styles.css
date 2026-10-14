@@ -568,10 +568,6 @@ button:focus-visible, [data-select-trigger]:focus-visible, [data-slider-thumb]:f
   background: rgba(255, 255, 255, 0.16);
 }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
-
 html[data-slop-capture="static"] .canvas {
   height: auto;
   min-height: 100vh;

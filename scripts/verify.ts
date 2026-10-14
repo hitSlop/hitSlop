@@ -23,12 +23,11 @@ import { testInventory, checkoutLease, atomicJson, retainReport, changedPaths, t
 import { exec as testExec, verificationAbort } from "./lib/test-process";
 import { run } from "../packages/hitslop/src/cli/process";
 import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artifacts";
-import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftTests } from "./lib/swift-tests";
 import { releases, replayedEntries, compatibilityMode } from "./compat/corpus";
 
-type Build = "browser" | "web" | "native" | "templates" | "packages" | "app";
+import { prerequisites, type Build } from "./build/preparation";
 type Tier = {
   name: TierName;
   /** Runs the tier; `args` are a single-tier run's own arguments. */
@@ -155,24 +154,35 @@ const tiers: Tier[] = [
     quick: true,
     inputs: tierInputs.types,
     run: async () => {
+      const tsc = (project: string) => quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", project]);
       const output = await Promise.all([
         quiet([process.execPath, "node_modules/prettier/bin/prettier.cjs", "--check", "packages/hitslop/src"]),
-        quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]),
+        // Type-aware rules from .oxlintrc.json; .svelte templates are not linted.
+        quiet([process.execPath, "node_modules/oxlint/bin/oxlint", "packages/hitslop/src", "scripts"]),
+        // The type tests' own project relaxes only the unused rules: their checks are never read.
+        tsc("tsconfig.json").then(async (root) => [root, await tsc("packages/hitslop/tests/tsconfig.json")]),
         quiet([process.execPath, "scripts/templates/check.ts"]),
       ]);
-      console.log(output.filter(Boolean).join("\n"));
+      console.log(output.flat().filter(Boolean).join("\n"));
     },
   },
   {
     name: "bun",
-    needs: ["web"],
+    needs: ["sdk"],
     inputs: tierInputs.bun,
     run: (args) => bunTest(inventory.bun, [`--parallel=${Math.min(4, availableParallelism())}`, ...args]),
   },
   {
-    name: "cli", needs: ["web"],
+    name: "cli", needs: ["engine", "shell"],
     inputs: tierInputs.cli,
-    run: (args) => bunTest(inventory.cli, ["--parallel=1", "--timeout=30000", ...args]),
+    run: (args) => bunTest(inventory.cli, ["--parallel=1", "--timeout=120000", ...args]),
+  },
+  {
+    name: "render", needs: ["engine", "shell"], inputs: tierInputs.render,
+    run: (args) => bunTest(inventory.render, ["--parallel=1", "--timeout=120000", ...args], {
+      HITSLOP_TEST_EVIDENCE: runDirectory,
+      ...(release ? { HITSLOP_RENDER: "all" } : {}),
+    }),
   },
   {
     name: "rust",
@@ -219,13 +229,13 @@ const tiers: Tier[] = [
     needs: ["packages"],
     // What the published packages ship: their sources, starter, skills and the page shell.
     inputs: tierInputs.packed,
-    // A release installs the packages against the native helper too.
-    run: (args) => bunTest(inventory.packed, args, release ? { HITSLOP_PACKED_NATIVE: "1" } : {}),
+    // A release also runs the packages' native workflow: register, create, theme and export.
+    run: (args) => bunTest(inventory.packed, ["--timeout=120000", ...args], release ? { HITSLOP_PACKED_NATIVE: "1" } : {}),
   },
   {
     name: "swift",
     native: true,
-    needs: ["native"],
+    needs: ["native", "shell"],
     inputs: tierInputs.swift,
     run: async (args, prepare) => {
       if (!args.length) await prepare("Swift formatting", async () => {
@@ -237,7 +247,6 @@ const tiers: Tier[] = [
       await swiftTests({
         ...environment,
         HITSLOP_TEST_EVIDENCE: runDirectory,
-        HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
         HITSLOP_PRESENTATION_FIXTURES: JSON.stringify(fixtures),
       }, args, prepare);
     },
@@ -252,17 +261,16 @@ const tiers: Tier[] = [
   },
   {
     // Playwright WebKit and Chrome: `slop dev`, EditableText and the local Chrome browser host.
-    name: "browser", native: true, nightly: true, needs: ["browser"], inputs: tierInputs.browser,
+    name: "browser", native: true, nightly: true, needs: ["browser", "engine", "shell"], inputs: tierInputs.browser,
     run: (args) => bunTest(inventory.browser, args, { HITSLOP_TEST_EVIDENCE: runDirectory }),
   },
   {
     name: "native",
     native: true,
-    needs: ["native"],
+    needs: ["engine", "shell"],
     inputs: tierInputs.native,
-    run: async (args, prepare) => {
-      await bunTest(inventory.native, args, {
-        HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
+    run: async (args) => {
+      await bunTest(inventory.native, ["--timeout=120000", ...args], {
         HITSLOP_TEST_EVIDENCE: runDirectory,
         // A release renders every bundled template and requires its frozen corpus entry.
         ...(release ? { HITSLOP_RENDER: "all" } : {}),
@@ -311,11 +319,11 @@ const candidates = named ? tiers.filter(tier => named.includes(tier.name))
 const listing = flag("--list") && (option("--base") || named || flag("--all") || release);
 const toolchains = {
   rust: !listing && candidates.some(usesRust) ? await run(["rustc", "--version"]).then(s => s.trim()) : null,
-  swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.native && tier.name !== "browser")
+  swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.name === "swift" || tier.name === "app")
     ? await run(["swift", "--version"]).then(s => s.trim()) : null,
 };
 const digestOf = (tier: Tier, files: Record<string, string>) =>
-  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.native && tier.name !== "browser" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", nightly, ["swift", "native"].includes(tier.name) ? compatibility : null, inputsOf(tier, files).map((path) => [path, files[path]])]));
+  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.name === "swift" || tier.name === "app" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", nightly, ["swift", "native"].includes(tier.name) ? compatibility : null, inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
 const differences = (tier: Tier, before: Record<string, string>, after: Record<string, string>) =>
   [...new Set([...inputsOf(tier, before), ...inputsOf(tier, after)])].filter((path) => before[path] !== after[path]);
@@ -417,27 +425,14 @@ const report = {
 };
 
 const done = new Map<Build, Promise<void>>();
-/** Builds `name` once; a native build covers the web one. */
+/** Prepare only actual shared outputs, once per graph. */
 function build(name: Build): Promise<void> {
-  if (flag("--no-build") || (flag("--built") && (name === "native" || name === "templates"))) return Promise.resolve();
-  if (name === "web" && done.has("native")) return done.get("native")!;
+  if (flag("--no-build") || (flag("--built") && ["engine", "shell", "native", "sdk", "browser", "templates"].includes(name))) return Promise.resolve();
   if (!done.has(name))
     done.set(name, (async () => {
+      for (const dependency of prerequisites[name]) await build(dependency);
       const started = performance.now();
-      if (name === "web") {
-        await sh([process.execPath, "scripts/build/core.ts", "--wasm"]);
-        await sh([process.execPath, "scripts/build/shell.ts"]);
-        await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
-      }
-      if (name === "browser") {
-        await sh([process.execPath, "scripts/build/browser.ts"]);
-        await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
-        await sh([process.execPath, "scripts/build/shell.ts"]);
-      }
-      if (name === "native") await sh([process.execPath, "scripts/build/build.ts"]);
-      if (name === "templates") await sh([process.execPath, "scripts/templates/build.ts"]);
-      if (name === "packages") await sh([process.execPath, "scripts/build/packages.ts"]);
-      if (name === "app") await sh([process.execPath, "scripts/build/apple.ts"]);
+      await sh([process.execPath, "scripts/build/build.ts", "--output", name]);
       report.builds.push({ name, seconds: (performance.now() - started) / 1000 });
     })());
   return done.get(name)!;

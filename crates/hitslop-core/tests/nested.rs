@@ -1,7 +1,7 @@
 // Failure: nested lists and objects inside rows publish wrong paths or order, e.g. a
 // nested edit and removal of its containing row in one batch. Oracle: independent patch
 // consumer + fresh snapshots. Random nested workloads run in `model.rs`.
-mod support;
+use crate::support;
 use hitslop_core::Document;
 use serde_json::{Value, json};
 use support::{Edit, View, app};

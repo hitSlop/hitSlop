@@ -76,5 +76,5 @@ export async function mountViewLifecycle(options: {
         console.error(error);
       }
     },
-  } satisfies Omit<import("./page-handle").SlopPageHandle, "publish" | "capture">;
+  } satisfies Omit<import("./page-handle").SlopPageHandle, "publish">;
 }

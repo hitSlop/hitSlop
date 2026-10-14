@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addChore, addPerson, assignChore, dealOut, newWeek, removeChore, removePerson, setDone } from "./chores";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addPerson: {
     description: "Add a person to the household and return their stable row ID.",
     args: { name: s.string({ description: "The person's name." }) },

@@ -1,8 +1,8 @@
 import { defineCommands } from "hitslop/commands";
-import doc from "./schema";
+import schema from "./schema";
 import { petView, restoreStarter } from "./pet";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   currentPet: {
     description: "Return the active pet's name, whether it came from an imported ZIP, and that ZIP's file name and size.",
     args: {},

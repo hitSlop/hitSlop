@@ -1,7 +1,7 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /** The ledger has six slots. */
 export const SLOTS = 6;

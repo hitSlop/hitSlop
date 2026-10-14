@@ -1,15 +1,16 @@
 <script lang="ts">
 import "./styles.css";
-import { bindText } from "hitslop/svelte";
+import { bindText, getDocument } from "hitslop/svelte";
 import { refuse } from "hitslop";
 import { prefersReducedMotion } from "svelte/motion";
 import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
 import CalendarClock from "@lucide/svelte/icons/calendar-clock";
-import doc from "./schema";
+import schema from "./schema";
 import { startUntil, restart } from "./countdown";
 import Vessel from "./Vessel.svelte";
 import { localInput, presets, read } from "./model";
 
+const doc = getDocument(schema);
 const day = 24 * 60 * 60_000;
 let now = $state(Date.now());
 const reading = $derived(read(doc.current, now));

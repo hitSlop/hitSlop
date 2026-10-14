@@ -137,9 +137,9 @@ export async function batch(document: string, ops: string, attach: string[] = []
 }
 export async function apply(document: string, ops: string[], attach: string[] = []) {
   // The flag is repeatable only so a second --op is refused instead of silently replacing the first.
-  if (ops.length !== 1)
+  const [op, ...more] = ops;
+  if (op === undefined || more.length)
     throw new Error("slop apply takes one --op; pass several operations to slop batch --ops");
-  const [op] = ops;
   const value = json(op);
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("--op must be one JSON object");
@@ -198,8 +198,8 @@ export async function themeReset(document: string, token?: string) {
 /** The theme file as the core writes it, to `output` or standard output. */
 export async function themeExport(document: string, output?: string) {
   const { file } = (await send({ method: "theme.export", ...at(document) })).state;
-  if (output === undefined) return process.stdout.write(file);
-  await publish(output, file);
+  if (output === undefined) process.stdout.write(file);
+  else await publish(output, file);
 }
 export async function themeImport(document: string, file: string) {
   const contents = text(await read(file, ThemeFileLimit), "Theme file");

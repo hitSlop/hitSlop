@@ -1,13 +1,13 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { redateFrame, removeFrame, rename, setNote } from "./frames";
 
 // Photos are added from the window (camera or file). Commands cannot carry file bytes;
 // an agent adds a frame with `slop batch --attach` and an insert into `frames`.
 const day = (description: string) => s.string({ minLength: 10, maxLength: 10, description });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   rename: {
     description: "Change the heading that says what the frames follow.",
     args: { title: s.string({ minLength: 1 }) },

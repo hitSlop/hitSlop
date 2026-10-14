@@ -792,9 +792,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [data-select-
   font-size: 12px;
   box-shadow: 0 6px 18px rgba(23, 43, 77, 0.16);
 }
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
 html[data-slop-capture="static"] .tag {
   height: auto;
   min-height: 100vh;

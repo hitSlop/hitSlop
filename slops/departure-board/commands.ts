@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addStop, cycleStatus, editStop, removeStop, setStatus, setTitle, statuses } from "./board";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addStop: {
     description: "Add a stop to the bottom of the board (at most eight) and return its stable row ID.",
     args: {

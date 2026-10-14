@@ -1,6 +1,6 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { kinds } from "./schema";
+import schema, { kinds } from "./schema";
 import { addCaregiver, addEntry, removeEntry, setCaregiverArchived, updateEntry, type EntryInput } from "./journal";
 
 const entryArgs = {
@@ -48,7 +48,7 @@ function entryInput(args: EntryArgs, bottleUnit: EntryInput["unit"], now: number
   };
 }
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addEntry: {
     description: "Record a feeding, diaper change, sleep or memory and return its stable row ID; the time defaults to now.",
     args: entryArgs,

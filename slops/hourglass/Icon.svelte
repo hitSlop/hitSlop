@@ -1,8 +1,10 @@
 <script lang="ts">
-import doc from "./schema";
+import type { CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
 import Vessel from "./Vessel.svelte";
 import { read } from "./model";
-const reading = $derived(read(doc.current, Date.now()));
+let { snapshot }: CaptureProps<typeof schema> = $props();
+const reading = $derived(read(snapshot, Date.now()));
 </script>
 
 <div class="hourglass-icon" aria-hidden="true"><Vessel remaining={reading.remaining} solid /></div>

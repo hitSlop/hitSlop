@@ -9,6 +9,7 @@ import { homedir, tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import platforms from "./platforms.json";
+import tools from "./tool-versions.json";
 
 /** Release binaries name dependency sources by a fixed prefix instead of this machine's
  * Cargo home, so none carries a local path, and builds of the same sources on different
@@ -59,9 +60,9 @@ async function generator(name: string, version: string, variable: string, instal
 export async function buildCoreWasm() {
   const bindgen = await generator(
     "wasm-bindgen",
-    "0.2.129",
+    tools.wasmBindgen,
     "HITSLOP_WASM_BINDGEN",
-    "cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools",
+    `cargo install wasm-bindgen-cli --version ${tools.wasmBindgen} --locked --root generated/core-tools`,
   );
   const target = "wasm32-unknown-unknown";
   await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "--target", target, "-p", "hitslop-core-wasm"]);
@@ -73,8 +74,8 @@ export async function buildCoreWasm() {
 
 /** SQLite compiles C for wasm32; Apple's clang has no WebAssembly backend. */
 export async function buildBrowserWasm() {
-  const optimizer = await generator("wasm-opt", "version 132", "HITSLOP_WASM_OPT",
-    "bash scripts/build/install-binaryen.sh (requires Binaryen 132; HITSLOP_WASM_OPT may select its wasm-opt)",
+  const optimizer = await generator("wasm-opt", `version ${tools.binaryen}`, "HITSLOP_WASM_OPT",
+    `bash scripts/build/install-binaryen.sh (requires Binaryen ${tools.binaryen}; HITSLOP_WASM_OPT may select its wasm-opt)`,
     "generated/core-tools/binaryen/bin/wasm-opt");
   const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
   const browserEnv = {
@@ -82,8 +83,8 @@ export async function buildBrowserWasm() {
     CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
     AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
   };
-  const bindgen = await generator("wasm-bindgen", "0.2.129", "HITSLOP_WASM_BINDGEN",
-    "cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools");
+  const bindgen = await generator("wasm-bindgen", tools.wasmBindgen, "HITSLOP_WASM_BINDGEN",
+    `cargo install wasm-bindgen-cli --version ${tools.wasmBindgen} --locked --root generated/core-tools`);
   const target = "wasm32-unknown-unknown";
   const command = ["cargo", "build", "--locked", "--profile", "wasm", "--target", target, "-p", "hitslop-core-wasm", "--features", "browser"];
   const { code } = await exec(command, { cwd: repository, env: browserEnv, inherit: ["stdout", "stderr"] });
@@ -112,11 +113,10 @@ export async function buildCoreNative() {
   if (process.platform !== "darwin" || process.arch !== "arm64") throw new Error("The native core builds on an Apple silicon Mac");
   const bindgen = await generator(
     "uniffi-bindgen",
-    "0.32.2",
+    tools.uniffi,
     "HITSLOP_UNIFFI_BINDGEN",
-    "cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen",
+    `cargo install uniffi --version ${tools.uniffi} --features cli --locked --root generated/core-tools --bin uniffi-bindgen`,
   );
-  await buildEngine();
   const generated = join(repository, "apps/apple/Packages/HitSlopApple/Generated");
   const headers = join(generated, "include");
   const bindings = await mkdtemp(join(tmpdir(), "hitslop-bindings-"));
@@ -154,7 +154,7 @@ export async function buildCoreNative() {
 if (import.meta.main) {
   if (process.argv.includes("--rustflags")) console.log(releaseRustflags().join(" "));
   else if (process.argv.includes("--wasm")) await buildCoreWasm();
-  else if (process.argv.includes("--native")) await buildCoreNative();
+  else if (process.argv.includes("--native")) { await buildEngine(); await buildCoreNative(); }
   else if (process.argv.includes("--engine")) await buildEngine();
   else {
     await buildCoreWasm();

@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { resumeView } from "./entries";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const { initials } = $derived(resumeView(doc.current));
+  const { initials } = $derived(resumeView(snapshot));
 </script>
 
 <div class="iconSurface" aria-hidden="true">

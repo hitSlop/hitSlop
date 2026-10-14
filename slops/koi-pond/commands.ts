@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { koiPatterns } from "./schema";
+import schema, { koiPatterns } from "./schema";
 import { addKoi, feedKoi, releaseKoi, renameKoi, repaintPond } from "./shared";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addKoi: {
     description: "Add a koi (at most nine) with the given or first free name and a given or random pattern, and return its stable row ID.",
     args: {

@@ -1,15 +1,17 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
   import { untrack } from "svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { Button } from "bits-ui";
   import Flag from "@lucide/svelte/icons/flag";
   import Bomb from "@lucide/svelte/icons/bomb";
   import Rotate from "@lucide/svelte/icons/rotate-ccw";
-  import doc from "./schema";
+  import schema from "./schema";
   import { LEVELS, boardView, clock, dig as digCell, newGame as startGame, toggleFlag, type Level } from "./game";
 
+  const doc = getDocument(schema);
   const game = $derived(doc.current);
   const board = $derived(boardView(game));
   const level = $derived(board.level);

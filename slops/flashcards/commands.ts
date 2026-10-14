@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addCard, addDeck, editCard, gradeCard, newDeckKey, removeCard, shuffleDeck } from "./study";
 
 const deck = s.string({ description: "The deck's $id." });
 const card = s.string({ description: "The card's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addDeck: {
     description: "Create an empty deck with the given name and return its stable row ID; a blank name is refused.",
     args: { name: s.string({ description: "The deck's name." }) },

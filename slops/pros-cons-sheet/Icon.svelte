@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { balanceView } from "./balance";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const { tilt } = $derived(balanceView(doc.current));
+  const { tilt } = $derived(balanceView(snapshot));
 </script>
 
 <div class="iconSurface" aria-hidden="true">

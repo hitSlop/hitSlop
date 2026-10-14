@@ -1,6 +1,7 @@
 import AppKit
 import HitSlopCore
 import HitSlopDocument
+import HitSlopWidgets
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
@@ -128,6 +129,7 @@ public struct SlopDocumentRouting {
 @MainActor
 public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate {
   public let url: URL
+  public let widgetFileIdentity: String?
   public let session: DocumentSession
   let routing: SlopDocumentRouting
   public let telemetry: SlopTelemetry
@@ -149,7 +151,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
   lazy var sharePopover = SlopSharePopover(
-    filename: url.lastPathComponent,
+    filename: url.lastPathComponent, canExport: canExport,
     holdToolbar: { [weak self] in self?.toolbar.holdForSharing($0) },
     select: { [weak self] in self?.request($0) })
   let fullscreen = FullscreenController()
@@ -206,6 +208,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     self.telemetry = telemetry
     presentation = WindowPresentation(started: started)
     self.url = url.standardizedFileURL
+    widgetFileIdentity = try? WidgetCache.identity(self.url)
     self.session = session
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.
@@ -407,8 +410,15 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     guard isContentReady, session.isReady else { return nil }
     let edited = session.edited
     let preview = edited ? nil : await session.artwork(.preview)
-    guard edited || preview == nil else { return nil }
-    return await SlopRenderer.artwork(session: session, telemetry: telemetry, trace: closeTrace)
+    let needsArtwork = edited || preview == nil
+    let needsWidget =
+      session.file.views.widget != nil
+      && SlopWidgetPublisher.shared.needsCapture(url: url, edited: edited)
+    guard needsArtwork || needsWidget else { return nil }
+    let artwork = await SlopRenderer.artwork(
+      session: session, telemetry: telemetry, trace: closeTrace,
+      widgetURL: needsWidget ? url : nil, renderArtwork: needsArtwork)
+    return needsArtwork ? artwork : nil
   }
 
   public func windowDidMove(_ notification: Notification) { toolbar.relayout() }

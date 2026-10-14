@@ -1,9 +1,9 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { milestoneTypes } from "./schema";
 
-type Edit = Tx<typeof doc>;
-export type Semester = typeof doc.current;
+type Edit = Tx<typeof schema>;
+export type Semester = Value<typeof schema.descriptor>;
 export type Milestone = Semester["milestones"][number];
 export type MilestoneType = (typeof milestoneTypes)[number];
 

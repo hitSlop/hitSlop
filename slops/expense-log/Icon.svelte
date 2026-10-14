@@ -1,6 +1,8 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { formatAmount, receiptLabel } from "./shared";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
   const placeholders = [
   { title: "COFFEE", amount: 4.5 },
@@ -8,10 +10,10 @@
   { title: "LUNCH", amount: 14.8 },
   { title: "BOOKS", amount: 22 },
 ];
-  const symbol = $derived(doc.current.currency.trim() || "$");
+  const symbol = $derived(snapshot.currency.trim() || "$");
   const formatMoney = (amount: number) => formatAmount(amount, symbol);
-  const total = $derived(doc.current.items.reduce((sum, item) => sum + Number(item.amount || 0), 0));
-  const lines = $derived(doc.current.items.slice(0, 4));
+  const total = $derived(snapshot.items.reduce((sum, item) => sum + Number(item.amount || 0), 0));
+  const lines = $derived(snapshot.items.slice(0, 4));
   const shown = $derived(lines.length ? lines : placeholders);
   const shownTotal = $derived(lines.length ? total : placeholders.reduce((sum, item) => sum + item.amount, 0));
 </script>
@@ -24,7 +26,7 @@
     <div class="iconBody">
       <div class="iconHeader">
         <span class="iconTitle">EXPENSE LOG</span>
-        <span class="iconSub">{doc.current.terminalId.trim() || "TERMINAL"}</span>
+        <span class="iconSub">{snapshot.terminalId.trim() || "TERMINAL"}</span>
       </div>
       <div class="iconDash"></div>
       <div class="iconItems">

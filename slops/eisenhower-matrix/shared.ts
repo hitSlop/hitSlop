@@ -1,12 +1,12 @@
-import { refuse, type Tx } from "hitslop";
+import { refuse, type Tx, type Value } from "hitslop";
 import { zones } from "./schema";
-import type doc from "./schema";
+import type schema from "./schema";
 
 export type Zone = (typeof zones)[number];
 export type QuadrantKey = Exclude<Zone, "inbox">;
-export type Data = typeof doc.current;
+export type Data = Value<typeof schema.descriptor>;
 export type Task = Data["tasks"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export const QUADRANTS: { key: QuadrantKey; num: string; title: string; subtitle: string; tag: string; empty: string }[] = [
   { key: "q1", num: "I", title: "Do First", subtitle: "Urgent & Important", tag: "Crises & Deadlines", empty: "No fires on the blotter." },

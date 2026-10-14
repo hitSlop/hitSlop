@@ -6,8 +6,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { debugHelper, documentFromStage, engineRequest } from "../../scripts/lib/native";
+import { join } from "node:path";
+import { documentFromStage, engineRequest } from "../../scripts/lib/native";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { negotiate } from "../../packages/hitslop/src/cli/engine";
 import { run } from "../../packages/hitslop/src/cli/process";
@@ -16,8 +16,6 @@ useTestRegistry();
 
 const fixture = "tests/fixtures/checklist/document";
 const rounds = 24;
-const helper = process.env.HITSLOP_NATIVE_CLI ?? debugHelper;
-// The engine the CLI selects for that helper: the one beside it.
 const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findEngine();
 const app = process.env.HITSLOP_APP_BINARY;
 let folder: string;
@@ -29,7 +27,7 @@ afterAll(() => rm(folder, { recursive: true, force: true }));
 /** One engine request, killed after `killAfter` milliseconds unless it has answered. */
 async function request(body: Record<string, unknown>, killAfter: number) {
   const child = Bun.spawn(negotiate(documentEngine), { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-  child.stdin.write(JSON.stringify(body));
+  await child.stdin.write(JSON.stringify(body));
   await child.stdin.end();
   setTimeout(() => child.kill("SIGKILL"), killAfter);
   const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
@@ -82,10 +80,7 @@ test.if(!!app)("an acknowledged edit survives the death of the host that acknowl
       if (Date.now() > deadline || host.exitCode !== null) throw new Error("Native host startup failed");
       await Bun.sleep(30);
     }
-    await run(
-      [process.execPath, "packages/hitslop/src/cli/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
-      { env: { ...process.env, HITSLOP_NATIVE_CLI: helper } },
-    );
+    await run([process.execPath, "packages/hitslop/src/cli/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })]);
   } finally {
     host.kill("SIGKILL");
     await host.exited;

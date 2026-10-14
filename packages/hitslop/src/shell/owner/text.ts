@@ -13,7 +13,6 @@ interface TextHost {
   send(batch: Batch): Promise<ApplyReply>;
   reached(sequence: number): Promise<void>;
   recover(): Promise<void>;
-  readOnly(): boolean;
   /** Registers in-flight work so close and capture barriers wait for it. */
   track(work: Promise<unknown>): void;
   report(error: unknown): void;
@@ -75,8 +74,7 @@ export function bindText(
     element.dispatchEvent(new Event("input", { bubbles: true }));
   };
   const setDisabled = () => {
-    const disabled = removed || host.readOnly();
-    if ((element as any).disabled !== disabled) (element as any).disabled = disabled;
+    if ((element as any).disabled !== removed) (element as any).disabled = removed;
   };
   /** Adopts the store's text when the DOM has nothing unsent for this field. */
   const adopt = () => {
@@ -100,15 +98,7 @@ export function bindText(
   const value = () => detached?.text ?? element.value;
   /** Sends the DOM value as one change from `confirmed`; one request at a time. */
   const send = () => {
-    if (
-      outcomeFailure ||
-      inflight ||
-      composing ||
-      removed ||
-      host.readOnly() ||
-      value() === confirmed
-    )
-      return;
+    if (outcomeFailure || inflight || composing || removed || value() === confirmed) return;
     const target = path;
     const from = confirmed;
     const sent = value();

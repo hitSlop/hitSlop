@@ -1,5 +1,7 @@
-import type doc from "./schema";
-export type Hourglass = typeof doc.current;
+import { dateLabel } from "../_shared/format";
+import type { Value } from "hitslop";
+import type schema from "./schema";
+export type Hourglass = Value<typeof schema.descriptor>;
 
 const minute = 60_000;
 const hour = 60 * minute;
@@ -20,14 +22,14 @@ export type Reading =
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-const date = new Intl.DateTimeFormat(undefined, {
+const time = (value: Date) => dateLabel(value, { hour: "numeric", minute: "2-digit" });
+const date = (value: Date) => dateLabel(value, {
   weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
 });
 /** The end as a person would say it: a time today, otherwise a day and time. */
 export function describeEnd(end: number, now: number): string {
   const at = new Date(end);
-  return sameDay(at, new Date(now)) ? time.format(at) : date.format(at);
+  return sameDay(at, new Date(now)) ? time(at) : date(at);
 }
 
 /** What the glass shows at `now`: how much sand is left (0 to 1) and the readout. Days for a

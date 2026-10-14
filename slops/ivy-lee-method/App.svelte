@@ -1,15 +1,17 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import Check from "@lucide/svelte/icons/check";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import ArrowDown from "@lucide/svelte/icons/arrow-down";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Zap from "@lucide/svelte/icons/zap";
   import { Checkbox, Progress } from "bits-ui";
-  import doc from "./schema";
+  import schema from "./schema";
   import { docketView, moveTask, rollover, setDone, SLOTS } from "./tasks";
+
+  const doc = getDocument(schema);
 
   function tomorrowStr(): string {
     const d = new Date();

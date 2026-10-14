@@ -20,11 +20,11 @@ fn the_engine_does_not_expose_development_rooms() {
         assert!(!path.exists());
     }
 }
-fn invoke(args: &[&str], input: &[u8], helper: Option<&Path>) -> std::process::Output {
+fn invoke(args: &[&str], input: &[u8], app: Option<&Path>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_slop-engine"));
     command.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    if let Some(helper) = helper {
-        command.env("HITSLOP_NATIVE_CLI", helper);
+    if let Some(app) = app {
+        command.env("HITSLOP_APP", app);
     }
     let mut child = command.spawn().unwrap();
     let _ = child.stdin.take().unwrap().write_all(input);
@@ -60,8 +60,8 @@ fn attachment_references_use_stored_blob_identity_and_media_rules_without_a_docu
     assert_eq!(request(json!({"method":"attachments.ref","file":file}))["reason"], "too_large");
 }
 
-fn reply(input: &str, helper: Option<&Path>) -> Value {
-    let output = invoke(&["--client-protocol", &protocol()], input.as_bytes(), helper);
+fn reply(input: &str, app: Option<&Path>) -> Value {
+    let output = invoke(&["--client-protocol", &protocol()], input.as_bytes(), app);
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     assert!(output.stderr.is_empty());
     assert!(
@@ -80,10 +80,10 @@ fn app(initial: Value) -> Value {
             "window":{"kind":"standard","width":320,"height":240},
             "document":{"kind":"object","properties":{"title":{"kind":"text"}}},
             "initial":initial,"theme":[{"token":"accent","color":"#335577"}],
-            "commands":[],"views":{"export":false,"icon":false}
+            "commands":[],"views":{"preview":true,"export":true,"icon":true}
         },
-        "roles":{"ui":"ui.js"},
-        "resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"}],
+        "roles":{"ui":"ui.js","preview":"preview.js","icon":"icon.js","export":"export.js"},
+        "resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"},{"kind":"app","key":"preview.js","mediaType":"text/javascript","path":"assets/preview.js"},{"kind":"app","key":"icon.js","mediaType":"text/javascript","path":"assets/icon.js"},{"kind":"app","key":"export.js","mediaType":"text/javascript","path":"assets/export.js"}],
         "artwork":{}
     })
 }
@@ -92,6 +92,13 @@ fn stage(dir: &Path) -> std::path::PathBuf {
     let stage = dir.join("stage");
     fs::create_dir_all(stage.join("assets")).unwrap();
     fs::write(stage.join("assets/ui.js"), "export default { mount() { return {}; } };").unwrap();
+    fs::write(
+        stage.join("assets/export.js"),
+        include_str!("../../../tests/fixtures/checklist/document/assets/export.js"),
+    )
+    .unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/preview.js")).unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/icon.js")).unwrap();
     stage
 }
 
@@ -101,7 +108,7 @@ fn packs_creates_and_reads_typed_results() {
     let file = dir.path().join("Template file.slop");
     assert_eq!(
         request(json!({"method":"pack","stage":stage(dir.path()),"file":file,"app":app(json!({"title":"Hello"}))})),
-        json!({"ok":true,"method":"pack"})
+        json!({"ok":true,"method":"pack","artwork":{"preview":"absent","icon":"absent"}})
     );
     let inspected = request(json!({"method":"inspect","file":file}));
     assert_eq!(inspected["info"]["kind"], "template");
@@ -109,7 +116,7 @@ fn packs_creates_and_reads_typed_results() {
     assert_eq!(inspected["info"]["metadata"]["categories"], json!(["utilities"]));
     assert_eq!(
         inspected["info"]["assets"],
-        json!([{"name":"ui.js","bytes":fs::metadata(dir.path().join("stage/assets/ui.js")).unwrap().len()}])
+        json!([{"name":"export.js","bytes":fs::metadata(dir.path().join("stage/assets/export.js")).unwrap().len()},{"name":"icon.js","bytes":fs::metadata(dir.path().join("stage/assets/icon.js")).unwrap().len()},{"name":"preview.js","bytes":fs::metadata(dir.path().join("stage/assets/preview.js")).unwrap().len()},{"name":"ui.js","bytes":fs::metadata(dir.path().join("stage/assets/ui.js")).unwrap().len()}])
     );
     assert_eq!(request(json!({"method":"schema","file":file}))["schema"]["properties"]["title"]["kind"], "text");
     let output = dir.path().join("-Document file.slop");
@@ -131,7 +138,6 @@ fn invalid_requests_are_classified_and_never_publish() {
         "{broken",
         "{}",
         r#"{"method":"templates","extra":true}"#,
-        r#"{"method":"screenshot","documentPath":"x","output":"y","target":"other","ifPresent":false}"#,
         r#"{"method":"get","documentPath":"x","protocol":1}"#,
         r#"{"method":"validateApp"}"#,
         r#"{"method":"validateApp","app":null,"extra":true}"#,
@@ -222,34 +228,63 @@ fn only_exact_bootstrap_modes_are_accepted() {
     assert!(invoke(&["--protocol"], b"", None).status.success());
     assert!(invoke(&["--build-id"], b"", None).status.success());
 }
+/// A template and a document made from it, from `stage()`'s fixture capture programs.
+fn template_and_document(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let (template, document) = (dir.join("Template file.slop"), dir.join("-Document file.slop"));
+    request(json!({"method":"pack","stage":stage(dir),"file":template,"app":app(json!({"title":"Exported"}))}));
+    request(json!({"method":"create","from":template,"output":document}));
+    (template, document)
+}
+
+/// The engine exports a closed document's saved state itself, in its own restricted
+/// evaluator, and never replaces a file or writes the document.
+#[test]
+fn the_engine_exports_a_closed_document_without_the_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let (template, document) = template_and_document(dir.path());
+    let saved = fs::read(&document).unwrap();
+    let export = |file: &Path, format: &str, output: &Path| {
+        request(json!({"method":"export","documentPath":file,"format":format,"output":output}))
+    };
+    for (format, signature) in [("png", &b"\x89PNG\r\n\x1a\n"[..]), ("pdf", &b"%PDF-"[..])] {
+        let output = dir.path().join(format!("-Export file.{format}"));
+        assert_eq!(export(&document, format, &output), json!({"ok":true,"method":"export","output":output}));
+        let bytes = fs::read(&output).unwrap();
+        assert!(bytes.starts_with(signature), "{format}");
+        let refused = export(&document, format, &output);
+        assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("exists")));
+        assert_eq!(fs::read(&output).unwrap(), bytes);
+    }
+    let output = dir.path().join("Template.png");
+    assert_eq!(export(&template, "png", &output)["reason"], "is_template");
+    assert!(!output.exists());
+    assert_eq!(fs::read(&document).unwrap(), saved);
+}
+
+/// A template opens by creating a document from it; that refusal comes before any app is
+/// chosen, and a named app that is missing is never replaced by another copy.
 #[test]
 #[cfg(target_os = "macos")]
-fn helper_receives_json_and_ambiguous_failures_stay_unknown() {
-    use std::os::unix::fs::PermissionsExt;
+fn open_refuses_a_template_and_a_missing_named_app() {
     let dir = tempfile::tempdir().unwrap();
-    let helper = dir.path().join("helper");
-    let input = json!({"method":"screenshot","documentPath":"-Document file.slop","output":"-capture file.png","target":"icon","ifPresent":true}).to_string();
-    for (body, code, outcome) in [
-        (r#"{"ok":true,"method":"screenshot","output":null}"#, 0, "success"),
-        (r#"{"ok":true,"method":"open","documentPath":"x"}"#, 0, "unknown_outcome"),
-        (r#"{"ok":true,"method":"screenshot"}"#, 0, "unknown_outcome"),
-        ("broken", 0, "unknown_outcome"),
-        ("", 17, "unknown_outcome"),
-    ] {
-        let capture = dir.path().join("request");
-        fs::write(&helper, format!("#!/bin/sh\n[ \"$1\" = --client-protocol ] && [ \"$#\" = 2 ] || exit 3\ncat > '{}'\nprintf '%s\\n' '{}'\nexit {code}\n", capture.display(), body)).unwrap();
-        fs::set_permissions(&helper, fs::Permissions::from_mode(0o700)).unwrap();
-        let result = reply(&input, Some(&helper));
-        assert_eq!(fs::read_to_string(&capture).unwrap(), input);
-        if outcome == "success" {
-            assert_eq!(result["output"], Value::Null);
-            assert_eq!(result["ok"], true);
-        } else {
-            assert_eq!(result["code"], outcome);
-        }
-    }
-    fs::write(&helper, "#!/bin/sh\necho 'update hitSlop' >&2\nexit 2\n").unwrap();
-    assert_eq!(reply(&input, Some(&helper))["reason"], "requires_update");
+    let (template, document) = template_and_document(dir.path());
+    let missing = dir.path().join("Missing.app");
+    let open = |file: &Path| reply(&json!({"method":"open","documentPath":file}).to_string(), Some(&missing));
+    assert_eq!(open(&template)["reason"], "is_template");
+    let refused = open(&document);
+    assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("invalid_request")));
+    assert!(refused["error"].as_str().unwrap().contains("HITSLOP_APP"), "{refused}");
+}
+
+/// Opening a window needs macOS and hitSlop.app; elsewhere it refuses and changes nothing.
+#[test]
+#[cfg(not(target_os = "macos"))]
+fn opening_a_window_requires_macos() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, document) = template_and_document(dir.path());
+    let refused = request(json!({"method":"open","documentPath":document}));
+    assert_eq!(refused["reason"], "invalid_request");
+    assert!(refused["error"].as_str().unwrap().contains("macOS"), "{refused}");
 }
 
 #[test]
@@ -345,4 +380,79 @@ fn stalled_preview(close_input: bool) {
     assert!(!status.success(), "a stalled transport is a failed preview session");
     drop(input);
     assert_eq!(request(json!({"method":"get","documentPath":document}))["state"]["value"]["title"], title);
+}
+
+// Linux qualification: a template's missing artwork renders inside `pack`, in this engine's
+// restricted evaluator, on every platform the engine ships for (no macOS host is involved).
+// Each fixture draws the same page for every view, its body centred on a white canvas the
+// view's size; the stored artwork is read back as the CLI reads it.
+const WHITE: [u8; 4] = [255, 255, 255, 255];
+fn fixture(dir: &Path, body: &str, css: &str) -> std::path::PathBuf {
+    let program = format!(
+        "globalThis.__slopCapture = json => {{ const r = JSON.parse(json); return JSON.stringify({{fonts:[],frames:[{{kind:r.kind,width:r.width,height:r.height,html:{html},css:'html,body{{margin:0;width:100%;height:'+r.height+'px;background:#fff}}body{{display:flex;align-items:center;justify-content:center}}'+{css}}}]}}); }};",
+        html = serde_json::to_string(&format!("<html><body>{body}</body></html>")).unwrap(),
+        css = serde_json::to_string(css).unwrap(),
+    );
+    let stage = stage(dir);
+    for role in ["preview", "icon"] {
+        fs::write(stage.join(format!("assets/{role}.js")), &program).unwrap();
+    }
+    let template = dir.join("Fixture.slop");
+    let packed = request(
+        json!({"method":"pack","stage":stage,"file":template,"app":app(json!({"title":"Fixture"})),"renderArtwork":true}),
+    );
+    assert_eq!(packed["artwork"], json!({"preview":"rendered","icon":"rendered"}), "{packed}");
+    template
+}
+/// A template's stored artwork image, through `artwork.export`: its size, and its 8-bit RGBA
+/// pixel at a position.
+fn artwork(template: &Path, role: &str) -> ((u32, u32), impl Fn(u32, u32) -> [u8; 4]) {
+    let output = template.with_file_name(format!("{role}.png"));
+    let exported = request(json!({"method":"artwork.export","file":template,"target":role,"output":output}));
+    assert_eq!(exported["output"], json!(output), "{exported}");
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(fs::read(&output).unwrap())).read_info().unwrap();
+    let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+    let info = decoder.next_frame(&mut pixels).unwrap();
+    assert_eq!(info.bit_depth, png::BitDepth::Eight);
+    let (width, channels) = (info.width, info.color_type.samples());
+    ((info.width, info.height), move |x, y| {
+        let pixel = &pixels[(y * width + x) as usize * channels..][..channels];
+        [pixel[0], pixel[1], pixel[2], if channels == 4 { pixel[3] } else { 255 }]
+    })
+}
+
+#[test]
+fn pack_renders_bundled_font_text_into_its_artwork() {
+    let dir = tempfile::tempdir().unwrap();
+    // Geist, the bundled sans-serif, at its heaviest: an H whose crossbar covers the centre.
+    let css = "p{margin:0;font-family:sans-serif;font-weight:900;font-size:50vh;line-height:1;color:#123456}";
+    let template = fixture(dir.path(), "<p>H</p>", css);
+    for (role, size) in [("preview", (640, 480)), ("icon", (512, 512))] {
+        let ((width, height), pixel) = artwork(&template, role);
+        assert_eq!((width, height), size, "{role}");
+        assert_eq!(pixel(0, 0), WHITE, "{role}: the page");
+        assert_eq!(pixel(width / 2, height / 2), [0x12, 0x34, 0x56, 255], "{role}: the H's crossbar");
+        assert_eq!(pixel(width / 2, height / 2 - 40), WHITE, "{role}: between the H's stems");
+    }
+}
+
+#[test]
+fn pack_renders_an_inline_image_into_its_artwork() {
+    let dir = tempfile::tempdir().unwrap();
+    // Templates hold no attachments: their images are inlined, here a 2 × 2 PNG.
+    let mut image = Vec::new();
+    let mut encoder = png::Encoder::new(&mut image, 2, 2);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header().unwrap().write_image_data(&[0x0f, 0x80, 0x40, 255].repeat(4)).unwrap();
+    let body = format!("<img src=\"data:image/png;base64,{}\">", data_encoding::BASE64.encode(&image));
+    let template = fixture(dir.path(), &body, "img{display:block;width:50vw;height:50vh}");
+    for (role, size) in [("preview", (640, 480)), ("icon", (512, 512))] {
+        let ((width, height), pixel) = artwork(&template, role);
+        assert_eq!((width, height), size, "{role}");
+        assert_eq!(pixel(0, 0), WHITE, "{role}: the page");
+        assert_eq!(pixel(width / 2, height / 2), [0x0f, 0x80, 0x40, 255], "{role}: the image");
+        assert_eq!(pixel(width / 2, height / 4 - 4), WHITE, "{role}: above the image");
+        assert_eq!(pixel(width / 2, height / 4 + 4), [0x0f, 0x80, 0x40, 255], "{role}: the image's top edge");
+    }
 }

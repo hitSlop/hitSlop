@@ -1,6 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
   import { onDestroy, onMount } from "svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { Button } from "bits-ui";
@@ -10,10 +11,12 @@
   import Check from "@lucide/svelte/icons/check";
   import Volume from "@lucide/svelte/icons/volume-2";
   import VolumeOff from "@lucide/svelte/icons/volume-x";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addStop, boardView, cells, cycleStatus, editStop, removeStop, setStatus, setTitle, statusLabel, statuses, type Status } from "./board";
   import { flap } from "./flap";
   import { clack, disableSound, enableSound } from "./clack";
+
+  const doc = getDocument(schema);
 
   type Row = (typeof doc.current.rows)[number];
 

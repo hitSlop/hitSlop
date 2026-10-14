@@ -285,7 +285,7 @@ private actor OpeningDelay {
 
 extension HostTests {
   // Failure: close awaited the app's unmount without a deadline, so a teardown that never
-  // settled blocked closing and render-session exports after the document was released.
+  // settled blocked closing and exports after the document was released.
   @Test @MainActor func aHungUnmountDoesNotBlockCloseOrExport() async throws {
     let root = try contractFixture { stage in
       try Data(
@@ -317,7 +317,7 @@ extension HostTests {
     #expect(try await command("get", url: root).ok)
     #expect(
       try await finishes(within: .seconds(10)) {
-        _ = try await SlopRenderer.withRenderSession(url: root) { try await SlopRenderer.exportPNGData(session: $0) }
+        _ = try await SlopRenderer.capture(url: root, output: .export(format: .png))
       })
   }
 

@@ -1,12 +1,13 @@
 <script lang="ts">
-import doc from "./schema";
-let { mode }: { mode: "preview" | "export" } = $props();
+import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
+let { snapshot, mode }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
 
 <main data-capture-mode={mode}>
-  <h1>{doc.current.title}</h1>
-  <p>{doc.current.rows.length} rows</p>
-  {#each doc.current.slides as slide (slide.$id)}
+  <h1>{snapshot.title}</h1>
+  <p>{snapshot.rows.length} rows</p>
+  {#each snapshot.slides as slide (slide.$id)}
     <section aria-label={slide.title}>
       <h2>{slide.title}</h2>
       {#each slide.blocks as block (block.$id)}<p>{block.text}</p>{/each}

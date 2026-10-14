@@ -51,7 +51,23 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
     let input = BuildInput::decode(input).map_err(Error::Rejected)?;
     let app =
         AppDefinition::from_declaration(&input.declaration, input.roles.skin.as_deref()).map_err(Error::Rejected)?;
-    if input.roles.ui != "ui.js"
+    if input.roles.widget.is_some() != app.views().widget.is_some() {
+        return Err(invalid("Widget.svelte requires its private widget.js render program"));
+    }
+    if input.roles.preview.is_some() != app.views().preview {
+        return Err(invalid("Preview.svelte requires its private preview.js render program"));
+    }
+    if input.roles.export.is_some() != app.views().export {
+        return Err(invalid("Export.svelte requires its private export.js render program"));
+    }
+    if input.roles.icon.is_some() != app.views().icon {
+        return Err(invalid("Icon.svelte and its private icon.js render program must be present together"));
+    }
+    if input.roles.widget.as_deref().is_some_and(|key| key != "widget.js")
+        || input.roles.icon.as_deref().is_some_and(|key| key != "icon.js")
+        || input.roles.preview.as_deref().is_some_and(|key| key != "preview.js")
+        || input.roles.export.as_deref().is_some_and(|key| key != "export.js")
+        || input.roles.ui != "ui.js"
         || input.roles.style.as_deref().is_some_and(|key| key != "ui.css")
         || input.roles.commands.as_deref().is_some_and(|key| key != "commands.js")
     {
@@ -90,7 +106,11 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
         super::assets::check_resource(&resource.key, &bytes, true)?;
         assets.push(BuildAsset { key: resource.key.clone(), media_type: kind.media_type, bytes });
     }
-    if !keys.contains("ui.js")
+    if keys.contains("widget.js") != input.roles.widget.is_some()
+        || keys.contains("icon.js") != input.roles.icon.is_some()
+        || keys.contains("preview.js") != input.roles.preview.is_some()
+        || keys.contains("export.js") != input.roles.export.is_some()
+        || !keys.contains("ui.js")
         || keys.contains("ui.css") != input.roles.style.is_some()
         || keys.contains("commands.js") != input.roles.commands.is_some()
     {
@@ -118,9 +138,7 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
             if length > crate::ASSET_FILE_BYTES as u64 {
                 return Err(invalid("Artwork exceeds its byte limit"));
             }
-            let bytes = read(file, length as usize)?;
-            super::check_artwork(name, &bytes)?;
-            artwork.push((name, super::optimize_png(bytes, 2)));
+            artwork.push((name, super::pack_artwork(name, read(file, length as usize)?)?));
         }
     }
     assets.sort_by(|a, b| a.key.cmp(&b.key));

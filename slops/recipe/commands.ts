@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addIngredient, addStep, moveRow, removeRow, setChecked, setStepTimer } from "./recipe";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addIngredient: {
     description: "Add an unchecked ingredient to the list and return its stable row ID; blank text is refused.",
     args: { text: s.string({ description: "The ingredient, such as '2 eggs'." }) },

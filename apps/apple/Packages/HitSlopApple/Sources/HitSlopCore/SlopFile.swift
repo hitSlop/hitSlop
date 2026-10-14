@@ -179,7 +179,7 @@ public enum SlopBackdrop: Sendable {
 
 /// A slop's preview or icon artwork, read through the core.
 public enum SlopArtwork {
-  /// The core's artwork; its raw value is the name `slop screenshot --target` takes.
+  /// The core's artwork; its raw value is the `target` the engine's `artwork.export` takes.
   public typealias Name = Artwork
   /// The first of `preferred` the file holds, in one read; nil when it holds none. Throws
   /// when the file can't be read now (busy, or mid-recovery), so a caller can tell that

@@ -1,14 +1,17 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
   import Download from "@lucide/svelte/icons/download";
   import Eraser from "@lucide/svelte/icons/eraser";
   import PaintBucket from "@lucide/svelte/icons/paint-bucket";
   import Pencil from "@lucide/svelte/icons/pencil";
   import Undo2 from "@lucide/svelte/icons/undo-2";
   import { Tabs, ToggleGroup, RadioGroup, Button } from "bits-ui";
-  import doc from "./schema";
+  import schema from "./schema";
   import { CELL_COUNT, PALETTES, PALETTE_IDS, SIZE, fillCells, paintCells, setPalette, spriteView } from "./sprite";
+
+  const doc = getDocument(schema);
 
   type Tool = "pencil" | "eraser" | "fill";
   function isTool(value: string): value is Tool {

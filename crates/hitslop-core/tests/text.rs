@@ -3,7 +3,7 @@
 // duplicated characters, a misplaced caret, a resurrected row, or a refused edit that
 // changed the document. Oracle: literal merged strings and UTF-16 carets, and an unchanged
 // snapshot on refusal.
-mod support;
+use crate::support;
 use hitslop_core::{Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;

@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { fillCells, paintCells, selectColor, setPalette } from "./sprite";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   paintCell: {
     description: "Paint one cell (index 0-255, row by row) with a #rrggbb color, or erase it with an empty color; returns the number of cells changed.",
     args: { index: s.integer(), color: s.string({ description: "A #rrggbb color, or empty to erase." }) },

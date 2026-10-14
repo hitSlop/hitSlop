@@ -1,7 +1,7 @@
 // Optional text in a collection. Failure: typing into an unset optional text does not
 // create it, or an edit from cleared text resurrects it. Random workloads run in
 // `model.rs`. Oracle: literal values.
-mod support;
+use crate::support;
 use hitslop_core::Document;
 use serde_json::json;
 use support::{Edit, app, fixture, snapshot, type_text};

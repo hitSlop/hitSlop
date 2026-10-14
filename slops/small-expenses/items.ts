@@ -1,7 +1,8 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { moneyLabel } from "../_shared/format";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export type Entry = { merchant: string; amountMinor: number; note?: string };
 
 /** The editor and any capture derive totals and counts from the same snapshot. */
@@ -12,7 +13,7 @@ export function expenseView(data: Data) {
 }
 
 export function formatMoney(minor: number, currency: string) {
-  return new Intl.NumberFormat("en-CA", { style: "currency", currency }).format(minor / 100);
+  return moneyLabel(minor / 100, currency);
 }
 
 /** Checks what a person typed; the editor shows the message inline. */

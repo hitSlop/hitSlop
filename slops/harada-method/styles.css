@@ -387,9 +387,6 @@ button:focus-visible, input:focus-visible, [data-button-root]:focus-visible, [da
   color: var(--slop-ink);
   font-size: 11px;
 }
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
 html[data-slop-capture="static"] input::-webkit-calendar-picker-indicator {
   display: none;
 }

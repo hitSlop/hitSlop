@@ -27,13 +27,17 @@ The supported authored examples use Svelte, Bits UI, the document DSL, and theme
 ## Capabilities and Constraints
 
 - Each `slop.ts` defines the initial viewport and window presentation. Put creation
-  values in `schema.ts`; use `App.svelte`, optional `Export.svelte` and `Icon.svelte`
-  for the fixed presentation roles.
+  values in `schema.ts`; `App.svelte` is the editor, and `Icon.svelte` plus
+  `Preview.svelte` are required saved-state artwork. Optional `Export.svelte`
+  enables PNG/PDF export; `Widget.svelte` supplies desktop widget images.
 - Preserve saved data and useful behavior when redesigning an example.
 - Each object may have a distinct palette, typography, layout, and material.
 - Paper, Instrument, and Skin are optional directions, not mandatory looks.
 - Reference images under `_vibe/` are inspiration only and never shipping assets.
-- Export and icon views should remain recognizable as the same object.
+- Preview, export and icon views should remain recognizable as the same object.
+  Previews deliberately select a compact overview; exports keep the complete
+  authored output. Share static components when the same composition suits both.
+  Every capture role renders synchronously through Takumi.
 
 ## Brand Commitments
 
@@ -62,7 +66,6 @@ CSS. A whole slop may opt in when reading and copying are central to its purpose
 ## Evidence on Hand
 
 Quick Checklist, Hourglass, and Little Lamp are current examples; additional templates
-are welcome. Shape Lab lives in `tests/apps/shape-lab` as a presentation fixture.
-Each example's visual identity belongs to that object alone.
+are welcome. Each example's visual identity belongs to that object alone.
 Use current working examples and local `_vibe/` references as evidence for
 clarity and expressiveness, not as a collection-wide skin.

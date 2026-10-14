@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addCourse, addQuest, addSideQuest, hit, setDone } from "./quest";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addCourse: {
     description: "Add a course region to the map (at most six) and return its stable row ID.",
     args: {},

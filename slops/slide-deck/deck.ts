@@ -1,9 +1,9 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { layouts, themes } from "./schema";
 
-export type Edit = Tx<typeof doc>;
-export type Deck = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Deck = Value<typeof schema.descriptor>;
 export type Slide = Deck["slides"][number];
 export type SlideLayout = (typeof layouts)[number];
 export type DeckTheme = (typeof themes)[number];

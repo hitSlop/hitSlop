@@ -1,12 +1,13 @@
 <script lang="ts">
 import "./styles.css";
   import { tick, onMount } from "svelte";
-  import { attachments, bindText, capture, resizeWindow } from "hitslop/svelte";
+  import { attachments, bindText, getDocument, resizeWindow } from "hitslop/svelte";
   import { isDocumentError, isRejected } from "hitslop";
-  import doc from "./schema";
+  import schema from "./schema";
   // App media the corpus must keep serving: an image, audio and a font (styles.css).
   import swatch from "./media/swatch.png";
   import tone from "./media/tone.wav";
+  const doc = getDocument(schema);
   let shown: HTMLParagraphElement;
   let input: HTMLTextAreaElement;
   let checkbox: HTMLInputElement;
@@ -23,10 +24,6 @@ import "./styles.css";
     throw new Error(`Expected a ${reason} refusal`);
   };
   onMount(() => {
-    const stopPrepare = capture.onPrepare((mode, signal) => {
-      check(["preview", "export", "icon"].includes(mode), "Unknown capture mode");
-      check(signal instanceof AbortSignal && !signal.aborted, "Invalid capture signal");
-    });
     // Exercises every ctx member and descriptor kind through the public SDK. It works on
     // a document in any prior state, so a frozen copy of this build can run it against
     // later shells (tests/compat).
@@ -204,8 +201,8 @@ import "./styles.css";
       await doc.redo();
       check(doc.current.label === "Undo me", "Redo did not reapply");
       check(Array.isArray(doc.current.rows), "Snapshot missing");
-      // Host services: attachments, capture and the window.
-      const ref = await attachments.import<typeof doc.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
+      // Host services: attachments and the window.
+      const ref = await attachments.import<typeof schema.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
         tx.fields.attachment.set(ref.id),
       );
       check(doc.current.attachment === ref.id && ref.name === "note.txt" && ref.mimeType === "application/octet-stream", "Attachment reference was lost");
@@ -216,7 +213,6 @@ import "./styles.css";
       for (const url of [swatch, tone]) check((await fetch(url)).ok, `App media did not load: ${url}`);
       await document.fonts.load('16px "Conformance Hand"');
       check(document.fonts.check('16px "Conformance Hand"'), "The imported font did not load");
-      check(capture.isRenderer() === false, "An interactive page reported itself as a renderer");
       await resizeWindow({ width: 480, height: 480 }).catch((error) => {
         if (!isDocumentError(error)) throw error;
       });
@@ -225,7 +221,6 @@ import "./styles.css";
       return true;
     };
     return () => {
-      stopPrepare();
       delete (globalThis as any).contractTest;
     };
   });

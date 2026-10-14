@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Select, Checkbox, Button } from "bits-ui";
@@ -10,13 +10,14 @@
   import Check from "@lucide/svelte/icons/check";
   import Repeat from "@lucide/svelte/icons/repeat";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
-  import doc, { days } from "./schema";
+  import schema, { days } from "./schema";
   import {
     addChore, addPerson, assignChore, dealOut, householdView, initials, newWeek, removeChore, removePerson,
     setDay, setDone, setPoints, setRotates, type Day, type Person,
   } from "./chores";
   import Wheel from "./Wheel.svelte";
 
+  const doc = getDocument(schema);
   const dayItems = days.map((value) => ({ value, label: value === "any" ? "Any day" : value.toUpperCase().slice(0, 1) + value.slice(1) }));
   const newPerson = draft((name) => doc.change((tx) => addPerson(tx, doc.current, name)));
   const newChore = draft((name) => doc.change((tx) => addChore(tx, doc.current, name)));

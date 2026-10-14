@@ -5,8 +5,8 @@
   // is ever painted white. All of it is view state and is gone when the mirror closes.
   import { onMount } from "svelte";
   import { Popover, Slider } from "bits-ui";
-  import { attachments, notify } from "hitslop/svelte";
-  import doc, { BRUSH } from "./schema";
+  import { attachments, getDocument, notify } from "hitslop/svelte";
+  import schema, { BRUSH } from "./schema";
   import { keepSnapshot, MAX_SNAPSHOT_BYTES, setBrush, snapshotName } from "./mirror";
   import { createTracker, type Delegate, type Tracker } from "./mediapipe";
   import {
@@ -14,6 +14,7 @@
     pinchPoint, pinchRatio, pixelRatio, rms, stepBreath, stepPen, wipeStamps, type PenState, type Point,
   } from "./gestures";
 
+  const doc = getDocument(schema);
   let { video: stream, audio, context, micProblem, onexit }: {
     video: MediaStream;
     audio: MediaStream | null;
@@ -415,7 +416,7 @@
       if (blob.size > MAX_SNAPSHOT_BYTES) throw new Error("This mirror is too large to save (over 10 MB). Make the window smaller and try again.");
       const now = new Date();
       const file = new File([blob], snapshotName(now, ext), { type: blob.type });
-      await attachments.import<typeof doc.descriptor>(file, (tx, ref) => keepSnapshot(tx, ref, W, H, now.toISOString()));
+      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => keepSnapshot(tx, ref, W, H, now.toISOString()));
       notify(`Saved · ${(blob.size / 1024 / 1024).toFixed(1)} MB ${ext.toUpperCase()}`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "The snapshot was not saved.");

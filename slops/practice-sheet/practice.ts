@@ -1,8 +1,8 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Sheet = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Sheet = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 export type Session = Sheet["log"][number];
 
 export const TEMPO_MIN = 20;

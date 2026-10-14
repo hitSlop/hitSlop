@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addEntry, removeEntry, setPrompt } from "./entries";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addEntry: {
     description: "Log a check-in stamped with the current time and return its stable row ID.",
     args: {

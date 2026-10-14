@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { categories } from "./schema";
+import schema, { categories } from "./schema";
 import { addItem, clearDone, removeItem, setDone } from "./items";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addItem: {
     description: "Add an unchecked item to an aisle and return its stable row ID.",
     args: {

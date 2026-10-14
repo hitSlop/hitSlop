@@ -3,7 +3,7 @@
 
 /// Why a storage call failed. Every save failure keeps ownership, the live state and all
 /// edits.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum Error {
     /// Another process holds the writer lock.
     #[error("document has a live writer")]

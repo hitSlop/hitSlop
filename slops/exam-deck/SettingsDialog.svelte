@@ -1,12 +1,13 @@
 <script lang="ts">
   import { AlertDialog, Dialog, Slider, Switch } from "bits-ui";
   import X from "@lucide/svelte/icons/x";
-  import { notify } from "hitslop/svelte";
-  import doc from "./schema";
+  import { getDocument, notify } from "hitslop/svelte";
+  import schema from "./schema";
   import { ASSUMED_EXAM_DAYS, cardCap, resetProgress, setBudget, setExamDate, setRetention, type Budget, type DeckView } from "./deck";
 
   interface Props { open: boolean; today: string; view: DeckView }
   let { open = $bindable(), today, view }: Props = $props();
+  const doc = getDocument(schema);
   let confirmReset = $state(false);
 
   const data = $derived(doc.current);

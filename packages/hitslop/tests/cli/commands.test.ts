@@ -26,17 +26,16 @@ async function run(
   return { stdout, stderr, code };
 }
 
-// What the author builds is read back with the engine that built it: never an installed
-// app's (which may be older) nor a helper's, so inspect and schema need neither.
-test("inspect and schema read a built template with the CLI's own engine, whatever helper is named", async () => {
+// What the author builds is read back with the engine that built it, never an installed
+// app's, which may be older.
+test("inspect and schema read a built template with the CLI's own engine", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-inspect-"));
   try {
     const template = await writeTemplate(join(root, "fixture.slop"));
-    const env = { HITSLOP_NATIVE_CLI: join(root, "missing-helper") };
-    const inspected = await run(["inspect", template], env);
+    const inspected = await run(["inspect", template]);
     expect(inspected.stderr).toBe("");
     expect(JSON.parse(inspected.stdout).kind).toBe("template");
-    const schema = await run(["schema", template], env);
+    const schema = await run(["schema", template]);
     expect(schema.stderr).toBe("");
     expect(JSON.parse(schema.stdout).kind).toBe("object");
   } finally {
@@ -160,7 +159,7 @@ test.if(nightly)("help and version do not invoke native or authoring handlers", 
     ]) {
       const result = await run(
         args,
-        { HITSLOP_NATIVE_CLI: "/nonexistent" },
+        { HITSLOP_ENGINE: "/nonexistent" },
         join(root, "src/cli/cli.ts"),
       );
       expect(result.stderr).toBe("");
@@ -188,9 +187,9 @@ test("invalid input fails before opening documents or building source", async ()
     ["export", "missing.slop", "--format", "jpeg", "--output", "x"],
     ...["-1", "65536", "1.5", "NaN"].map((port) => ["dev", "missing-source", "--port", port]),
   ]) {
-    const result = await run(args, { HITSLOP_NATIVE_CLI: "/nonexistent" });
+    const result = await run(args, { HITSLOP_ENGINE: "/nonexistent" });
     expect(result.code).not.toBe(0);
-    expect(result.stderr).not.toContain("HITSLOP_NATIVE_CLI");
+    expect(result.stderr).not.toContain("HITSLOP_ENGINE");
   }
 }, subprocessSequenceTimeout);
 
@@ -199,7 +198,7 @@ test("attachments ref prints a file's reference without opening any document", a
   try {
     const file = join(dir, "note.txt");
     await writeFile(file, "abc");
-    const result = await run(["attachments", "ref", file], { HITSLOP_NATIVE_CLI: "/nonexistent" });
+    const result = await run(["attachments", "ref", file]);
     expect(result.code).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({
       id: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
@@ -218,7 +217,7 @@ test.if(nightly)("mistyped commands suggest the intended command", async () => {
     [["theme", "gett", "missing.slop"], "get"],
     [["skils"], "skills"],
   ] as const) {
-    const result = await run([...args], { HITSLOP_NATIVE_CLI: "/nonexistent" });
+    const result = await run([...args], { HITSLOP_ENGINE: "/nonexistent" });
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain(`Did you mean "${suggestion}"?`);
   }

@@ -1,9 +1,12 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import { previewText } from "../_shared/preview";
+  import type schema from "./schema";
   import { todayISO, relativeDue, trackerView } from "./due";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   const reference = todayISO();
-  const data = $derived(doc.current);
+  const data = $derived(snapshot);
   // The export shows every stack, completed included; the window's open tab is not visible here.
   const stacks = $derived(trackerView(data, reference).all);
 </script>
@@ -22,12 +25,12 @@
     </div>
   </header>
   <div class={"asg-exportStacks"}>
-    {#each stacks as stack}<section class={"asg-stack"}>
+    {#each (preview ? (stacks).slice(0, 3) : stacks) as stack}<section class={"asg-stack"}>
         <div class={"asg-stackHead"}>
           <h2 class={"asg-stackLabel"} data-urgency={stack.id}>{stack.label}</h2>
           <span class={"asg-stackCount"}>{stack.items.length}</span>
         </div>
-        {#each stack.items as item}<div class={"asg-exportRow"}>
+        {#each (preview ? (stack.items).slice(0, 3) : stack.items) as item}<div class={"asg-exportRow"}>
             <span
               class={"asg-checkbox"}
               data-state={item.completed ? "checked" : "unchecked"}
@@ -35,7 +38,7 @@
             >
             <div class={"asg-exportBody"}>
               <strong class={"asg-itemTitle"}
-                >{item.title || "Untitled assignment"}</strong
+                >{previewText(item.title || "Untitled assignment", preview, 100)}</strong
               >
               <div class={"asg-itemMeta"}>
                 <span class={"asg-courseChip"}
@@ -46,7 +49,7 @@
                     : relativeDue(item.dueDate, reference).label}</span
                 >
               </div>
-              {#if item.notes}<p class={"asg-exportNotes"}>{item.notes}</p>{/if}
+              {#if item.notes}<p class={"asg-exportNotes"}>{previewText(item.notes, preview, 100)}</p>{/if}
             </div>
           </div>{/each}
       </section>{:else}<div class={"asg-empty"}>

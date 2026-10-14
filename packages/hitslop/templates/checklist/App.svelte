@@ -2,9 +2,10 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { Checkbox } from "bits-ui";
-  import { EditableText, draft } from "hitslop/svelte";
-  import doc, { addTask } from "./schema";
+  import { EditableText, draft, getDocument } from "hitslop/svelte";
+  import schema, { addTask } from "./schema";
 
+  const doc = getDocument(schema);
   const { title, tasks } = doc.fields;
   const complete = $derived(doc.current.tasks.filter(task => task.done).length);
   // The composer's text; it clears once the task is added. A refusal such as

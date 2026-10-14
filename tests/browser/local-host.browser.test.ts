@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chromium, type Page } from "playwright";
+import { chromium, type BrowserContext, type Frame, type Page, type Worker as PageWorker } from "playwright";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { startBrowserHost } from "../../packages/hitslop/src/cli/browser";
@@ -8,6 +8,7 @@ import { buildTemplate } from "../../packages/hitslop/src/cli/template";
 import { execute } from "../../packages/hitslop/src/cli/engine";
 import { releases, documents } from "../../scripts/compat/corpus";
 import { BrowserHost } from "../../packages/hitslop/src/schema/constants";
+import { copyDeadline } from "../../packages/hitslop/src/browser/requests";
 import { Database } from "bun:sqlite";
 
 function documentIdentity(file: string) {
@@ -51,7 +52,7 @@ beforeAll(async () => {
   await createFixture(process.cwd(), source);
   const declaration = join(source, "slop.ts");
   await writeFile(declaration, (await readFile(declaration, "utf8")).replace('window: { kind: "standard",', 'window: { kind: "standard", fullscreenable: true,'));
-  const template = await buildTemplate(source, undefined, join(directory, "fixture.slop"));
+  const template = await buildTemplate(source, join(directory, "fixture.slop"), { renderArtwork: false });
   const original = join(directory, "original.slop");
   await execute({ method: "create", from: template, output: original });
   await execute({ method: "batch", documentPath: original, batch: { intents: [{ type: "setTheme", values: { accent: "#123456" } }] } });
@@ -493,3 +494,201 @@ test("Chrome reclaims an abandoned export only after the owning tab closes", asy
     expect(await hasExport()).toBe(false);
   } finally { await context.close(); }
 }, 30_000);
+
+// A document worker that fails, or stops answering, must not leave the page waiting. Its
+// outstanding writes have an unknown outcome and fail together, later requests fail at
+// once, and nothing is ever sent again: an uncertain mutation is never replayed.
+type Outcome = { name: string; ok: boolean; code?: string; message?: string };
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/** In each document of a context: the timers of the given lengths (the deadlines) still pending,
+ * and the message ports closed so far. */
+function watchDocuments(watched: number[]) {
+  const root = globalThis as any;
+  const live = new Map<unknown, number>();
+  const { setTimeout: set, clearTimeout: clear } = root;
+  root.setTimeout = (handler: unknown, delay?: number, ...args: unknown[]) => {
+    const id = set(typeof handler === "function" ? (...rest: unknown[]) => { live.delete(id); return handler(...rest); } : handler, delay, ...args);
+    if (delay !== undefined && watched.includes(delay)) live.set(id, delay);
+    return id;
+  };
+  root.clearTimeout = (id: unknown) => { live.delete(id); clear(id); };
+  root.__deadlines = () => [...live.values()].sort();
+  let closed = 0;
+  const close = MessagePort.prototype.close;
+  MessagePort.prototype.close = function (this: MessagePort) { closed++; close.call(this); };
+  root.__closedPorts = () => closed;
+}
+const deadlines = (where: Page | Frame) => where.evaluate(() => (globalThis as any).__deadlines() as number[]);
+const closedPorts = (where: Page | Frame) => where.evaluate(() => (globalThis as any).__closedPorts() as number);
+const asked = (worker: PageWorker) => worker.evaluate(() => (globalThis as any).__asked as string[]);
+
+/** Opens a copy, then makes its worker record what it is sent and answer none of it. */
+async function stalledCopy(context: BrowserContext) {
+  const page = await context.newPage();
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  await page.goto(await imported());
+  await page.frameLocator("iframe").getByRole("textbox", { name: "Document title" }).waitFor();
+  const frame = page.frames().find(frame => frame.url().includes(".localhost:"))!;
+  const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
+  await worker.evaluate(() => {
+    const received: string[] = [];
+    (globalThis as any).__asked = received;
+    (globalThis as any).onmessage = ({ data }: MessageEvent) => { received.push(data?.type); };
+  });
+  return { page, frame, worker, errors };
+}
+/** Three writes of two kinds: the first applies and the attachment is stored while the row waits its turn. `__outcomes` collects how each ends. */
+function startWrites(frame: Frame) {
+  return frame.evaluate(() => {
+    const { doc, attachments } = (globalThis as any).__devProbe;
+    const outcomes: Outcome[] = ((globalThis as any).__outcomes = []);
+    const watch = (name: string, work: Promise<unknown>) => work.then(
+      () => void outcomes.push({ name, ok: true }),
+      (error: any) => void outcomes.push({ name, ok: false, code: error?.code, message: String(error?.message) }));
+    void watch("title", doc.fields.title.set("Never confirmed"));
+    void watch("row", doc.fields.tasks.insert({ text: "Never confirmed" }));
+    void watch("attachment", attachments.import(new File(["never stored"], "note.txt"), (tx: any, ref: any) => tx.fields.tasks.insert({ text: ref.id })));
+  });
+}
+async function untilAsked(worker: PageWorker, count: number) {
+  for (let tries = 0; tries < 200 && (await asked(worker)).length < count; tries++) await wait(25);
+  expect((await asked(worker)).length).toBeGreaterThanOrEqual(count);
+}
+/** The outcomes of the writes, once `count` of them ended; a write still waiting `ms` later is a hang. */
+async function outcomesWithin(frame: Frame, count: number, ms: number) {
+  const read = () => frame.evaluate(() => (globalThis as any).__outcomes as Outcome[]);
+  const until = Date.now() + ms;
+  let seen = await read();
+  while (seen.length < count && Date.now() < until) { await wait(25); seen = await read(); }
+  if (seen.length < count) throw new Error(`${count - seen.length} of ${count} page requests were still waiting ${ms} ms later`);
+  return seen;
+}
+/** Once the connection is dead, a write fails at once and neither it nor a read of current state is sent. */
+async function expectLaterRequestsFail(frame: Frame, worker: PageWorker, reason: RegExp) {
+  const before = await asked(worker);
+  const later = await frame.evaluate(async () => {
+    const { doc } = (globalThis as any).__devProbe;
+    const started = performance.now(); const failures: { code?: string; message: string }[] = [];
+    for (const write of [() => doc.fields.title.set("After the failure"), () => doc.fields.tasks.insert({ text: "After the failure" })])
+      await write().catch((error: any) => failures.push({ code: error?.code, message: String(error?.message) }));
+    return { failures, milliseconds: performance.now() - started };
+  });
+  expect(later.failures.map(({ code }) => code)).toEqual(["unknown_outcome", "unknown_outcome"]);
+  for (const { message } of later.failures) expect(message).toMatch(reason);
+  expect(later.milliseconds).toBeLessThan(2000);
+  // The worker is never asked again: a failed write is not replayed, nor is a later one sent.
+  expect(await asked(worker)).toEqual(before);
+}
+
+test("Chrome rejects every outstanding and later page request when the document worker fails", async () => {
+  const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "worker-failure-profile-")), { channel: "chrome" });
+  try {
+    await context.addInitScript(watchDocuments, [copyDeadline, 30_000]);
+    const { page, frame, worker, errors } = await stalledCopy(context);
+    await startWrites(frame);
+    // Page requests reach the worker and wait on it, each under the page deadline.
+    await untilAsked(worker, 2);
+    await wait(200);
+    const sent = await asked(worker);
+    expect(sent.every(type => type === "page")).toBe(true);
+    const waiting = await deadlines(frame);
+    const closedBefore = [await closedPorts(page), await closedPorts(frame)];
+    expect(await frame.evaluate(() => (globalThis as any).__outcomes)).toEqual([]);
+    // The worker fails: an uncaught error reaches the host, as a crash in a timer would.
+    await worker.evaluate(() => { setTimeout(() => { throw new Error("simulated worker failure"); }, 0); });
+    const outcomes = await outcomesWithin(frame, 3, 5000);
+    expect(outcomes.map(({ name }) => name).sort()).toEqual(["attachment", "row", "title"]);
+    for (const outcome of outcomes) {
+      expect(outcome.ok).toBe(false); expect(outcome.code).toBe("unknown_outcome");
+      expect(outcome.message).toContain("The document worker stopped");
+    }
+    // Each request waited under a page deadline, now cleared. The person is told, and nothing that needs the worker stays enabled.
+    expect(waiting).toEqual(sent.map(() => copyDeadline));
+    expect(await page.getByRole("alert").textContent()).toContain("The document worker stopped");
+    expect(await page.locator("#download").isDisabled()).toBe(true);
+    // Every deadline timer is cleared, and the page connection is closed at both ends.
+    expect(await deadlines(page)).toEqual([]); expect(await deadlines(frame)).toEqual([]);
+    expect(await closedPorts(page)).toBeGreaterThan(closedBefore[0]!); expect(await closedPorts(frame)).toBeGreaterThan(closedBefore[1]!);
+    await expectLaterRequestsFail(frame, worker, /The document worker stopped/);
+    expect(await asked(worker)).toEqual(sent);
+    // Nothing the failed worker posts afterwards is believed: the failure stays on screen.
+    await worker.evaluate(() => postMessage({ type: "save", status: "saved", error: null }));
+    await wait(300);
+    expect(await page.locator("#status").textContent()).toContain("The document worker stopped");
+    // A resource fetch through the Service Worker fails now, not after the 30 s resource deadline.
+    const resource = await frame.evaluate(async () => {
+      const started = performance.now(); const response = await fetch("/assets/ui.js");
+      return { ok: response.ok, milliseconds: performance.now() - started };
+    });
+    expect(resource.ok).toBe(false); expect(resource.milliseconds).toBeLessThan(5000);
+    expect(await deadlines(page)).toEqual([]); expect(await deadlines(frame)).toEqual([]);
+    expect(await asked(worker)).toEqual(sent);
+    // A frame that connects after the failure is told at once: it fails to open, it does not wait.
+    errors.length = 0;
+    await frame.evaluate(() => { setTimeout(() => location.reload(), 0); });
+    for (let tries = 0; tries < 200 && !errors.some(message => message.includes("The document worker stopped")); tries++) await wait(25);
+    expect(errors.some(message => message.includes("The document worker stopped"))).toBe(true);
+    expect(await asked(worker)).toEqual(sent);
+    // The person is not held on a dead copy: the catalog link leaves without the save that cannot happen.
+    await page.getByRole("link", { name: "hitSlop", exact: true }).click();
+    await page.getByRole("heading", { name: "Browser copies", exact: true }).waitFor({ timeout: 5000 });
+  } finally { await context.close(); }
+}, 60_000);
+
+test("Chrome fails a page request when the worker throws outside request handling", async () => {
+  const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "worker-poll-profile-")), { channel: "chrome" });
+  try {
+    await context.addInitScript(watchDocuments, [copyDeadline, 30_000]);
+    const page = await context.newPage(); await page.goto(await imported());
+    const field = page.frameLocator("iframe").getByRole("textbox", { name: "Document title" });
+    await field.waitFor();
+    // A saved, idle copy has no timer left in its worker: the next poll belongs to a request.
+    await field.fill("Saved before the failure"); await field.press("Tab");
+    await page.waitForFunction(() => document.querySelector("#status")?.textContent === "Saved in this browser");
+    await wait(1500);
+    const frame = page.frames().find(frame => frame.url().includes(".localhost:"))!;
+    const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
+    await worker.evaluate(async () => {
+      const runtimeURL = "/browser/core/hitslop_core_wasm.js";
+      const runtime = await import(runtimeURL);
+      runtime.BrowserCopy.prototype.poll = function () { throw new Error("simulated poll failure"); };
+    });
+    await startWrites(frame);
+    const outcomes = await outcomesWithin(frame, 3, 5000);
+    for (const outcome of outcomes) { expect(outcome.ok).toBe(false); expect(outcome.code).toBe("unknown_outcome"); }
+    expect(await page.getByRole("alert").textContent()).toContain("The document worker stopped");
+    expect(await deadlines(page)).toEqual([]); expect(await deadlines(frame)).toEqual([]);
+  } finally { await context.close(); }
+}, 60_000);
+
+test("Chrome fails every page request for good when the document worker stops answering", async () => {
+  const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "worker-silence-profile-")), { channel: "chrome" });
+  try {
+    // The worker never reports anything, so only the page's own deadline can end the wait. The
+    // clock is paused, so only this test moves it and a loaded machine cannot eat into the deadline.
+    await context.clock.install({ time: 0 });
+    await context.clock.pauseAt(1000);
+    await context.addInitScript(watchDocuments, [copyDeadline, 30_000]);
+    const { frame, worker } = await stalledCopy(context);
+    await startWrites(frame);
+    await untilAsked(worker, 2);
+    await wait(200);
+    const sent = await asked(worker);
+    const waiting = await deadlines(frame);
+    // Just short of the deadline every write is still waiting; just past it, all have failed.
+    await context.clock.fastForward(copyDeadline - 1000);
+    expect(await frame.evaluate(() => (globalThis as any).__outcomes)).toEqual([]);
+    await context.clock.fastForward(2000);
+    const outcomes = await outcomesWithin(frame, 3, 5000);
+    expect(waiting).toEqual(sent.map(() => copyDeadline));
+    for (const outcome of outcomes) {
+      expect(outcome.ok).toBe(false); expect(outcome.code).toBe("unknown_outcome");
+      expect(outcome.message).toContain("did not respond");
+    }
+    // A timed-out write has an unknown outcome, so the whole connection fails and nothing is retried.
+    expect(await deadlines(frame)).toEqual([]);
+    await expectLaterRequestsFail(frame, worker, /did not respond/);
+    expect(await asked(worker)).toEqual(sent);
+  } finally { await context.close(); }
+}, 60_000);

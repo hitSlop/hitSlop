@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { levels } from "./schema";
+import schema, { levels } from "./schema";
 import { dig, newGame, toggleFlag } from "./game";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   newGame: {
     description: "Start a fresh hidden board at the given size, keeping wins, losses and best times.",
     args: { level: s.enum(levels, { description: "Board size: easy 6x6, medium 8x8, hard 10x10." }) },

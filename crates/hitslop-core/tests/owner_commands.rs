@@ -1,7 +1,7 @@
 //! Owner coordination across a deliberately delayed child. The actual restricted JS
 //! runtime is tested in hitslop-runner; here the oracle is state and lifecycle fencing.
 #![cfg(feature = "storage")]
-mod support;
+use crate::support;
 use hitslop_core::{
     Code, Origin, file,
     owner::{Failure, FailureKind, Owner, Reply, Request},

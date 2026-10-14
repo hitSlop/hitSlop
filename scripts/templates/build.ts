@@ -4,7 +4,6 @@ import { join, resolve, relative } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { discoverTemplates, templateInventory } from "./discover";
 import { sharedTemplateInputs, TemplateCache } from "./cache";
-import { debugHelper } from "../lib/native";
 import { publishFolder } from "../lib/artifacts";
 
 /** The template cache (`HITSLOP_TEMPLATE_CACHE_DIR`, or `.hitslop/template-cache`), keyed by
@@ -44,7 +43,7 @@ export async function buildTemplates(output = join(repository, "generated/templa
         if (slug !== template.slug) throw new Error(`slops/${template.slug} declares slug "${slug}"; rename the folder or the slug`);
         return destination;
       };
-      const build = () => buildTemplate(template.source, { env: { ...process.env, HITSLOP_NATIVE_CLI: debugHelper } }, named);
+      const build = () => buildTemplate(template.source, named);
       console.log(`Preparing template ${index + 1}/${templates.length}: ${template.slug}`);
       const status = await cache.build(template.source, template.slug, destination, build);
       if (status === "hit") hits++;

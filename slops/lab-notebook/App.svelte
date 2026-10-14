@@ -1,12 +1,14 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
   import Plus from "@lucide/svelte/icons/plus";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import Chart from "./Chart.svelte";
   import { addRow, kinds, notebookView, parseNumber, removeRow, setAxis, setChart, setTitle, updateRow, type Kind } from "./lab";
 
+  const doc = getDocument(schema);
   const data = $derived(doc.current);
   const view = $derived(notebookView(data));
   let stageWidth = $state(640);

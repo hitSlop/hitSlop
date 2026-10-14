@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
-const TIME: Duration = Duration::from_millis(WATCHDOG_MS);
 /// A host-configured child, never an in-process evaluator. Every call starts a
 /// fresh process and QuickJS realm; the host retains all document authority.
 #[derive(Clone, Debug)]
@@ -52,6 +51,10 @@ impl Drop for Running {
     }
 }
 impl Evaluator {
+    /// Host-owned executable, including the renderer and its bundled fonts.
+    pub fn executable_path(&self) -> &std::path::Path {
+        &self.executable
+    }
     pub fn new(executable: PathBuf, arguments: Vec<String>) -> Result<Self, String> {
         if !executable.is_absolute() {
             return Err("Evaluator path must be absolute".into());
@@ -60,6 +63,34 @@ impl Evaluator {
     }
     pub fn run(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
         let input = command_input(runtime_abi, bundle, request)?.into_bytes();
+        self.run_input(input, JobKind::Command)
+    }
+    /// A widget batch has its own bounded output; command limits remain unchanged.
+    pub fn widget(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
+        self.render(runtime_abi, bundle, request, JobKind::Widget)
+    }
+    pub fn capture(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
+        self.render(runtime_abi, bundle, request, JobKind::Capture)
+    }
+    pub fn pdf(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
+        self.render(runtime_abi, bundle, request, JobKind::Pdf)
+    }
+    fn render(&self, runtime_abi: u64, bundle: &str, request: &str, mode: JobKind) -> Result<String, String> {
+        let input = serde_json::to_vec(&Job {
+            runtime_abi,
+            bundle: Cow::Borrowed(bundle),
+            request: Cow::Borrowed(request),
+            mode,
+        })
+        .map_err(|e| e.to_string())?;
+        if input.len() > INPUT {
+            return Err("Capture input is too large".into());
+        }
+        self.run_input(input, mode)
+    }
+    fn run_input(&self, input: Vec<u8>, mode: JobKind) -> Result<String, String> {
+        let limits = mode.limits();
+        let output_limit = limits.output;
         let child = Command::new(&self.executable)
             .args(&self.arguments)
             .env_clear()
@@ -89,24 +120,46 @@ impl Evaluator {
                 .name("hitslop.command.output".into())
                 .spawn(move || {
                     let mut output = Vec::new();
-                    let result = stdout.take(OUTPUT as u64 + 1).read_to_end(&mut output);
+                    let result = stdout.take(output_limit as u64 + 1).read_to_end(&mut output);
                     let _ = sender.send((result, output));
                 })
                 .map_err(|e| format!("Cannot start command output worker: {e}"))?,
         );
-        let deadline = Instant::now() + TIME;
-        let result = match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-            Ok((result, bytes)) => result.map_err(|e| e.to_string()).and_then(|_| {
-                if bytes.len() > OUTPUT {
-                    Err("Command output is too large".into())
-                } else {
-                    String::from_utf8(bytes).map_err(|e| e.to_string())
-                }
-            }),
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                Err("Command runner stopped without a reply".into())
+        let deadline = Instant::now() + Duration::from_millis(limits.watchdog_ms);
+        let result = loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break Err(mode.timeout_message().into());
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => Err("Command execution timed out".into()),
+            let interval =
+                if limits.resident_bytes.is_some() { remaining.min(Duration::from_millis(25)) } else { remaining };
+            match receiver.recv_timeout(interval) {
+                Ok((result, bytes)) => {
+                    break result.map_err(|e| e.to_string()).and_then(|_| {
+                        if bytes.len() > output_limit {
+                            Err("Command output is too large".into())
+                        } else {
+                            String::from_utf8(bytes).map_err(|e| e.to_string())
+                        }
+                    });
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    break Err("Command runner stopped without a reply".into());
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) =>
+                {
+                    #[cfg(target_os = "macos")]
+                    if let Some(limit) = limits.resident_bytes {
+                        match resident_bytes(running.child.id()) {
+                            Ok(Some(bytes)) if bytes > limit => {
+                                break Err("Capture renderer exceeds 512 MiB resident memory".into());
+                            }
+                            Err(error) => break Err(error),
+                            _ => {}
+                        }
+                    }
+                }
+            }
         };
         // Even an evaluator that wrote a valid reply cannot stay running.
         let written = running.stop();
@@ -116,6 +169,24 @@ impl Evaluator {
         }
         result
     }
+}
+
+#[cfg(target_os = "macos")]
+fn resident_bytes(pid: u32) -> Result<Option<u64>, String> {
+    let mut info = std::mem::MaybeUninit::<libc::proc_taskinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_taskinfo>() as libc::c_int;
+    // SAFETY: this buffer has the exact size requested by PROC_PIDTASKINFO and is
+    // read only after the kernel confirms it filled the complete record.
+    let written = unsafe { libc::proc_pidinfo(pid as i32, libc::PROC_PIDTASKINFO, 0, info.as_mut_ptr().cast(), size) };
+    if written == size {
+        // SAFETY: proc_pidinfo initialized all size bytes above.
+        return Ok(Some(unsafe { info.assume_init() }.pti_resident_size));
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(None);
+    }
+    Err(format!("Cannot monitor capture renderer memory: {error}"))
 }
 
 /// The app process keeps SIGPIPE's default action, which ends it when a child exits before

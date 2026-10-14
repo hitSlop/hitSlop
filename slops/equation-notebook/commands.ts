@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { kinds } from "./schema";
+import schema, { kinds } from "./schema";
 import { addCell, setLatex, setNote, setParam, setPlot, setWindow } from "./notebook";
 
 const cell = s.string({ description: "The cell's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addCell: {
     description: "Append an equation, note or graph cell (or insert it after another cell) and return its $id.",
     args: {

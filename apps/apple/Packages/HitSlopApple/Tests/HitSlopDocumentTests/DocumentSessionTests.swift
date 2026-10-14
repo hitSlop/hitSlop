@@ -159,7 +159,7 @@ import WebKit
     }
     do {
       try await session.waitUntilReady()
-      #expect(session.canEditTheme)
+      #expect(session.acceptsPageWork)
       for step in 1...20 { session.changeTheme(.set(["accent": String(format: "#0000%02x", step)])) }
       try await session.flush()
       #expect(try await accent() == "#000014")
@@ -272,13 +272,13 @@ import WebKit
       let accepted = try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
       #expect(accepted as? Bool == resizable)
       #expect(resized == resizable)
-      // The acquisition barrier prevents a page resize until the source has been copied.
+      // Saved-source acquisition does not change live window eligibility.
       resized = false
       let duringCapture = try await session.withCapture {
         try await session.webView.callAsyncJavaScript(resize, arguments: [:], in: nil, contentWorld: .page)
       }
-      #expect(duringCapture as? Bool == false)
-      #expect(!resized)
+      #expect(duringCapture as? Bool == resizable)
+      #expect(resized == resizable)
       try await session.close()
     } catch {
       try? await session.close()
@@ -330,22 +330,7 @@ import WebKit
       #expect(!admits(.cameraAndMicrophone, session), "a combined request needs both declared")
       #expect(!admits(.camera, session, main: false), "embedded frames never capture")
       #expect(!admits(.camera, session, origins: app + [(protocol: "https", host: "example.com")]))
-      #expect(await session.withCapture { admits(.camera, session) } == false, "not while a capture reads the page")
-      // A background renderer of the same document runs the app but never captures.
-      let snapshot = try await DocumentSession.open(url: root, storage: .snapshot)
-      let hidden = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
-        defer: false)
-      hidden.moveOffScreen()
-      hidden.contentView = snapshot.webView
-      hidden.orderFront(nil)
-      snapshot.load()
-      try await snapshot.waitUntilReady()
-      #expect(snapshot.file.capabilities == [.camera])
-      #expect(!admits(.camera, snapshot), "snapshot, export and icon renderers never capture")
-      hidden.contentView = nil
-      hidden.orderOut(nil)
-      try await snapshot.close()
+      #expect(await session.withCapture { admits(.camera, session) }, "saved-source capture leaves live media eligible")
       try await session.close()
     } catch {
       try? await session.close()

@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addRow, kinds, removeRow, setAxis, setChart, setTitle, updateRow } from "./lab";
 
 const row = s.string({ description: "The row's $id." });
 const axis = s.enum(["x", "y"] as const, { description: "Which axis: x is horizontal, y is vertical." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setTitle: {
     description: "Set the figure's title (up to 60 characters).",
     args: { title: s.string() },

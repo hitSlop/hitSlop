@@ -1,10 +1,10 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { clearSessions, saveSession, setSustain, setThresholds } from "./meter";
 
 // Commands only edit document verbs. Listening needs the microphone and happens in the page.
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setThresholds: {
     description: "Set the levels (0-100) where the light turns amber and red; red must be at least 5 above amber.",
     args: { amber: s.integer(), red: s.integer() },

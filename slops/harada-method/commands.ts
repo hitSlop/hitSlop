@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { setAction, setDeadline, setDone, setGoal, setTheme } from "./chart";
 
 const themeIndex = s.integer({ min: 0, max: 7, description: "The theme's index: 0 (top left) to 7 (bottom right), skipping the centre." });
 const actionIndex = s.integer({ min: 0, max: 7, description: "The action's index within its theme, 0 to 7." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setGoal: {
     description: "Write the one core goal in the centre of the sheet. Returns nothing.",
     args: { text: s.string() },

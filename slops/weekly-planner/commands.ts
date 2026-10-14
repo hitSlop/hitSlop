@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { colors } from "./schema";
+import schema, { colors } from "./schema";
 import { addBlock, moveBlock, removeBlock, setBlockDone } from "./schedule";
 
 const dayArg = s.string({ description: "The day's name as shown on the board, such as MON." });
 const timeArg = s.string({ description: "Start as HH:MM on a 24-hour clock, or an empty string for an anytime block." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addBlock: {
     description: "Add a time block to a day and return its stable row ID.",
     args: {

@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { currencies, statuses } from "./schema";
+import schema, { currencies, statuses } from "./schema";
 import { addItem, removeItem, setCurrency, setStatus, setTaxPercent } from "./items";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addLine: {
     description: "Add an empty line item and return its stable row ID.",
     args: {},

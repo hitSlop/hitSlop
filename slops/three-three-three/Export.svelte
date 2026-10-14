@@ -1,10 +1,13 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { Value } from "hitslop";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { planView } from "./plan";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  type PlanTask = (typeof doc.current.shortTasks)[number];
+  type PlanTask = Value<typeof schema.descriptor>["shortTasks"][number];
 
-  const view = $derived(planView(doc.current));
+  const view = $derived(planView(snapshot));
 </script>
 
 <main class="plan-container">
@@ -14,7 +17,7 @@
     </div>
     <div class="header-main">
       <h1 class="plan-title">The 3-3-3 Plan</h1>
-      <p class="plan-date">{doc.current.date}</p>
+      <p class="plan-date">{snapshot.date}</p>
     </div>
   </header>
   <section class="section-card deep-work-card">
@@ -27,8 +30,8 @@
         </div>
       </div>
     </div>
-    <p class="project-input">{doc.current.deepWork.project}</p>
-    {#if doc.current.deepWork.notes.trim()}<p class="project-notes">{doc.current.deepWork.notes}</p>{/if}
+    <p class="project-input">{snapshot.deepWork.project}</p>
+    {#if snapshot.deepWork.notes.trim()}<p class="project-notes">{snapshot.deepWork.notes}</p>{/if}
   </section>
   <section class="section-card short-card">
     <div class="card-header">
@@ -39,7 +42,7 @@
       <span class="card-count">{view.shortDone}/3</span>
     </div>
     <ul class="task-list">
-      {#each doc.current.shortTasks as task, index (task.$id)}{@render taskLine(task, index)}{/each}
+      {#each snapshot.shortTasks as task, index (task.$id)}{@render taskLine(task, index)}{/each}
     </ul>
   </section>
   <section class="section-card maint-card">
@@ -51,7 +54,7 @@
       <span class="card-count">{view.maintDone}/3</span>
     </div>
     <ul class="task-list">
-      {#each doc.current.maintenance as task, index (task.$id)}{@render taskLine(task, index)}{/each}
+      {#each snapshot.maintenance as task, index (task.$id)}{@render taskLine(task, index)}{/each}
     </ul>
   </section>
 </main>

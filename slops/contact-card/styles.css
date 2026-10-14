@@ -434,9 +434,6 @@ textarea {
   color: var(--slop-ink);
   font-size: 11px;
 }
-html[data-slop-capture=static] [data-slop-export=hide] {
-  display: none !important;
-}
 html[data-slop-capture=static] .canvas {
   height: auto;
   min-height: 100vh;

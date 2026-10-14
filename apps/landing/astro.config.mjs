@@ -41,7 +41,7 @@ export default defineConfig({
             { label: "Manifest and windows", slug: "docs/guides/manifest-and-windows" },
             { label: "Style an app", slug: "docs/guides/styling" },
             { label: "PNG window skins", slug: "docs/guides/png-window-skins" },
-            { label: "Icons, previews, and exports", slug: "docs/guides/icons-and-exports" },
+            { label: "Icons, widgets, and exports", slug: "docs/guides/icons-and-exports" },
             { label: "Build and share", slug: "docs/guides/build-and-share" },
           ],
         },

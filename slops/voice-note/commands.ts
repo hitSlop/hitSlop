@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { refuse, s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addTypedNote, removeNote, renamePad, setLocale, setTranscript } from "./notes";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addNote: {
     description: "Add a typed note without a recording and return its stable row ID. Recordings are added through the page, or with `batch --attach` storing an attachment reference in `clip`.",
     args: {

@@ -1,20 +1,22 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { householdView, initials } from "./chores";
   import Wheel from "./Wheel.svelte";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const { totals, week, personById } = $derived(householdView(doc.current));
+  const { totals, week, personById } = $derived(householdView(snapshot));
 </script>
 
 <article class="door export" aria-label="Exported chore chart">
   <header class="head">
-    <h1 class="title">{doc.current.title || "Our place"}</h1>
+    <h1 class="title">{snapshot.title || "Our place"}</h1>
     <span class="week">Week {week}</span>
   </header>
   <section class="board">
-    <Wheel people={doc.current.people} {totals} />
+    <Wheel people={snapshot.people} {totals} />
     <ul class="people">
-      {#each doc.current.people as person, index (person.$id)}
+      {#each (preview ? (snapshot.people).slice(0, 4) : snapshot.people) as person, index (person.$id)}
         <li class="person">
           <span class="magnet" data-tone={person.tone}>{initials(person.name)}</span>
           <div class="pname"><strong>{person.name || "Unnamed"}</strong><span>{totals[index]?.done ?? 0}/{totals[index]?.assigned ?? 0} this week · <b>{person.score ?? 0}</b> all-time</span></div>
@@ -24,7 +26,7 @@
   </section>
   <section class="chores">
     <ul class="notes">
-      {#each doc.current.chores as chore (chore.$id)}
+      {#each (preview ? (snapshot.chores).slice(0, 5) : snapshot.chores) as chore (chore.$id)}
         {@const owner = personById(chore.assignee)}
         <li class="note" data-done={chore.done}>
           <span class="pin" aria-hidden="true"></span>
@@ -43,7 +45,7 @@
       {/each}
     </ul>
   </section>
-  {#if doc.current.rules.trim()}
-    <aside class="rules"><span class="pin" aria-hidden="true"></span><p>{doc.current.rules}</p></aside>
+  {#if snapshot.rules.trim()}
+    <aside class="rules"><span class="pin" aria-hidden="true"></span><p>{snapshot.rules}</p></aside>
   {/if}
 </article>

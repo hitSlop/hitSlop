@@ -15,7 +15,8 @@ page (WebKit) ── requests ──▶ Swift DocumentOwner façade ──▶ Ru
 
 slop ── slop-engine ── Rust command router ──▶ same Rust owner
                          live: owner's socket; closed: acquire writer lock
-                     └── hitslop-native: open windows / render saved-state exports and artwork
+                     ├── closed export, a build's artwork ──▶ restricted evaluator renders
+                     └── open ──▶ LaunchServices ──▶ hitSlop.app
 ```
 
 Descriptor kinds: text (merging); boolean, string, number, integer and enum (last
@@ -48,25 +49,30 @@ callback on its output. A full output queue or a stalled reader fails the dispos
 session, fences the page and attempts a bounded close; the browser must reload rather
 than replay an edit with an unknown outcome.
 
-Native operations keep a separate process boundary: the typed TypeScript CLI invokes
-`slop-engine`, which validates and forwards macOS requests to `hitslop-native`. The
-Swift helper receives Rust-decoded requests through UniFFI and supplies AppKit/WebKit
-rendering; exports route through the Rust command router to a live owner or an independent
-saved-state render. Replies return as structured JSON. The restricted command evaluator's
-short execution budget does not govern WebKit rendering.
+The typed TypeScript CLI invokes `slop-engine` as a separate process, once per request,
+and gets structured JSON back. On macOS and Linux, a closed document's export and the artwork a
+build packs render inside the engine, in its restricted evaluator, with no app involved;
+an open document's export routes through the Rust command router to its live owner.
+`open` is the one request that starts hitSlop.app: the engine asks LaunchServices to open
+the document in it. The restricted command evaluator's short execution budget is
+separate from capture budgets.
 
 Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
-in `App.svelte`. Optional `Export.svelte`, `Icon.svelte` and agent-only `commands.ts` have
-fixed root roles. Two disconnected Vite graphs share resolution: the page imports the
+in `App.svelte`. Required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and agent-only `commands.ts` have
+fixed root roles. The UI and definition graphs share resolution: the page imports the
 schema and components, while the definition imports metadata, schema and commands.
-Neither graph rewrites command bodies or substitutes component tokens. The restricted
+A private capture graph compiles synchronous Svelte SSR for every Preview.svelte,
+Icon.svelte, declared Export.svelte and Widget.svelte role. It includes the UI graph's imported stylesheets in import order, then each
+closure's own imports and component CSS, without copying other components' scoped styles. Takumi uses tolerant CSS
+parsing, so unsupported declarations do not refuse a whole shared stylesheet.
+The graphs do not rewrite command bodies or substitute component tokens. The restricted
 definition evaluator returns a declaration for `BuildInput`. Rust checks that input and the explicit resource inventory before
 packing. Imported images, fonts and CSS URLs become content-addressed media resources;
 unimported files and `public/` are never copied.
 
 The immutable `app` row contains catalog columns, compatibility markers and one
 `definition_json`: the window, ordered theme, original document descriptor, views and
-command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`
+command descriptors. `assets` contains `ui.js`, optional `ui.css`, private `commands.js`, `widget.js`, `icon.js`, `preview.js` and `export.js`,
 and media. Pack inserts assets before the app row, whose presence seals them. Attachments
 and artwork have their own mutable lifecycles. Initial values seed the history's first snapshot; the authored schema module also includes
 those creation defaults. There is no JSON mirror of saved document state.
@@ -86,7 +92,9 @@ Rust owns wire types, errors, limits and app metadata. ts-rs generates TypeScrip
 UniFFI carries typed app definitions, summaries, window geometry and host actions to
 Swift. Swift never decodes the app definition, theme or page-message JSON. Rust decodes a page
 request once, applies its lifecycle fence, answers document requests, or returns a
-native host action. Document JSON remains opaque text through the bridge. TypeBox,
+native host action. The development preview supplies an already typed request through
+`page_typed`, which checks the same bounds and owner view fence without a JSON round trip.
+Document JSON remains opaque text through the bridge. TypeBox,
 quicktype, handwritten contract generators and production JSON Schema validators are gone.
 
 Agent commands through `slop call` send a name and arguments to the owner. Rust
@@ -103,9 +111,8 @@ hash on first touch. Compressed app assets share a bounded decoded cache. Rust p
 browser and preview resource adapters, which retain their transport and origin checks. Script sources are restricted to shell and app-asset paths;
 attachment and command-program paths cannot become script sources.
 
-The CLI's engine forwards to a live owner or acquires the writer lock. Native exports,
-windows and artwork use the app helper. Their command protocol is exact, with no old
-CLI adapters. Owner socket operations carry `{protocol, request}` around the engine
+The CLI's engine forwards to a live owner or acquires the writer lock. Its command
+protocol is exact, with no old CLI adapters. Owner socket operations carry `{protocol, request}` around the engine
 request type and return the same typed successes and failures. Protocol refusal precedes
 payload interpretation; hello preflight and transport limits still apply. Stored `packageFormat`, `runtimeABI`, SQLite storage version and Loro layout
 remain independent; [compatibility](engineering-contract.md#compatibility) and the
@@ -118,8 +125,8 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 | Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
 | File | `crates/hitslop-core/src/file/` (feature `storage`, native and browser) | The `.slop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
 | Storage | `crates/hitslop-core/src/store/`, `registry.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
-| Engine | `crates/slop-engine` | Authoring validation and packing; document creation, inspection, and requests on macOS and Linux |
-| Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations and stored commands; ABI-specific preludes, sandbox and execution limits |
+| Engine | `crates/slop-engine` | Authoring validation and packing, including artwork rendering on macOS and Linux; document creation, inspection and requests; closed PNG/PDF export on both platforms and macOS app opening through `/usr/bin/open -a` |
+| Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations, stored commands and native image capture; ABI-specific preludes, sandbox and execution limits |
 | Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
 | Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
 | Sync | `crates/hitslop-core/src/sync/`, `owner/actor/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
@@ -219,7 +226,9 @@ session's own Loro peer, and Loro's `UndoManager` undoes that peer's steps: an u
 reverses only the step's own operations (the palette with the data) and is rebased over
 changes made since by anyone else, which it keeps. A document opens with nothing to
 undo; the core keeps up to 100 steps per open document. A restored row keeps its `$id`.
-There are no JSON snapshots or persistent undo records.
+There are no JSON snapshots or persistent undo records. The step limit is not a memory
+budget: a grouped step can contain many edits, and dropping an undo step does not remove
+its operations from the live Loro document.
 
 - **Steps.** Each page batch is a step. A typing run is one step: consecutive text edits
   to one field, each starting at the caret the last one left. Consecutive agent batches
@@ -278,19 +287,28 @@ The UUID names the logical document, not its writer or its inode-based lease. Op
 save, rename, capture snapshots and internal backups preserve it; explicit Duplicate
 and independent editable copies receive a new UUID. Templates have no UUID. The core
 keeps this identity outside authored state; it is never a Loro peer ID.
-A history that does not start with a snapshot is
-refused and preserved for recovery. A checkpoint (one snapshot) replaces the history at 256
-updates or 4 MiB; the limits are 4,096 updates and 32 MiB. Shared storage limits are defined in
+A history that does not start with a snapshot is refused and preserved for recovery.
+Saving prefers a checkpoint (one snapshot replacing the saved log) once the log reaches
+256 saved updates or 4 MiB of update bytes. A regular snapshot retains history; a shallow
+snapshot discards history before its starting version. The limits are 4,096 saved updates
+and 32 MiB of saved Loro checkpoint and update bytes, not the whole `.slop` file: the app,
+attachments and artwork are separate. Shared storage limits are defined in
 [`wire/limits.rs`](../crates/hitslop-core/src/wire/limits.rs) and projected into host types.
 
-History is trimmed when nothing is editing. After its final save, a session that edited
-a document larger than 4 MiB writes one more checkpoint (`Store::close_job`) that keeps
-no history: undo covers the open session only, so nothing reads it later. While open, a
-checkpoint keeps the whole history when it fits the 32 MiB limit and the current state
-otherwise; the live document keeps its own history either way, so the session's undo
-still works. There is no live history rebuild: a long, heavy session's memory grows until
-it closes. There is no public live-compaction command. Only the checkpoint may
-start history late. Files
+Unshared documents need no lifetime edit history: undo covers the open session only.
+After its final save, a session that saved an edit or stored an attachment to an unshared
+document with more than 4 MiB of saved Loro data attempts one more checkpoint
+(`Store::close_job`) that keeps only current state, when that would shrink the saved data.
+This pruning is best-effort housekeeping: failure does not prevent closing after the
+final save succeeded. A session that only reads does not prune.
+
+While open, an unshared document's checkpoint keeps the whole history when it fits the
+32 MiB limit and only current state otherwise. If neither a checkpoint nor an append fits,
+saving fails and ownership is retained for retry. The live document keeps its own history
+either way, so the session's undo still works. There is no live history rebuild: a long,
+heavy session's memory can grow until it closes. This retention policy is intentional;
+live compaction remains deferred, and there is no public live-compaction command. Only
+the checkpoint may start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
 loads, and the core is the only code that opens a `.slop` file.
@@ -342,12 +360,39 @@ a file without artwork shows the `.slop` document icon.
 The page barrier sends unsent text, waits for queued writes and attachment imports, then
 flushes; it never joins a flush that already passed its drain point. Inputs stay
 enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
-fresh read-only pages from saved state. For an open document, the core first backs up
+saved state independently of the editor. For an open document, the core first backs up
 SQLite after the page drain and save; the temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
-WebKit rendering. A dedicated `export` view hides the editor before layout; without
-one, a fresh `view` renders its default local UI state. Capture never changes the open
+rendering. Icons, preview artwork, widgets, PNG exports and vector PDFs use synchronous Svelte SSR
+and Takumi in the restricted Rust child; there is no renderer choice, fallback or `slop.ts`
+override. The interactive editor continues to use WebKit.
+`Preview.svelte` and `Icon.svelte` are required when authoring; `Export.svelte` is optional.
+Preview supplies a compact overview for Quick Look and the catalog. Export supplies complete
+PNG/PDF output; without it, image/PDF share/save actions are hidden and CLI export is refused.
+Stored-file acceptance remains separate.
+Missing programs fail capture with a rebuild diagnostic. Rust owns output formats
+through one `CaptureOutput` type; Swift consumes an already saved source, leaving
+acquisition and publication at their existing boundaries.
+Native callers reuse a Rust `CaptureRuntime` for evaluator configuration. A Rust batch
+loads one saved document and lazily prepares its snapshot, theme and image resources once
+for its requested outputs, reporting each result independently. One failed output does not
+discard the others. Close requests artwork and eligible widgets in the same batch.
+Each output still starts a fresh restricted child, using shared QuickJS realm setup,
+a typed job envelope and explicit command, definition, widget, PNG and PDF budgets.
+Parent and child share render replies and typed failure serialization; the parent
+validates reply combinations. Job payloads still carry serialized request JSON.
+Image attachments resolve synchronously from a bounded immutable resource inventory;
+only PNG/JPEG/GIF/WebP bytes referenced by saved state enter the child, with no network or filesystem
+access. Imports, reads and writes are unavailable to capture components.
+PNG and PDF share layout, fonts and resources. PDF is one content-sized vector page,
+with selectable text and uniform scaling to 14,400 points per side through upstream viewport DPR.
+Takumi and its experimental PDF crate use one pinned Git revision; no local source fork
+or spike supplies production code. Distribution notices live in
+`crates/hitslop-runner/renderer-licenses`. Capture never changes the open
 editor's focus, selection, scroll, frame or selected tab.
+Source acquisition preserves speech, media access, file selection, downloads and resize
+eligibility. Its native queue still coordinates close, discard, reload and reopen.
+Close preparation, page replacement and renderer loss cancel pending transcription.
 
 If the session changed the document, or the file has no preview, close captures its
 preview and optional icon from that saved source. The owner writes successful artwork
@@ -367,20 +412,85 @@ An attachment import stores the blob, then submits its reference through a
 collector admitted past an active barrier. A collector that throws, or an edit the core
 refuses, leaves the blob unreferenced until the document closes.
 
+## macOS image widgets
+
+An optional embedded `Widget.svelte` renders small, medium and large PNGs from one
+saved snapshot, with family and viewport props and the document's effective theme.
+It never falls back to an export or preview. A private synchronous Svelte bundle runs in
+QuickJS, then Takumi renders all three canvases in the same restricted child. The owner
+supplies one saved source; authored execution and rasterization never run in the owner
+or WidgetKit extension. The renderer uses portable default fonts and color emoji;
+packaged @font-face fonts are registered with their authored family aliases per batch.
+It does not discover system fonts or fetch remote resources. Each batch retains the
+3-second process watchdog and CPU limit, a 256 MiB QuickJS heap and an 8 MiB reply cap.
+Linux additionally limits address space to 2 GiB; on macOS the parent samples resident
+memory and terminates a widget child above 512 MiB. This is a polling threshold, not a
+hard allocation ceiling.
+
+Successful saves coalesce for one second before capturing; opening a document with
+missing cache also schedules capture. Closing an eligible document after edits or with
+missing cached images publishes the three images into a disposable App Group cache.
+The running app watches cached source files, including saves made by a closed CLI
+owner. Events coalesce before comparing a core-produced freshness fingerprint
+with the version that produced the image. It combines the saved Loro version, the
+installed evaluator's bytes (including Takumi and bundled fonts), provider identity, and widget canvases
+and scale. Startup and reopen perform the same check, even without a refresh interval.
+Updating the renderer refreshes unchanged documents; artwork-only writes do not.
+The evaluator digest is computed off the main thread and cached against file identity,
+size and modification/change times. An evaluator changed during capture cannot publish.
+The fingerprint travels with the rendered snapshot, so a newer save cannot be marked
+fresh by an older capture. Watching starts with a version recheck to cover saves made
+while the first capture was running.
+The owner still controls the close barrier and document artwork. A widget capture or
+cache failure keeps the previous generation and does not become a save failure. Older
+cache tokens are simply stale: the previous images stay visible until replacement
+succeeds. This disposable cache policy does not change the document format.
+
+One configurable WidgetKit extension offers the three sizes. Its AppIntents `Document`
+parameter lists successfully captured documents. The extension reads presentation
+records and PNGs only. The app and extension compile the shared intent source directly
+so each bundle owns resolvable AppIntents metadata; the app passes active document IDs
+to the publisher. Swift owns the disposable cache format and image bounds; the
+extension does not link the document core. Rust owns stored declarations, capture
+viewports and scheduling bounds, carried to the host through UniFFI. Immutable generation folders precede an
+atomic record replacement; a late older capture cannot replace newer images. The cache
+retains the current and previous generation. Readers own image bytes and retry an
+expired pointer. App-side maintenance prunes confirmed missing/replaced files while
+retaining cached images when their source is temporarily unavailable.
+
+Each choice has a host-minted ID and bookmark, with local file identity checked on
+resolution. Copies get different choices even when their content matches. A
+`hitslop://widget/<id>` URL resolves the source and routes through the existing document
+coordinator, which focuses an open document. Unavailable files report a native error.
+
+`widget.refreshMinutes` requests approximate capture intervals of 15–1440 minutes.
+The running Mac app queries active WidgetKit configurations, deduplicates document IDs,
+and serializes due captures using a tolerant background activity. Close captures bypass
+that queue and do not rewrite document artwork when only widget images are missing. It skips missed
+intervals after sleep. Open documents use the owner save/copy barrier; closed ones use
+the read-only snapshot path. Quitting stops captures and file watchers and leaves cached images. WidgetKit
+controls visible reload timing. The `slop dev` composition selector previews all three families with HMR. iOS
+background capture remains follow-up work. See the [platform spike evidence](evidence/widget-images-2026-10-11.md).
+
 ## CLI
 
 `slop` is the user-facing CLI. Its private engine accepts one Rust-owned `EngineRequest`
 on bounded standard input and returns one method-specific `EngineReply`. Authoring,
 catalog, inspection, named commands and owner operations share this JSON boundary.
 `crates/hitslop-core/src/wire/engine.rs` defines the serde types and explicit checks;
-ts-rs exports the CLI's TypeScript. The engine forwards open, screenshot and export JSON
-to `hitslop-native`. Rust decodes its `NativeRequest` subset once and passes the request
-to Swift through UniFFI, rejecting document edits before starting AppKit. Exports still use
-the Rust command router, so the live owner or a closed document's renderer handles them.
-Screenshot output may replace an existing regular PNG, but refuses documents, links and
-destinations changed during rendering. New screenshot destinations are created exclusively.
+ts-rs exports the CLI's TypeScript. The engine renders for itself. `export` of a closed
+document on macOS or Linux draws a read-only snapshot of its saved state in the
+engine's restricted evaluator, without the app or a lock. It refuses a template and an
+existing output of any kind (`rejected`, reason `exists`) before rendering, stages the
+result beside the destination, publishes it without replacing anything, and discards one
+that finishes after the 30-second command deadline. When the CLI asks, as it does on
+macOS and Linux, `pack` renders the Preview and Icon artwork a project does not supply in the same
+request that writes the template, so a failed render publishes nothing. Only `open` starts
+hitSlop.app (macOS only): it refuses a template, then has LaunchServices (`open -a`) open
+the document in the app that contains the running engine, else the one `HITSLOP_APP`
+names, else `/Applications` or `~/Applications`.
 
-Both executables check the frozen first-position `--client-protocol N` before other
+The engine checks the frozen first-position `--client-protocol N` before other
 arguments or stdin: mismatches exit 2 with one stderr line. Identity queries remain
 flags, and the engine's exact standalone `--evaluate-command` starts its restricted
 child. All handled requests return JSON and exit 0, including classified failures.
@@ -392,10 +502,9 @@ mismatch kills the process, denied calls return `EPERM`, and installation sets
 
 An open document routes through its owner's socket, which lives as long as the owner,
 not the page. Commands never blur a field being typed in; a live `get` returns
-owner-accepted state. For a closed document, the engine takes the writer lock and runs
-the same owner in-process, without WebKit or authored code. Closed exports use a
-read-only saved-state renderer. Socket work runs off the main actor; edit payloads
-remain JSON text until the core parses them.
+owner-accepted state. For a closed document, the engine takes the writer lock (an export
+takes none) and runs the same owner in-process, without WebKit or authored code. Socket
+work runs off the main actor; edit payloads remain JSON text until the core parses them.
 
 Generic edits print `{ids}` after saving and are never replayed automatically. The socket has
 one edit method, `batch`, for data and palette alike; CLI `apply` wraps one operation.
@@ -404,7 +513,7 @@ descriptor and declared colors, and the document's version, value and effective 
 The page's state adds the publication `sequence`, which orders its stream and means
 nothing to an agent. The CLI prints `value` by default and the whole object with
 `get --snapshot`. Engine selection and protocol negotiation
-are detailed in the [CLI reference](guides/cli.md#helper-discovery-and-identity).
+are detailed in the [CLI reference](guides/cli.md#engine-discovery-and-identity).
 
 ## Themes and attachments
 
@@ -490,8 +599,9 @@ Accepted limits, chosen for mini apps over heavier machinery:
   [storage layout](reference/document-types.md#storage-layout).
 - **Counters** are Loro counters, exact until a counter's increments, summed as absolute
   values, reach about 9×10^15.
-- **Live history** grows through a long session; nothing compacts it while the document is
-  open. An unshared document trims at close.
+- **Live history** can grow through a long session despite the undo step limit and saved
+  data limits. Live compaction remains deferred; unshared documents attempt pruning on
+  close under the size and edit conditions above.
 - **Undo** starts over for the session if a live batch is refused after rehearsal
   admitted it, which a rehearsed batch should never be ([undo](#undo)).
 - **A shared document** never trims, so the 32 MiB save limit bounds it. Before sharing

@@ -52,8 +52,9 @@ and the pulse. The flipbook only plays when asked.
 
 ## View state (local, not in the document)
 The selected day, mode (view, camera, flipbook), camera phase, chosen camera, Ghost on/off, flipbook position,
-speed and pause. The export cannot see them: it shows the newest frame large and the most recent 48 frames
-as a contact sheet (8 in the Quick Look preview), with "and N earlier frames" beyond that.
+speed and pause. Captures cannot see them: the export shows the newest frame large and every frame
+as a contact sheet. `Preview.svelte` selects the most recent 8 frames for Quick Look,
+with "and N earlier frames" beyond that.
 
 ## Size
 Built `dist/daily-frame.slop`: about 360 KB, of which 235 KB is the two fonts; `ui.js` is 230 KB

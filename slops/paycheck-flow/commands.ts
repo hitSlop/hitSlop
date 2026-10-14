@@ -1,6 +1,6 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { currencies, tones } from "./money";
 import { addIncome, addSpending, removeRow, setCurrency, setMonth, updateRow } from "./plan";
 
@@ -8,7 +8,7 @@ const amountMinor = (description: string) =>
   s.integer({ min: 0, description: `${description} In minor units: cents, or whole yen for JPY.` });
 const row = s.string({ description: "The income or spending row's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setMonth: {
     description: "Set the month named at the top of the plan (up to 24 characters).",
     args: { month: s.string() },

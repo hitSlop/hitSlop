@@ -1,21 +1,22 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { isRefused } from "hitslop";
-  import { bindText } from "hitslop/svelte";
+  import { isRefused, type Value } from "hitslop";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Tabs, Checkbox, Dialog, Select } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import Check from "@lucide/svelte/icons/check";
   import ArrowUpRight from "@lucide/svelte/icons/arrow-up-right";
-  import doc from "./schema";
+  import schema from "./schema";
   import {
     addAssignment, removeAssignment, setCompleted, setDueDate, todayISO, relativeDue, trackerView,
     updateAssignment, msUntilNextDay,
   } from "./due";
   import DuePicker from "./DuePicker.svelte";
-  type Assignment = (typeof doc.current.assignments)[number];
+  const doc = getDocument(schema);
+  type Assignment = Value<typeof schema.descriptor>["assignments"][number];
   let filter = $state("todo");
   let day = $state(todayISO());
   $effect(() => {

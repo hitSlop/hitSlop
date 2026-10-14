@@ -99,18 +99,28 @@ document or the host; drive it through its own `postMessage` API.
 A slop's page has no web origin, and YouTube's player refuses to play without one
 (error 153, or 150 from `slop dev`). Use `hitslop/embed`, which plays videos
 through a relay page on hitslop.com. You don't run a server, and the relay never sees which
-video is playing.
+video is playing. `hitslop/youtube` holds the URL builders.
 
 ```ts
 import { youtube } from "hitslop/embed";
+import { src } from "hitslop/youtube";
 
-const id = youtube.findId(pastedText);              // null unless it holds a YouTube link
+const id = youtube.findId(pastedText); // null unless it holds a YouTube link
+if (!id) throw new Error("Paste a YouTube link.");
 const { title, author } = await youtube.lookup(id); // rejects with a LookupError if it can't be embedded
-// <iframe bind:this={frame} src={youtube.src(id, { controls: false })}
+// <iframe bind:this={frame} src={src(id, { controls: false })}
 //         allow="autoplay; encrypted-media" title="Player"></iframe>
 const player = youtube.player(frame, { onState, onTime, onEnded, onError });
-player.play(); player.seek(30); player.setVolume(0.5); player.dispose();
+player.play();
+player.seek(30);
+player.setVolume(0.5);
+player.dispose();
 ```
 
-`youtube.thumbnail(id)` is an image URL. Playback needs the network; `onError(-1)` means
-the relay never answered. Pass `relay` to `youtube.src` to host the relay page yourself.
+`hitslop/youtube` exports `thumbnail(id)`, `src(id, options)`, `defaultRelay` and `idShape`
+without browser APIs; static views may import it, including Widget. These helpers only
+build or validate strings: native capture cannot load a remote thumbnail. Keep an image
+as an attachment in the editor and pass its saved ID to `attachmentURL` in the static
+view. Static views may not import `hitslop/embed`, which owns `youtube.parseId`,
+`findId`, `lookup`, `player` and `LookupError`. Playback needs the network; `onError(-1)`
+means the relay never answered. Pass `relay` to `src` to host the relay page yourself.

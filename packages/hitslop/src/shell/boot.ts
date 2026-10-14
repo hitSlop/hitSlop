@@ -4,7 +4,6 @@ import { createContext as abi1 } from "./abi/1";
 import { ownerAttachments } from "./attachments";
 import { ownerSpeech } from "./speech";
 import { call, hasBrowserBridge } from "./bridge";
-import { createCaptureController } from "./capture";
 import { OwnerDocument as Document } from "./owner/document";
 import { nativeTransport } from "./owner/transport";
 import { installPresentationStage, presentationStage } from "./presentation";
@@ -16,7 +15,7 @@ import { checkedApp } from "./app-module";
 import { isDocumentError } from "../sdk/errors";
 import type {} from "./page-handle";
 import { hostDispatcher } from "./host-dispatch";
-import { ErrorTextLimit, RuntimeABI } from "../schema/constants";
+import { ErrorTextLimit, type RuntimeABI } from "../schema/constants";
 import { preview } from "./preview";
 
 const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop) || hasBrowserBridge();
@@ -30,7 +29,7 @@ const report = (native: boolean, kind: "application" | "operation", error: unkno
 async function openDocument(native: boolean) {
   const config = await call({ method: "config" });
   const descriptor = config.descriptor as ObjectNode;
-  const transport = nativeTransport(config.readOnly);
+  const transport = nativeTransport();
   // Boot owns the host entry point. Register it before opening the document; open
   // installs the receiver synchronously before requesting its initial snapshot.
   const page = { publish: transport.publish };
@@ -119,14 +118,12 @@ export async function boot() {
   }
   installPresentationStage(presentationStage(config.window));
   const view = checkedApp(await app, config.descriptor);
-  const capture = createCaptureController();
   const reportError = (error: unknown) => {
     globalThis.document.dispatchEvent(new CustomEvent("slop:render-error", { detail: error }));
     report(native, "application", error);
   };
   const ctx = contextFor(config.runtimeABI)(doc as Document<ObjectNode>, {
     attachments,
-    capture,
     speech: ownerSpeech(),
     resize: async (size) => {
       if (native) await call({ method: "window.resize", ...size });
@@ -145,6 +142,7 @@ export async function boot() {
     target,
     recovered: native ? () => call({ method: "pageRecovered" }) : undefined,
   });
-  Object.assign(globalThis.__slop!, lifecycle, { capture });
+  Object.assign(globalThis.__slop!, lifecycle);
   if (native) await call({ method: "ready" });
+  preview.host?.ready?.();
 }

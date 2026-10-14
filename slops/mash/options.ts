@@ -1,10 +1,10 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { slots } from "./schema";
 import { maxOptions, play, slotLabel, type Slot } from "./fate";
 
-export type Mash = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Mash = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /** The page, the future card and the export derive their blocks and fate from the same snapshot. */
 export function mashView(data: Mash) {

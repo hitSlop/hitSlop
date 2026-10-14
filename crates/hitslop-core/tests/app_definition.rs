@@ -11,7 +11,7 @@ fn definition() -> Value {
         "window":{"kind":"standard","width":320,"height":240},
         "document":{"kind":"object","properties":{"title":{"kind":"string","minLength":1,"description":"Document title"}}},
         "theme":[{"token":"zinc","color":"#777777"},{"token":"accent","color":"#123456"}],
-        "views":{"export":true,"icon":false},
+        "views":{"preview":true,"export":true,"icon":true},
         "commands":[{"name":"rename","description":"Rename the document","args":{
             "kind":"object","properties":{"title":{"kind":"string","minLength":1}}
         }}]
@@ -30,7 +30,8 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
     let app = read(&metadata(), &definition()).unwrap();
     assert_eq!(app.theme().iter().map(|t| t.token.as_str()).collect::<Vec<_>>(), ["zinc", "accent"]);
     assert!(app.views().export);
-    assert!(!app.views().icon);
+    assert!(app.views().preview);
+    assert!(app.views().icon);
     assert_eq!((app.window().width, app.window().height), (320, 240));
     assert!(matches!(
         app.window().frame,
@@ -43,6 +44,42 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
     let reopened = Document::open(reread.spec(), &document.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(document.state().unwrap(), reopened.state().unwrap());
     assert_eq!(app.definition_json(), reread.definition_json());
+}
+
+#[test]
+fn widget_role_and_refresh_policy_survive_pack_and_reopen() {
+    assert!(read(&metadata(), &definition()).unwrap().views().widget.is_none());
+    for options in [json!({}), json!({"refreshMinutes":15}), json!({"refreshMinutes":1440})] {
+        let mut value = definition();
+        value["views"]["widget"] = options.clone();
+        value["metadata"] = metadata();
+        value["initial"] = json!({"title":"Initial"});
+        let declaration: BuildDeclaration = serde_json::from_value(value).unwrap();
+        let app = AppDefinition::from_declaration(&declaration, None).unwrap();
+        let reopened = AppDefinition::decode(1, 1, &metadata().to_string(), &app.definition_json()).unwrap();
+        assert_eq!(serde_json::to_value(reopened.views().widget).unwrap(), options);
+    }
+    for bad in [
+        json!(true),
+        json!(null),
+        json!({"refreshMinutes":15.5}),
+        json!({"refreshMinutes":null}),
+        json!({"unknown":30}),
+    ] {
+        let mut value = definition();
+        value["views"]["widget"] = bad.clone();
+        assert!(read(&metadata(), &value).is_err(), "{bad}");
+    }
+    for minutes in [0, 14, 1441, u32::MAX] {
+        let mut value = definition();
+        value["views"]["widget"] = json!({"refreshMinutes": minutes});
+        let opened = read(&metadata(), &value).expect("host scheduling policy must not reject stored documents");
+        assert_eq!(opened.views().widget.unwrap().refresh_minutes, Some(minutes));
+        value["metadata"] = metadata();
+        value["initial"] = json!({"title":"Initial"});
+        let declaration: BuildDeclaration = serde_json::from_value(value).unwrap();
+        assert!(AppDefinition::from_declaration(&declaration, None).is_err());
+    }
 }
 
 #[test]

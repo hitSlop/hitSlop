@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addTask, fileFinished, restoreTask } from "./tasks";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addTask: {
     description: "Add an unfinished task and return its stable row ID.",
     args: { text: s.string() },

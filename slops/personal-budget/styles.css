@@ -509,9 +509,6 @@ ul {
   color: var(--slop-orange);
   overflow-wrap: anywhere;
 }
-html[data-slop-capture=static] [data-slop-export=hide] {
-  display: none !important;
-}
 html[data-slop-capture=static] .canvas {
   height: auto;
   min-height: 100%;

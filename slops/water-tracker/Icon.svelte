@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { intakeView } from "./intake";
 
-  const percent = $derived(intakeView(doc.current).percent);
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const percent = $derived(intakeView(snapshot).percent);
   const iconFill = $derived(Math.max(18, Math.min(86, percent)));
 </script>
 

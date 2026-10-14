@@ -1,6 +1,6 @@
 <script lang="ts">
 import TitleBar from "./TitleBar.svelte";
-import { youtube } from "hitslop/embed";
+import { thumbnail } from "hitslop/youtube";
 import type { Video } from "./pod";
 
 let { video, playing, paused, held }: { video: Video | undefined; playing?: boolean; paused?: boolean; held?: boolean } = $props();
@@ -10,7 +10,7 @@ let { video, playing, paused, held }: { video: Video | undefined; playing?: bool
   <TitleBar title="Remove Video" {playing} {paused} {held} />
   <div class="pod-remove-body">
     {#if video}
-      <img src={youtube.thumbnail(video.youtubeId)} alt="" draggable="false" />
+      <img src={thumbnail(video.youtubeId)} alt="" draggable="false" />
       <p class="pod-remove-title">Remove “{video.title}”?</p>
       <p class="pod-add-hint">Press ● to remove it. Press MENU to keep it.</p>
     {:else}

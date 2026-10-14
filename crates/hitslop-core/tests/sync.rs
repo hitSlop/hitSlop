@@ -1,7 +1,7 @@
 //! Sync through a relay (plans/sync-simplification.md §7). Replicas run the real session
 //! and every frame crosses the binary codec; the relay (`support::relay`) keeps the
 //! Durable Object's rules over memory. The relay's own codec is tested against `sync-frames.json`.
-mod support;
+use crate::support;
 use hitslop_core::Document;
 use hitslop_core::Origin;
 use hitslop_core::sync::{Ack, Frame, Permission, Record, Session, Span, Status, Version};

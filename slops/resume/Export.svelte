@@ -1,12 +1,15 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import { previewText } from "../_shared/preview";
+  import type schema from "./schema";
   import Globe from "@lucide/svelte/icons/globe";
   import Mail from "@lucide/svelte/icons/mail";
   import MapPin from "@lucide/svelte/icons/map-pin";
   import { resumeView } from "./entries";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const data = $derived(doc.current);
-  const { initials, printed: { skills, education, experience } } = $derived(resumeView(doc.current));
+  const data = $derived(snapshot);
+  const { initials, printed: { skills, education, experience } } = $derived(resumeView(snapshot));
 </script>
 
 <article class="resume" aria-label="Exported resume for {data.name}">
@@ -24,7 +27,7 @@
       <section class="skillsBlock" aria-label="Skills">
         <h2 class="heading">Skills</h2>
         <div class="skills">
-          {#each skills as skill (skill.$id)}
+          {#each (preview ? (skills).slice(0, 8) : skills) as skill (skill.$id)}
             <span class="skill"><span>{skill.label}</span></span>
           {/each}
         </div>
@@ -35,7 +38,7 @@
       <section class="educationBlock" aria-label="Education">
         <h2 class="heading">Education</h2>
         <div class="educationList">
-          {#each education as item (item.$id)}
+          {#each (preview ? (education).slice(0, 2) : education) as item (item.$id)}
             <div class="educationItem">
               <strong class="educationSchool">{item.school}</strong>
               {#if item.program.trim()}<span class="field">{item.program}</span>{/if}
@@ -52,19 +55,19 @@
       <span class="eyebrow">Resume</span>
       <h1 class="name">{data.name}</h1>
       {#if data.role.trim()}<p class="role">{data.role}</p>{/if}
-      {#if data.summary.trim()}<p class="summary">{data.summary}</p>{/if}
+      {#if data.summary.trim()}<p class="summary">{previewText(data.summary, preview, 220)}</p>{/if}
     </header>
 
     {#if experience.length}
       <section class="experience" aria-label="Experience">
         <div class="experienceHeading"><h2>Experience</h2></div>
         <div class="experienceList">
-          {#each experience as item (item.$id)}
+          {#each (preview ? (experience).slice(0, 2) : experience) as item (item.$id)}
             <article class="experienceItem">
               <div class="experienceMeta"><span class="period">{item.period}</span></div>
               <div>
                 <div class="roleLine"><span class="jobRole">{item.role}</span>{#if item.role.trim() && item.company.trim()}<span>·</span>{/if}<span class="company">{item.company}</span></div>
-                {#if item.summary.trim()}<p class="experienceCopy">{item.summary}</p>{/if}
+                {#if item.summary.trim()}<p class="experienceCopy">{previewText(item.summary, preview, 220)}</p>{/if}
               </div>
             </article>
           {/each}

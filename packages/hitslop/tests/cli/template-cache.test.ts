@@ -24,7 +24,7 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
       builds++;
       await writeTemplate(output);
     };
-    const cache = new TemplateCache(directory, { "@swift": "a" });
+    const cache = new TemplateCache(directory, { "@rust": "a" });
     const run = async (current = cache, artwork = true) => {
       await rm(output, { force: true });
       return current.build(source, "fixture-one", output, build, artwork);
@@ -46,13 +46,13 @@ test("template cache reuses matching artifacts and rebuilds changed or damaged e
     await mkdir(join(source, "assets/dist"), { recursive: true });
     await writeFile(join(source, "assets/dist/theme.css"), "changed asset");
     expect(await run()).toBe("built");
-    const toolchain = new TemplateCache(directory, { "@swift": "b" });
+    const toolchain = new TemplateCache(directory, { "@rust": "b" });
     expect(await run(toolchain)).toBe("built");
-    expect(toolchain.misses.get("fixture-one")).toEqual(["shared @swift"]);
+    expect(toolchain.misses.get("fixture-one")).toEqual(["shared @rust"]);
     expect(await run()).toBe("built");
     const cached = join(directory, "fixture-one/template.slop");
     const bytes = await readFile(cached);
-    bytes[bytes.length - 1] ^= 1;
+    bytes.writeUInt8(bytes.readUInt8(bytes.length - 1) ^ 1, bytes.length - 1);
     await writeFile(cached, bytes);
     expect(await run()).toBe("built");
     await writeFile(join(directory, "fixture-one/entry.json"), "interrupted");
@@ -183,3 +183,22 @@ test.each(["crates/hitslop-core/src/file/mod.rs", "bun.lock"])(
     }
   },
 );
+
+// The Mac app's build phases run the template cache with the system and Homebrew paths only
+// (no ~/.cargo/bin), so its fingerprint may not need a Rust or Swift tool on PATH.
+test("the shared template fingerprint needs no development tool on PATH", async () => {
+  const repository = join(import.meta.dir, "../../../..");
+  const probe = Bun.spawn(
+    [
+      process.execPath,
+      "-e",
+      `import { sharedTemplateInputs } from ${JSON.stringify(join(repository, "scripts/templates/cache.ts"))};
+       const inputs = await sharedTemplateInputs(${JSON.stringify(repository)}, []);
+       if (!("rust-toolchain.toml" in inputs)) throw new Error("The pinned toolchain is not fingerprinted");`,
+    ],
+    { env: { HOME: process.env.HOME!, PATH: "/usr/bin:/bin" }, stdout: "pipe", stderr: "pipe" },
+  );
+  const [code, stderr] = await Promise.all([probe.exited, new Response(probe.stderr).text()]);
+  expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+}, 60_000);
+

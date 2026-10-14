@@ -900,10 +900,6 @@ button:focus-visible, input:focus-visible, [data-checkbox-root]:focus-visible, [
   font-size: 11px;
 }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
-
 html[data-slop-capture="static"] .canvas {
   height: auto;
   min-height: 0;

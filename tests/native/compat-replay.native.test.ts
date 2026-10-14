@@ -1,4 +1,4 @@
-// Replays the compatibility corpus (tests/compat) through this build's CLI and helper: every
+// Replays the compatibility corpus (tests/compat) through this build's CLI and engine: every
 // saved document of every release reads as that release recorded, renders with its own old
 // app, keeps its attachments, takes a CLI edit and reopens to the recorded result; every
 // template master still creates documents. Old files are checked, not old programs. The Rust
@@ -69,7 +69,7 @@ if (required)
   test(`tests/compat/${required} is captured, frozen and matches this candidate`, async () => {
     const entry = entries.find(({ name }) => name === required);
     assert.ok(entry?.release.frozen, `tests/compat/${required} must be captured and frozen before this release`);
-    await verifyCandidate(entry.root, entry.release);
+    await verifyCandidate(entry.release);
   }, 120_000);
 
 for (const { name, root, release, documents: saved, templates } of entries)

@@ -214,25 +214,13 @@ export const app = new Crust("slop", {
   .add(
     defineCommand(
       "check",
-      { description: "Check Svelte and TypeScript authoring source, and slop.ts as a build does" },
+      {
+        description:
+          "Check Svelte and TypeScript authoring source with the project's own checker, and slop.ts as a build does",
+      },
       (c) =>
         c.args(source).action(async ({ args }) => {
-          const { createRequire } = await import("node:module");
-          const require = createRequire(import.meta.url);
-          const { exec } = await import("./process");
-          const svelte = await exec(
-            [
-              process.execPath,
-              require.resolve("svelte-check/bin/svelte-check"),
-              "--workspace",
-              args.source,
-            ],
-            {
-              inherit: ["stdout", "stderr"],
-            },
-          );
-          await (await import("./build")).checkProject(args.source);
-          if (svelte.code) throw new Error("Authoring checks failed");
+          await (await import("./check")).check(args.source);
         }),
     ),
   )
@@ -256,23 +244,22 @@ export const app = new Crust("slop", {
     ),
   )
   .add(
-    defineCommand("build", { description: "Build a runtime template on any platform" }, (c) =>
-      c
-        .args(source)
-        .flags({
-          name: "artwork",
-          type: "string",
-          description: "native: render Finder artwork not in artwork/ with hitSlop.app (macOS)",
-        })
-        .action(async ({ args, flags }) => {
-          await (await import("./authoring")).build(args.source, flags.artwork);
+    defineCommand(
+      "build",
+      {
+        description:
+          "Build a runtime template, rendering missing Preview and Icon artwork on macOS",
+      },
+      (c) =>
+        c.args(source).action(async ({ args }) => {
+          await (await import("./authoring")).build(args.source);
         }),
     ),
   )
   .add(
     defineCommand(
       "register",
-      { description: "Build with native artwork and register an immutable local template (macOS)" },
+      { description: "Build and register an immutable local template" },
       (c) =>
         c.args(source).action(async ({ args }) => {
           await (await import("./authoring")).register(args.source);
@@ -498,7 +485,7 @@ export const app = new Crust("slop", {
         sections: [
           {
             title: "Capture behavior",
-            body: "Exports render the saved state in a fresh page with its default view; an open document first saves pending edits. Output must not be the document itself. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
+            body: "Exports render saved state through Svelte SSR and Takumi in the restricted Rust child; an open document first saves pending edits. Output must not be the document itself. A lost acknowledgement has an uncertain outcome: inspect the destination before retrying.",
           },
         ],
       },

@@ -1,10 +1,11 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel } from "../_shared/format";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { KEPT_SESSIONS, LEVEL, SUSTAIN } from "./schema";
 
-export type Data = typeof doc.current;
+export type Data = Value<typeof schema.descriptor>;
 export type Session = Data["sessions"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 export interface SessionInput { date: string; seconds: number; loudSeconds: number; episodes: number; peak: number }
 export type Zone = "quiet" | "warn" | "loud";
 
@@ -56,7 +57,7 @@ export function localDay(date: Date) {
 export function dayLabel(day: string) {
   const [y, m, d] = day.split("-").map(Number);
   if (!y || !m || !d) return day;
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return dateLabel(new Date(y, m - 1, d), { weekday: "short", month: "short", day: "numeric" });
 }
 
 /** The editor and its captures read the same derived values. */

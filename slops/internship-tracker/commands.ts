@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { stages } from "./schema";
+import schema, { stages } from "./schema";
 import { addApplication, addChat, removeApplication, setFollowUp, setStage, setThanked } from "./pipeline";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addApplication: {
     description: "Add an application at the applied stage and return its stable row ID.",
     args: {

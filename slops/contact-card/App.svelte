@@ -11,10 +11,11 @@
   import Check from "@lucide/svelte/icons/check";
   import Download from "@lucide/svelte/icons/download";
   import ExternalLink from "@lucide/svelte/icons/external-link";
-  import { attachments, bindText } from "hitslop/svelte";
-  import doc from "./schema";
+  import { attachments, bindText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { cardView, setPortrait, vCardFileName, vCardText } from "./shared";
 
+  const doc = getDocument(schema);
   let copiedField = $state<string | null>(null);
   let fileInput = $state<HTMLInputElement>();
 
@@ -54,7 +55,7 @@
     const file = input.files?.[0];
     input.value = "";
     if (!file) return;
-    void attachments.import<typeof doc.descriptor>(file, (tx, ref) => setPortrait(tx, ref));
+    void attachments.import<typeof schema.descriptor>(file, (tx, ref) => setPortrait(tx, ref));
   }
 </script>
 

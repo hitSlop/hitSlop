@@ -16,7 +16,7 @@ A dark field instrument (camera and tape recorder) clipped above a cream noteboo
 - Errors (in the viewfinder or the tape strip, `role="alert"`): access off (`NotAllowedError`/`SecurityError`), no device (`NotFoundError`/`OverconstrainedError`), device busy (`NotReadableError`/`AbortError`), no capture in this window (no `mediaDevices`/`MediaRecorder`), file too large or notebook full. Each says what to do next and offers Try again.
 
 ## Capture rules
-- Devices start only from a click (Turn on camera / Record Audio) and only in the editor. `Export.svelte` and `Icon.svelte` render saved content and never import `devices.ts` or call getUserMedia.
+- Devices start only from a click (Turn on camera / Record Audio) and only in the editor. `Preview.svelte`, `Export.svelte` and `Icon.svelte` render saved content and never import `devices.ts` or call getUserMedia. Preview selects a few photos, recordings and notes; export includes them all.
 - Photos: the current frame drawn on a canvas, longest edge at most 1600 px, JPEG at quality 0.86, kept immediately as an attachment.
 - Recordings: `audio/mp4` (m4a) when MediaRecorder offers it, otherwise WebM or Ogg Opus, at 64 kbit/s, capped at 5 minutes (about 2.4 MB), imported when you press Stop and Keep. Discard throws the take away.
 - Every file is checked against the limits before import: 10 MiB per file, 256 files and 100 MiB per document.

@@ -1,6 +1,6 @@
 import { defineCommands } from "hitslop/commands";
 import { refuse, s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import {
   addCard, deckStatus, localDay, removeCard, resetProgress, reviewCard, setBudget, setExamDate, setRetention,
 } from "./deck";
@@ -11,7 +11,7 @@ const utcOffsetMinutes = s.optional(s.integer({
   description: "Minutes east of UTC for deciding which day is today (e.g. -300 for New York in winter). Default 0.",
 }));
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   status: {
     description: "Read today's card count against the budget, the load forecast up to 14 days or the exam, and the estimated readiness by the exam. Changes nothing.",
     args: { utcOffsetMinutes },

@@ -1,16 +1,17 @@
+import { dateLabel } from "../_shared/format";
 // The deck model: one view function for App, Export, Icon and commands, and every edit
 // written once over `Tx` so the page and an agent change the document the same way.
 // Nothing here reads the clock; callers pass `now` (epoch ms) and a UTC offset.
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import {
   ASSUMED_EXAM_DAYS, REVIEW_LOG_LIMIT, ScheduleError, addDays, dayStart, forecast, localDay, newSchedule,
   paramsProblem, scheduler, type Forecast, type ForecastDay, type Rating, type Schedule,
 } from "./fsrs";
 
-export type Deck = typeof doc.current;
+export type Deck = Value<typeof schema.descriptor>;
 export type Card = Deck["cards"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 type CardHandle = ReturnType<Edit["fields"]["cards"]["item"]>;
 
 const MINUTE = 60_000;
@@ -142,7 +143,7 @@ export function formatInterval(ms: number) {
 
 export function formatDay(day: string, style: "short" | "long" = "short") {
   const date = new Date(`${day}T12:00:00Z`);
-  return date.toLocaleDateString(undefined, style === "long"
+  return dateLabel(date, style === "long"
     ? { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }
     : { month: "short", day: "numeric", timeZone: "UTC" });
 }

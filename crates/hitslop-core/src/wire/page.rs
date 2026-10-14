@@ -136,7 +136,6 @@ pub enum PageSuccess {
     },
     Config {
         ok: True,
-        read_only: bool,
         #[serde(rename = "runtimeABI")]
         runtime_abi: u64,
         style: bool,
@@ -190,7 +189,7 @@ pub enum SpeechOutcome {
         reason: SpeechUnavailable,
         message: String,
     },
-    /// The page was replaced or closed, or an export began, before the transcript was ready.
+    /// The page was replaced, closed or lost its renderer before the transcript was ready.
     Cancelled {
         message: String,
     },
@@ -199,7 +198,7 @@ pub enum SpeechOutcome {
     },
 }
 /// Why this host cannot transcribe: the app did not declare `speech`; this host has no
-/// speech service (`slop dev`, a browser copy, a background renderer); the OS cannot
+/// speech service (`slop dev`, a browser copy); the OS cannot
 /// (too old, or recognition is off); this locale has no on-device recognizer, and the
 /// host never sends a recording off the device instead; the person declined; or the
 /// provider cannot decode this recording's format.
@@ -309,9 +308,7 @@ impl PagePush {
 #[serde(tag = "method", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
 pub enum HostRequest {
-    Publish {
-        payload: String,
-    },
+    Publish { payload: String },
     Flush,
     Undo,
     Redo,
@@ -319,54 +316,9 @@ pub enum HostRequest {
     CancelClose,
     Close,
     ReloadInterface,
-    #[serde(rename = "capture.begin")]
-    CaptureBegin {
-        token: String,
-        mode: CaptureMode,
-    },
-    #[serde(rename = "capture.settle")]
-    CaptureSettle {
-        token: String,
-    },
-    #[serde(rename = "capture.restore")]
-    CaptureRestore {
-        token: String,
-    },
 }
 impl HostRequest {
     pub fn to_json(&self) -> String {
         crate::encode(self)
-    }
-}
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub enum CaptureMode {
-    Preview,
-    Export,
-    Icon,
-}
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub struct HostCaptureResult {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub dedicated: bool,
-}
-impl HostCaptureResult {
-    pub fn decode(input: &str) -> Result<Self> {
-        if input.len() > 4096 {
-            return Err(err(Code::TooLarge, "Capture result is too large"));
-        }
-        let result: Self =
-            serde_json::from_str(input).map_err(|_| err(Code::InvalidRequest, "Invalid capture result"))?;
-        if [result.x, result.y, result.width, result.height].into_iter().all(f64::is_finite) {
-            Ok(result)
-        } else {
-            Err(err(Code::InvalidRequest, "Invalid capture dimensions"))
-        }
     }
 }

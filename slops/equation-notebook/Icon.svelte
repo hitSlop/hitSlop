@@ -11,8 +11,8 @@
   <line x1="0" y1="78" x2="400" y2="78" stroke="var(--slop-pencil)" stroke-width="5" />
   <line x1="62" y1="78" x2="62" y2="400" stroke="var(--slop-margin)" stroke-width="4" />
   <rect x="84" y="104" width="226" height="52" rx="6" fill="var(--slop-highlight)" />
-  <text x="96" y="143" class="pad-icon-math" fill="var(--slop-ink)">y = x² − 4</text>
-  <text x="318" y="143" class="pad-icon-math pad-icon-number" fill="var(--slop-muted)">(1)</text>
+  <text x="96" y="143" class="pad-icon-math" font-family="serif" font-style="italic" font-size="38" fill="var(--slop-ink)">y = x² − 4</text>
+  <text x="318" y="143" class="pad-icon-math pad-icon-number" font-family="serif" font-size="30" fill="var(--slop-muted)">(1)</text>
   <rect x="84" y="180" width="288" height="190" fill="var(--slop-plotPaper)" stroke="var(--slop-grid)" stroke-width="3" />
   <line x1="84" y1="290" x2="372" y2="290" stroke="var(--slop-ink)" stroke-width="3" />
   <line x1="228" y1="180" x2="228" y2="370" stroke="var(--slop-ink)" stroke-width="3" />

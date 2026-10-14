@@ -1,17 +1,18 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { Tabs, Collapsible } from "bits-ui";
   import Sun from "@lucide/svelte/icons/sun";
   import Moon from "@lucide/svelte/icons/moon";
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
-  import doc from "./schema";
+  import schema from "./schema";
   import { initialView, journalView, setDate, type View } from "./journal";
   import DatePicker from "./DatePicker.svelte";
   import JournalPage from "./JournalPage.svelte";
   import WritingField from "./WritingField.svelte";
+  const doc = getDocument(schema);
   let view = $state<View>(initialView(doc.current));
   const { hasThought } = $derived(journalView(doc.current));
   let thoughtOpen = $state(journalView(doc.current).hasThought);

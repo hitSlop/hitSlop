@@ -16,16 +16,9 @@ impl BrowserDriver {
         let store = Arc::new(store::Store::open_vfs(name, vfs, imported)?);
         let (sender, messages) = mpsc::channel();
         let (persist, work) = mpsc::channel();
-        let mode = store::Mode::Document;
-        let actor = Actor::new(store.clone(), mode, listener, persist)?;
+        let actor = Actor::new(store.clone(), store::Mode::Document, listener, persist)?;
         actor.start();
-        Ok(Self {
-            owner: Owner { mode, sender, store, path: PathBuf::from(name) },
-            actor,
-            messages,
-            work,
-            stopped: false,
-        })
+        Ok(Self { owner: Owner { sender, store, path: PathBuf::from(name) }, actor, messages, work, stopped: false })
     }
     /// Drive the shared save barrier before a synchronous export. No authored work runs here.
     pub fn flush(&mut self) -> Result<()> {

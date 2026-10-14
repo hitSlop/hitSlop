@@ -1,7 +1,8 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { RadioGroup, Select, ToggleGroup, Button, Dialog } from "bits-ui";
@@ -12,11 +13,12 @@
   import Check from "@lucide/svelte/icons/check";
   import BookOpen from "@lucide/svelte/icons/book-open";
   import Star from "@lucide/svelte/icons/star";
-  import doc, { statuses } from "./schema";
+  import schema, { statuses } from "./schema";
   import { addBook, readingView, removeBook, setNotes, setRating, setStatus, type Status } from "./books";
   import { grow } from "./grow";
 
-  type Book = (typeof doc.current.books)[number];
+  const doc = getDocument(schema);
+  type Book = Value<typeof schema.descriptor>["books"][number];
   const statusItems = statuses.map((value) => ({ value, label: value }));
   const STARS = [1, 2, 3, 4, 5] as const;
 

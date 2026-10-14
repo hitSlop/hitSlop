@@ -26,7 +26,7 @@ From the repository root:
 
 ```sh
 bun slop dev slops/little-lamp
-bun slop build slops/little-lamp --artwork native
+bun slop build slops/little-lamp
 bun slop register slops/little-lamp
 ```
 
@@ -62,8 +62,8 @@ The Lamp artboard's Power state machine reads the Lamp view model:
 | lookX / lookY | Transient head offsets; Rive solves the arm |
 | tilt | Transient head rotation |
 
-Export and icon components use the same Rive renderer in still mode, reading
-saved data. The host capture hook waits for the scene to load and draw. PNGs retain
+Export and icon components draw a static copy of the lamp (`StillLamp.svelte`) from
+the saved `on` value, since the renderer that makes them cannot run Rive. PNGs retain
 transparency; no dark preview-background screenshots are shipped as artwork.
 
 The JS runtime and matching WASM are packaged together; CDN fallback and hosted

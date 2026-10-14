@@ -1,6 +1,7 @@
-import type doc from "./schema";
+import type { Value } from "hitslop";
+import type schema from "./schema";
 
-type CourseGrade = (typeof doc.current.courses)[number];
+type CourseGrade = Value<typeof schema.descriptor>["courses"][number];
 
 export function percentToGradeLetter(pct: number): { letter: string; gpa: number; color: string } {
   if (pct >= 93) return { letter: "A", gpa: 4.0, color: "#2b593f" };

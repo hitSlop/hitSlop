@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { boardShapes } from "./schema";
+import schema, { boardShapes } from "./schema";
 import { clearBoard, drawStroke, setBoardShape } from "./drawing";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   drawStroke: {
     description: "Draw one freehand stroke through the given board points and return its stable row ID.",
     args: {

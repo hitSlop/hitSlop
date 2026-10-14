@@ -6,15 +6,12 @@
   import TrayScene from "./TrayScene.svelte";
   import { DiceKit, numeralFont, readPalette, type Palette, type ShownRoll } from "./dice3d";
 
-  let { roll, reduced, still = false, label, onRolling, onSettled, onStill }: {
+  let { roll, reduced, label, onRolling, onSettled }: {
     roll: ShownRoll | undefined;
     reduced: boolean;
-    still?: boolean;
     label: string;
     onRolling?: (id: string) => void;
     onSettled?: (id: string) => void;
-    /** Export: the resting dice as a PNG data URL, or null when there is no WebGL. */
-    onStill?: (url: string | null) => void;
   } = $props();
 
   let host: HTMLDivElement;
@@ -36,10 +33,7 @@
   onMount(() => {
     let alive = true;
     let made: DiceKit | undefined;
-    if (!webgl) {
-      if (roll) onSettled?.(roll.id);
-      onStill?.(null);
-    }
+    if (!webgl && roll) onSettled?.(roll.id);
     const theme = new MutationObserver(() => {
       if (!made) return;
       palette = readPalette(host);
@@ -71,7 +65,7 @@
         dpr={Math.min(window.devicePixelRatio || 1, 2)}
         createRenderer={(canvas) => new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "low-power" })}
       >
-        <TrayScene {roll} {kit} {palette} {reduced} {still} {onRolling} {onSettled} onStill={(url) => onStill?.(url)} />
+        <TrayScene {roll} {kit} {palette} {reduced} {onRolling} {onSettled} />
       </Canvas>
     {/if}
   {:else if roll}

@@ -1,7 +1,8 @@
 import { sankey, sankeyJustify, type SankeyLink, type SankeyNode } from "d3-sankey";
-import type doc from "./schema";
+import type { Value } from "hitslop";
+import type schema from "./schema";
 
-type Plan = typeof doc.current;
+type Plan = Value<typeof schema.descriptor>;
 
 export interface FlowNode { id: string; name: string; color: string; value: number }
 export interface FlowLink { id: string; color: string }

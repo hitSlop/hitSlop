@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Tabs, Toggle, Select, Button, Tooltip } from "bits-ui";
@@ -12,10 +12,12 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import List from "@lucide/svelte/icons/list";
   import Calendar from "@lucide/svelte/icons/calendar";
-  import doc from "./schema";
+  import schema from "./schema";
   import { SIGNIFIERS, signifierItems, isSignifier, symbolFor, labelFor, type Signifier } from "./signifiers";
   import { addEntry, addMonthDay, cycleSignifier, isDayOfMonth, journalView, removeEntry, removeMonthDay, setDay, setPriority } from "./journal";
   import type { Spread } from "./shared";
+
+  const doc = getDocument(schema);
 
   // The spread is view state, not saved: the export always shows both spreads.
   let spread = $state<Spread>("daily");

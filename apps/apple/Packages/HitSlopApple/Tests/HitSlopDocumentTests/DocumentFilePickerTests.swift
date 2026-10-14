@@ -40,7 +40,7 @@ import WebKit
   }
 
   // The HTML upload boundary is platform behavior, independent of a slop's importer.
-  @Test(.timeLimit(.minutes(1))) @MainActor func fileInputDeliversBytesAndRejectsSelectionDuringCapture() async throws {
+  @Test(.timeLimit(.minutes(1))) @MainActor func fileInputDeliversBytesDuringSavedSourceCapture() async throws {
     _ = NSApplication.shared
     let root = try Fixtures.document()
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
@@ -84,8 +84,8 @@ import WebKit
         """, arguments: [:], in: nil, contentWorld: .page) as? String
     }
     #expect(try await select() == "Selected 🦊 bytes")
-    #expect(try await engine.withCapture { try await select() } == nil, "no selection while a capture reads the page")
-    #expect(presentations == 1)
+    #expect(try await engine.withCapture { try await select() } == "Selected 🦊 bytes")
+    #expect(presentations == 2)
     try await engine.close()
   }
 

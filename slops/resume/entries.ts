@@ -1,7 +1,7 @@
-import type { Tx } from "hitslop";
-import type doc from "./schema";
-type Edit = Tx<typeof doc>;
-type Data = typeof doc.current;
+import type { Tx, Value } from "hitslop";
+import type schema from "./schema";
+type Edit = Tx<typeof schema>;
+type Data = Value<typeof schema.descriptor>;
 
 export function badgeInitials(name: string, initials: string): string {
   const fromName = name.split(/\s+/).filter(Boolean).map(word => word[0] ?? "").join("").slice(0, 2).toUpperCase();

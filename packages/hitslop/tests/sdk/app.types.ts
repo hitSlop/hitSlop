@@ -1,7 +1,13 @@
-import { defineDocument, defineSlop, s } from "../../src/sdk/schema";
+import { defineDocument, defineSlop, s, type LiveDocument, type Value } from "../../src/sdk/schema";
 import type { Component } from "svelte";
 import { attachments } from "../../src/sdk/app/attachments";
-import { isSpeechError, speech, svelteApp, type SpeechTranscript } from "../../src/sdk/app/store.svelte";
+import {
+  getDocument, isSpeechError, speech, svelteApp,
+  type CaptureMode, type CaptureProps, type SpeechTranscript, type WidgetProps,
+} from "../../src/sdk/app/store.svelte";
+
+type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Assert<T extends true> = T;
 
 function declarations(view: Component) {
   const fields = {
@@ -39,25 +45,59 @@ function declarations(view: Component) {
 void declarations;
 
 async function collectors(file: File) {
-  const doc = defineDocument({ title: s.string(), photo: s.optional(s.string()) }, { initial: {title:""} });
+  const schema = defineDocument({ title: s.string(), photo: s.optional(s.string()) }, { initial: {title:""} });
+  const doc = getDocument(schema);
   const id: { id: string } = await doc.change(() => ({ id: "kept" }));
   // @ts-expect-error A change() collector cannot be async.
   await doc.change(async tx => { await tx.fields.title.set("Later"); });
-  await attachments.import<typeof doc.descriptor>(file, (tx, ref) => tx.fields.photo.set(ref.id));
+  await attachments.import<typeof schema.descriptor>(file, (tx, ref) => tx.fields.photo.set(ref.id));
   // @ts-expect-error An attachment's reference collector cannot be async.
-  await attachments.import<typeof doc.descriptor>(file, async (tx, ref) => tx.fields.photo.set(ref.id));
+  await attachments.import<typeof schema.descriptor>(file, async (tx, ref) => tx.fields.photo.set(ref.id));
   return id;
 }
 void collectors;
 
-function exportRoles(plain: Component<Record<string, never>>, capture: Component<{ mode: "preview" | "export" }>, needy: Component<{ task: string }>) {
-  const schema = defineDocument({ title: s.text() });
-  svelteApp(plain, {schema, export:plain});
-  svelteApp(plain, {schema, export:capture});
-  // @ts-expect-error An export receives only its capture mode.
-  svelteApp(plain, {schema, export:needy});
+const board = defineDocument({
+  title: s.text(),
+  tasks: s.list(s.object({ text: s.text(), done: s.boolean() })),
+  cover: s.optional(s.object({ id: s.string() })),
+});
+
+// App is the only editor role; its components acquire the document their mount edits.
+function editorDocument(App: Component) {
+  svelteApp(App, { schema: board });
+  const doc = getDocument(board);
+  type Acquired = Assert<Equal<typeof doc, LiveDocument<typeof board.descriptor>>>;
+  type Current = Assert<Equal<typeof doc.current, Value<typeof board.descriptor>>>;
+  const done: boolean | undefined = doc.current.tasks[0]?.done;
+  // @ts-expect-error getDocument takes the definition, not its descriptor.
+  getDocument(board.descriptor);
+  return done;
 }
-void exportRoles;
+void editorDocument;
+
+// Static views are functions of their props: a snapshot, readonly all the way down, and
+// attachment URLs; views add their mode and widgets their viewport.
+function captureProps(view: CaptureProps<typeof board> & { mode: CaptureMode }, widget: CaptureProps<typeof board> & WidgetProps) {
+  type Snapshot = Assert<Equal<typeof view.snapshot, Value<typeof board.descriptor>>>;
+  const url: string = view.attachmentURL("cover");
+  const modes: CaptureMode[] = ["preview", "export", "icon"];
+  // @ts-expect-error A widget receives its viewport, not a mode.
+  const mode: CaptureMode = "widget";
+  const family: "small" | "medium" | "large" = widget.family;
+  // @ts-expect-error The snapshot prop is readonly.
+  view.snapshot = widget.snapshot;
+  // @ts-expect-error Snapshot fields are readonly.
+  view.snapshot.title = "Changed";
+  // @ts-expect-error Snapshot lists are readonly.
+  view.snapshot.tasks.push(view.snapshot.tasks[0]!);
+  // @ts-expect-error Snapshot rows are readonly.
+  view.snapshot.tasks[0]!.done = true;
+  // @ts-expect-error Nested objects are readonly.
+  if (view.snapshot.cover) view.snapshot.cover.id = "other";
+  return [url, modes, mode, family];
+}
+void captureProps;
 
 async function transcription(ref: Awaited<ReturnType<typeof attachments.import>>, error: unknown) {
   const transcript: SpeechTranscript = await speech.transcribe(ref, { locale: "en-US" });

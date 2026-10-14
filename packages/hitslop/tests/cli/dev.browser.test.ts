@@ -3,6 +3,7 @@ import { webkit } from "playwright";
 import { mkdtemp, readFile, writeFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { startDev } from "../../src/cli/dev";
+import { WidgetViewports } from "../../src/schema/constants";
 import { createFixture } from "./dev-fixture";
 import { overrideSlop, overrideSchema } from "./source-fixture";
 
@@ -75,13 +76,17 @@ test("HMR keeps one owner, accepted edits and row identity; definition resets an
       await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
       expect(await frame.locator("[data-probe]").count()).toBe(1);
     };
-    await roleChange(() => rm(join(source, "Export.svelte")));
-    await roleChange(() => writeFile(join(source, "Export.svelte"), "<p>Capture role</p>"));
-    await rename(join(source, "Export.svelte"), join(source, "export.tmp"));
-    await rename(join(source, "export.tmp"), join(source, "export.svelte"));
+    // A required capture role disappearing fences the preview until restored.
+    await rm(join(source, "Preview.svelte"));
     await frame.locator("vite-error-overlay").waitFor();
-    await rename(join(source, "export.svelte"), join(source, "export.tmp"));
-    await rename(join(source, "export.tmp"), join(source, "Export.svelte"));
+    await writeFile(join(source, "Preview.svelte"), "<p>Capture role</p>");
+    await frame.locator("vite-error-overlay").waitFor({ state: "detached" });
+    await frame.locator("[data-title]").filter({ hasText: "Reset seed" }).waitFor();
+    await rename(join(source, "Preview.svelte"), join(source, "preview.tmp"));
+    await rename(join(source, "preview.tmp"), join(source, "preview.svelte"));
+    await frame.locator("vite-error-overlay").waitFor();
+    await rename(join(source, "preview.svelte"), join(source, "preview.tmp"));
+    await rename(join(source, "preview.tmp"), join(source, "Preview.svelte"));
     await frame.locator("vite-error-overlay").waitFor({ state: "detached" });
     await frame.getByRole("heading", { name: "Recovered" }).waitFor();
     // commands.ts was absent at startup; adding, fixing and removing it must all rebuild.
@@ -177,3 +182,100 @@ test("native preview serves sniffed attachments and fences disconnected owners",
     expect(await ui.locator("[data-count]").textContent()).toBe("3");
   } finally { await browser.close(); await dev?.close(); await rm(root, {recursive:true,force:true}); }
 }, 60000);
+
+
+// Each view is the browser layout of one role: only it is mounted, from the live document, on a
+// surface the page sizes to its canvas. Selections come only from that page, and survive updates.
+test("views switch between the editor and static layouts, keep edits and survive updates", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".dev-test-"));
+  const browser = await webkit.launch();
+  let dev: Awaited<ReturnType<typeof startDev>> | undefined;
+  try {
+    const source = join(root, "source");
+    await createFixture(process.cwd(), source);
+    const widget = `<script lang="ts">
+      import type {CaptureProps, WidgetProps} from 'hitslop/svelte';
+      import type schema from './schema';
+      let {snapshot, family, width, height}: CaptureProps<typeof schema> & WidgetProps = $props();
+    </script><section data-widget style="width:100%;height:100%">Original {family} {width}×{height}: {snapshot.title}</section>`;
+    await writeFile(join(source, "Widget.svelte"), widget);
+    // A viewport-high preview is measured at the 480×620 window, as production lays it out.
+    await writeFile(join(source, "Preview.svelte"), `<script lang="ts">
+      import type {CaptureProps} from 'hitslop/svelte';
+      import type schema from './schema';
+      let {snapshot}: CaptureProps<typeof schema> = $props();
+    </script><article data-export style="min-height:100vh"><h1>{snapshot.title}</h1></article><p style="margin:0;height:40px">Note</p>`);
+    dev = await startDev(source);
+    const page = await browser.newPage();
+    page.setDefaultTimeout(15000);
+    await page.goto(dev.url);
+    const frame = page.frameLocator("iframe");
+    const app = () => page.frames().find((frame) => frame.url().includes("/app.html"))!;
+    const surface = (width: number, height?: number) =>
+      page.waitForFunction(([width, height]) => {
+        const box = document.querySelector("iframe")!.getBoundingClientRect();
+        return box.width === width && (height === undefined || box.height === height);
+      }, [width, height] as const);
+    const mounted = () => app().evaluate(() => ({
+      capture: document.documentElement.dataset.slopCapture ?? null,
+      editor: document.querySelectorAll("[data-slop-root]").length,
+      preview: document.querySelectorAll('[data-slop-capture-target="preview"] [data-export]').length,
+      icon: document.querySelectorAll('[data-slop-capture-target="icon"] svg').length,
+      widget: document.querySelectorAll("[data-widget]").length,
+    }));
+    const none = { editor: 0, preview: 0, icon: 0, widget: 0 };
+    await frame.getByRole("textbox", {name: "Document title"}).fill("Saved preview edit");
+    await frame.locator("[data-title]").filter({hasText: "Saved preview edit"}).waitFor();
+    await page.getByText("slop build shows the final image").waitFor();
+    const picker = page.getByRole("combobox", {name: "Preview composition"});
+    await picker.selectOption("preview");
+    await frame.locator('[data-slop-capture-target="preview"] h1').filter({hasText: "Saved preview edit"}).waitFor();
+    await surface(480, 620 + 40);
+    expect(await mounted()).toEqual({ ...none, capture: "static", preview: 1 });
+    await picker.selectOption("icon");
+    await frame.locator('svg[aria-label="Fixture icon"]').waitFor();
+    await surface(512, 512);
+    expect(await mounted()).toEqual({ ...none, capture: "icon", icon: 1 });
+    for (const { family, width, height } of WidgetViewports) {
+      await picker.selectOption(family);
+      await frame.locator("[data-widget]").filter({hasText: `${family} ${width}×${height}: Saved preview edit`}).waitFor();
+      await surface(width, height);
+    }
+    expect(await mounted()).toEqual({ ...none, capture: "widget", widget: 1 });
+    // Another origin, or another window at this origin, cannot select a view; the page can.
+    const select = (origin: string, fromParent: boolean) =>
+      app().evaluate(async ([origin, fromParent]) => {
+        const data = { type: "slop:view", view: "icon" };
+        dispatchEvent(new MessageEvent("message", { data, origin, source: fromParent ? parent : window }));
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }, [origin, fromParent] as const);
+    await select("http://example.com", true);
+    await select(new URL(dev.url).origin, false);
+    expect((await mounted()).widget).toBe(1);
+    await select(new URL(dev.url).origin, true);
+    expect(await mounted()).toEqual({ ...none, capture: "icon", icon: 1 });
+    // Component updates keep the selected view.
+    await picker.selectOption("large");
+    await writeFile(join(source, "Widget.svelte"), widget.replace("Original", "Updated"));
+    await frame.locator("[data-widget]").filter({hasText: "Updated large"}).waitFor();
+    await writeFile(join(source, "Widget.svelte"), widget.replace('width:100%;height:100%', 'width:900px;height:900px'));
+    await page.getByRole("status").filter({hasText: "will be clipped"}).waitFor();
+    await picker.selectOption("editor");
+    await frame.getByRole("textbox", {name: "Document title"}).waitFor();
+    expect(await frame.getByRole("textbox", {name: "Document title"}).inputValue()).toBe("Saved preview edit");
+    await surface(480, 620);
+    expect(await mounted()).toEqual({ ...none, capture: null, editor: 1 });
+    // A definition change reloads the frame with a fresh document; the page selects again.
+    await picker.selectOption("small");
+    await writeFile(join(source, "commands.ts"), (await readFile(join(source, "commands.ts"), "utf8")) + "\n");
+    await frame.locator("[data-widget]").filter({hasText: "small"}).filter({hasText: "Fixture title"}).waitFor();
+    await rm(join(source, "Widget.svelte"));
+    await page.locator("optgroup[disabled]").waitFor({state: "attached"});
+    await frame.getByRole("textbox", {name: "Document title"}).waitFor();
+    expect(await picker.inputValue()).toBe("editor");
+    await writeFile(join(source, "Widget.svelte"), widget);
+    await page.locator("optgroup:not([disabled])").waitFor({state: "attached"});
+    await picker.selectOption("small");
+    await frame.locator("[data-widget]").filter({hasText: "small"}).waitFor();
+  } finally { await browser.close(); await dev?.close(); await rm(root, {recursive: true, force: true}); }
+}, 120000);

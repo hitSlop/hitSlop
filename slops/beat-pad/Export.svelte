@@ -1,8 +1,11 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { beatView } from "./pattern";
 
-  const beat = $derived(doc.current);
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+
+  const beat = $derived(snapshot);
   const view = $derived(beatView(beat));
 </script>
 

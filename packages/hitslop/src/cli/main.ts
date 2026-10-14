@@ -15,9 +15,9 @@ const globalSkills = defineExtension(defineExtensionId("hitslop:global-skills"))
   },
 );
 
-/** A helper that exited without a reply printed why: the CLI exits with its status, after
+/** An engine that refused with exit status 2 printed why: the CLI exits with its status, after
  * what that means for the command. */
-const helperExit = defineExtension(defineExtensionId("hitslop:helper-exit")).onError(
+const engineExit = defineExtension(defineExtensionId("hitslop:engine-exit")).onError(
   async (error) => {
     const { ExitStatus } = await import("./engine");
     if (!(error instanceof ExitStatus)) return false;
@@ -30,6 +30,6 @@ const argv = process.argv.slice(2);
 
 await app
   .extend(globalSkills)
-  .extend(helperExit)
+  .extend(engineExit)
   .extend(interactiveUpdates())
   .execute({ argv: argv.length ? argv : ["--help"] });

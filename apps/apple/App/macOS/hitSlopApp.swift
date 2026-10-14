@@ -4,9 +4,11 @@ import HitSlopCore
 import HitSlopDocument
 import HitSlopFirebase
 import HitSlopHost
+import HitSlopWidgets
 import Sparkle
 import SwiftUI
 import UniformTypeIdentifiers
+import WidgetKit
 
 @main enum HitSlopApp {
   @MainActor static func main() {
@@ -46,6 +48,7 @@ private struct UpdateSettingsView: View {
     return coordinator
   }()
   private var recentMenu: NSMenu?
+  private var exportMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -58,6 +61,19 @@ private struct UpdateSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
+    SlopWidgetPublisher.shared.start(
+      activeSelections: {
+        let configurations: [WidgetInfo] = await withCheckedContinuation { continuation in
+          WidgetCenter.shared.getCurrentConfigurations { continuation.resume(returning: (try? $0.get()) ?? []) }
+        }
+        return Set(
+          configurations.filter { $0.kind == WidgetCache.kind }
+            .compactMap { $0.widgetConfigurationIntent(of: SlopWidgetIntent.self)?.slop?.id })
+      },
+      openSession: { [weak self] identity in
+        self?.coordinator.documentControllers.first { $0.widgetFileIdentity == identity && !$0.isHiddenForClose }?
+          .session
+      })
     HitSlopFirebase.telemetry.send(.launched)
     // A crashed session's discovery file would name a dead owner; clear it off the main
     // thread.
@@ -70,7 +86,36 @@ private struct UpdateSettingsView: View {
       urls.forEach(openDocument)
     }
   }
-  func application(_ application: NSApplication, open urls: [URL]) { urls.forEach(openDocument) }
+  func application(_ application: NSApplication, open urls: [URL]) {
+    for url in urls {
+      if url.isFileURL {
+        openDocument(url)
+        continue
+      }
+      guard url.scheme == "hitslop" else { continue }
+      if url.host == "widgets" {
+        showCatalog()
+        continue
+      }
+      guard let id = WidgetCache.selectionID(from: url) else { continue }
+      do {
+        let cache = try WidgetCache.shared()
+        guard let record = cache.record(id: id) else {
+          throw SlopFailure(
+            "This widget's document is no longer available. Open the slop in hitSlop, then choose it in Edit Widget.")
+        }
+        coordinator.openDocument(try cache.resolve(record))
+        NSApp.activate()
+      } catch {
+        showCatalog()
+        let alert = NSAlert()
+        alert.messageText = "Could not open this widget’s slop"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+      }
+    }
+  }
+  func applicationWillTerminate(_ notification: Notification) { SlopWidgetPublisher.shared.stop() }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     coordinator.requestQuit()
@@ -191,6 +236,7 @@ private struct UpdateSettingsView: View {
 
     let file = NSMenu(title: "File")
     fileItem.submenu = file
+    file.delegate = self
     item(file, "New from Template…", #selector(showCatalog), "n")
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
@@ -205,6 +251,7 @@ private struct UpdateSettingsView: View {
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
     export.submenu = exportMenu
+    exportMenuItem = export
     file.addItem(export)
     item(exportMenu, "Export PNG…", .exportPNG)
     item(exportMenu, "Export PDF…", .exportPDF)
@@ -248,6 +295,10 @@ private struct UpdateSettingsView: View {
     NSApp.mainMenu = main
   }
   func menuNeedsUpdate(_ menu: NSMenu) {
+    if menu === exportMenuItem?.menu {
+      exportMenuItem?.isHidden = coordinator.activeController?.canExport != true
+      return
+    }
     guard menu === recentMenu else { return }
     menu.removeAllItems()
     let urls = NSDocumentController.shared.recentDocumentURLs

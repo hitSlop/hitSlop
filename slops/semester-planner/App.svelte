@@ -2,7 +2,7 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { MILESTONE_TYPES, daysBetween, getTypeColor, formatDateStr, semesterView, addMilestone, removeMilestone, type MilestoneType } from "./shared";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import Calendar from "@lucide/svelte/icons/calendar";
   import Flag from "@lucide/svelte/icons/flag";
   import Plus from "@lucide/svelte/icons/plus";
@@ -12,8 +12,9 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import { Calendar as CalendarPrimitive, Popover, Select } from "bits-ui";
   import { CalendarDate, getLocalTimeZone, today as getTodayDate, type DateValue } from "@internationalized/date";
-  import doc from "./schema";
+  import schema from "./schema";
 
+  const doc = getDocument(schema);
   const today = getTodayDate(getLocalTimeZone()).toString();
 
   // What the person is looking at. Not saved with the document; the export shows everything.

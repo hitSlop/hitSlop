@@ -1,0 +1,10 @@
+{
+  // Type tests only compile: they declare checks and values that nothing reads.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["**/*.types.ts"],
+  "exclude": []
+}

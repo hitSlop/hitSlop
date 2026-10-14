@@ -80,10 +80,15 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         if: env.TIERS != ''
         with:
-          bindings: ${{ (contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'packed')) && 'portable' || 'none' }}
+          bindings: ${{ (contains(env.TIERS, 'bun') || contains(env.TIERS, 'packed')) && 'portable' || 'none' }}
           nextest: "false"
-          rust: ${{ contains(env.TIERS, 'contracts') || contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'packed') }}
+          rust: ${{ contains(env.TIERS, 'contracts') || contains(env.TIERS, 'bun') || contains(env.TIERS, 'cli') || contains(env.TIERS, 'render') || contains(env.TIERS, 'packed') }}
           dependencies: ${{ env.TIERS != 'compat' }}
+      - uses: ./.github/actions/native-cache
+        if: contains(env.TIERS, 'render')
+        with:
+          templates: fixtures
+          swift: "false"
       - run: bun install --cwd apps/landing --frozen-lockfile
         if: contains(env.TIERS, 'landing')
       - run: bun run verify --ci --keep-going "$TIERS"
@@ -111,9 +116,11 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         with:
           nextest: "false"
+          bindings: ${{ contains(env.TIERS, 'swift') && 'native' || 'none' }}
       - uses: ./.github/actions/native-cache
         with:
           templates: fixtures
+          swift: ${{ contains(env.TIERS, 'swift') }}
       - name: Native tiers
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
@@ -194,6 +201,7 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         with:
           bindings: portable
+          nextest: "false"
           webkit: "true"
       - name: Optional qualification
         env:
@@ -205,13 +213,14 @@ jobs:
           name: qualification-evidence
           path: .hitslop/evidence
           include-hidden-files: true
-  # Nightly runs keep the default branch's full template corpus warm for releases.
-  # Manual runs can also profile
-  # the complete render corpus without signing or publishing. Not a required check.
+  # Nightly runs build and render the default branch's full template corpus on Linux with
+  # the engine and shell alone, and keep that Linux cache warm; macOS releases keep their
+  # own template cache. Manual runs can also profile the complete render corpus without
+  # signing or publishing. Not a required check.
   release-templates:
     timeout-minutes: 60
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.render_corpus)
-    runs-on: macos-15
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -219,20 +228,24 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         with:
           cache-scope: templates
+          bindings: none
+          nextest: "false"
       - uses: ./.github/actions/native-cache
         with:
           templates: release
+          swift: "false"
       - name: Build release templates
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
         run: |
-          bun run build
+          bun scripts/build/core.ts --engine
+          bun scripts/build/shell.ts
           bun run build:templates
       - name: Profile full render corpus
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
           HITSLOP_RENDER: all
-        run: bun run verify native render
+        run: bun run verify render
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

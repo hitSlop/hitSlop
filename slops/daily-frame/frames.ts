@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { maxFrames } from "./schema";
 
-export type Data = typeof doc.current;
+export type Data = Value<typeof schema.descriptor>;
 export type Frame = Data["frames"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** A frame as the views draw it: a saved photo, or a drawn sample before the first photo. */
 export type Shown = {

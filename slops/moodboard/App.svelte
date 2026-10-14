@@ -1,16 +1,16 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { onMount, tick } from "svelte";
-  import { attachments, bindText, capture } from "hitslop/svelte";
+  import { attachments, bindText, getDocument } from "hitslop/svelte";
   import { Button } from "bits-ui";
   import ImagePlus from "@lucide/svelte/icons/image-plus";
   import X from "@lucide/svelte/icons/x";
-  import doc, { maxCaption, maxTiles } from "./schema";
+  import schema, { maxCaption, maxTiles } from "./schema";
   import { acceptedTypes, addTile, boardView, captionFromName, fileProblem, removeTile, setCaption, type Tile } from "./tiles";
   import Scene from "./motion-core/InfiniteGalleryScene.svelte";
   import Magnetic from "./motion-core/Magnetic.svelte";
 
+  const doc = getDocument(schema);
   let input: HTMLInputElement;
   let notice = $state("");
   let importing = $state(false);
@@ -21,13 +21,6 @@
   const sources = $derived(view.tiles.map((tile) => attachments.url(tile.image.id)).join("\n"));
   const images = $derived(sources ? sources.split("\n") : []);
 
-  onMount(() =>
-    capture.onPrepare(async () => {
-      await tick();
-      await Promise.all(Array.from(document.images, (image) => image.decode().catch(() => undefined)));
-    }),
-  );
-
   async function addFiles(files: Iterable<File>) {
     importing = true;
     notice = "";
@@ -36,7 +29,7 @@
         if (doc.current.tiles.length >= maxTiles) { notice = `The board holds ${maxTiles} images.`; break; }
         const problem = fileProblem(file);
         if (problem) { notice = problem; continue; }
-        await attachments.import<typeof doc.descriptor>(file, (tx, ref) => {
+        await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
           addTile(tx, doc.current, ref, captionFromName(file.name));
         });
       }

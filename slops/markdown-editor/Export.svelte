@@ -1,10 +1,13 @@
 <script lang="ts">
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { previewText } from "../_shared/preview";
   import { markdownView } from "./markdown";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const { content } = $derived(doc.current);
-  const view = $derived(markdownView(doc.current));
+  const { content } = $derived(snapshot);
+  const view = $derived(markdownView(snapshot));
 </script>
 
 <article class={"md-exportSheet"} aria-label="Exported manuscript {view.title}">
@@ -15,7 +18,7 @@
   </header>
   <div class={`md-prose md-exportProse`}>
     {#if !view.blank}
-      <SvelteMarkdown source={content} />
+      <SvelteMarkdown source={previewText(content, preview, 1200)} />
     {:else}
       <p class={"md-empty"}>This page is blank.</p>
     {/if}

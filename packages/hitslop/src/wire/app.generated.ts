@@ -17,7 +17,7 @@ capabilities: Array<Capability>, };
 
 export type BuildInput = { packageFormat: number, runtimeABI: number, declaration: BuildDeclaration, roles: BuildRoles, resources: Array<ResourceInput>, artwork: ArtworkInput, };
 
-export type BuildRoles = { ui: string, style?: string, commands?: string, skin?: string, };
+export type BuildRoles = { preview?: string, export?: string, icon?: string, widget?: string, ui: string, style?: string, commands?: string, skin?: string, };
 
 /**
  * A device or host service an app declares it uses. The host admits a request only for a
@@ -70,7 +70,9 @@ radius: string, shape: Silhouette, };
 
 export type ThemeInput = { token: string, color: string, };
 
-export type Views = { export: boolean, icon: boolean, };
+export type Views = { preview: boolean, export: boolean, icon: boolean, widget?: WidgetOptions, };
+
+export type WidgetOptions = { refreshMinutes?: number, };
 
 /**
  * Resolved host window semantics, independent of the stored definition's decoding rules.

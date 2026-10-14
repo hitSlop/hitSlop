@@ -1,16 +1,18 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import Check from "@lucide/svelte/icons/check";
   import { QUADRANTS, matrixView } from "./shared";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const view = $derived(matrixView(doc.current));
+  const view = $derived(matrixView(snapshot));
 </script>
 
-<article class="exportBlotter" aria-label="Exported Eisenhower matrix {doc.current.title}">
+<article class="exportBlotter" aria-label="Exported Eisenhower matrix {snapshot.title}">
   <header class="letterhead">
     <div class="titleGroup">
-      <h1 class="title">{doc.current.title.trim() || "Priority Desk Blotter"}</h1>
-      <p class="date">{doc.current.date.trim() || "Undated"}</p>
+      <h1 class="title">{snapshot.title.trim() || "Priority Desk Blotter"}</h1>
+      <p class="date">{snapshot.date.trim() || "Undated"}</p>
     </div>
     <div class="leverage" aria-label="Q2 leverage {view.q2Ratio} percent">
       <span class="leverageRow">
@@ -41,7 +43,7 @@
           <span class="quadTag">{q.tag}</span>
         </div>
         <ul class="exportList">
-          {#each view.inZone(q.key) as task (task.$id)}
+          {#each (preview ? (view.inZone(q.key)).slice(0, 3) : view.inZone(q.key)) as task (task.$id)}
             <li class="row" data-done={task.done}>
               <span data-checkbox-root data-state={task.done ? "checked" : "unchecked"}>{#if task.done}<Check size={10} strokeWidth={3} />{/if}</span>
               <span class="exportText">{task.text.trim() || "Untitled task"}</span>
@@ -63,7 +65,7 @@
     </div>
     {#if view.inbox.length > 0}
       <ul class="trayList" aria-label="Holding pen">
-        {#each view.inbox as item (item.$id)}
+        {#each (preview ? (view.inbox).slice(0, 2) : view.inbox) as item (item.$id)}
           <li class="inboxRow">
             <span class="exportText">{item.text.trim() || "Untitled task"}</span>
           </li>

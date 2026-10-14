@@ -67,3 +67,10 @@ pub(crate) fn optimize_png(bytes: Vec<u8>, level: u8) -> Vec<u8> {
         _ => bytes,
     }
 }
+/// Artwork as `pack` stores it, whether the build supplied it or packing rendered it:
+/// checked, then optimized at level 2.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn pack_artwork(name: Artwork, bytes: Vec<u8>) -> Result<Vec<u8>> {
+    check_artwork(name, &bytes)?;
+    Ok(optimize_png(bytes, 2))
+}

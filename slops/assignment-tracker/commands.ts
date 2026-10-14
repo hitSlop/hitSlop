@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addAssignment, removeAssignment, setCompleted, setDueDate } from "./due";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addAssignment: {
     description: "Add an unfinished assignment and return its stable row ID.",
     args: {

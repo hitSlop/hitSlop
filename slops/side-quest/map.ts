@@ -1,3 +1,4 @@
+import { dateLabel } from "../_shared/format";
 import type { Course, Quest } from "./quest";
 import { byDue, cleared, dayValue, isoDay, span } from "./quest";
 
@@ -27,7 +28,7 @@ export function mapGeometry(courses: readonly Course[], today: string) {
     return d;
   }
   function shortDate(iso: string): string {
-    return new Date(dayValue(iso, today)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return dateLabel(new Date(dayValue(iso, today)), { month: "short", day: "numeric" });
   }
   function overdue(quest: Quest): boolean { return !cleared(quest) && quest.due < today; }
   const months = (() => {
@@ -36,7 +37,7 @@ export function mapGeometry(courses: readonly Course[], today: string) {
     cursor.setDate(1);
     cursor.setMonth(cursor.getMonth() + 1);
     while (cursor.getTime() < range.end) {
-      marks.push({ x: xOf(isoDay(cursor)), label: cursor.toLocaleDateString(undefined, { month: "short" }) });
+      marks.push({ x: xOf(isoDay(cursor)), label: dateLabel(cursor, { month: "short" }) });
       cursor.setMonth(cursor.getMonth() + 1);
     }
     return marks;

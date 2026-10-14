@@ -1,5 +1,5 @@
 import { png } from "./png-fixture";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { defineDocument, s } from "../../src/sdk/schema";
 import { execute } from "../../src/cli/engine";
@@ -24,15 +24,16 @@ export async function writeTemplate(output: string, slug = "fixture-one") {
     window: { kind: "standard", width: 320, height: 240 },
     document: defineDocument({ title: s.text() }).descriptor,
     initial: { title: "Cache fixture" },
-    theme: [{ token: "accent", color: "#335577" }], commands: [], views: { export: false, icon: false } },
-    roles: { ui: "ui.js" },
-    resources: [{ kind: "app", key: "ui.js", mediaType: "text/javascript", path: "assets/ui.js" }],
+    theme: [{ token: "accent", color: "#335577" }], commands: [], views: { export: false, icon: true, preview: true } },
+    roles: { ui: "ui.js", icon: "icon.js", preview: "preview.js" },
+    resources: [{ kind: "app", key: "ui.js", mediaType: "text/javascript", path: "assets/ui.js" }, ...["icon", "preview"].map(role => ({ kind: "app", key: `${role}.js`, mediaType: "text/javascript", path: `assets/${role}.js` }))],
     artwork: { preview: "artwork/preview.png" },
   };
   await writeFile(join(stage, "assets/ui.js"), "export default { mount() { return {}; } };");
+  for (const role of ["icon", "preview"]) await writeFile(join(stage, `assets/${role}.js`), await readFile(new URL("../../../../tests/fixtures/checklist/document/assets/export.js", import.meta.url)));
   await writeFile(join(stage, "artwork/preview.png"), png(1, 1));
   try {
-    await execute({ method: "pack", stage, file: output, app });
+    await execute({ method: "pack", stage, file: output, app, renderArtwork: false });
   } finally {
     await rm(stage, { recursive: true, force: true });
   }

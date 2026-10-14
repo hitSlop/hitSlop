@@ -1,12 +1,13 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel } from "../_shared/format";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { stopTags } from "./schema";
 
-export type Trip = typeof doc.current;
+export type Trip = Value<typeof schema.descriptor>;
 export type Day = Trip["days"][number];
 export type Stop = Day["events"][number];
 export type StopTag = (typeof stopTags)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export const TAGS = [
   { value: "flight", label: "Flight", code: "FLT" },
@@ -47,7 +48,7 @@ export function tagCode(id: StopTag): string {
 export function formatDate(iso: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!match) return iso;
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return dateLabel(new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])),  { month: "short", day: "numeric" });
 }
 
 export function nextDate(from: string): string {

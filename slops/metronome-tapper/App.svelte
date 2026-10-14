@@ -8,11 +8,13 @@
   import { RadioGroup, Toggle } from "bits-ui";
   import { onDestroy, onMount } from "svelte";
   import { Spring, prefersReducedMotion } from "svelte/motion";
-  import doc, { signatures } from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema, { signatures } from "./schema";
   import {
     clampBpm, isSignature, metronomeView, removePreset, savePreset, setSignature, setTempo, tapTempo,
   } from "./metronome";
 
+  const doc = getDocument(schema);
   const CAPTURE_ANGLE = -16;
   const SWING_ANGLE = 22;
 

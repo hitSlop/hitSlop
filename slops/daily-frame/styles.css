@@ -560,6 +560,17 @@ html, body {
   color: var(--slop-onBody);
 }
 .df-export .df-print { width: 100%; }
+.df-export .df-imprint {
+  right: 24px;
+  bottom: 20px;
+  font-size: 24px;
+  white-space: nowrap;
+}
+.df-export .df-sheet-photo .df-imprint {
+  right: 8px;
+  bottom: 8px;
+  font-size: 11px;
+}
 .df-sheet {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

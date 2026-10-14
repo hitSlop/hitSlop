@@ -1,10 +1,13 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
+  import { previewText } from "../_shared/preview";
   import Check from "@lucide/svelte/icons/check";
   import Brand from "./Brand.svelte";
   import Progress from "./Progress.svelte";
-  import doc from "./schema";
+  import type schema from "./schema";
   import { checklistView } from "./tasks";
-  const { visible, finished, ratio } = $derived(checklistView(doc.current));
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const { visible, finished, ratio } = $derived(checklistView(snapshot));
 </script>
 
 <main class="checklist-shell checklist-export">
@@ -12,16 +15,16 @@
   <section class="checklist-paper" aria-label="Your checklist">
     <div class="checklist-heading">
       <p class="checklist-eyebrow">A little less on your mind.</p>
-      <h1 class="checklist-title">{doc.current.title || "Untitled list"}</h1>
+      <h1 class="checklist-title">{snapshot.title || "Untitled list"}</h1>
       <Progress total={visible.length} {finished} fill={ratio} />
     </div>
     <ol class="checklist-list">
-      {#each visible as task (task.$id)}
+      {#each (preview ? (visible).slice(0, 7) : visible) as task (task.$id)}
         <li class="checklist-row" data-done={task.done}>
           <span class="checklist-box" aria-label={task.done ? "Complete" : "Incomplete"}>
-            {#if task.done}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>{/if}
+            {#if task.done}<Check size={20} strokeWidth={3.5} />{/if}
           </span>
-          <span class="checklist-task-text">{task.text || "Untitled task"}</span>
+          <span class="checklist-task-text">{previewText(task.text || "Untitled task", preview, 110)}</span>
         </li>
       {/each}
     </ol>

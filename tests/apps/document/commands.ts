@@ -1,8 +1,8 @@
 import { defineCommands } from "hitslop/commands";
 import { refuse, s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addRow: {
     description: "Insert a row and return its identity.",
     args: { text: s.string() },

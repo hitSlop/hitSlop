@@ -21,7 +21,7 @@ svelte-check found 0 errors and 0 warnings
 /Users/you/my-slop/dist/my-slop.slop
 ```
 
-A build without supplied or native artwork also reports that no artwork was captured.
+`check` runs the project's own `svelte-check` and TypeScript, pinned by the starter; if the checker is missing, the CLI prints an install hint.
 
 Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
@@ -29,11 +29,10 @@ Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hi
 
 ### Finder artwork
 
-A template's Finder preview and icon come from one of three places:
+A template's Finder preview and icon come from two sources:
 
 - **Your files.** Images you declare as `artwork: { preview, icon }` in `defineSlop` (imported like any asset) are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
-- **The Mac app.** `slop build . --artwork native` renders whichever of the two you didn't supply from your `export` and `icon` views. `bun run register` always does this. Native capture uses the installed hitSlop app; authoring never compiles Swift or installs another document engine.
-- **Neither.** The template has no artwork, and Finder shows hitSlop's document icon. Documents created from it still get their own artwork when they are first closed in hitSlop.
+- **Rendered for you.** On macOS and Linux, `bun run build` and `bun run register` render whichever of the two you didn't supply from your `Preview.svelte` and `Icon.svelte` views, in the same step that packs the template. This needs only the CLI: no hitSlop app, Swift or Xcode. If a view can't render, the build fails.
 
 ## Register a local template
 
@@ -62,21 +61,6 @@ template. A plain `bun run build` updates `dist/SLUG.slop`, not the registered m
 Keep the old document if it contains work you want to preserve; automatic app upgrades
 and schema migration are not available.
 
-If you are developing hitSlop itself, bundled starters have another build step:
-
-```sh
-bun run build
-bun run build:templates
-bun run apple:build
-```
-
-Or run the first two commands, then rebuild/run in Xcode. `build:templates` prepares
-`generated/templates/`; the Mac app build refreshes that cache from current source and
-copies the selected templates into its bundle. Building just
-`slops/beat-pad/dist/beat-pad.slop` does not update the installed app's bundled Beat Pad.
-Create a new document from the refreshed starter after
-rebuilding. A separately installed local template still needs re-registering.
-
 ## Share a template or a document
 
 For a reusable app, distribute the freshly built `.slop` template: it is one file, so it travels by Mail, AirDrop or any file service as it is. The recipient needs the hitSlop app. Opening a template asks where to create a writable document from it; to keep it in the catalog, place it in `~/.hitslop/templates` and refresh.
@@ -103,4 +87,4 @@ See [icons and exports](/docs/guides/icons-and-exports/) for layouts and saved-s
 
 ## Release your source
 
-Include the root role files (`slop.ts`, `schema.ts`, `App.svelte`, and any `Export.svelte`, `Icon.svelte` and `commands.ts`), the modules, styles and assets they import, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.
+Include the root role files (`slop.ts`, `schema.ts`, `App.svelte`, `Preview.svelte`, `Icon.svelte`, and any `Export.svelte`, `Widget.svelte` and `commands.ts`), the modules, styles and assets they import, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.

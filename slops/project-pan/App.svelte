@@ -1,15 +1,17 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { Select, Slider, Button } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import Check from "@lucide/svelte/icons/check";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
-  import doc, { kinds } from "./schema";
+  import schema, { kinds } from "./schema";
   import { addProduct, expiryText, isExpired, isKind, kindLabel, monthsOf, removeProduct, setLeft, setOpened, setPao, setShade, stashView, swatches, type Product } from "./pan";
   import Pan from "./Pan.svelte";
+
+  const doc = getDocument(schema);
 
   // The pan being looked at is view state: it is not saved, so an export shows every product.
   let selectedId = $state<string | undefined>();

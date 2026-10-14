@@ -235,7 +235,7 @@ extension SlopDocumentWindowController {
       fullscreenable: session.file.isFullscreenable, fullscreen: isFullscreen,
       canFullscreen: canToggleFullscreen, desktopControls: fullscreen.saved == nil && !fullscreen.transitioning,
       themeShown: isThemeShown, canToggleTheme: canToggleTheme,
-      commandsEnabled: isAvailable(.duplicate))
+      commandsEnabled: isAvailable(.duplicate), canExport: canExport)
   }
 
   func toolbarAction(_ action: SlopToolbar.Action) {

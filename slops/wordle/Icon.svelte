@@ -1,6 +1,8 @@
 <script lang="ts">
-import doc from "./schema";
-const activeState = $derived(doc.current.mode === "daily" ? doc.current.daily : doc.current.practice);
+import type { CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
+let { snapshot }: CaptureProps<typeof schema> = $props();
+const activeState = $derived(snapshot.mode === "daily" ? snapshot.daily : snapshot.practice);
 const badge = $derived(activeState.status === "won" ? `${activeState.guesses.length}/6` : activeState.status === "lost" ? "X/6" : "SLOPS");
 </script>
 

@@ -13,11 +13,14 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 | `bun slop COMMAND` | Run from this repository after [development setup](development.md). |
 
 `slop-engine` ships with the CLI for macOS and Linux. The executable creates, reads and edits documents without Bun,
-WebKit or a running app. The TypeScript CLI runs only the engine; opening a window,
-PNG/PDF export and native template artwork run in the Swift helper, which the engine
-passes them to.
-`slop check` and `slop build` use the CLI's engine for validation and packing. Add
-`--help` to a CLI command for its arguments. Package versions here reflect repository
+WebKit or a running app. On both platforms it also exports a closed document as PNG/PDF and
+renders template artwork, in its own restricted evaluator. The TypeScript CLI runs only
+the engine; opening a window is the one operation that starts hitSlop.app.
+`slop check` and `slop build` use the CLI's engine for validation and packing, and on both
+platforms `slop build` and `slop register` render any Preview or Icon artwork the project
+does not supply inside the same `pack` request (see
+[Finder artwork](../../apps/landing/src/content/docs/docs/guides/build-and-share.mdx#finder-artwork)).
+Add `--help` to a CLI command for its arguments. Package versions here reflect repository
 metadata, not npm availability; see [releasing](releasing.md).
 
 ## Local browser copies (Chrome beta)
@@ -88,29 +91,36 @@ CLI reads an attached file or theme file itself and writes exported bytes. An ex
 never replaces a file, including the document under another spelling of its path; to
 export again, remove the old file first.
 
-## Helper discovery and identity
+## Engine discovery and identity
 
 The CLI uses its own packaged engine for both authoring and document commands, on macOS
-and Linux. A checkout uses `target/release/slop-engine` (or `HITSLOP_CARGO_PROFILE`).
-`HITSLOP_ENGINE` selects an explicit engine. File markers protect saved documents;
-the exact command protocol protects communication with a live owner or rendering helper.
+and Linux. A checkout uses `target/release/slop-engine` (or the profile
+`HITSLOP_CARGO_PROFILE` names). `HITSLOP_ENGINE` selects an explicit engine; a missing or
+non-executable override fails, and an engine that ran is never retried through another
+binary. File markers protect saved documents; the exact command protocol protects
+communication with a live owner.
 
-The CLI sends `open`, `screenshot`, and `export` through the engine to the app's
-rendering helper. `register` and `build --artwork native` are TypeScript flows that call
-`screenshot` for rendering. These native operations require macOS and hitSlop.app;
-document creation and editing do not. The engine finds the helper in `/Applications/hitSlop.app`, then
-`~/Applications/hitSlop.app`. `HITSLOP_NATIVE_CLI` independently selects an explicit helper.
-The app contains its linked core and renderer; the engine ships only in npm.
-Missing or non-executable overrides fail, and an executed tool is never retried
-through another binary.
+`open` (macOS only; a template is refused) is the one operation that starts hitSlop.app.
+It opens the document with `/usr/bin/open -a` in the app that contains the running
+engine, else the app `HITSLOP_APP` names, else `/Applications/hitSlop.app`, then
+`~/Applications/hitSlop.app`; a `HITSLOP_APP` that names no app is an error rather than a
+cue to try another copy. A document that is already open in the app is edited and
+exported by that app's owner, which the engine reaches through its socket. Everything
+else runs in the engine, including a closed document's export and the artwork a build
+renders. The one other thing read from an app is the bundled starter templates:
+`templates` and `create --from` list them from an app found the same way (a
+`HITSLOP_APP` without starters is skipped).
+The app contains its linked core and the restricted `hitslop-evaluator`; the engine ships
+only in npm.
 
 The CLI and Mac app update separately. The CLI names its command protocol on every
 engine call (`--client-protocol VERSION`), and the engine names it in every request to a
-live owner. An engine, helper or owner that does not serve it refuses before document
+live owner. An engine or owner that does not serve it refuses before document
 access, with exit status 2 or `requires_update`, and says which side to update; a
-document command that names no protocol is a usage error. Each executable reports the range it serves with
-`--protocol` (`{"version":N,"minimum":M}`). The app bundles its engine, helper and owner
-built from one core; `slop-engine --build-id` and `hitslop-native --build-id` print it.
+document command that names no protocol is a usage error. The engine reports the protocol
+it serves with `--protocol` (`{"version":N}`). A release builds the app and the engine
+from one core: `slop-engine --build-id` and the app executable's `--build-id` print it,
+and release acceptance requires them to match.
 A CLI-only release may reuse an installed app while the protocol and
 [installed-consumer checks](releasing.md) pass.
 
@@ -118,7 +128,9 @@ A CLI-only release may reuse an installed app while the protocol and
 
 `slop-engine` (`crates/slop-engine`) accepts the JSON `EngineRequest` methods above,
 not CLI subcommands. `validateApp` checks evaluated app input, `validateMetadata` checks
-new-project metadata, and `pack` writes an immutable template from a build stage.
+new-project metadata, and `pack` writes an immutable template from a build stage; with
+`renderArtwork` it also renders the Preview and Icon artwork the build does not supply,
+in the same request (the CLI asks for it on macOS and Linux).
 `templates` returns the catalog's folders, accepted templates and per-file issues;
 `create` takes `from` and `output`, creates parent folders and returns `documentPath`.
 A bare template slug resolves installed templates before bundled ones.
@@ -129,9 +141,9 @@ the app digest (equal digests mean the same app);
 the live or in-process owner and wait for persistence as required. `copy` makes a saved
 copy; `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
 file and returns its hash, byte length, name and detected MIME type without opening a
-document. Native `open`, `screenshot` and `export`
-requests route through the rendering helper. See the Rust `EngineRequest` enum for the
-complete method and field inventory.
+document. `export` renders a closed document in the engine, and routes an open one to its
+owner on macOS. Closed export also works on Linux; `open` is macOS only and asks
+LaunchServices to open the document in hitSlop.app. See the Rust `EngineRequest` enum for the complete method and field inventory.
 
 The executable flags are `--client-protocol N`, `--protocol`, `--build-id`, the restricted
 `--evaluate-command` entry point and `--preview-owner PATH` (with a client protocol).
@@ -164,9 +176,11 @@ are needed.
 ## Project version selection
 
 Use `bun run check`, `bun run dev` and `bun run build` in a project. These scripts run
-its pinned package. A global authoring command refuses a different installed project
-version and directs you to those scripts. `slop --project=DIR build .` explicitly delegates
-to that install. Merely changing cwd never redirects document commands.
+its pinned package. `slop check` runs the project's own svelte-check and TypeScript, which
+the starter pins as devDependencies; a project without them is told what to install. A
+global authoring command refuses a different installed project version and directs you to
+those scripts. `slop --project=DIR build .` explicitly delegates to that install. Merely
+changing cwd never redirects document commands.
 
 ## Domain commands
 

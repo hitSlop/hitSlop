@@ -1,5 +1,6 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
+use crate::support;
 use hitslop_core::file::{self, Artwork, Kind, TemplateSource};
 use hitslop_core::registry::{self, Lease};
 use hitslop_core::store::{Error, Mode, Store};
@@ -7,13 +8,263 @@ use hitslop_core::{Code, Origin};
 use rusqlite::{Connection, config::DbConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
-mod support;
 use support::ApplyJson;
 use support::{App, isolate_registry, registry_folder, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
+
+#[test]
+fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
+    use hitslop_core::capture::{CaptureFormat, CaptureOutput, CaptureValue, render_batch};
+    for has_widget in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let source = stage(directory.path());
+        if has_widget {
+            support::edit_input(&source, |input| {
+                input["declaration"]["views"]["widget"] = serde_json::json!({});
+                input["roles"]["widget"] = "widget.js".into();
+            });
+            support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+        }
+        let template = directory.path().join("template.slop");
+        support::pack(&source, &template).unwrap();
+        let document = directory.path().join("document.slop");
+        file::create_document(&template, &document).unwrap();
+        let saved = fs::read(&document).unwrap();
+        let image = png(512, 512, 6);
+        let reply = serde_json::json!({"ok": true, "images": [data_encoding::BASE64.encode(&image)]});
+        let widget_images: Vec<_> =
+            hitslop_core::widgets::widget_viewports().iter().map(|v| png(v.width * 2, v.height * 2, 6)).collect();
+        let widgets = serde_json::json!({"ok": true, "images": widget_images.iter()
+            .map(|bytes| data_encoding::BASE64.encode(bytes)).collect::<Vec<_>>()});
+        let evaluator = hitslop_core::owner::Evaluator::new(
+            "/bin/sh".into(),
+            vec!["-c".into(), format!(r#"input=$(/bin/cat); case "$input" in *'"mode":"widget"'*) printf '%s' '{widgets}';; *) printf '%s' '{reply}';; esac"#)],
+        ).unwrap();
+        let outputs = [
+            CaptureOutput::Preview,
+            CaptureOutput::Widgets,
+            CaptureOutput::Export { format: CaptureFormat::Pdf }, // Child returned the wrong media.
+            CaptureOutput::Icon,
+        ];
+        let results = render_batch(&document, &evaluator, &outputs).unwrap();
+        assert_eq!(results.iter().map(|result| result.output).collect::<Vec<_>>(), outputs);
+        for result in &results {
+            match result.output {
+                CaptureOutput::Preview | CaptureOutput::Icon => {
+                    let Ok(CaptureValue::Image { bytes: Some(bytes) }) = &result.result else {
+                        panic!("valid image must survive another role's failure")
+                    };
+                    assert_eq!(bytes, &image);
+                }
+                CaptureOutput::Widgets if has_widget => {
+                    let Ok(CaptureValue::Widgets { capture }) = &result.result else {
+                        panic!("valid widgets must survive another role's failure")
+                    };
+                    assert_eq!(
+                        capture.images.iter().map(|i| &i.png).collect::<Vec<_>>(),
+                        widget_images.iter().collect::<Vec<_>>()
+                    );
+                    assert_eq!(
+                        capture.source_version,
+                        hitslop_core::widgets::saved_version(&document, &evaluator).unwrap()
+                    );
+                }
+                _ => assert!(result.result.is_err()),
+            }
+        }
+        assert_eq!(fs::read(&document).unwrap(), saved);
+    }
+}
+
+/// A closed export to `output`, as a PNG, with a deadline it never reaches.
+fn export(document: &Path, output: &Path, evaluator: &hitslop_core::owner::Evaluator) -> Result<(), Error> {
+    use hitslop_core::capture::{CaptureFormat, export_saved};
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    export_saved(document, CaptureFormat::Png, output, evaluator, deadline)
+}
+/// A renderer that leaves `marker` behind, so a test can tell whether it ran.
+fn marking(marker: &Path) -> hitslop_core::owner::Evaluator {
+    support::renderer(&format!(": > '{}'", marker.display()), &png(64, 48, 6))
+}
+
+/// An export never replaces anything at its output under any spelling, and refuses before
+/// any authored code renders.
+#[test]
+fn closed_export_refuses_an_existing_output_before_rendering() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let rendered = dir.path().join("rendered");
+    let file = dir.path().join("file.png");
+    fs::write(&file, "an earlier export").unwrap();
+    let folder = dir.path().join("folder.png");
+    fs::create_dir(&folder).unwrap();
+    let (link, dangling, missing) =
+        (dir.path().join("link.png"), dir.path().join("dangling.png"), dir.path().join("missing.png"));
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    std::os::unix::fs::symlink(&missing, &dangling).unwrap();
+    let mut outputs = vec![file.clone(), folder.clone(), link.clone(), dangling.clone()];
+    // The Mac's file systems usually ignore case: another spelling of the same file.
+    let alias = dir.path().join("FILE.png");
+    if alias.exists() {
+        outputs.push(alias);
+    }
+    for output in outputs {
+        assert_eq!(code(export(&doc, &output, &marking(&rendered)).unwrap_err()), Code::Exists, "{}", output.display());
+    }
+    assert_eq!(fs::read_to_string(&file).unwrap(), "an earlier export");
+    assert!(folder.is_dir() && fs::read_dir(&folder).unwrap().next().is_none());
+    assert_eq!((fs::read_link(&link).unwrap(), fs::read_link(&dangling).unwrap()), (file, missing.clone()));
+    assert!(!missing.exists());
+    assert!(!rendered.exists(), "refused before rendering");
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// An export publishes exactly the image its renderer made, once it passed the checks every
+/// capture passes, and leaves the document's bytes and its writer lock alone.
+#[test]
+fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() {
+    use hitslop_core::capture::{CaptureFormat, export_saved};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let saved = fs::read(&doc).unwrap();
+    let image = png(64, 48, 6);
+    let output = dir.path().join("Export.png");
+    export(&doc, &output, &support::renderer(":", &image)).unwrap();
+    assert_eq!(fs::read(&output).unwrap(), image);
+    // Bytes that are not the format asked for: no PNG, and a PNG where a PDF was asked.
+    let refused = dir.path().join("Refused");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    for (format, bytes) in [(CaptureFormat::Png, b"not a PNG".to_vec()), (CaptureFormat::Pdf, image)] {
+        assert!(export_saved(&doc, format, &refused, &support::renderer(":", &bytes), deadline).is_err());
+        assert!(!refused.exists());
+    }
+    assert_eq!(fs::read(&doc).unwrap(), saved);
+    assert!(Lease::acquire(&doc).is_ok(), "an export takes no writer lock");
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// A result that arrives after its command's deadline is discarded, not published late.
+#[test]
+fn a_closed_export_past_its_deadline_publishes_nothing() {
+    use hitslop_core::capture::{CaptureFormat, export_saved};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Late.png"));
+    let late = export_saved(&doc, CaptureFormat::Png, &output, &marking(&rendered), std::time::Instant::now());
+    assert!(late.unwrap_err().to_string().contains("not published"));
+    assert!(rendered.exists(), "the renderer answered, too late");
+    assert!(!output.exists());
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// A file made at the output while the export rendered wins: the export refuses rather
+/// than replace it.
+#[test]
+fn a_file_made_at_the_output_while_rendering_is_never_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let output = dir.path().join("Raced.png");
+    let racing = support::renderer(&format!("printf theirs > '{}'", output.display()), &png(64, 48, 6));
+    assert_eq!(code(export(&doc, &output, &racing).unwrap_err()), Code::Exists);
+    assert_eq!(fs::read_to_string(&output).unwrap(), "theirs");
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// A template exports through a document made from it, and an app without an Export view
+/// has nothing to export; neither runs its renderer.
+#[test]
+fn closed_export_refuses_templates_and_apps_without_an_export_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Export.png"));
+    let template = template(dir.path());
+    assert_eq!(code(export(&template, &output, &marking(&rendered)).unwrap_err()), Code::IsTemplate);
+    support::edit_input(&dir.path().join("stage"), |input| {
+        input["declaration"]["views"]["export"] = false.into();
+        input["roles"].as_object_mut().unwrap().remove("export");
+        input["resources"].as_array_mut().unwrap().retain(|resource| resource["key"] != "export.js");
+    });
+    let plain = dir.path().join("Plain.slop");
+    support::pack(&dir.path().join("stage"), &plain).unwrap();
+    let doc = dir.path().join("Plain document.slop");
+    file::create_document(&plain, &doc).unwrap();
+    let error = export(&doc, &output, &marking(&rendered)).unwrap_err();
+    assert!(error.to_string().contains("Export.svelte"), "{error}");
+    assert_eq!(code(error), Code::InvalidRequest);
+    assert!(!output.exists());
+    assert!(!rendered.exists());
+}
+
+#[test]
+fn widget_program_is_required_at_pack_and_private_when_opened() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = stage(directory.path());
+    support::edit_input(&source, |input| input["declaration"]["views"]["widget"] = serde_json::json!({}));
+    let template = directory.path().join("widget.slop");
+    assert!(support::pack(&source, &template).is_err());
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+    support::edit_input(&source, |input| input["roles"]["widget"] = "widget.js".into());
+    support::pack(&source, &template).unwrap();
+    let document = directory.path().join("document.slop");
+    file::create_document(&template, &document).unwrap();
+    let store = Store::open(&document, Mode::Snapshot).unwrap();
+    assert!(store.app().widget.as_ref().unwrap().contains("__slopWidget"));
+    let reader = store.resource_reader().unwrap();
+    assert!(reader.info(file::ResourceRoute::App, "widget.js").unwrap().is_none());
+    assert!(reader.read_range(file::ResourceRoute::App, "widget.js", 0, 100).unwrap().is_none());
+}
+
+#[test]
+fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_document() {
+    use std::os::unix::fs::symlink;
+    let directory = tempfile::tempdir().unwrap();
+    let source = stage(directory.path());
+    support::edit_input(&source, |input| {
+        input["declaration"]["views"]["widget"] = serde_json::json!({});
+        input["roles"]["widget"] = "widget.js".into();
+    });
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+    let template = directory.path().join("widget.slop");
+    support::pack(&source, &template).unwrap();
+    let document = directory.path().join("document.slop");
+    file::create_document(&template, &document).unwrap();
+    let saved = fs::read(&document).unwrap();
+    let images: Vec<_> = hitslop_core::widgets::widget_viewports()
+        .iter()
+        .map(|view| data_encoding::BASE64.encode(&png(view.width * 2, view.height * 2, 6)))
+        .collect();
+    let reply = serde_json::json!({"ok": true, "images": images});
+    let program = format!("/bin/cat >/dev/null; printf '%s' '{reply}'");
+    let executable = directory.path().join("evaluator");
+    symlink("/bin/sh", &executable).unwrap();
+    let evaluator =
+        hitslop_core::owner::Evaluator::new(executable.clone(), vec!["-c".into(), program.clone()]).unwrap();
+    let first = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    let repeated = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    assert_eq!(first.source_version, repeated.source_version);
+    let replacement = directory.path().join("replacement");
+    symlink("/bin/bash", &replacement).unwrap();
+    fs::rename(&replacement, &executable).unwrap();
+    let upgraded = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    assert_ne!(first.source_version, upgraded.source_version, "new renderer must invalidate unchanged widget state");
+    assert_eq!(hitslop_core::widgets::saved_version(&document, &evaluator).unwrap(), upgraded.source_version);
+    // Replacing a helper at the same path with identical bytes does not need a
+    // new generation, but a capture that actually crosses a replacement is refused.
+    symlink("/bin/bash", &replacement).unwrap();
+    fs::rename(&replacement, &executable).unwrap();
+    assert_eq!(hitslop_core::widgets::saved_version(&document, &evaluator).unwrap(), upgraded.source_version);
+    let evaluator = hitslop_core::owner::Evaluator::new(
+        executable.clone(),
+        vec!["-c".into(), format!("/bin/ln -sf /bin/sh '{}'; {program}", executable.display())],
+    )
+    .unwrap();
+    let error =
+        hitslop_core::widgets::render_saved(&document, &evaluator).err().expect("replacement must refuse capture");
+    assert!(error.to_string().contains("renderer changed during capture"), "{error}");
+    assert_eq!(fs::read(&document).unwrap(), saved, "capture must never modify the document");
+}
 /// What a crashed owner leaves behind: its discovery file, with its lock released.
 fn crashed_owner(doc: &Path, json: &str) {
     let lease = Lease::acquire(doc).unwrap();
@@ -240,7 +491,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     let summary = file::inspect(&a).unwrap();
     assert!(matches!(summary.kind, hitslop_core::engine::FileKind::Template));
     let assets: Vec<&str> = summary.assets.iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(assets, [font_key().as_str(), "ui.css", "ui.js"]);
+    assert_eq!(assets, ["export.js", "icon.js", font_key().as_str(), "preview.js", "ui.css", "ui.js"]);
     // A rebuild replaces a template; it never replaces a document, or anything else.
     let folder = dir.path().join("Folder.slop");
     fs::create_dir(&folder).unwrap();
@@ -322,6 +573,156 @@ fn packed_artwork_is_losslessly_smaller() {
         assert!(stored.len() < input.len(), "the {name} is stored smaller");
         assert_eq!(&decoded(&stored), pixels, "the {name} decodes to the same pixels");
     }
+}
+
+type RenderedArtwork = Result<Vec<(Artwork, Option<Vec<u8>>)>, Error>;
+/// A stand-in for the capture renderer: it draws each role asked for with `draw` and notes
+/// each batch it was asked for, from the staged template.
+fn renders<'a>(
+    asked: &'a std::cell::RefCell<Vec<Vec<Artwork>>>,
+    draw: impl Fn(Artwork) -> Option<Vec<u8>> + 'a,
+) -> impl Fn(&Path, &[Artwork]) -> RenderedArtwork + 'a {
+    move |template, roles| {
+        assert_eq!(file::open(template, true).unwrap().kind, Kind::Template, "renders the staged template");
+        asked.borrow_mut().push(roles.to_vec());
+        Ok(roles.iter().map(|&name| (name, draw(name))).collect())
+    }
+}
+/// A 512 × 512 image in `shade`, uncompressed as a renderer returns it, and its pixels.
+fn render_of(shade: u8) -> (Vec<u8>, Vec<u8>) {
+    let pixels: Vec<u8> = (0..512 * 512usize).flat_map(|i| [shade, (i % 251) as u8, 0x77, 255]).collect();
+    (encoded(512, 512, &pixels), pixels)
+}
+
+/// Rendered artwork is stored exactly as supplied artwork is: checked, then optimized, so a
+/// template packed with a render stores the bytes one packed with that render as its
+/// artwork would.
+#[test]
+fn rendered_artwork_is_stored_as_supplied_artwork_is() {
+    use hitslop_core::engine::{ArtworkSource::*, PackedArtwork};
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let ((raw, pixels), asked) = (render_of(1), std::cell::RefCell::new(vec![]));
+    let rendered = dir.path().join("Rendered.slop");
+    let render = renders(&asked, |_| Some(raw.clone()));
+    let packed = support::pack_rendering(&stage, &rendered, Some(&render)).unwrap();
+    assert_eq!(packed, PackedArtwork { preview: Rendered, icon: Rendered });
+    // Through the capture renderer too, which renders the staged template's initial values.
+    let evaluator = support::renderer(":", &png(512, 512, 6));
+    let capture =
+        |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_artwork(template, &evaluator, roles);
+    let captured = dir.path().join("Captured.slop");
+    support::pack_rendering(&stage, &captured, Some(&capture)).unwrap();
+    for (render, template) in [(&raw, &rendered), (&png(512, 512, 6), &captured)] {
+        for name in Artwork::ALL {
+            support::artwork(&stage, &name.to_string(), render);
+        }
+        let supplied = dir.path().join("Supplied.slop");
+        assert_eq!(
+            support::pack_rendering(&stage, &supplied, None).unwrap(),
+            PackedArtwork { preview: Supplied, icon: Supplied }
+        );
+        for name in Artwork::ALL {
+            let stored = file::artwork(template, &[name]).unwrap().unwrap().1;
+            assert_eq!(stored, file::artwork(&supplied, &[name]).unwrap().unwrap().1, "the {name}");
+        }
+    }
+    let stored = file::artwork(&rendered, &[Artwork::Icon]).unwrap().unwrap().1;
+    assert!(stored.len() < raw.len(), "stored optimized");
+    assert_eq!(decoded(&stored), pixels);
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// Supplied artwork wins role by role: packing renders only what its build does not
+/// supply, and nothing when it supplies both.
+#[test]
+fn pack_renders_only_the_artwork_its_build_does_not_supply() {
+    use hitslop_core::engine::{ArtworkSource::*, PackedArtwork};
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let asked = std::cell::RefCell::new(vec![]);
+    let render = renders(&asked, |_| Some(render_of(1).0));
+    let pack = |name: &str| support::pack_rendering(&stage, &dir.path().join(name), Some(&render)).unwrap();
+    assert_eq!(pack("None.slop"), PackedArtwork { preview: Rendered, icon: Rendered });
+    assert_eq!(asked.take(), [Artwork::ALL.to_vec()]);
+    let (icon, pixels) = render_of(2);
+    support::artwork(&stage, "icon", &icon);
+    assert_eq!(pack("Icon.slop"), PackedArtwork { preview: Rendered, icon: Supplied });
+    assert_eq!(asked.take(), [vec![Artwork::Preview]]);
+    assert_eq!(decoded(&file::artwork(&dir.path().join("Icon.slop"), &[Artwork::Icon]).unwrap().unwrap().1), pixels);
+    support::artwork(&stage, "preview", &icon);
+    assert_eq!(pack("Both.slop"), PackedArtwork { preview: Supplied, icon: Supplied });
+    assert!(asked.take().is_empty(), "nothing to render");
+}
+
+/// Every template has a preview: one that cannot be rendered publishes nothing, an existing
+/// template at the destination stays as it was, and a document there is never replaced.
+#[test]
+fn a_preview_that_cannot_be_rendered_publishes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let existing = dir.path().join("Existing.slop");
+    support::pack(&stage, &existing).unwrap();
+    let before = fs::read(&existing).unwrap();
+    let asked = std::cell::RefCell::new(vec![]);
+    let failing =
+        |_: &Path, _: &[Artwork]| -> RenderedArtwork { Err(Error::Failed("Capture rendering failed".into())) };
+    let blank = renders(&asked, |_| None);
+    for render in [&failing as file::RenderArtwork, &blank] {
+        assert!(support::pack_rendering(&stage, &existing, Some(render)).is_err());
+        assert_eq!(fs::read(&existing).unwrap(), before);
+        assert!(temporaries(dir.path()).is_empty());
+    }
+    let doc = dir.path().join("Doc.slop");
+    file::create_document(&existing, &doc).unwrap();
+    let document = fs::read(&doc).unwrap();
+    let drawn = renders(&asked, |_| Some(png(512, 512, 6)));
+    assert_eq!(code(support::pack_rendering(&stage, &doc, Some(&drawn)).unwrap_err()), Code::Exists);
+    assert_eq!(fs::read(&doc).unwrap(), document);
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// An icon the renderer does not draw (an app without an icon view) leaves the template
+/// without one, and the reply says so; its preview still renders.
+#[test]
+fn a_template_without_a_drawn_icon_says_so() {
+    use hitslop_core::engine::{ArtworkSource::*, PackedArtwork};
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let asked = std::cell::RefCell::new(vec![]);
+    let render = renders(&asked, |name| (name == Artwork::Preview).then(|| png(512, 512, 6)));
+    let out = dir.path().join("No icon.slop");
+    assert_eq!(
+        support::pack_rendering(&stage, &out, Some(&render)).unwrap(),
+        PackedArtwork { preview: Rendered, icon: Absent }
+    );
+    assert_eq!(asked.take(), [Artwork::ALL.to_vec()]);
+    assert!(file::artwork(&out, &[Artwork::Icon]).unwrap().is_none());
+    assert!(file::artwork(&out, &[Artwork::Preview]).unwrap().is_some());
+}
+
+/// An app that draws an icon never ships without one: an icon that fails to render, or
+/// renders as no valid icon, fails the pack and publishes nothing.
+#[test]
+fn an_icon_that_fails_to_render_fails_the_pack() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let existing = dir.path().join("Existing.slop");
+    support::pack(&stage, &existing).unwrap();
+    let before = fs::read(&existing).unwrap();
+    // A rendered image is checked as supplied artwork is: an icon is 512 × 512.
+    let asked = std::cell::RefCell::new(vec![]);
+    let small = renders(&asked, |_| Some(png(64, 48, 6)));
+    let error = support::pack_rendering(&stage, &existing, Some(&small)).unwrap_err();
+    assert!(error.to_string().contains("artwork/icon.png"), "{error}");
+    // The capture renderer's own icon failure fails its batch.
+    let evaluator = support::renderer(":", &png(64, 48, 6));
+    let capture =
+        |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_artwork(template, &evaluator, roles);
+    let error = support::pack_rendering(&stage, &existing, Some(&capture)).unwrap_err();
+    assert!(error.to_string().contains("512"), "{error}");
+    assert_eq!(fs::read(&existing).unwrap(), before);
+    assert!(temporaries(dir.path()).is_empty());
 }
 
 /// The `app` row holds one-line JSON whatever the build's spacing, so hosts pass it on
@@ -1180,8 +1581,9 @@ fn a_newer_file_with_a_crashed_write_is_restored_then_refused() {
     store.close().unwrap();
     raw(&doc).execute_batch(&raised(&doc)[0]).unwrap();
     let committed = fs::read(&doc).unwrap();
-    let status =
-        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status = support::child("file::crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the file");
@@ -1218,9 +1620,10 @@ fn taking_the_writer_lock_never_drops_this_process_sqlite_locks() {
     reader.execute_batch("BEGIN").unwrap();
     reader.query_row("SELECT count(*) FROM app", [], |r| r.get::<_, i64>(0)).unwrap();
     let lease = Lease::acquire(&doc).unwrap();
-    let status = support::child("exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
-        .status()
-        .unwrap();
+    let status =
+        support::child("file::exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
+            .status()
+            .unwrap();
     assert_eq!(status.code(), Some(0), "another writer must find the file busy while this process reads it");
     reader.execute_batch("COMMIT").unwrap();
     drop(lease);
@@ -1245,8 +1648,9 @@ fn a_crash_mid_commit_is_recovered_by_the_next_writer() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     let attachment = store.put_attachment(&vec![7u8; 4 << 20]).unwrap();
     store.close().unwrap();
-    let status =
-        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status = support::child("file::crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the document");

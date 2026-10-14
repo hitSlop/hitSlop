@@ -300,9 +300,6 @@ button:focus-visible, textarea:focus-visible, [data-progress-root]:focus-visible
   font-size: 12px;
   color: var(--slop-gold);
 }
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
 .mp-iconSurface {
   display: grid;
   width: 100%;

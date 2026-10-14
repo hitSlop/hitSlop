@@ -22,7 +22,7 @@ import Testing
   }
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
-  // Failure: the helper validated a live reply, and the validator refuses JSON over 48 MiB,
+  // Failure: a live reply was validated, and the validator refuses JSON over 48 MiB,
   // while a closed reply went unchecked, so a large document read closed but not live.
   // Oracle: near-limit batches each apply once, and the live and closed reads of a reply
   // over 48 MiB agree.

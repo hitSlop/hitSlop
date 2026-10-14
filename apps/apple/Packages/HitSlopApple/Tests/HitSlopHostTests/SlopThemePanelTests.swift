@@ -50,7 +50,7 @@ import Testing
   controller.showWindow(nil)
   await controller.waitForPresentation()
   let window = try #require(controller.window)
-  #expect(controller.session.canEditTheme)
+  #expect(controller.session.acceptsPageWork)
 
   controller.setThemeShown(true)
   let panel = try #require(controller.themePanel)

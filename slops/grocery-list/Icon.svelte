@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const doneCount = $derived(doc.current.items.filter((item) => item.done).length);
-  const totalCount = $derived(doc.current.items.length);
+  const doneCount = $derived(snapshot.items.filter((item) => item.done).length);
+  const totalCount = $derived(snapshot.items.length);
   const marks = $derived(totalCount > 0 ? Math.round(4 * doneCount / totalCount) : 0);
 </script>
 

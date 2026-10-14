@@ -1,8 +1,8 @@
 import { defineCommands } from "hitslop/commands";
 import { refuse, s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   bump: {
     description: "Add to the hit counter, record the result and report the total.",
     args: { by: s.integer({ min: 1, max: 10 }) },

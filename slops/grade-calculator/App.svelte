@@ -6,14 +6,16 @@
     gradebookView, insertCategory, insertCourse, removeCategory, removeCourse,
     setFinalCategory, setScore, setTarget,
   } from "./gradebook";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import Calculator from "@lucide/svelte/icons/calculator";
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
   import Target from "@lucide/svelte/icons/target";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import { Slider, Tabs } from "bits-ui";
-  import doc from "./schema";
+  import schema from "./schema";
+
+  const doc = getDocument(schema);
   let selectedCourseId = $state<string | null>(null);
 
   const view = $derived(gradebookView(doc.current));

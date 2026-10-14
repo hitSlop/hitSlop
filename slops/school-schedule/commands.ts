@@ -1,6 +1,6 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { COLORS, DAYS } from "./schema";
+import schema, { COLORS, DAYS } from "./schema";
 import {
   copyDay, moveClass, periodKeyFrom, removeActivity, removeClass, removePeriod, saveActivity, saveClass, saveDetails, savePeriod,
 } from "./schedule";
@@ -9,7 +9,7 @@ const day = s.enum(DAYS, { description: "Weekday: MON to FRI." });
 const color = s.enum(COLORS, { description: "Subject color." });
 const time = (what: string) => s.string({ description: `${what} as 24-hour HH:MM.` });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addClass: {
     description: "Put a class in an empty timetable slot and return its row ID.",
     args: {

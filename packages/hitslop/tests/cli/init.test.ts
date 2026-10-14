@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { initProject } from "../../src/cli/init";
 import { stageProject } from "../../src/cli/build";
 import cli from "../../package.json";
+import starter from "../../templates/checklist/package.json";
 
 // Simulate a person's terminal even when the enclosing test runner is in CI.
 // CLI subprocess tests separately prove that CI selects unattended defaults.
@@ -86,7 +87,8 @@ test("cancelling init leaves no destination; --yes bypasses TTY prompts", async 
     expect(await lstat(target).catch(() => undefined)).toBeUndefined();
     expect(await initProject(target, { yes: true }, tty.io)).toBe(target);
     const project = JSON.parse(await readFile(join(target, "package.json"), "utf8"));
-    expect(project.devDependencies["hitslop"]).toBe(cli.version);
+    // The starter's checker and TypeScript pins stay beside this CLI's version.
+    expect(project.devDependencies).toEqual({ ...starter.devDependencies, hitslop: cli.version });
   } finally {
     tty.io.output.destroy();
     await rm(root, { recursive: true, force: true });

@@ -1,7 +1,9 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const allTasks = $derived(doc.current.days.flatMap((day) => day.tasks));
+  const allTasks = $derived(snapshot.days.flatMap((day) => day.tasks));
   const doneCount = $derived(allTasks.filter((task) => task.done).length);
 </script>
 

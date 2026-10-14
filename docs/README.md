@@ -15,6 +15,7 @@ published on hitslop.com. The pages here cover how the platform works and how to
 | Rules for platform changes | [Engineering contract](engineering-contract.md) |
 | Every document kind: snapshot, merge, writes, handles and CLI paths | [Document types](reference/document-types.md) |
 | File layout, limits, security, capture and telemetry | [Runtime reference](reference/runtime.md) |
+| Icon, preview and export rendering; desktop widget publication and refresh | [Capture architecture](architecture.md#close-export-and-capture) and [macOS widgets](architecture.md#macos-image-widgets) |
 | Camera, microphone, speech and their permission boundaries | [Capabilities](reference/runtime.md#security-boundaries) |
 | Operation shapes, ownership and tool identity | [CLI reference](guides/cli.md) |
 | Standards for the templates in this repository | [Authoring templates](guides/authoring.md) |

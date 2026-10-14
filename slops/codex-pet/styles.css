@@ -156,10 +156,6 @@ html:not([data-slop-controls]) .pet-shell:hover .pet-rail {
   background: transparent;
 }
 
-.pet-icon-canvas { width: 512px; height: 512px; }
-
-html[data-slop-capture="static"] [data-slop-export="hide"] { display: none !important; }
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; }
 }

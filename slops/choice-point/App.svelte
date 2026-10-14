@@ -1,15 +1,17 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, draft } from "hitslop/svelte";
+  import { bindText, draft, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { Checkbox } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import X from "@lucide/svelte/icons/x";
   import Check from "@lucide/svelte/icons/check";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addPoint, choicePointView, removePoint, setNextDone, type ListKey } from "./choices";
 
-  type ChoiceItem = (typeof doc.current.hooks)[number];
+  const doc = getDocument(schema);
+  type ChoiceItem = Value<typeof schema.descriptor>["hooks"][number];
   const view = $derived(choicePointView(doc.current));
 
   const composers = {

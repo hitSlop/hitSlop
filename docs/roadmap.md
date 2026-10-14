@@ -44,6 +44,13 @@ In order, with the reasoning in [ideas](ideas.md):
   runs do not certify the current candidate.
 - At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
   entry; from then on every released document stays openable.
+- Before that first freeze, bound the corpus's growth. Capture a new entry only when a
+  format marker or the persisted-format fingerprint (the `inputs` hash an entry already
+  records) changes, since an unchanged format is covered by the previous entry. Keep each
+  entry's documents in git (about 1.5 MB, and unchanged files are stored once), but stop
+  committing the 38 MB writer engine per entry: record its version and hash, fetch the
+  released engine from the published package for the randomized comparison against the
+  newest releases and any marker bump, or build a slim writer-only engine.
 - Give that entry boundary documents: limits at their maximums and every descriptor kind.
   The dev corpus already covers every window kind (1× and 2× skins, glass, transparent,
   path shapes), app media (font, image, audio) and agent commands. Opening checks only
@@ -65,8 +72,8 @@ In order, with the reasoning in [ideas](ideas.md):
   them, with the corpus passing.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
-- Shape Lab: the production-window shadow refresh, and the opening-only black strip, which
-  was not reproduced and has no confirmed cause
+- The production-window shadow refresh, and an opening-only black strip beneath a window's
+  content, which was not reproduced and has no confirmed cause
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
 - A long-lived memory study across windows, captures and close/reopen cycles. The window
   benchmarks record footprints only and make no leak claim.
@@ -93,6 +100,18 @@ In order, with the reasoning in [ideas](ideas.md):
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
   understandable. WebKit does not isolate `slop:` pages, so there is no
   `SharedArrayBuffer`.
+- **Static views declare their own stylesheets.** A capture imports the editor's
+  stylesheets, in the editor's import order, because most slops' Preview, Export and Icon
+  rely on `styles.css` that only `App.svelte` imports. Let each view (or `slop.ts`) name
+  the stylesheets it needs, so a capture depends on what it declares and the editor's CSS
+  stops leaking into it.
+- **Revisit the native Svelte checker.** `svelte-check-native` (Rust, TypeScript 7's native
+  compiler) matched `svelte-check` on every slop and 14 of 15 injected mistakes, and runs
+  about 8 to 10 times faster, but it has one maintainer, ships unsigned binaries without
+  release CI, trails `svelte-check` by weeks, and by default exits 0 on CSS and some markup
+  syntax errors. Look again when TypeScript 7.1 gives `svelte-check` a JS API (which lets
+  everything move to TypeScript 7) or when the native checker has provenance, CI and a
+  maintainer team. The repo itself type-checks cleanly on TypeScript 7 already.
 
 ## Implemented foundation
 
@@ -101,14 +120,20 @@ In order, with the reasoning in [ideas](ideas.md):
   Declared `speech` enables native on-device transcription of stored recordings; it is
   unavailable in previews and browser copies. There is no per-slop permission UI or
   server fallback. [Capabilities](reference/runtime.md#security-boundaries) records the boundary.
+- Saved-source capture preserves live speech, file selection, downloads and resize eligibility;
+  close preparation, page replacement and renderer loss cancel pending transcription.
+  Native capture uses a shared Rust runtime and per-output batch results; close batches
+  artwork and widgets with shared prepared inputs. Moving live capture coordination
+  fully into Rust, production-renderer dev previews, and a shared service admission/completion
+  API remain in progress; no new personal-data services are included in that work.
 - Active templates are discovered under `slops/`; `bundled.json` chooses the starters.
   Xcode's embedding phase refreshes `generated/templates/` through the template cache
   before copying selected starters into the app. Prepare changed tooling first; see
   [the build workflow](guides/development.md#build-current-templates-with-the-app).
 - Rust owns edit admission, save scheduling, discard, close, command dispatch and the
   live socket. Swift delivers events and provides native UI and rendering.
-- The CLI's engine creates, edits and validates documents on macOS and Linux. The Mac
-  app links its core and supplies the rendering helper independently.
+- The CLI's engine creates, edits and validates documents on macOS and Linux, renders template artwork and exports closed documents itself. The Mac app links
+  its core independently.
 - The CLI, SDK, contracts, templates and skills ship as one `hitslop` npm package with
   the Mac app's release version.
 - Rust types own every wire and the app definition; ts-rs generates TypeScript and UniFFI
@@ -124,14 +149,40 @@ In order, with the reasoning in [ideas](ideas.md):
   relay source is outside this repository. The production relay and clients are
   [later](#later).
 - `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
-  `App.svelte` the editor, and optional root `Export.svelte`, `Icon.svelte` and
-  `commands.ts` the other roles. Captures use fresh saved-state pages, with a fresh `App` as the export
-  fallback. `slop dev` runs the native owner on a disposable copy per preview page.
+  `App.svelte` the editor, required `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte`, `Widget.svelte`
+  and `commands.ts` the other roles. All production captures use saved-state Svelte SSR
+  and Takumi in the restricted Rust child, including selectable vector PDF; there is no
+  WebKit capture, automatic fallback or public per-slop override.
+  `slop dev` runs the native owner on a disposable copy per preview page.
 
 A historical summary of the ownership decisions and integration findings is retained in
 the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
+
+**Catalog capture fidelity.** The [76-slop visual review](evidence/slop-capture-review-2026-10-12.md)
+initially found blank icons, lost SVG styling and collapsed exports. The Takumi-only
+pass repairs those cases and provides synchronous capture compositions for all 76
+bundled slops. Rich browser views use static compositions; Pixel Art preserves its
+saved cells, and image-based exports resolve saved attachments in the render child.
+Seven additions from that review now have widget compositions: Water Tracker,
+Grocery List, Reading Tracker, Habit Heatmap, Daily Planner, Assignment Tracker
+and Countdown Milestones, alongside Quick Checklist. Ivy Lee Method was not
+selected. Broader theme and populated-state coverage remains product qualification;
+successful rendering does not imply support for every browser CSS feature.
+
+**Widget qualification.** The macOS image-widget integration includes dedicated saved-state
+captures, document selection, bookmark opening and optional approximate refreshes.
+Saved edits and renderer/font changes invalidate image generations; the app watches
+cached sources and catches up at startup. Shared tests cover publication, reload requests,
+restart catch-up and retaining prior images on failure. The signed app is installed and
+all three review images were generated, and the user reported the installed widget
+working after hands-on review. That report does not qualify every size or lifecycle
+scenario. See [native capture evidence](evidence/takumi-capture-2026-10-12.md) for measured
+macOS costs and the review checklist.
+Finish signed product testing of all sizes, appearance modes, refresh budgets and
+sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrower evidence.
+The `slop dev` composition selector previews all three widget families with HMR. Broader desktop qualification, cache management UI and iOS hosting are pending.
 
 **Permissions and device services.** Code-bound grants and per-slop consent remain a
 [proposal](ideas.md#permissions-bound-to-the-apps-code), as do additional devices such

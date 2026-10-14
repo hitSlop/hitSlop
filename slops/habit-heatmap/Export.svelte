@@ -1,10 +1,13 @@
 <script lang="ts">
+import type { Value } from "hitslop";
+import type { CaptureProps } from "hitslop/svelte";
 import Check from "@lucide/svelte/icons/check";
-import doc from "./schema";
+import type schema from "./schema";
 import { dayKey, heatmapView, labelDay, localDate, shortDay, weekdays } from "./calendar";
-type Habit = (typeof doc.current.habits)[number];
+let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+type Habit = Value<typeof schema.descriptor>["habits"][number];
 const today = dayKey(new Date());
-const view = $derived(heatmapView(doc.current, today));
+const view = $derived(heatmapView(snapshot, today));
 const { days, labels } = $derived(view);
 </script>
 {#snippet calendar(habit: Habit)}
@@ -25,7 +28,7 @@ const { days, labels } = $derived(view);
 {/snippet}
 <article class="habit-export">
       <header><p class="habit-eyebrow">Daily practice / 12 weeks</p><h1>Keep the thread</h1><p>{shortDay(days[0]!)} — {shortDay(today)} · {localDate(today).getFullYear()}</p></header>
-      {#each view.habits as { habit, streak, completed } (habit.$id)}
+      {#each (preview ? (view.habits).slice(0, 2) : view.habits) as { habit, streak, completed } (habit.$id)}
         <section class="habit-export-record">
           <div class="habit-detail"><h2>{habit.name || "Untitled habit"}</h2><p>{completed} check-ins · {streak} day streak</p></div>
           {@render calendar(habit)}

@@ -1,6 +1,8 @@
 <script lang="ts">
-  import doc from "./schema";
-  const stages = $derived(doc.current.applications.slice(0, 3).map((app) => app.stage));
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const stages = $derived(snapshot.applications.slice(0, 3).map((app) => app.stage));
 </script>
 
 <div class="icon-surface" aria-hidden="true">

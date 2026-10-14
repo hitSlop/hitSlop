@@ -22,17 +22,17 @@ test("stored commands validate arguments, return typed results and refuse atomic
     const source = join(root, "source");
     await cp("tests/apps/document", source, { recursive: true });
     const file = join(source, "commands.ts");
-    await writeFile(file, (await readFile(file, "utf8")).replace("defineCommands(doc, {", `defineCommands(doc, {
+    await writeFile(file, (await readFile(file, "utf8")).replace("defineCommands(schema, {", `defineCommands(schema, {
       failing: { description: "Fail after collecting", args: {}, run({tx}) { tx.fields.title.set("Must roll back"); throw new Error("Deliberate failure"); } },
       ambient: { description: "No host APIs", args: {}, run() { return [typeof process, typeof fetch, typeof Bun]; } },
     `));
-    const template = await buildTemplate(source, undefined, join(root, "master.slop"));
+    const template = await buildTemplate(source, join(root, "master.slop"), { renderArtwork: false });
     const document = join(root, "Working.slop");
     await execute({ method: "create", from: template, output: document });
     const run = (command: string, args: unknown) => request({ method: "call", documentPath: document, command, args });
     const describe = async () => (await execute({ method: "describe", documentPath: document })).state;
     const first = await describe();
-    expect(first.commands.addRow.args).toMatchObject({ properties: { text: { type: "string" } } });
+    expect(first.commands.addRow?.args).toMatchObject({ properties: { text: { type: "string" } } });
     expect(first.fields.find(field => field.path[0] === "title")?.description).toBeTruthy();
     const added = await run("addRow", { text: "From command" });
     expect(added.ok, JSON.stringify(added)).toBe(true);
@@ -81,7 +81,7 @@ test("stored commands validate arguments, return typed results and refuse atomic
     const program = await readFile(file, "utf8");
     for (const argument of ["s.text()", "s.counter()", "s.object({})", "s.optional(s.object({}))", "s.list(s.string())", "s.record(s.string())"]) {
       await writeFile(file, program.replace("text: s.string()", `text: ${argument}`));
-      await expect(buildTemplate(source, undefined, template)).rejects.toThrow("invalid_schema");
+      await expect(buildTemplate(source, template)).rejects.toThrow("invalid_schema");
       expect(await readFile(template)).toEqual(old);
     }
   } finally { await rm(root, { recursive: true, force: true }); }

@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { layouts, themes } from "./schema";
+import schema, { layouts, themes } from "./schema";
 import { addSlide, moveSlide, removeSlide, setLayout, setTheme } from "./deck";
 
 const slide = s.string({ description: "The slide's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addSlide: {
     description: "Append a split-layout slide with placeholder text and return its stable row ID.",
     args: {},

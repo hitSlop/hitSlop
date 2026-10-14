@@ -1,9 +1,9 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
 import { maxShapes, maxSize, minSize, tones, type shapeKinds } from "./schema";
-import type doc from "./schema";
+import type schema from "./schema";
 
-export type Data = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Data = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 type Shape = Data["shapes"][number];
 export type Kind = (typeof shapeKinds)[number];
 export type Tone = (typeof tones)[number];

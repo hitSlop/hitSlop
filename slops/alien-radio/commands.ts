@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { selectChannel, setFavorite, setMuted, setVolume } from "./radio";
 import { stationIds } from "./stations";
 
 const station = s.enum(stationIds, { description: "A SomaFM station id from the bundled index." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   tune: {
     description: "Tune the receiver to a SomaFM station; playback still waits for the play button.",
     args: { station },

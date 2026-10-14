@@ -1,13 +1,13 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { repeatModes, stickerKinds } from "./schema";
 
-export type Data = typeof doc.current;
+export type Data = Value<typeof schema.descriptor>;
 export type Video = Data["videos"][number];
 export type Sticker = Data["stickers"][number];
 export type StickerKind = (typeof stickerKinds)[number];
 export type RepeatMode = (typeof repeatModes)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 /** A uniform draw in [0, 1): `Math.random` on the page, `ctx.random` in a command. */
 export type Random = () => number;
 

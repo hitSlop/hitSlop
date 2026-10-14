@@ -227,7 +227,6 @@ input:focus-visible,
   color: var(--slop-ink);
 }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] { display: none !important; }
 html[data-slop-capture="static"] .sheet { height: auto; min-height: 100vh; overflow: visible; }
 html[data-slop-capture="static"] .list { overflow: visible; }
 

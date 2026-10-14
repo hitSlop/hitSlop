@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { statuses } from "./schema";
+import schema, { statuses } from "./schema";
 import { addBook, removeBook, setNotes, setRating, setStatus } from "./books";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addBook: {
     description: "Add a book to the reading list and return its stable row ID; a blank author becomes Unknown Author.",
     args: {

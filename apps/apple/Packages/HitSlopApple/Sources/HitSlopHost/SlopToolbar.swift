@@ -154,6 +154,7 @@ struct SlopToolbar: View {
     var themeShown = false, canToggleTheme = false
     /// Whether the app accepts document operations now.
     var commandsEnabled = false
+    var canExport = false
   }
   let identity: SlopDocumentIdentity
   let controls: Controls
@@ -191,9 +192,11 @@ struct SlopToolbar: View {
         .disabled(!controls.commandsEnabled).background(SlopToolbarControlRegion())
       Menu {
         Button("Duplicate…") { act(.document(.duplicate)) }.disabled(!controls.commandsEnabled)
-        Divider()
-        Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)
-        Button("Export PDF…") { act(.document(.exportPDF)) }.disabled(!controls.commandsEnabled)
+        if controls.canExport {
+          Divider()
+          Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)
+          Button("Export PDF…") { act(.document(.exportPDF)) }.disabled(!controls.commandsEnabled)
+        }
         if !editors.isEmpty {
           Divider()
           ForEach(editors, id: \.1) { editor in Button(editor.0) { act(.openEditor(editor.1)) } }

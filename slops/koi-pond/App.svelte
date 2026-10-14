@@ -1,16 +1,18 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { onMount, tick } from "svelte";
   import { Popover } from "bits-ui";
   import Fish from "@lucide/svelte/icons/fish";
   import Paintbrush from "@lucide/svelte/icons/paintbrush";
   import List from "@lucide/svelte/icons/list";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addKoi as collectKoi, feedKoi, maxName, patternLabels, pondView, releaseKoi, repaintPond } from "./shared";
   import { PondScene, readPalette } from "./pond";
+
+  const doc = getDocument(schema);
 
   let shell: HTMLElement;
   let host: HTMLDivElement;

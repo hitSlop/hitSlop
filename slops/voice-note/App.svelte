@@ -4,14 +4,14 @@
   import { onDestroy, onMount } from "svelte";
   import { AlertDialog, Select } from "bits-ui";
   import { isDocumentError } from "hitslop";
-  import { attachments, EditableText, isSpeechError, notify, speech, type SpeechError } from "hitslop/svelte";
+  import { attachments, EditableText, getDocument, isSpeechError, notify, speech, type SpeechError } from "hitslop/svelte";
   import Play from "@lucide/svelte/icons/play";
   import Pause from "@lucide/svelte/icons/pause";
   import Trash from "@lucide/svelte/icons/trash";
   import AudioLines from "@lucide/svelte/icons/audio-lines";
   import PenLine from "@lucide/svelte/icons/pen-line";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import {
     addRecording, addTypedNote, baseType, durationLabel, extensionFor, languages,
     MAX_ATTACHMENT_BYTES, MAX_RECORDING_MS, padView, removeNote, saveTranscription, setLocale, sizeLabel, type Clip, type Note,
@@ -20,6 +20,7 @@
   import NoteMeta from "./NoteMeta.svelte";
   import Spiral from "./Spiral.svelte";
 
+  const doc = getDocument(schema);
   const view = $derived(padView(doc.current));
 
   // Everything below is view state. The live microphone, the level, the clock and an
@@ -137,7 +138,7 @@
     let id = "";
     let clip: Clip | undefined;
     try {
-      await attachments.import<typeof doc.descriptor>(file, (tx, ref) => {
+      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
         clip = { id: ref.id, byteLength: ref.byteLength, name: ref.name, mimeType: ref.mimeType };
         id = addRecording(tx, { recordedAt: new Date(taken.startedAt).toISOString(), durationMs, clip }).id;
       });

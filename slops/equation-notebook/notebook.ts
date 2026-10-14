@@ -1,11 +1,11 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { maxLatex, paramLimit, windowLimit, type Kind } from "./schema";
 import { compilePlot, isParamName, type Params, type Plot } from "./latex";
 
-export type Notebook = typeof doc.current;
+export type Notebook = Value<typeof schema.descriptor>;
 export type Cell = Notebook["cells"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 export const defaultWindow = { xMin: -10, xMax: 10 } as const;
 const minSpan = 0.01;

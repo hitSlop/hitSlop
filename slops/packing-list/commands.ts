@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addItem, applyPreset, clearPacked, removeItem, setPacked } from "./items";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addItem: {
     description: "Add an unpacked item to a bag category and return its stable row ID.",
     args: {

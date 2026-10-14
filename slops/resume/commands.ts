@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addEducation, addExperience, addSkill, removeEducation, removeExperience, removeSkill } from "./entries";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addSkill: {
     description: "Add a skill with placeholder text and return its stable row ID.",
     args: {},

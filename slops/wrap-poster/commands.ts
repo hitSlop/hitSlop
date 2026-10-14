@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { shapeKinds, tones } from "./schema";
+import schema, { shapeKinds, tones } from "./schema";
 import { addShape, moveShape, removeShape, resizeShape, setShapeTone, setText } from "./poster";
 
 const shape = s.string({ description: "The shape's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addShape: {
     description: "Add a circle or square to the poster (at most 5) and return its stable row ID.",
     args: {

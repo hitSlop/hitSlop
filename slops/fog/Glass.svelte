@@ -13,12 +13,12 @@
 <svg class="fg-glass" data-variant={variant} viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" role={image ? "img" : undefined} aria-label={image ? alt : undefined} aria-hidden={image ? undefined : "true"}>
   <defs>
     <linearGradient id="{id}-room" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" class="fg-room-top" />
-      <stop offset="1" class="fg-room-bottom" />
+      <stop offset="0" class="fg-room-top" stop-color="var(--slop-room)" />
+      <stop offset="1" class="fg-room-bottom" stop-color="var(--slop-surface)" />
     </linearGradient>
     <radialGradient id="{id}-lamp" cx="0.72" cy="0.18" r="0.55">
-      <stop offset="0" class="fg-lamp" stop-opacity="0.5" />
-      <stop offset="1" class="fg-lamp" stop-opacity="0" />
+      <stop offset="0" class="fg-lamp" stop-color="var(--slop-lamp)" stop-opacity="0.5" />
+      <stop offset="1" class="fg-lamp" stop-color="var(--slop-lamp)" stop-opacity="0" />
     </radialGradient>
     <filter id="{id}-soft" filterUnits="userSpaceOnUse" x="-20" y="-20" width="440" height="340">
       <feGaussianBlur stdDeviation={variant === "icon" ? 2 : 3.2} />
@@ -46,17 +46,17 @@
   {:else}
     <rect width="400" height="300" fill="url(#{id}-room)" />
     <rect width="400" height="300" fill="url(#{id}-lamp)" />
-    <rect class="fg-tile-line" x="0" y="212" width="400" height="1" />
-    <rect class="fg-tile-line" x="132" y="0" width="1" height="300" />
-    <rect class="fg-tile-line" x="266" y="0" width="1" height="300" />
+    <rect class="fg-tile-line" fill="var(--slop-tile)" opacity="0.22" x="0" y="212" width="400" height="1" />
+    <rect class="fg-tile-line" fill="var(--slop-tile)" opacity="0.22" x="132" y="0" width="1" height="300" />
+    <rect class="fg-tile-line" fill="var(--slop-tile)" opacity="0.22" x="266" y="0" width="1" height="300" />
   {/if}
   {#if !image || variant !== "export"}
     <g mask="url(#{id}-wiped)">
-      <rect class="fg-frost" width="400" height="300" />
+      <rect class="fg-frost" fill="var(--slop-frost)" opacity="0.72" width="400" height="300" />
       <rect width="400" height="300" filter="url(#{id}-grain)" opacity="0.07" />
     </g>
   {/if}
   {#if !image && variant === "export"}
-    <text class="fg-glass-title" x="200" y="160" text-anchor="middle">fog</text>
+    <text class="fg-glass-title" fill="var(--slop-ink)" font-family="sans-serif" font-weight="300" font-size="58" x="200" y="160" text-anchor="middle">fog</text>
   {/if}
 </svg>

@@ -1,7 +1,8 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { onDestroy, untrack } from "svelte";
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
@@ -10,13 +11,14 @@
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addFactor, balanceView, clampWeight, removeFactor, setStatus, setWeight, type Side } from "./balance";
   import { STATUS_OPTIONS, isStatus } from "./statuses";
   import { grow } from "./grow";
   import Scale from "./Scale.svelte";
 
-  type Factor = (typeof doc.current.factors)[number];
+  const doc = getDocument(schema);
+  type Factor = Value<typeof schema.descriptor>["factors"][number];
 
   const { pros, cons, proTotal, conTotal, statusLabel, tilt: tiltTarget } = $derived(balanceView(doc.current));
   const tilt = new Tween(untrack(() => tiltTarget), { duration: 420, easing: cubicOut });

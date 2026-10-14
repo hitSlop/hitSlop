@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addItem, clearNote, removeItem, settleItem } from "./items";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addItem: {
     description: "Add an unsettled expense and return its stable row ID.",
     args: {

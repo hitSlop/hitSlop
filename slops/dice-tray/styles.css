@@ -189,12 +189,6 @@ button:disabled {
   padding: 20px;
   box-sizing: border-box;
 }
-.well-still {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
 
 /* Flat dice drawings. */
 .die-glyph-body {
@@ -485,7 +479,7 @@ button:disabled {
   color: var(--slop-muted);
 }
 
-/* Export: natural height, a fixed well for the still. */
+/* Export: natural height, a fixed well for the static dice. */
 .tray-export {
   height: auto;
   grid-template-rows: auto 280px auto;

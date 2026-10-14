@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { BPM, STEPS, SWING, clearPattern, kits, setKit, setStep, setSwing, setTempo, setTrack, shufflePattern, tracks } from "./pattern";
 
 const track = s.enum(tracks, { description: "The track: kick, snare, hat or bass." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   setStep: {
     description: "Set one step of a track; drums take \".\" or \"x\", bass takes \".\" or a note 1 to 5.",
     args: {

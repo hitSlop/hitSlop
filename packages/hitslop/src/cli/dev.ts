@@ -4,14 +4,12 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { roleName } from "./app-vite";
-import { appConfig, virtualEntry } from "./vite";
+import { appConfig, viewsEntry } from "./vite";
 import { previewFrame } from "./preview";
-import { previewResizeScript } from "./preview-resize";
 import { cliRoot, shellDirectory } from "./paths";
 import { stageWorker } from "./build";
 import { execute } from "./engine";
 import { PreviewOwners } from "./preview-owner";
-import { previewClient } from "./preview-client";
 import type { BuildInput, Capability, WindowDefinition } from "../wire/app.generated";
 import {
   appContentSecurityPolicy,
@@ -47,6 +45,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
         app: built.input,
         stage: join(next, "stage"),
         file: join(next, "preview.slop"),
+        renderArtwork: false,
       });
       const old = stage;
       input = built.input;
@@ -122,102 +121,68 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
               dependencies.has(file) ||
               (failed && file.startsWith(source + "/")))
           ) {
-            const entry = current.moduleGraph.getModuleById(virtualEntry);
-            if (entry) current.moduleGraph.invalidateModule(entry);
+            const views = current.moduleGraph.getModuleById(viewsEntry);
+            if (views) current.moduleGraph.invalidateModule(views);
             rebuild();
           }
         });
+        // The preview's browser entries are TypeScript beside this file, compiled by Vite.
+        const entry = async (name: string) =>
+          (await current.transformRequest(`/@fs${join(cliRoot, "src/cli", name)}`))?.code;
         current.middlewares.use(async (req, res, next) => {
           let path = "";
           try {
             path = decodeURIComponent(new URL(req.url!, "http://localhost").pathname);
+            if (path.startsWith("/attachments/")) {
+              const [, , token, id, ...rest] = path.split("/");
+              if (rest.length || !token || !new RegExp(AttachmentIdPattern).test(id ?? ""))
+                throw new Error("Invalid attachment URL");
+              const metadata = await hosts.resource(token, id!, 0, 0, req.headers.range ?? null);
+              const plan = metadata.plan;
+              if (!plan || metadata.error) throw new Error("Missing attachment");
+              res.statusCode = plan.status;
+              for (const [name, value] of Object.entries(plan.headers)) res.setHeader(name, value);
+              if (!plan.span || req.method === "HEAD") {
+                res.end();
+                return;
+              }
+              const data = await hosts.resource(token, id!, plan.span.offset, plan.span.length);
+              if (data.error || !data.bytes) throw new Error(data.error ?? "Missing attachment");
+              res.end(Buffer.from(data.bytes, "base64"));
+              return;
+            }
             const origin = new URL(current.resolvedUrls!.local[0]!).origin;
+            const widget = input.declaration.views.widget !== undefined;
             let content: string | Buffer | undefined,
               type = "text/javascript";
-            const routes: [boolean, () => void | Promise<void>][] = [
-              [
-                path === "/",
-                () => {
-                  content = previewFrame({
-                    title: input.declaration.metadata.title,
-                    window,
-                    capabilities,
-                  });
-                  type = "text/html";
-                },
-              ],
-              [
-                path === "/app.html",
-                () => {
-                  type = "text/html";
-                  content = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}"></script></body></html>`;
-                },
-              ],
-              [
-                path.startsWith("/__preview__/"),
-                () => {
-                  if (path === "/__preview__/resize.js") content = previewResizeScript;
-                  if (path === "/__preview__/native.js") content = previewClient;
-                },
-              ],
-              [
-                path.startsWith("/__shell__/"),
-                async () => {
-                  const file = resolve(shellDirectory, path.slice(11));
-                  if (!file.startsWith(shellDirectory + "/") || !file.endsWith(".js"))
-                    throw new Error("Resource not exposed");
-                  content = await readFile(file);
-                },
-              ],
-              [
-                path.startsWith("/assets/"),
-                async () => {
-                  const key = path.slice(8),
-                    resource = input.resources.find((r) => r.kind === "app" && r.key === key);
-                  if (!resource) {
-                    res.statusCode = 404;
-                    res.end();
-                    return;
-                  }
-                  content = await readFile(join(stage, "stage", resource.path));
-                  type = resource.mediaType;
-                },
-              ],
-              [
-                path.startsWith("/attachments/"),
-                async () => {
-                  const [, , token, id, ...rest] = path.split("/");
-                  if (rest.length || !token || !new RegExp(AttachmentIdPattern).test(id ?? ""))
-                    throw new Error("Invalid attachment URL");
-                  const metadata = await hosts.resource(
-                    token,
-                    id!,
-                    0,
-                    0,
-                    req.headers.range ?? null,
-                  );
-                  const plan = metadata.plan;
-                  if (!plan || metadata.error) {
-                    res.statusCode = 404;
-                    res.end();
-                    return;
-                  }
-                  res.statusCode = plan.status;
-                  for (const [name, value] of Object.entries(plan.headers))
-                    res.setHeader(name, value);
-                  if (!plan.span || req.method === "HEAD") {
-                    res.end();
-                    return;
-                  }
-                  const data = await hosts.resource(token, id!, plan.span.offset, plan.span.length);
-                  if (data.error || !data.bytes)
-                    throw new Error(data.error ?? "Missing attachment");
-                  res.end(Buffer.from(data.bytes, "base64"));
-                },
-              ],
-            ];
-            await routes.find(([matches]) => matches)?.[1]();
-            if (res.writableEnded) return;
+            if (path === "/") {
+              type = "text/html";
+              const title = input.declaration.metadata.title;
+              content = previewFrame({ title, window, capabilities, widget });
+            } else if (path === "/app.html") {
+              type = "text/html";
+              content = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><script type="module" src="/__preview__/native.js?token=${hosts.token}&widget=${widget}"></script></body></html>`;
+            } else if (path === "/__preview__/native.js") {
+              content = await entry("preview-client.ts");
+            } else if (path === "/__preview__/resize.js") {
+              // The host page's policy admits this one script and nothing it could import.
+              content = await entry("preview-frame.ts");
+            } else if (path.startsWith("/__shell__/")) {
+              const file = resolve(shellDirectory, path.slice(11));
+              if (!file.startsWith(shellDirectory + "/") || !file.endsWith(".js"))
+                throw new Error("Resource not exposed");
+              content = await readFile(file);
+            } else if (path.startsWith("/assets/")) {
+              const key = path.slice(8),
+                resource = input.resources.find((r) => r.kind === "app" && r.key === key);
+              if (!resource) {
+                res.statusCode = 404;
+                res.end();
+                return;
+              }
+              content = await readFile(join(stage, "stage", resource.path));
+              type = resource.mediaType;
+            }
             if (content === undefined) {
               next();
               return;
@@ -244,7 +209,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
         });
       },
       handleHotUpdate(ctx) {
-        if (rebuilding || failed || dependencies.has(ctx.file)) return [];
+        return rebuilding || failed || dependencies.has(ctx.file) ? [] : undefined;
       },
     };
     const config = await appConfig(source);

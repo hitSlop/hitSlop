@@ -1,6 +1,6 @@
 #![cfg(feature = "storage")]
 //! The Rust boundary owns request shapes and limits; Swift carries only typed host actions.
-use hitslop_core::page_wire::{CaptureMode, HostCaptureResult, HostReply, HostRequest, PageRequest};
+use hitslop_core::page_wire::{HostReply, HostRequest, PageRequest};
 use serde_json::json;
 
 #[test]
@@ -60,32 +60,18 @@ fn requests_are_bounded_before_their_payloads_are_interpreted() {
 }
 
 #[test]
-fn native_actions_use_the_same_serializer_and_capture_results_are_checked_in_rust() {
+fn native_actions_and_host_requests_use_the_same_serializer() {
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&HostReply::Ready.to_json()).unwrap(),
         json!({"ok":true,"method":"ready"})
     );
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(
-            &HostRequest::CaptureBegin { token: "one".into(), mode: CaptureMode::Export }.to_json()
-        )
-        .unwrap(),
-        json!({"method":"capture.begin","token":"one","mode":"export"})
+        serde_json::from_str::<serde_json::Value>(&HostRequest::Publish { payload: "{}".into() }.to_json()).unwrap(),
+        json!({"method":"publish","payload":"{}"})
     );
     let refused: serde_json::Value =
         serde_json::from_str(&HostReply::WindowResize { width: f64::NAN, height: 3.0 }.to_json()).unwrap();
     assert_eq!(refused["ok"], false);
-    let good = r#"{"x":-2,"y":0.5,"width":480,"height":360,"dedicated":true}"#;
-    assert_eq!(HostCaptureResult::decode(good).unwrap().width, 480.0);
-    for bad in [
-        "{}",
-        "null",
-        r#"{"x":1e999,"y":0,"width":1,"height":1,"dedicated":false}"#,
-        r#"{"x":0,"y":0,"width":1,"height":1,"dedicated":false,"extra":true}"#,
-    ] {
-        assert!(HostCaptureResult::decode(bad).is_err());
-    }
-    assert!(HostCaptureResult::decode(&" ".repeat(4097)).is_err());
 }
 
 // A transcription names a stored recording by its attachment ID, never its bytes, and an

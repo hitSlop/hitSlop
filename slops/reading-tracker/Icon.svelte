@@ -1,7 +1,9 @@
 <script lang="ts">
-import doc from "./schema";
+import type { CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
 import { readingView } from "./books";
-const view = $derived(readingView(doc.current));
+let { snapshot }: CaptureProps<typeof schema> = $props();
+const view = $derived(readingView(snapshot));
 </script>
 
 <div class="iconSurface" aria-hidden="true">

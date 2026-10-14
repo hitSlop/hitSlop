@@ -476,9 +476,6 @@ textarea {
   color: var(--slop-ink);
   font-size: 11px;
 }
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
 .md-exportSheet {
   display: flex;
   flex-direction: column;

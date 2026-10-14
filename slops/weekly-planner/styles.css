@@ -487,8 +487,6 @@ button { cursor: pointer; }
 
 .icon { display: block; width: 100%; height: 100%; }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] { display: none !important; }
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition: none !important;

@@ -25,40 +25,6 @@ test("HITSLOP_ENGINE names the engine, and must be executable", async () => {
   await expect(findEngine()).rejects.toThrow("HITSLOP_ENGINE is not executable");
 });
 
-test("document engine override is independent of the native renderer", async () => {
-  const { findEngine } = await import("../../src/cli/engine");
-  const root = await mkdtemp(join(tmpdir(), "hitslop-owner-engine-")); roots.push(root);
-  const engine = join(root, "slop-engine"); await writeFile(engine, "#!/bin/sh\n", { mode: 0o755 });
-  const old = process.env.HITSLOP_NATIVE_CLI;
-  try {
-    process.env.HITSLOP_NATIVE_CLI = join(root, "missing-renderer");
-    process.env.HITSLOP_ENGINE = engine;
-    expect(await findEngine()).toBe(engine);
-    process.env.HITSLOP_ENGINE = join(root, "missing-engine");
-    await expect(findEngine()).rejects.toThrow("HITSLOP_ENGINE is not executable");
-  } finally {
-    if (old === undefined) delete process.env.HITSLOP_NATIVE_CLI; else process.env.HITSLOP_NATIVE_CLI = old;
-  }
-});
-
-test("a renderer never selects the document engine", async () => {
-  const { findEngine } = await import("../../src/cli/engine");
-  const root = await mkdtemp(join(tmpdir(), "hitslop-owner-sibling-")); roots.push(root);
-  const helper = join(root, "hitslop-native"); await writeFile(helper, "#!/bin/sh\n", { mode: 0o755 });
-  const old = process.env.HITSLOP_NATIVE_CLI;
-  try {
-    delete process.env.HITSLOP_ENGINE;
-    process.env.HITSLOP_NATIVE_CLI = helper;
-    const own = await findEngine();
-    const engine = join(root, "slop-engine"); await writeFile(engine, "#!/bin/sh\n", { mode: 0o755 });
-    expect(await findEngine()).toBe(own);
-    // Authoring must keep the CLI's evaluated metadata and its validating core together.
-    expect(await findEngine()).not.toBe(engine);
-  } finally {
-    if (old === undefined) delete process.env.HITSLOP_NATIVE_CLI; else process.env.HITSLOP_NATIVE_CLI = old;
-  }
-});
-
 test("one JSON transport validates results and never retries ambiguous invocations", async () => {
   const { request } = await import("../../src/cli/engine");
   const root = await mkdtemp(join(tmpdir(), "hitslop-wire-")); roots.push(root);
@@ -80,12 +46,12 @@ console.log(${JSON.stringify(JSON.stringify(reply))});
     await expect(request(body, { binary })).rejects.toThrow("Outcome unknown");
     const observed = await Bun.file(sent).json();
     expect(observed.body).toEqual(body);
-    expect(observed.args).toEqual(["--client-protocol", String((await import("../../src/schema/constants")).HelperProtocol.version)]);
+    expect(observed.args).toEqual(["--client-protocol", String((await import("../../src/schema/constants")).EngineProtocol.version)]);
   }
   await writeFile(binary, `#!${process.execPath}
-await Bun.stdin.json(); console.log(JSON.stringify({ok:true,method:"screenshot",output:null}));
+await Bun.stdin.json(); console.log(JSON.stringify({ok:true,method:"artwork.export",output:null}));
 `, { mode: 0o755 });
-  expect(await request({ method: "screenshot", documentPath: "a.slop", output: "a.png", target: "icon", ifPresent: true }, { binary })).toEqual({ ok: true, method: "screenshot", output: null });
+  expect(await request({ method: "artwork.export", file: "a.slop", target: "icon", output: "a.png" }, { binary })).toEqual({ ok: true, method: "artwork.export", output: null });
 });
 
 test("only protocol refusals suggest updating the CLI", async () => {

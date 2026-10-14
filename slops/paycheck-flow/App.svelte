@@ -1,14 +1,16 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
   import { Button } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import Chart from "./Chart.svelte";
   import { currencies, money, parseMajor, toMajor, tones, type Currency, type Tone } from "./money";
   import { addIncome, addSpending, planView, removeRow, setCurrency, setMonth, updateRow } from "./plan";
 
+  const doc = getDocument(schema);
   const plan = $derived(doc.current);
   const view = $derived(planView(plan));
   const update = (id: string, change: Parameters<typeof updateRow>[3]) => doc.change((tx) => updateRow(tx, doc.current, id, change));

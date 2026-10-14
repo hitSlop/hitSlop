@@ -1,10 +1,12 @@
 <script lang="ts">
   import { tick } from "svelte";
-  import doc from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { answerPreview, deckView, formatInterval, nextCard, ratings, reviewCard, type Next } from "./deck";
 
   interface Props { now: number; offset: number; clock: () => number; onend: () => void }
   const { now, offset, clock, onend }: Props = $props();
+  const doc = getDocument(schema);
 
   // Session state is view state: which card is up, whether its back is showing, and
   // whether the person chose to study past the budget. Nothing here is saved.

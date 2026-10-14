@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { categories } from "./schema";
+import schema, { categories } from "./schema";
 import { addItem, removeItem, setCurrency } from "./items";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addItem: {
     description: "Record a purchase stamped with the current time and return its stable row ID.",
     args: {

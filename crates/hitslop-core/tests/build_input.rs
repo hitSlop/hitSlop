@@ -8,17 +8,24 @@ use std::path::Path;
 fn input(root: &Path) -> Value {
     fs::create_dir_all(root.join("resources")).unwrap();
     fs::write(root.join("resources/ui.js"), b"export default {mount(){}};").unwrap();
+    fs::write(
+        root.join("resources/export.js"),
+        include_str!("../../../tests/fixtures/checklist/document/assets/export.js"),
+    )
+    .unwrap();
+    std::fs::copy(root.join("resources/export.js"), root.join("resources/preview.js")).unwrap();
+    std::fs::copy(root.join("resources/export.js"), root.join("resources/icon.js")).unwrap();
     json!({
         "packageFormat":1,"runtimeABI":1,
         "declaration": {
             "metadata":{"slug":"fixture","title":"Fixture","description":"Build input","author":{"name":"Test"},"categories":["utilities"]},
             "window":{"kind":"standard","width":320,"height":240},
-            "theme":[],"commands":[],"views":{"export":false,"icon":false},
+            "theme":[],"commands":[],"views":{"preview":true,"export":true,"icon":true},
             "document":{"kind":"object","properties":{"title":{"kind":"string"}}},
             "initial":{"title":"Original"}
         },
-        "roles":{"ui":"ui.js"},
-        "resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"resources/ui.js"}],
+        "roles":{"ui":"ui.js","preview":"preview.js","icon":"icon.js","export":"export.js"},
+        "resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"resources/ui.js"},{"kind":"app","key":"preview.js","mediaType":"text/javascript","path":"resources/preview.js"},{"kind":"app","key":"icon.js","mediaType":"text/javascript","path":"resources/icon.js"},{"kind":"app","key":"export.js","mediaType":"text/javascript","path":"resources/export.js"}],
         "artwork":{}
     })
 }
@@ -52,7 +59,7 @@ fn acceptance_owns_the_explicit_inventory_and_initial_checkpoint() {
     fs::write(root.path().join("unlisted.txt"), "not packaged").unwrap();
     let accepted = build::accept(&value.to_string(), root.path()).unwrap();
     assert_eq!(accepted.requirements(), (1, 1));
-    assert_eq!(accepted.assets().len(), 2);
+    assert_eq!(accepted.assets().len(), 5);
     let document = Document::open(accepted.app().spec(), accepted.checkpoint(), &[]).unwrap();
     assert_eq!(serde_json::from_str::<Value>(&document.value()).unwrap(), value["declaration"]["initial"]);
     fs::write(root.path().join(format!("resources/{key}")), "changed after acceptance").unwrap();
@@ -184,7 +191,7 @@ fn skin_and_artwork_bytes_use_the_full_png_checker() {
     value["artwork"]["preview"] = "preview.png".into();
     let accepted = build::accept(&value.to_string(), root.path()).unwrap();
     assert_eq!(accepted.artwork().len(), 1);
-    assert_eq!(accepted.assets().len(), 2, "artwork is not silently copied into assets");
+    assert_eq!(accepted.assets().len(), 5, "artwork is not silently copied into assets");
     let good = value.clone();
     value["resources"].as_array_mut().unwrap().pop();
     refused(root.path(), &value);
@@ -209,4 +216,36 @@ fn markers_and_budgets_precede_reads_and_allocations() {
     let mut many = value.clone();
     many["resources"] = vec![value["resources"][0].clone(); hitslop_core::ASSET_COUNT + 1].into();
     refused(Path::new("/does-not-exist"), &many);
+}
+
+#[test]
+fn authoring_requires_preview_and_icon_but_export_is_optional() {
+    let root = tempfile::tempdir().unwrap();
+    let baseline = input(root.path());
+    for role in ["preview", "icon"] {
+        let mut value = baseline.clone();
+        value["declaration"]["views"][role] = json!(false);
+        let error = build::accept(&value.to_string(), root.path()).err().expect("missing required role is refused");
+        assert!(error.to_string().contains("requires Preview.svelte and Icon.svelte"));
+    }
+    let mut value = baseline;
+    value["declaration"]["views"]["export"] = json!(false);
+    value["roles"].as_object_mut().unwrap().remove("export");
+    value["resources"].as_array_mut().unwrap().retain(|resource| resource["key"] != "export.js");
+    assert!(build::accept(&value.to_string(), root.path()).is_ok());
+}
+
+#[test]
+fn authoring_requires_native_programs_for_declared_capture_views() {
+    let root = tempfile::tempdir().unwrap();
+    let baseline = input(root.path());
+    for role in ["preview", "export", "icon"] {
+        let mut value = baseline.clone();
+        value["declaration"]["views"][role] = json!(true);
+        value["roles"].as_object_mut().unwrap().remove(role);
+        value["resources"].as_array_mut().unwrap().retain(|resource| resource["key"] != format!("{role}.js"));
+        let error =
+            build::accept(&value.to_string(), root.path()).err().expect("declared capture requires its program");
+        assert!(error.to_string().contains(&format!("{role}.js")));
+    }
 }

@@ -1,10 +1,13 @@
 <script lang="ts">
-import BookOpen from "@lucide/svelte/icons/book-open";
-import Star from "@lucide/svelte/icons/star";
-import doc from "./schema";
-import { readingView } from "./books";
-const STARS = [1, 2, 3, 4, 5] as const;
-const view = $derived(readingView(doc.current));
+  import type { CaptureProps } from "hitslop/svelte";
+  import { previewText } from "../_shared/preview";
+  import BookOpen from "@lucide/svelte/icons/book-open";
+  import Star from "@lucide/svelte/icons/star";
+  import type schema from "./schema";
+  import { readingView } from "./books";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const STARS = [1, 2, 3, 4, 5] as const;
+  const view = $derived(readingView(snapshot));
 </script>
 
 <article class="exportCard" aria-label="Exported reading list">
@@ -12,9 +15,9 @@ const view = $derived(readingView(doc.current));
         <div class="identity">
           <h1 class="masthead">Reading list</h1>
           <div class="memberRow">
-            <span class="memberName">{doc.current.memberName.trim() || "Cardholder"}</span>
-            {#if doc.current.memberName.trim() && doc.current.memberSince.trim()}<span aria-hidden="true">·</span>{/if}
-            <span class="memberSince">{doc.current.memberSince}</span>
+            <span class="memberName">{snapshot.memberName.trim() || "Cardholder"}</span>
+            {#if snapshot.memberName.trim() && snapshot.memberSince.trim()}<span aria-hidden="true">·</span>{/if}
+            <span class="memberSince">{snapshot.memberSince}</span>
           </div>
         </div>
         <div class="finishedCount" aria-label="{view.read} books finished"><strong>{view.read}</strong><span>finished</span></div>
@@ -28,7 +31,7 @@ const view = $derived(readingView(doc.current));
           <span>Status</span>
         </div>
         <ul class="list" aria-label="Reading list">
-          {#each doc.current.books as book (book.$id)}
+          {#each (preview ? (snapshot.books).slice(0, 4) : snapshot.books) as book (book.$id)}
             <li class="row exportRow">
               <span class="bookSpine" data-status={book.status} aria-hidden="true"><BookOpen size={19} strokeWidth={1.5} /></span>
               <div class="bookInfo">
@@ -41,7 +44,7 @@ const view = $derived(readingView(doc.current));
                 {/each}
               </span>
               <span class="statusPill" data-status={book.status}>{book.status || "To Read"}</span>
-              {#if book.notes?.trim()}<div class="exportNotes"><strong>Notes</strong><p>{book.notes}</p></div>{/if}
+              {#if book.notes?.trim()}<div class="exportNotes"><strong>Notes</strong><p>{previewText(book.notes, preview, 100)}</p></div>{/if}
             </li>
           {:else}
             <li class="empty"><h2>Your next chapter starts here.</h2></li>
@@ -54,3 +57,13 @@ const view = $derived(readingView(doc.current));
         <span>One book at a time.</span>
       </footer>
     </article>
+
+<style>
+/* Explicit placement also works in the native capture renderer. */
+.masthead { font-size: 44px; }
+.bookSpine { grid-column: 1; grid-row: 1 / span 2; }
+.bookInfo { grid-column: 2; grid-row: 1; }
+.stars { grid-column: 2; grid-row: 2; }
+.statusPill { grid-column: 3; grid-row: 1 / span 2; }
+.exportNotes { grid-column: 2 / 4; grid-row: 3; }
+</style>

@@ -1,4 +1,5 @@
 #![cfg(feature = "storage")]
+use crate::support;
 use hitslop_core::{
     Origin, file,
     owner::{Event, Failure, FailureKind, Owner, Reply, Request},
@@ -10,7 +11,6 @@ use std::{
     sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
-mod support;
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {
     support::isolate_registry();

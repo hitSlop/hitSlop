@@ -573,17 +573,9 @@
   }
 
   /* Export mode */
-  html[data-slop-capture="static"] [data-slop-export="hide"] {
-    display: none !important;
-  }
-
   html[data-slop-capture="static"] input {
     border: none !important;
     background: transparent !important;
-  }
-
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .grade-app {
-    display: none;
   }
 
 .grade-render {
@@ -594,7 +586,7 @@
     background: transparent;
   }
 
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .grade-render {
+  html[data-slop-capture="icon"] .grade-render {
     display: grid !important;
   }
 

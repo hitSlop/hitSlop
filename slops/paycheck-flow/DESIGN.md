@@ -14,5 +14,5 @@ Saved: month, currency, and each income and spending row (name, amount, colour).
 Amounts are stored as whole minor units (cents, or whole yen) and shown in whole major
 units; switching currency rescales them so the typed numbers stay the same. Leftover
 and shares are derived in `plan.ts`, never stored. Amounts commit on change; zero rows
-are hidden from the chart but kept in the sheet. Hover is view state only. Export is the same chart at a fixed
-size with no hover; the icon is a flat sankey.
+are hidden from the chart but kept in the sheet. Hover is view state only. Export uses the same d3-sankey calculation in a fixed-size SVG, including its
+name-and-amount labels, without Layer Cake or hover; the icon is a flat sankey.

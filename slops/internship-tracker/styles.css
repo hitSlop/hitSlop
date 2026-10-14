@@ -163,7 +163,7 @@ h1.title { overflow-wrap: anywhere; }
 
 /* Export */
 .export { width: 100%; height: auto; max-width: none; margin: 0; border-radius: 0; box-shadow: none; overflow: visible; }
-.export .rows { overflow: visible; }
+.export .rows { flex: none; height: auto; overflow: visible; }
 .export .stamp { min-width: 104px; }
 html[data-slop-capture="static"] body { overflow: visible; background: var(--slop-badge); }
 html[data-slop-capture="static"] .export { height: auto; }

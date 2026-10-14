@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { tick } from "svelte";
   import { Button, Tabs } from "bits-ui";
   import SvelteMarkdown from "@humanspeak/svelte-markdown";
@@ -16,11 +16,13 @@
   import Moon from "@lucide/svelte/icons/moon";
   import Quote from "@lucide/svelte/icons/quote";
   import Sun from "@lucide/svelte/icons/sun";
-  import doc from "./schema";
+  import schema from "./schema";
   import {
     markdownView, nextMode, prefixLine as prefixedLine, setContent, setMode as writeMode,
     toggleTheme as flipTheme, wrapSelection, type Mode, type Rewrite,
   } from "./markdown";
+
+  const doc = getDocument(schema);
 
   let textareaEl: HTMLTextAreaElement | undefined = $state();
   let backdropEl: HTMLDivElement | undefined = $state();

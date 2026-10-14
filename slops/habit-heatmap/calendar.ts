@@ -1,5 +1,6 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel } from "../_shared/format";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { colors } from "./schema";
 /** Local calendar dates, deliberately independent of UTC offsets and 24-hour durations. */
 export function dayKey(date: Date): string {
@@ -31,7 +32,7 @@ export function calendarWeeks(today: string) {
   const weeks = days.filter((_, i) => i % 7 === 0);
   const labels = weeks.map((day, index) =>
     index === 0 || day.slice(0, 7) !== weeks[index - 1]!.slice(0, 7)
-      ? new Intl.DateTimeFormat(undefined, { month: "short" }).format(localDate(day))
+      ? dateLabel(localDate(day), { month: "short" })
       : String(localDate(day).getDate()),
   );
   return { days, weeks, labels };
@@ -46,16 +47,16 @@ export function streak(checkins: Readonly<Record<string, number>>, today: string
 export function completedDays(checkins: Readonly<Record<string, number>>, days: readonly string[], today: string): number {
   return days.filter(day => day <= today && checkins[day] > 0).length;
 }
-export const labelDay = (day: string) => new Intl.DateTimeFormat(undefined, {
+export const labelDay = (day: string) => dateLabel(localDate(day), {
   weekday: "long", month: "long", day: "numeric", year: "numeric",
-}).format(localDate(day));
-export const shortDay = (day: string) => new Intl.DateTimeFormat(undefined, {
+});
+export const shortDay = (day: string) => dateLabel(localDate(day), {
   month: "short", day: "numeric",
-}).format(localDate(day));
+});
 
 // Edits are written once: the page runs them with doc.change, a command with its tx.
-export type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 export type HabitColor = (typeof colors)[number];
 
 /** The editor and its export derive the calendar and per-habit numbers from the same snapshot. */

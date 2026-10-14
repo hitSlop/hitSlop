@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { onMount } from "svelte";
   import { Button } from "bits-ui";
   import Circle from "@lucide/svelte/icons/circle";
@@ -11,10 +11,12 @@
   import Minus from "@lucide/svelte/icons/minus";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash from "@lucide/svelte/icons/trash-2";
-  import doc, { tones } from "./schema";
+  import schema, { tones } from "./schema";
   import Poster from "./Poster.svelte";
   import { PAGE } from "./fonts";
   import { addShape, clamp, moveShape, nudgedSize, posterView, removeShape, resizeShape, setShapeTone, type Drag, type Kind } from "./poster";
+
+  const doc = getDocument(schema);
 
   let stage: HTMLElement;
   let scale = $state(1);

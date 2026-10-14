@@ -1,10 +1,10 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { categories } from "./schema";
-export type Grocery = typeof doc.current;
+export type Grocery = Value<typeof schema.descriptor>;
 export type Category = (typeof categories)[number];
 export type Filter = "All" | Category;
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** The pad and the export derive their rows and counts from the same snapshot. */
 export function groceryView(data: Grocery, filter: Filter = "All") {

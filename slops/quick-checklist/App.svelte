@@ -3,9 +3,9 @@
   import "./styles.css";
   import Brand from "./Brand.svelte";
   import Progress from "./Progress.svelte";
-  import doc from "./schema";
+  import schema from "./schema";
   import { addTask, checklistView, fileFinished as collectFinished, restoreTask } from "./tasks";
-  import { EditableText, draft, motion, notify } from "hitslop/svelte";
+  import { EditableText, draft, getDocument, motion, notify } from "hitslop/svelte";
   import { DropdownMenu, Tabs } from "bits-ui";
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
@@ -13,6 +13,7 @@
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
 
+  const doc = getDocument(schema);
   let activeView = $state<"tasks" | "filed">("tasks");
   const { visible, filed, finished, ratio } = $derived(checklistView(doc.current));
   const fill = motion(() => ratio);

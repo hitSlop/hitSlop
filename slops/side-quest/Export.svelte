@@ -1,27 +1,29 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import BossReadout from "./BossReadout.svelte";
   import Monster from "./Monster.svelte";
   import StickerFace from "./StickerFace.svelte";
   import { courseLabel, mapGeometry, questLabel } from "./map";
   import { cleared, hp, isoDay, lootFor, questView, spriteFace } from "./quest";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   const today = isoDay(new Date());
-  const { xOf, points, trail, months, shortDate, overdue } = $derived(mapGeometry(doc.current.courses, today));
-  const { allQuests, clearedCount, earned, boss } = $derived(questView(doc.current, today));
+  const { xOf, points, trail, months, shortDate, overdue } = $derived(mapGeometry(snapshot.courses, today));
+  const { allQuests, clearedCount, earned, boss } = $derived(questView(snapshot, today));
 </script>
 
 <main class="sq-page sq-export">
   <div class="sq-spiral" aria-hidden="true"></div>
   <header class="sq-head">
-    <div class="sq-title"><h1 class="sq-semester">{doc.current.semester}</h1><span class="sq-subtitle">side quest · semester map</span></div>
+    <div class="sq-title"><h1 class="sq-semester">{snapshot.semester}</h1><span class="sq-subtitle">side quest · semester map</span></div>
     <BossReadout {boss} {today} />
     <dl class="sq-stats"><div><dt>Cleared</dt><dd>{clearedCount}<small>/{allQuests.length}</small></dd></div><div><dt>Stickers</dt><dd>{earned}</dd></div></dl>
   </header>
   <div class="sq-body">
     {@render board()}
-    {#if doc.current.sideQuests.length}
-      <aside class="sq-export-sides"><h2 class="sq-panel-title">Side quests</h2><ul>{#each doc.current.sideQuests as side (side.$id)}<li data-done={side.done}>{side.done ? "☑" : "☐"} {side.title}</li>{/each}</ul></aside>
+    {#if snapshot.sideQuests.length}
+      <aside class="sq-export-sides"><h2 class="sq-panel-title">Side quests</h2><ul>{#each (preview ? (snapshot.sideQuests).slice(0, 4) : snapshot.sideQuests) as side (side.$id)}<li data-done={side.done}>{side.done ? "☑" : "☐"} {side.title}</li>{/each}</ul></aside>
     {/if}
   </div>
 </main>
@@ -32,7 +34,7 @@
       {#each months as month (month.label + month.x)}<span style={`left:${month.x}%`}>{month.label}</span>{/each}
     </div>
     <div class="sq-labels">
-      {#each doc.current.courses as course (course.$id)}
+      {#each snapshot.courses as course (course.$id)}
         <div class="sq-label">
           <div class="sq-tape" style={`--tape: var(--slop-${course.tape})`}>
               <strong class="sq-tape-code">{course.code}</strong><span class="sq-tape-name">{course.name}</span>
@@ -45,13 +47,13 @@
       <div class="sq-today" style={`left:${xOf(today)}%`} aria-hidden="true"></div>
       <svg class="sq-trails" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
         <defs><clipPath id="sq-past-export"><rect x="0" y="0" width={xOf(today) * 10} height="1000" /></clipPath></defs>
-        {#each doc.current.courses as course, row (course.$id)}
+        {#each snapshot.courses as course, row (course.$id)}
           {@const d = trail(course, row)}
-          <path class="sq-trail-future" d={d} />
-          <path class="sq-trail-past" d={d} clip-path={`url(#sq-past-export)`} />
+          <path class="sq-trail-future" fill="none" stroke="var(--slop-pen)" stroke-width="2.5" stroke-dasharray="2 7" opacity="0.7" stroke-linecap="round" vector-effect="non-scaling-stroke" d={d} />
+          <path class="sq-trail-past" fill="none" stroke="var(--slop-pen)" stroke-width="3" stroke-linecap="round" vector-effect="non-scaling-stroke" d={d} clip-path={`url(#sq-past-export)`} />
         {/each}
       </svg>
-      {#each doc.current.courses as course, row (course.$id)}
+      {#each snapshot.courses as course, row (course.$id)}
         {#each points(course, row) as { quest, x, y, up } (quest.$id)}
           {@const done = cleared(quest)}
           {@const hpLeft = hp(quest)}
@@ -72,15 +74,15 @@
         {/each}
       {/each}
       <div class="sq-player" style={`left:${xOf(today)}%`}>
-          <span class="sq-player-face">{spriteFace[doc.current.player.sprite]}</span>
+          <span class="sq-player-face">{spriteFace[snapshot.player.sprite]}</span>
         <span class="sq-player-tag">you · today</span>
       </div>
     </div>
 
-    {#each doc.current.placed as placed (placed.$id)}
+    {#each snapshot.placed as placed (placed.$id)}
         <span class="sq-placed" style={`left:${placed.x * 100}%; top:${placed.y * 100}%; --turn:${placed.turn}deg`}><StickerFace kind={placed.sticker} /></span>
     {/each}
-    {#if doc.current.courses.length === 0}
+    {#if snapshot.courses.length === 0}
       <p class="sq-empty">A blank map.<br />Add your first course to draw its trail.</p>
     {/if}
   </section>

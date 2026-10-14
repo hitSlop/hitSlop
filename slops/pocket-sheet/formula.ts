@@ -1,3 +1,4 @@
+import { numberLabel } from "../_shared/format";
 // A tiny spreadsheet language: numbers, text, cell references, ranges, arithmetic,
 // comparisons, `&` joins and a handful of Excel-compatible functions.
 
@@ -240,7 +241,7 @@ function arity(args: Expr[], min: number, max = min) {
 /** Up to two decimals, grouped, and never scientific notation for everyday sizes. */
 export function format(value: number): string {
   if (!Number.isFinite(value)) return "#VALUE!";
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: Math.abs(value) < 1 && value !== 0 ? 4 : 2 }).format(value);
+  return numberLabel(value, Math.abs(value) < 1 && value !== 0 ? 4 : 2);
 }
 
 export function display(value: Value): string {

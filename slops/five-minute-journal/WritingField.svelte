@@ -3,13 +3,12 @@
   import { bindText } from "hitslop/svelte";
   import { tick } from "svelte";
 
-  let { value, label, placeholder = "", prefix = "", staticView = false, text }: {
+  let { value, label, placeholder = "", prefix = "", text }: {
     value: string;
     label: string;
     placeholder?: string;
     prefix?: string;
-    staticView?: boolean;
-    text?: Handle<Text>;
+    text: Handle<Text>;
   } = $props();
 
   function grow(node: HTMLTextAreaElement, _value: string) {
@@ -42,9 +41,5 @@
 
 <div class={"fmj-line"}>
   {#if prefix}<span class={"fmj-linePrefix"} aria-hidden="true">{prefix}</span>{/if}
-  {#if staticView}
-    <p class={"fmj-lineText"}>{value}</p>
-  {:else if text}
-    <textarea class={"fmj-writingField"} aria-label={label} {placeholder} rows={1} use:bindText={text} use:grow={value}></textarea>
-  {/if}
+  <textarea class={"fmj-writingField"} aria-label={label} {placeholder} rows={1} use:bindText={text} use:grow={value}></textarea>
 </div>

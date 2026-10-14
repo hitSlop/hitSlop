@@ -1,7 +1,3 @@
-<script lang="ts">
-  import doc from "./schema";
-</script>
-
 <section class="cornell-render cornell-icon" data-slop-render="icon" aria-hidden="true">
   <div class="icon-sheet">
     <div class="icon-head">

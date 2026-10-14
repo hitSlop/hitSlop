@@ -1,9 +1,12 @@
 <script lang="ts">
-import Check from "@lucide/svelte/icons/check";
-import doc from "./schema";
-import { meetingView } from "./meeting";
-const data = $derived(doc.current);
-const view = $derived(meetingView(data));
+  import { previewText } from "../_shared/preview";
+  import Check from "@lucide/svelte/icons/check";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { meetingView } from "./meeting";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const data = $derived(snapshot);
+  const view = $derived(meetingView(data));
 </script>
 
 <article class="exportMemo" aria-label="Exported meeting memo {data.title}">
@@ -19,7 +22,7 @@ const view = $derived(meetingView(data));
     <h1 class="title">{data.title.trim() || "Untitled meeting"}</h1>
     <div class="attendees">
       <span class="attendeesLabel">Attendees</span>
-      {#each view.listedAttendees as person}
+      {#each (preview ? (view.listedAttendees).slice(0, 6) : view.listedAttendees) as person}
         <span class="pill">{person}</span>
       {:else}
         <span class="pill">None listed</span>
@@ -34,7 +37,7 @@ const view = $derived(meetingView(data));
           <h2 id="export-agenda" class="sectionTitle">Agenda <span class="sectionCount">({view.agendaDone}/{data.agenda.length})</span></h2>
         </div>
         <ul class="list">
-          {#each data.agenda as item (item.$id)}
+          {#each (preview ? (data.agenda).slice(0, 3) : data.agenda) as item (item.$id)}
             <li class="agendaItem" data-done={item.done}>
               <span data-checkbox-root data-state={item.done ? "checked" : "unchecked"}>{#if item.done}<Check size={10} strokeWidth={3} />{/if}</span>
               <span class="rowText">{item.text.trim() || "Untitled topic"}</span>
@@ -50,7 +53,7 @@ const view = $derived(meetingView(data));
           <h2 id="export-decisions" class="decisionsTitle"><span class="decisionsDot"></span>Decisions</h2>
         </div>
         <ul class="list">
-          {#each data.decisions as item (item.$id)}
+          {#each (preview ? (data.decisions).slice(0, 3) : data.decisions) as item (item.$id)}
             <li class="decisionItem">
               <span class="decisionBullet" aria-hidden="true">▪</span>
               <span class="rowText">{item.text.trim() || "Untitled decision"}</span>
@@ -66,7 +69,7 @@ const view = $derived(meetingView(data));
       <section class="section" aria-labelledby="export-notes">
         <div class="sectionHeader"><h2 id="export-notes" class="sectionTitle">Notes</h2></div>
         {#if data.notes.trim()}
-          <p class="notesText">{data.notes}</p>
+          <p class="notesText">{previewText(data.notes, preview, 180)}</p>
         {:else}
           <p class="empty">No notes captured.</p>
         {/if}
@@ -77,7 +80,7 @@ const view = $derived(meetingView(data));
           <h2 id="export-actions" class="sectionTitle">Actions <span class="sectionCount">({view.actionsDone}/{data.actions.length})</span></h2>
         </div>
         <ul class="list">
-          {#each data.actions as item (item.$id)}
+          {#each (preview ? (data.actions).slice(0, 3) : data.actions) as item (item.$id)}
             <li class="actionItem" data-done={item.done}>
               <span data-checkbox-root data-state={item.done ? "checked" : "unchecked"}>{#if item.done}<Check size={10} strokeWidth={3} />{/if}</span>
               <span class="rowText">{item.text.trim() || "Untitled action"}</span>

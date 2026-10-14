@@ -17,7 +17,6 @@ public struct UndoState: Sendable, Equatable {
 /// and the writer lease live in Rust; Swift delivers events and hosts native services.
 public final class DocumentOwner: Sendable {
   public let file: SlopFile
-  let mode: StoreMode
   let assets: ResourceReader
   private let native: NativeOwner
   private let events: Events
@@ -45,8 +44,8 @@ public final class DocumentOwner: Sendable {
   /// Whether this session published any change, so its document's artwork may be out of date.
   var edited: Bool { events.facts.withLock { $0.published } }
 
+  /// A `.snapshot` owner reads the saved document without the writer lock and never writes it.
   public init(url: URL, mode: StoreMode = .document) throws {
-    self.mode = mode
     let events = Events()
     let owner = try storeCall {
       try SlopFile.opening {
@@ -61,7 +60,7 @@ public final class DocumentOwner: Sendable {
 
   /// The app and its renderer ship this sibling helper. Missing helpers refuse commands;
   /// they never cause authored code to execute in the page or native process.
-  private static var evaluatorPath: String? {
+  public static var evaluatorPath: String? {
     #if DEBUG
       if let path = ProcessInfo.processInfo.environment["HITSLOP_EVALUATOR"] { return path }
     #endif

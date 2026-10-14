@@ -69,8 +69,12 @@ struct Command {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredViews {
+    #[serde(default)]
+    preview: bool,
     export: bool,
     icon: bool,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    widget: Option<super::WidgetOptions>,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -173,6 +177,10 @@ pub(super) fn decode(metadata_json: &str, definition_json: &str) -> Result<AppDe
 
 pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> Result<AppDefinition> {
     authoring(&input.metadata, &input.window, &input.commands)?;
+    authoring_widget(input.views.widget)?;
+    if !input.views.preview || !input.views.icon {
+        return Err(err(Code::InvalidRequest, "Authoring requires Preview.svelte and Icon.svelte").at("views"));
+    }
     let window = match &input.window {
         WindowInput::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
             if skin.is_some() {
@@ -208,7 +216,12 @@ pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> 
             .iter()
             .map(|c| Command { name: c.name.clone(), description: c.description.clone(), args: c.args.clone() })
             .collect(),
-        views: StoredViews { export: input.views.export, icon: input.views.icon },
+        views: StoredViews {
+            preview: input.views.preview,
+            export: input.views.export,
+            icon: input.views.icon,
+            widget: input.views.widget,
+        },
         capabilities: {
             let mut declared = input.capabilities.clone();
             declared.sort();
@@ -259,7 +272,13 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     }
     let spec = AppSpec::of(node, &metadata_value.slug, tokens);
     let theme = stored.theme.iter().map(|t| ThemeInput { token: t.token.clone(), color: t.color.clone() }).collect();
-    let views = Views { export: stored.views.export, icon: stored.views.icon };
+    let views = Views {
+        preview: stored.views.preview,
+        export: stored.views.export,
+        icon: stored.views.icon,
+        widget: stored.views.widget,
+    };
+
     let mut capabilities: Vec<_> = stored.capabilities.iter().filter_map(|name| stored_capability(name)).collect();
     capabilities.sort();
     capabilities.dedup();
@@ -279,6 +298,25 @@ fn stored_metadata(value: &AppMetadata) -> Result<()> {
 }
 
 /// The current authoring rules for a new app, on top of what opening requires.
+fn authoring_widget(widget: Option<super::WidgetOptions>) -> Result<()> {
+    if let Some(minutes) = widget.and_then(|widget| widget.refresh_minutes)
+        && !(crate::widgets::MIN_REFRESH_MINUTES..=crate::widgets::MAX_REFRESH_MINUTES).contains(&minutes)
+    {
+        return Err(err(
+            Code::InvalidRequest,
+            format!(
+                "Widget refreshMinutes must be between {} and {}",
+                crate::widgets::MIN_REFRESH_MINUTES,
+                crate::widgets::MAX_REFRESH_MINUTES
+            ),
+        )
+        .at("refreshMinutes")
+        .at("widget")
+        .at("views"));
+    }
+    Ok(())
+}
+
 pub(super) fn authoring(metadata: &AppMetadata, window: &WindowInput, commands: &[CommandInput]) -> Result<()> {
     authoring_metadata(metadata)?;
     let (width, height) = match window {

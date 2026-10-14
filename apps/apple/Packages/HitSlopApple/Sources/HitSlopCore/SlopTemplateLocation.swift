@@ -1,7 +1,7 @@
 import Foundation
 import HitSlopCoreBinding
 
-/// Where templates live, as the core lists them, so the app, its helper and the CLI agree. A
+/// Where templates live, as the core lists them, so the app and the CLI agree. A
 /// template is a kind of file, not a location: these folders decide what the catalog lists,
 /// and the core refuses new documents inside them.
 public enum SlopTemplateLocation {

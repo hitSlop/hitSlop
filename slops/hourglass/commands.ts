@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { startUntil, restart } from "./countdown";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   startUntil: {
     description: "Start counting down to an epoch millisecond timestamp in the future.",
     args: { end: s.number({ min: 0 }) },

@@ -16,8 +16,9 @@ the light. Pointer offsets move the target and tilt the head. An awake loop adds
 gentle breathing and a double blink. Sleep ends in a compact slouched pose.
 
 The four states can interrupt each other without waiting for a clip to finish.
-A fresh open, reduced motion and captures go directly to the saved pose. Captures
-reuse the real renderer with idle playback stopped; all backgrounds stay transparent.
+A fresh open and reduced motion go directly to the saved pose. Icons and exports
+use a synchronous SVG illustration of the articulated lamp, with open or sleepy
+eyes from the saved power state. Their backgrounds stay transparent.
 
 The native mask covers the motion envelope, so corners are outside the window.
 It cannot follow each animated pixel. The small focus accent is themeable;

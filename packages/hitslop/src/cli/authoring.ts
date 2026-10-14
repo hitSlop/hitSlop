@@ -1,20 +1,17 @@
 import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { shellDirectory } from "./paths";
-import { execute, type EngineOptions } from "./engine";
-import { buildTemplate, prepareRenderer } from "./template";
+import { execute } from "./engine";
+import { buildTemplate } from "./template";
 
-/** Builds anywhere; only `native` artwork needs the Mac app. */
-export async function build(source: string, artwork?: string) {
-  if (artwork !== undefined && artwork !== "native")
-    throw new Error("--artwork accepts only native");
-  console.log(await buildTemplate(source, artwork ? await prepareRenderer() : undefined));
+export async function build(source: string) {
+  console.log(await buildTemplate(source));
 }
 
 /** The installed templates folder, as the app's engine lists it: `HITSLOP_TEMPLATES_ROOT`,
  * or `~/.hitslop/templates` in the account's home folder. */
-async function installedTemplates(engine: EngineOptions) {
-  const { folders } = (await execute({ method: "templates" }, engine)).catalog;
+async function installedTemplates() {
+  const { folders } = (await execute({ method: "templates" })).catalog;
   const installed = folders?.find((folder) => folder.source === "installed")?.path;
   if (typeof installed !== "string") throw new Error("Cannot find this account's home folder");
   return installed;
@@ -22,10 +19,9 @@ async function installedTemplates(engine: EngineOptions) {
 
 /** Builds into the installed templates folder the app lists, replacing only an earlier build. */
 export async function register(source: string) {
-  const renderer = await prepareRenderer();
-  const templates = await installedTemplates(renderer);
+  const templates = await installedTemplates();
   await mkdir(templates, { recursive: true });
-  console.log(await buildTemplate(source, renderer, (slug) => join(templates, slug + ".slop")));
+  console.log(await buildTemplate(source, (slug) => join(templates, slug + ".slop")));
 }
 
 export async function dev(source: string, port = 5173) {

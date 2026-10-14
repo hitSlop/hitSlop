@@ -1,7 +1,6 @@
 /** The lifecycle invoked by the native host through `globalThis.__slop`. */
 export interface SlopPageHandle {
   publish(pushes: unknown): void;
-  capture: ReturnType<typeof import("./capture").createCaptureController>;
   flush(): Promise<void>;
   /** Edit ▸ Undo and Redo: the page sends what the person sees first. */
   undo(): Promise<void>;

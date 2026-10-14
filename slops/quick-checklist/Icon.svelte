@@ -1,8 +1,10 @@
 <script lang="ts">
+  import type { CaptureProps } from "hitslop/svelte";
   import Check from "@lucide/svelte/icons/check";
-  import doc from "./schema";
+  import type schema from "./schema";
   import { checklistView } from "./tasks";
-  const { marks } = $derived(checklistView(doc.current));
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const { marks } = $derived(checklistView(snapshot));
 </script>
 
 <div class="checklist-icon-tile" aria-hidden="true">

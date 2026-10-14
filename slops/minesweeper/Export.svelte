@@ -1,8 +1,11 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { boardView, clock } from "./game";
 
-  const game = $derived(doc.current);
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+
+  const game = $derived(snapshot);
   const board = $derived(boardView(game));
   const verdict = $derived(game.status === "won" ? "Channel clear!" : game.status === "lost" ? "Hit a mine." : game.status === "playing" ? "In progress" : "Fresh board");
 </script>

@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import type { lists } from "./schema";
 
-export type Choices = typeof doc.current;
+export type Choices = Value<typeof schema.descriptor>;
 export type ListKey = (typeof lists)[number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** The editor derives its lists and commitment state from one snapshot. */
 export function choicePointView(data: Choices) {

@@ -1,10 +1,12 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { budgetView } from "./budget";
   import { categoryPercent, formatCurrency, money } from "./shared";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  const data = $derived(doc.current);
-  const { totalSpent, remaining, remainingRatio, overspent } = $derived(budgetView(doc.current));
+  const data = $derived(snapshot);
+  const { totalSpent, remaining, remainingRatio, overspent } = $derived(budgetView(snapshot));
 </script>
 
 <article class="exportChassis" aria-label="Exported personal budget">
@@ -41,7 +43,7 @@
     <div class="categories">
       <div class="catHead"><span class="catTitle">Categories</span></div>
       <ul class="catList">
-        {#each data.categories as cat (cat.$id)}
+        {#each (preview ? (data.categories).slice(0, 6) : data.categories) as cat (cat.$id)}
           {@const percent = categoryPercent(cat)}
           {@const isOver = money(cat.spent) > money(cat.allocated)}
           <li class="catRow">

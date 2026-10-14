@@ -1,12 +1,12 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { insertCategory, insertCourse, removeCourse, setFinalCategory, setScore, setTarget } from "./gradebook";
 
 const course = s.string({ description: "The course's $id." });
 const category = s.string({ description: "The category's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addCourse: {
     description: "Add a placeholder course with three categories and return its stable row ID.",
     args: {},

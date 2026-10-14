@@ -1,9 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel as formattedDate } from "../_shared/format";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { BRUSH } from "./schema";
 
-export type Mirror = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Mirror = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 /** An attachment reference as `attachments.import` returns it. */
 export type FileRef = { id: string; name: string; mimeType: string; byteLength: number };
 
@@ -19,7 +20,7 @@ export function mirrorView(data: Mirror) {
 export function stamp(iso: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return "";
-  return date.toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return formattedDate(date, { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 /** A descriptive name such as `fog-2026-10-10-1920.png`, in local time. */

@@ -2,12 +2,13 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { onMount } from "svelte";
-  import { attachments } from "hitslop/svelte";
-  import doc from "./schema";
+  import { attachments, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { mirrorView, stamp } from "./mirror";
   import Glass from "./Glass.svelte";
   import Mirror from "./Mirror.svelte";
 
+  const doc = getDocument(schema);
   const view = $derived(mirrorView(doc.current));
 
   // Everything live is view state: the streams and the audio graph here, the trackers in

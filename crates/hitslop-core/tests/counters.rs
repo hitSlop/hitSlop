@@ -1,6 +1,6 @@
 // Failure: counter values differ between live use, replay or reopen, or leave the safe
 // integer range. Oracles: literal values, the patch consumer and fresh snapshots.
-mod support;
+use crate::support;
 use hitslop_core::Document;
 use serde_json::{Value, json};
 use support::{Edit, app, snapshot, updates_since};

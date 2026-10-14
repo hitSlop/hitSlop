@@ -1,7 +1,9 @@
 <script lang="ts">
-import doc from "./schema";
+import type { CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
 import { boardView } from "./drawing";
-const view = $derived(boardView(doc.current));
+let { snapshot }: CaptureProps<typeof schema> = $props();
+const view = $derived(boardView(snapshot));
 const board = $derived(view.board);
 </script>
 

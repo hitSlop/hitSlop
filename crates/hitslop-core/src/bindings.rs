@@ -57,6 +57,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
             "SpeechLimits",
             json!({"localeBytes": SPEECH_LOCALE_BYTES, "localePattern": SPEECH_LOCALE_PATTERN, "textBytes": SPEECH_TEXT_BYTES}),
         ),
+        ("WidgetViewports", json!(crate::widgets::widget_viewports())),
         ("PushLimits", json!({"items": PUSH_ITEMS, "bytes": PUSH_BYTES})),
         ("ResyncPush", json!(PagePush::<crate::Publication>::Resync)),
         ("SocketLimits", json!({"request": SOCKET_REQUEST, "attachment": SOCKET_ATTACHMENT})),
@@ -68,7 +69,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ("CoreErrorCodes", json!(Code::ALL)),
         ("PackageFormat", json!(PACKAGE_FORMAT)),
         ("RuntimeABI", json!(RUNTIME_ABI)),
-        ("HelperProtocol", json!({"version": HELPER_PROTOCOL})),
+        ("EngineProtocol", json!({"version": ENGINE_PROTOCOL})),
         ("OutcomeCodes", json!(OutcomeCode::ALL)),
     ]
 }

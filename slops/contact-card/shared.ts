@@ -1,8 +1,8 @@
-import type { Tx } from "hitslop";
-import type doc from "./schema";
+import type { Tx, Value } from "hitslop";
+import type schema from "./schema";
 
-export type Card = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Card = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export const detailFields = ["name", "headline", "location", "bio", "email", "phone", "website"] as const;
 export type DetailField = (typeof detailFields)[number];

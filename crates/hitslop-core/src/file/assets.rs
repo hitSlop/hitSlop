@@ -219,7 +219,9 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
     fn row(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceRow>> {
         let row = match route {
             ResourceRoute::App => {
-                if key == "commands.js" || crate::media::asset_key(key).is_none() {
+                if matches!(key, "commands.js" | "widget.js" | "icon.js" | "export.js" | "preview.js")
+                    || crate::media::asset_key(key).is_none()
+                {
                     return Ok(None);
                 }
                 self.conn

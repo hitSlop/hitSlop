@@ -1,0 +1,36 @@
+<figure class="widget-scene">
+  <div class="widget-sizes">
+    <div class="widget-sample medium">
+      <img src="/assets/widgets/quick-checklist-medium.png" width="688" height="328" alt="Medium Quick Checklist widget showing two tasks and how many are left." loading="lazy" decoding="async" />
+      <span>Medium</span>
+    </div>
+    <div class="widget-sample large">
+      <img src="/assets/widgets/quick-checklist-large.png" width="688" height="688" alt="Large Quick Checklist widget showing the full list and a progress bar." loading="lazy" decoding="async" />
+      <span>Large</span>
+    </div>
+    <div class="widget-sample small">
+      <img src="/assets/widgets/quick-checklist-small.png" width="328" height="328" alt="Small Quick Checklist widget with the list title, task count and first task." loading="lazy" decoding="async" />
+      <span>Small</span>
+    </div>
+  </div>
+  <figcaption>Quick Checklist. Same document, three sizes.</figcaption>
+</figure>
+
+<style>
+  .widget-scene { margin: 0; min-width: 0; padding: clamp(18px, 3vw, 32px); border: 1px solid #fff; border-radius: 30px; background: radial-gradient(ellipse at 100% 100%, #f4ccba 0, transparent 65%), radial-gradient(ellipse at 0 0, #d3c7f0, transparent 70%), #e5e9f2; box-shadow: inset 0 1px 0 #fff8, 0 24px 60px #3b24551a; }
+  .widget-sizes { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 22px 18px; align-items: end; }
+  .widget-sample { min-width: 0; display: grid; gap: 9px; }
+  .widget-sample img { display: block; width: 100%; height: auto; border-radius: 16px; box-shadow: 0 8px 20px #59304b24, 0 1px 2px #59304b1a; }
+  .widget-sample span { color: #463955; font-size: .75rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  .medium { grid-column: 1 / -1; width: 82%; justify-self: end; }
+  .small { padding-bottom: 22px; }
+  figcaption { margin-top: 24px; color: #463955; font-size: .88rem; text-align: center; }
+  @media (max-width: 480px) {
+    .widget-scene { border-radius: 22px; }
+    .widget-sizes { gap: 16px 12px; }
+    .widget-sample img { border-radius: 12px; }
+    .medium { width: 100%; }
+    .small { padding-bottom: 12px; }
+    figcaption { margin-top: 18px; font-size: .8rem; }
+  }
+</style>

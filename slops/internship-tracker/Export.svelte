@@ -1,10 +1,13 @@
 <script lang="ts">
-  import doc, { stages } from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { stages } from "./schema";
   import { dateString, dueLabel, shortDate } from "./dates";
   import { trackerView } from "./pipeline";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
   const today = dateString(new Date());
-  const view = $derived(trackerView(doc.current, today));
+  const view = $derived(trackerView(snapshot, today));
 </script>
 
 <article class="badge export">
@@ -20,7 +23,7 @@
     {#each stages as stage}<li data-stage={stage}><b>{view.counts[stage]}</b> {stage}</li>{/each}
   </ul>
   <ul class="rows">
-    {#each view.applications as app (app.$id)}
+    {#each (preview ? (view.applications).slice(0, 5) : view.applications) as app (app.$id)}
       {@const due = dueLabel(app.followUp, today)}
       <li class="row" data-stage={app.stage}>
         <span class="stamp">{app.stage}</span>
@@ -34,7 +37,7 @@
     {/each}
   </ul>
   <ul class="rows">
-    {#each view.chats as chat (chat.$id)}
+    {#each (preview ? (view.chats).slice(0, 2) : view.chats) as chat (chat.$id)}
       <li class="row chat">
         <span class="thanks" data-checked={chat.thanked}>{chat.thanked ? "✓" : ""}</span>
         <div class="who"><span class="company">{chat.name || "Untitled"}</span><span class="role">{chat.place}</span></div>

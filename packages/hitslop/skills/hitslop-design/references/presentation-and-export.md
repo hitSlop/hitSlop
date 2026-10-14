@@ -60,28 +60,40 @@ the application behind a hole, not merely that a DOM element ignores them.
 
 ## Static output
 
-Add an optional root `Export.svelte`. It receives
-`mode: "preview" | "export"` and reads the same document by importing its module.
-Render saved data in a fresh page; transient editor selection is not carried over. Share presentation and theme components.
-Use normal flow rather than viewport heights or scrolling panels. This view also
-supplies the catalog and Quick Look preview (captured at the export object’s
-size, not the empty editor window). Without it, use `data-slop-capture="static"`
-styles and `data-slop-export="hide"` on editing controls.
+Provide required root `Preview.svelte` for a compact saved-state overview and optional
+`Export.svelte` for complete output. Both receive the saved `snapshot` and `attachmentURL` as props;
+share presentation and theme components. Preview supplies the catalog and Quick Look artwork.
+Bound its lists and show omitted counts. Export uses normal flow and full content height.
+Without Export, PNG/PDF actions are hidden and CLI export is refused. Neither captures editor controls.
 
 PNG exports use the window width and full content height at 2×, within 16384 pixels
 per side and 24 megapixels. PDF retains selectable text on one content-sized page.
-Dedicated exports do not inherit native window masks. Fonts, visible images, and
-stable geometry are awaited; asynchronous charts can use `capture.onPrepare`.
+Dedicated exports do not inherit native window masks. All icons, previews, widgets,
+PNG and vector PDF exports use synchronous Svelte SSR and Takumi in the Rust child.
+Use static SVG with explicit presentation attributes for charts, and packaged fonts or
+the bundled fallbacks. Read images through the `attachmentURL(id)` prop; blob reads/imports,
+async/await, DOM and browser capture hooks are unavailable. Review PNG and PDF;
+PDF preserves vectors and selectable text, with uniform scaling for very long pages.
 
 Rendering failures in export or icon components reject that capture without
-replacing the editor or reporting an application-render error. Restoration
-clears the component failure so the next attempt renders it again. Editor rendering
+replacing the editor or reporting an application-render error. A declared native
+program failure is reported rather than silently switching engines; the next attempt
+starts a fresh render. Editor rendering
 failures still use native application-error recovery and prevent capture.
 
 ## Icon
 
-Add an optional root `Icon.svelte`. It mounts
-only for capture, centered on a transparent 512×512 surface. Pass progress or other saved data if useful; keep
+Provide the required root `Icon.svelte`. It renders
+for capture and the `slop dev` Icon layout, centered on a transparent 512×512 surface. Pass progress or other saved data if useful; keep
 a strong silhouette, safe margins, and no essential small text. It refreshes
 a document's artwork and Finder icon on close; the template's icon remains as built.
-Build with `--artwork native` (or register) and check the generated artwork (`slop inspect` lists it; Quick Look shows it), then verify native exports.
+Build (or register) on macOS or Linux and check the generated artwork (`slop inspect` lists it; Quick Look shows it on a Mac), then verify PNG/PDF exports.
+
+
+## Widget compositions
+
+Use optional root `Widget.svelte` for small, medium and large image widgets. It receives `CaptureProps<typeof schema> & WidgetProps` from `hitslop/svelte`: the saved `snapshot`, `attachmentURL`, and viewport (`family`, `width`, `height`). Import these and `schema` as types; read theme tokens from CSS. Keep the slop's typography, colors and reusable components; edit density and hierarchy for each canvas. The fixed canvas clips overflow; intentionally shorten lists and text. In `slop dev`, use Preview → Small/Medium/Large widget to review all three compositions and any overflow warning, then return to Editor without losing accepted edits. Widgets contain images; tapping opens the source slop. Do not add interactive controls or an export fallback.
+
+Widget images always use the native renderer. Compare the actual PNGs with the browser
+preview: unsupported CSS is ignored, and page CSS does not style the interior of inline
+SVG images. Prefer explicit SVG attributes and simple flex/grid layouts for capture views.

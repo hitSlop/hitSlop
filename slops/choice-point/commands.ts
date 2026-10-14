@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc, { lists } from "./schema";
+import schema, { lists } from "./schema";
 import { addPoint, removePoint, setNextDone, setNextMove } from "./choices";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addPoint: {
     description: "Add a point to one of the four lists and return its stable row ID.",
     args: {

@@ -14,7 +14,6 @@ import { commitIntent, Previews, type Preview } from "./previews";
 export type { OwnerTransport } from "./transport";
 import type { Scope as OwnerScope } from "../../sdk/abi";
 
-const readOnly = () => new DocumentError("rejected", "Read-only document");
 const barrier = () => new DocumentError("closing", "Document barrier is active");
 /** How long an assigned `value` waits for the next assignment before it commits, like
  * the host's autosave idle. */
@@ -110,7 +109,7 @@ export class OwnerDocument<N extends ObjectNode> {
     this.snapshots.map(this.presented);
   }
   private refusal(admitted = false) {
-    return this.transport.readOnly ? readOnly() : this.blocked && !admitted ? barrier() : undefined;
+    return this.blocked && !admitted ? barrier() : undefined;
   }
   private assertNotCollecting(message = "Use tx handles inside change()") {
     if (this.collecting) throw new Error(message);
@@ -297,7 +296,7 @@ export class OwnerDocument<N extends ObjectNode> {
     await Promise.all([...this.drains].map((drain) => drain()));
     // Writes in flight settle first: an accepted live write clears its own preview, so
     // only uncommitted previews remain to write.
-    while (this.pending.size) await Promise.allSettled([...this.pending]);
+    while (this.pending.size) await Promise.allSettled(this.pending);
     // One invalid draft must not reject an unrelated, valid draft's atomic batch.
     for (const [key, preview] of this.previews.all()) {
       try {
@@ -307,7 +306,7 @@ export class OwnerDocument<N extends ObjectNode> {
         this.report(error);
       }
     }
-    while (this.pending.size) await Promise.allSettled([...this.pending]);
+    while (this.pending.size) await Promise.allSettled(this.pending);
   }
   flush(): Promise<void> {
     this.assertNotCollecting("Cannot flush inside change()");
@@ -370,7 +369,6 @@ export class OwnerDocument<N extends ObjectNode> {
         },
         reached: (sequence) => this.store.reached(sequence),
         recover: () => this.store.resync(),
-        readOnly: () => !!this.transport.readOnly,
         track: (work) => void this.track(work),
         report: (error) => this.report(error),
         undo: (redo) =>

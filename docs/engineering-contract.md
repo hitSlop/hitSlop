@@ -20,7 +20,7 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | App behavior: `ctx`, handles, errors, the command prelude and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's location and its `socket` and `documentPath` fields (other fields are ignored); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
+| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's location and its `socket` and `documentPath` fields (other fields are ignored); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
 
 ### Local browser storage
 
@@ -99,10 +99,9 @@ its markers together; reads that only display it (Quick Look, the catalog, `get`
 export) never migrate it. Public boundaries grow additively: `ctx` and handle
 methods (new object-handle members start with `$`; reserved field names never grow),
 error and issue codes (apps treat unfamiliar ones as outcomes), `--slop-*`,
-`data-slop-root` and the embed relay. The npm package ships the document engine; the Mac app contains its linked core,
-restricted evaluator and rendering helper. Release acceptance checks that the engine,
-app and helper contain the same core build. Loro is pinned exactly and upgraded only
-with the corpus passing.
+`data-slop-root` and the embed relay. The npm package ships the document engine; the Mac app contains its linked core
+and restricted evaluator. Release acceptance checks that the engine and the app contain
+the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
 
 The [compatibility corpus](testing.md#compatibility-corpus) is the evidence: every
 release's templates and saved documents, replayed by every build. A frozen entry is never
@@ -115,7 +114,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 
 - `hitslop-core` (Rust on Loro, `crates/`) owns document semantics and durable storage
   (the writer lock, the `.slop` file, the save policy), and is the only code that opens a
-  `.slop` file: the app, the helper, Quick Look and the CLI's `slop-engine` all read and
+  `.slop` file: the app, Quick Look and the CLI's `slop-engine` all read and
   write through it. The Rust owner schedules saves and serializes edits; Swift
   `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/hitslop/src/shell`) holds no CRDT.
 - A `.slop` file is one SQLite database. A template holds its app: the `app` row
@@ -135,9 +134,11 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   sizes after a failure; it advances the saved version only on confirmed success.
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
 - Flush unsent text and pending writes before close or export. Captures render saved
-  state in a fresh read-only page; the optional root `Export.svelte` supplies the layout, otherwise
-  a fresh App uses its default local UI state. Successful close destroys WebViews.
-- Author schemas with `defineDocument`/`s`. The stored descriptor is not JSON Schema.
+  state through synchronous Svelte SSR and Takumi in the restricted Rust child; required root `Preview.svelte` supplies preview artwork; optional `Export.svelte` supplies PNG/PDF output.
+  Successful close destroys WebViews.
+- Author schemas with `defineDocument`/`s`: the export is definition data. Editors acquire
+  their document with `getDocument(schema)` during component initialization; static views
+  receive saved snapshot and attachment URL props. The stored descriptor is not JSON Schema.
   Initial values are read only when a document is created. Descriptor kinds exist only once Rust,
   the SDK and a fixture implement them (today: text, boolean, string, number, integer, enum,
   optional (of a scalar, text or an object), object, list(object), list(scalar),
@@ -152,8 +153,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - Rust owns wire types and shared limits (`crates/hitslop-core/src/wire`); ts-rs exports
   TypeScript and UniFFI carries native types to Swift. App acceptance also belongs to Rust; JSON Schema is only a descriptor projection for tool clients. Run `bun run schema:generate`; never edit generated files.
 - The core checks every file it opens (its layout, rows, markers and resource bounds) and
-  every build it packs, not authored UI behavior. Rust decodes and checks page/socket requests once; Swift checks the page sender and receives typed native actions. The helper receives Rust-decoded native
-  request enums and returns typed outcomes for Rust to encode.
+  every build it packs, not authored UI behavior. Rust decodes and checks page/socket requests once; Swift checks the page sender and receives typed native actions.
 - Attachments are host-owned immutable content-addressed blobs in the file's
   `attachments` table, referenced by ordinary document fields and served by URL. Stored media types are sniffed; the first read verifies the full hash.
 - Agent commands use the owner's descriptor validation and restricted child. Pages use handles and `doc.change`; command implementations stay outside the UI graph. Every evaluation gets a fresh runtime; no command globals persist across calls.

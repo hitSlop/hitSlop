@@ -1,9 +1,10 @@
-import { CalendarDate, getLocalTimeZone, parseDate, type DateValue } from "@internationalized/date";
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel } from "../_shared/format";
+import { CalendarDate, parseDate, type DateValue } from "@internationalized/date";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Edit = Tx<typeof doc>;
-export type Data = typeof doc.current;
+export type Edit = Tx<typeof schema>;
+export type Data = Value<typeof schema.descriptor>;
 export type View = "am" | "pm" | "all";
 export type Period = "am" | "pm";
 
@@ -85,9 +86,9 @@ export function calendarDate(value: string): CalendarDate | undefined {
 }
 
 export function displayDate(value: string): string {
-  const date = calendarDate(value);
-  return date
-    ? new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" }).format(date.toDate(getLocalTimeZone()))
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isFinite(date.getTime())
+    ? dateLabel(value, { weekday: "long", month: "short", day: "numeric", year: "numeric" })
     : value.trim() || "Choose a day";
 }
 

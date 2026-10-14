@@ -1,7 +1,7 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
-export type Sprite = typeof doc.current;
-type Edit = Tx<typeof doc>;
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
+export type Sprite = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export const SIZE = 16;
 export const CELL_COUNT = SIZE * SIZE;

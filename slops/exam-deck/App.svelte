@@ -4,13 +4,16 @@
   import { onMount } from "svelte";
   import Layers from "@lucide/svelte/icons/layers";
   import Settings from "@lucide/svelte/icons/settings-2";
-  import doc from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import { deckView, localDay } from "./deck";
   import Header from "./Header.svelte";
   import Readouts from "./Readouts.svelte";
   import Session from "./Session.svelte";
   import SettingsDialog from "./SettingsDialog.svelte";
   import DeckDialog from "./DeckDialog.svelte";
+
+  const doc = getDocument(schema);
 
   // The clock is view state: it ticks while the window is visible and on every answer.
   let now = $state(Date.now());
@@ -47,7 +50,7 @@
 <main class="deck-sheet">
   <div class="deck-timing" aria-hidden="true"></div>
   <div class="deck-body">
-    <Header {view} editable onexam={() => (settingsOpen = true)} />
+    <Header {view} title={doc.current.title} field={doc.fields.title} onexam={() => (settingsOpen = true)} />
 
     {#if studying}
       <Session {now} {offset} {clock} onend={end} />

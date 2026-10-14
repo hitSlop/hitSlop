@@ -4,7 +4,7 @@
   import { onMount, tick } from "svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { AlertDialog, Select, Slider, Toggle, ToggleGroup } from "bits-ui";
-  import { attachments, EditableText, notify } from "hitslop/svelte";
+  import { attachments, EditableText, getDocument, notify } from "hitslop/svelte";
   import Play from "@lucide/svelte/icons/play";
   import Pause from "@lucide/svelte/icons/pause";
   import Square from "@lucide/svelte/icons/square";
@@ -14,10 +14,12 @@
   import Layers from "@lucide/svelte/icons/layers";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import CameraOff from "@lucide/svelte/icons/camera-off";
-  import doc, { maxFrameBytes } from "./schema";
+  import schema, { maxFrameBytes } from "./schema";
   import { dayKey, dayLabel, frameView, keepFrame, monthEarlier, nearFrame, removeFrame, shortLabel, sizeLabel, stamp } from "./frames";
   import { explainCameraError, fileToJpeg, listCameras, openCamera, stopStream, toJpeg } from "./camera";
   import Photo from "./Photo.svelte";
+
+  const doc = getDocument(schema);
 
   type CameraState =
     | { phase: "starting" }
@@ -130,7 +132,7 @@
     if (blob.size > maxFrameBytes) return `This picture is ${sizeLabel(blob.size)}; one frame can be at most 10 MB.`;
     const retake = doc.current.frames.some(frame => frame.date === date);
     try {
-      await attachments.import<typeof doc.descriptor>(new File([blob], `frame-${date}.jpg`, { type: "image/jpeg" }), (tx, ref) => {
+      await attachments.import<typeof schema.descriptor>(new File([blob], `frame-${date}.jpg`, { type: "image/jpeg" }), (tx, ref) => {
         keepFrame(tx, doc.current, date, ref);
       });
     } catch (error) {
@@ -292,14 +294,14 @@
         {:else if mode === "play" && playing}
           {#each view.stack as shown, at (shown.key)}
             {#if Math.abs(at - index) <= 1 || (index === view.stack.length - 1 && at === 0)}
-              <span class="df-layer" class:df-layer-on={at === index}><Photo {shown} /></span>
+              <span class="df-layer" class:df-layer-on={at === index}><Photo {shown} url={attachments.url} /></span>
             {/if}
           {/each}
         {:else if stageFrame}
-          <Photo shown={stageFrame} onerror={() => notify("This photo couldn't be opened.")} />
+          <Photo shown={stageFrame} url={attachments.url} onerror={() => notify("This photo couldn't be opened.")} />
         {:else}
           <div class="df-blank">
-            {#if view.latest}<span class="df-blank-ghost" aria-hidden="true"><Photo shown={view.latest} imprint={false} /></span>{/if}
+            {#if view.latest}<span class="df-blank-ghost" aria-hidden="true"><Photo shown={view.latest} url={attachments.url} imprint={false} /></span>{/if}
             <span class="df-imprint df-imprint-blank" aria-hidden="true">{stamp(today)}</span>
             <p>Today's frame isn't taken yet.</p>
             <p class="df-blank-sub">{view.previous ? "Line it up with the last one: the camera shows it faintly." : "Same place, same angle, every day."}</p>
@@ -384,7 +386,7 @@
 
   <section class="df-lower">
     <button class="df-ago" onclick={() => earlier && pick(earlier.date)} disabled={!earlier} aria-label={earlier ? `One month earlier: ${dayLabel(earlier.date)}` : `No frame near ${dayLabel(earlierDay)}`}>
-      <span class="df-ago-photo">{#if earlier}<Photo shown={earlier} imprint={false} lazy />{:else}<span class="df-ago-empty">—</span>{/if}</span>
+      <span class="df-ago-photo">{#if earlier}<Photo shown={earlier} url={attachments.url} imprint={false} lazy />{:else}<span class="df-ago-empty">—</span>{/if}</span>
       <span class="df-ago-label">{stageDay === today ? "This day last month" : "A month before"}</span>
       <span class="df-ago-date">{earlier ? shortLabel(earlier.date) : `None near ${shortLabel(earlierDay)}`}</span>
     </button>
@@ -398,7 +400,7 @@
           {@const current = mode === "play" && playing ? playing.date === shown.date : stageDay === shown.date}
           <button class="df-thumb" data-day={shown.date} aria-current={current ? "true" : undefined} tabindex={stageDay === shown.date ? 0 : -1}
             onclick={() => pick(shown.date)} aria-label={`${dayLabel(shown.date)}${shown.note ? `, ${shown.note}` : ""}`}>
-            <span class="df-thumb-photo"><Photo {shown} imprint={false} lazy /></span>
+            <span class="df-thumb-photo"><Photo {shown} url={attachments.url} imprint={false} lazy /></span>
             <span class="df-thumb-day">{newMonth(shown.date) ? shortLabel(shown.date) : shown.date.slice(8)}</span>
           </button>
         {/each}

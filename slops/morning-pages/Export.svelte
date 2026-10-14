@@ -1,11 +1,14 @@
 <script lang="ts">
-import doc from "./schema";
-import { formatDisplayDate, pageView, TARGET } from "./model";
-const { active, wordsCount, progressPct, page1Done, page2Done, page3Done } = $derived(pageView(doc.current));
-const text = $derived(active?.text ?? "");
+  import type { CaptureProps } from "hitslop/svelte";
+  import { previewText } from "../_shared/preview";
+  import type schema from "./schema";
+  import { formatDisplayDate, pageView, TARGET } from "./model";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const { active, wordsCount, progressPct, page1Done, page2Done, page3Done } = $derived(pageView(snapshot));
+  const text = $derived(active?.text ?? "");
 </script>
 
-<article class={"mp-exportPad"} aria-label="Exported morning pages for {formatDisplayDate(doc.current.currentKey)}">
+<article class={"mp-exportPad"} aria-label="Exported morning pages for {formatDisplayDate(snapshot.currentKey)}">
   <header class={"mp-stub"}>
     <span class={"mp-perforations"} aria-hidden="true"></span>
     <div class={"mp-brandRow"}>
@@ -15,7 +18,7 @@ const text = $derived(active?.text ?? "");
       </div>
     </div>
     <div class={"mp-headlineRow"}>
-      <h1 class={"mp-dateHeadline"}>{formatDisplayDate(doc.current.currentKey)}</h1>
+      <h1 class={"mp-dateHeadline"}>{formatDisplayDate(snapshot.currentKey)}</h1>
       {#if page3Done}<span class={"mp-stamp"}>3 pages cleared</span>{/if}
     </div>
     <div class={"mp-odometer"}>
@@ -44,7 +47,7 @@ const text = $derived(active?.text ?? "");
       <span class={"mp-hole"}></span>
     </div>
     {#if text.trim()}
-      <p class={"mp-writing"}>{text}</p>
+      <p class={"mp-writing"}>{previewText(text, preview, 900)}</p>
     {:else}
       <p class={"mp-empty"}>Nothing written this morning.</p>
     {/if}

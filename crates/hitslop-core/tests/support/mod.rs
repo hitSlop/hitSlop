@@ -1,4 +1,4 @@
-#![allow(dead_code, reason = "each integration test binary uses a different subset of these fixtures")]
+#![allow(dead_code, reason = "a build without `storage` uses a subset of these fixtures")]
 pub mod generate;
 pub mod relay;
 use hitslop_core::Origin;
@@ -15,8 +15,9 @@ pub fn isolate_registry() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| hitslop_core::registry::use_folder(&registry_folder()).unwrap());
 }
-/// This test binary running only its ignored test `name`, as a separate process, with
-/// `env`: a child test returns at once unless its variables are set. Output is discarded.
+/// This test binary running only its ignored test `name` (module-qualified: `file::…`), as
+/// a separate process, with `env`: a child test returns at once unless its variables are
+/// set. Output is discarded.
 pub fn child(name: &str, env: &[(&str, &str)]) -> std::process::Command {
     let mut command = std::process::Command::new(std::env::current_exe().unwrap());
     command.args(["--exact", name, "--ignored", "--nocapture"]);
@@ -59,15 +60,32 @@ impl<'a> App<'a> {
 pub fn write_app(stage: &std::path::Path, app: App) {
     let parse = |value: &str| serde_json::from_str::<Value>(value).unwrap();
     let theme: serde_json::Map<String, Value> = serde_json::from_str(app.theme).unwrap();
+    std::fs::create_dir_all(stage.join("assets")).unwrap();
+    std::fs::write(
+        stage.join("assets/export.js"),
+        include_str!("../../../../tests/fixtures/checklist/document/assets/export.js"),
+    )
+    .unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/preview.js")).unwrap();
+    std::fs::copy(stage.join("assets/export.js"), stage.join("assets/icon.js")).unwrap();
     let input = json!({"packageFormat":app.format,"runtimeABI":app.abi,
         "declaration":{"metadata":parse(app.metadata),"window":parse(app.window),"document":parse(app.descriptor),"initial":parse(app.initial),
-            "theme":theme.into_iter().map(|(token,color)|json!({"token":token,"color":color})).collect::<Vec<_>>(),"commands":parse(app.commands),"views":{"export":false,"icon":false}},
-        "roles":{"ui":"ui.js"},"resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"}],"artwork":{}});
+            "theme":theme.into_iter().map(|(token,color)|json!({"token":token,"color":color})).collect::<Vec<_>>(),"commands":parse(app.commands),"views":{"preview":true,"export":true,"icon":true}},
+        "roles":{"ui":"ui.js","preview":"preview.js","icon":"icon.js","export":"export.js"},"resources":[{"kind":"app","key":"ui.js","mediaType":"text/javascript","path":"assets/ui.js"},{"kind":"app","key":"preview.js","mediaType":"text/javascript","path":"assets/preview.js"},{"kind":"app","key":"icon.js","mediaType":"text/javascript","path":"assets/icon.js"},{"kind":"app","key":"export.js","mediaType":"text/javascript","path":"assets/export.js"}],"artwork":{}});
     std::fs::write(stage.join("input.json"), input.to_string()).unwrap();
 }
 #[cfg(feature = "storage")]
 pub fn pack(stage: &std::path::Path, destination: &std::path::Path) -> Result<(), hitslop_core::store::Error> {
-    hitslop_core::file::pack(&std::fs::read_to_string(stage.join("input.json")).unwrap(), stage, destination)
+    pack_rendering(stage, destination, None).map(|_| ())
+}
+/// Packs, rendering the artwork the stage does not supply with `render`.
+#[cfg(feature = "storage")]
+pub fn pack_rendering(
+    stage: &std::path::Path,
+    destination: &std::path::Path,
+    render: Option<hitslop_core::file::RenderArtwork>,
+) -> Result<hitslop_core::engine::PackedArtwork, hitslop_core::store::Error> {
+    hitslop_core::file::pack(&std::fs::read_to_string(stage.join("input.json")).unwrap(), stage, destination, render)
 }
 pub fn edit_input(stage: &std::path::Path, edit: impl FnOnce(&mut Value)) {
     let path = stage.join("input.json");
@@ -98,6 +116,14 @@ pub fn add_asset(stage: &std::path::Path, key: &str, media_type: &str, bytes: &[
             input["roles"]["commands"] = key.into();
         }
     });
+}
+/// A stand-in capture renderer: it reads its job, runs the shell command `before`, then
+/// replies with one image, `bytes`, whatever it was asked for.
+#[cfg(feature = "storage")]
+pub fn renderer(before: &str, bytes: &[u8]) -> hitslop_core::owner::Evaluator {
+    let reply = json!({"ok": true, "images": [data_encoding::BASE64.encode(bytes)]});
+    let script = format!("/bin/cat >/dev/null; {before}; printf '%s' '{reply}'");
+    hitslop_core::owner::Evaluator::new("/bin/sh".into(), vec!["-c".into(), script]).unwrap()
 }
 #[cfg(feature = "storage")]
 pub fn media_key(bytes: &[u8], extension: &str) -> String {

@@ -1,11 +1,11 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addCategory, logExpense, removeCategory, renameCategory, setAllocated } from "./budget";
 
 const category = s.string({ description: "The category's $id." });
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addCategory: {
     description: "Add a spending category and return its stable row ID.",
     args: { name: s.string(), allocated: s.number({ min: 0 }) },

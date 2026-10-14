@@ -5,7 +5,8 @@
   import { Tween, prefersReducedMotion } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { Button } from "bits-ui";
-  import doc from "./schema";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
   import Chamber, { type Particle } from "./Chamber.svelte";
   import { intakeView, logIntake, resetDay, setTarget } from "./intake";
 
@@ -16,6 +17,7 @@
     { amount: 750, label: "Flask" },
   ] as const;
   const PARTICLES = ["💧", "✨", "🎉", "🌟", "🫧", "🌊", "💎", "💙"];
+  const doc = getDocument(schema);
   const view = $derived(intakeView(doc.current));
   const percent = $derived(view.percent);
   const fill = $derived(view.fill);
@@ -42,6 +44,15 @@
   onDestroy(() => {
     void liquid.set(liquid.target, { duration: 0, delay: 0 });
     stopChime();
+  });
+
+  // The day becoming complete is what we celebrate, however it came about (a tap, an agent,
+  // an undo): react to the state instead of reading it again after a write that may not have landed.
+  let wasComplete = untrack(() => view.complete);
+  $effect(() => {
+    const complete = view.complete;
+    if (complete && !wasComplete) untrack(celebrate);
+    wasComplete = complete;
   });
 
   function celebrate() {
@@ -96,9 +107,7 @@
   }
 
   function log(amount: number, label: string) {
-    const wasComplete = percent >= 100;
     doc.change((tx) => logIntake(tx, doc.current, amount, label, new Date()));
-    if (!wasComplete && intakeView(doc.current).complete) celebrate();
   }
 
   function reset() {
@@ -125,7 +134,7 @@
       </label>
     </header>
 
-    <Chamber level={liquid.current} {percent} interactive {particles} oncelebrate={celebrate} onparticleend={(id) => { particles = particles.filter((item) => item.id !== id); }} />
+    <Chamber level={liquid.current} {percent} total={view.total} unit={doc.current.unit} interactive {particles} oncelebrate={celebrate} onparticleend={(id) => { particles = particles.filter((item) => item.id !== id); }} />
 
     <section class="taps" data-slop-export="hide" aria-label="Quick log drinks">
       {#each QUICK as drink}

@@ -1,8 +1,8 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Board = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Board = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export const statuses = ["on-time", "boarding", "delayed", "gone"] as const;
 export type Status = (typeof statuses)[number];

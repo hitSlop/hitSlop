@@ -55,10 +55,8 @@ rack die removes one. Focus rings are paper on wood and ink on the slip. The wel
 
 ## Export and icon
 
-Export is a fresh page: it mounts the tray in still mode, renders one frame of the last roll at
-rest, keeps it as a PNG data URL and unmounts the WebGL canvas (context released) before
-capture, through `capture.onPrepare`. Without WebGL it shows flat die drawings with the values.
-Below it: the plate and up to twelve recent rolls, no controls. The icon is the tray from
+Export is a fresh page with no WebGL canvas: the plate, flat die drawings with the values of the
+last roll, and up to twelve recent rolls, no controls. The icon is the tray from
 above: walnut rim, felt, a d20 showing the last d20 value and a d6.
 
 ## Edits
@@ -77,6 +75,6 @@ such as Tiny Planet.
 
 ## Unverified
 
-Rendering, tumbling, reduced motion, a 360 px width and the export still were checked in
-headless Chromium through `slop dev`. Not verified: WebGL and the tumble under `slop://` in
-WKWebView, native PNG/PDF export timing of the still, theme overrides in the native panel.
+Rendering, tumbling, reduced motion and a 360 px width were checked in headless Chromium
+through `slop dev`. Not verified: WebGL and the tumble under `slop://` in WKWebView, theme
+overrides in the native panel.

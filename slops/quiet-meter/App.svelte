@@ -2,13 +2,13 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { onMount } from "svelte";
-  import { EditableText, notify } from "hitslop/svelte";
+  import { EditableText, getDocument, notify } from "hitslop/svelte";
   import Mic from "@lucide/svelte/icons/mic";
   import Square from "@lucide/svelte/icons/square";
   import Minus from "@lucide/svelte/icons/minus";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import doc from "./schema";
+  import schema from "./schema";
   import { LEVEL, SUSTAIN } from "./schema";
   import {
     ZONE_LABEL, advanceTally, clearSessions, clock, emptyTally, levelFromRms, localDay, meterView,
@@ -17,6 +17,8 @@
   import Gauge from "./Gauge.svelte";
   import Lamp from "./Lamp.svelte";
   import Summary from "./Summary.svelte";
+
+  const doc = getDocument(schema);
 
   const { last, lastZone, recent } = $derived(meterView(doc.current));
   const amber = $derived(doc.current.amber);

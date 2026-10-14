@@ -3,12 +3,12 @@
   import "./styles.css";
   import { onDestroy, tick, untrack } from "svelte";
   import { Checkbox, Dialog, Select } from "bits-ui";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
   import ArrowDownToLine from "@lucide/svelte/icons/arrow-down-to-line";
   import NotebookPen from "@lucide/svelte/icons/notebook-pen";
-  import doc, { KINDS } from "./schema";
+  import schema, { KINDS } from "./schema";
   import DatePicker from "./DatePicker.svelte";
   import {
     DAY_START,
@@ -36,6 +36,7 @@
     validRange,
     scrollForTime,
   } from "./schedule";
+  const doc = getDocument(schema);
   let now = $state(new Date());
   let follow = $state(true);
   let viewport = $state<HTMLDivElement>();

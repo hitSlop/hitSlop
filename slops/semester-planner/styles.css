@@ -526,17 +526,9 @@
   }
 
   /* Export mode */
-  html[data-slop-capture="static"] [data-slop-export="hide"] {
-    display: none !important;
-  }
-
   html[data-slop-capture="static"] input {
     border: none !important;
     background: transparent !important;
-  }
-
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .semester-app {
-    display: none;
   }
 
 .semester-render {
@@ -547,7 +539,7 @@
     background: transparent;
   }
 
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .semester-render {
+  html[data-slop-capture="icon"] .semester-render {
     display: grid !important;
   }
 

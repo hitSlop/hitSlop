@@ -1,7 +1,8 @@
 <script lang="ts">
 import "./styles.css";
-  import { EditableText } from "hitslop/svelte";
-  import doc from "./schema";
+  import { EditableText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+  const doc = getDocument(schema);
   let hidden = $state(false);
 </script>
 <main data-editor>

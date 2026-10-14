@@ -10,7 +10,7 @@ import { changedPaths } from "../lib/verification";
 export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate = true) {
   const pick = (names: TierName[]) => tiers.filter(name => names.includes(name)).join(",");
   return {
-    fast: pick(["compat", "tooling", "contracts", "types", "bun", "cli", "packed", "landing"]),
+    fast: pick(["compat", "tooling", "contracts", "types", "bun", "cli", "render", "packed", "landing"]),
     native: nativeGate ? pick(["swift", "native"]) : "",
     nativeRust: pick(["rust"]),
     rust: pick(["rust"]),

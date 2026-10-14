@@ -1,17 +1,20 @@
 <script lang="ts">
-import doc from "./schema";
+import type { CaptureProps } from "hitslop/svelte";
+import type schema from "./schema";
 import Case from "./Case.svelte";
 import ClickWheel from "./ClickWheel.svelte";
 import CoverFlow from "./CoverFlow.svelte";
 import StickerLayer from "./StickerLayer.svelte";
 import { podView } from "./pod";
 
+let { snapshot }: CaptureProps<typeof schema> = $props();
+
 // The same body, with the current video centered in Cover Flow.
-const { videos, currentIndex: cursor } = $derived(podView(doc.current));
+const { videos, currentIndex: cursor } = $derived(podView(snapshot));
 </script>
 
 {#snippet stickers()}
-  <StickerLayer stickers={doc.current.stickers} />
+  <StickerLayer stickers={snapshot.stickers} />
 {/snippet}
 
 {#snippet screen()}

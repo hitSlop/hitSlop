@@ -142,12 +142,9 @@ assert_arm64_only() {
 }
 
 assert_arm64_only "$app/Contents/MacOS/hitSlop"
-assert_arm64_only "$app/Contents/Helpers/hitslop-native"
 assert_arm64_only "$app/Contents/Helpers/hitslop-evaluator"
 
-echo "Signing nested helper and app…"
-/usr/bin/codesign --force --timestamp --sign "$identity" "$app/Contents/Helpers/HitSlopApple_HitSlopDocument.bundle"
-/usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/hitslop-native"
+echo "Signing nested tools and app…"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/hitslop-evaluator"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Frameworks/Sparkle.framework"
 /usr/bin/codesign --force --timestamp --options runtime \
@@ -156,17 +153,15 @@ echo "Signing nested helper and app…"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 
 # Notarize only the candidate that passed installed-app and host-crash acceptance.
-# Requires the Debug helper from `bun run build` for storage probes.
+# Requires the engine from `bun run build` for storage probes.
 if [ "${HITSLOP_SKIP_ACCEPTANCE:-}" != "1" ]; then
   echo "Accepting signed app before notarization…"
   (
     cd "$repo_root"
     HITSLOP_APP_BINARY="$app/Contents/MacOS/hitSlop" \
-      HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" \
       bun test ./tests/native/crash.native.test.ts
-    # Every released document still reads, renders and edits with the signed helper.
-    HITSLOP_NATIVE_CLI="$app/Contents/Helpers/hitslop-native" \
-      bun test ./tests/native/compat-replay.native.test.ts
+    # Every released document still reads, renders and edits with this build's engine.
+    bun test ./tests/native/compat-replay.native.test.ts
   )
 fi
 

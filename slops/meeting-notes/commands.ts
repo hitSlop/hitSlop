@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { addAction, addAgendaTopic, addAttendee, addDecision, removeAction, setActionDone } from "./meeting";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   addAttendee: {
     description: "Add a person to the attendee list and return the new attendee count.",
     args: { name: s.string() },

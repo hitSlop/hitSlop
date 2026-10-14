@@ -1,9 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel as formattedDate } from "../_shared/format";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Notebook = typeof doc.current;
+export type Notebook = Value<typeof schema.descriptor>;
 export type Entry = Notebook["entries"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 /** An attachment reference as `attachments.import` returns it. */
 export type FileRef = { id: string; name: string; mimeType: string; byteLength: number };
 
@@ -102,8 +103,8 @@ export function clock(seconds: number): string {
 export function stamp(at: string): string {
   const date = new Date(at);
   if (!Number.isFinite(date.getTime())) return "Time unknown";
-  const day = date.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const day = formattedDate(date, { weekday: "short", day: "numeric", month: "short" });
+  const time = formattedDate(date, { hour: "numeric", minute: "2-digit" });
   return `${day} · ${time}`;
 }
 export function formatLabel(entry: Entry): string {

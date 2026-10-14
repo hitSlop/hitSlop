@@ -1,7 +1,8 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Tabs, Checkbox, Select, Button, Tooltip, Dialog, Progress, Popover } from "bits-ui";
@@ -11,11 +12,12 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Sparkles from "@lucide/svelte/icons/sparkles";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import { PRESETS } from "./presets";
   import { addItem, applyPreset, clearPacked, cycleQuantity, packingView, removeItem, setAllPacked, setEssential, setFlag, setPacked } from "./items";
 
-  type Category = (typeof doc.current.categories)[number];
+  const doc = getDocument(schema);
+  type Category = Value<typeof schema.descriptor>["categories"][number];
 
   const QTY_ITEMS = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((value) => ({ value: String(value), label: `×${value}` }));
   const POPULAR_FLAGS = [

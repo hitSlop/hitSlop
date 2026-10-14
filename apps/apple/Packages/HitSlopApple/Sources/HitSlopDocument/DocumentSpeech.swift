@@ -36,7 +36,7 @@ public protocol SpeechRecognizing: Sendable {
 /// and owns the recording's bytes, which it reads by attachment ID.
 enum SpeechTranscription {
   static let cancelled = SpeechOutcome.cancelled(
-    message: "Transcription stopped: the page was replaced or closed, or an export began")
+    message: "Transcription stopped: the page was replaced, closed or became unavailable")
 
   /// The outcome of transcribing the attachment `attachment` with `recognizer`. Checks
   /// the recording, format and locale before permission, so unsupported requests never prompt.
@@ -108,12 +108,12 @@ enum SpeechTranscription {
 
 extension DocumentSession {
   /// Transcribes for the attached page. The work belongs to this page: replacing or
-  /// closing it, reloading its interface or starting an export cancels it, and the page
+  /// closing it, reloading its interface or losing its renderer cancels it, and the page
   /// receives `cancelled`.
   func serveSpeech(
     attachment: String, locale: String?, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void
   ) {
-    guard admitsPageServices else {
+    guard acceptsPageWork else {
       return reply(
         encodeHostReply(
           reply: .speechTranscribe(

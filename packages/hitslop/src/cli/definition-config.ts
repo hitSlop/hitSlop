@@ -1,6 +1,6 @@
 import { build, type InlineConfig, type Plugin } from "vite";
 import { readdir } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   discoverRoles,
   refuseRoleImport,
@@ -9,12 +9,12 @@ import {
   uiEntrySource,
 } from "./app-vite";
 import { portableAssetURLs } from "./asset-url-transform";
-import { declaresModuleState, sharedStateIn } from "./capture-state";
 import { resourceKey, bytesOf, typeOf, type Emitted } from "./definition-resources";
+import { buildCapture, refuseHostRuntime } from "./capture-build";
 export type DefinitionBuildOptions = { alias?: Record<string, string> };
 const virtualEntry = "\0hitslop-definition-entry";
 
-/** Build two disconnected graphs and collect Vite's complete resource inventory. */
+/** Build disconnected role graphs and collect Vite's complete resource inventory. */
 export async function buildGraphs(source: string, options: DefinitionBuildOptions) {
   let sdk = "";
   const publicFiles = await readdir(join(source, "public")).catch(
@@ -29,18 +29,22 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
     );
   const roles = await discoverRoles(source);
   const entry = roles.metadata;
-  const inputs = { ui: new Set<string>(), definition: new Set<string>() };
+  const inputs = {
+    ui: new Set<string>(),
+    definition: new Set<string>(),
+    capture: new Set<string>(),
+  };
   const outputs = { ui: new Map<string, Emitted>(), definition: new Map<string, Emitted>() };
   const referencedUIAssets = new Set<string>();
-  // The UI's module graph, and the project's modules in it with top-level $state.
-  const uiImports = new Map<string, string[]>();
-  const statefulModules = new Set<string>();
+  // Captures import the editor's stylesheets first, in the order of its cascade: depth-first in
+  // import order, each at its first import. A chunk lists its modules in that execution order,
+  // which ui.css follows; the build's module table is a hash order that changes with paths.
+  let editorStyles: string[] = [];
   const previous = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
     for (const mode of ["definition", "ui"] as const) {
       const headless = mode === "definition";
-      const inventory = outputs[mode];
       const boundary: Plugin = {
         name: "hitslop-explicit-entry",
         enforce: "pre",
@@ -63,38 +67,21 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
           return found;
         },
         load(id) {
-          if (id === virtualEntry)
-            return headless
-              ? `import app from ${JSON.stringify(roles.metadata)};
+          if (id !== virtualEntry) return;
+          return headless
+            ? `import app from ${JSON.stringify(roles.metadata)};
 import document from ${JSON.stringify(roles.schema)};
 ${roles.commands ? `import commands from ${JSON.stringify(roles.commands)}; if (commands === undefined) throw new Error("commands.ts must default-export defineCommands(document, specs)");` : "const commands = undefined;"}
 import {describeApp} from ${JSON.stringify(join(sdk, "app-definition.ts"))};
 globalThis.__slopCommands = commands;
-globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app,document,commands,${JSON.stringify({ export: !!roles.export, icon: !!roles.icon })})});`
-              : uiEntrySource(roles);
-        },
-        transform(code, id) {
-          const clean = id.split("?", 1)[0]!;
-          if (
-            !headless &&
-            clean.startsWith(source + "/") &&
-            !clean.includes("/node_modules/") &&
-            declaresModuleState(code, clean)
-          )
-            statefulModules.add(clean);
+globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeApp(app,document,commands,${JSON.stringify({ export: !!roles.export, icon: !!roles.icon, preview: !!roles.preview, ...(roles.widget ? { widget: {} } : {}) })})});`
+            : uiEntrySource(roles);
         },
         generateBundle() {
           const clean = (id: string) => id.split("?", 1)[0]!;
           for (const id of this.getModuleIds()) {
             if (!id.startsWith("\0")) inputs[mode].add(clean(id));
-            if (!headless)
-              uiImports.set(clean(id), [...(this.getModuleInfo(id)?.importedIds ?? [])].map(clean));
-            // The host's own runtime, not an author folder that happens to be named shell.
-            if (
-              id.includes("/node_modules/loro-crdt/") ||
-              id.startsWith(join(dirname(sdk), "shell") + "/")
-            )
-              this.error(`Embedded host runtime rejected: ${id}`);
+            refuseHostRuntime(id, sdk, (message) => this.error(message));
           }
         },
       };
@@ -114,7 +101,8 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
                   name: "hitslop-portable-asset-urls",
                   enforce: "post" as const,
                   renderChunk(code: string, chunk: { fileName: string }) {
-                    if (code.includes("/assets/")) return portableAssetURLs(code, chunk.fileName);
+                    if (!code.includes("/assets/")) return;
+                    return portableAssetURLs(code, chunk.fileName);
                   },
                 },
               ]
@@ -149,7 +137,7 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
       for (const output of Array.isArray(result) ? result : [result]) {
         for (const item of output.output) {
           const bytes = bytesOf(item.type === "chunk" ? item.code : item.source);
-          inventory.set(item.fileName, {
+          outputs[mode].set(item.fileName, {
             key: item.fileName,
             bytes,
             mediaType: typeOf(item.fileName)[0]!,
@@ -163,20 +151,29 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
             ).viteMetadata;
             if (!metadata) throw new Error("Vite emitted a UI chunk without asset metadata");
             for (const key of metadata.importedAssets) referencedUIAssets.add(key);
+            editorStyles = item.moduleIds.filter(
+              (id) => !id.startsWith("\0") && !id.includes("?") && id.endsWith(".css"),
+            );
           }
         }
       }
     }
-    // Captures render saved state in a fresh page, so a module the editor sets shows only
-    // its initial value there, even when the editor is reused as the export component.
-    for (const role of ["export", "icon"] as const) {
-      const component = roles[role];
-      if (!component) continue;
-      const shared = sharedStateIn(component, uiImports, statefulModules);
-      if (shared)
-        throw new Error(
-          `${component} (the ${role} view) imports ${relative(source, shared)}, whose $state is always its initial value in a capture. Captures render saved state in a fresh page: read doc.current there, and give a component shared with the editor that value as a prop.`,
-        );
+    for (const role of ["widget", "icon", "preview", "export"] as const) {
+      const capture = await buildCapture(role, {
+        source,
+        roles,
+        sdk,
+        ui: outputs.ui,
+        options,
+        editorStyles,
+      });
+      if (!capture) continue;
+      outputs.definition.set(`${role}.js`, {
+        key: `${role}.js`,
+        bytes: capture.bytes,
+        mediaType: "text/javascript",
+      });
+      for (const path of capture.dependencies) inputs.capture.add(path);
     }
     return { inputs, outputs, referencedUIAssets, sdk };
   } finally {

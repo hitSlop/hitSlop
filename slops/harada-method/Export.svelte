@@ -1,8 +1,10 @@
 <script lang="ts">
+import type { CaptureProps } from "hitslop/svelte";
 import Check from "@lucide/svelte/icons/check";
-import doc from "./schema";
+import type schema from "./schema";
 import { CELLS, sheetView } from "./chart";
-const { doneCount, deadlineText, isDone, textOf } = $derived(sheetView(doc.current));
+let { snapshot }: CaptureProps<typeof schema> = $props();
+const { doneCount, deadlineText, isDone, textOf } = $derived(sheetView(snapshot));
 </script>
 
 <article class="exportPage" aria-label="Exported Open Window 64 chart">

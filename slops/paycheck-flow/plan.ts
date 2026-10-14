@@ -1,10 +1,10 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { flowTotals } from "./flow";
 import { maxBuckets, maxSources, minorScale, money, share, tones, type Currency, type Tone } from "./money";
 
-export type Plan = typeof doc.current;
-type Edit = Tx<typeof doc>;
+export type Plan = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 /** The editor and the export derive totals and the verdict from the same snapshot. */
 export function planView(data: Plan) {

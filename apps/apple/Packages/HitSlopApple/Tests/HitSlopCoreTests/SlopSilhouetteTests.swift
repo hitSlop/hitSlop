@@ -14,7 +14,6 @@ private func pathShape(_ path: String, evenOdd: Bool = false, width: Double = 10
 // from a template the core packed.
 private func silhouette(shape: Any, width: Int, height: Int) throws -> SlopSilhouette {
   let stage = try Fixtures.minimalStage(
-    slug: "shape-lab",
     fields: [
       "window": [
         "width": max(240, width), "height": max(180, height),

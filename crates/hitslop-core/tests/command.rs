@@ -1,5 +1,6 @@
 //! Shared live/closed command routing and bounded Unix transport. Fault peers exercise
 //! real socket loss and identity checks, not private call ordering.
+use crate::support;
 use hitslop_core::{
     command::{self, ExportCompletion, ExportHandler, ExportRequest},
     file,
@@ -14,7 +15,6 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
-mod support;
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
 fn document() -> (tempfile::TempDir, PathBuf) {
     document_declaring(&[])
@@ -37,7 +37,7 @@ fn document_declaring(capabilities: &[&str]) -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 /// The command protocol these requests are written in.
-const PROTOCOL: u64 = hitslop_core::HELPER_PROTOCOL;
+const PROTOCOL: u64 = hitslop_core::ENGINE_PROTOCOL;
 fn request(path: &Path, method: &str) -> Value {
     json!({"protocol":PROTOCOL,"method":method,"documentPath":std::fs::canonicalize(path).unwrap()})
 }
@@ -56,7 +56,7 @@ fn socket_request(mut value: Value) -> String {
 }
 fn run(mut value: Value) -> Value {
     value.as_object_mut().unwrap().remove("protocol");
-    checked(command::request(&value.to_string(), PROTOCOL, None))
+    checked(command::request(&value.to_string(), PROTOCOL))
 }
 fn call(owner: &Owner, request: Request) -> std::result::Result<Reply, Failure> {
     let (tx, rx) = mpsc::channel();
@@ -107,7 +107,7 @@ impl ExportHandler for NoExport {
 
 #[test]
 fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
-    let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1, None));
+    let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1));
     assert_eq!(reply["reason"], "requires_update");
     let (_dir, path) = document();
     let owner = open(&path);
@@ -387,7 +387,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
         let input = line(&mut edit);
         let applied = checked(command::serve(&actor, &input, None, Instant::now() + Duration::from_secs(5)));
         assert_eq!(applied["ok"], true);
-        drop(edit); // The committed reply never reaches the helper.
+        drop(edit); // The committed reply never reaches the client.
     });
     let answer = run(batch(&path));
     assert_eq!(answer["code"], "unknown_outcome");
@@ -442,6 +442,29 @@ fn page(owner: &Owner, view: &str, input: &str) -> command::PageDispatch {
 fn page_json(reply: &command::PageDispatch) -> Value {
     let command::PageDispatch::Reply { json, .. } = reply else { panic!("expected a JSON reply") };
     serde_json::from_str(json).unwrap()
+}
+
+#[test]
+fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
+    use command::PageDispatch;
+    use hitslop_core::page_wire::{HostAction, PageRequest};
+    let (_dir, path) = document();
+    let owner = open(&path);
+    owner.attach("page".into());
+    let request = |view: &str, width| {
+        let (tx, rx) = mpsc::channel();
+        command::page_typed(&owner, view.into(), PageRequest::WindowResize { width, height: 480 }, move |reply| {
+            tx.send(reply).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    };
+    assert!(matches!(
+        request("page", 640),
+        PageDispatch::Host { action: HostAction::WindowResize { width: 640, height: 480 } }
+    ));
+    assert_eq!(page_json(&request("page", 0))["reason"], "invalid_request");
+    assert_eq!(page_json(&request("retired", 640))["code"], "owner_replaced");
+    close(&owner);
 }
 // The page's document requests run through the core: replies the page reads, refusals it
 // can act on, and the owner's failure for the host. Oracle: literal replies and the value.
@@ -620,6 +643,39 @@ fn a_client_that_panics_frees_its_place() {
     server.stop();
 }
 
+// Failure: a closed export without a renderer did not refuse cleanly, or a closed export
+// took the writer lock to render. Oracle: a refusal, the live owner's own answer, and the
+// saved state exported while another writer holds the lock with no session to ask.
+#[test]
+fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
+    let (dir, path) = document();
+    let output = dir.path().join("closed.pdf");
+    let mut export = request(&path, "export");
+    export["format"] = "pdf".into();
+    export["output"] = output.to_str().unwrap().into();
+    // `command::request` has no evaluator to render with.
+    let refused = run(export.clone());
+    assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("invalid_request")));
+    let owner = open(&path);
+    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    assert_eq!(run(export.clone())["error"], "No export", "the live owner's renderer answers");
+    close(&owner);
+    server.stop();
+    assert!(!output.exists());
+    if cfg!(target_os = "macos") {
+        let before = std::fs::read(&path).unwrap();
+        let busy = registry::Lease::acquire(&path).unwrap();
+        let pdf = b"%PDF-1.7\n%%EOF".to_vec();
+        export.as_object_mut().unwrap().remove("protocol");
+        let request = hitslop_core::EngineRequest::parse(&export.to_string()).unwrap();
+        let rendered = command::request_with_evaluator(request, PROTOCOL, Some(support::renderer(":", &pdf)));
+        assert_eq!(checked(rendered), json!({"ok":true,"method":"export","output":output}));
+        assert_eq!(std::fs::read(&output).unwrap(), pdf);
+        drop(busy);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+
 #[test]
 fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     use command::PageDispatch;
@@ -629,7 +685,6 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     owner.attach("page".into());
     let config = page_json(&page(&owner, "page", r#"{"method":"config"}"#));
     assert_eq!(config["ok"], true);
-    assert_eq!(config["readOnly"], false);
     assert_eq!(config["window"]["frame"]["kind"], "standard");
     assert_eq!(config["window"]["frame"]["frame"]["resizable"], true);
     assert_eq!(config["descriptor"], serde_json::from_str::<Value>(SCHEMA).unwrap());
@@ -645,14 +700,10 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     }
     close(&owner);
     assert_eq!(page_json(&page(&owner, "replacement", r#"{"method":"ready"}"#))["code"], "closing");
-    let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
-    snapshot.attach("capture".into());
-    assert_eq!(page_json(&page(&snapshot, "capture", r#"{"method":"config"}"#))["readOnly"], true);
-    close(&snapshot);
 }
 
-// Speech reaches the host only for an owner's page whose stored app declared it; every
-// other page learns why it is unavailable without a host being asked. The host then reads
+// Speech reaches the host only for a page whose stored app declared it; every other
+// page learns why it is unavailable without a host being asked. The host then reads
 // the verified recording through the owner's reader and decides what it can decode.
 #[test]
 fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
@@ -695,15 +746,7 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     let malformed = page(&owner, "page", &json!({"method":"speech.transcribe","attachment":"clip.m4a"}).to_string());
     assert_eq!(page_json(&malformed)["reason"], "invalid_request");
     assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
-
     close(&owner);
-
-    // A background renderer of the same document never transcribes.
-    let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
-    snapshot.attach("capture".into());
-    let outcome = page_json(&page(&snapshot, "capture", &request))["outcome"].clone();
-    assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("host")));
-    close(&snapshot);
 }
 
 #[test]

@@ -1,7 +1,3 @@
-<script lang="ts">
-  import doc from "./schema";
-</script>
-
 <section class="ttt-render ttt-icon" data-slop-render="icon" aria-hidden="true">
   <article class="icon-page">
     <div class="icon-bands">

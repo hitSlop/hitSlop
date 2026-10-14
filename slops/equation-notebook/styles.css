@@ -319,7 +319,7 @@ p.note { margin: 0; white-space: pre-wrap; }
 .pad-export { display: block; height: auto; }
 .pad-export .sheet { overflow: visible; }
 .pad-export .line-body { gap: 6px; }
-.static-math { display: block; padding: 6px 8px; font-size: 21px; color: var(--slop-ink); overflow-x: auto; }
+.static-math { display: block; padding: 6px 8px; font-family: var(--roman); font-size: 21px; line-height: 1.5; color: var(--slop-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .export-graph { margin: 0; border: 1.5px solid var(--slop-grid); border-radius: 4px; background: var(--slop-plotPaper); }
 .export-params { margin: 0; font: italic 15px/1.4 var(--roman); color: var(--slop-pencil); }
 .plot-figure { display: block; width: 100%; height: auto; }

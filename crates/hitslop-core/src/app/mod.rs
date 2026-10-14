@@ -120,8 +120,20 @@ pub struct CommandInput {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct Views {
+    pub preview: bool,
     pub export: bool,
     pub icon: bool,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub widget: Option<WidgetOptions>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
+pub struct WidgetOptions {
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub refresh_minutes: Option<u32>,
 }
 
 /// Resolved host window semantics, independent of the stored definition's decoding rules.

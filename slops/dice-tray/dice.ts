@@ -1,10 +1,11 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel } from "../_shared/format";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 import { kinds, maxDice, maxModifier, maxRolls, type Kind } from "./schema";
 
-export type Tray = typeof doc.current;
+export type Tray = Value<typeof schema.descriptor>;
 export type Roll = Tray["rolls"][number];
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 export type Pool = Record<Kind, number>;
 
 export const sides: Record<Kind, number> = { d4: 4, d6: 6, d8: 8, d10: 10, d12: 12, d20: 20 };
@@ -62,10 +63,10 @@ export type RollView = ReturnType<typeof rollView>;
 export function formatWhen(at: string, now: number): string {
   const when = new Date(at);
   if (Number.isNaN(when.getTime())) return "";
-  const time = when.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const time = dateLabel(when, { hour: "numeric", minute: "2-digit" });
   return when.toDateString() === new Date(now).toDateString()
     ? time
-    : `${when.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+    : `${dateLabel(when, { month: "short", day: "numeric" })}, ${time}`;
 }
 
 /** The editor and its export derive the readout and history from the same snapshot. */

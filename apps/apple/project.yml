@@ -25,6 +25,7 @@ targets:
     platform: macOS
     sources:
       - path: App/Shared/Assets.xcassets
+      - path: App/Shared/WidgetIntent.swift
       - path: App/macOS
         excludes:
           - ExportOptions.plist
@@ -47,6 +48,9 @@ targets:
         product: Sparkle
       - target: hitSlop-QuickLookThumbnail
       - target: hitSlop-QuickLookPreview
+      - target: hitSlop-Widgets
+      - package: HitSlopApple
+        product: HitSlopWidgets
     postCompileScripts:
       - name: Embed command evaluator
         basedOnDependencyAnalysis: false
@@ -54,16 +58,6 @@ targets:
       - name: Embed starter templates
         basedOnDependencyAnalysis: false
         script: '"${SRCROOT}/../../scripts/templates/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
-      - name: Embed hitslop-native
-        basedOnDependencyAnalysis: false
-        script: |
-          set -euo pipefail
-          case "${CONFIGURATION:-}" in
-            Release) ;;
-            *) exit 0 ;;
-          esac
-          export HITSLOP_NATIVE_ARCHS="${ARCHS:-}"
-          "${SRCROOT}/../../scripts/build/embed-hitslop-native.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"
     postBuildScripts:
       - name: Upload Crashlytics symbols
         basedOnDependencyAnalysis: false
@@ -98,6 +92,31 @@ targets:
         Release:
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
           ENABLE_DEBUG_DYLIB: NO
+  hitSlop-Widgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - App/Widgets
+      # Intent types must belong to each bundle, not a static Swift package.
+      - App/Shared/WidgetIntent.swift
+    dependencies:
+      - package: HitSlopApple
+        product: HitSlopWidgets
+      - sdk: WidgetKit.framework
+    info:
+      path: App/Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: hitSlop
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.widgets
+        CODE_SIGN_ENTITLEMENTS: App/Widgets/Widgets.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
   # Quick Look reads a document's artwork through the core, read-only, in a sandbox: what
   # Finder, Mail and the share sheet show for a `.slop` that left this Mac.
   hitSlop-QuickLookThumbnail:

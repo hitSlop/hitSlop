@@ -1,8 +1,9 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { attachments, bindText, capture, motion } from "hitslop/svelte";
-  import { onDestroy, onMount, tick } from "svelte";
+  import type { Value } from "hitslop";
+  import { attachments, bindText, getDocument, motion } from "hitslop/svelte";
+  import { onDestroy } from "svelte";
   import { Progress, Select, Checkbox, Dialog } from "bits-ui";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -18,11 +19,12 @@
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import doc, { difficulties } from "./schema";
+  import schema, { difficulties } from "./schema";
   import { addIngredient, addStep, moveRow, recipeView, removeRow, setChecked, stepSeconds, stepTitle, type RowKind } from "./recipe";
   import { grow } from "./grow";
 
-  type Step = (typeof doc.current.steps)[number];
+  const doc = getDocument(schema);
+  type Step = Value<typeof schema.descriptor>["steps"][number];
 
   /** Keeps a typed number within the field's bounds; an emptied input clears the field. */
   const within = (min: number, max: number) => (value: number | null | undefined) =>
@@ -42,7 +44,6 @@
   let timer: ReturnType<typeof setInterval> | null = null;
   let deadline = 0;
   let picker = $state<HTMLInputElement>();
-  let photoImage = $state<HTMLImageElement>();
 
   let photoError = $state<string | null>(null);
 
@@ -60,14 +61,6 @@
     if (!cookingOpen && running) pauseTimer();
     if (!cookingOpen && finished) resetCookingSession();
   });
-  onMount(() => capture.onPrepare(async () => {
-    try {
-      await photoImage?.decode();
-    } catch {
-      // A photo that failed to decode still captures as its frame.
-    }
-    await tick();
-  }));
   onDestroy(() => stopTick());
 
   function remainingFor(step: Step): number {
@@ -176,7 +169,7 @@
     photoError = null;
     try {
       // The reference is written in the same step as the stored image.
-      await attachments.import<typeof doc.descriptor>(file, (tx, ref) => {
+      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
         tx.fields.photo.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
       });
     } catch {
@@ -232,7 +225,7 @@
         </div>
 
         <figure class="photoWell" data-photo={photo ? "true" : "false"}>
-          {#if photoURL}<img bind:this={photoImage} src={photoURL} alt={doc.current.title} />{/if}
+          {#if photoURL}<img src={photoURL} alt={doc.current.title} />{/if}
           {#if !photo}<button class="photoInvitation" onclick={() => picker?.click()} data-slop-export="hide"><Camera size={25} strokeWidth={1.5} />Add meal photo</button>{/if}
           {#if photo}<div class="photoActions" data-slop-export="hide">
             <button type="button" aria-label="Replace meal photo" onclick={() => picker?.click()}>

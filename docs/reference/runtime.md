@@ -11,10 +11,10 @@ imports the app's `assets/ui.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell supplies the runtime. The single `hitslop` npm package ships
 the CLI, author SDK, contracts, templates, skills and locally served runtime. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
-`bind.text`, capture hooks, attachments, `speech.transcribe`, `window.resize` and
+`bind.text`, attachments, `speech.transcribe`, `window.resize` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view may supply `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
-native readiness, themes, attachments and capture coordination stay in the page shell.
+native readiness, themes and attachments stay in the page shell.
 
 `subscribe` supports multiple listeners and idempotent disposal. `observe` is the single
 framework dependency hook: replacing it installs the new adapter, and disposing the old
@@ -22,7 +22,7 @@ adapter cannot detach the replacement. Text composition, caret transforms and me
 stay in the host binding. Draft submission, motion and notice presentation are SDK
 helpers compiled into the app, without separate host APIs.
 
-The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture/renderer and
+The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture and
 controls attributes, the notice region, `--slop-*` variables, `__slopCommands`,
 `__slopDescribe` and `__slopRun`. Command sets use `Symbol.for("slop.command-set")` with `{ document, specs }`. A
 `slop.operation-error` branded `DocumentError` carries document outcomes across bundles;
@@ -36,11 +36,11 @@ lists the host-internal names apps never read (`slop:render-error`, `data-slop-h
 
 `hitslop/svelte` is the Svelte adapter compiled into each app:
 the builder emits `svelteApp` from required root `schema.ts` and `App.svelte`, plus
-optional `Export.svelte` and `Icon.svelte`. These filenames are fixed and case-sensitive.
+required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte` and `Widget.svelte`. These filenames are fixed and case-sensitive.
 Metadata in `slop.ts` and agent-only `commands.ts` stay outside the UI graph. Authors
-import styles from their components. Once mounted, the schema's definition is the live document
+import styles from their components. During component initialization, `getDocument(schema)` acquires the mount's live document
 (`ctx.document` with Svelte reactivity; a handle's `value` registers its read through
-`ctx.document.observe`). `bindText`, `EditableText`, `capture`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Capture components remain optional.
+`ctx.document.observe`). `bindText`, `EditableText`, `attachments` and `speech` forward to `ctx`. The generated entry is the one authoring path. Authoring requires `Preview.svelte` and `Icon.svelte`; export and widget components remain optional.
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
@@ -58,7 +58,7 @@ metadata/window/theme values and never decodes the stored definition itself.
 
 ```text
 app          one row: package_format, runtime_abi, catalog columns, definition_json
-assets       key, media_type, encoding, size, bytes: ui.js, optional ui.css / commands.js, media…
+assets       key, media_type, encoding, size, bytes: ui.js / preview.js / icon.js, optional ui.css / commands.js / export.js / widget.js, media…
 artwork      preview and icon PNGs: built, then rewritten as an edited document's window closes
 document     a document's identity; none in a template
 history      the saved Loro state in order: a snapshot (data and theme overrides; a template's
@@ -73,7 +73,7 @@ and atomically adds its identity. A template is immutable (`is_template` refuses
 document), and bundled starters are also read-only on disk. Initial values seed only
 a new document. Schema changes require new documents.
 
-The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges; the resource reader refuses commands.js. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. The local Chrome browser host uses the same Rust owner compiled to WASM, with SQLite in OPFS. Its app frame has a separate origin per copy and receives assets through a client-bound Service Worker channel. Runtime code is bundled with the CLI and served locally.
+The page shell is served at `slop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `slop://app/assets/`, whole or as byte ranges; the resource reader refuses private commands.js, widget.js, icon.js and export.js programs. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. The local Chrome browser host uses the same Rust owner compiled to WASM, with SQLite in OPFS. Its app frame has a separate origin per copy and receives assets through a client-bound Service Worker channel. Runtime code is bundled with the CLI and served locally.
 
 Both readers check the application/storage markers, then package-format and runtime-ABI requirements, then the exact SQLite layout. `summary` reads only safe catalog fields and artwork, never the definition, app assets, attachments or Loro payloads. It is not a validity certificate. Full acceptance checks the definition with its frozen package-format module, resource inventory and budgets, streaming PNGs and optionally SQLite integrity; owners also validate Loro state. A newer marker returns `requires_update` without writes. Reads never migrate. SQLite may roll back a hot journal from an interrupted transaction to restore committed bytes.
 
@@ -109,7 +109,7 @@ The declaration and host enforcement described below do not create a per-slop OS
 
 Authored code can change or damage its own document. Runtime operation validation is not a separate security boundary from code sharing that page. Native code validates the file, bridge envelopes, and resource sizes. Credentials never belong in authored code.
 
-The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
+The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`, `widget.js`, `icon.js`, `preview.js` or `export.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
 The native, browser and development-preview CSPs are defined in Rust
 (`crates/hitslop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/hitslop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
@@ -124,9 +124,9 @@ and a new document, never a data edit. Playback, file selection, attachments and
 HTTPS requests do not acquire a capability requirement. A declaration restricts admission;
 it is not consent. Code-bound permissions remain a [proposal](../ideas.md#permissions-bound-to-the-apps-code).
 
-Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The native host's WebKit media delegate grants a request only for the current, ready, owned document page (never a snapshot, export or icon renderer, or a page being captured), from the main frame at `slop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for hitSlop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-slop prompt yet. WebKit exposes `navigator.mediaDevices` at `slop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
+Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The native host's WebKit media delegate grants a request only for the current, ready, owned document page, from the main frame at `slop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for hitSlop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-slop prompt yet. WebKit exposes `navigator.mediaDevices` at `slop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
 
-Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, normalizes locale separators from `_` to `-`, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`) or the owner is a snapshot renderer (`host`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document that is not being captured, reads and verifies the recording through the owner's resource reader, checks the provider's format support, and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. The Mac provider accepts m4a, mp3, wav, flac, mp4 and mov; other formats return `unavailable` (`format`). Missing or damaged attachments return `failed`. Format and on-device locale support are checked before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: replacing or closing it, reloading its interface or starting an export or copy cancels it, and the page receives `cancelled`. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
+Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, normalizes locale separators from `_` to `-`, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document, reads and verifies the recording through the owner's resource reader, checks the provider's format support, and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. The Mac provider accepts m4a, mp3, wav, flac, mp4 and mov; other formats return `unavailable` (`format`). Missing or damaged attachments return `failed`. Format and on-device locale support are checked before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: close preparation, page replacement, interface reload, renderer loss or teardown cancels it, and the page receives `cancelled` when its transport remains available. Saved-source exports, copies and widget refreshes do not cancel transcription. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. `slop dev`, the browser host and the WASM core answer `unavailable` (`host`).
 
 Transcripts are returned without being saved; authors write them through document handles
 and guard against the recording changing during recognition. `isSpeechError` recognizes
@@ -136,7 +136,7 @@ native transcription support. `SpeechAnalyzer` and browser speech remain deferre
 
 Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.
 
-A slop's page, `slop://app`, has no HTTP(S) referrer, and some providers refuse to embed without one (YouTube reports error 153; a `127.0.0.1` origin gets error 150). The SDK's `hitslop/embed` embeds YouTube through a static relay page, `https://hitslop.com/embed/youtube.html`, served from `apps/landing/public/embed/`. It takes the video from the URL fragment, so the server never sees it, and relays only the player's allowlisted `postMessage` commands. YouTube playback therefore needs that page to be reachable; each additional referrer-gated provider needs its own relay and helper.
+A slop's page, `slop://app`, has no HTTP(S) referrer, and some providers refuse to embed without one (YouTube reports error 153; a `127.0.0.1` origin gets error 150). The SDK embeds YouTube through a static relay page, `https://hitslop.com/embed/youtube.html`, served from `apps/landing/public/embed/`. `hitslop/youtube` builds the relay and thumbnail URLs as plain strings, and a static view may import it; `hitslop/embed` adds reading a pasted link, the title lookup and the player, which need `URL`, the network or the page, none of which a capture has, so a static view may not import it. The relay takes the video from the URL fragment, so the server never sees it, and relays only the player's allowlisted `postMessage` commands. YouTube playback therefore needs that page to be reachable; each additional referrer-gated provider needs its own relay and helper.
 
 Bridge calls must originate in the main frame at `slop://app` and decode into the Rust serde request types. Page requests are bounded to 16 MiB, which holds the largest attachment upload (10 MiB, base64-encoded to about 13.3 MiB), with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket requests are bounded to 1 MiB (16 MiB for a batch carrying attachments), one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
 
@@ -144,44 +144,71 @@ An export never replaces the document it renders. Capture stages output and publ
 
 Slop-initiated blob/data downloads require a native save confirmation. Download bytes receive quarantine metadata before atomic installation, including replacement of existing files; a quarantine write failure leaves the destination unchanged.
 
-Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell, development preview and browser host. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping, hit testing and fallback PNG masking; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
+Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell, development preview and browser host. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping and hit testing; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
 
 ## Capture and Finder integration
 
-Every host capture uses a disposable read-only page. An open document first drains its
+Every host capture uses synchronous Svelte SSR and Takumi in the restricted Rust child. An open document first drains its
 page writes, saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
 ends after the backup. Rendering then uses that independent copy, including its app,
 attachments, data and theme. The editor's focus, selection, scroll and local selected
 view are not used or changed. No read transaction remains open during rendering.
+Source acquisition leaves speech, media access, file selection, downloads and resize
+eligible under their normal page policy. The native acquisition queue still coordinates
+close, discard, reload and reopen. Close batches preview, icon and eligible widgets from
+one source; Rust prepares shared inputs once and returns independent output results.
 
-The CLI discovers optional `Export.svelte` and `Icon.svelte` beside `App.svelte`. The export view
-receives `mode: "preview" | "export"` and supplies the capture layout. Without it, a fresh
-rendering of `view` shows saved data using its default local UI state.
+The CLI requires `Preview.svelte` and `Icon.svelte` beside `App.svelte`; `Export.svelte` and `Widget.svelte` are optional.
+Preview supplies compact Quick Look/catalog artwork; Export supplies complete PNG/PDF layout.
+Without Export, native export/share-image actions are hidden and CLI exports are refused.
 State that should determine an export, such as a selected report, must be saved in the
-document. Capture components read the same document facade; they cannot change saved
+document. Capture components receive a deeply readonly `snapshot` and an `attachmentURL` function as props; they cannot change saved
 state to prepare their view.
 
-The renderer mounts only the requested dedicated export or icon, without mounting a
-hidden editor. Without a dedicated export it mounts the editor for preview/export,
-including apps that declare only an icon. Capture preparation also runs hooks installed
-by the newly mounted component, then waits for fonts, visible images and stable layout.
-Cancellation or failed preparation restores the target and host state. A dedicated
-export does not inherit the native window mask. The App
-fallback can hide `data-slop-export="hide"` controls and replace native text inputs with
-wrapping text. The icon target owns a transparent 512×512 canvas and centers authored
-artwork. The host's window-filling sizing rules are disabled during capture; the page
-reset remains. Rendering errors reject the capture, and the disposable page is closed.
+The builder emits separate synchronous SSR programs for every preview, icon and declared export.
+These read their immutable `snapshot` prop in a fresh QuickJS realm and render with Takumi in
+the restricted Rust child. Icons are 512×512; export PNGs are 2× with measured natural
+height, and previews crop at the larger of the saved window height and three widths.
+Native capture preserves the saved viewport's layout while extending the image canvas
+to include horizontal overflow; viewport units retain the saved window dimensions.
+The build rejects retained browser lifecycle/DOM, locale formatting, async code or
+host helpers with a role/source diagnostic. The `attachmentURL(id)` prop resolves referenced
+PNG/JPEG/GIF/WebP images from the saved source; capture cannot import or read blobs.
+The inventory is capped at 24 MiB before base64 encoding. Missing or unsupported
+images fail capture and retain prior artwork. Native failures never change engines.
+
+A dedicated export does not inherit the native window mask. Preview, Export and Icon
+captures append a platform stylesheet after the app's CSS and theme: it resets the page
+instead of applying the editor's window-filling sizing, hides `data-slop-export="hide"`
+elements, and gives the icon target a transparent 512×512 canvas that centers authored
+artwork. The static HTML carries `data-slop-capture` (`static` or `icon`) and wraps the
+view in `data-slop-capture-target`. A rendering error rejects the capture.
+
+Widget capture requires `Widget.svelte`: it has no App or Export fallback. The component
+receives the Rust-generated `WidgetProps` (`family`, `width`, `height`). A private synchronous
+Svelte SSR program reads the saved `snapshot` prop in a fresh QuickJS realm. Takumi renders the
+three fixed canvases at 2× in the same restricted child, using bundled fonts and resources.
+No browser code runs during native widget capture. The browser authoring
+preview still mounts the component normally. The host publishes PNGs outside the document.
+Widget freshness includes saved state, renderer/font bytes and canvas configuration;
+startup refreshes stale images even when the document has not been edited. Failed
+captures retain the previous images, and WidgetKit controls visible reload timing.
+The [macOS widget architecture](../architecture.md#macos-image-widgets)
+describes selection, opening and refresh policy. The extension never runs authored code.
 
 Dedicated PNG and PDF captures use the export's measured width, including compositions
-wider than the editor window. Preview rasterization prefers 2×; a large fallback window
-uses 1× when 2× exceeds the raster budget. Explicit PNG export remains 2×.
-PDF recomposes WebKit's internal pages into one continuous page when needed. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
+wider than the editor window. Native previews and exports rasterize at 2×.
+PDF uses the experimental Takumi vector backend from the same pinned Git revision, sharing SSR, layout, fonts and resources
+with PNG. It keeps selectable text on one continuous page, with one CSS pixel mapping
+to one PDF point before uniform viewport scaling to at most 14,400 points per side.
+PDF has an independent 24 MiB output budget (36 MiB encoded reply), a 10-second wall watchdog and 8-second CPU limit; it is not bounded by PNG pixels. The child accepts at most 16 MiB of rendered markup and 24 MiB of image attachments referenced anywhere in saved state. This is a whole-document inventory, even for roles that display no photos; oversized or damaged inventories reject capture and preserve existing artwork. Image bytes travel once in the request and resolve through opaque attachment URLs; image decoding stays in the child. Output sizes are in [icons and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#export-from-the-host-or-cli).
 
 The core stores artwork losslessly optimized with oxipng: `pack` at level 2, and a closing window's artwork at level 0, because the writer lock is released only after it is written ([measurements](../evidence/artwork-optimization-2026-10-05.md)). Pixels, dimensions and transparency are preserved, fully transparent pixels keep their colour, alpha is removed only from fully opaque images, and metadata that does not affect display is stripped. A result is kept only when it is smaller; artwork oxipng cannot read, or would decode past 64 MiB, is stored as it is. PNG and PDF exports are written as rendered.
 
-Build and register render artwork the project does not supply from a draft of the template, before packing it. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup in a fresh read-only page; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
+On macOS and Linux, build and register render artwork the project does not supply from the staged template, inside the same `pack` request that writes it, and store it as supplied artwork is stored; a failed render publishes nothing. New documents copy their template's artwork. A window closing a document its session changed, or one without a preview, renders the preview and, when an icon target exists, the icon from a saved backup through Svelte SSR and Takumi in the restricted Rust child; the owner writes them through its writer connection before the file closes. The file's Finder custom icon is a local copy of that artwork (the icon, else the preview), written after a close that wrote artwork, at create and at copy; Finder shows it without Quick Look's icon-mode tile. It is file metadata, never a source: tools that drop metadata lose only the copy, and Finder falls back to the Quick Look thumbnail. The catalog reads the new artwork and updates without reopening. A failed capture or write keeps the previous artwork and never stops the close; a close that fails shows the window again. Quick Look extensions show the artwork in Finder, Mail and the share sheet, for documents that left this Mac too: sandboxed, read-only, through the core. Catalog, Finder and Quick Look display read stored artwork without running authored code or creating a live document owner.
 
-Open and closed exports use fresh saved-state pages with default local UI state. An open export uses the flushed backup described above; a closed export takes no writer lock and can render while another process holds the document.
+Open and closed exports use independent saved-state renderers. An open export uses the flushed backup described above; a
+closed export takes no writer lock and can render while another process holds the document.
 
 ## Telemetry
 
@@ -207,7 +234,7 @@ services. Text edits are batches: a binding's `apply` carries a `set` with `from
 `wire/core.rs`. Requests carry no correlation ID or view token: WebKit
 correlates promises and Swift supplies its own lifecycle view token alongside the
 request after checking the sender. The page never chooses that token.
-The host enters the shell through `__slop` for publications, capture and lifecycle.
+The host enters the shell through `__slop` for publications and lifecycle.
 Apps use the restricted `ctx.document` facade and its explicit durability barrier,
 `flush()`. The initial owner state includes effective theme values, and ordered publications include
 them when they change (defaults come from `slop.ts`'s `theme`). Authored layout stays in CSS.

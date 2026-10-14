@@ -5,7 +5,7 @@
 <div class="sq-icon" aria-hidden="true">
   <div class="sq-icon-map">
     <svg viewBox="0 0 400 400">
-      <path class="sq-icon-trail" d="M40 330 C120 330 90 230 170 230 C250 230 220 130 300 120" />
+      <path class="sq-icon-trail" fill="none" stroke="var(--slop-pen)" stroke-width="14" stroke-linecap="round" stroke-dasharray="2 30" d="M40 330 C120 330 90 230 170 230 C250 230 220 130 300 120" />
       <circle cx="40" cy="330" r="16" fill="var(--slop-mint)" stroke="var(--slop-ink)" stroke-width="7" />
       <circle cx="170" cy="230" r="16" fill="var(--slop-pink)" stroke="var(--slop-ink)" stroke-width="7" />
     </svg>

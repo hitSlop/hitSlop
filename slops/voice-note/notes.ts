@@ -1,11 +1,12 @@
-import { refuse, type RowRef, type Tx } from "hitslop";
-import type doc from "./schema";
+import { dateLabel } from "../_shared/format";
+import { refuse, type RowRef, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-export type Pad = typeof doc.current;
+export type Pad = Value<typeof schema.descriptor>;
 export type Note = Pad["notes"][number];
 /** An attachment reference as `attachments.import` returns it and `clip` stores it. */
 export type Clip = { readonly id: string; readonly byteLength: number; readonly name: string; readonly mimeType: string };
-type Edit = Tx<typeof doc>;
+type Edit = Tx<typeof schema>;
 
 /** One note records for at most five minutes: at 64 kbit/s that is about 2.4 MB, well
  * under the 10 MiB attachment limit. */
@@ -48,16 +49,10 @@ export function durationLabel(ms: number) {
 export function sizeLabel(bytes: number) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
-// Built on first use: commands evaluate this module where Intl may be absent.
-let formats: { day: Intl.DateTimeFormat; time: Intl.DateTimeFormat } | undefined;
 export function whenLabel(iso: string) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return { day: "Undated", time: "" };
-  formats ??= {
-    day: new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" }),
-    time: new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }),
-  };
-  return { day: formats.day.format(date), time: formats.time.format(date) };
+  return { day: dateLabel(date, { weekday: "short", day: "numeric", month: "short" }), time: dateLabel(date, { hour: "numeric", minute: "2-digit" }) };
 }
 function words(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;

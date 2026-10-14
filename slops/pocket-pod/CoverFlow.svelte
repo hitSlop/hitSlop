@@ -2,7 +2,7 @@
 import { untrack } from "svelte";
 import { Spring, prefersReducedMotion } from "svelte/motion";
 import TitleBar from "./TitleBar.svelte";
-import { youtube } from "hitslop/embed";
+import { thumbnail } from "hitslop/youtube";
 import type { Video } from "./pod";
 
 let { videos, cursor, playing, paused, held, onpick }: {
@@ -52,7 +52,7 @@ function pose(index: number): string {
           style:opacity={clamp(1 - (Math.abs(index - position.current) - 3.2), 0, 1)}
           onclick={() => onpick(index)}
         >
-          <img src={youtube.thumbnail(video.youtubeId)} alt="" draggable="false" />
+          <img src={thumbnail(video.youtubeId)} alt="" draggable="false" />
         </button>
       {/each}
     </div>

@@ -1,16 +1,16 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { attachments, capture } from "hitslop/svelte";
+  import { attachments, getDocument } from "hitslop/svelte";
   import { onMount, tick } from "svelte";
   import { Button } from "bits-ui";
   import license from "./assets/BUBU-LICENSE.txt?raw";
   import { parsePetPackage } from "./pet-package";
   import { ACTIONS, CELL_HEIGHT, CELL_WIDTH, STARTER, adoptPackage, nextAmbient, petView, restoreStarter, type PetAction, type StoredPackage } from "./pet";
   import { loadPet } from "./sheet";
-  import doc from "./schema";
+  import schema from "./schema";
 
-  const capturing = capture.isRenderer();
+  const doc = getDocument(schema);
   const view = $derived(petView(doc.current));
   let canvas: HTMLCanvasElement;
   let fileInput: HTMLInputElement;
@@ -39,7 +39,7 @@
   function play(next: PetAction, cycles = 1): void {
     window.clearTimeout(frameTimer);
     action = next; frame = 0; draw();
-    if (reducedMotion || capturing) return;
+    if (reducedMotion) return;
     const spec = ACTIONS[next];
     let remaining = cycles;
     const advance = () => {
@@ -58,7 +58,7 @@
 
   function scheduleAmbient(): void {
     window.clearTimeout(ambientTimer);
-    if (reducedMotion || capturing || document.hidden) return;
+    if (reducedMotion || document.hidden) return;
     const next = nextAmbient(new Date().getHours(), Math.random);
     ambientTimer = window.setTimeout(() => { play(next.action, 1); scheduleAmbient(); }, next.delay);
   }
@@ -80,7 +80,7 @@
     importing = true; error = null;
     try {
       const parsed = await parsePetPackage(file);
-      await attachments.import<typeof doc.descriptor>(file, (tx, ref) => adoptPackage(tx, ref, parsed.displayName));
+      await attachments.import<typeof schema.descriptor>(file, (tx, ref) => adoptPackage(tx, ref, parsed.displayName));
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
     } finally { importing = false; }

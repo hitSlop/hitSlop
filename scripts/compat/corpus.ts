@@ -3,15 +3,12 @@
 // regenerated or deleted; see docs/testing.md#compatibility-corpus.
 import { repository } from "../lib/artifacts";
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { debugHelper } from "../lib/native";
+import { join, resolve } from "node:path";
 import { exec } from "../../packages/hitslop/src/cli/process";
-import { strict as assert } from "node:assert";
 import type { AttachmentInfo } from "../../packages/hitslop/src/wire/engine.generated";
 
 export const corpus = join(repository, "tests/compat");
-export const helper = resolve(process.env.HITSLOP_NATIVE_CLI ?? debugHelper);
-/** The checkout engine, independent of the selected renderer. */
+/** The checkout engine. */
 export const documentEngine = () => resolve(process.env.HITSLOP_ENGINE ?? `target/${process.env.HITSLOP_CARGO_PROFILE || "release"}/slop-engine`);
 
 /** `release.json`: what captured the entry, and whether it is permanent. */
@@ -101,10 +98,9 @@ export async function readJSON<T>(path: string): Promise<T | undefined> {
   );
 }
 
-/** Runs a `slop` command through this build's CLI and helper, returning its exit code and output. */
+/** Runs a `slop` command through this build's CLI and engine, returning its exit code and output. */
 export function slop(args: string[]) {
   return exec([process.execPath, join(repository, "packages/hitslop/src/cli/cli.ts"), ...args], {
-    env: { ...process.env, HITSLOP_NATIVE_CLI: helper },
     timeout: 120_000,
   });
 }

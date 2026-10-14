@@ -1,7 +1,9 @@
 <script lang="ts">
-import doc from "./schema";
-import { pageView } from "./model";
-const { wordsCount, page3Done } = $derived(pageView(doc.current));
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { pageView } from "./model";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const { wordsCount, page3Done } = $derived(pageView(snapshot));
 </script>
 
 <div class={"mp-iconSurface"} aria-hidden="true">

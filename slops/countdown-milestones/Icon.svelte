@@ -1,8 +1,10 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { countdownView } from "./countdown";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
 
-  const view = $derived(countdownView(doc.current, Date.now()).state);
+  const view = $derived(countdownView(snapshot, Date.now()).state);
   const value = $derived(view.kind === "today" ? "Today" : view.value.length > 4 ? "999+" : view.value);
 </script>
 

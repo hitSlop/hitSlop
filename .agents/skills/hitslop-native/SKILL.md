@@ -1,13 +1,13 @@
 ---
 name: hitslop-native
-description: Work on hitSlop Apple hosting, the document owner, local storage, template caching, previews, export, window shapes, or the native CLI.
+description: Work on hitSlop Apple hosting, the document owner, local storage, template caching, previews, export, window shapes, or live CLI requests.
 ---
 
 # Native host
 
 Preserve the real macOS client and its target graph: Core, Document, Runtime, Host,
-Features, Catalog/local templates, Firebase Analytics/Crashlytics, Sparkle and
-NativeCLI. Do not replace it with a playground shell. Read docs/architecture.md first.
+Features, Catalog/local templates, Firebase Analytics/Crashlytics and Sparkle.
+Do not replace it with a playground shell. Read docs/architecture.md first.
 
 **Ownership.** A `.slop` is one SQLite file: the app (its `app` row, assets and artwork)
 and, for a document, its saved state, theme overrides and attachments. `hitslop-core`
@@ -22,8 +22,10 @@ events; `DocumentSession` delivers ordered publications to the page. The private
 mirror, a JavaScriptCore evaluator or app-specific Swift schemas.
 
 **One edit path.** The CLI forwards to the live owner's socket or takes the lock and runs
-the shared Rust owner in-process. The bundled `slop-engine` handles data commands; the
-native helper supplies WebKit only for rendering and macOS services. The writer lock and the live owner's
+the shared Rust owner in-process. The bundled `slop-engine` handles data commands and, on
+macOS, renders a closed document's export and a template's artwork in its restricted
+evaluator; the app owns the documents it has open, and `slop open` asks LaunchServices to
+open one in it. The writer lock and the live owner's
 discovery live outside the file, in the core's registry (`~/.hitslop/live`, keyed by the
 file's device and inode); never remove a lock file there or bypass a busy lock, and never
 lock or open the database file outside the core. Closed edits never start WebKit. Agent commands use the owner's restricted child runner; pages edit through handles. The app embeds and signs `hitslop-evaluator`. A
@@ -41,15 +43,23 @@ documents stay openable: follow AGENTS.md's Compatibility rules, and keep
 `tests/compat` passing (`CompatCorpusTests`, `bun run verify native compat-replay`).
 
 **Windows and captures.** `SlopSilhouette` builds paths from the core's parsed shape and
-is the one mask for clipping, hit testing and window-sized PNG captures. Dedicated
-`export`/`icon` view captures are never masked. Flush and copy saved state before
-rendering in an independent hidden page. The editor holds `capturing` only while acquiring
-that copy; rendering can continue after the editor closes. Without an `export` view, export
-uses a fresh `view` with its default transient view state. Theme overrides live in
+is the one mask for window clipping and hit testing; captures are never masked. Flush and
+copy saved state before rendering in an independent read-only renderer. All icons, preview artwork, PNG and vector PDF exports use synchronous Svelte SSR and
+Takumi in the restricted Rust child. `Preview.svelte` and `Icon.svelte` are required for authoring; `Export.svelte` is optional.
+The editor holds `capturing` only while acquiring the copy; rendering can continue
+after it closes. Capture attachment URLs resolve a bounded saved image inventory. Theme overrides live in
 Loro and use the same publication, undo and saving path as data edits.
+
+**Widgets.** The app captures `Widget.svelte` in the Rust child and atomically publishes
+three PNGs outside the document; the extension only reads cached images. Successful
+saves, cached-file watchers, startup/reopen and optional scheduled refresh drive
+captures. Freshness combines saved state, installed evaluator bytes (including fonts),
+and canvas configuration. Renderer upgrades invalidate unchanged cached documents.
+Failed refreshes retain the previous generation; publish before requesting a WidgetKit
+reload. Quitting retains cached images, and WidgetKit controls visible reload timing.
 
 **Checks.** `bun run verify --native` runs what a change touches, building first.
 `bun run verify swift` covers WKWebView, live and closed CLI, save failure, close and
-export; `bun run verify native` runs the CLI against the engine and helper, both relocated,
-renders, crashes and the corpus replay; `bun run bench:windows` measures window scaling.
+export; `bun run verify native` runs the CLI against the engine, renders, crashes and the
+corpus replay; `bun run bench:windows` measures window scaling.
 Templates: `bun run build:templates`, then `HITSLOP_RENDER=all bun run verify native render`.

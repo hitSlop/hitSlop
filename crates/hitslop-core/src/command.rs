@@ -2,7 +2,6 @@
 use crate::{
     Code,
     owner::{self, Failure, FailureKind, Owner},
-    store,
     wire::{self, OutcomeCode, PageRequest},
 };
 use serde_json::value::RawValue;
@@ -67,28 +66,22 @@ fn page_config(owner: &Owner) -> Result<wire::page::PageSuccess> {
         ok: wire::engine::True,
         runtime_abi: app.runtime_abi,
         style: app.style,
-        read_only: owner.mode() == store::Mode::Snapshot,
         window: app.app.window().clone(),
         descriptor: raw(app.app.document_json().into())?,
     })
 }
-/// A transcription reaches the host only for an owner's page whose stored app declared
-/// `speech`; otherwise the page learns why it is unavailable, and no host is asked.
+/// A transcription reaches the host only for a page whose stored app declared `speech`;
+/// otherwise the page learns why it is unavailable, and no host is asked.
 fn speech(owner: &Owner, attachment: String, locale: Option<String>) -> PageDispatch {
     use wire::page::{HostAction, PageSuccess, SpeechOutcome, SpeechUnavailable};
-    let unavailable = |reason, message: &str| {
+    if !owner.app().app.capabilities().contains(&crate::app::Capability::Speech) {
         page_success(PageSuccess::SpeechTranscribe {
             ok: wire::engine::True,
-            outcome: SpeechOutcome::Unavailable { reason, message: message.into() },
+            outcome: SpeechOutcome::Unavailable {
+                reason: SpeechUnavailable::NotDeclared,
+                message: r#"This app does not declare speech; add "speech" to capabilities in slop.ts"#.into(),
+            },
         })
-    };
-    if owner.mode() == store::Mode::Snapshot {
-        unavailable(SpeechUnavailable::Host, "Exports and background renders do not transcribe speech")
-    } else if !owner.app().app.capabilities().contains(&crate::app::Capability::Speech) {
-        unavailable(
-            SpeechUnavailable::NotDeclared,
-            r#"This app does not declare speech; add "speech" to capabilities in slop.ts"#,
-        )
     } else {
         PageDispatch::Host {
             action: HostAction::SpeechTranscribe { attachment, locale: locale.map(|locale| locale.replace('_', "-")) },
@@ -98,14 +91,36 @@ fn speech(owner: &Owner, attachment: String, locale: Option<String>) -> PageDisp
 /// Runs one validated request from `view`. Edits answer on acceptance; flush waits for
 /// persistence. Host actions pass the same serial view/lifecycle fence before delivery.
 pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDispatch) + Send + 'static) {
+    match PageRequest::decode(input) {
+        Ok(request) => page_validated(owner, view, request, reply),
+        Err(error) => reply(page_failure(error.into(), false)),
+    }
+}
+
+/// Trusted transports that have already decoded their envelope still use all page
+/// bounds and the serial owner fence, without encoding JSON just to parse it again.
+pub fn page_typed(
+    owner: &Owner,
+    view: String,
+    request: PageRequest,
+    reply: impl FnOnce(PageDispatch) + Send + 'static,
+) {
+    match request.check() {
+        Ok(()) => page_validated(owner, view, request, reply),
+        Err(error) => reply(page_failure(error.into(), false)),
+    }
+}
+
+fn page_validated(
+    owner: &Owner,
+    view: String,
+    request: PageRequest,
+    reply: impl FnOnce(PageDispatch) + Send + 'static,
+) {
     use owner::{Reply, Request};
     use wire::engine::True;
     use wire::page::{HostAction, PageSuccess as Success};
     type Answer = Box<dyn FnOnce(Reply) -> Option<Success> + Send>;
-    let request = match PageRequest::decode(input) {
-        Ok(request) => request,
-        Err(error) => return reply(page_failure(error.into(), false)),
-    };
     let storage = matches!(request, PageRequest::AttachmentsPut { .. });
     let (request, answer): (Request, Answer) = match request {
         PageRequest::Open {} => (
@@ -202,13 +217,13 @@ pub fn page(owner: &Owner, view: String, input: &str, reply: impl FnOnce(PageDis
     );
 }
 pub fn protocol() -> String {
-    serde_json::json!({ "version": wire::HELPER_PROTOCOL }).to_string()
+    serde_json::json!({ "version": wire::ENGINE_PROTOCOL }).to_string()
 }
 /// What to say when a caller names `version`: nothing when this build serves it, otherwise
 /// which side is older. The wording is part of the permanent refusal path.
 pub fn protocol_mismatch(version: u64) -> Option<&'static str> {
     use std::cmp::Ordering::*;
-    match version.cmp(&wire::HELPER_PROTOCOL) {
+    match version.cmp(&wire::ENGINE_PROTOCOL) {
         Equal => None,
         Greater => Some("This command needs a newer hitSlop app; update hitSlop"),
         Less => Some("This hitSlop app needs a newer command line; update the hitSlop CLI"),

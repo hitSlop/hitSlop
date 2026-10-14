@@ -455,10 +455,6 @@ button {
   text-align: center;
 }
 
-html[data-slop-capture="static"] [data-slop-export="hide"] {
-  display: none !important;
-}
-
 html[data-slop-capture="static"] .metronome-shell {
   grid-template-rows: auto auto minmax(160px, 1fr) auto;
 }

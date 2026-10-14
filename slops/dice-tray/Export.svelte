@@ -1,36 +1,12 @@
 <script lang="ts">
-  import { capture } from "hitslop/svelte";
-  import { onMount, tick } from "svelte";
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { trayView } from "./dice";
   import History from "./History.svelte";
   import Readout from "./Readout.svelte";
-  import Tray from "./Tray.svelte";
-
-  const view = $derived(trayView(doc.current));
-  const shown = $derived(view.last ? { id: view.last.$id, seed: view.last.seed, dice: view.last.dice } : undefined);
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
+  const view = $derived(trayView(snapshot));
   const now = Date.now();
-  let still = $state("");
-  let image = $state<HTMLImageElement>();
-  let finish: () => void = () => {};
-  const ready = new Promise<void>((resolve) => (finish = resolve));
-
-  // Export is a fresh page: it renders the last roll at rest once with WebGL, keeps that frame
-  // as a PNG and drops the renderer before capture. Without WebGL the flat dice stay.
-  async function took(url: string | null) {
-    if (url) {
-      still = url;
-      await tick();
-      await image?.decode().catch(() => {});
-    }
-    finish();
-  }
-
-  onMount(() => {
-    const stop = capture.onPrepare(() => ready);
-    const giveUp = setTimeout(finish, 8000);
-    return () => { clearTimeout(giveUp); stop(); };
-  });
 </script>
 
 <main class="tray-shell tray-export">
@@ -38,14 +14,20 @@
     {#snippet title()}<h1 class="plate-title">{view.title}</h1>{/snippet}
   </Readout>
   <section class="well">
-    {#if still}
-      <img bind:this={image} class="well-still" src={still} alt={view.lastView ? `The dice at rest: ${view.lastView.breakdown}` : "An empty dice tray"} />
-    {:else}
-      <Tray roll={shown} reduced still label="Dice tray" onStill={took} />
-    {/if}
+    <div class="static-dice">
+      {#each view.lastView?.values ?? [] as die}
+        <div class="static-die"><strong>{die.value}</strong><span>{die.kind}</span></div>
+      {:else}<p>The tray is ready for a roll.</p>{/each}
+    </div>
   </section>
   <section class="slip">
     <div class="slip-head"><h2>Recent rolls</h2></div>
-    <History rolls={view.history.slice(0, 12)} {now} />
+    <History rolls={preview ? view.history.slice(0, 4) : view.history} {now} />
   </section>
 </main>
+
+<style>
+.static-dice { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 20px; min-height: 240px; padding: 28px; }
+.static-die { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 84px; height: 84px; border: 3px solid var(--slop-pip); border-radius: 16px; background: var(--slop-die); color: var(--slop-pip); box-shadow: 4px 5px 0 #00000028; }
+.static-die strong { font: 700 32px/1.1 serif; } .static-die span { font: 12px/1.5 sans-serif; }
+</style>

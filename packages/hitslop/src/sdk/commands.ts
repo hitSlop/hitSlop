@@ -2,7 +2,6 @@ import type { Definition, ObjectNode, OptionalNode, Scalar, Value } from "./sche
 import type { Scope } from "./abi";
 import { commandBrand, type CommandSet } from "./command-set";
 export type { CommandSet } from "./command-set";
-import { withCommand } from "./app/context";
 
 export interface CommandContext<N extends ObjectNode> {
   readonly current: Value<N>;
@@ -41,14 +40,7 @@ export function defineCommands<N extends ObjectNode, A extends Record<string, Ar
       if (typeof run !== "function") throw new Error(`commands.${name} needs run(ctx, args)`);
       if (Object.prototype.toString.call(run) !== "[object Function]")
         throw new Error(`commands.${name} must be synchronous (no async or generator functions)`);
-      return [
-        name,
-        Object.freeze({
-          ...spec,
-          run: (ctx: CommandContext<N>, args: CommandArgs<Arguments>) =>
-            withCommand(() => run(ctx, args)),
-        }),
-      ];
+      return [name, Object.freeze({ ...spec })];
     }),
   );
   return Object.freeze({

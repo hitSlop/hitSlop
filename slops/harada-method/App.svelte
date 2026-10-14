@@ -1,11 +1,13 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import { Checkbox } from "bits-ui";
   import Check from "@lucide/svelte/icons/check";
-  import doc from "./schema";
+  import schema from "./schema";
   import { CELLS, formatDeadline, ringIndex, setAction, setDeadline, setDone, sheetView } from "./chart";
+
+  const doc = getDocument(schema);
 
   type CellBind = {
     value: string;

@@ -1,11 +1,14 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { Value } from "hitslop";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { categoryCode, formatDate } from "./shared";
   import { expenseView } from "./items";
+  let { snapshot, preview = false }: CaptureProps<typeof schema> & { preview?: boolean } = $props();
 
-  type ExpenseItem = (typeof doc.current.items)[number];
+  type ExpenseItem = Value<typeof schema.descriptor>["items"][number];
   const today = formatDate(new Date());
-  const view = $derived(expenseView(doc.current));
+  const view = $derived(expenseView(snapshot));
 </script>
 
 <article class="exportShell" aria-label="Exported expense receipt">
@@ -13,9 +16,9 @@
   <div class="paper">
     <header class="masthead">
       <p class="stamp">*** RECEIPT ***</p>
-      <h1 class="storeTitle">{doc.current.storeName.trim() || "EXPENSE LOG"}</h1>
+      <h1 class="storeTitle">{snapshot.storeName.trim() || "EXPENSE LOG"}</h1>
       <div class="meta">
-        <span>TERM {doc.current.terminalId.trim() || "—"}</span>
+        <span>TERM {snapshot.terminalId.trim() || "—"}</span>
         <span>DATE {today}</span>
       </div>
     </header>
@@ -64,7 +67,7 @@
 
 {#snippet receiptRows(items: readonly ExpenseItem[], editable: boolean)}
   <ul class="list">
-    {#each items as item (item.$id)}
+    {#each (preview ? (items).slice(0, 7) : items) as item (item.$id)}
       <li class="row">
         <div class="itemInfo">
             <span class="itemTitle">{item.title.trim() || "Untitled item"}</span>

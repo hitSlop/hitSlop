@@ -200,11 +200,11 @@ process-death recovery, historical document replay and the installed-tarball con
 outside the workspace. Reports and render evidence live under `.hitslop/evidence`.
 A dirty-tree or partial-tier result is not release acceptance.
 
-The Mac app contains its linked core and `hitslop-native` rendering helper. The npm
-package contains its own document engine. Release checks compare core identities and
-protocols, render the packaged templates, and exercise creation/editing/export with a
-system-only PATH. Engine and helper placement is independent. Development overrides
-are `HITSLOP_ENGINE` and `HITSLOP_NATIVE_CLI`.
+The Mac app contains its linked core and the restricted `hitslop-evaluator`. The npm
+package contains its own document engine. Release checks compare the app's and the
+engine's core builds, render the packaged templates, and exercise creation/editing/export
+with a system-only PATH. Engine and app placement is independent. Development overrides
+are `HITSLOP_ENGINE` and `HITSLOP_APP`.
 
 `bun run packages:pack` creates `generated/npm/hitslop-VERSION.tgz`. The installed-consumer
 check covers SDK exports, init/install/check/build, preview, global and project skills,
@@ -225,7 +225,7 @@ Record commit, version/build, OS, and results. Test macOS 15.2 and the current s
 - Kill WebContent, reopen saved state, and continue editing.
 - PNG/PDF, Finder preview/icon, keyboard focus, narrow windows, repeated open/close, and menu commands.
 - GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite.
-- Gatekeeper launch from downloaded DMG and ZIP; installed helper works without Node/Bun.
+- Gatekeeper launch from downloaded DMG and ZIP; the installed app works without Node/Bun.
 - Sparkle update from the previous signed release, verifying publisher and resulting version.
   With an isolated reachable appcast, confirm the versioned Markdown loads in the update
   dialog, headings and bullets render correctly, and authoring notes stay on GitHub.

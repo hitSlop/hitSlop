@@ -1,6 +1,6 @@
 // The page's player: screen stack, playback and notices are view state that lives as long as
 // the page. Every document change goes through an edit in pod.ts.
-import doc, { stickerKinds } from "./schema";
+import schema, { stickerKinds } from "./schema";
 import { click } from "./clicker";
 import type { Intent } from "./intents";
 import {
@@ -8,6 +8,7 @@ import {
   placeSticker as place, podView, removeVideo as removeRow, round, selectVideo, setVolume, shuffleAll,
   sizeSticker as size, turnSticker as turn, type StickerKind, type Video,
 } from "./pod";
+import { getDocument } from "hitslop/svelte";
 import { LookupError, youtube, type YouTubeHandlers, type YouTubePlayer } from "hitslop/embed";
 
 export type ScreenId =
@@ -41,7 +42,9 @@ const shorten = (text: string) => (text.length > 34 ? `${text.slice(0, 33)}…` 
 // The page's random source: shuffle picks and sticker spots are stored once drawn.
 const random = () => Math.random();
 
+// App calls this while it initializes, when getDocument can reach the mounted document.
 export function createPod() {
+  const doc = getDocument(schema);
   const ui = $state({
     stack: [{ id: "menu", cursor: 0 }] as Entry[],
     held: false,

@@ -1,8 +1,10 @@
 <script lang="ts">
-import doc from "./schema";
-import { workoutView } from "./workout";
-const { total, done } = $derived(workoutView(doc.current));
-const marks = $derived(total ? Math.round((done / total) * 4) : 0);
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import { workoutView } from "./workout";
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const { total, done } = $derived(workoutView(snapshot));
+  const marks = $derived(total ? Math.round((done / total) * 4) : 0);
 </script>
 
 <svg class="icon" viewBox="0 0 512 512" fill="none" aria-hidden="true">

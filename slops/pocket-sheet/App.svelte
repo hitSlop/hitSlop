@@ -3,15 +3,17 @@
   import "./styles.css";
   import { onMount, tick } from "svelte";
   import { Popover } from "bits-ui";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import Download from "@lucide/svelte/icons/download";
   import Eraser from "@lucide/svelte/icons/eraser";
-  import doc, { stamps, tints } from "./schema";
+  import schema, { stamps, tints } from "./schema";
   import { allKeys, cellKey, columnName, COLUMNS, csv, display, isError, ROWS } from "./formula";
   import {
     cellLabel, gridTemplate, kindOf, MAX_WIDTH, MIN_WIDTH, setColumnWidth, sheetView, stampCells, tintCells,
     widthOf as savedWidth, writeCells, type Tint,
   } from "./sheet";
+
+  const doc = getDocument(schema);
 
   type Point = { column: number; row: number };
 

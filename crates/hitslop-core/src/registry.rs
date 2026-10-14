@@ -1,7 +1,7 @@
 //! The writer lock and live-owner discovery, outside the document: `~/.hitslop/live`, one
 //! lock file and one discovery file per document file, named by its device and inode. The
-//! folder comes from the account's home, not `$HOME`, so the app, the helper and the engine
-//! agree even under `sudo`. The lock is an `flock` on the registry file and never on the
+//! folder comes from the account's home, not `$HOME`, so the app and the engine agree even
+//! under `sudo`. The lock is an `flock` on the registry file and never on the
 //! database: closing any second descriptor on a SQLite file drops SQLite's own locks. Lock
 //! files are never unlinked; only the lock holder removes a discovery file, and a dropped
 //! lease withdraws its own. `sweep` clears a crashed owner's discovery.

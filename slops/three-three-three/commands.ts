@@ -1,9 +1,9 @@
 import { defineCommands } from "hitslop/commands";
 import { s } from "hitslop";
-import doc from "./schema";
+import schema from "./schema";
 import { adjustFocus, renameTask, setDeepWork, setTaskDone, toggleHour } from "./plan";
 
-export default defineCommands(doc, {
+export default defineCommands(schema, {
   adjustFocus: {
     description: "Add or subtract whole minutes of deep work, clamped to 0 to 180; return the new minutes.",
     args: { delta: s.integer({ description: "Minutes to add (negative to subtract), such as 15 or -15." }) },

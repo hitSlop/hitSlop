@@ -1,23 +1,24 @@
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { displayDate, journalView } from "./journal";
-  import JournalPage from "./JournalPage.svelte";
+  import JournalPage from "./StaticJournalPage.svelte";
 
-  const data = $derived(doc.current);
-  const { hasThought } = $derived(journalView(doc.current));
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const { hasThought } = $derived(journalView(snapshot));
 </script>
 
 <article class={"fmj-exportBook fmj-book"} aria-label="Exported five minute journal">
   <header class={"fmj-masthead"}>
     <h1 class={"fmj-title"}>Five Minute Journal</h1>
-    <p class={"fmj-exportDate"}>{displayDate(data.date)}</p>
+    <p class={"fmj-exportDate"}>{displayDate(snapshot.date)}</p>
   </header>
-  <JournalPage period="am" staticView />
-  <JournalPage period="pm" staticView />
+  <JournalPage period="am" {snapshot} />
+  <JournalPage period="pm" {snapshot} />
   {#if hasThought}
     <blockquote class={"fmj-exportThought"}>
-      {#if data.quote.trim()}<p class={"fmj-quoteText"}>{data.quote}</p>{/if}
-      {#if data.quoteAuthor.trim()}<footer class={"fmj-authorText"}>— {data.quoteAuthor}</footer>{/if}
+      {#if snapshot.quote.trim()}<p class={"fmj-quoteText"}>{snapshot.quote}</p>{/if}
+      {#if snapshot.quoteAuthor.trim()}<footer class={"fmj-authorText"}>— {snapshot.quoteAuthor}</footer>{/if}
     </blockquote>
   {/if}
 </article>

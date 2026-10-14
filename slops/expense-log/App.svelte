@@ -3,15 +3,17 @@
   import "./styles.css";
   import { CATEGORIES, categoryCode, formatDate } from "./shared";
   import { addItem, expenseView, removeItem, setCurrency, type Category } from "./items";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
+  import type { Value } from "hitslop";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { RadioGroup, Button, Tooltip } from "bits-ui";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import doc from "./schema";
+  import schema from "./schema";
 
-  type ExpenseItem = (typeof doc.current.items)[number];
+  const doc = getDocument(schema);
+  type ExpenseItem = Value<typeof schema.descriptor>["items"][number];
 
   function isCategory(value: string): value is Category {
     return CATEGORIES.some((cat) => cat.id === value);

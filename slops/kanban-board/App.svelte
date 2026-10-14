@@ -2,7 +2,7 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { Dialog } from "bits-ui";
-  import { bindText } from "hitslop/svelte";
+  import { bindText, getDocument } from "hitslop/svelte";
   import Check from "@lucide/svelte/icons/check";
   import ArrowDown from "@lucide/svelte/icons/arrow-down";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -12,11 +12,13 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import doc from "./schema";
+  import schema from "./schema";
   import {
     addCard, addLane, boardView, moveCard, pad, refugeFor, removeCard, removeLane, setDoneLane, setLaneLimit,
     type Card, type Lane,
   } from "./model";
+
+  const doc = getDocument(schema);
 
   let draggingCardId = $state<string | null>(null);
   let draggingLaneKey = $state<string | null>(null);

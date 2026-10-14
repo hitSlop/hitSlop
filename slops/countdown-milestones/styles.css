@@ -148,6 +148,9 @@ button:disabled { opacity: 0.4; cursor: default; }
   overflow-wrap: anywhere;
 }
 
+.exportShell .number { font-size: 88px; }
+.exportShell .number[data-long="true"] { font-size: 68px; }
+
 .unit {
   display: inline-block;
   font-family: var(--displayFont);
@@ -416,8 +419,6 @@ button:disabled { opacity: 0.4; cursor: default; }
 .day:hover { box-shadow: inset 0 0 0 1px var(--slop-ink); }
 
 .icon { display: block; width: 100%; height: 100%; }
-
-html[data-slop-capture="static"] [data-slop-export="hide"] { display: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

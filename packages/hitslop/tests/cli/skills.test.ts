@@ -79,7 +79,7 @@ async function sandbox(root: string) {
         HOME: home,
         BUN_INSTALL: bun,
         BUN_INSTALL_GLOBAL_DIR: "",
-        HITSLOP_NATIVE_CLI: "/nonexistent",
+        HITSLOP_ENGINE: "/nonexistent",
         PATH: "/usr/bin:/bin",
       },
     });

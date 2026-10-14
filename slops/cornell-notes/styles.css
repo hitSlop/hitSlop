@@ -746,10 +746,6 @@
   }
 
   /* Static Export Mode */
-  html[data-slop-capture="static"] [data-slop-export="hide"] {
-    display: none !important;
-  }
-
   html[data-slop-capture="static"] .study-mask-card {
     display: none !important;
   }
@@ -762,10 +758,6 @@
   html[data-slop-capture="static"] input,
   html[data-slop-capture="static"] textarea {
     caret-color: transparent;
-  }
-
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .cornell-page {
-    display: none !important;
   }
 
   /* Focus rings */
@@ -793,7 +785,7 @@
     background: transparent;
   }
 
-  html[data-slop-renderer="true"][data-slop-capture="icon"] .cornell-render {
+  html[data-slop-capture="icon"] .cornell-render {
     display: grid !important;
   }
 

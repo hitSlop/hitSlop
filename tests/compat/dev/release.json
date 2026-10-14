@@ -1,8 +1,8 @@
 {
   "release": "dev",
   "frozen": false,
-  "commit": "fa6668c9a0e2c22f599dc478b1646f59299f34dc-dirty",
-  "captured": "2026-10-12T02:32:21.982Z",
+  "commit": "7bb3081bcdad3d46014dd590b3daf005de61d4a3",
+  "captured": "2026-10-13T22:33:00.093Z",
   "markers": {
     "packageFormat": 1,
     "runtimeABI": 1,
@@ -10,21 +10,21 @@
     "layout": 1,
     "protocol": 1
   },
-  "inputs": "4a353d2fb6fc0d5c01ae33c75f62b891d198fc93fb2bbd123e36c2a793ccf651",
+  "inputs": "0114621b65d1759bd2c9aa791f69774f68888be3538e73cee0b524bbca7db465",
   "producer": {
-    "coreBuildID": "7843fbef47030b54",
-    "shell": "5851e01c7a207951a3bb4b00c2f7b8fe7e5fcf47ef67967c5e45d5477740a1cd",
+    "coreBuildID": "e30c3efc2c498999",
+    "shell": "c2337cf57fdb493839022c3d5aa2a38b821999cfd117e136dba5b9212abdc3ae",
     "runner": {
-      "1": "c0a8fb2024f7a74a1e8de8ce216f4dcc4f604b40d1147a9a5eaa3ea419bdaa67"
+      "1": "9294d66cf9598bbc1e29a13d8e34efdbf69161060db7932157a3ec8371ce8a5f"
     }
   },
   "files": {
-    "commands/conformance.json": "b745f75fca04abe92018bc132243ae3cd11f3db439fd8afe0bd7a953b04347de",
-    "documents/conformance-compacted.page.slop": "5415ceec703f1169c661621721e5212ef5a8626b1ea19c480efeb063f9385caa",
-    "documents/conformance-compacted.slop": "bde2bcd8ff2c41a39f9395c6e38137fd390a0136b65b95f132a5bb1ef829b377",
-    "documents/conformance.page.slop": "29f71d1de377f652b0f3d25b37e539447e8569a358e6aedf772f7b74230155a4",
-    "documents/conformance.slop": "9c00b0f7c2f63e3070a13aa91ff40c824de121bd809ae8f77343a92ce5c5a6cb",
-    "engine/darwin-arm64/slop-engine": "99c3cac059b724fd4c8512249fa127ecc17e2e64a3da96e85bb9b32a2dd57e8f",
+    "commands/conformance.json": "85824ec9b0158e39311c993614753f446dc15bd303ca781361c6f509050d4051",
+    "documents/conformance-compacted.page.slop": "7a92c80306dbde0c7b88908760e70ebe6c13598dcc84fad51496eeed086c2a02",
+    "documents/conformance-compacted.slop": "890bfda6bb916f00502e7c9b670205533ade17f6c6f4b3ec38d1e03b2dec8c96",
+    "documents/conformance.page.slop": "dba4284189d62dc0a3b0ed78d696de1947bc14f3e15c00c8979f8b85e313aaab",
+    "documents/conformance.slop": "6b66e6c572fe7a2f99ef50b1a90ff8c7a7440f30e4e84728e9b2b9042245f51c",
+    "engine/darwin-arm64/slop-engine": "a9d22b88f8c654fdbab4a3a2848519bc2c1e2a435067c4001fa9e15dc94e923e",
     "expected/conformance-compacted.json": "c4d8cb2bc9e015eea5deb275e8ac53c8fd7162c008723b8789b92a5acb54b81e",
     "expected/conformance-compacted.page.json": "b5258a19891182a5265a4c9bca6f683668f1cf616344be275a8ac5380963d0e1",
     "expected/conformance.json": "c4d8cb2bc9e015eea5deb275e8ac53c8fd7162c008723b8789b92a5acb54b81e",
@@ -41,29 +41,29 @@
     "scenarios/conformance-compacted.page.json": "15af7df6519bcaf4df400935109d896c9a7da6823337fdf289307229345c95bb",
     "scenarios/conformance.json": "704c5ef553f3497c16e982e75f25b11aeef338d92c938d9d2456b2bcc97d7601",
     "scenarios/conformance.page.json": "15af7df6519bcaf4df400935109d896c9a7da6823337fdf289307229345c95bb",
-    "templates/conformance.slop": "5d03d02bb88830ae461fd52a0ccaee37886b170344e35511b49d5eee4292518f",
-    "templates/presentation-ellipse.slop": "a6382602b73ee343b2eb4a7b35e42879960e6c10735afae1027860341acccb4b",
-    "templates/presentation-glass.slop": "af0fe706a60a6c8b4000a89def60f996d272e70d4f4415a0ab019a0cad291cec",
-    "templates/presentation-notch.slop": "3d56c9c485b5b9ab9effb3f57ff9ce2d159490e23bef5fae2305b3898c98bb4d",
-    "templates/presentation-washer-2x.slop": "52a0b9af659103fa6330e76d549f585d911a18dc53255f224257e4253c528207",
-    "templates/presentation-washer.slop": "385ed8931dc1364602f982d23c142a98d07a83524dca9daebc324cb61964f9b6"
+    "templates/conformance.slop": "a844d8936f01d66f3a05e4875beafe9ca4267beca82e92f7c9edba4a2a288599",
+    "templates/presentation-ellipse.slop": "d17e7477ed52272b93628b48360fb5b2a7cf688077cf1cfecf38de6f24b775f3",
+    "templates/presentation-glass.slop": "39d42d7584e424531232d5478a1436f071035bf220693d2206d05bcd297ac6f0",
+    "templates/presentation-notch.slop": "c44d730b4cedf206769b0fa1effdc876c658846f9c6e9b07e62629ff513d7e18",
+    "templates/presentation-washer-2x.slop": "ea54c94bae3ddaf8cf4e8d4926140cd24c353879428117a96d46f935c1ee6564",
+    "templates/presentation-washer.slop": "499bb3c69ac7078d301af50414b9c291e79e43e0546cc279fef5422a782a4e96"
   },
   "acceptance": {
-    "crates/hitslop-core/src/app/package_format_1.rs": "b0f1cc5d4bff353d5ce2254c91d1e072efdf98083babb2ecb3c2067c8dfd4178",
+    "crates/hitslop-core/src/app/package_format_1.rs": "b87511750b871edcbc40d85337668b7cb859ce5bf740beb1596bfe70797a8c56",
     "crates/hitslop-core/src/file/storage-1.sql": "f5033424c308e6635e999ae708408446e08d32a6b80a27744cce196b2d992499"
   },
   "templates": {
-    "conformance": "5d03d02bb88830ae461fd52a0ccaee37886b170344e35511b49d5eee4292518f",
-    "presentation-washer": "385ed8931dc1364602f982d23c142a98d07a83524dca9daebc324cb61964f9b6",
-    "presentation-washer-2x": "52a0b9af659103fa6330e76d549f585d911a18dc53255f224257e4253c528207",
-    "presentation-glass": "af0fe706a60a6c8b4000a89def60f996d272e70d4f4415a0ab019a0cad291cec",
-    "presentation-ellipse": "a6382602b73ee343b2eb4a7b35e42879960e6c10735afae1027860341acccb4b",
-    "presentation-notch": "3d56c9c485b5b9ab9effb3f57ff9ce2d159490e23bef5fae2305b3898c98bb4d"
+    "conformance": "a844d8936f01d66f3a05e4875beafe9ca4267beca82e92f7c9edba4a2a288599",
+    "presentation-washer": "499bb3c69ac7078d301af50414b9c291e79e43e0546cc279fef5422a782a4e96",
+    "presentation-washer-2x": "ea54c94bae3ddaf8cf4e8d4926140cd24c353879428117a96d46f935c1ee6564",
+    "presentation-glass": "39d42d7584e424531232d5478a1436f071035bf220693d2206d05bcd297ac6f0",
+    "presentation-ellipse": "d17e7477ed52272b93628b48360fb5b2a7cf688077cf1cfecf38de6f24b775f3",
+    "presentation-notch": "c44d730b4cedf206769b0fa1effdc876c658846f9c6e9b07e62629ff513d7e18"
   },
   "writer": {
-    "buildId": "7843fbef47030b54",
-    "commit": "fa6668c9a0e2c22f599dc478b1646f59299f34dc-dirty",
-    "sha256": "99c3cac059b724fd4c8512249fa127ecc17e2e64a3da96e85bb9b32a2dd57e8f"
+    "buildId": "e30c3efc2c498999",
+    "commit": "7bb3081bcdad3d46014dd590b3daf005de61d4a3",
+    "sha256": "a9d22b88f8c654fdbab4a3a2848519bc2c1e2a435067c4001fa9e15dc94e923e"
   },
   "toolchain": {
     "rust": "rustc 1.96.1 (31fca3adb 2026-06-26)",
@@ -73,14 +73,14 @@
     "loro": "1.16.2",
     "svelte": "5.57.2"
   },
-  "clock": 1791806400000,
+  "clock": 1791892800000,
   "storage": {
     "conformance": {
       "checkpointBytes": 1755,
       "updates": 5
     },
     "conformance-compacted": {
-      "checkpointBytes": 2550,
+      "checkpointBytes": 2535,
       "updates": 0
     },
     "conformance.page": {
@@ -88,7 +88,7 @@
       "updates": 13
     },
     "conformance-compacted.page": {
-      "checkpointBytes": 2550,
+      "checkpointBytes": 2535,
       "updates": 8
     }
   }

@@ -1,8 +1,8 @@
-import { refuse, type Tx } from "hitslop";
-import type doc from "./schema";
+import { refuse, type Tx, type Value } from "hitslop";
+import type schema from "./schema";
 
-type Sheet = typeof doc.current;
-type Edit = Tx<typeof doc>;
+type Sheet = Value<typeof schema.descriptor>;
+type Edit = Tx<typeof schema>;
 
 export const RING: [number, number][] = [
   [0, 0], [0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1], [2, 2],

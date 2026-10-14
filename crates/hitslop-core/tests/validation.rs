@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 use hitslop_core::{AppSpec, Document};
 use serde_json::{Value, json};
 use support::ApplyJson;

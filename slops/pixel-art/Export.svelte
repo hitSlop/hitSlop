@@ -1,15 +1,17 @@
 <script lang="ts">
-import doc from "./schema";
+  import type { CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
   import { spriteView } from "./sprite";
-  const { cells } = $derived(spriteView(doc.current));
+  let { snapshot }: CaptureProps<typeof schema> = $props();
+  const { cells } = $derived(spriteView(snapshot));
 </script>
 
 <article class="exportSheet" aria-label="Exported 16 by 16 sprite">
     <div class="exportBezel">
-      <div class="exportGrid">
+      <svg class="exportPixels" width="384" height="384" viewBox="0 0 16 16" shape-rendering="crispEdges" aria-label="Saved pixel art">
         {#each cells as color, index (index)}
-          <span class="cell" style:background={color || "transparent"}></span>
+          <rect x={index % 16} y={Math.floor(index / 16)} width="1" height="1" fill={color || ((index % 16 + Math.floor(index / 16)) % 2 ? "var(--slop-screenLite)" : "var(--slop-screenMid)")} />
         {/each}
-      </div>
+      </svg>
     </div>
   </article>
