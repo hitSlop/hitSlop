@@ -1,5 +1,6 @@
 //! Shared live/closed command routing and bounded Unix transport. Fault peers exercise
 //! real socket loss and identity checks, not private call ordering.
+use crate::support;
 use hitslop_core::{
     command::{self, ExportCompletion, ExportHandler, ExportRequest},
     file,
@@ -14,15 +15,21 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
-mod support;
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
 fn document() -> (tempfile::TempDir, PathBuf) {
+    document_declaring(&[])
+}
+/// A document whose app declares `capabilities`.
+fn document_declaring(capabilities: &[&str]) -> (tempfile::TempDir, PathBuf) {
     support::isolate_registry();
     let dir = tempfile::tempdir_in("/tmp").unwrap();
     let stage = dir.path().join("stage");
     std::fs::create_dir_all(stage.join("assets")).unwrap();
     std::fs::write(stage.join("assets/ui.js"), "export default {}").unwrap();
     support::write_app(&stage, support::App::new(SCHEMA, r#"{"title":"Initial","hits":0}"#));
+    if !capabilities.is_empty() {
+        support::edit_input(&stage, |input| input["declaration"]["capabilities"] = json!(capabilities));
+    }
     let template = dir.path().join("template.slop");
     support::pack(&stage, &template).unwrap();
     let path = dir.path().join("doc.slop");
@@ -30,7 +37,7 @@ fn document() -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 /// The command protocol these requests are written in.
-const PROTOCOL: u64 = hitslop_core::HELPER_PROTOCOL;
+const PROTOCOL: u64 = hitslop_core::ENGINE_PROTOCOL;
 fn request(path: &Path, method: &str) -> Value {
     json!({"protocol":PROTOCOL,"method":method,"documentPath":std::fs::canonicalize(path).unwrap()})
 }
@@ -43,9 +50,13 @@ fn checked(text: String) -> Value {
     assert!(serde_json::from_str::<hitslop_core::EngineReply>(&text).is_ok(), "invalid reply: {text}");
     serde_json::from_str(&text).unwrap()
 }
+fn socket_request(mut value: Value) -> String {
+    let protocol = value.as_object_mut().unwrap().remove("protocol").unwrap();
+    json!({"protocol":protocol,"request":value}).to_string()
+}
 fn run(mut value: Value) -> Value {
     value.as_object_mut().unwrap().remove("protocol");
-    checked(command::request(&value.to_string(), PROTOCOL, None))
+    checked(command::request(&value.to_string(), PROTOCOL))
 }
 fn call(owner: &Owner, request: Request) -> std::result::Result<Reply, Failure> {
     let (tx, rx) = mpsc::channel();
@@ -63,6 +74,38 @@ fn close(owner: &Owner) {
 }
 fn open(path: &Path) -> Arc<Owner> {
     Arc::new(Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap())
+}
+
+#[test]
+fn document_commands_refuse_a_link_with_the_regular_file_reason() {
+    let (dir, path) = document();
+    let saved = std::fs::read(&path).unwrap();
+    let link = dir.path().join("link.slop");
+    std::os::unix::fs::symlink(&path, &link).unwrap();
+    for method in ["get", "describe", "batch", "call", "copy", "export"] {
+        // Do not canonicalize the supplied leaf before sending the request.
+        let mut request = json!({"method":method,"documentPath":link});
+        match method {
+            "batch" => request["batch"] = json!({"intents":[]}),
+            "call" => {
+                request["command"] = "missing".into();
+                request["args"] = json!({});
+            }
+            "copy" | "export" => {
+                request["output"] = json!(dir.path().join("output.slop"));
+                if method == "export" {
+                    request["format"] = "png".into();
+                }
+            }
+            _ => {}
+        }
+        let refused = run(request);
+        assert_eq!(refused["code"], "rejected", "{method}: {refused}");
+        assert_eq!(refused["reason"], "invalid_request", "{method}: {refused}");
+        assert_eq!(refused["error"], "A document must be an existing regular file", "{method}: {refused}");
+    }
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    assert!(!dir.path().join("output.slop").exists());
 }
 
 #[test]
@@ -96,7 +139,7 @@ impl ExportHandler for NoExport {
 
 #[test]
 fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
-    let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1, None));
+    let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1));
     assert_eq!(reply["reason"], "requires_update");
     let (_dir, path) = document();
     let owner = open(&path);
@@ -233,7 +276,7 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
         for mut other in [batch(&path), json!({"documentPath": path, "method": "a-later-method"})] {
             other["protocol"] = protocol.into();
             other["surprise"] = "a field of another protocol".into();
-            let refused = checked(socket::call(server.path(), &other.to_string()).unwrap());
+            let refused = checked(socket::call(server.path(), &socket_request(other)).unwrap());
             let mut keys: Vec<_> = refused.as_object().unwrap().keys().map(String::as_str).collect();
             keys.sort_unstable();
             assert_eq!(keys, ["code", "error", "ok", "reason"], "{refused}");
@@ -245,7 +288,8 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
         }
     }
     assert_eq!(
-        checked(command::serve(&owner, &batch(&path).to_string(), None, Instant::now() - Duration::from_millis(1)))["code"],
+        checked(command::serve(&owner, &socket_request(batch(&path)), None, Instant::now() - Duration::from_millis(1)))
+            ["code"],
         "closing"
     );
     assert_eq!(run(request(&path, "get"))["state"]["value"]["hits"], 0);
@@ -258,7 +302,7 @@ fn partial_frames_and_oversized_requests_are_bounded() {
     let (_dir, path) = document();
     let owner = open(&path);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
-    let get = request(&path, "get").to_string();
+    let get = socket_request(request(&path, "get"));
     let mut stream = UnixStream::connect(server.path()).unwrap();
     for byte in get.bytes().chain([b'\n']) {
         stream.write_all(&[byte]).unwrap();
@@ -268,7 +312,7 @@ fn partial_frames_and_oversized_requests_are_bounded() {
     assert_eq!(checked(reply)["method"], "get");
     let mut huge = batch(&path);
     huge["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":"x".repeat(1024 * 1024 + 1)}]});
-    assert_eq!(checked(socket::call(server.path(), &huge.to_string()).unwrap())["code"], "rejected");
+    assert_eq!(checked(socket::call(server.path(), &socket_request(huge)).unwrap())["code"], "rejected");
     close(&owner);
     server.stop();
 }
@@ -280,7 +324,7 @@ fn the_socket_client_limit_is_bounded() {
     // A reply can arrive before its worker releases its slot. Start with no previous
     // clients, so none of these partial frames is rejected by a finishing worker.
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
-    let get = request(&path, "get").to_string();
+    let get = socket_request(request(&path, "get"));
     let mut partial = Vec::new();
     for _ in 0..16 {
         let mut client = UnixStream::connect(server.path()).unwrap();
@@ -308,56 +352,81 @@ fn line(stream: &mut UnixStream) -> String {
     BufReader::new(stream).read_line(&mut text).unwrap();
     text
 }
+fn peer_reply(hello: Value, response: &str) -> (String, usize) {
+    let (dir, path) = document();
+    let owner = open(&path);
+    let saved = std::fs::read(&path).unwrap();
+    let listener = mock(&owner, dir.path());
+    listener.set_nonblocking(true).unwrap();
+    let response = response.to_owned();
+    let (stop, stopped) = mpsc::channel();
+    let peer = std::thread::spawn(move || {
+        let mut commands = 0;
+        loop {
+            if stopped.try_recv().is_ok() {
+                break;
+            }
+            let mut stream = match listener.accept() {
+                // macOS hands out accepted streams nonblocking like their listener.
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(1));
+                    continue;
+                }
+                Err(error) => panic!("{error}"),
+            };
+            let input: Value = serde_json::from_str(&line(&mut stream)).unwrap();
+            if input["method"] == "hello" {
+                writeln!(stream, "{hello}").unwrap();
+                continue;
+            }
+            assert_eq!(input["request"]["method"], "batch");
+            commands += 1;
+            writeln!(stream, "{response}").unwrap();
+        }
+        commands
+    });
+    let mut input = batch(&path);
+    input.as_object_mut().unwrap().remove("protocol");
+    let answer = command::request(&input.to_string(), PROTOCOL);
+    stop.send(()).unwrap();
+    let commands = peer.join().unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    close(&owner);
+    (answer, commands)
+}
+
 #[test]
 fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
     for code in ["rejected", "owner_replaced", "closing", "save_failed", "unknown_outcome"] {
-        let (dir, path) = document();
-        let owner = open(&path);
-        let saved = std::fs::read(&path).unwrap();
-        let listener = mock(&owner, dir.path());
-        listener.set_nonblocking(true).unwrap();
-        let refusal = json!({"ok":false,"error":"Peer refusal","code":code});
-        let expected = refusal.clone();
-        let (stop, stopped) = mpsc::channel();
-        let peer = std::thread::spawn(move || {
-            let mut commands = 0;
-            loop {
-                if stopped.try_recv().is_ok() {
-                    break;
-                }
-                let mut stream = match listener.accept() {
-                    // macOS hands out accepted streams nonblocking like their listener.
-                    Ok((stream, _)) => {
-                        stream.set_nonblocking(false).unwrap();
-                        stream
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-                    Err(error) => panic!("{error}"),
-                };
-                let input: Value = serde_json::from_str(&line(&mut stream)).unwrap();
-                if input["method"] == "hello" {
-                    writeln!(stream, "{}", json!({"ok":true,"method":"hello"})).unwrap();
-                    continue;
-                }
-                commands += 1;
-                writeln!(stream, "{refusal}").unwrap();
-            }
-            commands
-        });
-        assert_eq!(run(batch(&path)), expected);
-        stop.send(()).unwrap();
-        let commands = peer.join().unwrap();
+        let refusal = json!({"ok":false,"error":"Peer refusal","code":code}).to_string();
+        let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello"}), &refusal);
+        assert_eq!(answer, refusal);
         if code == "closing" {
-            assert!(commands >= 1);
+            assert!(commands > 1, "closing refusal must retry during admission");
         } else {
             assert_eq!(commands, 1);
         }
-        assert_eq!(std::fs::read(&path).unwrap(), saved);
-        close(&owner);
     }
+}
+
+#[test]
+fn peer_hello_reply_accepts_unknown_members() {
+    let response = r#"{ "method": "batch", "ok": true }"#;
+    let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello","features":[]}), response);
+    assert_eq!(answer, response);
+    assert_eq!(commands, 1);
+}
+
+#[test]
+fn peer_unfamiliar_outcome_is_forwarded_byte_for_byte() {
+    let response = r#"{ "ok": false, "code": "future_outcome", "error": "Future peer message" }"#;
+    let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello"}), response);
+    assert_eq!(answer, response);
+    assert_eq!(commands, 1);
 }
 
 #[test]
@@ -375,7 +444,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
         let input = line(&mut edit);
         let applied = checked(command::serve(&actor, &input, None, Instant::now() + Duration::from_secs(5)));
         assert_eq!(applied["ok"], true);
-        drop(edit); // The committed reply never reaches the helper.
+        drop(edit); // The committed reply never reaches the client.
     });
     let answer = run(batch(&path));
     assert_eq!(answer["code"], "unknown_outcome");
@@ -431,6 +500,29 @@ fn page_json(reply: &command::PageDispatch) -> Value {
     let command::PageDispatch::Reply { json, .. } = reply else { panic!("expected a JSON reply") };
     serde_json::from_str(json).unwrap()
 }
+
+#[test]
+fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
+    use command::PageDispatch;
+    use hitslop_core::page_wire::{HostAction, PageRequest};
+    let (_dir, path) = document();
+    let owner = open(&path);
+    owner.attach("page".into());
+    let request = |view: &str, width| {
+        let (tx, rx) = mpsc::channel();
+        command::page_typed(&owner, view.into(), PageRequest::WindowResize { width, height: 480 }, move |reply| {
+            tx.send(reply).unwrap();
+        });
+        rx.recv_timeout(Duration::from_secs(5)).unwrap()
+    };
+    assert!(matches!(
+        request("page", 640),
+        PageDispatch::Host { action: HostAction::WindowResize { width: 640, height: 480 } }
+    ));
+    assert_eq!(page_json(&request("page", 0))["reason"], "invalid_request");
+    assert_eq!(page_json(&request("retired", 640))["code"], "owner_replaced");
+    close(&owner);
+}
 // The page's document requests run through the core: replies the page reads, refusals it
 // can act on, and the owner's failure for the host. Oracle: literal replies and the value.
 #[test]
@@ -482,7 +574,8 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         ),
         // Text edits are batches now; there is no separate text request.
         (json!({"method":"text","request":json!({"base":"x"}).to_string()}), "invalid_request"),
-        (json!({"method":"apply","batch":json!({"base":"x","intents":[]})}), "invalid_version"),
+        // A text set carries the text it started `from`; no batch names a version base.
+        (json!({"method":"apply","batch":json!({"base":"x","intents":[]})}), "invalid_request"),
         // The core bounds opaque document payloads in UTF-8 bytes.
         (
             json!({"method":"apply","batch":{"intents":[{"type":"set","path":["title"],"value":"😀".repeat(1_048_577)}]}}),
@@ -502,17 +595,16 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 2);
     close(&owner);
 }
-// Failure: an agent's batch replaced text written after its `get`; then a batch's merged
-// version, reused as the next base, deleted it. Oracle: the literal merged text, with each
-// base read by `get` before the rewrite it serves.
+// Failure: an agent's batch replaced text written after its `get`. Oracle: the literal
+// merged text, with each `from` read by `get` before the rewrite it serves.
 #[test]
-fn a_based_batch_keeps_text_written_since_the_agents_read() {
+fn an_agents_text_set_from_its_read_keeps_text_written_since() {
     let (_dir, path) = document();
-    let set = |title: &str, base: Option<&Value>| {
+    let set = |title: &str, from: Option<&Value>| {
         let mut batch = request(&path, "batch");
         batch["batch"] = json!({"intents":[{"type":"set","path":["title"],"value":title}]});
-        if let Some(base) = base {
-            batch["batch"]["base"] = base.clone();
+        if let Some(from) = from {
+            batch["batch"]["intents"][0]["from"] = from.clone();
         }
         run(batch)
     };
@@ -520,12 +612,12 @@ fn a_based_batch_keeps_text_written_since_the_agents_read() {
     let before = read();
     // The person types after the agent's read.
     set("Initial typed", None);
-    set("First", Some(&before["version"]));
+    set("First", Some(&before["value"]["title"]));
     assert_eq!(read()["value"]["title"], "First typed");
     // The agent reads again before its next rewrite, and the person keeps typing.
     let again = read();
     set("First typed!", None);
-    set("Second typed", Some(&again["version"]));
+    set("Second typed", Some(&again["value"]["title"]));
     assert_eq!(read()["value"]["title"], "Second typed!");
 }
 struct Delayed(Mutex<mpsc::Sender<Arc<ExportCompletion>>>);
@@ -544,7 +636,7 @@ fn stopping_server_and_closing_owner_preserves_an_admitted_export_reply() {
     export["format"] = "png".into();
     export["output"] = "/tmp/result.png".into();
     let socket = server.path().to_owned();
-    let client = std::thread::spawn(move || checked(socket::call(&socket, &export.to_string()).unwrap()));
+    let client = std::thread::spawn(move || checked(socket::call(&socket, &socket_request(export.clone())).unwrap()));
     let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
     assert!(completion.is_active());
     close(&owner);
@@ -566,7 +658,12 @@ fn an_expired_export_callback_cannot_publish_late() {
     export["output"] = "/tmp/result.png".into();
     let actor = owner.clone();
     let worker = std::thread::spawn(move || {
-        command::serve(&actor, &export.to_string(), Some(&exporter), Instant::now() + Duration::from_millis(100))
+        command::serve(
+            &actor,
+            &socket_request(export.clone()),
+            Some(&exporter),
+            Instant::now() + Duration::from_millis(100),
+        )
     });
     let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
     let answer = checked(worker.join().unwrap());
@@ -592,12 +689,48 @@ fn a_client_that_panics_frees_its_place() {
     export["format"] = "png".into();
     export["output"] = "/tmp/result.png".into();
     for _ in 0..16 {
-        assert!(socket::call(server.path(), &export.to_string()).is_err(), "a panicked request has no reply");
+        assert!(
+            socket::call(server.path(), &socket_request(export.clone())).is_err(),
+            "a panicked request has no reply"
+        );
     }
-    let answer = socket::call(server.path(), &request(&path, "get").to_string());
+    let answer = socket::call(server.path(), &socket_request(request(&path, "get")));
     assert_eq!(checked(answer.expect("a place is free"))["method"], "get");
     close(&owner);
     server.stop();
+}
+
+// Failure: a closed export without a renderer did not refuse cleanly, or a closed export
+// took the writer lock to render. Oracle: a refusal, the live owner's own answer, and the
+// saved state exported while another writer holds the lock with no session to ask.
+#[test]
+fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
+    let (dir, path) = document();
+    let output = dir.path().join("closed.pdf");
+    let mut export = request(&path, "export");
+    export["format"] = "pdf".into();
+    export["output"] = output.to_str().unwrap().into();
+    // `command::request` has no evaluator to render with.
+    let refused = run(export.clone());
+    assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("invalid_request")));
+    let owner = open(&path);
+    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    assert_eq!(run(export.clone())["error"], "No export", "the live owner's renderer answers");
+    close(&owner);
+    server.stop();
+    assert!(!output.exists());
+    if cfg!(target_os = "macos") {
+        let before = std::fs::read(&path).unwrap();
+        let busy = registry::Lease::acquire(&path).unwrap();
+        let pdf = b"%PDF-1.7\n%%EOF".to_vec();
+        export.as_object_mut().unwrap().remove("protocol");
+        let request = hitslop_core::EngineRequest::parse(&export.to_string()).unwrap();
+        let rendered = command::request_with_evaluator(request, PROTOCOL, Some(support::renderer(":", &pdf)));
+        assert_eq!(checked(rendered), json!({"ok":true,"method":"export","output":output}));
+        assert_eq!(std::fs::read(&output).unwrap(), pdf);
+        drop(busy);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
 }
 
 #[test]
@@ -609,8 +742,8 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     owner.attach("page".into());
     let config = page_json(&page(&owner, "page", r#"{"method":"config"}"#));
     assert_eq!(config["ok"], true);
-    assert_eq!(config["readOnly"], false);
-    assert_eq!(config["window"]["kind"], "standard");
+    assert_eq!(config["window"]["frame"]["kind"], "standard");
+    assert_eq!(config["window"]["frame"]["frame"]["resizable"], true);
     assert_eq!(config["descriptor"], serde_json::from_str::<Value>(SCHEMA).unwrap());
     assert!(matches!(page(&owner, "page", r#"{"method":"ready"}"#), PageDispatch::Host { action: HostAction::Ready }));
     assert!(matches!(
@@ -624,10 +757,60 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     }
     close(&owner);
     assert_eq!(page_json(&page(&owner, "replacement", r#"{"method":"ready"}"#))["code"], "closing");
-    let snapshot = Owner::open(&path, Mode::Snapshot, Arc::new(|_| {})).unwrap();
-    snapshot.attach("capture".into());
-    assert_eq!(page_json(&page(&snapshot, "capture", r#"{"method":"config"}"#))["readOnly"], true);
-    close(&snapshot);
+}
+
+// Speech reaches the host only for a page whose stored app declared it; every other
+// page learns why it is unavailable without a host being asked. The host then reads
+// the verified recording through the owner's reader and decides what it can decode.
+#[test]
+fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
+    use command::PageDispatch;
+    use hitslop_core::page_wire::HostAction;
+    let id = "0123456789abcdef".repeat(4);
+    let request = json!({"method":"speech.transcribe","attachment":id,"locale":"en-US"}).to_string();
+
+    let (_dir, path) = document();
+    let owner = open(&path);
+    owner.attach("page".into());
+    let undeclared = page(&owner, "page", &request);
+    assert!(matches!(undeclared, PageDispatch::Reply { failure: None, .. }), "a definite answer, not a fault");
+    let outcome = &page_json(&undeclared)["outcome"];
+    assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("notDeclared")));
+    assert!(outcome["message"].as_str().unwrap().contains("capabilities"));
+    let typed = hitslop_core::page_wire::PageRequest::decode(&request).unwrap();
+    let (reply, received) = mpsc::channel();
+    command::page_typed(&owner, "page".into(), typed, move |dispatch| reply.send(dispatch).unwrap());
+    let typed = received.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(page_json(&typed)["outcome"]["reason"], "notDeclared");
+    assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
+    close(&owner);
+    assert_eq!(page_json(&page(&owner, "page", &request))["code"], "closing");
+
+    let (_dir, path) = document_declaring(&["speech"]);
+    let owner = open(&path);
+    owner.attach("page".into());
+    match page(&owner, "page", &request) {
+        PageDispatch::Host { action: HostAction::SpeechTranscribe { attachment, locale } } => {
+            assert_eq!((attachment.as_str(), locale.as_deref()), (id.as_str(), Some("en-US")));
+        }
+        _ => panic!("a declared app's page asks the host"),
+    }
+    let without_locale = json!({"method":"speech.transcribe","attachment":id}).to_string();
+    let underscored = json!({"method":"speech.transcribe","attachment":id,"locale":"zh_Hant_TW"}).to_string();
+    match page(&owner, "page", &underscored) {
+        PageDispatch::Host { action: HostAction::SpeechTranscribe { locale, .. } } => {
+            assert_eq!(locale.as_deref(), Some("zh-Hant-TW"));
+        }
+        _ => panic!("a declared app's page asks the host"),
+    }
+    assert!(matches!(
+        page(&owner, "page", &without_locale),
+        PageDispatch::Host { action: HostAction::SpeechTranscribe { locale: None, .. } }
+    ));
+    let malformed = page(&owner, "page", &json!({"method":"speech.transcribe","attachment":"clip.m4a"}).to_string());
+    assert_eq!(page_json(&malformed)["reason"], "invalid_request");
+    assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
+    close(&owner);
 }
 
 #[test]

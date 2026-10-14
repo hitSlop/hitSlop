@@ -128,14 +128,24 @@ public enum Fixtures {
       "declaration": [
         "metadata": metadata, "window": window, "document": ["kind": "object", "properties": [:]],
         "initial": [:], "theme": theme.map { ["token": $0.0, "color": $0.1] }, "commands": [],
-        "views": ["export": false, "icon": false],
+        "views": ["export": true, "icon": true, "preview": true],
       ],
-      "roles": ["ui": "ui.js"],
-      "resources": [["kind": "app", "key": "ui.js", "mediaType": "text/javascript", "path": "assets/ui.js"]],
+      "roles": ["ui": "ui.js", "export": "export.js", "icon": "icon.js", "preview": "preview.js"],
+      "resources": [
+        ["kind": "app", "key": "ui.js", "mediaType": "text/javascript", "path": "assets/ui.js"],
+        ["kind": "app", "key": "export.js", "mediaType": "text/javascript", "path": "assets/export.js"],
+        ["kind": "app", "key": "icon.js", "mediaType": "text/javascript", "path": "assets/icon.js"],
+        ["kind": "app", "key": "preview.js", "mediaType": "text/javascript", "path": "assets/preview.js"],
+      ],
       "artwork": [:],
     ]
     try JSONSerialization.data(withJSONObject: app).write(to: stage.appendingPathComponent("input.json"))
     try writeApp("export default { mount() { return {}; } };", to: stage)
+    for role in ["icon", "preview", "export"] {
+      try FileManager.default.copyItem(
+        at: repository.appendingPathComponent("tests/fixtures/scalars/document/assets/\(role).js"),
+        to: stage.appendingPathComponent("assets/\(role).js"))
+    }
     return stage
   }
 
@@ -151,6 +161,30 @@ public enum Fixtures {
       var declaration = input["declaration"] as! [String: Any]
       try change(&declaration)
       input["declaration"] = declaration
+    }
+  }
+
+  /// A minimal private render program, independent of any shipped slop or browser UI.
+  public static func addWidget(_ stage: URL) throws {
+    let source = """
+      globalThis.__slopWidget = json => {
+        const request = JSON.parse(json);
+        const color = request.snapshot.title === 'Widget saved' ? '#ff0000' : '#0000ff';
+        return JSON.stringify({fonts:[], frames: request.viewports.map(viewport => ({
+          width: viewport.width, height: viewport.height,
+          html: '<html><body><div></div></body></html>',
+          css: 'html,body,div{margin:0;width:100%;height:100%;background:'+color+'}'
+        }))});
+      };
+      """
+    try Data(source.utf8).write(to: stage.appendingPathComponent("assets/widget.js"))
+    try updateInput(stage) { input in
+      var roles = input["roles"] as! [String: Any]
+      roles["widget"] = "widget.js"
+      input["roles"] = roles
+      var resources = input["resources"] as! [[String: Any]]
+      resources.append(["kind": "app", "key": "widget.js", "mediaType": "text/javascript", "path": "assets/widget.js"])
+      input["resources"] = resources
     }
   }
 
@@ -207,7 +241,7 @@ public enum Fixtures {
       "method": "pack", "stage": stage.path, "file": template.path,
       "app": try JSONSerialization.jsonObject(with: Data(contentsOf: stage.appendingPathComponent("input.json"))),
     ])
-    let (status, output, errors) = try run(engine, ["--client-protocol", String(HelperProtocol.version)], input: input)
+    let (status, output, errors) = try run(engine, ["--client-protocol", String(EngineProtocol.version)], input: input)
     guard status == 0 else { throw SlopFailure(errors.trimmingCharacters(in: .whitespacesAndNewlines)) }
     guard let reply = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any],
       reply["ok"] as? Bool == true
@@ -322,7 +356,7 @@ public enum Fixtures {
       sqlite3_close(connection)
     }
     let sql =
-      "SELECT (SELECT coalesce(sum(length(bytes)),0) FROM checkpoint), (SELECT coalesce(sum(length(bytes)),0) FROM updates), (SELECT count(*) FROM updates)"
+      "SELECT coalesce((SELECT length(bytes) FROM history ORDER BY seq LIMIT 1),0), coalesce(sum(length(bytes)),0) - coalesce((SELECT length(bytes) FROM history ORDER BY seq LIMIT 1),0), max(count(*)-1,0) FROM history"
     guard sqlite3_open_v2(document.path, &connection, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
       sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW
     else { throw SlopFailure("Cannot read \(document.lastPathComponent)") }

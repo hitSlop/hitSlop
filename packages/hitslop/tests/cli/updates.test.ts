@@ -6,7 +6,11 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-test("update checks are interactive, cached, optional, and soft-failing", async () => {
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
+
+test.if(nightly)("update checks are interactive, cached, optional, and soft-failing", async () => {
   const root = await mkdtemp(join(tmpdir(), "hsl-updates-"));
   try {
     for (const scenario of ["piped", "stderr-piped", "ci", "disabled", "offline", "notice"]) {

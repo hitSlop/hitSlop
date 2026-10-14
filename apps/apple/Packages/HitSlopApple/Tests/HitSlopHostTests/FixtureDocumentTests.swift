@@ -9,7 +9,7 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
-  @Test @MainActor func fixtureDocumentsSurviveHostCLIThemeAndExport() async throws {
+  @Test(.nightly) @MainActor func fixtureDocumentsSurviveHostCLIThemeAndExport() async throws {
     _ = NSApplication.shared
     let fixtures = Fixtures.repository.appendingPathComponent("tests/fixtures")
     let entries = try FileManager.default.contentsOfDirectory(at: fixtures, includingPropertiesForKeys: nil)
@@ -39,17 +39,12 @@ extension HostTests {
         #expect(try await command("batch", url: root, setTitle("Closed command")).ok)
         #expect(try await command("batch", url: root, setTitle("Candidate update")).ok)
       }
-      // Renders run the authored app (including its self-checks) against a snapshot:
-      // saved state is byte-for-byte what a later read returns.
+      // Closed renders read the saved document: its state is what a later read returns.
       let saved = try await savedValue(root)
-      let session = try await DocumentSession.open(url: root, storage: .snapshot)
-      session.load()
-      try await session.waitUntilReady()
-      let png = try await SlopRenderer.exportPNGData(session: session)
+      let png = try await SlopRenderer.capture(url: root, output: .export(format: .png))
       #expect(NSBitmapImageRep(data: png) != nil)
-      let pdf = try await SlopRenderer.exportPDFData(session: session)
+      let pdf = try await SlopRenderer.capture(url: root, output: .export(format: .pdf))
       #expect((PDFDocument(data: pdf)?.pageCount ?? 0) > 0)
-      try await session.close()
       #expect(try await savedValue(root) == saved)
       // SQLite replay, scenarios and current-engine convergence run in Bun.
       // This test retains the frozen apps' WebKit, CLI, theme and export boundary.

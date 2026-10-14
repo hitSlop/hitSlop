@@ -3,8 +3,8 @@ import { exec } from "../../../../scripts/lib/test-process";
 import { test, expect } from "bun:test";
 import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { stageProject } from "../../src/cli/build";
-import { overrideSlop, stage } from "./source-fixture";
+import { stageWorker } from "../../src/cli/build";
+import { overrideSlop, overrideSchema, stage } from "./source-fixture";
 
 // slop.ts declares the app's row: the build evaluates it, checks it as the app opens files,
 // and never ships it in the app.
@@ -14,19 +14,22 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
     const source = join(root, "sentinel");
     await cp("tests/apps/document", source, { recursive: true });
     const sentinel = `slop-ts-sentinel-${crypto.randomUUID()}`;
-    await overrideSlop(source, { initial: `{ ...slop.initial, title: ${JSON.stringify(sentinel)} }` });
+    await overrideSlop(source, { description: JSON.stringify(sentinel), capabilities: '["microphone", "camera", "microphone"]' });
+    await overrideSchema(source, `{ ...authored.initial, title: "Initial from schema" }`);
     const output = join(root, "built");
-    const app = await stageProject(source, output);
+    const built = await stageWorker(source, output, "Authoring build failed").done;
+    const app = built.input;
     expect(app.declaration.metadata.slug).toBe("document-fixture");
-    expect(app.declaration.initial).toMatchObject({ title: sentinel });
+    // Capabilities travel beside the metadata, never in it; acceptance makes them canonical.
+    expect(app.declaration.metadata).not.toHaveProperty("capabilities");
+    expect(built.capabilities).toEqual(["camera", "microphone"]);
+    expect(app.declaration.initial).toMatchObject({ title: "Initial from schema" });
     expect(await readFile(join(output, "resources/ui.js"), "utf8")).not.toContain(sentinel);
     for (const [name, fields, statements, error] of [
       ["unknown", { lineage: '"future"' }, "", "unknown field"],
       ["field", { title: '""' }, "", "1–80 characters"],
-      ["no-initial", { initial: "undefined" }, "", "initial"],
-      ["no-document", { document: "undefined" }, "", "defineDocument"],
-      ["initial", { initial: "{ ...slop.initial, title: 42 }" }, "", "type_mismatch"],
       ["theme", { theme: '{ accent: "#ABCDEF" }' }, "", "Theme color"],
+      ["capability", { capabilities: '["location"] as never' }, "", "unknown variant `location`"],
     ] as const) {
       const project = join(root, name);
       await cp("tests/apps/document", project, { recursive: true });
@@ -42,7 +45,7 @@ test("slop.ts declares the app without shipping in app.js and is checked like a 
 }, 60000);
 
 // slop.ts is build-only: an app that imports it would ship author metadata and initial
-// values, and run build-time code in the page.
+// and run build-time code in the page.
 test("an app that imports slop.ts is refused", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
@@ -51,9 +54,9 @@ test("an app that imports slop.ts is refused", async () => {
     const app = await readFile(join(source, "App.svelte"), "utf8");
     await writeFile(
       join(source, "App.svelte"),
-      app.replace('<script lang="ts">', '<script lang="ts">\nimport slop from "./slop";\nconsole.log(slop.initial.title);'),
+      app.replace('<script lang="ts">', '<script lang="ts">\nimport slop from "./slop";\nconsole.log(slop.title);'),
     );
-    await expect(stage(source, join(root, "stage"))).rejects.toThrow("Only the generated entry");
+    await expect(stage(source, join(root, "stage"))).rejects.toThrow("slop.ts is metadata");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

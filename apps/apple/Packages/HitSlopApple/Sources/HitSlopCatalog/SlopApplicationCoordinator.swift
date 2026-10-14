@@ -51,25 +51,42 @@ import SwiftUI
 
   public func showCatalog() {
     guard presentsWindows, model.quitPhase == .running else { return }
-    if catalogWindow == nil {
-      let host = NSHostingController(rootView: CatalogView(model: model.catalog))
-      let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 1040, height: 720),
-        styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered,
-        defer: false)
-      window.title = ""
-      window.titleVisibility = .hidden
-      window.titlebarAppearsTransparent = true
-      window.isReleasedWhenClosed = false
-      window.minSize = NSSize(width: 900, height: 600)
-      window.contentViewController = host
-      window.center()
-      catalogWindow = NSWindowController(window: window)
-    }
-    catalogWindow?.showWindow(nil)
-    if catalogWindow?.window?.isMiniaturized == true { catalogWindow?.window?.deminiaturize(nil) }
-    catalogWindow?.window?.makeKeyAndOrderFront(nil)
+    let catalogWindow = preparedCatalog()
+    catalogWindow.showWindow(nil)
+    if catalogWindow.window?.isMiniaturized == true { catalogWindow.window?.deminiaturize(nil) }
+    catalogWindow.window?.makeKeyAndOrderFront(nil)
     NSApp.activate()
+  }
+  /// The catalog window, built once and reused.
+  private func preparedCatalog() -> NSWindowController {
+    if let catalogWindow { return catalogWindow }
+    let host = NSHostingController(rootView: CatalogView(model: model.catalog))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 1040, height: 720),
+      styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered,
+      defer: false)
+    window.title = ""
+    window.titleVisibility = .hidden
+    window.titlebarAppearsTransparent = true
+    window.isReleasedWhenClosed = false
+    window.minSize = NSSize(width: 900, height: 600)
+    window.contentViewController = host
+    window.center()
+    let controller = NSWindowController(window: window)
+    catalogWindow = controller
+    return controller
+  }
+  /// An app opened straight into a document has not built its catalog. Build it hidden
+  /// once that document is showing, so closing the last document returns to the catalog
+  /// without the first-show cost.
+  func prewarmCatalog() {
+    guard presentsWindows, catalogWindow == nil, model.quitPhase == .running else { return }
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(500))
+      guard let self, self.catalogWindow == nil, self.model.quitPhase == .running else { return }
+      self.model.catalog.start()
+      self.preparedCatalog().window?.contentView?.layoutSubtreeIfNeeded()
+    }
   }
   /// A document's page is ready; the catalog that opened it steps aside.
   func hideCatalog() { catalogWindow?.window?.orderOut(nil) }
@@ -148,15 +165,15 @@ import SwiftUI
       },
       focus: { [self] id in focus(id) },
       perform: { [self] id, command in
-        do { return try await perform(id, command: command) } catch { throw SlopDocumentFailure(command: error) }
+        do { return try await perform(id, command: command) } catch { throw SlopDocumentFailure(error) }
       },
       prepareToQuit: { [self] id in
         do { try await controller(id).prepareToClose(operation: .quit) } catch {
-          throw SlopDocumentFailure(command: error)
+          throw SlopDocumentFailure(error)
         }
       },
       finishQuit: { [self] id in
-        do { try await finishQuit(id) } catch { throw SlopDocumentFailure(command: error) }
+        do { try await finishQuit(id) } catch { throw SlopDocumentFailure(error) }
       },
       cancelQuit: { [self] id in await controllers[id]?.cancelPreparedClose() },
       replyToQuit: { allowed in NSApp.reply(toApplicationShouldTerminate: allowed) },
@@ -176,7 +193,10 @@ import SwiftUI
     try Task.checkCancellation()
     let routing = SlopDocumentRouting(
       command: { [weak self] command in self?.coordinator?.model.send(command, to: id) },
-      pageReady: { [weak self] in self?.coordinator?.hideCatalog() },
+      pageReady: { [weak self] in
+        self?.coordinator?.hideCatalog()
+        self?.coordinator?.prewarmCatalog()
+      },
       closeHidden: { [weak self] in self?.coordinator?.model.documentHiddenForClose(id) })
     let progress = presentsWindows ? SlopOpeningProgress() : nil
     openings[id] = progress

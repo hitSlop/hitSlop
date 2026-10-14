@@ -1,19 +1,19 @@
 //! Durable storage: identity, limits, crash outcomes and the writer lock, over one
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
+use crate::support;
 use hitslop_core::Document;
 use hitslop_core::Origin;
 use hitslop_core::file;
 use hitslop_core::registry::Lease;
-use hitslop_core::store::{Error, Mode, Store};
+use hitslop_core::store::{Error, Mode, Share, Store};
 use hitslop_core::{STORAGE_BYTES, STORAGE_ROWS};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-mod support;
 use support::ApplyJson;
-use support::{App, app, isolate_registry, type_text, write_app};
+use support::{App, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -56,9 +56,12 @@ struct Stored {
 fn stored(path: &Path) -> Stored {
     sql(path)
         .query_row(
-            "SELECT (SELECT count(*) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM updates),(SELECT coalesce(sum(length(bytes)),0) FROM checkpoint)",
+            "SELECT max(count(*)-1,0), coalesce(sum(length(bytes)),0), coalesce((SELECT length(bytes) FROM history ORDER BY seq LIMIT 1),0) FROM history",
             [],
-            |r| Ok(Stored { rows: r.get(0)?, update_bytes: r.get(1)?, checkpoint_bytes: r.get(2)? }),
+            |r| {
+                let (rows, total, checkpoint_bytes): (i64, i64, i64) = (r.get(0)?, r.get(1)?, r.get(2)?);
+                Ok(Stored { rows, update_bytes: total - checkpoint_bytes, checkpoint_bytes })
+            },
         )
         .unwrap()
 }
@@ -78,13 +81,13 @@ fn set_title(doc: &mut Document, title: &str) {
         .unwrap();
 }
 fn save(store: &Store, doc: &mut Document) -> Option<bool> {
-    let job = store.job(doc, false).unwrap()?;
+    let job = store.job(doc).unwrap()?;
     store.write(&job).unwrap();
     Some(job.is_checkpoint())
 }
 
-// Failure: an absent checkpoint was treated as initial state even with saved updates,
-// and opening then deleted those updates. Every open refuses the file and preserves it.
+// Failure: an absent snapshot was treated as initial state even with saved updates, and
+// opening then deleted those updates. Every open refuses the file and preserves it.
 fn missing_checkpoint_is_refused(mode: Mode, saved_edits: bool) {
     let (_dir, path) = document();
     if saved_edits {
@@ -95,9 +98,13 @@ fn missing_checkpoint_is_refused(mode: Mode, saved_edits: bool) {
         }
         store.close().unwrap();
     }
-    sql(&path).execute("DELETE FROM checkpoint", []).unwrap();
+    sql(&path).execute("DELETE FROM history WHERE seq=(SELECT min(seq) FROM history)", []).unwrap();
     let before = std::fs::read(&path).unwrap();
-    let error = Store::open(&path, mode).err().expect("a document without saved state is refused");
+    // The file's tables are checked on open, its history when the store loads it; hosts
+    // always load what they open.
+    let error = Store::open(&path, mode)
+        .and_then(|store| store.document().map(drop))
+        .expect_err("a document without saved state is refused");
     assert!(error.to_string().contains("keep it for recovery"), "{error}");
     assert_eq!(std::fs::read(&path).unwrap(), before, "nothing is written");
 }
@@ -136,11 +143,11 @@ fn a_new_document_saves_its_first_checkpoint_and_reopens_with_its_edits() {
     let (store, mut doc) = open(&path);
     assert_eq!(stored(&path).rows, 0);
     assert!(stored(&path).checkpoint_bytes > 0);
-    assert!(store.job(&mut doc, false).unwrap().is_none(), "a clean document has nothing to save");
+    assert!(store.job(&mut doc).unwrap().is_none(), "a clean document has nothing to save");
     set_title(&mut doc, "Edited");
     assert_eq!(save(&store, &mut doc), Some(false), "an edit appends");
     assert_eq!(stored(&path).rows, 1);
-    assert!(store.job(&mut doc, false).unwrap().is_none());
+    assert!(store.job(&mut doc).unwrap().is_none());
     store.close().unwrap();
     let (_, doc) = open(&path);
     assert_eq!(title(&doc), "Edited");
@@ -162,17 +169,25 @@ fn a_long_log_checkpoints_and_compaction_is_always_a_checkpoint() {
     store.close().unwrap();
     let (store, mut doc) = open(&path);
     assert!(!stale(&doc, &first), "a small checkpoint keeps its whole history");
-    let job = store.job(&mut doc, true).unwrap().expect("a requested checkpoint is written even when clean");
+    let job = store.checkpoint_job(&mut doc).expect("a requested checkpoint is written even when clean");
     assert!(job.is_checkpoint());
     store.write(&job).unwrap();
     store.close().unwrap();
     assert_eq!(title(&open(&path).1), format!("Edit {appended}"));
 }
 
-/// Whether `doc` refuses `version` as a text base, as history before its retained start.
+/// Whether `doc`'s history starts after `version`: a checkpoint trimmed it away. A version
+/// token is the frontier IDs as 12-byte big-endian (peer, counter) records.
 fn stale(doc: &Document, version: &str) -> bool {
-    let mut scratch = Document::open(&app(SCHEMA), &doc.checkpoint().unwrap(), &[]).unwrap();
-    matches!(type_text(&mut scratch, version, json!(["title"]), "", "", 0), Err(e) if e.code.as_str() == "stale_base")
+    let saved = loro::LoroDoc::new();
+    saved.import(&doc.checkpoint().unwrap()).unwrap();
+    let trimmed = saved.shallow_since_vv().to_vv();
+    let bytes: Vec<u8> =
+        (0..version.len()).step_by(2).map(|i| u8::from_str_radix(&version[i..i + 2], 16).unwrap()).collect();
+    bytes.chunks_exact(12).any(|record| {
+        let peer = u64::from_be_bytes(record[..8].try_into().unwrap());
+        trimmed.includes_id(loro::ID::new(peer, i32::from_be_bytes(record[8..].try_into().unwrap())))
+    })
 }
 
 /// Incompressible text of `len` letters.
@@ -227,7 +242,7 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
     set_title(&mut doc, "Edited");
     let edited = doc.version();
     set_title(&mut doc, "Compacted");
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     let latest = doc.version();
     store.close().unwrap();
     let doc = open(&path).1;
@@ -240,7 +255,15 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
 // that deletes a lot never shrank. Oracle: it closes to its live value with no history.
 #[test]
 fn a_session_too_large_to_keep_closes_with_no_history() {
-    let (_dir, path) = document();
+    for kind in ["string", "text"] {
+        let mut schema: Value = serde_json::from_str(SCHEMA).unwrap();
+        schema["properties"]["rows"]["item"]["properties"]["text"]["kind"] = json!(kind);
+        session_too_large_to_keep(&schema.to_string());
+    }
+}
+
+fn session_too_large_to_keep(schema: &str) {
+    let (_dir, path) = document_with(schema, INITIAL);
     let mut seed = 3;
     let mut opened = String::new();
     for _ in 0..2 {
@@ -303,7 +326,7 @@ fn undo_survives_compaction() {
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Before");
     set_title(&mut doc, "After");
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert!(doc.undo().unwrap().publication.is_some());
     assert_eq!(title(&doc), "Before");
     save(&store, &mut doc);
@@ -330,7 +353,7 @@ fn restoring_a_deleted_row_after_compaction_survives_reopen() {
     let with_row = doc.value();
     doc.apply_json(&json!({"intents":[{"type":"remove","path":["rows"],"id":"row"}]}).to_string(), Origin::Page)
         .unwrap();
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert!(doc.undo().unwrap().publication.is_some());
     save(&store, &mut doc);
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
@@ -355,54 +378,33 @@ fn redo_across_compaction_survives_reopen() {
     set_title(&mut doc, "Before");
     set_title(&mut doc, "After");
     assert!(doc.undo().unwrap().publication.is_some());
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert!(doc.redo().unwrap().publication.is_some());
     assert_eq!(title(&doc), "After");
     close(store, &mut doc);
     assert_eq!(title(&open(&path).1), "After");
 }
 
-// A compaction whose write fails leaves the saved state as it was; undo and the retried
-// save must still reopen to what the window showed.
-#[test]
-fn undo_after_a_failed_compaction_saves_on_retry() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_title(&mut doc, "Before");
-    save(&store, &mut doc);
-    set_title(&mut doc, "After");
-    let job = store.job(&mut doc, true).unwrap().unwrap();
-    let other = hold(&path);
-    assert!(matches!(store.write(&job), Err(Error::Busy)));
-    other.execute_batch("COMMIT").unwrap();
-    assert!(doc.undo().unwrap().publication.is_some());
-    assert_eq!(title(&doc), "Before");
-    save(&store, &mut doc);
-    store.close().unwrap();
-    assert_eq!(title(&open(&path).1), "Before");
-}
-
 // Failure: a concurrent text edit branched from a version a checkpoint had just trimmed,
-// and saved an update that depends on it; the document could never be opened again.
+// and saved an update that depends on it; the document could never be opened again. Text
+// edits now merge from strings, so an edit from before the trim merges and saves.
 #[test]
-fn a_stale_text_base_cannot_make_the_document_unopenable() {
+fn a_text_edit_from_before_a_trimming_checkpoint_saves_and_reopens() {
     let schema = r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#;
     let initial = r#"{"title":"abc"}"#;
     let (_dir, path) = document_with(schema, initial);
     let store = Store::open(&path, Mode::Document).unwrap();
     let mut doc = store.document().unwrap();
-    let base = doc.version();
     doc.apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
         .unwrap();
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
-    let result = type_text(&mut doc, &base, json!(["title"]), "abc", "abcX", 4).map(|_| ());
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
+    type_text(&mut doc, json!(["title"]), "abc", "abcX", 4).unwrap();
     save(&store, &mut doc);
     store.close().unwrap();
     let store = Store::open(&path, Mode::Document).unwrap();
     let reopened = store.document().expect("the document opens");
-    assert_eq!(result.unwrap_err().code.as_str(), "stale_base");
     let value: Value = serde_json::from_str(&reopened.value()).unwrap();
-    assert_eq!(value["title"], "Rabc");
+    assert_eq!(value["title"], "RabcX");
 }
 
 // Failure: a drawing app that saves large strokes and erases them reached the storage
@@ -449,10 +451,10 @@ fn snapshots_never_lock_or_modify_the_document() {
     assert_eq!(title(&doc), "Saved");
     assert_eq!(std::fs::read(&path).unwrap(), before, "a render writes nothing");
     set_title(&mut doc, "In memory");
-    let job = snapshot.job(&mut doc, false).unwrap().unwrap();
+    let job = snapshot.job(&mut doc).unwrap().unwrap();
     assert!(matches!(snapshot.write(&job), Err(Error::Closed)), "snapshots own nothing");
     set_accent(&mut doc, "#123456");
-    assert!(matches!(snapshot.write(&snapshot.job(&mut doc, false).unwrap().unwrap()), Err(Error::Closed)));
+    assert!(matches!(snapshot.write(&snapshot.job(&mut doc).unwrap().unwrap()), Err(Error::Closed)));
     assert_eq!(std::fs::read(&path).unwrap(), before);
     drop(hitslop_core::registry::Lease::acquire(&path).expect("a snapshot holds no lock"));
 }
@@ -475,7 +477,7 @@ fn oversized_documents_are_refused_before_any_blob_is_read() {
     let (store, _) = open(&path);
     store.close().unwrap();
     sql(&path)
-        .execute_batch(&format!("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<{}) INSERT INTO updates(bytes) SELECT x'00' FROM n;", STORAGE_ROWS + 1))
+        .execute_batch(&format!("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<{}) INSERT INTO history(bytes) SELECT x'00' FROM n;", STORAGE_ROWS + 1))
         .unwrap();
     for mode in [Mode::Document, Mode::Snapshot] {
         let error = Store::open(&path, mode).unwrap().document().err().expect("refused");
@@ -483,39 +485,84 @@ fn oversized_documents_are_refused_before_any_blob_is_read() {
     }
 }
 
+// One busy database refuses every kind of save, and each keeps its changes for the retry:
+// an append, a checkpoint, a theme-only save, a theme change saved with an edit, and an undo
+// after a refused checkpoint. A refused write never advances the saved version. The
+// scenarios run at once, each on its own document, so the test waits out the busy timeout once.
 #[test]
-fn a_busy_database_fails_the_save_and_a_retry_succeeds() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_title(&mut doc, "Retried");
-    let other = hold(&path);
-    let job = store.job(&mut doc, false).unwrap().unwrap();
-    let started = std::time::Instant::now();
-    assert!(matches!(store.write(&job), Err(Error::Busy)));
-    assert!(started.elapsed() >= std::time::Duration::from_secs(1), "waits for the busy timeout");
-    other.execute_batch("COMMIT").unwrap();
-    store.write(&store.job(&mut doc, false).unwrap().unwrap()).unwrap();
-    store.close().unwrap();
-    assert_eq!(title(&open(&path).1), "Retried");
-}
-
-// A refused write never advances the saved version: the next job saves the same edits
-// again, as an append or as a checkpoint.
-#[test]
-fn a_failed_write_never_advances_the_saved_version() {
-    for checkpoint in [false, true] {
+fn a_refused_save_keeps_every_change_for_the_retry() {
+    fn refused(store: &Store, path: &Path, job: &hitslop_core::store::SaveJob) {
+        let other = hold(path);
+        let started = std::time::Instant::now();
+        assert!(matches!(store.write(job), Err(Error::Busy)));
+        assert!(started.elapsed() >= std::time::Duration::from_secs(1), "waits for the busy timeout");
+        other.execute_batch("COMMIT").unwrap();
+    }
+    let edits = |checkpoint: bool| {
         let (_dir, path) = document();
         let (store, mut doc) = open(&path);
         set_title(&mut doc, "Retried");
-        let job = store.job(&mut doc, checkpoint).unwrap().unwrap();
-        let other = hold(&path);
-        assert!(store.write(&job).is_err());
-        other.execute_batch("COMMIT").unwrap();
-        let retry = store.job(&mut doc, false).unwrap().expect("the refused edit is saved again");
+        refused(
+            &store,
+            &path,
+            &(if checkpoint { store.checkpoint_job(&mut doc).map(Some) } else { store.job(&mut doc) })
+                .unwrap()
+                .unwrap(),
+        );
+        let retry = store.job(&mut doc).unwrap().expect("the refused edit is saved again");
         store.write(&retry).unwrap();
         store.close().unwrap();
         assert_eq!(title(&open(&path).1), "Retried", "checkpoint: {checkpoint}");
-    }
+    };
+    let theme_only = || {
+        let (_dir, path) = document();
+        let (store, mut doc) = open(&path);
+        set_accent(&mut doc, "#303030");
+        refused(&store, &path, &store.job(&mut doc).unwrap().expect("a theme-only job"));
+        assert_eq!(accent(&doc), "#303030");
+        assert_eq!(saved_accent(&path), "#335577");
+        assert_eq!(save(&store, &mut doc), Some(false));
+        assert_eq!(saved_accent(&path), "#303030");
+    };
+    let theme_with_edit = || {
+        let (_dir, path) = document();
+        let (store, mut doc) = open(&path);
+        set_accent(&mut doc, "#222222");
+        set_title(&mut doc, "Both");
+        refused(&store, &path, &store.job(&mut doc).unwrap().unwrap());
+        assert_eq!(saved_accent(&path), "#335577", "the theme change and the edit fail together");
+        save(&store, &mut doc);
+        assert_eq!(saved_accent(&path), "#222222");
+        let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
+        assert_eq!(title(&snapshot.document().unwrap()), "Both");
+    };
+    let undo_after_checkpoint = || {
+        let (_dir, path) = document();
+        let (store, mut doc) = open(&path);
+        set_title(&mut doc, "Before");
+        save(&store, &mut doc);
+        set_title(&mut doc, "After");
+        refused(&store, &path, &store.checkpoint_job(&mut doc).unwrap());
+        assert!(doc.undo().unwrap().publication.is_some());
+        assert_eq!(title(&doc), "Before");
+        save(&store, &mut doc);
+        store.close().unwrap();
+        assert_eq!(title(&open(&path).1), "Before");
+    };
+    std::thread::scope(|scope| {
+        let runs = [
+            scope.spawn(|| edits(false)),
+            scope.spawn(|| edits(true)),
+            scope.spawn(theme_only),
+            scope.spawn(theme_with_edit),
+            scope.spawn(undo_after_checkpoint),
+        ];
+        for run in runs {
+            if let Err(panic) = run.join() {
+                std::panic::resume_unwind(panic);
+            }
+        }
+    });
 }
 
 #[test]
@@ -523,7 +570,7 @@ fn a_moved_or_linked_document_refuses_writes() {
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
     set_title(&mut doc, "Unsaved");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     std::fs::rename(&path, dir.path().join("Moved.slop")).unwrap();
     std::fs::write(&path, b"").unwrap();
     assert!(matches!(store.write(&job), Err(Error::Moved)));
@@ -549,7 +596,7 @@ fn a_document_moved_away_and_back_saves_and_reloads() {
     let moved = dir.path().join("Moved.slop");
     std::fs::rename(&path, &moved).unwrap();
     std::fs::rename(&moved, &path).unwrap();
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     store.write(&job).unwrap();
     set_title(&mut doc, "Discarded");
     std::fs::rename(&path, &moved).unwrap();
@@ -572,14 +619,14 @@ fn a_full_document_refuses_appends_and_keeps_saved_state() {
     let (store, mut doc) = open(&path);
     // Pad the log past the byte limit from outside, as an old save would have.
     let room = STORAGE_BYTES as i64 - stored(&path).checkpoint_bytes;
-    sql(&path).execute("INSERT INTO updates(bytes) VALUES(zeroblob(?))", [room - 8]).unwrap();
+    sql(&path).execute("INSERT INTO history(bytes) VALUES(zeroblob(?))", [room - 8]).unwrap();
     set_title(&mut doc, "Too much");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     let result = store.write(&job);
     assert!(matches!(result, Err(Error::Full)), "{result:?}");
     assert!(stored(&path).update_bytes > 0, "saved state is intact");
     // Sizes were re-read, so the next save checkpoints, which fits.
-    let retry = store.job(&mut doc, false).unwrap().unwrap();
+    let retry = store.job(&mut doc).unwrap().unwrap();
     assert!(retry.is_checkpoint());
     store.write(&retry).unwrap();
 }
@@ -603,7 +650,7 @@ fn checkpoints_reclaim_free_pages() {
         .unwrap();
         save(&store, &mut doc);
     }
-    store.write(&store.job(&mut doc, true).unwrap().unwrap()).unwrap();
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     let logical = stored(&path).checkpoint_bytes as u64;
     let file = std::fs::metadata(&path).unwrap().len();
     assert!(file < logical + 256 * 1024, "file {file} bytes for {logical} logical bytes");
@@ -623,6 +670,34 @@ fn a_copy_has_the_same_state_version_and_theme() {
     assert_eq!(title(&copied), "Copied");
     assert_eq!(accent(&copied), "#123456");
     assert_eq!(copied.version(), doc.version());
+}
+
+// A shared document syncs with replicas whose edits can depend on any of its history and
+// still reference any attachment: compaction keeps the whole history, reclaiming keeps every
+// blob, and the room survives reopening. A clean copy is a new document, shared with no one.
+#[test]
+fn a_shared_document_keeps_its_history_and_blobs_and_a_clean_copy_is_unshared() {
+    let (dir, path) = document();
+    let (store, mut doc) = open(&path);
+    assert_eq!(store.share().unwrap(), None);
+    let share = Share { room: "room-1".into(), endpoint: "wss://relay.example".into() };
+    store.set_share(&share).unwrap();
+    let unreferenced = store.put_attachment(b"no field names this").unwrap().id;
+    set_title(&mut doc, "Edited");
+    let edited = doc.version();
+    set_title(&mut doc, "Compacted");
+    store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
+    assert_eq!(store.reclaim_attachments().unwrap(), 0, "a shared document reclaims no blob");
+    store.close().unwrap();
+    let (store, doc) = open(&path);
+    assert_eq!(store.share().unwrap(), Some(share));
+    assert!(!stale(&doc, &edited), "compaction keeps a shared document's history");
+    assert!(store.attachments().unwrap().iter().any(|a| a.id == unreferenced));
+    let copy = dir.path().join("Copy.slop");
+    store.copy_clean(&copy, &[]).unwrap();
+    let copied = Store::open(&copy, Mode::Document).unwrap();
+    assert_eq!(copied.share().unwrap(), None, "a clean copy is shared with no one");
+    assert_ne!(copied.app().document_uuid, store.app().document_uuid);
 }
 
 /// A copy is a document of its own: the current state without history (a title replaced
@@ -666,6 +741,77 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
     assert_eq!(title(&doc), replaced);
 }
 
+// A hidden child is still saved state, even when the public value no longer shows it.
+// A clean copy must discard deleted nested data, not just hide it from the page.
+#[test]
+fn a_clean_copy_excludes_deleted_nested_content() {
+    use loro::{Container, ContainerTrait, LoroDoc, LoroMap, ValueOrContainer};
+    let schema = json!({"kind":"object","properties":{
+        "rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}},
+        "entries":{"kind":"record","value":{"kind":"object","properties":{"text":{"kind":"text"}}}},
+        "note":{"kind":"optional","inner":{"kind":"text"}}
+    }});
+    let secret = "deleted-private-content-7b516e";
+    let initial = json!({"rows":[{"$id":"gone","text":secret}],"entries":{"gone":{"text":secret}},"note":secret});
+    let (dir, path) = document_with(&schema.to_string(), &initial.to_string());
+    let (store, mut doc) = open(&path);
+    let before = LoroDoc::new();
+    before.import(&doc.checkpoint().unwrap()).unwrap();
+    let child = |map: &LoroMap, key: &str| match map.get(key).unwrap() {
+        ValueOrContainer::Container(container) => container,
+        _ => panic!("expected container at {key}"),
+    };
+    let map = |container| match container {
+        Container::Map(map) => map,
+        _ => panic!("expected map"),
+    };
+    let root = before.get_map("data");
+    let rows = map(child(&map(child(&root, "rows")), "rows"));
+    let row = map(child(&rows, "gone"));
+    let entry = map(child(&map(child(&root, "entries")), "gone"));
+    let deleted = [child(&row, "text").id(), child(&entry, "text").id(), child(&root, "note").id()];
+    doc.apply_json(
+        &json!({"intents":[
+            {"type":"remove","path":["rows"],"id":"gone"},
+            {"type":"clear","path":["entries","gone"]},
+            {"type":"clear","path":["note"]}
+        ]})
+        .to_string(),
+        Origin::Page,
+    )
+    .unwrap();
+    save(&store, &mut doc);
+    let copy = dir.path().join("Copy.slop");
+    store.copy_clean(&copy, &[]).unwrap();
+    let (_copied_store, mut copied) = open(&copy);
+    assert_eq!(copied.value(), doc.value());
+    let raw = LoroDoc::new();
+    raw.import(&copied.checkpoint().unwrap()).unwrap();
+    for id in deleted {
+        let retained = raw.get_container(id).map(|c| ValueOrContainer::Container(c).get_deep_value());
+        assert!(!format!("{retained:?}").contains(secret), "the copy retained deleted content: {retained:?}");
+    }
+    copied
+        .apply_json(
+            &json!({"intents":[
+                {"type":"insert","path":["rows"],"id":"gone","value":{"text":"New row"}},
+                {"type":"set","path":["entries","gone"],"value":{"text":"New entry"}},
+                {"type":"set","path":["note"],"value":"New note"}
+            ]})
+            .to_string(),
+            Origin::Page,
+        )
+        .unwrap();
+    assert_eq!(
+        support::value(&copied),
+        json!({
+            "rows":[{"$id":"gone","text":"New row"}],"entries":{"gone":{"text":"New entry"}},"note":"New note"
+        })
+    );
+    assert!(doc.undo().unwrap().publication.is_some(), "copying preserves the source's undo");
+    assert_eq!(support::value(&doc), initial);
+}
+
 fn accent(doc: &Document) -> String {
     let theme = doc.theme_state().unwrap();
     theme.effective["accent"].clone()
@@ -696,21 +842,9 @@ fn a_theme_change_is_saved_by_the_next_job() {
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(stored(&path).rows, before.rows + 1, "theme changes share the Loro update log");
     assert_eq!(saved_accent(&path), "#111111");
-    // A theme change and an edit are saved in one transaction.
-    set_accent(&mut doc, "#222222");
-    set_title(&mut doc, "Both");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
-    let other = hold(&path);
-    assert!(store.write(&job).is_err());
-    other.execute_batch("COMMIT").unwrap();
-    assert_eq!(saved_accent(&path), "#111111");
-    save(&store, &mut doc);
-    assert_eq!(saved_accent(&path), "#222222");
-    let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
-    assert_eq!(title(&snapshot.document().unwrap()), "Both");
     assert!(palette(&mut doc, json!({"type":"setTheme","values":{"unknown":"#000000"}})).is_err());
     store.close().unwrap();
-    assert_eq!(accent(&open(&path).1), "#222222");
+    assert_eq!(accent(&open(&path).1), "#111111");
 }
 
 // Failure: a theme change checked ownership under the mutex a save holds for its whole
@@ -723,7 +857,7 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     let (store, mut doc) = open(&path);
     let store = Arc::new(store);
     set_title(&mut doc, "Slow");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     // The save waits on another connection's lock, inside its transaction.
     let other = hold(&path);
     let writer = {
@@ -739,21 +873,6 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     writer.join().unwrap().unwrap();
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#808080");
-}
-
-#[test]
-fn a_failed_theme_save_keeps_the_change_for_a_retry() {
-    let (_dir, path) = document();
-    let (store, mut doc) = open(&path);
-    set_accent(&mut doc, "#303030");
-    let other = hold(&path);
-    let job = store.job(&mut doc, false).unwrap().expect("a theme-only job");
-    assert!(matches!(store.write(&job), Err(Error::Busy)));
-    other.execute_batch("COMMIT").unwrap();
-    assert_eq!(accent(&doc), "#303030");
-    assert_eq!(saved_accent(&path), "#335577");
-    assert_eq!(save(&store, &mut doc), Some(false));
-    assert_eq!(saved_accent(&path), "#303030");
 }
 
 // Failure: a theme command that changed nothing still wrote the document row, so it
@@ -827,7 +946,7 @@ fn readers_beside_an_open_document_never_fail_its_saves() {
     let mut failures = vec![];
     for i in 0..300 {
         set_title(&mut doc, &format!("Title {i}"));
-        let job = store.job(&mut doc, false).unwrap().unwrap();
+        let job = store.job(&mut doc).unwrap().unwrap();
         if let Err(e) = store.write(&job) {
             failures.push(format!("save {i}: {e}"));
         }
@@ -840,7 +959,7 @@ fn readers_beside_an_open_document_never_fail_its_saves() {
 // Crash outcomes at each kind of save, with real processes: what a save commits survives
 // the death of the process that wrote it, and its lock dies with it. The rollback of a
 // write interrupted mid-commit is SQLite's journal (`a_crash_mid_commit_is_recovered_by_the_next_writer`
-// in `file.rs`); the timed helper kills in `tests/native/crash.native.test.ts` are stress coverage.
+// in `file.rs`); the timed engine kills in `tests/native/crash.native.test.ts` are stress coverage.
 const SAVES: [&str; 3] = ["append", "checkpoint", "theme"];
 
 /// Runs only as the child of `a_committed_save_survives_its_process_being_killed`: makes
@@ -856,11 +975,14 @@ fn save_then_die() {
     let job = match save.as_str() {
         "theme" => {
             assert!(set_accent(&mut doc, "#123456"));
-            store.job(&mut doc, false).unwrap().unwrap()
+            store.job(&mut doc).unwrap().unwrap()
         }
         kind => {
             set_title(&mut doc, &format!("Saved by {kind}"));
-            let job = store.job(&mut doc, kind == "checkpoint").unwrap().unwrap();
+            let job =
+                (if kind == "checkpoint" { store.checkpoint_job(&mut doc).map(Some) } else { store.job(&mut doc) })
+                    .unwrap()
+                    .unwrap();
             assert_eq!(job.is_checkpoint(), kind == "checkpoint");
             job
         }
@@ -876,7 +998,7 @@ fn a_committed_save_survives_its_process_being_killed() {
         let (store, _) = open(&path);
         store.close().unwrap();
         let status = support::child(
-            "save_then_die",
+            "store::save_then_die",
             &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_SAVE", save)],
         )
         .status()
@@ -905,7 +1027,7 @@ fn save_while_held() {
     isolate_registry();
     let (store, mut doc) = open(Path::new(&path));
     set_title(&mut doc, "Never saved");
-    let job = store.job(&mut doc, false).unwrap().unwrap();
+    let job = store.job(&mut doc).unwrap().unwrap();
     std::fs::write(&marker, b"").unwrap();
     // Waits for the held database until the parent kills this process.
     let _ = store.write(&job);
@@ -920,7 +1042,7 @@ fn a_save_killed_before_its_commit_leaves_the_saved_state() {
     held.execute_batch("BEGIN IMMEDIATE").unwrap();
     let marker = dir.path().join("saving");
     let mut child = support::child(
-        "save_while_held",
+        "store::save_while_held",
         &[("HITSLOP_CHILD_DOCUMENT", path.to_str().unwrap()), ("HITSLOP_CHILD_MARKER", marker.to_str().unwrap())],
     )
     .spawn()
@@ -954,7 +1076,8 @@ fn a_save_retried_after_a_lost_reply_counts_once() {
         let (store, mut doc) = open(&path);
         doc.apply_json(r#"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#, Origin::Page).unwrap();
         expected += 3;
-        let job = store.job(&mut doc, checkpoint).unwrap().unwrap();
+        let job =
+            (if checkpoint { store.checkpoint_job(&mut doc).map(Some) } else { store.job(&mut doc) }).unwrap().unwrap();
         assert_eq!(job.is_checkpoint(), checkpoint);
         store.write(&job).unwrap();
         store.write(&job).unwrap();

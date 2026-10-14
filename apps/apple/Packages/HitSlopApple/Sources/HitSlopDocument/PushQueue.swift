@@ -1,5 +1,6 @@
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import Synchronization
 
 /// Delivery retains its batch until acknowledgement. Overflow and view replacement
@@ -19,7 +20,7 @@ final class PushQueue: Sendable {
 
     mutating func markResync() {
       generation &+= 1
-      items = [#"{"type":"resync"}"#]
+      items = [resyncPush()]
       bytes = items[0].utf8.count
     }
   }

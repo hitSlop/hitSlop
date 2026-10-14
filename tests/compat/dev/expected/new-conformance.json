@@ -1,17 +1,68 @@
 {
-  "cells": {},
-  "checkins": {},
-  "colors": [],
+  "booleans": [
+    true
+  ],
+  "ceiling": 100,
+  "cells": {
+    "seed": {
+      "hits": 5,
+      "input": "Seed record",
+      "width": 12
+    }
+  },
+  "checkins": {
+    "seed": 1
+  },
+  "colors": [
+    "#335577"
+  ],
   "count": 0,
   "done": false,
+  "enabled": true,
   "epoch": 42,
-  "hits": 0,
-  "label": "",
+  "extremes": [
+    -9007199254740991,
+    9007199254740991
+  ],
+  "files": [],
+  "hits": 3,
+  "label": "Seed label",
   "lane": "todo",
+  "lanes": [
+    "todo"
+  ],
   "lastHit": 0,
+  "lower": 0,
+  "measurements": {
+    "seed": 0.5
+  },
+  "memo": "Seed memo",
+  "note": "Seed optional",
+  "numbers": [
+    0.25
+  ],
+  "place": {
+    "name": "Seed place",
+    "visits": 1
+  },
   "ratio": 0.5,
-  "rows": [],
+  "rows": [
+    {
+      "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+      "done": false,
+      "hits": 2,
+      "notes": {
+        "seed": "Seed note"
+      },
+      "tags": [
+        "seed",
+        "tag"
+      ],
+      "text": "Seed row 中文 😀"
+    }
+  ],
   "settings": {
+    "hits": 4,
     "muted": false,
     "volume": 5
   },
@@ -31,6 +82,15 @@
       "title": "Nested composition"
     }
   ],
-  "title": "Svelte ABI 2",
-  "version": "Authored version"
+  "stage": "todo",
+  "stages": {
+    "seed": "todo"
+  },
+  "switches": {
+    "seed": true
+  },
+  "title": "Svelte ABI conformance",
+  "upper": 0,
+  "version": "Authored version",
+  "weight": 0.25
 }

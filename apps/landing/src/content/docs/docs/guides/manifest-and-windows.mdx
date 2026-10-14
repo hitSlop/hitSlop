@@ -4,14 +4,19 @@ description: Define a slop's identity, discovery metadata, initial window, and n
 ---
 
 Read `slop.ts` first. It declares a slop's app: its identity, author, catalog
-metadata, initial native window, theme colors and a new document's values. The build stores catalog fields and a typed definition, with initial values in its
+metadata, initial native window, theme colors and optional artwork. The build stores catalog fields and a typed definition, with initial values in its
 checkpoint. The embedded app and its defaults are
 immutable in a built template or document, so make changes in the source project and
 rebuild. Writable state and imported attachments belong to the document.
 
+The optional `capabilities` field declares `camera`, `microphone`, or `speech` access.
+It does not grant system permission. See [capabilities and permissions](/docs/guides/capabilities/)
+for declarations, capture, transcription and platform limits.
+
 ## Start with a complete `slop.ts`
 
-The `document` field takes a `defineDocument` value; `initial` must fit it:
+`schema.ts` default-exports `defineDocument(fields, { initial })`. Initial values may be
+omitted when every field defaults or is optional; a counter starts at zero:
 
 ```ts title="schema.ts"
 import { defineDocument, s } from "hitslop";
@@ -21,60 +26,58 @@ export default defineDocument({ count: s.counter() });
 
 ```ts title="slop.ts"
 import { defineSlop } from "hitslop";
-import schema from "./schema";
-import App from "./App.svelte";
-import * as commands from "./commands";
 
 export default defineSlop({
   slug: "tiny-counter",
-  view: App,
-  commands,
   title: "Tiny Counter",
   description: "A small counter that stays on your desktop.",
   author: { name: "Your Name", url: "https://example.com" },
   categories: ["utilities"],
   window: { kind: "standard", width: 420, height: 520, resizable: true, fullscreenable: true },
   theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
-  document: schema,
-  initial: { count: 0 },
 });
 ```
 
-Define the registered action in `commands.ts`:
+Define an optional agent action in `commands.ts`:
 
 ```ts title="commands.ts"
-import doc from "./schema";
+import { defineCommands } from "hitslop/commands";
+import schema from "./schema";
 
-export const countOne = doc.command({
-  description: "Count one more.",
-  args: {},
-  run({ tx }) { tx.fields.count.increment(); },
+export default defineCommands(schema, {
+  countOne: {
+    description: "Count one more.",
+    args: {},
+    run({ tx }) {
+      tx.fields.count.increment();
+    },
+  },
 });
 ```
 
-An `App.svelte` button imports `countOne` and calls `countOne()`. The CLI discovers
-the registered name through `slop describe` and runs it through `slop call`. Both
-execute the same action. Declare actions at module scope; use `s.*` descriptors for
-arguments. See the [complete counter tutorial](/docs/getting-started/) and
+An `App.svelte` button writes with `doc.fields.count.increment()`; to share one edit between the page and a command, see [share an edit with agents](/docs/guides/data-and-schemas/#share-an-edit-with-agents). The CLI discovers
+`countOne` through `slop describe` and runs it through `slop call`. Commands accept flat
+scalar or optional scalar arguments. See the [complete counter tutorial](/docs/getting-started/) and
 [command walkthrough](/docs/guides/edit-installed-data/).
 
 Vite compiles the declaration and its imports. A restricted native evaluator initializes
-it, then Rust checks the resulting definition and resource inventory. Metadata and
-initial values do not ship in `ui.js`. The explicit `slug` is independent of the source
-folder's name. Import CSS in this entry or in a component; it is never discovered by name.
+it, then Rust checks the resulting definition and resource inventory. Metadata and command bodies do not ship in `ui.js`; the schema module includes its
+creation defaults. The explicit `slug` is independent of the source
+folder's name. Import CSS from components. Root roles are fixed: required `slop.ts`, `schema.ts`, `App.svelte`, `Preview.svelte` and
+`Icon.svelte`, plus optional `Export.svelte`, `Widget.svelte` and `commands.ts`.
 
 ## Identity and discovery fields
 
-| Field | Rule |
-| --- | --- |
-| `slug` | Explicit identity: 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`. |
+| Field         | Rule                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `slug`        | Explicit identity: 2–64 lowercase letters or numbers in kebab case, such as `tiny-counter`.                  |
 | `author.name` | Required, 1–80 characters with at least one non-space character. This attribution travels with the template. |
-| `author.url` | Optional HTTP or HTTPS URL, up to 2,048 characters. |
-| `title` | Required, 1–80 characters. |
-| `description` | Required, 1–240 characters. Explain the slop's specific job. |
-| `categories` | One or two unique catalog categories. |
+| `author.url`  | Optional HTTP or HTTPS URL, up to 2,048 characters.                                                          |
+| `title`       | Required, 1–80 characters.                                                                                   |
+| `description` | Required, 1–240 characters. Explain the slop's specific job.                                                 |
+| `categories`  | One or two unique catalog categories.                                                                        |
 
-Categories are `productivity`, `utilities`, `finance`, `media`, `games`,
+Categories are `popular`, `productivity`, `utilities`, `finance`, `media`, `games`,
 `developer-tools`, `education`, `business`, `personal`, `health`, `creative`, `music`,
 and `other`.
 
@@ -87,13 +90,13 @@ for capture work.
 
 Standard windows support these options:
 
-| Option | Values | Behavior |
-| --- | --- | --- |
-| `resizable` | `true` or `false` | Whether the user can resize the window. The host defaults to `true`. |
-| `fullscreenable` | Boolean, default false | Enables the native fullscreen control; also supported by PNG-skinned windows. |
-| `shape` | CSS radius string or SVG path object | Defines the native silhouette; defaults to `"22px"`. |
-| `lockAspect` | Boolean, default false | Preserves the initial width/height ratio when resizing. |
-| `background` | `transparent` or `glass` | `transparent` shows the desktop behind a custom HTML surface; `glass` frosts it. |
+| Option           | Values                               | Behavior                                                                         |
+| ---------------- | ------------------------------------ | -------------------------------------------------------------------------------- |
+| `resizable`      | `true` or `false`                    | Whether the user can resize the window. The host defaults to `true`.             |
+| `fullscreenable` | Boolean, default false               | Enables the native fullscreen control; also supported by PNG-skinned windows.    |
+| `shape`          | CSS radius string or SVG path object | Defines the native silhouette; defaults to `"22px"`.                             |
+| `lockAspect`     | Boolean, default false               | Preserves the initial width/height ratio when resizing.                          |
+| `background`     | `transparent` or `glass`             | `transparent` shows the desktop behind a custom HTML surface; `glass` frosts it. |
 
 ## Enable fullscreen
 
@@ -116,8 +119,7 @@ For a small tool you want to keep visible on the desktop, use the toolbar's
 ## Choose a window shape
 
 `shape` is either a CSS radius string or a vector path. The host builds one native
-silhouette from it and uses that silhouette for clipping, click-through, and the
-mask on window-sized fallback PNG captures.
+silhouette from it and uses that silhouette for clipping and click-through.
 
 **Radius strings** accept one to four nonnegative `px` or `%` values, unitless `0`,
 and an optional `/` followed by vertical radii. Corners run top-left, top-right,
@@ -180,13 +182,13 @@ in `Export.svelte` when the export should look finished.
 
 The native host exposes the presentation to your CSS:
 
-| Host value | Meaning |
-| --- | --- |
-| `data-slop-presentation` | `standard`, `transparent`, `glass`, or `skin` |
-| `--slop-window-radius` | The radius shape; `0` for paths, absent for PNG skins |
-| `data-slop-resizable` | Present when the person can resize the window |
-| `--slop-window-width`, `--slop-window-height` | Initial dimensions, not live viewport measurements |
-| `data-slop-controls` | `visible` or `hidden`, following the native hover toolbar |
+| Host value                                    | Meaning                                                   |
+| --------------------------------------------- | --------------------------------------------------------- |
+| `data-slop-presentation`                      | `standard`, `transparent`, `glass`, or `skin`             |
+| `--slop-window-radius`                        | The radius shape; `0` for paths, absent for PNG skins     |
+| `data-slop-resizable`                         | Present when the person can resize the window             |
+| `--slop-window-width`, `--slop-window-height` | Initial dimensions, not live viewport measurements        |
+| `data-slop-controls`                          | `visible` or `hidden`, following the native hover toolbar |
 
 `slop dev` previews the window at its declared `window` size with the same shape or skin, but
 without these host values; lay out from the actual viewport rather than assuming them.
@@ -220,10 +222,19 @@ don't reveal these actions. Hide them with `visibility: hidden` and
 `pointer-events: none`, not opacity alone, so they also leave keyboard navigation.
 
 ```css
-.my-slop-actions { visibility: hidden; pointer-events: none; }
-html[data-slop-controls="visible"] .my-slop-actions { visibility: visible; pointer-events: auto; }
+.my-slop-actions {
+  visibility: hidden;
+  pointer-events: none;
+}
+html[data-slop-controls="visible"] .my-slop-actions {
+  visibility: visible;
+  pointer-events: auto;
+}
 /* Browser preview has no attribute; fall back to :hover there only. */
-html:not([data-slop-controls]) .my-slop-shell:hover .my-slop-actions { visibility: visible; pointer-events: auto; }
+html:not([data-slop-controls]) .my-slop-shell:hover .my-slop-actions {
+  visibility: visible;
+  pointer-events: auto;
+}
 ```
 
 Mark these controls `data-slop-export="hide"` too, or leave them out of your export

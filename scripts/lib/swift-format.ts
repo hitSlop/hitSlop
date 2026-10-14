@@ -1,6 +1,6 @@
 /** The Swift sources `swift format` owns, styled by `apps/apple/.swift-format`: every Swift
  * file under apps/apple except generated bindings and contracts.
- * Run explicitly with `bun run swift:format`. */
+ * Run explicitly with `bun run swift:format`; verification uses `--check`. */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { exec } from "../../packages/hitslop/src/cli/process";
@@ -17,14 +17,15 @@ async function swiftSources(): Promise<string[]> {
     .filter((file) => file && !file.includes("/Generated/") && existsSync(join(repository, file)));
 }
 
-/** Formats the Swift sources in place. */
-async function swiftFormat() {
+/** Checks or formats the same Swift sources, excluding generated bindings. */
+async function swiftFormat(check: boolean) {
   const files = await swiftSources();
-  const { code, stdout, stderr } = await exec(["swift", "format", "--in-place", "--parallel", ...files], {
+  if (!files.length) return;
+  const { code, stdout, stderr } = await exec(["swift", "format", ...(check ? ["lint", "--strict"] : ["--in-place"]), "--parallel", ...files], {
     cwd: repository,
   });
   const output = (stdout + stderr).trim();
   if (code) throw new Error(`swift format failed\n${output}`);
 }
 
-if (import.meta.main) await swiftFormat();
+if (import.meta.main) await swiftFormat(process.argv.includes("--check"));

@@ -19,7 +19,7 @@ const definition = defineDocument({
   memo: s.optional(s.string()),
   photo: s.optional(s.object({ id: s.string(), name: s.string() })),
   rows: s.list(s.object({ text: s.text(), amount: s.number(), note: s.optional(s.string()) })),
-});
+}, { initial: { currency: "CAD", label: "ab", ratio: 0.5, rating: 3 } });
 const initial = { currency: "CAD", label: "ab", ratio: 0.5, rating: 3, rows: [{ $id: "r1", text: "Coffee", amount: 475 }] };
 
 async function open() {
@@ -44,7 +44,7 @@ test("scalar, optional and optional-object handles write through the core", asyn
     await doc.fields.ratio.set(0.25);
     await doc.fields.rating.set(5);
     await doc.fields.memo.set("hi");
-    await doc.fields.photo.set({ id: "a", name: "first" });
+    await doc.fields.photo.$set({ id: "a", name: "first" });
     await doc.fields.photo.name.set("renamed");
     const { id } = await doc.fields.rows.insert({ text: "Train", amount: 12.5 });
     await doc.fields.rows.item(id).note.set("work");
@@ -57,7 +57,7 @@ test("scalar, optional and optional-object handles write through the core", asyn
     });
     expect(JSON.parse(JSON.stringify(doc.current))).toEqual(saved());
     expect("memo" in doc.current).toBe(false);
-    await doc.fields.photo.clear();
+    await doc.fields.photo.$clear();
     expect(doc.current.photo).toBeUndefined();
   } finally {
     core.free();

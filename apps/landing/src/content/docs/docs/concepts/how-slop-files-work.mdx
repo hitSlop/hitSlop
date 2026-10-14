@@ -7,7 +7,7 @@ A `.slop` is one file: a small database that holds the app needed to open it and
 
 ## Source is not the runtime file
 
-`slop.ts` explicitly declares identity, window, theme, document shape, initial values, imported view/capture components and commands. It imports styles and images through Vite; filenames do not assign roles. Before mounting, the host applies theme defaults and document overrides as `--slop-*` CSS variables.
+`slop.ts` declares identity, window, theme and optional artwork. `schema.ts` owns the document shape and initial values. The CLI discovers `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and agent-only `commands.ts` by these exact names. Components import styles and media through Vite. Before mounting, the host applies theme defaults and document overrides as `--slop-*` CSS variables.
 
 `slop build` compiles the app, evaluates the declaration in a restricted Rust runner, and packs the result into a template file:
 
@@ -17,10 +17,10 @@ My.slop
              and the format and runtime the app needs
   assets     ui.js, optional ui.css / commands.js, content-addressed media
   artwork    preview and, when declared, icon images
-  checkpoint initial values as a seed Loro snapshot
+  history    initial values, as one Loro snapshot
 ```
 
-The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, theme, attachment, capture, and window services. The page shell is served to the WebView; it is never copied into the file.
+The authored bundle does not contain its own document engine. The installed app supplies the page shell, boot sequence, the native document engine and lifecycle. It calls the compiled app’s `mount(ctx, target)` with document, binding, attachment, speech, and window services. The page shell is served to the WebView; it is never copied into the file.
 
 ## A document adds its saved state
 
@@ -28,19 +28,20 @@ Creating a document copies a template into a new file. As it is edited, the same
 
 ```text
   document     the document's identity
-  checkpoint   saved data and theme overrides
-  updates      edits saved since the checkpoint
+  history      saved data and theme overrides: a snapshot, then the edits saved since
   attachments  imported files, by content
 ```
 
-The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque checkpoints and updates; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
+A `share` table stays empty until collaboration ships.
+
+The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque Loro history; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
 
 One writer at a time owns a document: an OS lock the Rust owner keeps outside the file. CLI commands route to the live owner's socket or take the lock and edit the document directly. Headless editing never starts a WebView. Named commands evaluate their stored program in a restricted child before the owner applies the returned intents.
 
-Theme overrides live in Loro's root `theme` map, outside the authored data tree. They merge per color and share the document's sequence, undo and saving. The page receives the effective palette through its initial state and ordered publications. Replacing document data with JSON preserves the theme. See [theme files and commands](/docs/guides/styling/#let-owners-override-tokens). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides in a new file.
+Theme overrides live in Loro's root `theme` map, outside the authored data tree. They merge per color and share the document's sequence, undo and saving. The page receives the effective palette through its initial state and ordered publications. Replacing document data with JSON preserves the theme. See [theme files and commands](/docs/guides/styling/#let-people-change-the-colors). **Duplicate** and **Share a Copy** preserve the saved content, attachments and overrides in a new file.
 
 ## Templates and copies
 
-Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the app or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Export renders a fresh read-only page from saved state. For an open document, the owner first saves and copies it; no second writer renders the original file.
+Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the app or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Captures render saved state independently: all icon/preview/widget/PNG views and selectable vector PDFs use the restricted Rust renderer. For an open document, the owner first saves and copies it; no second writer renders the original file. See [capture views and widget refresh](/docs/guides/icons-and-exports/).
 
 Close before moving or renaming a document. Keep it on a local filesystem outside iCloud and other synced folders. Every file is checked when it opens: a damaged or oversized one is refused, never repaired. Migrations, schema evolution, and multiple writers on one document are not supported.

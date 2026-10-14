@@ -1,6 +1,7 @@
 import AppKit
 import HitSlopCore
 import HitSlopDocument
+import HitSlopWidgets
 import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
@@ -128,42 +129,37 @@ public struct SlopDocumentRouting {
 @MainActor
 public final class SlopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate {
   public let url: URL
+  public let widgetFileIdentity: String?
   public let session: DocumentSession
   let routing: SlopDocumentRouting
   public let telemetry: SlopTelemetry
-  var reportedSaveFailure = false
-  var reportedRendererFailure = false
-  /// Issue kinds already reported (operations, authored); each is reported once.
-  var reportedIssueKinds = Set<Bool>()
+  let failures = WindowFailureReporter()
   /// The hover toolbar above the window.
   private(set) lazy var toolbar = SlopHoverToolbar(
     window: window, session: session, identity: SlopDocumentIdentity(url: url),
     controls: { [weak self] in self?.toolbarControls ?? .init() },
-    isLoading: { [weak self] in self?.isLoading ?? false },
+    isLoading: { [weak self] in self?.presentation.loading ?? false },
     act: { [weak self] action in self?.toolbarAction(action) })
   var failedOverlay: NSHostingView<FailureOverlay>?
   var presentedPageError: String?
   var documentAttention: NSPanel?
-  var attentionFailure: SaveFailure?
-  var attentionWaitingForSheet = false
+  var saveAttention = SaveAttention()
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
   var issueBadge: NSPanel?
   /// The theme panel beside the window, while shown.
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
-  var fullscreenRestore: SlopFullscreenRestore?
-  var fullscreenTransition = false
+  lazy var sharePopover = SlopSharePopover(
+    filename: url.lastPathComponent, canExport: canExport,
+    holdToolbar: { [weak self] in self?.toolbar.holdForSharing($0) },
+    select: { [weak self] in self?.request($0) })
+  let fullscreen = FullscreenController()
   var commandsEnabled = true
-  var openingProgress: SlopOpeningProgress?
   /// Undo for this window's document; see `DocumentUndoManager`.
   lazy var documentUndo = DocumentUndoManager(session: session)
-  var isLoading = false
-  var presentationRequested = false
-  public internal(set) var isContentReady = false
-  var loadingTask: Task<Void, Never>?
-  weak var loadingWebView: NSView?
-  let startupStarted: ContinuousClock.Instant
+  var presentation: WindowPresentation
+  public var isContentReady: Bool { presentation.ready }
 
   /// Opens the document at `url`. With `progress`, the window is shown once ready, and the
   /// progress panel (its caller's, shown if opening is slow) can cancel the open.
@@ -194,7 +190,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
         throw CancellationError()
       }
       if let progress {
-        controller.openingProgress = progress
+        controller.presentation.progress = progress
         controller.showWindow(nil)
       }
       return controller
@@ -210,8 +206,9 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   ) {
     self.routing = routing
     self.telemetry = telemetry
-    startupStarted = started
+    presentation = WindowPresentation(started: started)
     self.url = url.standardizedFileURL
+    widgetFileIdentity = try? WidgetCache.identity(self.url)
     self.session = session
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.
@@ -282,16 +279,16 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   required init?(coder: NSCoder) { nil }
 
   deinit {
-    loadingTask?.cancel()
-    Task { @MainActor [progress = openingProgress] in progress?.finish() }
+    presentation.task?.cancel()
+    Task { @MainActor [progress = presentation.progress] in progress?.finish() }
   }
 
   public override func showWindow(_ sender: Any?) {
     guard !isHiddenForClose else { return }
-    presentationRequested = true
+    presentation.requested = true
     if isContentReady || presentedPageError != nil {
-      openingProgress?.finish()
-      openingProgress = nil
+      presentation.progress?.finish()
+      presentation.progress = nil
       revealReadyWindow()
     } else {
       showOpeningProgress()
@@ -302,7 +299,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     throws -> CGSize
   {
     guard let window else { throw SlopFailure("document window is unavailable") }
-    if fullscreenRestore != nil {
+    if fullscreen.saved != nil {
       let view = session.webView
       return CGSize(width: view.bounds.width / view.pageZoom, height: view.bounds.height / view.pageZoom)
     }
@@ -346,12 +343,14 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   public func owns(_ candidate: NSWindow?) -> Bool {
     guard let candidate else { return false }
     return candidate === window || candidate === toolbar.panel || candidate === themePanel
-      || candidate === openingProgress?.panel
+      || candidate === sharePopover.window
+      || candidate === presentation.progress?.panel
   }
   /// Whether the coordinator accepts commands now; the toolbar follows it.
   public func setCommandsEnabled(_ enabled: Bool) {
     guard commandsEnabled != enabled else { return }
     commandsEnabled = enabled
+    sharePopover.commandsEnabled = enabled
     toolbar.update()
   }
   public func revealFromDock() { showWindow(nil) }
@@ -362,7 +361,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   func closeDocument() async throws {
     try await prepareToClose()
     do { try await finishClose() } catch {
-      if isLoading { startLoading() }
+      if presentation.loading { startLoading() }
       throw error
     }
   }
@@ -408,11 +407,18 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   /// The page's preview and icon, when this session changed the document or it has no
   /// preview yet. Rendering uses an independent snapshot, never the window.
   private func closingArtwork() async -> SlopRenderedArtwork? {
-    guard isContentReady, session.isReady, !session.rendererDead else { return nil }
+    guard isContentReady, session.isReady else { return nil }
     let edited = session.edited
     let preview = edited ? nil : await session.artwork(.preview)
-    guard edited || preview == nil else { return nil }
-    return await SlopRenderer.artwork(session: session, telemetry: telemetry, trace: closeTrace)
+    let needsArtwork = edited || preview == nil
+    let needsWidget =
+      session.file.views.widget != nil
+      && SlopWidgetPublisher.shared.needsCapture(url: url, edited: edited)
+    guard needsArtwork || needsWidget else { return nil }
+    let artwork = await SlopRenderer.artwork(
+      session: session, telemetry: telemetry, trace: closeTrace,
+      widgetURL: needsWidget ? url : nil, renderArtwork: needsArtwork)
+    return needsArtwork ? artwork : nil
   }
 
   public func windowDidMove(_ notification: Notification) { toolbar.relayout() }
@@ -435,6 +441,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     super.close()
   }
   public func prepareToClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
+    sharePopover.dismiss()
     switch closeState {
     case .prepared, .closing, .closed: return
     case .preparing: throw SlopFailure("Document is already preparing to close")
@@ -445,16 +452,16 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     let interval = trace?.begin("Save barrier")
     defer { trace?.end("Save barrier", interval) }
     telemetry.send(.breadcrumb(operation, .started))
-    loadingTask?.cancel()
-    openingProgress?.finish()
-    if session.rendererDead || !session.isReady {
+    presentation.task?.cancel()
+    presentation.progress?.finish()
+    if !session.isReady {
       closeState = .prepared(.unavailable)
       return
     }
     window?.makeFirstResponder(nil)
     do {
       try await session.prepareClose()
-      closeState = .prepared(.saved)
+      closeState = .prepared(session.isReady ? .saved : .unavailable)
     } catch {
       reportLifecycleFailure(operation, error: error)
       await cancelPreparedClose()
@@ -467,7 +474,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     closeTrace?.finish()
     closeTrace = nil
     await session.cancelClose()
-    if isLoading { startLoading() }
+    if presentation.loading { startLoading() }
   }
   public func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? { documentUndo }
   /// Closing is a command: the coordinator runs it after any command in progress, and
@@ -487,8 +494,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
   public func windowWillMiniaturize(_ notification: Notification) { toolbar.hide() }
   public func windowWillClose(_ notification: Notification) {
-    attentionWaitingForSheet = false
-    isContentReady = false
+    saveAttention.windowClosed()
+    presentation.ready = false
     stopLoading()
     documentAttention?.close()
     documentAttention = nil

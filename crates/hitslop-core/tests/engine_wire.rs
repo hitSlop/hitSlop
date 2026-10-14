@@ -15,11 +15,9 @@ fn engine_request_shapes_are_closed_and_optionals_are_not_nullable() {
         json!({"method":"get"}),
         json!({"method":"future"}),
         json!({"method":"batch","documentPath":"x","batch":{"intents":[],"ifVersion":null}}),
-        json!({"method":"batch","documentPath":"x","batch":{"intents":[],"base":null}}),
         json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"command":"rename"}),
         json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":null}),
-        json!({"method":"screenshot","documentPath":"x","output":"y","target":"other","ifPresent":false}),
-        json!({"method":"screenshot","documentPath":"x","output":"y","target":"icon","ifPresent":1}),
+        json!({"method":"artwork.export","file":"x","output":"y","target":"other"}),
     ] {
         assert!(!accepts(value.clone()), "{value}");
     }
@@ -33,7 +31,7 @@ fn paths_and_command_names_keep_their_bounds() {
             json!({"method":"get","documentPath":path}),
             json!({"method":"create","from":path,"output":"x"}),
             json!({"method":"pack","stage":"x","file":path}),
-            json!({"method":"screenshot","documentPath":"x","output":path,"target":"icon","ifPresent":false}),
+            json!({"method":"artwork.export","file":"x","output":path,"target":"icon"}),
         ] {
             assert!(!accepts(value.clone()), "{value}");
         }
@@ -44,6 +42,30 @@ fn paths_and_command_names_keep_their_bounds() {
     for name in ["", "Add", "a-b", "a_b", "aé", &"a".repeat(81)] {
         assert!(!accepts(json!({"method":"call","documentPath":"x","command":name,"args":{}})));
         assert!(!accepts(json!({"method":"batch","documentPath":"x","command":name,"batch":{"intents":[]}})));
+    }
+}
+
+/// Only `pack` takes `renderViews`: a boolean, false when absent.
+#[test]
+fn only_pack_renders_views() {
+    for (flag, expected) in [(None, false), (Some(json!(false)), false), (Some(json!(true)), true)] {
+        let mut request = json!({"method":"pack","stage":"x","file":"y","app":{}});
+        if let Some(flag) = flag {
+            request["renderViews"] = flag;
+        }
+        let Ok(EngineRequest::Pack { render_views, .. }) = EngineRequest::parse(&request.to_string()) else {
+            panic!("{request}")
+        };
+        assert_eq!(render_views, expected, "{request}");
+    }
+    for value in [
+        json!({"method":"pack","stage":"x","file":"y","app":{},"renderArtwork":true}),
+        json!({"method":"pack","stage":"x","file":"y","app":{},"renderViews":null}),
+        json!({"method":"pack","stage":"x","file":"y","app":{},"renderViews":"true"}),
+        json!({"method":"validateApp","stage":"x","app":{},"renderViews":true}),
+        json!({"method":"inspect","file":"x","renderViews":true}),
+    ] {
+        assert!(!accepts(value.clone()), "{value}");
     }
 }
 
@@ -114,7 +136,10 @@ fn successes_require_their_results_and_literal_discriminants() {
         json!({"ok":true,"method":"create"}),
         json!({"ok":true,"method":"templates","catalog":{}}),
         json!({"ok":true,"method":"describe","state":{}}),
-        json!({"ok":true,"method":"screenshot"}),
+        json!({"ok":true,"method":"artwork.export"}),
+        json!({"ok":true,"method":"pack"}),
+        json!({"ok":true,"method":"pack","artwork":{"preview":"rendered"}}),
+        json!({"ok":true,"method":"pack","artwork":{"preview":"rendered","icon":"none"}}),
         json!({"ok":false,"method":"batch","ids":[]}),
         json!({"ok":true,"method":"batch","ids":[],"extra":1}),
         json!({"ok":true,"method":"call","ids":[]}),
@@ -124,7 +149,9 @@ fn successes_require_their_results_and_literal_discriminants() {
         assert!(serde_json::from_value::<EngineReply>(value.clone()).is_err(), "{value}");
     }
     for value in [
-        json!({"ok":true,"method":"screenshot","output":null}),
+        json!({"ok":true,"method":"artwork.export","output":null}),
+        json!({"ok":true,"method":"pack","artwork":{"preview":"rendered","icon":"absent"}}),
+        json!({"ok":true,"method":"pack","artwork":{"preview":"supplied","icon":"supplied"}}),
         json!({"ok":true,"method":"call","result":null,"ids":[]}),
         json!({"ok":false,"code":"unknown_outcome","error":"Lost reply"}),
     ] {

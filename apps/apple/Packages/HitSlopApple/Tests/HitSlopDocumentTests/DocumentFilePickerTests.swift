@@ -16,7 +16,10 @@ import WebKit
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
+      defer: false)
+    // Borderless: AppKit pulls a titled window back on screen when it is ordered front.
+    window.moveOffScreen()
     window.contentView = engine.webView
     defer {
       window.contentView = nil
@@ -37,7 +40,7 @@ import WebKit
   }
 
   // The HTML upload boundary is platform behavior, independent of a slop's importer.
-  @Test(.timeLimit(.minutes(1))) @MainActor func fileInputDeliversBytesAndRejectsSelectionDuringCapture() async throws {
+  @Test(.timeLimit(.minutes(1))) @MainActor func fileInputDeliversBytesDuringSavedSourceCapture() async throws {
     _ = NSApplication.shared
     let root = try Fixtures.document()
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
@@ -50,7 +53,10 @@ import WebKit
     engine.load()
     try await engine.waitUntilReady()
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
+      defer: false)
+    // Borderless: AppKit pulls a titled window back on screen when it is ordered front.
+    window.moveOffScreen()
     window.contentView = engine.webView
     window.orderFront(nil)
     defer {
@@ -78,8 +84,8 @@ import WebKit
         """, arguments: [:], in: nil, contentWorld: .page) as? String
     }
     #expect(try await select() == "Selected 🦊 bytes")
-    #expect(try await engine.withCapture { try await select() } == nil, "no selection while a capture reads the page")
-    #expect(presentations == 1)
+    #expect(try await engine.withCapture { try await select() } == "Selected 🦊 bytes")
+    #expect(presentations == 2)
     try await engine.close()
   }
 
@@ -87,8 +93,8 @@ import WebKit
     _ = NSApplication.shared
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
-    window.orderFront(nil)
-    defer { window.orderOut(nil) }
+    window.moveOffScreen()
+    // Only the picker's parent: the presenter is the test's, so nothing goes on screen.
     var completions = 0
     var rejected = 0
     var dismissals = 0

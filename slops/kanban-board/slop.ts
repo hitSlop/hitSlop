@@ -1,0 +1,31 @@
+import { defineSlop } from "hitslop";
+
+export default defineSlop({
+  slug: "kanban-board",
+  title: "Kanban Board",
+  description: "An anodized job-shop schedule board with work orders, lane limits, and a completed rail.",
+  author: { name: "hitSlop", url: "https://hitslop.com" },
+  categories: ["productivity", "business"],
+  window: { kind: "standard", width: 880, height: 620 },
+  theme: {
+    graphite: "#202227",
+    graphiteDeep: "#16181b",
+    chassisHi: "#26292e",
+    brushed: "#34373d",
+    brushedHigh: "#43474e",
+    amber: "#f2a63b",
+    amberDeep: "#a76415",
+    paper: "#ece5d6",
+    paperShade: "#d8cfbc",
+    ink: "#24211b",
+    inkSoft: "#6a6355",
+    steel: "#9aa0a8",
+    railInk: "#dfe3e8",
+    meterInk: "#c9ced5",
+    doneHead: "#414a3d",
+    doneHeadDeep: "#2a2f27",
+    donePaper: "#dcdcd6",
+    donePaperDeep: "#cbccc4",
+    doneInk: "#4d5049",
+  },
+});

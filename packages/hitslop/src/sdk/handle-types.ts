@@ -1,4 +1,3 @@
-import type { Anchor } from "../schema/core";
 import type {
   CounterNode,
   Input,
@@ -17,6 +16,10 @@ import type {
  * `change()`, transaction handles collect the same writes synchronously. */
 type Mode = "live" | "tx";
 type Write<M extends Mode, R = void> = M extends "tx" ? R : Promise<R>;
+
+/** A row snapshot or its stable document identity. */
+export type RowRef = string | { readonly $id: string };
+export type Destination = { before: RowRef } | { after: RowRef };
 
 export type InsertResult = { readonly id: string };
 /** Resolve a snapshot object (the root, a row, a nested object) to its handle. */
@@ -63,11 +66,11 @@ type ValueHandle<N extends Node, M extends Mode> =
     : N extends ListNode<infer I>
       ? I extends ObjectNode
         ? {
-            item(id: string): Handle<I, M>;
+            item(row: RowRef): Handle<I, M>;
             /** Mints the row's `$id`; inside `change()` it is available immediately. */
-            insert(value: Input<I>, destination?: Anchor): Write<M, InsertResult>;
-            remove(id: string): Write<M>;
-            move(id: string, destination?: Anchor): Write<M>;
+            insert(value: Input<I>, destination?: Destination): Write<M, InsertResult>;
+            remove(row: RowRef): Write<M>;
+            move(row: RowRef, destination?: Destination): Write<M>;
           }
         : ScalarListHandle<Value<I>, M>
       : N extends RecordNode<infer V>
@@ -97,12 +100,15 @@ type ValueHandle<N extends Node, M extends Mode> =
 export type Handle<N extends Node, M extends Mode = "live"> =
   N extends OptionalNode<infer S>
     ? S extends ObjectNode
-      ? ValueHandle<S, M> & {
+      ? // This handle also carries the object's fields, so its own members start with `$`,
+        // which no field name can: a field may be named `set` or `clear`.
+        ValueHandle<S, M> & {
           /** Creates an absent object with defaults. An existing object requires all
            * required fields (the type cannot tell which; the owner refuses an incomplete
            * one); complete values reconcile children and remove omitted optionals. */
-          set(value: Input<S>): Write<M>;
-          clear(): Write<M>;
+          $set(value: Input<S>): Write<M>;
+          /** Removes the object (clearing an absent one does nothing). */
+          $clear(): Write<M>;
         }
       : S extends Text
         ? // An unset text reads as "": `set` or typing into a bound field creates it.

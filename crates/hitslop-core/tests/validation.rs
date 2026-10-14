@@ -1,4 +1,4 @@
-mod support;
+use crate::support;
 use hitslop_core::{AppSpec, Document};
 use serde_json::{Value, json};
 use support::ApplyJson;
@@ -96,18 +96,79 @@ fn string_bounds_are_safe_nonnegative_integers_in_order() {
     hitslop_core::validate(empty, r#"{"text":""}"#).unwrap();
 }
 
+/// `fields` as the properties of a root object, of an optional object and of a row.
+fn field_positions(fields: &Value) -> [Value; 3] {
+    [
+        json!({"kind":"object","properties":fields}),
+        json!({"kind":"object","properties":{
+            "value":{"kind":"optional","inner":{"kind":"object","properties":fields}}
+        }}),
+        json!({"kind":"object","properties":{
+            "rows":{"kind":"list","item":{"kind":"object","properties":fields}}
+        }}),
+    ]
+}
+
+// A handle's own members start with `$`, which no field name can, so a field may be named
+// after any member that does not (`set`, `clear`, `path`, `node`). Only the names a plain
+// object already owns are reserved, because a field of that name would shadow them.
 #[test]
 fn descriptor_rules_protect_public_sdk_handles() {
-    for key in ["path", "node", "with-hyphen", "0first"] {
-        let schema = json!({"kind":"object","properties":{key:{"kind":"string"}}});
-        assert_eq!(AppSpec::data(&schema.to_string()).err().unwrap().code.as_str(), "invalid_schema", "{key}");
+    for key in [
+        "with-hyphen",
+        "0first",
+        "_leading",
+        "__proto__",
+        "$set",
+        "constructor",
+        "prototype",
+        "toString",
+        "toLocaleString",
+        "valueOf",
+        "hasOwnProperty",
+        "isPrototypeOf",
+        "propertyIsEnumerable",
+    ] {
+        for schema in field_positions(&json!({key:{"kind":"string"}})) {
+            let refused = AppSpec::data(&schema.to_string()).err().map(|error| error.code.as_str().to_string());
+            assert_eq!(refused.as_deref(), Some("invalid_schema"), "{key} in {schema}");
+        }
     }
-    for key in ["set", "clear"] {
-        let schema = json!({"kind":"object","properties":{
-            "value":{"kind":"optional","inner":{"kind":"object","properties":{key:{"kind":"string"}}}}
-        }});
-        assert_eq!(AppSpec::data(&schema.to_string()).err().unwrap().code.as_str(), "invalid_schema", "{key}");
+    let members = json!({
+        "set":{"kind":"string"},"clear":{"kind":"string"},"path":{"kind":"string"},"node":{"kind":"string"}
+    });
+    for schema in field_positions(&members) {
+        if let Err(error) = AppSpec::data(&schema.to_string()) {
+            panic!("{schema} was refused: {}", error.message);
+        }
     }
+}
+
+// An optional object named like a handle member is an ordinary object to the core: it is
+// set whole, edited by field and cleared like any other.
+#[test]
+fn fields_named_like_handle_members_are_ordinary_fields() {
+    use hitslop_core::Origin;
+    let members = json!({
+        "set":{"kind":"string"},"clear":{"kind":"string"},"path":{"kind":"string"},"node":{"kind":"string"}
+    });
+    let schema = json!({"kind":"object","properties":{"photo":{"kind":"optional","inner":{"kind":"object","properties":members}}}});
+    let app = AppSpec::data(&schema.to_string()).unwrap();
+    let mut document = Document::create(&app, "{}").unwrap();
+    let value = |document: &Document| -> Value {
+        serde_json::from_str::<Value>(&document.state().unwrap()).unwrap()["value"].clone()
+    };
+    let intents = |intents: Value| json!({"intents":intents}).to_string();
+    document
+        .apply_json(
+            &intents(json!([{"type":"set","path":["photo"],"value":{"set":"a","clear":"b","path":"c","node":"d"}}])),
+            Origin::Page,
+        )
+        .unwrap();
+    document.apply_json(&intents(json!([{"type":"set","path":["photo","set"],"value":"e"}])), Origin::Page).unwrap();
+    assert_eq!(value(&document), json!({"photo":{"set":"e","clear":"b","path":"c","node":"d"}}));
+    document.apply_json(&intents(json!([{"type":"clear","path":["photo"]}])), Origin::Page).unwrap();
+    assert_eq!(value(&document), json!({}));
 }
 
 #[test]
@@ -147,10 +208,6 @@ fn descriptor_limits_accept_their_boundaries() {
     let wide = |n: usize| json!({"kind":"object","properties":(0..n).map(|i| (format!("f{i}"), json!({"kind":"boolean"}))).collect::<serde_json::Map<_, _>>()});
     assert!(accepts(&wide(1024)), "1024 fields");
     assert!(!accepts(&wide(1025)), "1025 fields");
-    for key in ["constructor", "prototype"] {
-        let schema = json!({"kind":"object","properties":{key:{"kind":"string"}}});
-        assert!(!accepts(&schema), "{key}");
-    }
 }
 
 // Every document records the layout it was written in. A build refuses bytes with no

@@ -1,7 +1,7 @@
 //! Palette edits use the document's history, sequence, publications and saved bytes.
+use crate::support;
 use hitslop_core::{AppSpec, Applied, Document, Origin};
 use serde_json::{Value, json};
-mod support;
 use support::ApplyJson;
 use support::{View, snapshot};
 

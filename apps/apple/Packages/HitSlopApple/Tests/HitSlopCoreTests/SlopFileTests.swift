@@ -48,6 +48,8 @@ import Testing
   for (url, kind) in [(template, FileKind.template), (document, .document)] {
     let file = try SlopFile(url: url)
     #expect(file.kind == kind)
+    #expect(file.packageFormat == PackageFormat.level)
+    #expect(file.runtimeABI == RuntimeABI.level)
     #expect(file.metadata.categories == [.productivity, .other])
     guard case .shape(let silhouette) = file.outline else {
       Issue.record("Expected a shape")

@@ -2,8 +2,33 @@
 title: Availability
 ---
 
-Available: macOS 15.2+ on Apple silicon, bundled and local templates, recents, native document editing, and PNG/PDF export. Creating, previewing and building slops also works on Linux with Bun.
+Available: macOS 15.2+ on Apple silicon, bundled and local templates, Recents, native
+document editing, imported file attachments, and PNG/PDF export. Creating, previewing
+and building slops, rendering template artwork, editing documents, and exporting closed
+documents as PNG/PDF also work on Linux with Bun.
 
-Coming soon: [live collaboration](/docs/guides/live-sharing/). The website preview uses simulated participants.
+macOS desktop widgets display saved document images in small, medium and large sizes
+when the embedded app includes a widget view. Images refresh while hitSlop runs;
+quitting leaves the last image visible. See [widget setup and refresh behavior](/docs/guides/icons-and-exports/#design-a-macos-widget).
 
-Future work: hosted catalog, hosted template publishing, media import, iCloud and other synced folders, iOS, Windows, a document history view, and schema evolution. Documents from earlier builds are not supported and are not migrated.
+Apps may declare camera and microphone capture. Native on-device speech recognition
+transcribes saved recordings when the Mac supports the language and speech permission
+is granted. It is not available in `slop dev` or browser copies; see
+[capabilities and permissions](/docs/guides/capabilities/) for the support matrix.
+
+The local Chrome browser beta opens independent document copies with local browser
+storage and downloads a complete `.slop` file through Save As. It is not a hosted web
+app or a live connection to the Mac document. Safari, mobile browsers, and hosted
+delivery remain unqualified.
+
+Planned: [live collaboration](/docs/guides/live-sharing/). The website preview uses
+simulated participants; the production sharing service and clients are not available.
+
+Future work includes hosted catalog and template publishing, iCloud and other synced
+folders, other native platforms, a document history view, and app/schema upgrades.
+Windows support is not planned. Per-slop permission decisions tied to an app's code
+and additional device capabilities are proposals, not current features.
+
+Pre-launch development documents are unsupported and are not migrated. From the first
+public release, newer hitSlop builds must keep released documents openable. Installing
+a newer host never automatically replaces the app embedded in an existing document.

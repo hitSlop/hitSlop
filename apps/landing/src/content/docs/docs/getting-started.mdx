@@ -7,7 +7,7 @@ A slop is a focused app and its document in one portable `.slop` package. Start 
 
 ## Install the tools
 
-Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking and building an app, and creating or editing its documents, need only the CLI. To register templates, open windows, render Finder artwork and export PNG/PDF, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
+Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking, building and registering an app, and creating or editing its documents, need only the CLI, which also renders template artwork and exports closed documents as PNG/PDF on both platforms. To open windows and pick your registered templates in the catalog, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
 
 The public CLI workflow is:
 
@@ -31,7 +31,8 @@ and timings vary). `bun run dev` starts a long-running preview and prints:
 Disposable preview: http://localhost:5173/
 ```
 
-The port may differ if that one is busy. Stop the preview before continuing with builds.
+If port 5173 is busy, choose another with `bun run dev --port 5174`.
+Stop the preview before continuing with builds.
 
 Alternatively, install the CLI with `bun install -g hitslop` and run `slop init tiny-counter`. The generated project pins its own `hitslop` version; prefer its `bun run` scripts after creation.
 
@@ -43,17 +44,19 @@ The final question asks which agent CLI should build it for you. Choose an insta
 
 ## Understand the source
 
-Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and a new document's values. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
+Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and optional artwork. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
-- `schema.ts` defines document fields; `slop.ts`'s `initial` provides creation-only values.
-- `commands.ts` exports named actions shared by the page and CLI; the starter includes `addTask`.
+- `schema.ts` default-exports the document fields and creation-only initial values.
+- `commands.ts` optionally default-exports agent commands; the starter includes `addTask`.
 - `App.svelte` renders and edits the document through typed handles.
+- Required `Preview.svelte` renders a compact saved-state overview for Quick Look and the catalog.
+- Required `Icon.svelte` renders the Finder icon. Optional `Export.svelte` renders complete PNG/PDF output.
 - `slop.ts`'s `theme` declares the colors people can change.
-- `styles.css` owns layout and component styling; import it explicitly from `slop.ts`.
+- `styles.css` owns layout and component styling; import it explicitly from `App.svelte`.
 
-Import the editor as `view` and optional capture components as `export` and `icon`. Filenames do not assign roles.
+The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state desktop images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-macos-widget).
 
-The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts` or the modules it imports outside components (such as `schema.ts`) resets the copy. Test native persistence in a writable document copy.
+The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to metadata, schema, commands, their dependencies or the role inventory resets the copy. Test native persistence in a writable document copy.
 
 ## Turn the starter into a counter
 
@@ -61,32 +64,25 @@ Replace the starter's data definition:
 
 ```ts title="schema.ts"
 import { defineDocument, s } from "hitslop";
-export default defineDocument({ title: s.text(), count: s.counter() });
+export default defineDocument(
+  { title: s.text(), count: s.counter() },
+  { initial: { title: "Tiny Counter" } },
+);
 ```
 
-Then describe the counter in `slop.ts`. Its `initial` values must fit the new schema, and its `theme` declares the colors `styles.css` uses below:
+Then describe the counter in `slop.ts`. Its `theme` declares the colors `styles.css` uses below:
 
 ```ts title="slop.ts"
 import { defineSlop } from "hitslop";
-import schema from "./schema";
-import App from "./App.svelte";
-import Icon from "./Icon.svelte";
-import * as commands from "./commands";
-import "./styles.css";
 
 export default defineSlop({
   slug: "tiny-counter",
-  view: App,
-  icon: Icon,
-  commands,
   title: "Tiny Counter",
   description: "Count the small things worth counting.",
   author: { name: "Your Name" },
   categories: ["utilities"],
   window: { kind: "standard", width: 360, height: 360, fullscreenable: true },
   theme: { surface: "#fff7e6", ink: "#382d24", accent: "#28634b" },
-  document: schema,
-  initial: { title: "Tiny Counter", count: 0 },
 });
 ```
 
@@ -97,58 +93,123 @@ See [fullscreen behavior](/docs/guides/manifest-and-windows/#enable-fullscreen).
 Replace the starter's `commands.ts` with a counter action:
 
 ```ts title="commands.ts"
-import doc from "./schema";
+import { defineCommands } from "hitslop/commands";
+import schema from "./schema";
 
-export const countOne = doc.command({
-  description: "Count one more.",
-  args: {},
-  run({ tx }) { tx.fields.count.increment(); },
+export default defineCommands(schema, {
+  countOne: {
+    description: "Count one more.",
+    args: {},
+    run({ tx }) {
+      tx.fields.count.increment();
+    },
+  },
 });
 ```
 
-The `commands` import above registers this export under its name, `countOne`.
-The page and CLI can now invoke the same action. Declare commands at module scope;
-their `args` use `s.*` descriptors, or `{}` when no arguments are needed.
+The CLI discovers `countOne` from this set. Commands are for agents; their arguments
+are flat scalars or optional scalars, or `{}` when none are needed. The page below
+edits with its document handle. To give the button and an agent one shared edit, see [share an edit with agents](/docs/guides/data-and-schemas/#share-an-edit-with-agents).
 
-Replace `App.svelte` with:
+Replace `App.svelte` with an editor that acquires its document during component initialization ([document access](/docs/guides/data-and-schemas/#read-snapshots-write-through-handles)):
 
 ```svelte title="App.svelte"
 <script lang="ts">
-  import { EditableText } from "hitslop/svelte";
-  import doc from "./schema";
-  import { countOne } from "./commands";
+  import { EditableText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+  import "./styles.css";
+  const doc = getDocument(schema);
 </script>
 <main class="counter">
   <EditableText class="counter-title" field={doc.fields.title} label="Counter title" placeholder="Name it" />
   <p class="counter-value">{doc.current.count}</p>
-  <button data-slop-export="hide" onclick={() => countOne()}>
+  <button data-slop-export="hide" onclick={() => doc.fields.count.increment()}>
     Count one
   </button>
 </main>
 ```
 
-PNG and PDF exports render this view from the saved document in a fresh page; `data-slop-export="hide"` leaves the button out of them. Add a thin `export` component with natural height when content grows longer than the window or should become a different artifact. It reads the same saved state and mounts without the editor.
+Replace `Preview.svelte` with a compact saved-state view for Quick Look and the catalog.
+It receives the saved snapshot as props and renders independently of the editor ([capture props](/docs/guides/icons-and-exports/#declare-capture-views)):
+
+```svelte title="Preview.svelte"
+<script lang="ts">
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
+</script>
+<main class="counter">
+  <h1 class="counter-title">{snapshot.title}</h1>
+  <p class="counter-value">{snapshot.count}</p>
+</main>
+```
+
+This counter's complete export fits the same layout, so replace `Export.svelte` with a shared view:
+
+```svelte title="Export.svelte"
+<script lang="ts">
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  import Preview from "./Preview.svelte";
+  let props: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
+</script>
+<Preview {...props} />
+```
+
+For growing documents, keep Preview compact and let Export include all rows. Removing
+`Export.svelte` removes PNG/PDF export actions; Preview and Icon remain required.
+
+See [icons and exports](/docs/guides/icons-and-exports/) for capture authoring.
 
 `Icon.svelte` draws the Finder icon:
 
 ```svelte title="Icon.svelte"
 <script lang="ts">
-  import doc from "./schema";
+  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type schema from "./schema";
+  let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
-<strong class="counter-icon">{doc.current.count}</strong>
+<strong class="counter-icon">{snapshot.count}</strong>
 ```
 
 Give it ordinary CSS, using the starter's declared tokens:
 
 ```css title="styles.css"
-* { box-sizing: border-box; }
-body { background: var(--slop-surface); color: var(--slop-ink); font-family: system-ui; }
-.counter { padding: 2rem; text-align: center; }
-.counter-title { font-size: 1.4rem; font-weight: 600; }
-.counter-value { font-size: 4rem; font-variant-numeric: tabular-nums; }
-.counter button { padding: .8rem 1.2rem; background: var(--slop-accent); color: white; border: 0; border-radius: .5rem; }
-.counter button:focus-visible { outline: 3px solid var(--slop-ink); outline-offset: 3px; }
-.counter-icon { font-size: 180px; color: var(--slop-accent); }
+* {
+  box-sizing: border-box;
+}
+body {
+  background: var(--slop-surface);
+  color: var(--slop-ink);
+  font-family: system-ui;
+}
+.counter {
+  padding: 2rem;
+  text-align: center;
+}
+.counter-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+.counter-value {
+  font-size: 4rem;
+  font-variant-numeric: tabular-nums;
+}
+.counter button {
+  padding: 0.8rem 1.2rem;
+  background: var(--slop-accent);
+  color: white;
+  border: 0;
+  border-radius: 0.5rem;
+}
+.counter button:focus-visible {
+  outline: 3px solid var(--slop-ink);
+  outline-offset: 3px;
+}
+.counter-icon {
+  font-size: 180px;
+  color: var(--slop-accent);
+}
 ```
 
 ## Build, register, and test persistence
@@ -167,12 +228,11 @@ svelte-check found 0 errors and 0 warnings
 /Users/you/.hitslop/templates/tiny-counter.slop
 ```
 
-Build without artwork also reports that no artwork was captured. Register captures it.
+Build also renders your [Finder artwork](/docs/guides/build-and-share/#finder-artwork) on macOS and Linux; a failed render fails the build.
 
-Build emits `dist/tiny-counter.slop`. Register renders its Finder artwork with the Mac app and installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
+Build emits `dist/tiny-counter.slop`. Register builds it the same way and installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
 
 Edit that copy, close immediately after typing, reopen, duplicate it, and export PNG/PDF. Check keyboard focus and a narrower window. Read [styling](/docs/guides/styling/), [data and schemas](/docs/guides/data-and-schemas/), and [icons and exports](/docs/guides/icons-and-exports/) before expanding the app.
-
 
 ## Discover and run your action
 
@@ -186,8 +246,10 @@ Response excerpt:
 
 ```text
 Commands (slop call PATH NAME --args JSON)
+  Arguments accept only the listed fields.
+
   countOne — Count one more.
-    args: {"additionalProperties":false,"properties":{},"type":"object"}
+    No arguments. Pass --args '{}'.
 ```
 
 `describe` also includes the fields, operations, version and current values.
@@ -197,7 +259,7 @@ bunx hitslop call "My Counter.slop" countOne
 ```
 
 ```json
-{"result":null,"ids":[]}
+{ "result": null, "ids": [] }
 ```
 
 This action returns no value and inserts no rows, but it increments the saved counter.
@@ -208,7 +270,7 @@ bunx hitslop get "My Counter.slop"
 ```
 
 ```json
-{"count":1,"title":"Tiny Counter"}
+{ "count": 1, "title": "Tiny Counter" }
 ```
 
 You can also edit the counter directly:
@@ -218,7 +280,7 @@ bunx hitslop apply "My Counter.slop" --op '{"type":"increment","path":["count"],
 ```
 
 ```json
-{"ids":[]}
+{ "ids": [] }
 ```
 
 The window now shows **2**. A named action lets an agent reuse your app’s behavior;

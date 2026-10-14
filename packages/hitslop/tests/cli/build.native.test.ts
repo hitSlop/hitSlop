@@ -1,12 +1,11 @@
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdtemp, cp, readFile, writeFile, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdtemp, mkdir, cp, readFile, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { PNG } from "pngjs";
 import { buildTemplate } from "../../src/cli/template";
 import { execute, request } from "../../src/cli/engine";
-
-/** The helper `bun run verify native` names, which renders native artwork. */
-const renderer = process.env.HITSLOP_NATIVE_CLI!;
+import { png as solidPng } from "./png-fixture";
 import { overrideSlop } from "./source-fixture";
 
 /** A built file's preview or icon, read outside the engine. */
@@ -21,35 +20,24 @@ function artwork(file: string, name: "preview" | "icon"): Buffer {
   }
 }
 
-// The shell applies theme defaults before mount, so the first view is never unstyled.
-// Existing controller tests do not mount apps.
-test("generated Svelte app mounts with theme defaults before native capture", async () => {
+// Inspect actual captured pixels: App onMount hooks never run in native capture.
+test("generated preview renders theme defaults through the native capture engine", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await cp("tests/apps/document", source, { recursive: true });
     await overrideSlop(source, { theme: '{ accent: "#123456" }' });
-    await writeFile(join(source, "App.svelte"), `
-      <script>
-        import { onMount } from "svelte";
-        import doc from "./schema";
-        let root;
-        onMount(() => {
-          if (getComputedStyle(root).backgroundColor !== "rgb(18, 52, 86)")
-            throw new Error("Theme defaults were not applied before mount");
-        });
-      </script>
-      <main bind:this={root} style="background:var(--slop-accent)">{doc.current.title}</main>
-    `);
-    const output = await buildTemplate(source, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, join(root, "svelte.slop"));
+    await writeFile(join(source, "Preview.svelte"), '<div style="width:100%;height:240px;background:var(--slop-accent)"></div>');
+    const output = await buildTemplate(source, join(root, "svelte.slop"));
     const png = artwork(output, "preview");
-    expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+    const pixel = [...PNG.sync.read(png).data.subarray(0, 4)];
+    expect(pixel).toEqual([18, 52, 86, 255]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 }, 90000);
 
-test("dedicated capture components share the document and mode without mounting the editor", async () => {
+test("dedicated capture views receive the snapshot and mode as props without mounting the editor", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   const source = join(root, "source");
   try {
@@ -58,42 +46,68 @@ test("dedicated capture components share the document and mode without mounting 
       join(source, "Child.svelte"),
       `
       <script lang="ts">
-        import doc from "./schema";
-        const previous = (globalThis as any).captureFields;
-        if (previous && doc.fields !== previous) throw new Error("Child received another document");
-        (globalThis as any).captureFields = doc.fields;
+        let { snapshot }: { snapshot: { title: string } } = $props();
+        const previous = (globalThis as any).captureSnapshot;
+        if (previous && snapshot !== previous) throw new Error("Child received another document");
+        (globalThis as any).captureSnapshot = snapshot;
       </script>
-      <h1>{doc.current.title}</h1>
+      <h1>{snapshot.title}</h1>
     `,
     );
     await writeFile(
       join(source, "App.svelte"),
       `
-      <script lang="ts">
-        throw new Error("The editor mounted during a dedicated capture");
+      <script module lang="ts">
+        throw new Error("The editor module evaluated during a native capture");
       </script>
     `,
     );
-    await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte";</script><Child /><Child />');
-    await writeFile(join(source, "Export.svelte"), `<script>
+    await writeFile(join(source, "Icon.svelte"), '<script>import Child from "./Child.svelte"; let {snapshot} = $props();</script><Child {snapshot} /><Child {snapshot} />');
+    await writeFile(join(source, "Preview.svelte"), `<script>
       import Child from "./Child.svelte";
-      let {mode} = $props();
+      let {snapshot, mode} = $props();
       if (mode !== "preview") throw new Error("Expected preview mode, got " + mode);
-    </script><Child />`);
-    await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
-    const output = await buildTemplate(source, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, join(root, "probe.slop"));
+    </script><Child {snapshot} />`);
+    await rm(join(source, "Export.svelte"));
+    const output = await buildTemplate(source, join(root, "probe.slop"));
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(output, name);
       expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
     }
     await writeFile(join(source, "Export.svelte"), `<script>
       import Child from "./Child.svelte";
-      let {mode} = $props();
+      let {snapshot, mode} = $props();
       if (mode !== "export") throw new Error("Expected export mode, got " + mode);
-    </script><Child />`);
-    const exported = await buildTemplate(source, undefined, join(root, "export.slop"));
-    expect(await request({ method: "export", documentPath: exported, format: "png", output: join(root, "export.png") })).toMatchObject({ ok: true });
+    </script><Child {snapshot} />`);
+    const template = await buildTemplate(source, join(root, "export.slop"));
+    // Closed export renders a document's saved state; a template is refused.
+    const document = join(root, "Working.slop");
+    await execute({ method: "create", from: template, output: document });
+    expect(await request({ method: "export", documentPath: document, format: "png", output: join(root, "export.png") })).toMatchObject({ ok: true });
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 90000);
+
+// Supplied artwork wins per role; the engine renders only the role the project lacks, in the
+// same pack, and a build that renders reports nothing missing.
+test("a build keeps the artwork a project supplies and renders the role it lacks", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const source = join(root, "source");
+    await cp("tests/apps/document", source, { recursive: true });
+    await mkdir(join(source, "artwork"));
+    await writeFile(join(source, "artwork/preview.png"), solidPng(640, 480));
+    await overrideSlop(source, { artwork: "{ preview }" }, 'import preview from "./artwork/preview.png";');
+    const output = await buildTemplate(source, join(root, "mixed.slop"));
+    const dimensions = (image: Buffer) => [image.readUInt32BE(16), image.readUInt32BE(20)];
+    // The supplied preview is stored as given; the icon is the app's own 512px canvas.
+    expect(dimensions(artwork(output, "preview"))).toEqual([640, 480]);
+    expect(dimensions(artwork(output, "icon"))).toEqual([512, 512]);
+    expect(warn).not.toHaveBeenCalled();
+  } finally {
+    warn.mockRestore();
     await rm(root, { recursive: true, force: true });
   }
 }, 90000);
@@ -104,7 +118,7 @@ test("native artwork is complete before a rebuild replaces a registered template
     // Registering builds into the template folder, replacing an earlier build.
     const templates = join(root, "templates");
     const master = join(templates, "document-fixture.slop");
-    await buildTemplate("tests/apps/document", { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, master);
+    await buildTemplate("tests/apps/document", master);
     for (const name of ["preview", "icon"] as const) {
       const png = artwork(master, name);
       expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
@@ -113,33 +127,29 @@ test("native artwork is complete before a rebuild replaces a registered template
         expect(png.readUInt32BE(20)).toBe(512);
       }
     }
-    await buildTemplate("tests/apps/document", { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, master);
+    await buildTemplate("tests/apps/document", master);
     const before = await readFile(master);
-    await expect(
-      buildTemplate("tests/apps/document", { binary: "/usr/bin/false" }, master),
-    ).rejects.toThrow();
-    expect(await readFile(master)).toEqual(before);
     const badSource = join(root, "bad-capture-source");
     await cp("tests/apps/document", badSource, { recursive: true });
     await writeFile(
       join(badSource, "App.svelte"),
       `
       <script lang="ts">
-        import doc from "./schema";
+        import { getDocument } from "hitslop/svelte";
+        import schema from "./schema";
+        const doc = getDocument(schema);
       </script>
       <h1>{doc.current.title}</h1>
     `,
     );
     await writeFile(join(badSource, "Icon.svelte"), '<script>function broken(){throw new Error("Authored icon failed");}</script><span>{broken()}</span>');
-    await expect(buildTemplate(badSource, { env: { ...process.env, HITSLOP_NATIVE_CLI: renderer } }, master)).rejects.toThrow(
-      "Authored icon failed",
-    );
+    await expect(buildTemplate(badSource, master)).rejects.toThrow("Authored icon failed");
     expect(await readFile(master)).toEqual(before);
     // A build never replaces a document.
     const document = join(root, "Document.slop");
     await execute({ method: "create", from: master, output: document });
     const saved = await readFile(document);
-    await expect(buildTemplate("tests/apps/document", undefined, document)).rejects.toThrow("Refusing to replace a document");
+    await expect(buildTemplate("tests/apps/document", document)).rejects.toThrow("Refusing to replace a document");
     expect(await readFile(document)).toEqual(saved);
   } finally {
     await rm(root, { recursive: true, force: true });

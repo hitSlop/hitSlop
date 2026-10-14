@@ -13,17 +13,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     EngineRequest::export_all(&config)?;
     EngineReply::export_all(&config)?;
     BuildInput::export_all(&config)?;
+    hitslop_runner::Job::export_all(&config)?;
+    hitslop_core::widgets::WidgetRenderRequest::export_all(&config)?;
+    hitslop_core::capture::ViewRenderRequest::export_all(&config)?;
     Batch::export_all(&config)?;
     OwnerState::export_all(&config)?;
     Publication::export_all(&config)?;
     ThemeFile::export_all(&config)?;
-    hitslop_core::socket_wire::SocketRequest::export_all(&config)?;
-    hitslop_core::socket_wire::Discovery::export_all(&config)?;
     hitslop_core::page_wire::PageRequest::export_all(&config)?;
     hitslop_core::page_wire::PageSuccess::export_all(&config)?;
-    hitslop_core::page_wire::PagePush::export_all(&config)?;
+    hitslop_core::page_wire::PagePush::<Publication>::export_all(&config)?;
     hitslop_core::page_wire::HostRequest::export_all(&config)?;
-    hitslop_core::page_wire::HostCaptureResult::export_all(&config)?;
     let mut constants = String::from("// Generated from hitslop-core's contracts. Do not edit.\n");
     for (name, value) in hitslop_core::bindings::constants() {
         constants.push_str(&format!("export const {name} = {} as const;\n", serde_json::to_string(&value)?));

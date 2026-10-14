@@ -58,7 +58,7 @@ pub fn asset_type(extension: &str) -> &'static AssetType {
 /// Fixed entry names or a content-addressed resource with a canonical extension.
 pub fn asset_key(key: &str) -> Option<&'static AssetType> {
     match key {
-        "ui.js" | "commands.js" => Some(asset_type("js")),
+        "ui.js" | "commands.js" | "widget.js" | "icon.js" | "export.js" | "preview.js" => Some(asset_type("js")),
         "ui.css" => Some(asset_type("css")),
         _ => {
             let (hash, extension) = key.strip_prefix("media/")?.split_once('.')?;
@@ -229,7 +229,7 @@ fn webm(bytes: &[u8]) -> bool {
     };
     let start = 4 + size;
     // Real headers are small; refuse oversized/unknown-length headers for sniffing.
-    if length > 4096 || length as usize > bytes.len().saturating_sub(start) {
+    if length > crate::wire::WEBM_HEADER_BYTES || length as usize > bytes.len().saturating_sub(start) {
         return false;
     }
     let mut header = &bytes[start..start + length as usize];

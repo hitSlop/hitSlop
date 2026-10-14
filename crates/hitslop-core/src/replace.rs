@@ -3,7 +3,9 @@
 //! container keep their identity, so open text fields, row handles and concurrent edits
 //! survive. An unchanged value writes nothing.
 use super::*;
-use execute::{Change, insert_row, put, rewrite_list};
+use execute::{put, rewrite_list};
+use layout::RowList;
+use std::collections::HashSet;
 
 /// Validates `value` completely before the first mutation.
 pub(super) fn replace(
@@ -12,17 +14,16 @@ pub(super) fn replace(
     path: &[Segment],
     value: &Value,
     ids: &mut Vec<String>,
-    rows: &mut Rows,
 ) -> Result<()> {
     if path.len() > crate::wire::PATH_SEGMENTS {
         return Err(err(Code::InvalidPath, "Path length"));
     }
-    let mut to = Reconcile { doc, ids, rows };
+    let mut to = Reconcile { ids };
     if path.is_empty() {
         schema.validate(value, false)?;
         return to.object(&doc.get_map("data"), schema, value);
     }
-    let at = resolve(doc, schema, path, to.rows)?;
+    let at = resolve(doc, schema, path)?;
     let kind = unwrap_optional(at.node);
     if let Some((list, index)) = &at.element {
         kind.validate(value, false)?;
@@ -55,15 +56,8 @@ pub(super) fn replace(
 
 /// The present object `map` becomes the fully validated `value`, written as its
 /// differences so surviving text, lists and rows retain their identities.
-pub(super) fn object(
-    doc: &LoroDoc,
-    map: &LoroMap,
-    node: &Node,
-    value: &Value,
-    ids: &mut Vec<String>,
-    rows: &mut Rows,
-) -> Result<()> {
-    Reconcile { doc, ids, rows }.object(map, node, value)
+pub(super) fn object(map: &LoroMap, node: &Node, value: &Value, ids: &mut Vec<String>) -> Result<()> {
+    Reconcile { ids }.object(map, node, value)
 }
 
 /// A stored scalar as the snapshot shows it, or none when it is not one.
@@ -74,38 +68,27 @@ fn stored(kind: &Node, value: &ValueOrContainer) -> Option<Value> {
     }
 }
 
-struct Reconcile<'a, 'b> {
-    doc: &'a LoroDoc,
+struct Reconcile<'a> {
     ids: &'a mut Vec<String>,
-    rows: &'a mut Rows<'b>,
 }
-impl Reconcile<'_, '_> {
+impl Reconcile<'_> {
     /// `map[key]` becomes `value`; an absent field or entry is created.
     fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
         let kind = unwrap_optional(node);
         let Some(current) = map.get(key) else {
-            return put(map, key, kind, value, self.rows);
+            return put(map, key, kind, value);
         };
         match (kind, current) {
-            (scalar, current) if is_scalar(scalar) || matches!(scalar, Node::Counter {}) => {
+            (scalar, current) if is_scalar(scalar) => {
                 if stored(scalar, &current) != Some(project(Some(scalar), value.clone())) {
-                    map.insert(
-                        key,
-                        if is_scalar(scalar) {
-                            loro_scalar(scalar, value)
-                        } else {
-                            value.as_i64().expect("validated counter").into()
-                        },
-                    )
-                    .map_err(engine)?;
+                    map.insert(key, loro_scalar(scalar, value)).map_err(engine)?;
                 }
             }
+            (Node::Counter {}, ValueOrContainer::Container(Container::Counter(counter))) => {
+                layout::set_counter(&counter, value.as_i64().expect("validated counter"))?;
+            }
             (Node::Text {}, ValueOrContainer::Container(Container::Text(text))) => {
-                let to = value.as_str().expect("validated text");
-                let delta = text::script(&text.to_string(), to, to.chars().count());
-                if !delta.is_empty() {
-                    text.apply_delta(&delta).map_err(engine)?;
-                }
+                layout::set_text(&text, value.as_str().expect("validated text"))?;
             }
             (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => {
                 self.object(&child, kind, value)?
@@ -116,8 +99,8 @@ impl Reconcile<'_, '_> {
             (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) if is_scalar(item) => {
                 rewrite_list(&list, item, value.as_array().expect("validated list"))?;
             }
-            (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) => {
-                self.list(&list, item, value.as_array().expect("validated list"))?;
+            (Node::List { item }, current) => {
+                self.list(&RowList::of(&current)?, item, value.as_array().expect("validated list"))?;
             }
             _ => return Err(unexpected()),
         }
@@ -152,53 +135,43 @@ impl Reconcile<'_, '_> {
     /// Rows by `$id`: those the value leaves out are removed, kept rows are reconciled in
     /// place, new ones are inserted (a row without `$id` gets a new one), and only rows
     /// outside the longest run already in the target order move.
-    fn list(&mut self, list: &LoroMovableList, item: &Node, values: &[Value]) -> Result<()> {
-        let current = identity::rows(list);
+    fn list(&mut self, list: &RowList, item: &Node, values: &[Value]) -> Result<()> {
         let wanted: Vec<String> = values
             .iter()
             .map(|value| value.get("$id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(application_id))
             .collect();
-        // The common import keeps its row IDs in place. Reconcile those live maps
-        // directly, including a list changed earlier in this batch, without repeatedly
-        // scanning the row index or planning moves that cannot be needed.
-        if current == wanted {
-            for (index, value) in values.iter().enumerate() {
-                let Some(ValueOrContainer::Container(Container::Map(row))) = list.get(index) else {
-                    return Err(unexpected());
-                };
-                self.object(&row, item, value)?;
+        // The common import keeps its row IDs in place: reconcile those rows directly.
+        if list.ids() == wanted {
+            for (id, value) in wanted.iter().zip(values) {
+                self.object(&list.row(id).ok_or_else(unexpected)?, item, value)?;
             }
             return Ok(());
         }
         let keep: HashSet<&str> = wanted.iter().map(String::as_str).collect();
-        for (index, id) in current.iter().enumerate().rev() {
-            if !keep.contains(id.as_str()) {
-                list.delete(index, 1).map_err(engine)?;
-                self.rows.changed(list, Change::Removed(index));
-            }
+        for id in list.ids().iter().filter(|id| !keep.contains(id.as_str())) {
+            list.remove(id)?;
         }
-        let existing: HashSet<&str> = current.iter().map(String::as_str).filter(|id| keep.contains(id)).collect();
-        let kept: Vec<&str> = wanted.iter().map(String::as_str).filter(|id| existing.contains(id)).collect();
-        let positions: Vec<usize> = kept.iter().map(|id| self.rows.index(list, id)).collect::<Result<_>>()?;
-        let staying: HashSet<&str> = longest_increasing(&positions).into_iter().map(|i| kept[i]).collect();
+        // A replacement states the whole order: `order` then names each row once.
+        list.normalize()?;
+        let existing: HashSet<String> = list.ids().into_iter().collect();
+        let kept: Vec<&str> = wanted.iter().map(String::as_str).filter(|id| existing.contains(*id)).collect();
+        let positions: Vec<usize> = kept.iter().map(|id| list.index(id)).collect::<Result<_>>()?;
+        let staying: HashSet<&str> = layout::longest_increasing(&positions).into_iter().map(|i| kept[i]).collect();
         let mut previous: Option<&str> = None;
         for (id, value) in wanted.iter().zip(values) {
             let after = match previous {
-                Some(previous) => self.rows.index(list, previous)? + 1,
+                Some(previous) => list.index(previous)? + 1,
                 None => 0,
             };
-            if existing.contains(id.as_str()) {
-                let row = self.rows.map(self.doc, list, id)?;
-                self.object(&row, item, value)?;
-                let from = self.rows.index(list, id)?;
+            if existing.contains(id) {
+                self.object(&list.row(id).ok_or_else(unexpected)?, item, value)?;
+                let from = list.index(id)?;
                 let to = if after > from { after - 1 } else { after };
                 if !staying.contains(id.as_str()) && from != to {
-                    list.mov(from, to).map_err(engine)?;
-                    self.rows.changed(list, Change::Moved(from, to));
+                    list.mov_index(from, to)?;
                 }
             } else {
-                insert_row(list, item, after, id, value, self.rows)?;
-                self.rows.changed(list, Change::Inserted(after, id.clone()));
+                list.insert(after, id, item, value)?;
                 self.ids.push(id.clone());
             }
             previous = Some(id);
@@ -210,26 +183,4 @@ impl Reconcile<'_, '_> {
 /// write rule out.
 fn unexpected() -> Error {
     engine("A stored value does not match its descriptor")
-}
-/// Indexes into `values` of a longest strictly increasing subsequence.
-fn longest_increasing(values: &[usize]) -> Vec<usize> {
-    let mut tails: Vec<usize> = vec![];
-    let mut parent = vec![None; values.len()];
-    for (i, &value) in values.iter().enumerate() {
-        let at = tails.partition_point(|&t| values[t] < value);
-        parent[i] = at.checked_sub(1).map(|p| tails[p]);
-        if at == tails.len() {
-            tails.push(i);
-        } else {
-            tails[at] = i;
-        }
-    }
-    let mut out = vec![];
-    let mut next = tails.last().copied();
-    while let Some(i) = next {
-        out.push(i);
-        next = parent[i];
-    }
-    out.reverse();
-    out
 }

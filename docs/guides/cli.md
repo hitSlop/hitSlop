@@ -8,16 +8,19 @@ reference behind them: operation shapes, ownership, tool identity and the skills
 
 | Entry point | Use |
 | --- | --- |
-| `bunx hitslop@1.0.0 COMMAND` | Run the CLI matching this checkout's SDK without installing globally. |
-| `slop COMMAND` | Run after `bun install -g hitslop@1.0.0`, with Bun's bin directory on PATH. |
+| `bunx hitslop COMMAND` | Run the published CLI without installing globally. |
+| `slop COMMAND` | Run after `bun install -g hitslop`, with Bun's bin directory on PATH. |
 | `bun slop COMMAND` | Run from this repository after [development setup](development.md). |
 
 `slop-engine` ships with the CLI for macOS and Linux. The executable creates, reads and edits documents without Bun,
-WebKit or a running app. The TypeScript CLI runs only the engine; opening a window,
-PNG/PDF export and native template artwork run in the Swift helper, which the engine
-passes them to.
-`slop check` and `slop build` use the CLI's engine for validation and packing. Add
-`--help` to a CLI command for its arguments. Package versions here reflect repository
+WebKit or a running app. On both platforms it also exports a closed document as PNG/PDF and
+renders template artwork, in its own restricted evaluator. The TypeScript CLI runs only
+the engine; opening a window is the one operation that starts hitSlop.app.
+`slop check` and `slop build` use the CLI's engine for validation and packing, and on both
+platforms `slop build` and `slop register` render any Preview or Icon artwork the project
+does not supply inside the same `pack` request (see
+[Finder artwork](../../apps/landing/src/content/docs/docs/guides/build-and-share.mdx#finder-artwork)).
+Add `--help` to a CLI command for its arguments. Package versions here reflect repository
 metadata, not npm availability; see [releasing](releasing.md).
 
 ## Local browser copies (Chrome beta)
@@ -47,11 +50,11 @@ shareable hosted links are deferred. Fullscreen appears for apps declaring
 
 `apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names and record keys are strings, rows are `{"id": "$id from get"}`, and elements of a scalar list are `{"index": n}`. Never use array positions as row identity. [Document types](../reference/document-types.md) lists every kind's operations. Both print `{ids}`, the inserted row IDs; `slop get` prints the value. A refused batch exits 1 and prints `Refused ops[N] (reason): message` on stderr, naming the zero-based index of the operation to fix, then whether anything was applied.
 
-Both take `--base VERSION`, the `version` of the `slop get --snapshot` you read the text with. Text `set`s in the batch then change each field from its text at that version and merge with edits made since, such as typing in an open window, instead of replacing them. Pass it whenever you rewrite text you read, and read again before each rewrite. Without it, a text `set` replaces the field as it is when the owner applies it; `replace` and `slop import` take no base. Other operations are unaffected. A version older than the document's kept history is refused as `stale_base`: read again and redo the rewrite.
+A text `set` may carry `from`, the field's text as you read it (`slop get --snapshot`). The set then changes the field from that text and merges with edits made since, such as typing in an open window, instead of replacing them. Pass it whenever you rewrite text you read. Without it, a text `set` replaces the field as it is when the owner applies it, as `replace` and `slop import` do. Other operations are unaffected.
 
 | Operation | Shape | Targets |
 | --- | --- | --- |
-| `set` | `{"type":"set","path":[...],"value":v}` | Scalars (within their bounds), optional values and objects, whole text fields (from `--base`, else the text as it is when the owner applies it), record entries (`[...,"key"]` creates or replaces), scalar list elements (`[...,{"index":n}]`) and whole scalar lists |
+| `set` | `{"type":"set","path":[...],"value":v}` | Scalars (within their bounds), optional values and objects, whole text fields (merged from `from` when given, else replacing the text as it is when the owner applies it), record entries (`[...,"key"]` creates or replaces), scalar list elements (`[...,{"index":n}]`) and whole scalar lists |
 | `clear` | `{"type":"clear","path":[...]}` | Optional fields and record entries; clearing an unset one does nothing |
 | `insert` | `{"type":"insert","path":[...],"value":v,"id":"optional","at":{"after":"$id"}}` | Object-row lists; supply `id` for an insert you may retry |
 | `insert` | `{"type":"insert","path":[...],"value":v,"index":0}` | Scalar lists; omit `index` to append |
@@ -59,7 +62,7 @@ Both take `--base VERSION`, the `version` of the `slop get --snapshot` you read 
 | `remove` | `{"type":"remove","path":[...],"index":0,"count":1}` | Scalar lists; `count` defaults to 1 |
 | `move` | `{"type":"move","path":[...],"id":"$id","at":{"before":"$id"}}` | Rows; omit `at` to move to the end |
 | `increment` | `{"type":"increment","path":[...],"by":1}` | Counters (negative values decrement) |
-| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter takes the value, and an optional or record entry the value leaves out is removed |
+| `replace` | `{"type":"replace","path":[...],"value":v}` | Any value; an empty path is the whole document. Only the differences are written: rows match by `$id` (a row without one is new), kept rows and text keep their identity, a counter takes the value within its [exactness envelope](../reference/document-types.md#counter) (about 9×10^15 in summed absolute increments; beyond it off-by-one is possible and exactness is not guaranteed), and an optional or record entry the value leaves out is removed |
 
 `slop import PATH FILE [--path JSON]` sends one `replace` with the file's JSON (up to just
 under 1 MiB), so `slop get` output, edited or from another document of the same
@@ -88,50 +91,66 @@ CLI reads an attached file or theme file itself and writes exported bytes. An ex
 never replaces a file, including the document under another spelling of its path; to
 export again, remove the old file first.
 
-## Helper discovery and identity
+## Engine discovery and identity
 
 The CLI uses its own packaged engine for both authoring and document commands, on macOS
-and Linux. A checkout uses `target/release/slop-engine` (or `HITSLOP_CARGO_PROFILE`).
-`HITSLOP_ENGINE` selects an explicit engine. File markers protect saved documents;
-the exact command protocol protects communication with a live owner or rendering helper.
+and Linux. A checkout uses `target/release/slop-engine` (or the profile
+`HITSLOP_CARGO_PROFILE` names). `HITSLOP_ENGINE` selects an explicit engine; a missing or
+non-executable override fails, and an engine that ran is never retried through another
+binary. File markers protect saved documents; the exact command protocol protects
+communication with a live owner.
 
-The CLI sends `open`, `screenshot`, and `export` through the engine to the app's
-rendering helper. `register` and `build --artwork native` are TypeScript flows that call
-`screenshot` for rendering. These native operations require macOS and hitSlop.app;
-document creation and editing do not. The engine finds the helper in `/Applications/hitSlop.app`, then
-`~/Applications/hitSlop.app`. `HITSLOP_NATIVE_CLI` independently selects an explicit helper.
-The app contains its linked core and renderer; the engine ships only in npm.
-Missing or non-executable overrides fail, and an executed tool is never retried
-through another binary.
+`open` (macOS only) is the one operation that starts hitSlop.app.
+`open` refuses a template, a link and any file that is not a regular file; a linked parent folder is fine.
+It opens the document with `/usr/bin/open -a` in the app that contains the running
+engine, else the app `HITSLOP_APP` names, else `/Applications/hitSlop.app`, then
+`~/Applications/hitSlop.app`; a `HITSLOP_APP` that names no app is an error rather than a
+cue to try another copy. A document that is already open in the app is edited and
+exported by that app's owner, which the engine reaches through its socket. Everything
+else runs in the engine, including a closed document's export and the artwork a build
+renders. The one other thing read from an app is the bundled starter templates:
+`templates` and `create --from` list them from an app found the same way (a
+`HITSLOP_APP` without starters is skipped).
+The app contains its linked core and the restricted `hitslop-evaluator`; the engine ships
+only in npm.
 
 The CLI and Mac app update separately. The CLI names its command protocol on every
 engine call (`--client-protocol VERSION`), and the engine names it in every request to a
-live owner. An engine, helper or owner that does not serve it refuses before document
+live owner. An engine or owner that does not serve it refuses before document
 access, with exit status 2 or `requires_update`, and says which side to update; a
-document command that names no protocol is a usage error. Each executable reports the range it serves with
-`--protocol` (`{"version":N,"minimum":M}`). The app bundles its engine, helper and owner
-built from one core; `slop-engine --build-id` and `hitslop-native --core-build` print it.
+document command that names no protocol is a usage error. The engine reports the protocol
+it serves with `--protocol` (`{"version":N}`). A release builds the app and the engine
+from one core: `slop-engine --build-id` and the app executable's `--build-id` print it,
+and release acceptance requires them to match.
 A CLI-only release may reuse an installed app while the protocol and
 [installed-consumer checks](releasing.md) pass.
 
 ## File engine
 
-`slop-engine` (`crates/slop-engine`) is the native build of the shared Rust core.
-`validate-app` checks bounded evaluated app JSON on standard input. `pack` turns a build
-stage into an immutable template. `templates` prints the templates the app's catalog lists
-as JSON: its `folders` (the starters inside the selected or installed Mac app, then the
-installed folder, `HITSLOP_TEMPLATES_ROOT` or `~/.hitslop/templates`, which `slop register`
-builds into), each template found there, and an issue for each `.slop` file left out.
-`create --from TEMPLATE --output DOCUMENT` creates a writable copy, makes missing parent
-folders and prints its resolved path; TEMPLATE is a template's path, or a listed slug when
-it is a bare name, and an installed template shadows a bundled one.
+`slop-engine` (`crates/slop-engine`) accepts the JSON `EngineRequest` methods above,
+not CLI subcommands. `validateApp` checks evaluated app input, `validateMetadata` checks
+new-project metadata, and `pack` writes an immutable template from a build stage; with
+`renderArtwork` it also renders the Preview and Icon artwork the build does not supply,
+in the same request (the CLI asks for it on macOS and Linux).
+`templates` returns the catalog's folders, accepted templates and per-file issues;
+`create` takes `from` and `output`, creates parent folders and returns `documentPath`.
+A bare template slug resolves installed templates before bundled ones.
 
-`inspect` prints a file's kind, requirements, metadata, window and asset/artwork/attachment and
-saved-state sizes, and whether an owner published its socket. `schema` prints the
-stored descriptor. These two commands read the saved file; `request` routes through the
-live or in-process owner and waits for persistence where its method requires it.
-Checkpoint and retention maintenance are automatic; there is no public compaction
-command.
+`inspect` returns file kind, requirements, metadata, window, resource/state sizes and
+the app digest (equal digests mean the same app);
+`schema` reads its stored descriptor. `get`, `describe`, `batch` and `call` route through
+the live or in-process owner and wait for persistence as required. `copy` makes a saved
+copy; `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
+file and returns its hash, byte length, name and detected MIME type without opening a
+document. `export` renders a closed document in the engine, and routes an open one to its
+owner on macOS. Closed export also works on Linux; `open` is macOS only and asks
+LaunchServices to open the document in hitSlop.app. See the Rust `EngineRequest` enum for the complete method and field inventory.
+
+The executable flags are `--client-protocol N`, `--protocol`, `--build-id`, the restricted
+`--evaluate-command` entry point and `--preview-owner PATH` (with a client protocol).
+There are no `validate-app`, `request` or `create --from` engine subcommands; those are
+JSON methods or public `slop` workflows. Checkpoint/retention maintenance is automatic,
+with no public compaction command.
 
 ## Agent skills
 
@@ -158,9 +177,11 @@ are needed.
 ## Project version selection
 
 Use `bun run check`, `bun run dev` and `bun run build` in a project. These scripts run
-its pinned package. A global authoring command refuses a different installed project
-version and directs you to those scripts. `slop --project=DIR build .` explicitly delegates
-to that install. Merely changing cwd never redirects document commands.
+its pinned package. `slop check` runs the project's own svelte-check and TypeScript, which
+the starter pins as devDependencies; a project without them is told what to install. A
+global authoring command refuses a different installed project version and directs you to
+those scripts. `slop --project=DIR build .` explicitly delegates to that install. Merely
+changing cwd never redirects document commands.
 
 ## Domain commands
 

@@ -1,7 +1,7 @@
 //! Typed native adapter; sequencing and persistence remain in hitslop-core::owner.
 use super::*;
-use hitslop_core::Batch;
 use hitslop_core::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
+use hitslop_core::{Batch, Code};
 use std::path::PathBuf;
 #[uniffi::remote(Enum)]
 pub enum ThemeChange {
@@ -29,7 +29,7 @@ pub enum FailureKind {
 pub struct Failure {
     pub kind: FailureKind,
     pub message: String,
-    pub reason: Option<String>,
+    pub reason: Option<Code>,
     pub op_index: Option<u32>,
 }
 // Request destinations are file paths, which Swift passes as strings.
@@ -42,11 +42,6 @@ uniffi::custom_type!(PathBuf, String, {
 /// callback as owner refusals, rather than failing during UniFFI argument lifting.
 #[derive(uniffi::Enum)]
 pub enum Request {
-    Command {
-        name: String,
-        args_json: String,
-        origin: Origin,
-    },
     State,
     Apply {
         batch: String,
@@ -74,13 +69,6 @@ pub enum Request {
     Artwork {
         name: Artwork,
     },
-    Attachments,
-    ReadAttachment {
-        id: String,
-    },
-    PutAttachment {
-        bytes: Vec<u8>,
-    },
     /// The palette; changes are batch intents from the window.
     Theme,
     ExportTheme,
@@ -92,7 +80,6 @@ impl Request {
     fn into_core(self) -> Result<core::Request, Failure> {
         use core::Request as R;
         Ok(match self {
-            Self::Command { name, args_json, origin } => R::Command { name, args_json, origin },
             Self::State => R::State,
             Self::Apply { batch, origin } => R::Apply { batch: Batch::decode(&batch)?, origin },
             Self::Undo { redo } => R::Undo { redo },
@@ -102,9 +89,6 @@ impl Request {
             Self::Copy { destination, preview, icon } => R::Copy { destination, preview, icon },
             Self::CaptureSource { destination } => R::CaptureSource { destination },
             Self::Artwork { name } => R::Artwork { name },
-            Self::Attachments => R::Attachments,
-            Self::ReadAttachment { id } => R::ReadAttachment { id },
-            Self::PutAttachment { bytes } => R::PutAttachment { bytes },
             Self::Theme => R::Theme,
             Self::ExportTheme => R::ExportTheme,
             Self::ChangeTheme { change } => core::theme_request(change),
@@ -180,12 +164,7 @@ impl NativeOwner {
             mode,
             Arc::new(move |event| listener.event(event)),
             evaluator_path.map(|path| core::Evaluator::new(PathBuf::from(path), vec![])).transpose().map_err(|e| {
-                Failure {
-                    kind: FailureKind::Rejected,
-                    message: e,
-                    reason: Some("invalid_request".into()),
-                    op_index: None,
-                }
+                Failure { kind: FailureKind::Rejected, message: e, reason: Some(Code::InvalidRequest), op_index: None }
             })?,
         )?))))
     }

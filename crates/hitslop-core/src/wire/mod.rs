@@ -9,7 +9,7 @@ pub mod page;
 pub(crate) use page::*;
 #[cfg(feature = "storage")]
 pub mod socket;
-#[cfg(feature = "storage")]
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 pub(crate) use socket::*;
 mod codes;
 pub use codes::Code;
@@ -19,8 +19,6 @@ pub use codes::OutcomeCode;
 pub mod build;
 #[cfg(feature = "storage")]
 pub mod engine;
-#[cfg(feature = "storage")]
-pub mod native;
 
 /// Optional wire fields may be absent, but explicitly present null is not a value.
 pub(crate) fn present_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>

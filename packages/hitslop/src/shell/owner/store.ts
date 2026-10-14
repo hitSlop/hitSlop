@@ -1,3 +1,4 @@
+import { ResyncPush } from "../../schema/constants";
 import { rowIndexes, indexOf, keyIn, pathKey } from "./path";
 import { PushLimits } from "../../schema/constants";
 import { isRejected, isDocumentError } from "../../sdk/errors";
@@ -71,7 +72,8 @@ export function applyOps(root: any, ops: readonly OwnerPatchOp[]): any {
       case "text": {
         const parent = owned(parentPath);
         const key = keyIn(parent, last);
-        if (typeof key === "number" && (key < 0 || key >= parent.length)) throw new Error("Missing publication row");
+        if (typeof key === "number" && (key < 0 || key >= parent.length))
+          throw new Error("Missing publication row");
         if (op.type === "set") parent[key] = op.value;
         else if (typeof parent[key] === "string") parent[key] = applyText(parent[key], op.delta);
         else throw new Error("Text publication for a value that is not text");
@@ -107,8 +109,14 @@ export function applyOps(root: any, ops: readonly OwnerPatchOp[]): any {
 export type Changes = { paths: Set<string>; removed?: Segment[][] } | "all";
 
 /** Recovery timing and the push buffer's bounds; buffer bytes are UTF-8, as the host counts them. */
-const policy = { stallMS: 2000, deadlineMS: 15000, retryMS: 250, maxRetryMS: 4000,
-  maxItems: PushLimits.items as number, maxBytes: PushLimits.bytes as number };
+const policy = {
+  stallMS: 2000,
+  deadlineMS: 15000,
+  retryMS: 250,
+  maxRetryMS: 4000,
+  maxItems: PushLimits.items as number,
+  maxBytes: PushLimits.bytes as number,
+};
 const utf8 = new TextEncoder();
 
 /** Sequence-ordered state, fed by `open` and the push stream. */
@@ -121,7 +129,12 @@ export class Store {
   private bufferGeneration = 0;
   private resyncing?: Promise<void>;
   private watchdog?: ReturnType<typeof setTimeout>;
-  private waiters: { sequence: number; deadline: number; resolve(): void; reject(error: unknown): void }[] = [];
+  private waiters: {
+    sequence: number;
+    deadline: number;
+    resolve(): void;
+    reject(error: unknown): void;
+  }[] = [];
 
   constructor(
     private readonly reopen: () => Promise<OwnerState>,
@@ -138,20 +151,26 @@ export class Store {
   load(state: OwnerState) {
     this.install(state);
     const buffered = this.takeBuffer();
-    if (!this.consume(buffered)) { this.recover(); return; }
+    if (!this.consume(buffered)) {
+      this.recover();
+      return;
+    }
     this.changed("all");
     this.settle();
   }
   private buffer(pushes: readonly PagePush[]) {
     for (const push of pushes) {
       const bytes = utf8.encode(JSON.stringify(push)).length;
-      if (push.type === "resync" || this.buffered.length >= policy.maxItems ||
-          this.bufferedBytes + bytes > policy.maxBytes) {
+      if (
+        push.type === "resync" ||
+        this.buffered.length >= policy.maxItems ||
+        this.bufferedBytes + bytes > policy.maxBytes
+      ) {
         this.buffered = [];
         this.bufferedBytes = 0;
         this.bufferGeneration++;
         // A marker forces another snapshot if overflow races an in-flight open.
-        this.buffered.push({ type: "resync" });
+        this.buffered.push(ResyncPush);
         continue;
       }
       this.buffered.push(push);
@@ -165,8 +184,14 @@ export class Store {
     return result;
   }
   publish(pushes: readonly PagePush[]) {
-    if (!this.opened || this.resyncing || this.failure) { this.buffer(pushes); return; }
-    if (!this.consume(pushes)) { this.recover(); return; }
+    if (!this.opened || this.resyncing || this.failure) {
+      this.buffer(pushes);
+      return;
+    }
+    if (!this.consume(pushes)) {
+      this.recover();
+      return;
+    }
     this.settle();
   }
   /** Returns false when continuity requires a fresh snapshot. */
@@ -186,8 +211,11 @@ export class Store {
       if (p.sequence <= this.state.sequence) continue;
       if (p.previous !== this.state.sequence) return finish(false, pushes.slice(i));
       let value;
-      try { value = applyOps(this.state.value, p.ops); }
-      catch { return finish(false, pushes.slice(i)); }
+      try {
+        value = applyOps(this.state.value, p.ops);
+      } catch {
+        return finish(false, pushes.slice(i));
+      }
       const theme = p.theme ?? this.state.theme;
       deepFreeze(theme);
       this.state = { sequence: p.sequence, version: p.version, value, theme };
@@ -200,15 +228,23 @@ export class Store {
     }
     return finish(true);
   }
-  private recover() { void this.resync().catch(() => {}); }
+  private recover() {
+    void this.resync().catch(() => {});
+  }
   private timeout() {
-    return new DocumentError("unknown_outcome", "Document publication recovery timed out; retry loading current state before editing");
+    return new DocumentError(
+      "unknown_outcome",
+      "Document publication recovery timed out; retry loading current state before editing",
+    );
   }
   /** Recovery only reads owner state. Accepted mutations are never replayed. */
   resync(): Promise<void> {
     if (this.resyncing) return this.resyncing;
     clearTimeout(this.watchdog);
-    const deadline = Math.min(Date.now() + policy.deadlineMS, ...this.waiters.map(w => w.deadline));
+    const deadline = Math.min(
+      Date.now() + policy.deadlineMS,
+      ...this.waiters.map((w) => w.deadline),
+    );
     const work = (async () => {
       let delay = policy.retryMS;
       try {
@@ -222,7 +258,10 @@ export class Store {
             const opened = await Promise.race([
               this.reopen(),
               new Promise<never>((_, reject) => {
-                timer = setTimeout(() => reject(this.timeout()), Math.max(0, deadline - Date.now()));
+                timer = setTimeout(
+                  () => reject(this.timeout()),
+                  Math.max(0, deadline - Date.now()),
+                );
               }),
             ]);
             if (generation !== this.bufferGeneration) continue;
@@ -233,10 +272,19 @@ export class Store {
             this.settle();
             return;
           } catch (error) {
-            if (isRejected(error) || isDocumentError(error) && ["owner_invalidated", "owner_replaced", "closing"].includes(error.code)) throw error;
+            if (
+              isRejected(error) ||
+              (isDocumentError(error) &&
+                ["owner_invalidated", "owner_replaced", "closing"].includes(error.code))
+            )
+              throw error;
             if (Date.now() >= deadline) throw this.timeout();
-          } finally { clearTimeout(timer); }
-          await new Promise(resolve => setTimeout(resolve, Math.min(delay, Math.max(0, deadline - Date.now()))));
+          } finally {
+            clearTimeout(timer);
+          }
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.min(delay, Math.max(0, deadline - Date.now()))),
+          );
           delay = Math.min(delay * 2, policy.maxRetryMS);
         }
       } catch (error) {
@@ -246,10 +294,15 @@ export class Store {
         throw this.failure;
       }
     })();
-    this.resyncing = work.finally(() => { this.resyncing = undefined; this.armWatchdog(); });
+    this.resyncing = work.finally(() => {
+      this.resyncing = undefined;
+      this.armWatchdog();
+    });
     return this.resyncing;
   }
-  assertWritable() { if (this.failure) throw this.failure; }
+  assertWritable() {
+    if (this.failure) throw this.failure;
+  }
   reached(sequence: number): Promise<void> {
     if (this.failure) return Promise.reject(this.failure);
     if (this.state.sequence >= sequence && !this.resyncing) return Promise.resolve();
@@ -267,11 +320,13 @@ export class Store {
   private armWatchdog() {
     clearTimeout(this.watchdog);
     if (this.resyncing || this.failure || !this.waiters.length) return;
-    this.watchdog = setTimeout(() => this.recover(), Math.max(0, Math.min(policy.stallMS,
-      ...this.waiters.map(w => w.deadline - Date.now()))));
+    this.watchdog = setTimeout(
+      () => this.recover(),
+      Math.max(0, Math.min(policy.stallMS, ...this.waiters.map((w) => w.deadline - Date.now()))),
+    );
   }
   private settle() {
-    this.waiters = this.waiters.filter(waiter => {
+    this.waiters = this.waiters.filter((waiter) => {
       if (this.state.sequence < waiter.sequence) return true;
       waiter.resolve();
       return false;

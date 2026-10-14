@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileDigest, repository, verifyShellCopies } from "../lib/artifacts";
 import { releases } from "../compat/corpus";
 import { verifyCandidate, verifyCorpus } from "../compat/integrity";
+import { verifyPackedWriter } from "../compat/writers";
 import { enginePlatforms } from "../build/core";
 import { exec, run } from "../../packages/hitslop/src/cli/process";
 
@@ -20,7 +21,7 @@ if (process.argv.includes("--preflight")) process.exit(0);
 const entry = (await releases()).find(entry => entry.name === version && entry.release.frozen);
 if (!entry) throw new Error("Missing frozen release corpus");
 await verifyCorpus(entry.root, entry.release);
-await verifyCandidate(entry.root, entry.release);
+await verifyCandidate(entry.release);
 const shell = await verifyShellCopies();
 const output = join(repository, "dist/macos");
 await mkdir(output, { recursive: true });
@@ -32,6 +33,7 @@ const commit = (await run(["git", "rev-parse", "HEAD"], { cwd: repository, failu
 // The published CLI carries the file engine for every supported platform, each built from
 // the producing candidate's commit and core.
 const cliPackage = join(output, `hitslop-${version}.tgz`);
+await verifyPackedWriter(cliPackage, entry.release.writer);
 const packed = await run(["/usr/bin/tar", "-tzf", cliPackage], { failure: "Cannot list the CLI package" });
 for (const platform of enginePlatforms) {
   if (!packed.includes(`package/engine/${platform}/slop-engine`))

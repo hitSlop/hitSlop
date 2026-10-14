@@ -1,5 +1,8 @@
 <script lang="ts">
-    import doc from "./schema";
+import "./styles.css";
+  import { getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+  const doc = getDocument(schema);
   // Native tests inject failures and refused writes without changing the shipped examples.
   function checkRender(kind: "editor" | "export" | "icon") {
     const failure = (globalThis as any).__presentationFailure;

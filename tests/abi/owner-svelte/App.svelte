@@ -1,12 +1,17 @@
 <script lang="ts">
+import "./styles.css";
   import { tick, onMount } from "svelte";
-  import { attachments, bindText, capture, resizeWindow } from "hitslop/svelte";
-  import { isDocumentError, isRejected } from "hitslop";
-  import doc from "./schema";
-  import { bump, decline } from "./actions";
+  import { attachments, bindText, getDocument, resizeWindow, speech, isSpeechError } from "hitslop/svelte";
+  import { isDocumentError, isRejected, refuse } from "hitslop";
+  import schema from "./schema";
+  // Access the mounted ctx to probe its framework-neutral ABI, beyond the Svelte adapter.
+  import type { SlopDocument } from "../../../packages/hitslop/src/sdk/abi";
+  import { current as mountedContext } from "../../../packages/hitslop/src/sdk/app/context";
+  import { mediaURLs } from "./media";
   // App media the corpus must keep serving: an image, audio and a font (styles.css).
   import swatch from "./media/swatch.png";
   import tone from "./media/tone.wav";
+  const doc = getDocument(schema);
   let shown: HTMLParagraphElement;
   let input: HTMLTextAreaElement;
   let checkbox: HTMLInputElement;
@@ -23,10 +28,6 @@
     throw new Error(`Expected a ${reason} refusal`);
   };
   onMount(() => {
-    const stopPrepare = capture.onPrepare((mode, signal) => {
-      check(["preview", "export", "icon"].includes(mode), "Unknown capture mode");
-      check(signal instanceof AbortSignal && !signal.aborted, "Invalid capture signal");
-    });
     // Exercises every ctx member and descriptor kind through the public SDK. It works on
     // a document in any prior state, so a frozen copy of this build can run it against
     // later shells (tests/compat).
@@ -43,6 +44,15 @@
       input.dispatchEvent(new CompositionEvent("compositionend"));
       await doc.flush();
       check(doc.current.title === "Draft 中文", "Draft was lost");
+      // An IME edit based on stale text merges with a later whole-field write.
+      await doc.fields.title.set("base"); await tick();
+      input.dispatchEvent(new CompositionEvent("compositionstart")); input.value = "base local"; input.dispatchEvent(new Event("input"));
+      await doc.fields.title.set("remote base"); input.dispatchEvent(new CompositionEvent("compositionend")); await doc.flush();
+      check(doc.current.title === "remote base local", "Stale composition lost a concurrent edit");
+      // A binding may switch fields without retaining the old field's events.
+      const control = document.createElement("textarea"); const binding = bindText(control, doc.fields.title);
+      await doc.fields.memo.set("Binding target"); binding.update(doc.fields.memo); control.value = "Binding updated"; control.dispatchEvent(new Event("input")); await doc.flush(); binding.destroy();
+      check(doc.current.memo === "Binding updated" && doc.current.title === "remote base local", "Binding.update wrote the old field");
       // Bound scalars show at once and follow the document.
       checkbox.checked = true;
       checkbox.dispatchEvent(new Event("change"));
@@ -88,13 +98,21 @@
       await doc.fields.note.clear();
       check(doc.current.note === undefined, "Clear left the optional set");
       await doc.fields.memo.set("Memo ✎");
-      await doc.fields.place.set({ name: "Café", visits: 1 });
+      await doc.fields.place.$set({ name: "Café", visits: 1 });
       await doc.fields.place.visits.set(2);
       check(doc.current.place?.visits === 2 && doc.current.memo === "Memo ✎", "Optional object or text was lost");
+      await doc.fields.place.$clear(); check(doc.current.place === undefined, "Optional object clear failed");
+      await doc.fields.memo.clear(); check(doc.current.memo === undefined, "Optional text clear failed");
+      await doc.fields.note.set("Clear by assignment"); doc.fields.note.value = undefined; await doc.flush(); check(doc.current.note === undefined, "Optional scalar assignment did not clear");
+      await doc.fields.enabled.set(true); await doc.fields.enabled.clear(); doc.fields.weight.value = 0.5; await doc.flush(); doc.fields.weight.value = undefined; await doc.flush();
+      check(doc.current.enabled === undefined && doc.current.weight === undefined, "Optional typed scalars did not clear");
+      await doc.fields.stage.set("done"); await doc.fields.stage.clear(); check(doc.current.stage === undefined, "Optional enum clear failed");
       // Rows: insert, move, nested scalar lists and records, `at`, remove.
       const first = (await doc.fields.rows.insert({ text: "First", done: false, tags: [], notes: {} })).id;
       const second = (await doc.fields.rows.insert({ text: "Second", done: false, tags: [], notes: {} }, { before: first })).id;
       await doc.fields.rows.move(second, { after: first });
+      const trailing = (await doc.fields.rows.insert({ text: "After", done: false }, { after: first })).id;
+      await doc.fields.rows.move(trailing); check(doc.current.rows.at(-1)?.$id === trailing, "Unanchored move did not append"); await doc.fields.rows.remove(trailing);
       const row = doc.fields.rows.item(first);
       await row.text.set("First ✓");
       await row.tags.insert("a");
@@ -138,13 +156,14 @@
       await doc.fields.colors.insert("#222222");
       await doc.fields.colors.remove(2);
       check(doc.current.colors.join() === "#111111,#eeeeee", "Scalar list edits were lost");
+      await doc.fields.colors.replace(["a", "b", "c"]); await doc.fields.colors.remove(0, 2); check(doc.current.colors.join() === "c", "Multi-element remove failed");
       // Records of scalars and of objects.
       await doc.fields.checkins.put("2026-10-02", 1);
       await doc.fields.checkins.entry("2026-10-02").set(2);
-      await doc.fields.cells.put("A1", { input: "42" });
+      await doc.fields.cells.put("A1", { input: "42", hits: 0 });
       await doc.fields.cells.entry("A1").input.set("43");
       await doc.fields.cells.entry("A1").width.set(10);
-      await doc.fields.cells.put("A1", { input: "replace" });
+      await doc.fields.cells.put("A1", { input: "replace", hits: 0 });
       check(doc.current.checkins["2026-10-02"] === 2 && doc.current.cells.A1?.input === "replace" &&
         doc.current.cells.A1.width === undefined, "Complete record replacement failed");
       // A keyed journal editor is removed during composition and then recreated at the
@@ -158,7 +177,7 @@
       await doc.fields.cells.delete("A1");
       await tick();
       check(!oldEntry.isConnected, "Deleting a key retained its editor");
-      await doc.fields.cells.put("A1", { input: "Fresh entry" });
+      await doc.fields.cells.put("A1", { input: "Fresh entry", hits: 0 });
       await tick();
       const newEntry = document.querySelector<HTMLTextAreaElement>('[aria-label="Keyed entry"]')!;
       check(newEntry !== oldEntry && newEntry.value === "Fresh entry", "Recreated keyed text retained its old binding");
@@ -196,6 +215,22 @@
         tx.fields.count.set(1000);
       }), "out_of_range");
       check(doc.current.count === 42, "A refused change applied part of itself");
+      await doc.fields.hits.increment(); check(doc.current.hits === hits + 4, "Default increment failed");
+      await doc.at(doc.current).epoch.set(Number.MAX_SAFE_INTEGER); check(doc.current.epoch === Number.MAX_SAFE_INTEGER, "Positive safe integer changed");
+      await doc.at(doc.current).epoch.set(-Number.MAX_SAFE_INTEGER); check(doc.current.epoch === -Number.MAX_SAFE_INTEGER, "Negative safe integer changed");
+      await doc.at(doc.current.settings).volume.set(6); check(doc.current.settings.volume === 6, "Nested doc.at failed");
+      const txRow = doc.current.rows.find((r) => r.$id === first)!;
+      await doc.change((tx) => { tx.at(txRow).text.set("Transaction row"); tx.fields.checkins.put("tx", 3); tx.fields.colors.replace(["tx", "remove", "remove"]); tx.fields.colors.remove(1, 2); });
+      check(doc.current.rows.find((r) => r.$id === first)?.text === "Transaction row" && doc.current.checkins.tx === 3 && doc.current.colors.join() === "tx", "Transaction at/record/list/text failed");
+      await refused(doc.fields.checkins.put("__proto__", 1), "invalid_key"); await refused(doc.fields.count.set(1.5), "type_mismatch");
+      await doc.fields.cells.delete("missing"); await refused(doc.fields.cells.entry("missing").input.set("x"), "path_not_found");
+      // Probe the ctx document directly: the Svelte adapter intentionally hides observers.
+      const raw = mountedContext().document as SlopDocument<typeof schema.descriptor>; let callsA = 0, callsB = 0;
+      const stopA = raw.subscribe(() => callsA++), stopB = raw.subscribe(() => callsB++); await doc.fields.label.set("Listeners");
+      check(callsA > 0 && callsA === callsB, "Subscribers did not both receive publication"); stopA(); stopA(); const endedA = callsA; await doc.fields.label.set("One listener");
+      check(callsA === endedA && callsB > callsA, "Double dispose removed another listener"); stopB(); stopB();
+      let readsA = 0, readsB = 0; const endA = raw.observe(() => readsA++), endB = raw.observe(() => readsB++); endA(); endA();
+      void raw.fields.done.value; check(readsA === 0 && readsB === 1, "Old observe disposer removed its replacement"); endB(); endB();
       // Undo and redo step through the person's edits.
       await doc.fields.label.set("Before undo");
       await doc.fields.label.set("Undo me");
@@ -204,40 +239,26 @@
       await doc.redo();
       check(doc.current.label === "Undo me", "Redo did not reapply");
       check(Array.isArray(doc.current.rows), "Snapshot missing");
-      // A command runs in the owner: its arguments are checked there, it returns its
-      // result after its edit reaches this page, and it is one undo step.
-      const before = doc.current.hits;
-      const previousHit = doc.current.lastHit;
-      check((await bump({ by: 2 })) === before + 2 && doc.current.hits === before + 2 &&
-        doc.current.lastHit === before + 2, "Command result or atomic edits were lost");
-      await refused(bump({ by: 100 }), "invalid_request");
-      check(doc.current.hits === before + 2 && doc.current.lastHit === before + 2, "A refused command changed the document");
-      await doc.undo();
-      check(doc.current.hits === before && doc.current.lastHit === previousHit, "Undo did not revert the whole command");
-      await doc.redo();
-      check(doc.current.hits === before + 2 && doc.current.lastHit === before + 2, "Redo did not reapply the whole command");
-      // A command's refusal reaches its caller as `refused`; left unhandled, it is shown
-      // in the notice region (the root cancels `slop:refused`) rather than reported.
-      await refused(decline(), "refused");
-      const offered = new Promise<string>((resolve) =>
-        document.addEventListener("slop:refused", (event) => resolve((event as CustomEvent<string>).detail), { once: true }));
-      void decline();
-      check((await offered) === "Not today.", "An unhandled refusal was not offered to the app");
-      await tick();
-      check(document.querySelector("[data-slop-notice] p")?.textContent === "Not today.", "The refusal was not shown");
-      // Host services: attachments, capture and the window.
-      const ref = await attachments.import<typeof doc.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
+      // Host services: attachments and the window.
+      const ref = await attachments.import<typeof schema.descriptor>(new File(["conformance"], "note.txt", { type: "text/plain" }), (tx, ref) =>
         tx.fields.attachment.set(ref.id),
       );
       check(doc.current.attachment === ref.id && ref.name === "note.txt" && ref.mimeType === "application/octet-stream", "Attachment reference was lost");
       check((await (await attachments.read(ref.id)).text()) === "conformance", "Attachment bytes differ");
       check((await (await fetch(attachments.url(ref.id))).text()) === "conformance", "Attachment URL bytes differ");
       check(document.querySelector("[data-slop-root]") !== null, "The app root is not marked for the host");
+      const html = document.documentElement, css = getComputedStyle(html);
+      check(html.getAttribute("data-slop-presentation") === "standard" && html.hasAttribute("data-slop-resizable") && !html.hasAttribute("data-slop-capture"), "Host presentation attributes changed");
+      for (const token of ["accent", "ink", "paper-tint", "window-width", "window-height"]) check(css.getPropertyValue(`--slop-${token}`).trim().length > 0, `Missing --slop-${token}`);
+      for (const [options, reason] of [[{}, "notDeclared"], [{ locale: "bad locale!" }, "locale"]] as const) {
+        try { await speech.transcribe(ref.id, options); throw new Error("Speech unexpectedly succeeded"); } catch (error) { check(isSpeechError(error) && error.code === "unavailable" && error.reason === reason, `Expected speech ${reason}, got ${String(error)}`); }
+      }
+      document.querySelector<HTMLButtonElement>("[data-contract-refuse]")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); await tick();
+      check(document.querySelector("[data-slop-notice] p")?.textContent === "Conformance refusal", "Unhandled refuse did not render a notice");
       // The app's own media load from its embedded assets.
-      for (const url of [swatch, tone]) check((await fetch(url)).ok, `App media did not load: ${url}`);
+      for (const url of mediaURLs) check((await fetch(url)).ok, `App media did not load: ${url}`);
       await document.fonts.load('16px "Conformance Hand"');
       check(document.fonts.check('16px "Conformance Hand"'), "The imported font did not load");
-      check(capture.isRenderer() === false, "An interactive page reported itself as a renderer");
       await resizeWindow({ width: 480, height: 480 }).catch((error) => {
         if (!isDocumentError(error)) throw error;
       });
@@ -246,7 +267,6 @@
       return true;
     };
     return () => {
-      stopPrepare();
       delete (globalThis as any).contractTest;
     };
   });
@@ -254,6 +274,7 @@
 
 <main>
   <h2>Conformance</h2>
+  <button data-contract-refuse onclick={() => refuse("Conformance refusal")}>Refuse</button>
   <img src={swatch} alt="Swatch" width="16" height="16" />
   <audio src={tone} preload="none"></audio>
   <p bind:this={shown}>{doc.current.title}</p>

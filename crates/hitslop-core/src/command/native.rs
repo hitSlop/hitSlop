@@ -1,7 +1,11 @@
 //! Native socket routing and blocking CLI driver.
 use super::*;
-use crate::wire::{SocketRequest, SocketSuccess};
-use crate::{file, lock, registry, socket};
+use crate::capture::CaptureFormat;
+use crate::wire::SocketRequest;
+use crate::wire::engine::{
+    AttachmentBytes, AttachmentInfo, EngineRequest, EngineSuccess, ExportFormat, GetState, ThemeExportState, True,
+};
+use crate::{file, lock, registry, socket, store};
 use serde::Deserialize;
 use serde_json::json;
 use std::path::Path;
@@ -69,14 +73,8 @@ fn export(request: ExportRequest, exporter: Option<&Arc<dyn ExportHandler>>, dea
     completion.cancel();
     result
 }
-#[derive(Serialize)]
-struct Success {
-    ok: bool,
-    #[serde(flatten)]
-    result: SocketSuccess,
-}
-fn success(result: SocketSuccess) -> String {
-    crate::encode(&Success { ok: true, result })
+fn success(result: EngineSuccess) -> String {
+    crate::encode(&result)
 }
 /// One owner request, admitted before `deadline`.
 fn call(owner: &Owner, request: owner::Request, deadline: Instant) -> Result<owner::Reply> {
@@ -110,7 +108,9 @@ fn parse(input: &str) -> Result<SocketRequest> {
 /// Serves one request that arrived on `owner`'s socket.
 pub fn serve(owner: &Owner, input: &str, exporter: Option<&Arc<dyn ExportHandler>>, deadline: Instant) -> String {
     match parse(input) {
-        Ok(request) if Path::new(request.path()) == owner.path() => dispatch(owner, request, exporter, deadline),
+        Ok(request) if Path::new(request.request.document_path().expect("document request")) == owner.path() => {
+            dispatch(owner, request.request, exporter, deadline)
+        }
         Ok(_) => failure(invalid("Document path mismatch"), false, false),
         Err(error) => failure(error, false, false),
     }
@@ -119,16 +119,16 @@ pub fn serve(owner: &Owner, input: &str, exporter: Option<&Arc<dyn ExportHandler
 /// replies once saved: an agent's edit is durable when its command returns.
 fn dispatch(
     owner: &Owner,
-    request: SocketRequest,
+    request: EngineRequest,
     exporter: Option<&Arc<dyn ExportHandler>>,
     deadline: Instant,
 ) -> String {
     let (mut accepted, mut saving) = (false, false);
-    let result = (|| -> Result<SocketSuccess> {
+    let result = (|| -> Result<EngineSuccess> {
         use owner::{Reply, Request};
         let unexpected = || Failure::new(FailureKind::Invalidated, "Unexpected owner result");
         Ok(match request {
-            SocketRequest::Call { command, args, .. } => {
+            EngineRequest::Call { command, args, .. } => {
                 let Reply::Command { ids, result_json, .. } = call(
                     owner,
                     Request::Command { name: command, args_json: args.to_string(), origin: crate::Origin::Agent },
@@ -141,9 +141,13 @@ fn dispatch(
                 saving = true;
                 call_after(owner, Request::Flush, deadline)?;
                 saving = false;
-                SocketSuccess::Call { ids, result: raw(result_json)? }
+                EngineSuccess::Call {
+                    ok: True,
+                    ids,
+                    result: serde_json::from_str(&result_json).map_err(|e| invalid(e.to_string()))?,
+                }
             }
-            SocketRequest::Describe { .. } => {
+            EngineRequest::Describe { .. } => {
                 saving = true;
                 call(owner, Request::Flush, deadline)?;
                 saving = false;
@@ -153,38 +157,37 @@ fn dispatch(
                 let app = &owner.app().app;
                 let mut state = serde_json::to_value(reading).map_err(|e| invalid(e.to_string()))?;
                 state["schema"] = serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?;
-                SocketSuccess::Describe {
-                    state: fragment(crate::describe::describe(
+                EngineSuccess::Describe {
+                    ok: True,
+                    state: serde_json::from_value(crate::describe::describe(
                         serde_json::to_value(app.metadata()).expect("metadata"),
                         state,
                         app.command_metadata(),
-                    ))?,
+                    ))
+                    .map_err(|e| invalid(e.to_string()))?,
                 }
             }
-            SocketRequest::Get { .. } => {
+            EngineRequest::Get { .. } => {
                 saving = true;
                 call(owner, Request::Flush, deadline)?;
                 saving = false;
                 let Reply::State { reading, .. } = call(owner, Request::State, deadline)? else {
                     return Err(unexpected());
                 };
-                #[derive(Serialize)]
-                struct Get<'a> {
-                    schema: &'a RawValue,
-                    defaults: std::collections::BTreeMap<String, String>,
-                    #[serde(flatten)]
-                    reading: crate::Reading,
-                }
                 let app = &owner.app().app;
-                SocketSuccess::Get {
-                    state: fragment(Get {
-                        schema: app.document_raw(),
+                EngineSuccess::Get {
+                    ok: True,
+                    state: GetState {
+                        schema: serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?,
                         defaults: app.spec().theme_tokens().iter().cloned().collect(),
-                        reading,
-                    })?,
+                        version: reading.version,
+                        value: reading.value,
+                        theme: reading.theme,
+                    },
                 }
             }
-            SocketRequest::Batch { batch, attachments, .. } => {
+
+            EngineRequest::Batch { batch, attachments, .. } => {
                 // The blobs first, in this one request: their reference edits follow, so
                 // no close can find a blob waiting for its reference. A refused batch
                 // leaves only blobs nothing references, which its close reclaims.
@@ -205,40 +208,41 @@ fn dispatch(
                 saving = true;
                 call_after(owner, Request::Flush, deadline)?;
                 saving = false;
-                SocketSuccess::Batch { ids }
+                EngineSuccess::Batch { ok: True, ids }
             }
-            SocketRequest::ThemeExport { .. } => {
+            EngineRequest::ThemeExport { .. } => {
                 saving = true;
                 let Reply::ThemeFile { json } = call(owner, Request::ExportTheme, deadline)? else {
                     return Err(unexpected());
                 };
                 saving = false;
-                SocketSuccess::ThemeExport { state: fragment(json!({"file":json}))? }
+                EngineSuccess::ThemeExport { ok: True, state: ThemeExportState { file: json } }
             }
-            SocketRequest::AttachmentsList { .. } => {
+            EngineRequest::AttachmentsList { .. } => {
                 let Reply::Attachments { items } = call(owner, Request::Attachments, deadline)? else {
                     return Err(unexpected());
                 };
                 let state: Vec<_> = items
                     .into_iter()
-                    .map(|v| json!({"id":v.id,"byteLength":v.bytes,"mimeType":v.media_type}))
+                    .map(|v| AttachmentInfo { id: v.id, byte_length: v.bytes, mime_type: v.media_type })
                     .collect();
-                SocketSuccess::AttachmentsList { state: fragment(state)? }
+                EngineSuccess::AttachmentsList { ok: True, state }
             }
-            SocketRequest::AttachmentsRead { attachmentID, .. } => {
+            EngineRequest::AttachmentsRead { attachment_id, .. } => {
                 let Reply::Bytes { bytes: Some(bytes) } =
-                    call(owner, Request::ReadAttachment { id: attachmentID }, deadline)?
+                    call(owner, Request::ReadAttachment { id: attachment_id }, deadline)?
                 else {
                     return Err(unexpected());
                 };
-                SocketSuccess::AttachmentsRead {
-                    state: fragment(json!({"bytes": data_encoding::BASE64.encode(&bytes)}))?,
+                EngineSuccess::AttachmentsRead {
+                    ok: True,
+                    state: AttachmentBytes { bytes: data_encoding::BASE64.encode(&bytes) },
                 }
             }
-            SocketRequest::Copy { documentPath, output, .. } => {
+            EngineRequest::Copy { document_path, output, .. } => {
                 saving = true;
                 let output = if exporter.is_some() {
-                    export(ExportRequest { document_path: documentPath, format: None, output }, exporter, deadline)?
+                    export(ExportRequest { document_path, format: None, output }, exporter, deadline)?
                 } else {
                     call(
                         owner,
@@ -247,15 +251,13 @@ fn dispatch(
                     )?;
                     output
                 };
-                SocketSuccess::Copy { output }
+                EngineSuccess::Copy { ok: True, output }
             }
-            SocketRequest::Export { documentPath, format, output, .. } => SocketSuccess::Export {
-                output: export(
-                    ExportRequest { document_path: documentPath, format: Some(format), output },
-                    exporter,
-                    deadline,
-                )?,
+            EngineRequest::Export { document_path, format, output, .. } => EngineSuccess::Export {
+                ok: True,
+                output: export(ExportRequest { document_path, format: Some(format), output }, exporter, deadline)?,
             },
+            _ => return Err(invalid("Not a document command")),
         })
     })();
     match result {
@@ -267,7 +269,7 @@ fn dispatch(
 struct Header {
     ok: bool,
     method: Option<String>,
-    code: Option<OutcomeCode>,
+    code: Option<String>,
 }
 fn header(json: &str) -> Result<Header> {
     serde_json::from_str(json).map_err(|_| Failure::new(FailureKind::Failed, "Invalid socket response"))
@@ -282,61 +284,42 @@ fn discovery(path: &Path) -> Result<String> {
     Ok(value.socket)
 }
 /// A client's request in `protocol`, naming its document by its resolved path.
-fn prepare(request: wire::engine::EngineRequest, protocol: u64) -> Result<SocketRequest> {
-    use wire::engine::EngineRequest as E;
-    let path = |path: String| -> Result<String> {
-        let path = file::resolve(Path::new(&path))?;
-        registry::identity(&path)?;
-        Ok(path.to_string_lossy().into_owned())
-    };
-    let request = match request {
-        E::Get { document_path } => SocketRequest::Get { protocol, documentPath: path(document_path)? },
-        E::Describe { document_path } => SocketRequest::Describe { protocol, documentPath: path(document_path)? },
-        E::Call { document_path, command, args } => {
-            SocketRequest::Call { protocol, documentPath: path(document_path)?, command, args }
-        }
-        E::Batch { document_path, batch, attachments } => {
-            SocketRequest::Batch { protocol, documentPath: path(document_path)?, batch, attachments }
-        }
-        E::ThemeExport { document_path } => SocketRequest::ThemeExport { protocol, documentPath: path(document_path)? },
-        E::AttachmentsList { document_path } => {
-            SocketRequest::AttachmentsList { protocol, documentPath: path(document_path)? }
-        }
-        E::AttachmentsRead { document_path, attachment_id } => {
-            SocketRequest::AttachmentsRead { protocol, documentPath: path(document_path)?, attachmentID: attachment_id }
-        }
-        E::Copy { document_path, output } => {
-            SocketRequest::Copy { protocol, documentPath: path(document_path)?, output }
-        }
-        E::Export { document_path, format, output } => {
-            SocketRequest::Export { protocol, documentPath: path(document_path)?, format, output }
-        }
-        _ => return Err(invalid("Not a document command")),
-    };
+fn prepare(mut request: EngineRequest, protocol: u64) -> Result<SocketRequest> {
+    if !request.is_document() {
+        return Err(invalid("Not a document command"));
+    }
+    let path = request.document_path_mut().expect("document request");
+    let resolved = file::existing(Path::new(path))?;
+    *path = resolved.to_string_lossy().into_owned();
     request.check().map_err(invalid)?;
+    let limit = request.socket_limit();
+    let request = SocketRequest { protocol, request };
+    wire::check_json_size(&request, limit).map_err(Failure::from)?;
     Ok(request)
 }
 /// Engine entry point, for a request written in `protocol`. A closed owner is created only
 /// after taking the writer lock; discovery is consulted only when that lock is busy.
-/// Exports alone may use a snapshot.
-pub fn request(input: &str, protocol: u64, exporter: Option<Arc<dyn ExportHandler>>) -> String {
+/// Exports alone use a snapshot: without an evaluator, a closed export is refused.
+pub fn request(input: &str, protocol: u64) -> String {
     if let Some(message) = protocol_mismatch(protocol) {
         return failure(Failure::rejected(Code::RequiresUpdate, message), false, false);
     }
     match wire::engine::EngineRequest::parse(input) {
-        Ok(request) => request_with_evaluator(request, protocol, exporter, None),
+        Ok(request) => request_checked(request, protocol, None),
         Err(error) => failure(invalid(error.to_string()), false, false),
     }
 }
 pub fn request_with_evaluator(
     input: wire::engine::EngineRequest,
     protocol: u64,
-    exporter: Option<Arc<dyn ExportHandler>>,
     evaluator: Option<owner::Evaluator>,
 ) -> String {
     if let Some(message) = protocol_mismatch(protocol) {
         return failure(Failure::rejected(Code::RequiresUpdate, message), false, false);
     }
+    request_checked(input, protocol, evaluator)
+}
+fn request_checked(input: EngineRequest, protocol: u64, evaluator: Option<owner::Evaluator>) -> String {
     let request = match prepare(input, protocol) {
         Ok(r) => r,
         Err(mut e) => {
@@ -344,25 +327,29 @@ pub fn request_with_evaluator(
             return failure(e, false, false);
         }
     };
-    let path = Path::new(request.path()).to_owned();
+    let path = Path::new(request.request.document_path().expect("document request")).to_owned();
     let admission = Instant::now() + ADMISSION;
     loop {
         enum Connection {
             Local(Owner),
             Live(String),
         }
-        let connection = if matches!(request, SocketRequest::Export { .. }) {
+        let connection = if matches!(request.request, EngineRequest::Export { .. }) {
             match discovery(&path) {
                 Ok(socket) => Connection::Live(socket),
                 Err(_) => {
-                    let SocketRequest::Export { documentPath, format, output, .. } = request else { unreachable!() };
-                    return match export(
-                        ExportRequest { document_path: documentPath, format: Some(format), output },
-                        exporter.as_ref(),
-                        Instant::now() + COMMAND_TIMEOUT,
-                    ) {
-                        Ok(output) => success(SocketSuccess::Export { output }),
-                        Err(error) => failure(error, false, false),
+                    let EngineRequest::Export { format, output, .. } = request.request else { unreachable!() };
+                    let Some(evaluator) = &evaluator else {
+                        return failure(invalid("Export requires the capture renderer"), false, false);
+                    };
+                    let format = match format {
+                        ExportFormat::Png => CaptureFormat::Png,
+                        ExportFormat::Pdf => CaptureFormat::Pdf,
+                    };
+                    let deadline = Instant::now() + COMMAND_TIMEOUT;
+                    return match crate::capture::export_saved(&path, format, Path::new(&output), evaluator, deadline) {
+                        Ok(()) => success(EngineSuccess::Export { ok: True, output }),
+                        Err(error) => failure(error.into(), false, false),
                     };
                 }
             }
@@ -385,14 +372,14 @@ pub fn request_with_evaluator(
         };
         let answer = match &connection {
             Connection::Local(owner) => {
-                Ok(dispatch(owner, request.clone(), exporter.as_ref(), Instant::now() + COMMAND_TIMEOUT))
+                Ok(dispatch(owner, request.request.clone(), None, Instant::now() + COMMAND_TIMEOUT))
             }
             Connection::Live(socket) => match socket::call(Path::new(socket), &crate::encode(&request)) {
                 // Transport loss cannot confirm admission: its failure already has an
                 // unknown outcome and must not claim the owner accepted the command.
                 Err(error) => Ok(failure(error, false, false)),
                 Ok(response) => match header(&response) {
-                    Ok(result) if result.ok && result.method.as_deref() != Some(request.method()) => {
+                    Ok(result) if result.ok && result.method.as_deref() != Some(request.request.method()) => {
                         Err(Failure::new(FailureKind::Failed, "Socket response method mismatch"))
                     }
                     Ok(_) => Ok(response),
@@ -408,7 +395,8 @@ pub fn request_with_evaluator(
         }
         match answer {
             Ok(reply)
-                if header(&reply).is_ok_and(|reply| reply.code == Some(OutcomeCode::Closing))
+                if header(&reply)
+                    .is_ok_and(|reply| reply.code.as_deref() == Some(OutcomeCode::Closing.name().as_str()))
                     && Instant::now() < admission =>
             {
                 // A closing refusal confirms this request was not admitted. Once the

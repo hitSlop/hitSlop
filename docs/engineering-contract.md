@@ -16,11 +16,11 @@ Old documents depend on a few public boundaries; everything behind them may chan
 
 | Boundary | Marker | A later build |
 |---|---|---|
-| The app in a `.slop` file: catalog fields and `definition_json` (window, descriptor, theme, commands), plus resource semantics | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
-| App behavior: `ctx`, handles, errors, the command prelude and host DOM/CSS conventions | `app.runtime_abi`, stamped from the project's resolved SDK | Dispatches to the app-facing context adapter for that ABI |
+| The app in a `.slop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
+| App behavior: `ctx`, handles, errors, the command prelude, stored capture programs and host DOM/CSS conventions | `app.runtime_abi`, stamped by the build | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine` (and on the helper it runs), and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's location and its `socket` and `documentPath` fields (other fields are ignored); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON, outputs and exit statuses |
+| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's `socket` and `documentPath` fields (other fields are ignored; its location is per platform); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
 
 ### Local browser storage
 
@@ -63,11 +63,12 @@ Macs share openable on both for as long as possible.
 Markers are requirements, not release numbers: refactors never raise them, and app,
 CLI and SDK versions never stand for them. The Mac app and the npm package share one
 release version. A format change that an older build cannot read correctly raises a
-marker; a change without one is allowed only when older readers already handle it. An additive `ctx` API still raises
-`runtimeABI` once the SDK depends on it; an app may treat an API as optional only where
-it has a real fallback. A syntax reader never caps `runtimeABI`: the supported runtime is
-checked before the reader is chosen. The build stamps `runtimeABI` from the project's
-SDK and refuses one this CLI cannot validate or preview. Raising one
+marker; a change without one is allowed only when older readers already handle it.
+New `ctx` members may be declared optional (`member?:`) with a real fallback; these
+additions need no ABI bump. A required member an older host cannot supply raises
+`runtimeABI` once the SDK depends on it. A syntax reader never caps `runtimeABI`: the supported runtime is
+checked before the reader is chosen. The build stamps `runtimeABI`; the CLI refuses a
+project whose SDK version differs from its own, and refuses an ABI it cannot validate or preview. Raising one
 adds a reader and leaves released behavior in place. The current format reader is
 `app/package_format_1.rs`; the page context is `shell/abi/1.ts`, the command prelude
 is built from `shell/abi/runner-1.ts`, and `sdk/abi.ts` lists every part of the app ABI,
@@ -97,16 +98,48 @@ existing document; upgrading a document's app is an explicit operation. Only a w
 under the writer lock migrates a file, validating the result and committing the data and
 its markers together; reads that only display it (Quick Look, the catalog, `get`,
 export) never migrate it. Public boundaries grow additively: `ctx` and handle
-methods (new object-handle members start with `$`; reserved field names never grow),
-error and issue codes (apps treat unfamiliar ones as outcomes), `--slop-*`,
-`data-slop-root` and the embed relay. The engine, rendering helper and live owner ship in one
-Mac app bundle and keep an exact core build check. Loro is pinned exactly and upgraded only
-with the corpus passing.
+methods (host members start with `$` exactly when the handle also carries authored
+fields; handles without authored fields keep plain names; reserved field names never grow),
+error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports an
+unrecognized outcome and tells the user to inspect state before retrying; the engine relay
+forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--slop-*`,
+`data-slop-root`, the embed relay, and capture program requests and replies. The npm package ships the document engine; the Mac app contains its linked core
+and restricted evaluator. Release acceptance checks that the engine and the app contain
+the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
+
+Limits governing opening, reading and saving are versioned by their owning marker. The corpus records them, and a build may not make a released bound stricter. Acceptance vectors pin positive decoding behavior.
+
+Stored capture programs are governed by runtimeABI. Requests grow additively; reply readers ignore unknown hints. Captures remain faithful and usable, while renderer fixes may change pixels. See the [stored capture program contract](reference/runtime.md#stored-capture-program-abi-runtimeabi-1).
+
+### Open readers
+
+Readers are open and writers careful. A reader of persisted or exchanged JSON ignores the
+members it does not know: the stored definition's containers, shared theme files, engine
+replies and the output of a stored program, so adding an optional member never breaks an
+older build. A writer decides per addition: an ignorable hint needs no marker; an unknown
+enum kind, or anything an old reader must not ignore, raises the marker that owns it, and
+older builds then refuse with `requires_update` before decoding. Requests to something that
+executes them, the descriptor and arguments grammar (an option ignored would weaken
+validation), authoring input and same-build wires stay exact. Adding a member to an engine
+reply is therefore not a protocol bump. A category spelling this build does not know reads
+as `other`.
+
+A named command's reply stays raw JSON until the arm for its runtime ABI decodes it.
+The `{ok, intents, result}` success envelope and refusal envelope readers ignore unknown
+members. Required fields and types remain checked; intents inside the ABI-1 arm still
+decode strictly as executing requests. `Intent`, `Segment`, `Anchor` and `Selection`
+are the frozen ABI-1 vocabulary. An incompatible change raises `runtimeABI` and freezes
+the old decoder in the same change.
 
 The [compatibility corpus](testing.md#compatibility-corpus) is the evidence: every
 release's templates and saved documents, replayed by every build. A frozen entry is never
 edited, regenerated or deleted. The corpus is regression evidence, not proof that every
 possible document opens. Apps that embed external services depend on those services.
+
+Counters are exact while increments summed as absolute values over their whole history
+stay below 2^53 (about 9×10^15). Beyond that envelope an off-by-one result is possible,
+including after replacement, undo or reopen; no exactness is guaranteed. See
+[document types](reference/document-types.md#counter).
 
 ## Ownership
 
@@ -114,7 +147,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 
 - `hitslop-core` (Rust on Loro, `crates/`) owns document semantics and durable storage
   (the writer lock, the `.slop` file, the save policy), and is the only code that opens a
-  `.slop` file: the app, the helper, Quick Look and the CLI's `slop-engine` all read and
+  `.slop` file: the app, Quick Look and the CLI's `slop-engine` all read and
   write through it. The Rust owner schedules saves and serializes edits; Swift
   `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/hitslop/src/shell`) holds no CRDT.
 - A `.slop` file is one SQLite database. A template holds its app: the `app` row
@@ -124,7 +157,15 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   attachments. No engine, source,
   dependencies or caches.
 
+### App identity
+
+`appDigest` hashes a fixed encoding of named app and asset columns with stable domain
+and field identifiers, never SQL query text. An inert schema extension therefore never
+changes an unchanged app's digest.
+
 ## Rules
+
+- Theme token names reserve the prefixes `window-`, `host-` and `platform-` for the host.
 
 - One edit path. The CLI forwards to the live owner's socket or takes the writer lock
   and runs the owner in-process, without WebKit or authored code. Never bypass a busy
@@ -134,9 +175,11 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   sizes after a failure; it advances the saved version only on confirmed success.
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
 - Flush unsent text and pending writes before close or export. Captures render saved
-  state in a fresh read-only page; the optional explicitly imported export view supplies the layout, otherwise
-  a fresh App uses its default local UI state. Successful close destroys WebViews.
-- Author schemas with `defineDocument`/`s`. The stored descriptor is not JSON Schema.
+  state through synchronous Svelte SSR and Takumi in the restricted Rust child; required root `Preview.svelte` supplies preview artwork; optional `Export.svelte` supplies PNG/PDF output.
+  Successful close destroys WebViews.
+- Author schemas with `defineDocument`/`s`: the export is definition data. Editors acquire
+  their document with `getDocument(schema)` during component initialization; static views
+  receive saved snapshot and attachment URL props. The stored descriptor is not JSON Schema.
   Initial values are read only when a document is created. Descriptor kinds exist only once Rust,
   the SDK and a fixture implement them (today: text, boolean, string, number, integer, enum,
   optional (of a scalar, text or an object), object, list(object), list(scalar),
@@ -151,26 +194,19 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - Rust owns wire types and shared limits (`crates/hitslop-core/src/wire`); ts-rs exports
   TypeScript and UniFFI carries native types to Swift. App acceptance also belongs to Rust; JSON Schema is only a descriptor projection for tool clients. Run `bun run schema:generate`; never edit generated files.
 - The core checks every file it opens (its layout, rows, markers and resource bounds) and
-  every build it packs, not authored UI behavior. Rust decodes and checks page/socket requests once; Swift checks the page sender and receives typed native actions. The helper receives Rust-decoded native
-  request enums and returns typed outcomes for Rust to encode.
+  every build it packs, not authored UI behavior. Rust decodes and checks page/socket requests once; Swift checks the page sender and receives typed native actions.
 - Attachments are host-owned immutable content-addressed blobs in the file's
-  `attachments` table, referenced by ordinary document fields and served by URL. Stored media types are sniffed; the first read verifies the full hash.
-- Page and CLI commands share the owner's descriptor validation and restricted child. The UI bundle contains stubs only. Every evaluation gets a fresh runtime; no command globals persist across calls.
+  `attachments` table, referenced by ordinary document fields and served by URL. Media types are sniffed when stored; the first read verifies the full hash and refuses a stored label that does not match the content, except `application/octet-stream`, the fallback any content may carry.
+- Agent commands use the owner's descriptor validation and restricted child. Pages use handles and `doc.change`; command implementations stay outside the UI graph. Every evaluation gets a fresh runtime; no command globals persist across calls.
 - The app row seals assets at pack time. No app or asset updates/deletes, and no asset insert after the seal, including conflict-replacement forms. Catalog summaries never parse `definition_json` or read app/attachment blobs.
 - Preserve the macOS client: app lifecycle and quit, catalog and Recents, slop windows and
   toolbar, PNG/PDF export, Quick Look previews and Finder icons, Firebase
   Analytics/Crashlytics and Sparkle.
-- Active examples are the directories with a `slop.ts` under `examples/slops`;
+- Active examples are the directories with a `slop.ts` under `slops`;
   `bundled.json` selects shipped templates. Dedicated fixtures own platform semantics. Use plain CSS and
-  `slop.ts` theme colors; read `examples/slops/PRODUCT.md` and `docs/guides/authoring.md` for
+  `slop.ts` theme colors; read `slops/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
-- Development-only exception: an opt-in native `dev-sync` loopback harness may qualify
-  one authority and two temporary replica owners. It keeps Loro bytes in Rust, disables
-  shared undo and attachment imports, and creates no released format or production
-  endpoint. Shared-session fencing ends with its live owner; durable restart/retry
-  recovery remains deferred.
-- Deferred: production collaboration, a document history UI, schema evolution (changing a
-  descriptor makes a new document type), synced folders, hosted catalog/publishing,
-  accounts and sharing.
+- Deferred work is tracked in the [roadmap](roadmap.md#later). Changing a descriptor
+  currently makes a new document type; schema evolution is deferred.
 
 Testing policy lives in [testing](testing.md). Agent entrypoint: [AGENTS.md](../AGENTS.md).

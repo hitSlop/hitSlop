@@ -11,6 +11,7 @@ import BidirectionalSync from "../components/BidirectionalSync.svelte";
 import SlopUnfold from "../components/SlopUnfold.svelte";
 import ThemeSwitcher from "../components/ThemeSwitcher.svelte";
 import ExportPrinter from "../components/ExportPrinter.svelte";
+import DesktopWidgets from "../components/DesktopWidgets.astro";
 import LiveTogether from "../components/LiveTogether.svelte";
 import AppleIcon from "../components/AppleIcon.astro";
 import templates from "../data/templates.json";
@@ -24,11 +25,12 @@ const faqs = [
   { question: "What is a .slop?", answer: "A tiny app or a living document, packaged as a single SQLite file. Open it, move it, share it, keep it. The interface and your data travel together." },
   { question: "Can I open a .slop without hitSlop?", answer: "You can look inside it: a .slop is a standard SQLite database, so any SQLite tool opens it and shows its tables. To use or edit it, open it in hitSlop or change it through the CLI. hitSlop is MIT-licensed, so the format is all in the open." },
   { question: "What comes with the app?", answer: `A whole collection: ${count} tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond, and we keep releasing more. Pick one from Templates and hitSlop makes you your own copy.` },
-  { question: "Where does my data live?", answer: "In the document on your Mac: one SQLite file, with the app and everything you save inside it. No account, no server, and every included template works offline." },
+  { question: "Where does my data live?", answer: "In the document on your Mac: one SQLite file, with the app and everything you save inside it. No account or document server. Apps that use online media still need the network." },
   { question: "Can an AI edit it?", answer: "Yes. A coding agent can build a slop from scratch, and it can change the tasks, notes and numbers in a document through the hitSlop CLI. It edits the same live document you have open." },
   { question: "Can a tiny app go fullscreen?", answer: "Yes, when its author enables fullscreen, as Checklist and Hourglass do. Use the green fullscreen control or View ▸ Enter Full Screen. Flexible windows fill the screen; fixed or shaped designs scale to fit on a black backdrop. You can also pin a desktop window Always on Top." },
   { question: "Can I change how a slop looks?", answer: "Yes. Open the theme panel in any slop’s window to pick your own colors, and import or export a palette to share it. Your agent can do the same with the theme commands. Colors stay with that document. Authors change layout and structure in source and build a new version." },
   { question: "Will my slops update on their own?", answer: "No. A document keeps the app version it was made with. A new build is available for new copies and never rewrites the ones you already use." },
+  { question: "Can I put a slop in a desktop widget?", answer: "Yes, when its author includes a widget view. Open the document in hitSlop, add a hitSlop widget from the Mac widget gallery, and choose your document in Edit Widget. Small, medium and large sizes show saved content and refresh while hitSlop runs. macOS controls when updates appear; quitting hitSlop leaves the last image visible." },
   { question: "Can I share the result without sharing the app?", answer: "Yes. Export a crisp PNG, or a PDF with selectable text and vector output. Good for invoices, recipes, plans, or anything that needs to leave your desktop." },
   { question: "Can we edit together?", answer: "Live collaboration is coming soon. Today your documents stay on your Mac, and you can send copies or PNG and PDF exports." },
   { question: "Is it free?", answer: "Yes. hitSlop is free and open source under the MIT license." },
@@ -40,7 +42,7 @@ const faqs = [
   <head>
     <SiteHead title="hitSlop · Tiny apps. Big personality." description={`Tiny apps and living documents for your Mac. ${count} included templates, each one a single SQLite file you keep. Make your own with your AI agent.`} preloadHeadline />
   </head>
-  <body>
+  <body class="landing-home">
     <a class="skip-link" href="#main-content">Skip to content</a>
     <Masthead current="home" />
 
@@ -113,6 +115,20 @@ const faqs = [
         </div>
       </section>
 
+      <section class="section widgets" id="widgets" aria-labelledby="widgets-title">
+        <div class="split">
+          <div>
+            <p class="kicker">Desktop widgets</p>
+            <h2 class="headline" id="widgets-title">Your slop.<br /><em>At a glance.</em></h2>
+            <p class="lede">Keep your checklist on your Mac desktop, even with its window closed. Choose a small, medium or large widget, and click it to open the document when you need to do more.</p>
+            <p class="lede">Edit the document and its widget refreshes while hitSlop runs. Your list, your colors, right where you can see them.</p>
+            <a class="text-link widget-guide" href="/docs/guides/icons-and-exports/#design-a-macos-widget">Add a desktop widget <span aria-hidden="true">→</span></a>
+            <p class="small-print">Available for Quick Checklist, Water Tracker, Grocery List, Reading Tracker, Habit Heatmap, Daily Planner, Assignment Tracker and Countdown Milestones. macOS controls update timing.</p>
+          </div>
+          <DesktopWidgets />
+        </div>
+      </section>
+
       <section class="section panel export" id="export" aria-labelledby="export-title">
         <div class="split flip">
           <div>
@@ -168,7 +184,7 @@ const faqs = [
           <p class="kicker">Small files. Big ideas.</p>
           <h2 class="headline" id="final-title">Put a tiny app on your desktop.</h2>
           <a class="button button-primary final-download" href={SITE_LINKS.download} data-burst={JSON.stringify(burst)}><AppleIcon /> Download for Mac</a>
-          <p class="small-print">Free &amp; open source · macOS 15.2+ on Apple silicon · Signed &amp; notarized · Live collaboration, Windows + iOS coming soon</p>
+          <p class="small-print">Free &amp; open source · macOS 15.2+ on Apple silicon · Signed &amp; notarized · Live collaboration coming soon</p>
         </div>
         <div class="final-dock" aria-hidden="true">
           <span>🍅</span><span>☑️</span><span class="app"><img src="/assets/appicon-256.webp" width="96" height="96" alt="" loading="lazy" /></span><span>🐟</span><span>📻</span>
@@ -218,6 +234,7 @@ const faqs = [
 
   .make-actions { margin-top: 28px; display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
   .make-art { min-width: 0; }
+  .widget-guide { margin-top: 26px; }
 
   .agent { color: #f3ecf6; background: #251630; border-radius: var(--radius); }
   .agent .headline em { color: #ffd84a; }
@@ -275,6 +292,32 @@ const faqs = [
   @media (prefers-reduced-motion: no-preference) { .final-dock .app { animation: dock-bounce 2.8s var(--ease-out) infinite; } }
   @keyframes dock-bounce { 0%, 55%, 100% { translate: 0 0; } 10%, 30% { translate: 0 -34px; } 20%, 40% { translate: 0 0; } }
   @media (max-width: 520px) { .final-dock span { width: 48px; height: 48px; font-size: 26px; } .final-dock .app { width: 72px; height: 72px; } }
+
+  @media (max-width: 779px) {
+    .headline.small { font-size: clamp(2rem, 8vw, 3rem); }
+    .templates { padding-top: 48px; }
+    .wall-wrap, .unfold-wrap { margin-top: 24px; }
+    .make-actions { margin-top: 20px; gap: 16px; }
+    .make-actions .button { width: 100%; }
+    .agent-intro { margin-bottom: 24px; }
+    .section.file { padding-block: 40px; }
+    .verbs { margin-top: 20px; gap: 8px; }
+    .verbs .sticker { padding: 7px 10px; border-width: 2px; border-radius: 10px; box-shadow: none; font-size: .9rem; rotate: 0deg; }
+    .themes .theme-note { margin-top: 16px; font-size: 1rem; rotate: 0deg; }
+    .stamps { gap: 12px; }
+    .stamps li { padding: 16px; rotate: 0deg; box-shadow: 0 4px 10px #6b3c0014; }
+    .stamps b { font-size: 1.35rem; }
+    .faq { gap: 24px; }
+    .faq-list summary { min-height: 64px; gap: 12px; font-size: 1.05rem; }
+    .faq-list details p { font-size: 1rem; }
+    .final { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+    .final .headline { max-width: 15ch; }
+    .final-download { width: 100%; margin-top: 24px; }
+    .final .small-print { font-size: .85rem; line-height: 1.5; }
+    .final-dock { width: min(100%, 340px); padding: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)); gap: 8px; border-radius: 20px; box-shadow: 0 12px 24px #6b1f3a1a; }
+    .final-dock span, .final-dock .app { width: 100%; height: auto; aspect-ratio: 1; border-radius: 14px; font-size: clamp(20px, 6vw, 30px); }
+    .final-dock .app { animation: none; }
+  }
 
   :global(.burst-bit) { position: fixed; z-index: 999; font-size: 30px; pointer-events: none; translate: -50% -50%; animation: burst-fly 1100ms cubic-bezier(.2, .8, .3, 1) forwards; }
   @keyframes burst-fly { to { transform: translate(var(--dx), var(--dy)) rotate(var(--spin)) scale(.7); opacity: 0; } }

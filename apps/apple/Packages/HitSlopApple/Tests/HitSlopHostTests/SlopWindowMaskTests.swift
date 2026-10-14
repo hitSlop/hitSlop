@@ -108,7 +108,7 @@ private func maskedFixture(scale: Int = 1, alpha: (Int, Int) -> UInt8 = { _, y i
 }
 
 extension HostTests {
-  @Test @MainActor func glassWindowsFrostBehindThePage() async throws {
+  @Test(.nightly) @MainActor func glassWindowsFrostBehindThePage() async throws {
     let stage = try Fixtures.minimalStage(
       slug: "glass", fields: ["window": ["width": 240, "height": 180, "background": "glass"]])
     let root = try Fixtures.document(stage: stage)

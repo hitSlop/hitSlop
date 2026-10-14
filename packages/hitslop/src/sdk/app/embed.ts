@@ -2,29 +2,23 @@
 // player refuses to play for an embedder that doesn't send an HTTP(S) referrer (error 153). So
 // the player is embedded through a small relay page on hitslop.com, which supplies the referrer
 // and forwards the player's postMessage API. Authors never run a server and never load YouTube's
-// own script (remote scripts are blocked): they call `youtube.src` and `youtube.player`.
+// own script (remote scripts are blocked): they embed the `src` from `hitslop/youtube` and control
+// it with `youtube.player`. Reading a pasted link, the lookup and the player need `URL`, the
+// network or the page, none of which a capture has, so a static view may not import this module;
+// the thumbnail and relay URL builders are plain strings and live in `hitslop/youtube`.
 
-const defaultRelay = "https://hitslop.com/embed/youtube.html";
-const idShape = /^[A-Za-z0-9_-]{11}$/;
+import { defaultRelay, idShape } from "./youtube";
+
 const youtubeHosts = new Set([
-  "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
-  "youtube-nocookie.com", "www.youtube-nocookie.com",
+  "youtube.com",
+  "www.youtube.com",
+  "m.youtube.com",
+  "music.youtube.com",
+  "youtube-nocookie.com",
+  "www.youtube-nocookie.com",
 ]);
 
 export type VideoMeta = { youtubeId: string; title: string; author: string };
-
-export type YouTubeSrcOptions = {
-  /** Show YouTube's own controls. Off by default: the slop draws its own. */
-  controls?: boolean;
-  /** Start playing as soon as the player loads. On by default. */
-  autoplay?: boolean;
-  /** Show the video's caption track, if it has one. Off by default. */
-  captions?: boolean;
-  /** Start position in whole seconds. */
-  start?: number;
-  /** A relay you host yourself instead of hitslop.com. */
-  relay?: string;
-};
 
 export type YouTubeHandlers = {
   /** The player answered for the first time. */
@@ -51,7 +45,10 @@ export type YouTubePlayer = {
 };
 
 export class LookupError extends Error {
-  constructor(readonly kind: "missing" | "embed" | "network", message: string) {
+  constructor(
+    readonly kind: "missing" | "embed" | "network",
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -70,8 +67,12 @@ function parseId(input: string): string | null {
   if (host === "youtu.be") candidate = url.pathname.split("/")[1] ?? null;
   else if (youtubeHosts.has(host)) {
     const [, kind = "", id] = url.pathname.split("/");
-    candidate = kind === "watch" ? url.searchParams.get("v")
-      : ["embed", "shorts", "live", "v"].includes(kind) ? id ?? null : null;
+    candidate =
+      kind === "watch"
+        ? url.searchParams.get("v")
+        : ["embed", "shorts", "live", "v"].includes(kind)
+          ? (id ?? null)
+          : null;
   }
   return candidate && idShape.test(candidate) ? candidate : null;
 }
@@ -91,8 +92,6 @@ function clip(text: string, max: number): string {
   return text.slice(0, (text.charCodeAt(max - 1) & 0xfc00) === 0xd800 ? max - 1 : max);
 }
 
-const thumbnail = (youtubeId: string) => `https://i.ytimg.com/vi/${youtubeId}/mqdefault.jpg`;
-
 /** Title and author from YouTube's oEmbed endpoint, which also refuses videos that can't be embedded. */
 async function lookup(youtubeId: string, signal?: AbortSignal): Promise<VideoMeta> {
   const watch = encodeURIComponent(`https://www.youtube.com/watch?v=${youtubeId}`);
@@ -103,26 +102,17 @@ async function lookup(youtubeId: string, signal?: AbortSignal): Promise<VideoMet
     if (signal?.aborted) throw cause;
     throw new LookupError("network", "Can't reach YouTube.");
   }
-  if (response.status === 401 || response.status === 403) throw new LookupError("embed", "That video can't be embedded.");
-  if (response.status === 400 || response.status === 404) throw new LookupError("missing", "No video found at that link.");
+  if (response.status === 401 || response.status === 403)
+    throw new LookupError("embed", "That video can't be embedded.");
+  if (response.status === 400 || response.status === 404)
+    throw new LookupError("missing", "No video found at that link.");
   if (!response.ok) throw new LookupError("network", "YouTube didn't answer. Try again.");
-  const body = await response.json() as { title?: unknown; author_name?: unknown };
+  const body = (await response.json()) as { title?: unknown; author_name?: unknown };
   return {
     youtubeId,
     title: clip(typeof body.title === "string" && body.title ? body.title : "Untitled video", 200),
     author: clip(typeof body.author_name === "string" ? body.author_name : "", 120),
   };
-}
-
-/** The relay URL to use as an `<iframe src>`. The video travels in the fragment, which is never sent to a server. */
-function src(youtubeId: string, options: YouTubeSrcOptions = {}): string {
-  if (!idShape.test(youtubeId)) throw new Error("A YouTube video id is 11 letters, digits, - or _");
-  const parts = [`v=${youtubeId}`];
-  if (options.controls !== undefined) parts.push(`controls=${options.controls ? 1 : 0}`);
-  if (options.autoplay !== undefined) parts.push(`autoplay=${options.autoplay ? 1 : 0}`);
-  if (options.captions) parts.push("cc=1");
-  if (options.start !== undefined && Number.isSafeInteger(options.start) && options.start > 0) parts.push(`start=${options.start}`);
-  return `${options.relay ?? defaultRelay}#${parts.join("&")}`;
 }
 
 type PlayerEvent =
@@ -135,17 +125,24 @@ type PlayerEvent =
 function decode(raw: unknown): PlayerEvent[] {
   let message = raw as { event?: unknown; info?: unknown } | null;
   if (typeof raw === "string") {
-    try { message = JSON.parse(raw); } catch { return []; }
+    try {
+      message = JSON.parse(raw);
+    } catch {
+      return [];
+    }
   }
   if (!message || typeof message !== "object" || typeof message.event !== "string") return [];
-  if (message.event === "onStateChange" && typeof message.info === "number") return [{ type: "state", state: message.info }];
+  if (message.event === "onStateChange" && typeof message.info === "number")
+    return [{ type: "state", state: message.info }];
   if (message.event === "onError") return [{ type: "error", code: Number(message.info) }];
   if (message.event === "infoDelivery" || message.event === "initialDelivery") {
     const info = (message.info ?? {}) as Record<string, unknown>;
     const events: PlayerEvent[] = [];
-    if (typeof info.playerState === "number") events.push({ type: "state", state: info.playerState });
+    if (typeof info.playerState === "number")
+      events.push({ type: "state", state: info.playerState });
     const time = typeof info.currentTime === "number" ? info.currentTime : undefined;
-    const duration = typeof info.duration === "number" && info.duration > 0 ? info.duration : undefined;
+    const duration =
+      typeof info.duration === "number" && info.duration > 0 ? info.duration : undefined;
     if (time !== undefined || duration !== undefined) events.push({ type: "time", time, duration });
     return events.length ? events : [{ type: "other" }];
   }
@@ -153,8 +150,8 @@ function decode(raw: unknown): PlayerEvent[] {
 }
 
 /**
- * Control the player in `frame`, whose `src` came from `youtube.src`. Attach it after the frame
- * has its `src`; it keeps asking the relay to start reporting until the player answers.
+ * Control the player in `frame`, whose `src` came from `src` in `hitslop/youtube`. Attach it after
+ * the frame has its `src`; it keeps asking the relay to start reporting until the player answers.
  */
 function player(
   frame: HTMLIFrameElement,
@@ -170,8 +167,11 @@ function player(
   let heard = false;
   let state = -1;
   let duration: number | undefined;
-  const post = (payload: object) => frame.contentWindow?.postMessage(JSON.stringify(payload), origin);
-  const listen = () => { if (!heard) post({ event: "listening", id: 1, channel: "widget" }); };
+  const post = (payload: object) =>
+    frame.contentWindow?.postMessage(JSON.stringify(payload), origin);
+  const listen = () => {
+    if (!heard) post({ event: "listening", id: 1, channel: "widget" });
+  };
   const answered = () => {
     if (heard) return;
     heard = true;
@@ -200,12 +200,20 @@ function player(
   window.addEventListener("message", onMessage);
   frame.addEventListener("load", listen);
   const poll = setInterval(listen, 400);
-  const timeout = setTimeout(() => { if (!heard) handlers.onError?.(-1); }, options.timeoutMs ?? 10_000);
+  const timeout = setTimeout(() => {
+    if (!heard) handlers.onError?.(-1);
+  }, options.timeoutMs ?? 10_000);
   return {
     play: () => post({ event: "command", func: "playVideo", args: [] }),
     pause: () => post({ event: "command", func: "pauseVideo", args: [] }),
-    seek: (seconds) => post({ event: "command", func: "seekTo", args: [Math.max(0, seconds), true] }),
-    setVolume: (level) => post({ event: "command", func: "setVolume", args: [Math.round(Math.min(1, Math.max(0, level)) * 100)] }),
+    seek: (seconds) =>
+      post({ event: "command", func: "seekTo", args: [Math.max(0, seconds), true] }),
+    setVolume: (level) =>
+      post({
+        event: "command",
+        func: "setVolume",
+        args: [Math.round(Math.min(1, Math.max(0, level)) * 100)],
+      }),
     dispose() {
       clearInterval(poll);
       clearTimeout(timeout);
@@ -215,4 +223,4 @@ function player(
   };
 }
 
-export const youtube = { parseId, findId, thumbnail, lookup, src, player, clip };
+export const youtube = { parseId, findId, lookup, player };

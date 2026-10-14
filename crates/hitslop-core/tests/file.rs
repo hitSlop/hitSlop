@@ -1,5 +1,6 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
+use crate::support;
 use hitslop_core::file::{self, Artwork, Kind, TemplateSource};
 use hitslop_core::registry::{self, Lease};
 use hitslop_core::store::{Error, Mode, Store};
@@ -7,13 +8,584 @@ use hitslop_core::{Code, Origin};
 use rusqlite::{Connection, config::DbConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
-mod support;
 use support::ApplyJson;
 use support::{App, isolate_registry, registry_folder, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
+
+#[test]
+fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
+    use std::os::unix::ffi::OsStrExt;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let saved = fs::read(&doc).unwrap();
+    let missing = dir.path().join("missing.slop");
+    let link = dir.path().join("link.slop");
+    let dangling = dir.path().join("dangling.slop");
+    let folder = dir.path().join("folder.slop");
+    let fifo = dir.path().join("fifo.slop");
+    std::os::unix::fs::symlink(&doc, &link).unwrap();
+    std::os::unix::fs::symlink(&missing, &dangling).unwrap();
+    fs::create_dir(&folder).unwrap();
+    let name = std::ffi::CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    // SAFETY: `name` is a valid NUL-terminated path for this call.
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    type Entry = (&'static str, fn(&Path) -> Result<(), Error>);
+    let entries: [Entry; 6] = [
+        ("kind", |path| file::kind(path).map(|_| ())),
+        ("inspect", |path| file::inspect(path).map(|_| ())),
+        ("descriptor", |path| file::descriptor(path).map(|_| ())),
+        ("snapshot", |path| Store::open(path, Mode::Snapshot)?.close()),
+        ("document", |path| Store::open(path, Mode::Document)?.close()),
+        ("lease", |path| Lease::acquire(path).map(drop)),
+    ];
+    let mut failures = Vec::new();
+    for path in [link, dangling, folder, fifo, missing] {
+        // A refused leaf must not get a registry lock or discovery entry. Lock files are never
+        // removed and a filesystem may reuse an inode number, so a file already under this
+        // leaf's name belongs to another document, not to this refusal.
+        use std::os::unix::fs::MetadataExt;
+        let names: Vec<PathBuf> = fs::symlink_metadata(&path)
+            .ok()
+            .into_iter()
+            .flat_map(|meta| {
+                ["lock", "json", "json.tmp"]
+                    .map(|extension| registry_folder().join(format!("{:x}-{:x}.{extension}", meta.dev(), meta.ino())))
+            })
+            .collect();
+        let preexisting: Vec<bool> = names.iter().map(|name| name.exists()).collect();
+        for (entry, open) in entries {
+            let (tx, rx) = mpsc::channel();
+            let supplied = path.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(open(&supplied));
+            });
+            match rx.recv_timeout(Duration::from_secs(2)) {
+                Ok(Err(Error::Rejected(error)))
+                    if error.code == Code::InvalidRequest
+                        && error.message == "A document must be an existing regular file" => {}
+                result => failures.push(format!("{entry}: {}: {result:?}", path.display())),
+            }
+        }
+        for (name, existed) in names.iter().zip(&preexisting) {
+            assert!(*existed || !name.exists(), "{} was created for a refused leaf", name.display());
+        }
+        assert!(!path.with_extension("slop-journal").exists());
+    }
+    let parent = dir.path().join("parent");
+    std::os::unix::fs::symlink(dir.path(), &parent).unwrap();
+    let linked_parent = parent.join(doc.file_name().unwrap());
+    for (entry, open) in entries {
+        open(&linked_parent).unwrap_or_else(|error| panic!("{entry}: {error}"));
+    }
+    assert_eq!(fs::read(&doc).unwrap(), saved);
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
+    use hitslop_core::capture::{CaptureFormat, CaptureOutput, CaptureValue, render_batch};
+    for has_widget in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let source = stage(directory.path());
+        if has_widget {
+            support::edit_input(&source, |input| {
+                input["declaration"]["views"]["widget"] = serde_json::json!({});
+                input["roles"]["widget"] = "widget.js".into();
+            });
+            support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+        }
+        let template = directory.path().join("template.slop");
+        support::pack(&source, &template).unwrap();
+        let document = directory.path().join("document.slop");
+        file::create_document(&template, &document).unwrap();
+        let saved = fs::read(&document).unwrap();
+        let image = png(512, 512, 6);
+        let reply = serde_json::json!({"ok": true, "images": [data_encoding::BASE64.encode(&image)]});
+        let widget_images: Vec<_> =
+            hitslop_core::widgets::widget_viewports().iter().map(|v| png(v.width * 2, v.height * 2, 6)).collect();
+        let widgets = serde_json::json!({"ok": true, "images": widget_images.iter()
+            .map(|bytes| data_encoding::BASE64.encode(bytes)).collect::<Vec<_>>()});
+        let markup =
+            serde_json::json!({"frames":[{"kind":"preview","width":512,"height":512,"html":"","css":""}],"fonts":[]});
+        let widget_markup = serde_json::json!({"frames": hitslop_core::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+        let evaluator = hitslop_core::owner::Evaluator::new(
+            "/bin/sh".into(),
+            vec!["-c".into(), format!(r#"input=$(/bin/cat); case "$input" in *'"mode":"markup"'*) printf '%s' '{markup}';; *'"mode":"widgetMarkup"'*) printf '%s' '{widget_markup}';; *'"mode":"widget"'*) printf '%s' '{widgets}';; *) printf '%s' '{reply}';; esac"#)],
+        ).unwrap();
+        let outputs = [
+            CaptureOutput::Preview,
+            CaptureOutput::Widgets,
+            CaptureOutput::Export { format: CaptureFormat::Pdf }, // Child returned the wrong media.
+            CaptureOutput::Icon,
+        ];
+        let results = render_batch(&document, &evaluator, &outputs).unwrap();
+        assert_eq!(results.iter().map(|result| result.output).collect::<Vec<_>>(), outputs);
+        for result in &results {
+            match result.output {
+                CaptureOutput::Preview | CaptureOutput::Icon => {
+                    let Ok(CaptureValue::Image { bytes: Some(bytes) }) = &result.result else {
+                        panic!("valid image must survive another role's failure")
+                    };
+                    assert_eq!(bytes, &image);
+                }
+                CaptureOutput::Widgets if has_widget => {
+                    let Ok(CaptureValue::Widgets { capture }) = &result.result else {
+                        panic!("valid widgets must survive another role's failure")
+                    };
+                    assert_eq!(
+                        capture.images.iter().map(|i| &i.png).collect::<Vec<_>>(),
+                        widget_images.iter().collect::<Vec<_>>()
+                    );
+                    assert_eq!(
+                        capture.source_version,
+                        hitslop_core::widgets::saved_version(&document, &evaluator).unwrap()
+                    );
+                }
+                _ => assert!(result.result.is_err()),
+            }
+        }
+        assert_eq!(fs::read(&document).unwrap(), saved);
+    }
+}
+
+/// A metadata-only markup stand-in and a bounded raster reply. The shell never
+/// evaluates authored code, so these tests isolate core image admission and reads.
+fn image_markup(ids: &[String], icon_ids: &[String]) -> hitslop_core::owner::Evaluator {
+    image_markup_before(ids, icon_ids, ":")
+}
+fn image_markup_before(ids: &[String], icon_ids: &[String], before: &str) -> hitslop_core::owner::Evaluator {
+    let frame = |kind: &str, ids: &[String]| {
+        serde_json::json!({"frames":[{
+        "html":ids.iter().step_by(2).map(|id| format!("<img src=\"slop-attachment:{id}\">" )).collect::<String>(),
+        "css":ids.iter().skip(1).step_by(2).map(|id| format!(".photo{{background:url(\"slop-attachment:{id}\")}}" )).collect::<String>(),
+        "width":512,"height":512,"kind":kind}],"fonts":[]})
+    };
+    let preview = frame("preview", ids);
+    let icon = frame("icon", icon_ids);
+    let widgets = serde_json::json!({"frames":hitslop_core::widgets::widget_viewports().iter().map(|v|serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+    let reply = serde_json::json!({"ok":true,"images":[data_encoding::BASE64.encode(&png(512,512,6))]});
+    let widget_reply = serde_json::json!({"ok":true,"images":hitslop_core::widgets::widget_viewports().iter().map(|v|data_encoding::BASE64.encode(&png(v.width*2,v.height*2,6))).collect::<Vec<_>>()});
+    // Only the small request prefix selects a reply; drain image bytes without
+    // copying or pattern-matching megabytes in the shell.
+    let script = format!(
+        r#"input=$(/usr/bin/head -c 4096); /bin/cat >/dev/null; {before}; case "$input" in *'"mode":"markup"'*) case "$input" in *'\"kind\":\"icon\"'*) printf '%s' '{icon}';; *) printf '%s' '{preview}';; esac;; *'"mode":"widgetMarkup"'*) printf '%s' '{widgets}';; *'"mode":"widget"'*) printf '%s' '{widget_reply}';; *) printf '%s' '{reply}';; esac"#
+    );
+    hitslop_core::owner::Evaluator::new("/bin/sh".into(), vec!["-c".into(), script]).unwrap()
+}
+fn capture_document(dir: &Path) -> PathBuf {
+    let source = stage(dir);
+    support::edit_input(&source, |input| {
+        input["declaration"]["views"]["widget"] = serde_json::json!({});
+        input["roles"]["widget"] = "widget.js".into();
+    });
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '{}';");
+    let template = dir.join("template.slop");
+    support::pack(&source, &template).unwrap();
+    let doc = dir.join("document.slop");
+    file::create_document(&template, &doc).unwrap();
+    doc
+}
+fn saved_images(path: &Path, count: usize, padded: bool) -> Vec<String> {
+    let store = Store::open(path, Mode::Document).unwrap();
+    let ids: Vec<_> = (0..count)
+        .map(|i| {
+            let mut bytes = Vec::new();
+            let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            if padded {
+                // Large encoded bytes, one pixel to decode. An unknown ancillary
+                // chunk keeps the PNG valid without adding raster work.
+                writer.write_chunk(png::chunk::ChunkType(*b"slOp"), &vec![0; 6 << 20]).unwrap();
+            }
+            writer.write_image_data(&[i as u8, 0, 0, 255]).unwrap();
+            writer.finish().unwrap();
+            store.put_attachment(&bytes).unwrap().id
+        })
+        .collect();
+    let mut doc = store.document().unwrap();
+    doc.apply_json(
+        &serde_json::json!({"intents":[{"type":"set","path":["title"],"value":ids.join(" ")}]}).to_string(),
+        Origin::Page,
+    )
+    .unwrap();
+    store.write(&store.job(&mut doc).unwrap().unwrap()).unwrap();
+    store.close().unwrap();
+    ids
+}
+#[test]
+fn capture_damaged_unused_image_never_blocks_outputs() {
+    use hitslop_core::capture::{CaptureFormat, CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = capture_document(dir.path());
+    let ids = saved_images(&doc, 1, false);
+    raw(&doc).execute("UPDATE attachments SET bytes=zeroblob(length(bytes))", []).unwrap();
+    let evaluator = image_markup(&[], &[]);
+    let results = render_batch(
+        &doc,
+        &evaluator,
+        &[
+            CaptureOutput::Preview,
+            CaptureOutput::Icon,
+            CaptureOutput::Export { format: CaptureFormat::Png },
+            CaptureOutput::Widgets,
+        ],
+    )
+    .unwrap();
+    for result in results {
+        assert!(result.result.is_ok(), "unused {}: {:?}", ids[0], result.result.err());
+    }
+}
+#[test]
+fn capture_used_damage_names_attachment_and_preserves_sibling() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let ids = saved_images(&doc, 1, false);
+    raw(&doc).execute("UPDATE attachments SET bytes=zeroblob(length(bytes))", []).unwrap();
+    // Preview references the damaged image; Icon has independent empty markup.
+    let evaluator = image_markup(&ids, &[]);
+    let results = render_batch(&doc, &evaluator, &[CaptureOutput::Preview, CaptureOutput::Icon]).unwrap();
+    let mut results = results.into_iter();
+    let error = results.next().unwrap().result.err().unwrap().to_string();
+    assert!(error.contains(&ids[0]), "{error}");
+    assert!(error.contains("Preview"), "{error}");
+    assert!(results.next().unwrap().result.is_ok());
+}
+#[test]
+fn capture_image_budget_is_per_output() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let ids = saved_images(&doc, 4, true); // Just over 24 MiB in state, just over 12 MiB per view.
+    let store = Store::open(&doc, Mode::Snapshot).unwrap();
+    let sizes: Vec<_> = store.attachments().unwrap().iter().map(|image| image.bytes).collect();
+    assert_eq!(sizes.len(), 4);
+    assert!(sizes.iter().sum::<u64>() > hitslop_runner::IMAGE_BYTES as u64);
+    assert!(sizes.iter().sum::<u64>() / 2 < hitslop_runner::IMAGE_BYTES as u64);
+    store.close().unwrap();
+    let results =
+        render_batch(&doc, &image_markup(&ids[..2], &ids[2..]), &[CaptureOutput::Preview, CaptureOutput::Icon])
+            .unwrap();
+    for result in results {
+        assert!(result.result.is_ok(), "{:?}", result.result.as_ref().err());
+    }
+    let results = render_batch(&doc, &image_markup(&ids, &[]), &[CaptureOutput::Preview]).unwrap();
+    let error = results.into_iter().next().unwrap().result.err().unwrap();
+    assert_eq!(code(error.clone()), Code::TooLarge);
+    assert!(error.to_string().contains("Preview"));
+}
+#[test]
+fn capture_markup_outside_image_inventory_names_the_id() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let unknown = "a".repeat(64);
+    let results =
+        render_batch(&doc, &image_markup(std::slice::from_ref(&unknown), &[]), &[CaptureOutput::Preview]).unwrap();
+    let error = results.into_iter().next().unwrap().result.err().unwrap().to_string();
+    assert!(error.contains(&unknown) && error.contains("inventory"), "{error}");
+}
+
+#[test]
+fn capture_attachment_removed_during_markup_fails_only_its_output() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let ids = saved_images(&doc, 1, false);
+    let before = format!("/usr/bin/sqlite3 '{}' 'DELETE FROM attachments'", doc.display());
+    let results =
+        render_batch(&doc, &image_markup_before(&ids, &[], &before), &[CaptureOutput::Preview, CaptureOutput::Icon])
+            .unwrap();
+    let mut results = results.into_iter();
+    let error = results.next().unwrap().result.err().unwrap().to_string();
+    assert!(error.contains(&ids[0]) && error.contains("Preview"), "{error}");
+    assert!(results.next().unwrap().result.is_ok());
+}
+
+/// A closed export to `output`, as a PNG, with a deadline it never reaches.
+fn export(document: &Path, output: &Path, evaluator: &hitslop_core::owner::Evaluator) -> Result<(), Error> {
+    use hitslop_core::capture::{CaptureFormat, export_saved};
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    export_saved(document, CaptureFormat::Png, output, evaluator, deadline)
+}
+/// A renderer that leaves `marker` behind, so a test can tell whether it ran.
+fn marking(marker: &Path) -> hitslop_core::owner::Evaluator {
+    support::renderer(&format!(": > '{}'", marker.display()), &png(64, 48, 6))
+}
+
+/// An export never replaces anything at its output under any spelling, and refuses before
+/// any authored code renders.
+#[test]
+fn closed_export_refuses_an_existing_output_before_rendering() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let rendered = dir.path().join("rendered");
+    let file = dir.path().join("file.png");
+    fs::write(&file, "an earlier export").unwrap();
+    let folder = dir.path().join("folder.png");
+    fs::create_dir(&folder).unwrap();
+    let (link, dangling, missing) =
+        (dir.path().join("link.png"), dir.path().join("dangling.png"), dir.path().join("missing.png"));
+    std::os::unix::fs::symlink(&file, &link).unwrap();
+    std::os::unix::fs::symlink(&missing, &dangling).unwrap();
+    let mut outputs = vec![file.clone(), folder.clone(), link.clone(), dangling.clone()];
+    // The Mac's file systems usually ignore case: another spelling of the same file.
+    let alias = dir.path().join("FILE.png");
+    if alias.exists() {
+        outputs.push(alias);
+    }
+    for output in outputs {
+        assert_eq!(code(export(&doc, &output, &marking(&rendered)).unwrap_err()), Code::Exists, "{}", output.display());
+    }
+    assert_eq!(fs::read_to_string(&file).unwrap(), "an earlier export");
+    assert!(folder.is_dir() && fs::read_dir(&folder).unwrap().next().is_none());
+    assert_eq!((fs::read_link(&link).unwrap(), fs::read_link(&dangling).unwrap()), (file, missing.clone()));
+    assert!(!missing.exists());
+    assert!(!rendered.exists(), "refused before rendering");
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// An export publishes exactly the image its renderer made, once it passed the checks every
+/// capture passes, and leaves the document's bytes and its writer lock alone.
+#[test]
+fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() {
+    use hitslop_core::capture::{CaptureFormat, export_saved};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let saved = fs::read(&doc).unwrap();
+    let image = png(64, 48, 6);
+    let output = dir.path().join("Export.png");
+    export(&doc, &output, &support::renderer(":", &image)).unwrap();
+    assert_eq!(fs::read(&output).unwrap(), image);
+    // Bytes that are not the format asked for: no PNG, and a PNG where a PDF was asked.
+    let refused = dir.path().join("Refused");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    for (format, bytes) in [(CaptureFormat::Png, b"not a PNG".to_vec()), (CaptureFormat::Pdf, image)] {
+        assert!(export_saved(&doc, format, &refused, &support::renderer(":", &bytes), deadline).is_err());
+        assert!(!refused.exists());
+    }
+    assert_eq!(fs::read(&doc).unwrap(), saved);
+    assert!(Lease::acquire(&doc).is_ok(), "an export takes no writer lock");
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// A result that arrives after its command's deadline is discarded, not published late.
+#[test]
+fn a_closed_export_past_its_deadline_publishes_nothing() {
+    use hitslop_core::capture::{CaptureFormat, export_saved};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Late.png"));
+    let late = export_saved(&doc, CaptureFormat::Png, &output, &marking(&rendered), std::time::Instant::now());
+    assert!(late.unwrap_err().to_string().contains("not published"));
+    assert!(rendered.exists(), "the renderer answered, too late");
+    assert!(!output.exists());
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+#[test]
+fn capture_export_bytes_are_complete_and_existing_outputs_are_never_replaced() {
+    use hitslop_core::capture::publish_export;
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("Export.png");
+    let bytes = png(64, 48, 6);
+    publish_export(&bytes, &output, || true).unwrap();
+    assert_eq!(fs::read(&output).unwrap(), bytes);
+    assert_eq!(code(publish_export(b"replacement", &output, || true).unwrap_err()), Code::Exists);
+    assert_eq!(fs::read(&output).unwrap(), bytes);
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+#[test]
+fn capture_export_accepts_long_destination_names_without_leaving_staging_files() {
+    for length in [240, 255] {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join(format!("{}.png", "e".repeat(length - 4)));
+        let bytes = png(64, 48, 6);
+        hitslop_core::capture::publish_export(&bytes, &output, || true).unwrap();
+        assert_eq!(fs::read(&output).unwrap(), bytes);
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert!(temporaries(dir.path()).is_empty());
+    }
+}
+
+#[test]
+fn document_copy_accepts_long_destination_names_without_leaving_staging_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = template(dir.path());
+    for length in [240, 255] {
+        let folder = dir.path().join(length.to_string());
+        fs::create_dir(&folder).unwrap();
+        let output = folder.join(format!("{}.slop", "d".repeat(length - 5)));
+        file::create_document(&source, &output).unwrap();
+        assert_eq!(file::kind(&output).unwrap(), Kind::Document);
+        assert_eq!(fs::read_dir(&folder).unwrap().count(), 1);
+        assert!(temporaries(&folder).is_empty());
+    }
+}
+
+#[test]
+fn capture_export_cancelled_after_staging_publishes_nothing() {
+    use hitslop_core::capture::publish_export;
+    let dir = tempfile::tempdir().unwrap();
+    let output = dir.path().join("Late.png");
+    let result = publish_export(b"complete staged bytes", &output, || {
+        assert!(!output.exists());
+        let paths: Vec<_> = fs::read_dir(dir.path()).unwrap().map(|entry| entry.unwrap().path()).collect();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(fs::read(&paths[0]).unwrap(), b"complete staged bytes");
+        false
+    });
+    assert!(result.unwrap_err().to_string().contains("not published"));
+    assert!(fs::read_dir(dir.path()).unwrap().next().is_none());
+}
+
+#[test]
+fn capture_export_failed_write_removes_the_partial_staging_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let status = support::child(
+        "file::capture_export_write_limit_child",
+        &[("HITSLOP_EXPORT_WRITE_LIMIT", dir.path().to_str().unwrap())],
+    )
+    .status()
+    .unwrap();
+    assert!(status.success(), "limited writer failed: {status}");
+    assert!(fs::read_dir(dir.path()).unwrap().next().is_none(), "no destination or partial staging file");
+}
+
+#[test]
+#[ignore = "child process with a file-size limit"]
+fn capture_export_write_limit_child() {
+    let Ok(folder) = std::env::var("HITSLOP_EXPORT_WRITE_LIMIT") else { return };
+    // A real write fault after four bytes; isolate this process-wide limit in a child.
+    // SAFETY: SIG_IGN is valid; the limit points to an initialized rlimit.
+    unsafe {
+        libc::signal(libc::SIGXFSZ, libc::SIG_IGN);
+        assert_eq!(libc::setrlimit(libc::RLIMIT_FSIZE, &libc::rlimit { rlim_cur: 4, rlim_max: 4 }), 0);
+    }
+    let result =
+        hitslop_core::capture::publish_export(b"more than four bytes", &Path::new(&folder).join("Export.png"), || {
+            panic!("a failed write must never reach publication")
+        });
+    assert!(result.unwrap_err().to_string().contains("Cannot write the export"));
+}
+
+/// A file made at the output while the export rendered wins: the export refuses rather
+/// than replace it.
+#[test]
+fn a_file_made_at_the_output_while_rendering_is_never_replaced() {
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let output = dir.path().join("Raced.png");
+    let racing = support::renderer(&format!("printf theirs > '{}'", output.display()), &png(64, 48, 6));
+    assert_eq!(code(export(&doc, &output, &racing).unwrap_err()), Code::Exists);
+    assert_eq!(fs::read_to_string(&output).unwrap(), "theirs");
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// A template exports through a document made from it, and an app without an Export view
+/// has nothing to export; neither runs its renderer.
+#[test]
+fn closed_export_refuses_templates_and_apps_without_an_export_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Export.png"));
+    let template = template(dir.path());
+    assert_eq!(code(export(&template, &output, &marking(&rendered)).unwrap_err()), Code::IsTemplate);
+    support::edit_input(&dir.path().join("stage"), |input| {
+        input["declaration"]["views"]["export"] = false.into();
+        input["roles"].as_object_mut().unwrap().remove("export");
+        input["resources"].as_array_mut().unwrap().retain(|resource| resource["key"] != "export.js");
+    });
+    let plain = dir.path().join("Plain.slop");
+    support::pack(&dir.path().join("stage"), &plain).unwrap();
+    let doc = dir.path().join("Plain document.slop");
+    file::create_document(&plain, &doc).unwrap();
+    let error = export(&doc, &output, &marking(&rendered)).unwrap_err();
+    assert!(error.to_string().contains("Export.svelte"), "{error}");
+    assert_eq!(code(error), Code::InvalidRequest);
+    assert!(!output.exists());
+    assert!(!rendered.exists());
+}
+
+#[test]
+fn widget_program_is_required_at_pack_and_private_when_opened() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = stage(directory.path());
+    support::edit_input(&source, |input| input["declaration"]["views"]["widget"] = serde_json::json!({}));
+    let template = directory.path().join("widget.slop");
+    assert!(support::pack(&source, &template).is_err());
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+    support::edit_input(&source, |input| input["roles"]["widget"] = "widget.js".into());
+    support::pack(&source, &template).unwrap();
+    let document = directory.path().join("document.slop");
+    file::create_document(&template, &document).unwrap();
+    let store = Store::open(&document, Mode::Snapshot).unwrap();
+    assert!(store.app().widget.as_ref().unwrap().contains("__slopWidget"));
+    let reader = store.resource_reader().unwrap();
+    assert!(reader.info(file::ResourceRoute::App, "widget.js").unwrap().is_none());
+    assert!(reader.read_range(file::ResourceRoute::App, "widget.js", 0, 100).unwrap().is_none());
+}
+
+#[test]
+fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_document() {
+    use std::os::unix::fs::symlink;
+    let directory = tempfile::tempdir().unwrap();
+    let source = stage(directory.path());
+    support::edit_input(&source, |input| {
+        input["declaration"]["views"]["widget"] = serde_json::json!({});
+        input["roles"]["widget"] = "widget.js".into();
+    });
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '[]';");
+    let template = directory.path().join("widget.slop");
+    support::pack(&source, &template).unwrap();
+    let document = directory.path().join("document.slop");
+    file::create_document(&template, &document).unwrap();
+    let saved = fs::read(&document).unwrap();
+    let images: Vec<_> = hitslop_core::widgets::widget_viewports()
+        .iter()
+        .map(|view| data_encoding::BASE64.encode(&png(view.width * 2, view.height * 2, 6)))
+        .collect();
+    let reply = serde_json::json!({"ok": true, "images": images});
+    let batch = serde_json::json!({"frames":hitslop_core::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+    let program = format!(
+        r#"input=$(/bin/cat); case "$input" in *'"mode":"widgetMarkup"'*) printf '%s' '{batch}';; *) printf '%s' '{reply}';; esac"#
+    );
+    let executable = directory.path().join("evaluator");
+    symlink("/bin/sh", &executable).unwrap();
+    let evaluator =
+        hitslop_core::owner::Evaluator::new(executable.clone(), vec!["-c".into(), program.clone()]).unwrap();
+    let first = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    let repeated = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    assert_eq!(first.source_version, repeated.source_version);
+    let replacement = directory.path().join("replacement");
+    symlink("/bin/bash", &replacement).unwrap();
+    fs::rename(&replacement, &executable).unwrap();
+    let upgraded = hitslop_core::widgets::render_saved(&document, &evaluator).unwrap();
+    assert_ne!(first.source_version, upgraded.source_version, "new renderer must invalidate unchanged widget state");
+    assert_eq!(hitslop_core::widgets::saved_version(&document, &evaluator).unwrap(), upgraded.source_version);
+    // Replacing a helper at the same path with identical bytes does not need a
+    // new generation, but a capture that actually crosses a replacement is refused.
+    symlink("/bin/bash", &replacement).unwrap();
+    fs::rename(&replacement, &executable).unwrap();
+    assert_eq!(hitslop_core::widgets::saved_version(&document, &evaluator).unwrap(), upgraded.source_version);
+    let evaluator = hitslop_core::owner::Evaluator::new(
+        executable.clone(),
+        vec!["-c".into(), format!("/bin/ln -sf /bin/sh '{}'; {program}", executable.display())],
+    )
+    .unwrap();
+    let error =
+        hitslop_core::widgets::render_saved(&document, &evaluator).err().expect("replacement must refuse capture");
+    assert!(error.to_string().contains("renderer changed during capture"), "{error}");
+    assert_eq!(fs::read(&document).unwrap(), saved, "capture must never modify the document");
+}
 /// What a crashed owner leaves behind: its discovery file, with its lock released.
 fn crashed_owner(doc: &Path, json: &str) {
     let lease = Lease::acquire(doc).unwrap();
@@ -127,7 +699,7 @@ fn creation_refuses_invalid_template_state_without_publishing_or_repairing_it() 
     ] {
         let dir = tempfile::tempdir().unwrap();
         let source = template(dir.path());
-        raw(&source).execute("UPDATE checkpoint SET bytes=?", [&checkpoint]).unwrap();
+        raw(&source).execute("UPDATE history SET bytes=?", [&checkpoint]).unwrap();
         let before = fs::read(&source).unwrap();
         let destination = dir.path().join("Refused.slop");
         assert!(file::create_document(&source, &destination).is_err(), "invalid saved state must refuse creation");
@@ -152,7 +724,7 @@ fn document_uuid_survives_reopen_and_capture_but_independent_copies_get_new_uuid
     let store = Store::open(&first, Mode::Document).unwrap();
     let mut document = store.document().unwrap();
     document.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Saved"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut document, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut document).unwrap().unwrap()).unwrap();
     assert_eq!(uuid(&first), original);
     let capture = dir.path().join("Capture.slop");
     store.capture_source(&capture).unwrap();
@@ -192,6 +764,51 @@ fn document_uuid_is_immutable_and_malformed_identities_are_refused_without_write
         assert!(Store::open(&path, Mode::Document).is_err());
         assert!(file::summary(&path).is_err());
         assert_eq!(fs::read(&path).unwrap(), before);
+    }
+}
+
+#[test]
+fn freshly_packed_pragmas_and_writer_journal_mode_are_pinned() {
+    let dir = tempfile::tempdir().unwrap();
+    let packed = template(dir.path());
+    let conn = Connection::open(&packed).unwrap();
+    for (pragma, expected) in
+        [("application_id", 0x4853_4c50), ("user_version", 1), ("page_size", 4096), ("auto_vacuum", 1)]
+    {
+        assert_eq!(
+            conn.query_row(&format!("PRAGMA {pragma}"), [], |r| r.get::<_, i64>(0)).unwrap(),
+            expected,
+            "{pragma}"
+        );
+    }
+    assert_eq!(conn.query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0)).unwrap(), "delete");
+    drop(conn);
+    let path = dir.path().join("Writer.slop");
+    file::create_document(&packed, &path).unwrap();
+    // Persist WAL first, so this observes the writer applying its rollback-journal policy.
+    raw(&path).query_row("PRAGMA journal_mode=WAL", [], |_| Ok(())).unwrap();
+    let store = Store::open(&path, Mode::Document).unwrap();
+    assert_eq!(
+        Connection::open(&path).unwrap().query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0)).unwrap(),
+        "delete"
+    );
+    store.close().unwrap();
+}
+
+#[test]
+fn app_digest_changes_with_embedded_app_content() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = document(dir.path());
+    let original = file::inspect(&path).unwrap().app_digest;
+    for change in [
+        "UPDATE app SET title='Changed title'",
+        "UPDATE assets SET bytes=x'626f6479207b207d',size=8 WHERE key='ui.css'",
+        "UPDATE assets SET key='media/0000000000000000000000000000000000000000000000000000000000000000.woff2' WHERE media_type='font/woff2'",
+    ] {
+        let changed = dir.path().join("Changed.slop");
+        fs::copy(&path, &changed).unwrap();
+        raw(&changed).execute_batch(change).unwrap();
+        assert_ne!(file::inspect(&changed).unwrap().app_digest, original, "{change}");
     }
 }
 /// Each marker raised one past what this build writes.
@@ -240,7 +857,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     let summary = file::inspect(&a).unwrap();
     assert!(matches!(summary.kind, hitslop_core::engine::FileKind::Template));
     let assets: Vec<&str> = summary.assets.iter().map(|a| a.name.as_str()).collect();
-    assert_eq!(assets, [font_key().as_str(), "ui.css", "ui.js"]);
+    assert_eq!(assets, ["export.js", "icon.js", font_key().as_str(), "preview.js", "ui.css", "ui.js"]);
     // A rebuild replaces a template; it never replaces a document, or anything else.
     let folder = dir.path().join("Folder.slop");
     fs::create_dir(&folder).unwrap();
@@ -251,6 +868,7 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     let before = fs::read(&doc).unwrap();
     assert_eq!(code(support::pack(&stage, &doc).unwrap_err()), Code::Exists);
     assert_eq!(fs::read(&doc).unwrap(), before);
+    assert_eq!(file::inspect(&doc).unwrap().app_digest, summary.app_digest, "a document carries its template's app");
     assert!(temporaries(dir.path()).is_empty());
 }
 
@@ -321,6 +939,154 @@ fn packed_artwork_is_losslessly_smaller() {
         assert!(stored.len() < input.len(), "the {name} is stored smaller");
         assert_eq!(&decoded(&stored), pixels, "the {name} decodes to the same pixels");
     }
+}
+
+type RenderedArtwork = Result<Vec<(Artwork, Option<Vec<u8>>)>, Error>;
+/// A stand-in for the capture renderer: it draws each role asked for with `draw` and notes
+/// each batch it was asked for, from the staged template.
+fn renders<'a>(
+    asked: &'a std::cell::RefCell<Vec<Vec<Artwork>>>,
+    draw: impl Fn(Artwork) -> Option<Vec<u8>> + 'a,
+) -> impl Fn(&Path, &[Artwork]) -> RenderedArtwork + 'a {
+    move |template, roles| {
+        assert_eq!(file::open(template, true).unwrap().kind, Kind::Template, "renders the staged template");
+        asked.borrow_mut().push(roles.to_vec());
+        Ok(roles.iter().map(|&name| (name, draw(name))).collect())
+    }
+}
+/// A 512 × 512 image in `shade`, uncompressed as a renderer returns it, and its pixels.
+fn render_of(shade: u8) -> (Vec<u8>, Vec<u8>) {
+    let pixels: Vec<u8> = (0..512 * 512usize).flat_map(|i| [shade, (i % 251) as u8, 0x77, 255]).collect();
+    (encoded(512, 512, &pixels), pixels)
+}
+
+/// Rendered artwork is stored exactly as supplied artwork is: checked, then optimized, so a
+/// template packed with a render stores the bytes one packed with that render as its
+/// artwork would.
+#[test]
+fn rendered_artwork_is_stored_as_supplied_artwork_is() {
+    use hitslop_core::engine::{ArtworkSource::*, PackedArtwork};
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let ((raw, pixels), asked) = (render_of(1), std::cell::RefCell::new(vec![]));
+    let rendered = dir.path().join("Rendered.slop");
+    let render = renders(&asked, |_| Some(raw.clone()));
+    let packed = support::pack_rendering(&stage, &rendered, Some(&render)).unwrap();
+    assert_eq!(packed, PackedArtwork { preview: Rendered, icon: Rendered });
+    // Through the capture renderer too, which renders the staged template's initial values.
+    let evaluator = support::renderer_outputs(":", &png(512, 512, 6), b"%PDF-1.7\n%%EOF");
+    let capture = |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_views(template, &evaluator, roles);
+    let captured = dir.path().join("Captured.slop");
+    support::pack_rendering(&stage, &captured, Some(&capture)).unwrap();
+    for (render, template) in [(&raw, &rendered), (&png(512, 512, 6), &captured)] {
+        for name in Artwork::ALL {
+            support::artwork(&stage, &name.to_string(), render);
+        }
+        let supplied = dir.path().join("Supplied.slop");
+        assert_eq!(
+            support::pack_rendering(&stage, &supplied, None).unwrap(),
+            PackedArtwork { preview: Supplied, icon: Supplied }
+        );
+        for name in Artwork::ALL {
+            let stored = file::artwork(template, &[name]).unwrap().unwrap().1;
+            assert_eq!(stored, file::artwork(&supplied, &[name]).unwrap().unwrap().1, "the {name}");
+        }
+    }
+    let stored = file::artwork(&rendered, &[Artwork::Icon]).unwrap().unwrap().1;
+    assert!(stored.len() < raw.len(), "stored optimized");
+    assert_eq!(decoded(&stored), pixels);
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// Supplied artwork wins role by role; the callback still validates views when both
+/// images are supplied, with no artwork requested for storage.
+#[test]
+fn pack_stores_only_unsupplied_artwork_and_always_calls_the_renderer() {
+    use hitslop_core::engine::{ArtworkSource::*, PackedArtwork};
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let asked = std::cell::RefCell::new(vec![]);
+    let render = renders(&asked, |_| Some(render_of(1).0));
+    let pack = |name: &str| support::pack_rendering(&stage, &dir.path().join(name), Some(&render)).unwrap();
+    assert_eq!(pack("None.slop"), PackedArtwork { preview: Rendered, icon: Rendered });
+    assert_eq!(asked.take(), [Artwork::ALL.to_vec()]);
+    let (icon, pixels) = render_of(2);
+    support::artwork(&stage, "icon", &icon);
+    assert_eq!(pack("Icon.slop"), PackedArtwork { preview: Rendered, icon: Supplied });
+    assert_eq!(asked.take(), [vec![Artwork::Preview]]);
+    assert_eq!(decoded(&file::artwork(&dir.path().join("Icon.slop"), &[Artwork::Icon]).unwrap().unwrap().1), pixels);
+    support::artwork(&stage, "preview", &icon);
+    assert_eq!(pack("Both.slop"), PackedArtwork { preview: Supplied, icon: Supplied });
+    assert_eq!(asked.take(), [vec![]], "supplied artwork still needs its views checked");
+}
+
+/// Every template has a preview: one that cannot be rendered publishes nothing, an existing
+/// template at the destination stays as it was, and a document there is never replaced.
+#[test]
+fn a_preview_that_cannot_be_rendered_publishes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let existing = dir.path().join("Existing.slop");
+    support::pack(&stage, &existing).unwrap();
+    let before = fs::read(&existing).unwrap();
+    let asked = std::cell::RefCell::new(vec![]);
+    let failing =
+        |_: &Path, _: &[Artwork]| -> RenderedArtwork { Err(Error::Failed("Capture rendering failed".into())) };
+    let blank = renders(&asked, |_| None);
+    for render in [&failing as file::RenderArtwork, &blank] {
+        assert!(support::pack_rendering(&stage, &existing, Some(render)).is_err());
+        assert_eq!(fs::read(&existing).unwrap(), before);
+        assert!(temporaries(dir.path()).is_empty());
+    }
+    let doc = dir.path().join("Doc.slop");
+    file::create_document(&existing, &doc).unwrap();
+    let document = fs::read(&doc).unwrap();
+    let drawn = renders(&asked, |_| Some(png(512, 512, 6)));
+    assert_eq!(code(support::pack_rendering(&stage, &doc, Some(&drawn)).unwrap_err()), Code::Exists);
+    assert_eq!(fs::read(&doc).unwrap(), document);
+    assert!(temporaries(dir.path()).is_empty());
+}
+
+/// An icon the renderer does not draw (an app without an icon view) leaves the template
+/// without one, and the reply says so; its preview still renders.
+#[test]
+fn a_template_without_a_drawn_icon_says_so() {
+    use hitslop_core::engine::{ArtworkSource::*, PackedArtwork};
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let asked = std::cell::RefCell::new(vec![]);
+    let render = renders(&asked, |name| (name == Artwork::Preview).then(|| png(512, 512, 6)));
+    let out = dir.path().join("No icon.slop");
+    assert_eq!(
+        support::pack_rendering(&stage, &out, Some(&render)).unwrap(),
+        PackedArtwork { preview: Rendered, icon: Absent }
+    );
+    assert_eq!(asked.take(), [Artwork::ALL.to_vec()]);
+    assert!(file::artwork(&out, &[Artwork::Icon]).unwrap().is_none());
+    assert!(file::artwork(&out, &[Artwork::Preview]).unwrap().is_some());
+}
+
+/// An app that draws an icon never ships without one: an icon that fails to render, or
+/// renders as no valid icon, fails the pack and publishes nothing.
+#[test]
+fn an_icon_that_fails_to_render_fails_the_pack() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    let existing = dir.path().join("Existing.slop");
+    support::pack(&stage, &existing).unwrap();
+    let before = fs::read(&existing).unwrap();
+    // A rendered image is checked as supplied artwork is: an icon is 512 × 512.
+    let asked = std::cell::RefCell::new(vec![]);
+    let small = renders(&asked, |_| Some(png(64, 48, 6)));
+    let error = support::pack_rendering(&stage, &existing, Some(&small)).unwrap_err();
+    assert!(error.to_string().contains("artwork/icon.png"), "{error}");
+    // The capture renderer's own icon failure fails its batch.
+    let evaluator = support::renderer(":", &png(64, 48, 6));
+    let capture = |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_views(template, &evaluator, roles);
+    let error = support::pack_rendering(&stage, &existing, Some(&capture)).unwrap_err();
+    assert!(error.to_string().contains("512"), "{error}");
+    assert_eq!(fs::read(&existing).unwrap(), before);
+    assert!(temporaries(dir.path()).is_empty());
 }
 
 /// The `app` row holds one-line JSON whatever the build's spacing, so hosts pass it on
@@ -403,6 +1169,12 @@ fn a_skin_must_be_an_rgba_asset_at_one_or_two_times_the_window_size() {
         assert_eq!(support::pack(&stage, &out).is_ok(), accept, "{width}×{height} color {color}");
         if accept {
             assert_eq!(file::open(&out, true).unwrap().skin, Some(bytes));
+            raw(&out)
+                .execute("UPDATE assets SET bytes=CAST(x'00' || substr(bytes,2) AS BLOB) WHERE key=?", [&key])
+                .unwrap();
+            for integrity in [false, true] {
+                assert!(file::open(&out, integrity).is_err());
+            }
         }
     }
 }
@@ -411,19 +1183,27 @@ fn a_skin_must_be_an_rgba_asset_at_one_or_two_times_the_window_size() {
 fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
     for ddl in [
         "CREATE TABLE extra(x)",
+        "DROP TABLE share",
+        "ALTER TABLE share ADD COLUMN extra BLOB",
         "CREATE INDEX extra_index ON assets(bytes)",
         "CREATE VIEW extra_view AS SELECT 1",
-        "CREATE TRIGGER extra_trigger AFTER INSERT ON updates BEGIN DELETE FROM attachments; END",
+        "CREATE TRIGGER extra_trigger AFTER INSERT ON history BEGIN DELETE FROM attachments; END",
         "INSERT INTO assets VALUES('../escape.js', 'text/javascript', 'identity', 1, x'00')",
         "INSERT INTO assets VALUES('invalid.css', 'text/css', 'identity', 2, x'00')",
         "INSERT INTO assets VALUES('commands.js', 'text/javascript', 'br', 2, x'789c')",
-        "INSERT INTO updates(bytes) VALUES(x'00')",
+        "INSERT INTO history(bytes) VALUES(x'00')",
+        "INSERT INTO share VALUES(1, 'room', 'wss://relay.example')",
         "DELETE FROM app",
         "PRAGMA ignore_check_constraints=ON; INSERT INTO attachments VALUES('not-an-id', 'application/octet-stream', x'00')",
     ] {
         let dir = tempfile::tempdir().unwrap();
         let doc = document(dir.path());
-        let damaged = if ddl.starts_with("INSERT INTO updates") { template(dir.path()) } else { doc.clone() };
+        // A template holds one history row and no share.
+        let damaged = if ddl.starts_with("INSERT INTO history") || ddl.starts_with("INSERT INTO share") {
+            template(dir.path())
+        } else {
+            doc.clone()
+        };
         raw(&damaged).execute_batch(&format!("PRAGMA ignore_check_constraints=ON; {ddl}")).unwrap();
         assert!(file::open(&damaged, true).is_err(), "{ddl}");
         assert!(Store::open(&damaged, Mode::Snapshot).is_err(), "{ddl}");
@@ -509,16 +1289,11 @@ fn a_newer_app_format_is_refused_before_its_tables_are_compared() {
 fn stored_values_are_bounded_as_writes_bound_them() {
     let many_tokens =
         format!("{{{}}}", (0..100_000).map(|i| format!(r##""t{i}":"#000000""##)).collect::<Vec<_>>().join(","));
-    let cases: [(&str, &str, Option<Vec<u8>>); 4] = [
+    let cases: [(&str, &str, Option<Vec<u8>>); 3] = [
         (
             "theme defaults over budget",
             "UPDATE app SET definition_json=CAST(? AS TEXT)",
             Some(many_tokens.into_bytes()),
-        ),
-        (
-            "a misnumbered checkpoint",
-            "PRAGMA ignore_check_constraints=ON; INSERT INTO checkpoint VALUES(2,x'00')",
-            None,
         ),
         (
             "a second document row",
@@ -796,10 +1571,9 @@ fn reimporting_over_damaged_bytes_is_refused() {
     store.close().unwrap();
 }
 
-/// Hosts that display a file take the first artwork it holds, in one read, and learn that
-/// a file they cannot read now is busy, never that it has no artwork.
+/// Hosts that display a file take the first artwork it holds, in one read.
 #[test]
-fn display_reads_fall_back_in_one_read_and_report_a_busy_file() {
+fn display_reads_fall_back_in_one_read() {
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
     fs::create_dir_all(stage.join("artwork")).unwrap();
@@ -822,7 +1596,19 @@ fn display_reads_fall_back_in_one_read_and_report_a_busy_file() {
     assert_eq!(fs::read(&output).unwrap(), preview);
     assert!(file::export_artwork(&doc, Artwork::Preview, &output).is_err());
     assert_eq!(fs::read(&doc).unwrap(), before);
+}
 
+/// A host learns that a file it cannot read now is busy, never that it has no artwork.
+/// Nightly (`.config/nextest.toml`): it waits out the reader's busy timeouts.
+#[test]
+fn a_busy_file_is_reported_busy_not_as_having_no_artwork() {
+    let dir = tempfile::tempdir().unwrap();
+    let stage = stage(dir.path());
+    fs::create_dir_all(stage.join("artwork")).unwrap();
+    support::artwork(&stage, "preview", &png(64, 48, 6));
+    let (template, doc) = (dir.path().join("T.slop"), dir.path().join("D.slop"));
+    support::pack(&stage, &template).unwrap();
+    file::create_document(&template, &doc).unwrap();
     let holder = raw(&doc);
     holder.execute_batch("BEGIN EXCLUSIVE").unwrap();
     assert!(matches!(file::artwork(&doc, &[Artwork::Preview]), Err(Error::Busy)));
@@ -920,17 +1706,17 @@ fn an_open_document_copies_through_its_owner() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     let mut state = store.document().unwrap();
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Shared"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let photo = store.put_attachment(b"photo").unwrap().id;
     let reference = format!(r#"{{"intents":[{{"type":"set","path":["title"],"value":"Shared {photo}"}}]}}"#);
     state.apply_json(&reference, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let copy = dir.path().join("Copy.slop");
     store.copy_clean(&copy, &[(Artwork::Preview, &png(640, 480, 6))]).unwrap();
     assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::Exists);
     // The owner keeps saving after the copy.
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
     assert!(copied.document().unwrap().value().contains("Shared"));
     assert_eq!(copied.attachments().unwrap().len(), 1);
@@ -982,6 +1768,63 @@ fn commands_are_checked_definitions_and_private_programs() {
         assert!(reader.info(file::ResourceRoute::App, key).unwrap().is_none());
         assert!(reader.read_range(file::ResourceRoute::App, key, 0, u64::MAX).unwrap().is_none());
     }
+    raw(&template)
+        .execute("UPDATE assets SET bytes=x'ff',size=1,encoding='identity' WHERE key='commands.js'", [])
+        .unwrap();
+    for integrity in [false, true] {
+        assert!(file::open(&template, integrity).is_err());
+    }
+}
+
+#[test]
+fn resource_responses_share_range_and_header_policy() {
+    use file::{ResourceInfo, ResourceRoute, resource_response};
+    for (range, status, span) in [
+        (None, 200, Some((0, 10))),
+        (Some("bytes=0-1"), 206, Some((0, 2))),
+        (Some("bytes=4-"), 206, Some((4, 6))),
+        (Some("bytes=-3"), 206, Some((7, 3))),
+        (Some("bytes=-30"), 206, Some((0, 10))),
+        (Some("bytes=8-99"), 206, Some((8, 2))),
+        (Some(" bytes= 1 - 3 "), 206, Some((1, 3))),
+        (Some("bytes=10-"), 416, None),
+        (Some("bytes=5-4"), 416, None),
+        (Some("bytes=-0"), 416, None),
+        (Some("bytes=0-1,4-5"), 200, Some((0, 10))),
+        (Some("items=0-1"), 200, Some((0, 10))),
+        (Some("bytes=a-b"), 200, Some((0, 10))),
+        (Some("bytes=-"), 200, Some((0, 10))),
+        (Some("bytes=0-18446744073709551615"), 206, Some((0, 10))),
+        (Some("bytes=18446744073709551615-"), 416, None),
+        (Some("bytes=0-18446744073709551616"), 200, Some((0, 10))),
+    ] {
+        for route in [ResourceRoute::App, ResourceRoute::Attachment] {
+            let plan = resource_response(&ResourceInfo { size: 10, media_type: "audio/mpeg".into() }, route, range);
+            assert_eq!(plan.status, status, "{range:?}");
+            assert_eq!(plan.span.as_ref().map(|s| (s.offset, s.length)), span, "{range:?}");
+            assert_eq!(plan.headers["Content-Length"], span.map_or(0, |(_, n)| n).to_string());
+            assert_eq!(plan.headers["Accept-Ranges"], "bytes");
+            assert_eq!(plan.headers["Content-Type"], "audio/mpeg");
+            assert_eq!(plan.headers["X-Content-Type-Options"], "nosniff");
+            assert_eq!(plan.headers["Cache-Control"], "no-store");
+            assert_eq!(
+                plan.headers.get("Content-Security-Policy").map(String::as_str),
+                if route == ResourceRoute::Attachment { Some("sandbox") } else { None }
+            );
+            if status == 416 {
+                assert_eq!(plan.headers["Content-Range"], "bytes */10");
+            } else if let Some((start, length)) = span.filter(|_| status == 206) {
+                assert_eq!(plan.headers["Content-Range"], format!("bytes {start}-{}/10", start + length - 1));
+            } else {
+                assert!(!plan.headers.contains_key("Content-Range"));
+            }
+        }
+    }
+    let empty = ResourceInfo { size: 0, media_type: "application/octet-stream".into() };
+    assert_eq!(resource_response(&empty, ResourceRoute::App, None).status, 200);
+    for range in ["bytes=0-", "bytes=-1", "bytes=0-0"] {
+        assert_eq!(resource_response(&empty, ResourceRoute::App, Some(range)).status, 416);
+    }
 }
 
 #[test]
@@ -1011,7 +1854,9 @@ fn resources_are_served_whole_or_in_ranges_with_checked_types() {
     assert_eq!(file::descriptor(&doc).unwrap(), SCHEMA);
     raw(&doc).execute("UPDATE assets SET bytes=CAST(x'00' || substr(bytes,2) AS BLOB) WHERE key='ui.js'", []).unwrap();
     // A fresh reader sees corruption; already decoded immutable resources may be cached.
-    assert!(file::open(&doc, false).is_err());
+    file::open(&doc, false).unwrap();
+    let fresh = Store::open(&doc, Mode::Snapshot).unwrap().resource_reader().unwrap();
+    assert!(fresh.read_range(App, "ui.js", 100, 50).is_err());
 }
 
 #[test]
@@ -1102,8 +1947,9 @@ fn a_newer_file_with_a_crashed_write_is_restored_then_refused() {
     store.close().unwrap();
     raw(&doc).execute_batch(&raised(&doc)[0]).unwrap();
     let committed = fs::read(&doc).unwrap();
-    let status =
-        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status = support::child("file::crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the file");
@@ -1140,9 +1986,10 @@ fn taking_the_writer_lock_never_drops_this_process_sqlite_locks() {
     reader.execute_batch("BEGIN").unwrap();
     reader.query_row("SELECT count(*) FROM app", [], |r| r.get::<_, i64>(0)).unwrap();
     let lease = Lease::acquire(&doc).unwrap();
-    let status = support::child("exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
-        .status()
-        .unwrap();
+    let status =
+        support::child("file::exclusive_sqlite_writer", &[("HITSLOP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
+            .status()
+            .unwrap();
     assert_eq!(status.code(), Some(0), "another writer must find the file busy while this process reads it");
     reader.execute_batch("COMMIT").unwrap();
     drop(lease);
@@ -1167,8 +2014,9 @@ fn a_crash_mid_commit_is_recovered_by_the_next_writer() {
     let store = Store::open(&doc, Mode::Document).unwrap();
     let attachment = store.put_attachment(&vec![7u8; 4 << 20]).unwrap();
     store.close().unwrap();
-    let status =
-        support::child("crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())]).status().unwrap();
+    let status = support::child("file::crash_mid_commit", &[("HITSLOP_CRASH_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert!(!status.success(), "the child died mid-commit");
     let journal = dir.path().join("Doc.slop-journal");
     assert!(journal.exists(), "a hot journal is left beside the document");
@@ -1271,6 +2119,33 @@ fn attachment_urls_check_the_whole_blob_before_serving_even_one_byte() {
     store.close().unwrap();
 }
 
+// Failure: a category spelling a later build added made its files unopenable here, though the
+// name is only a catalog label. Oracle: the file lists, opens and edits, under `other`.
+#[test]
+fn a_category_this_build_does_not_know_reads_as_other() {
+    use hitslop_core::app::Category::{Other, Popular, Utilities};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    for (primary, secondary, expected) in [
+        ("utilities", None, vec![Utilities]),
+        ("a-later-category", None, vec![Other]),
+        ("utilities", Some("a-later-category"), vec![Utilities, Other]),
+        ("a-later-category", Some("popular"), vec![Other, Popular]),
+        // Two spellings that read alike are one category, as a pair of equal ones always was.
+        ("a-later-category", Some("another-later-one"), vec![Other]),
+        ("a-later-category", Some("other"), vec![Other]),
+    ] {
+        raw(&doc)
+            .execute("UPDATE app SET category_primary=?, category_secondary=?", rusqlite::params![primary, secondary])
+            .unwrap();
+        assert_eq!(file::summary(&doc).unwrap().metadata.categories, expected, "{primary} {secondary:?}");
+        assert_eq!(file::open(&doc, true).unwrap().app.metadata().categories, expected);
+    }
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    assert_eq!(store.app().app.metadata().categories, [Other]);
+    store.close().unwrap();
+}
+
 /// A saved app is judged by its package format's acceptance, never by today's authoring
 /// rules: metadata `init` would now refuse and a damaged preview still open, edit, save
 /// and reopen. Artwork is cosmetic and reads as absent.
@@ -1292,11 +2167,53 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
     assert_eq!(store.artwork(Artwork::Preview).unwrap(), None);
     let mut state = store.document().unwrap();
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Edited"}]}"#, Origin::Page).unwrap();
-    store.write(&store.job(&mut state, false).unwrap().unwrap()).unwrap();
+    store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     store.close().unwrap();
     let reopened = Store::open(&doc, Mode::Snapshot).unwrap();
     assert!(reopened.document().unwrap().value().contains("Edited"));
     assert_eq!(reopened.app().app.metadata().title, title);
+}
+
+// Failure: a stored `application/octet-stream` label was compared with what the classifier
+// says today, so an attachment stored before the classifier knew its type read as damaged.
+// Oracle: the label is the fallback and always serves; any other label must match the
+// content, and a damaged blob is still damage.
+#[test]
+fn an_attachment_labelled_octet_stream_reads_whatever_the_classifier_now_says() {
+    use file::ResourceRoute::Attachment;
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    let image = png(8, 8, 6);
+    let attachment = store.put_attachment(&image).unwrap();
+    assert_eq!(attachment.media_type, "image/png");
+    let relabel = |media_type: &str| {
+        raw(&doc)
+            .execute("UPDATE attachments SET media_type=? WHERE id=?", rusqlite::params![media_type, attachment.id])
+            .unwrap();
+    };
+    relabel("application/octet-stream");
+    let reader = store.resource_reader().unwrap();
+    let info = reader.info(Attachment, &attachment.id).unwrap().unwrap();
+    assert_eq!((info.media_type.as_str(), info.size), ("application/octet-stream", image.len() as u64));
+    assert_eq!(reader.read_range(Attachment, &attachment.id, 0, 8).unwrap(), Some(image[..8].to_vec()));
+    // Any other label that is not what the content is stays refused, with its own message.
+    relabel("image/jpeg");
+    let error = store.resource_reader().unwrap().info(Attachment, &attachment.id).unwrap_err();
+    assert!(error.to_string().contains("stored type does not match its content"), "{error}");
+    // Bytes that no longer match their identity are damaged under either label.
+    for media_type in ["image/png", "application/octet-stream"] {
+        relabel(media_type);
+        raw(&doc)
+            .execute("UPDATE attachments SET bytes=CAST(substr(bytes,1,length(bytes)-1) || x'00' AS BLOB)", [])
+            .unwrap();
+        let error = store.resource_reader().unwrap().info(Attachment, &attachment.id).unwrap_err();
+        assert!(error.to_string().contains("damaged"), "{media_type}: {error}");
+        raw(&doc)
+            .execute("UPDATE attachments SET bytes=? WHERE id=?", rusqlite::params![image, attachment.id])
+            .unwrap();
+    }
+    store.close().unwrap();
 }
 
 #[test]

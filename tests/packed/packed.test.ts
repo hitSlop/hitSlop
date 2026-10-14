@@ -1,8 +1,8 @@
 // The published npm packages (generated/npm), installed outside the checkout with Node
 // absent: the SDK alone, then the CLI through init, check, build, preview and the
 // getting-started tutorial. With HITSLOP_PACKED_NATIVE=1 (a release), also the native
-// workflow: register, global skills, create, theme and export with the debug helper. Each
-// test continues the one before it.
+// workflow: register, global skills, create, theme and export. Each test continues the
+// one before it.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { strict as assert } from "node:assert";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, cp, realpath } from "node:fs/promises";
@@ -10,7 +10,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { appAsset, repository } from "../../scripts/lib/artifacts";
 import { exec, testProcess } from "../../scripts/lib/test-process";
-import { debugHelper } from "../../scripts/lib/native";
+
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
 
 const native = process.env.HITSLOP_PACKED_NATIVE === "1";
 const minutes = (n: number) => n * 60_000;
@@ -23,7 +26,7 @@ beforeAll(async () => {
   coreRoot = await mkdtemp(join(tmpdir(), "hitslop framework neutral "));
   // The installed CLI must find the file engine it ships, never this checkout's.
   const { HITSLOP_ENGINE: _engine, ...inherited } = process.env;
-  env = { ...inherited, HITSLOP_TEMPLATES_ROOT: join(root, "templates"), HITSLOP_NATIVE_CLI: native ? debugHelper : join(root, "native-helper-must-not-be-used") };
+  env = { ...inherited, HITSLOP_TEMPLATES_ROOT: join(root, "templates") };
   const bin = join(root, "bin");
   await mkdir(bin);
   await symlink(process.execPath, join(bin, "bun"));
@@ -237,7 +240,7 @@ test("the installed CLI previews the project with its own page shell and core", 
 }, minutes(5));
 
 // The getting-started code compiles, so the documentation is an executable contract.
-test("the getting-started tutorial's code checks and builds", async () => {
+test.if(nightly)("the getting-started tutorial's code checks and builds", async () => {
   const tutorial = await readFile(join(repository, "apps/landing/src/content/docs/docs/getting-started.mdx"), "utf8");
   for (const match of tutorial.matchAll(/```(?:ts|svelte|css) title="([^"]+)"\n([\s\S]*?)\n```/g))
     await writeFile(join(project(), match[1]!), match[2]!);

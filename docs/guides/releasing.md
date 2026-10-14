@@ -4,6 +4,16 @@ The Mac app and the single `hitslop` npm package ship together under one `vX.Y.Z
 Their shared version labels a release; file markers and the exact command protocol decide
 compatibility. The first shared version is 1.0.0. Mac build numbers continue increasing.
 
+Version 1.0.0 starts the supported document baseline. Earlier Mac and scoped npm
+releases were prelaunch experiments; their documents are unsupported and are recreated
+from current templates. Do not add readers or migrations for those files. From 1.0.0
+onward, retain every frozen corpus entry and preserve released documents.
+
+The old GitHub releases and remote tags were removed before this launch. Downloads and
+Sparkle are unavailable until v1.0.0 is published. The previous signed app and appcast
+are retained locally for isolated update acceptance. Use `git push --no-follow-tags`
+for release work: local historical tags must not repopulate the cleaned remote.
+
 ## Release branches and hotfixes
 
 Development continues on `master`. When a candidate is ready to stabilize, cut
@@ -35,7 +45,7 @@ must recognize `release/*`.
 
 The reviewed ruleset in [release-ruleset.json](../../.github/release-ruleset.json) is staged
 with enforcement disabled. It targets `refs/heads/release/*`, requires PRs and resolved
-review threads, blocks force pushes/deletion, and requires `fast`, `native`, `linux-smoke`,
+review threads, blocks force pushes/deletion, and requires `fast`, `native`, `native-rust`, `linux-smoke`,
 `Gitleaks` and `Attribution` from GitHub Actions. It permits initial branch creation without
 checks on that new ref; subsequent changes require current checks. Create branches from
 the chosen candidate or released tag, never as a way to bypass validation before tagging.
@@ -61,18 +71,40 @@ npm bootstrap/deprecations and public release changes are separate release work.
 
 1. Set the same version in root `package.json`, `packages/hitslop/package.json` and
    `apps/apple/project.yml`; increase `CURRENT_PROJECT_VERSION`. Update starter pins,
-   public examples and the lockfile. Commit the candidate.
+   public examples and the lockfile. Prepare and review the [release notes](#release-notes)
+   for that version. Commit the candidate, including its notes.
 2. Run the Engines workflow on that commit. Its platform table is
    `scripts/build/platforms.json`: darwin-arm64, linux-x64 and linux-arm64. Download
    the artifacts into `generated/engines/<platform>/`. Each records its commit and core
    build; packing refuses mixed candidates.
-3. Capture `bun run compat:capture VERSION --frozen` from the clean candidate. The
-   default covers every bundled template, plus conformance fixtures, saved updates,
-   attachments, page actions and stored commands. The entry records acceptance-rule
-   hashes and producing inputs. Commit only the corpus. Frozen entries are permanent;
-   the prelaunch `dev` entry may be replaced and is never frozen. Each public version
+3. Capture `bun run compat:capture VERSION --frozen --writer generated/engines/darwin-arm64/slop-engine`
+   from the clean candidate. `--writer` is the CI-built darwin-arm64 engine destined
+   for the npm tarball; capture checks its build ID against the current core and uses
+   it for CLI writes. The native page uses the same core build. It
+   covers the runtime: the conformance app's documents (saved updates, a compacted
+   snapshot, attachments, its page scenario and a stored command) and a template per
+   window kind. The producing engine writes self-checked raw acceptance vectors with
+   `--acceptance-vectors DIR` and records its `--limits` table. Rust replay must accept
+   every vector and preserve its typed re-encoding; no recorded open/read/save limit may
+   become stricter. The entry pins physical storage SQL hashes and `sourceInputs` (the producing source fingerprint),
+   while format-reader source and authoring rules may change. Commit only the corpus.
+   Frozen entries are permanent; the prelaunch `dev` entry may be replaced and is never frozen. Each public version
    gets its own entry even when all format markers remain at 1. Keep the original
    `.slop` bytes and expectations in the test repository, not the installed app.
+   `release.json.writer` records `{version, platform: "darwin-arm64", sha256, buildId}`;
+   no engine binary belongs in the corpus. `bun scripts/compat/writers.ts` resolves
+   writers before Rust replay into `~/.cache/hitslop/compat-writers/<sha256>` (override
+   with `HITSLOP_COMPAT_WRITERS`). It uses `HITSLOP_ENGINE` or the checkout engine only
+   when both build ID and SHA-256 match; otherwise it downloads `hitslop@VERSION`
+   from npm and extracts and verifies the shipped engine. Cached bytes are checked
+   again. Missing or corrupt writers fail replay. The release gate verifies that
+   the packed tarball's darwin-arm64 engine has exactly the captured SHA-256.
+   For the unpublished prelaunch `dev` entry, omit `--writer` to capture with the
+   fresh local dist build (`target/dist/slop-engine`); capture populates the hash cache.
+   To resolve it again, run `HITSLOP_ENGINE=target/dist/slop-engine bun scripts/compat/writers.ts`.
+   There is no registry fallback for dev: retain that build
+   or its verified cache entry, use `HITSLOP_ENGINE` to select it, or recapture dev
+   after producing changes. Never recapture a frozen public entry.
    Required affected PR checks replay all entries through Rust and the native host
    (open, render, edit, save, reopen); Playwright qualification is separate.
 4. Run Engines again on the corpus-only commit and replace the downloaded artifacts
@@ -84,6 +116,60 @@ npm bootstrap/deprecations and public release changes are separate release work.
    Before tagging, run Release hitSlop manually on the final candidate. It checks the
    gate but skips signing, notarization, publication and deployment; it cannot validate
    their credentials or npm permissions.
+
+## Release notes
+
+Draft locally with your coding agent; CI publishes reviewed text and never calls an AI
+provider. After the code changes are committed, collect the release's evidence:
+
+```sh
+bun run release:notes --from v1.0.0 --to HEAD
+# First supported release: summarize current capabilities, not prelaunch history.
+bun run release:notes --initial --to HEAD
+```
+
+The command prints agent instructions, resolved commit IDs, commit messages, changed
+paths and a diff summary. `--to` defaults to `HEAD`. Supply the previous published
+release explicitly: old local prelaunch tags are not a release baseline. The diff compares
+the two snapshots directly, including releases on different branches. Initial mode includes product and
+authoring sources from the candidate commit. Collection only reads committed content;
+it does not generate prose or modify files itself.
+
+Ask the agent to inspect relevant diffs and referenced PRs, then draft
+`docs/releases/<version>.md`. Every claim should describe an observable, supported
+capability or change; omit internal refactors and deferred work. Use this structure:
+
+```markdown
+# hitSlop 1.0.1
+
+## Mac app
+
+### Fixed
+
+- Describe the change a person using the app will notice.
+
+## Authoring
+
+- Describe CLI or SDK changes for app authors.
+```
+
+`Mac app` is required and must contain text; omit `Authoring` if there are no authoring
+changes. Use optional third-level New, Improved and Fixed headings when useful. For an
+authoring-only release, write “No Mac app changes in this release.” in the Mac section.
+Keep links absolute so they work outside GitHub. Review and edit the draft, run
+`bun run release:notes --check`, then commit it before freezing the candidate and running
+the final release dry run. `bun run release:check` also validates the current notes
+before building. Regenerate or amend the draft if later code changes affect its claims.
+
+Packaging writes `hitSlop-<version>.md` for Sparkle with only the Mac app section and
+`release-notes.md` for GitHub with both sections, installation requirements and the
+first-release compatibility notice when applicable. Both files are checksummed and
+retained with the candidate. The appcast links to the versioned Markdown asset on
+GitHub; the release body uses the retained GitHub notes. Change the committed source
+before release, not a generated or published artifact.
+
+The Sparkle package's `exactVersion` in `apps/apple/project.yml` also selects the
+`generate_appcast` tool. There is no separate packaging version override.
 
 ## Publication and recovery
 
@@ -114,12 +200,15 @@ successful publish within two days. These are deployment prerequisites, not loca
 First-publication checklist, after merge:
 
 - Confirm ownership of `hitslop`. If a bootstrap publication is needed to configure
-  trusted publishing, publish it under a bootstrap dist-tag and explicitly accept that
-  its version remains part of npm history.
+  trusted publishing, publish the metadata-only `0.0.0-bootstrap.0` under the `bootstrap`
+  dist-tag. It contains no CLI, SDK or document runtime and remains part of npm history.
+  npm may assign it `latest` on first publication and refuse to remove that tag. The
+  release promotion accepts this prerelease baseline and replaces it with `1.0.0`;
+  the bootstrap README makes clear that it is not a usable release.
 - Configure the exact repository/workflow with both direct publish and dist-tag access;
   confirm Apple, Sparkle and Cloudflare credentials independently of the dry run.
-- Retain the previous signed app and reachable appcast for Sparkle acceptance before
-  cleaning obsolete prerelease releases or tags. Keep Git history and increasing Mac builds.
+- Use the locally retained previous signed app and an isolated reachable appcast for
+  Sparkle acceptance after the prelaunch cleanup. Keep Git history and increasing Mac builds.
 - Complete and record the manual acceptance below. Publish only the accepted commit.
 - Once `hitslop` is available, deprecate the superseded `@hitslop/*` packages with a
   message pointing to it. Unpublication is not required for this release.
@@ -131,11 +220,11 @@ process-death recovery, historical document replay and the installed-tarball con
 outside the workspace. Reports and render evidence live under `.hitslop/evidence`.
 A dirty-tree or partial-tier result is not release acceptance.
 
-The Mac app contains its linked core and `hitslop-native` rendering helper. The npm
-package contains its own document engine. Release checks compare core identities and
-protocols, render the packaged templates, and exercise creation/editing/export with a
-system-only PATH. Engine and helper placement is independent. Development overrides
-are `HITSLOP_ENGINE` and `HITSLOP_NATIVE_CLI`.
+The Mac app contains its linked core and the restricted `hitslop-evaluator`. The npm
+package contains its own document engine. Release checks compare the app's and the
+engine's core builds, render the packaged templates, and exercise creation/editing/export
+with a system-only PATH. Engine and app placement is independent. Development overrides
+are `HITSLOP_ENGINE` and `HITSLOP_APP`.
 
 `bun run packages:pack` creates `generated/npm/hitslop-VERSION.tgz`. The installed-consumer
 check covers SDK exports, init/install/check/build, preview, global and project skills,
@@ -153,10 +242,19 @@ Record commit, version/build, OS, and results. Test macOS 15.2 and the current s
 - Install an external template file; confirm categories and selection update when it is removed. Invalid files report local issues without hiding valid templates. Open a template received by Mail: it offers to create a document. Check Quick Look's thumbnail and Space preview on a document sent by AirDrop.
 - Type then close, reorder rows, commit IME, and quit with multiple documents.
 - Failed save retains ownership; retry works and cancelled quit preserves other documents.
-- Kill WebContent, reopen saved state, and continue editing.
+- Kill WebContent: the failure screen says edits are kept; Reopen restores them; a pending
+  save keeps its Retry Save sheet; Copy details holds no document values (it lists the
+  slop's and the build's package format and runtime ABI); Get help opens the Discord invite.
+- Wedge a page with a busy loop: after 15 s the failure screen appears and the page's
+  WebContent process ends (it stops using CPU), Reopen recovers, Close and Quit do not hang;
+  note a WebContent kill and a wedge show different titles/reasons.
+- Widgets: exercise all sizes, rename and same-volume move, edit and save, and confirm
+  images regenerate once after a Sparkle update.
 - PNG/PDF, Finder preview/icon, keyboard focus, narrow windows, repeated open/close, and menu commands.
 - GitHub and Discord remain in the native sidebar; verify Discord opens the configured community invite.
-- Gatekeeper launch from downloaded DMG and ZIP; installed helper works without Node/Bun.
+- Gatekeeper launch from downloaded DMG and ZIP; the installed app works without Node/Bun.
 - Sparkle update from the previous signed release, verifying publisher and resulting version.
+  With an isolated reachable appcast, confirm the versioned Markdown loads in the update
+  dialog, headings and bullets render correctly, and authoring notes stay on GitHub.
 
 Use a disposable Release validation build to verify representative Analytics events and a symbolicated Crashlytics test crash outside the debugger. Relaunch after the crash for upload. Debug/tests do not upload telemetry. Do not ship a crash trigger. Retain the Release dSYM upload phase and verify reported version/build. Unit tests do not prove Firebase delivery.

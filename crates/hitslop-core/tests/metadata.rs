@@ -51,15 +51,14 @@ fn every_live_origin_records_its_message_and_timestamp_after_reopen() {
 fn merged_text_and_post_rollback_edits_keep_live_metadata() {
     let app = AppSpec::data(r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#).unwrap();
     let mut doc = Document::create(&app, r#"{"title":"Hello"}"#).unwrap();
-    let base = doc.version();
     doc.apply_batch(batch(json!({"intents":[{"type":"set","path":["title"],"value":"Hello A"}]})), Origin::Page)
         .unwrap();
     doc.apply_batch(
-        batch(json!({"base":base,"intents":[{"type":"set","path":["title"],"from":"Hello","value":"Hello B"}]})),
+        batch(json!({"intents":[{"type":"set","path":["title"],"from":"Hello","value":"Hello B"}]})),
         Origin::Agent,
     )
     .unwrap();
-    // The latest frontier includes the local and branch commits; inspect all new peers.
+    // The merged edit is the session's own commit, labeled by its origin.
     let raw = LoroDoc::new();
     raw.import(&doc.checkpoint().unwrap()).unwrap();
     assert!(raw.oplog_frontiers().iter().any(|id| raw.get_change(id).unwrap().message() == "agent"));

@@ -1,6 +1,6 @@
 //! Theme rules shared by authoring validation and native writes. A theme is a palette:
 //! the colors an app declares, with overrides in the document's own Loro history.
-use crate::wire::{THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIX, THEME_TOKENS, ThemeFile};
+use crate::wire::{THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIXES, THEME_TOKENS, ThemeFile};
 use crate::{Code, Result, encode, err, parse};
 use loro::{LoroMap, LoroValue, ValueOrContainer};
 use std::collections::{BTreeMap, HashSet};
@@ -11,7 +11,7 @@ fn valid_name(name: &str) -> bool {
     name.len() <= THEME_NAME_LIMIT
         && name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
         && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        && !name.starts_with(THEME_RESERVED_PREFIX)
+        && !THEME_RESERVED_PREFIXES.iter().any(|prefix| name.starts_with(prefix))
 }
 /// Lowercase `#rrggbb` or `#rrggbbaa`. An opaque color omits `ff`, so two values name the
 /// same color only when they are the same string.
@@ -106,9 +106,6 @@ impl Theme {
     /// The palette over tokens already checked by `validate_defaults`.
     pub fn new(template: &str, tokens: Vec<(String, String)>) -> Self {
         Self { template: template.into(), defaults: tokens.iter().cloned().collect(), tokens }
-    }
-    pub fn template(&self) -> &str {
-        &self.template
     }
     pub fn tokens(&self) -> &[(String, String)] {
         &self.tokens
@@ -274,6 +271,8 @@ mod tests {
             json!({"bad key":"#ffffff"}),
             json!({"1accent":"#ffffff"}),
             json!({"window-radius":"#ffffff"}),
+            json!({"host-accent":"#ffffff"}),
+            json!({"platform-accent":"#ffffff"}),
             json!({"a".repeat(65): "#ffffff"}),
         ] {
             assert!(validate_defaults(&values.to_string()).is_err(), "{values}");
@@ -369,7 +368,6 @@ mod tests {
             (elsewhere.clone(), Code::InvalidRequest),
             (json!({"template":"kanban-board","values":{"missing":"#000000"}}).to_string(), Code::InvalidKey),
             (json!({"template":"kanban-board","values":{"ink":"black"}}).to_string(), Code::OutOfRange),
-            (json!({"template":"kanban-board","values":{},"extra":1}).to_string(), Code::InvalidRequest),
             ("not json".to_owned(), Code::InvalidRequest),
             (" ".repeat(THEME_FILE_LIMIT + 1), Code::TooLarge),
         ];
@@ -379,6 +377,21 @@ mod tests {
         assert_eq!(target.overrides(), before);
         let message = target.import(&elsewhere).unwrap_err().message;
         assert_eq!(message, "This theme is for habit-heatmap");
+    }
+
+    // Failure: a theme file a later build wrote with one more member was refused whole, though
+    // people share these files between versions. Oracle: it imports as the file without it.
+    #[test]
+    fn a_theme_file_ignores_members_it_does_not_know() {
+        let mut target = theme();
+        let file = json!({"template":"kanban-board","values":{"ink":"#111111"},"made-by":{"build":2},"note":"hi"});
+        assert!(target.import(&file.to_string()).unwrap());
+        assert_eq!(target.overrides(), r##"{"ink":"#111111"}"##);
+        // What the file does define is still required and exact.
+        for file in [json!({"values":{}}), json!({"template":"kanban-board"}), json!({"template":1,"values":{}})] {
+            assert_eq!(code(target.import(&file.to_string())), Code::InvalidRequest, "{file}");
+        }
+        assert_eq!(target.overrides(), r##"{"ink":"#111111"}"##);
     }
 
     #[test]

@@ -112,7 +112,7 @@ import HitSlopHost
     panel.canCreateDirectories = true
     panel.startOnDesktop()
     panel.nameFieldStringValue = "\(slug).slop"
-    return await panel.begin() == .OK ? panel.url : nil
+    return await SlopPanels.select(panel)
   }
 
 }

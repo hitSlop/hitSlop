@@ -139,25 +139,4 @@ import ImageIO
       return alphaMap?.contains(point, in: bounds) ?? false
     }
   }
-
-  /// A snapshot clipped to the window's shape, as PNG. `scale` is the snapshot's pixels
-  /// per point.
-  func png(from image: NSImage, scale: CGFloat = 1) throws -> Data {
-    try SlopPreviewImage.png(size: image.size) { [content] rect in
-      guard let context = NSGraphicsContext.current?.cgContext else { return }
-      switch content {
-      case .vector(let silhouette):
-        let logical = CGRect(
-          x: rect.minX / scale, y: rect.minY / scale, width: rect.width / scale, height: rect.height / scale)
-        var transform = CGAffineTransform(scaleX: scale, y: scale)
-        context.addPath(silhouette.path(in: logical).copy(using: &transform)!)
-        context.clip(using: silhouette.fillRule)
-        image.draw(in: rect)
-      case .image(let mask):
-        image.draw(in: rect)
-        context.setBlendMode(.destinationIn)
-        context.draw(mask, in: rect)
-      }
-    }
-  }
 }

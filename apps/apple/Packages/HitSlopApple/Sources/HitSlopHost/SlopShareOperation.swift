@@ -15,6 +15,7 @@ final class SlopShareOperation: NSObject, @preconcurrency NSSharingServicePicker
   private var service: NSSharingService?
   private var finished = false
   private let telemetry: SlopTelemetry
+  private var pickerDismissed: (() -> Void)?
 
   private init(filename: String, telemetry: SlopTelemetry) throws {
     directory = FileManager.default.temporaryDirectory.appendingPathComponent("hitSlop Share \(UUID().uuidString)")
@@ -41,8 +42,9 @@ final class SlopShareOperation: NSObject, @preconcurrency NSSharingServicePicker
 
   func present(
     in view: NSView?,
+    pickerDismissed: @escaping () -> Void = {},
     show: (NSSharingServicePicker, NSView) -> Void = {
-      $0.show(relativeTo: .zero, of: $1, preferredEdge: .minY)
+      $0.show(relativeTo: $1.bounds, of: $1, preferredEdge: .minY)
     }
   ) throws {
     guard let view, view.window != nil else {
@@ -52,6 +54,7 @@ final class SlopShareOperation: NSObject, @preconcurrency NSSharingServicePicker
     let picker = NSSharingServicePicker(items: [file])
     self.picker = picker
     picker.delegate = self
+    self.pickerDismissed = pickerDismissed
     Self.active[id] = self
     show(picker, view)
   }
@@ -68,6 +71,7 @@ final class SlopShareOperation: NSObject, @preconcurrency NSSharingServicePicker
     _ sharingServicePicker: NSSharingServicePicker,
     didChoose service: NSSharingService?
   ) {
+    releasePicker()
     guard let service else {
       telemetry.send(.breadcrumb(.share, .cancelled))
       finish()
@@ -89,12 +93,19 @@ final class SlopShareOperation: NSObject, @preconcurrency NSSharingServicePicker
   private func finish() {
     guard !finished else { return }
     finished = true
+    releasePicker()
     picker?.delegate = nil
     picker = nil
     service?.delegate = nil
     service = nil
     try? FileManager.default.removeItem(at: directory)
     Self.active[id] = nil
+  }
+
+  private func releasePicker() {
+    let dismissed = pickerDismissed
+    pickerDismissed = nil
+    dismissed?()
   }
 
   deinit { try? FileManager.default.removeItem(at: directory) }

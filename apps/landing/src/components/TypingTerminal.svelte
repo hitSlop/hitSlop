@@ -121,5 +121,13 @@
   .file img { border-radius: 10px; }
   .result.done .file { transform: none; opacity: 1; animation: bounce 900ms var(--spring) 1; }
   @keyframes bounce { 30% { transform: translateY(-14px) rotate(8deg) scale(1.1); } 60% { transform: translateY(0) rotate(-4deg); } }
+  @media (max-width: 779px) {
+    .terminal { rotate: 0deg; box-shadow: 0 12px 24px #10132c26, 0 4px 0 #0b0e1a; }
+    .bar { padding-inline: 12px; gap: 8px; flex-wrap: wrap; }
+    .bar button { min-height: 44px; }
+    .screen { min-height: 360px; padding: 16px 12px 8px; font-size: .85rem; overflow-wrap: anywhere; }
+    .result { padding: 14px 12px; gap: 10px; }
+    .file { flex: none; }
+  }
   @media (prefers-reduced-motion: reduce) { .file, .result.done .file { transform: none; opacity: 1; animation: none; } .caret { animation: none; } }
 </style>

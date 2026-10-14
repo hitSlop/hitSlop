@@ -1,84 +1,49 @@
 //! The private engine boundary: frozen protocol preflight on argv, one Rust-owned JSON
 //! request on bounded stdin, and one classified JSON reply on stdout. The core routes
-//! document operations to the live owner or acquires its lock and runs the same owner.
-//! AppKit operations forward the original JSON to the native helper. Only build/protocol
-//! queries and the exact restricted evaluator entry point are outside the JSON wire.
-use hitslop_core::{EngineRequest, EngineSuccess, command, engine::True, file, native::NativeReply, registry};
-use slop_engine::{evaluator, preview, rejected};
+//! document operations to the live owner or acquires its lock and runs the same owner; it
+//! renders a closed document's export in this executable's restricted evaluator. Only
+//! opening a window needs hitSlop.app. Only build/protocol queries and the exact restricted
+//! evaluator entry point are outside the JSON wire.
+use hitslop_core::owner::{Failure, FailureKind};
+use hitslop_core::{Code, EngineRequest, EngineSuccess, command, engine::True, file, registry, store};
 use std::ffi::OsString;
-use std::io::{Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
+use std::process::ExitCode;
 
-/// The app's helper. `HITSLOP_NATIVE_CLI` names one; otherwise the installed app's.
-fn helper() -> Result<PathBuf, String> {
-    if !cfg!(target_os = "macos") {
-        return Err("Opening windows, exporting and native artwork require macOS and hitSlop.app; document edits and authoring run anywhere.".into());
-    }
-    let executable =
-        |path: &Path| std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
-    if let Some(named) = std::env::var_os("HITSLOP_NATIVE_CLI").filter(|named| !named.is_empty()) {
-        let named = PathBuf::from(named);
-        return if executable(&named) { Ok(named) } else { Err("HITSLOP_NATIVE_CLI is not executable".into()) };
-    }
-    let home = std::env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join("Applications/hitSlop.app/Contents/Helpers/hitslop-native"));
-    [PathBuf::from("/Applications/hitSlop.app/Contents/Helpers/hitslop-native")]
-        .into_iter()
-        .chain(home)
-        .find(|path| executable(path))
-        .ok_or_else(|| {
-            "Install hitSlop.app in /Applications or ~/Applications to open windows, export or render artwork".into()
-        })
+mod attachments;
+mod open;
+mod preview;
+
+/// A classified refusal, as every engine reply spells one.
+fn rejected(reason: Code, error: impl std::fmt::Display) -> String {
+    command::failure(
+        Failure { kind: FailureKind::Rejected, message: error.to_string(), reason: Some(reason), op_index: None },
+        false,
+        false,
+    )
+}
+/// A file operation's refusal: nothing changed.
+fn refusal(code: Code, message: impl Into<String>) -> store::Error {
+    store::Error::Rejected(hitslop_core::Error { code, message: message.into(), op_index: None, path: vec![] })
+}
+/// The restricted evaluator: this same executable, run with `--evaluate-command`.
+fn evaluator() -> Result<hitslop_runner::Evaluator, String> {
+    hitslop_runner::Evaluator::new(
+        std::env::current_exe().map_err(|e| e.to_string())?,
+        vec!["--evaluate-command".into()],
+    )
 }
 
-fn unknown(error: impl std::fmt::Display) -> String {
-    command::failure(hitslop_core::store::Error::Failed(error.to_string()).into(), false, false)
-}
 fn success(result: EngineSuccess) -> String {
     serde_json::to_string(&result).expect("serializable reply")
 }
-fn native(protocol: u64, method: &str, input: &str) -> String {
-    let path = match helper() {
-        Ok(path) => path,
-        Err(error) => return rejected("invalid_request", error),
-    };
-    let mut child = match Command::new(path)
-        .args(["--client-protocol", &protocol.to_string()])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-    {
-        Ok(child) => child,
-        Err(error) => return rejected("invalid_request", error),
-    };
-    let sent = child.stdin.take().expect("piped stdin").write_all(input.as_bytes());
-    // Always reap, including an early refusal that closed stdin before the write.
-    let output = match child.wait_with_output() {
-        Ok(output) => output,
-        Err(error) => return unknown(error),
-    };
-    if output.status.code() == Some(2) {
-        return rejected("requires_update", String::from_utf8_lossy(&output.stderr).trim());
-    }
-    const NO_REPLY: &str =
-        "Native helper stopped without a valid reply; inspect the document and output before retrying";
-    if !output.status.success() || sent.is_err() {
-        return unknown(NO_REPLY);
-    }
-    let Ok(reply) = serde_json::from_slice::<NativeReply>(&output.stdout) else {
-        return unknown(NO_REPLY);
-    };
-    if reply.method().is_some_and(|received| received != method) {
-        return unknown("Native helper replied to another method; inspect the document and output before retrying");
-    }
-    String::from_utf8(output.stdout).expect("validated JSON")
-}
 fn dispatch(request: EngineRequest) -> String {
-    let result = (|| -> Result<EngineSuccess, hitslop_core::store::Error> {
+    let result = (|| -> Result<EngineSuccess, store::Error> {
         Ok(match request {
+            EngineRequest::AttachmentRef { file } => {
+                EngineSuccess::AttachmentRef { ok: True, reference: attachments::reference(Path::new(&file))? }
+            }
             EngineRequest::Templates {} => {
                 EngineSuccess::Templates { ok: True, catalog: file::list_templates(&file::template_roots()) }
             }
@@ -87,17 +52,28 @@ fn dispatch(request: EngineRequest) -> String {
                 let path = std::fs::canonicalize(&output).unwrap_or(PathBuf::from(output));
                 EngineSuccess::Create { ok: True, document_path: path.to_string_lossy().into_owned() }
             }
-            EngineRequest::Pack { stage, file: path, app } => {
-                file::pack(app.get(), Path::new(&stage), Path::new(&path))?;
-                EngineSuccess::Pack { ok: True }
+            EngineRequest::Pack { stage, file: path, app, render_views } => {
+                let (stage, path) = (Path::new(&stage), Path::new(&path));
+                let artwork = if render_views {
+                    let evaluator = evaluator().map_err(|e| {
+                        refusal(Code::InvalidRequest, format!("Cannot start the capture renderer: {e}"))
+                    })?;
+                    let render = |template: &Path, roles: &[file::Artwork]| {
+                        hitslop_core::capture::render_views(template, &evaluator, roles)
+                    };
+                    file::pack(app.get(), stage, path, Some(&render))?
+                } else {
+                    file::pack(app.get(), stage, path, None)?
+                };
+                EngineSuccess::Pack { ok: True, artwork }
             }
             EngineRequest::ValidateMetadata { metadata } => {
-                hitslop_core::app::validate_metadata(&metadata).map_err(hitslop_core::store::Error::Rejected)?;
+                hitslop_core::app::validate_metadata(&metadata).map_err(store::Error::Rejected)?;
                 EngineSuccess::ValidateMetadata { ok: True }
             }
             EngineRequest::ValidateApp { app, stage } => {
-                file::validate_app(app.get(), Path::new(&stage))?;
-                EngineSuccess::ValidateApp { ok: True }
+                let (window, capabilities) = file::validate_app(app.get(), Path::new(&stage))?;
+                EngineSuccess::ValidateApp { ok: True, window, capabilities }
             }
             EngineRequest::ArtworkExport { file: path, target, output } => {
                 let name = match target {
@@ -115,6 +91,9 @@ fn dispatch(request: EngineRequest) -> String {
                 ok: True,
                 schema: serde_json::from_str(&file::descriptor(Path::new(&path))?).expect("valid descriptor"),
             },
+            EngineRequest::Open { document_path } => {
+                EngineSuccess::Open { ok: True, document_path: open::document(Path::new(&document_path))? }
+            }
             _ => unreachable!("routed before file dispatch"),
         })
     })();
@@ -125,25 +104,15 @@ fn dispatch(request: EngineRequest) -> String {
 }
 fn request(input: &str, protocol: u64) -> String {
     if input.len() > command::MAX_REQUEST_BYTES {
-        return rejected("too_large", "Engine request is too large");
+        return rejected(Code::TooLarge, "Engine request is too large");
     }
     let request = match EngineRequest::parse(input) {
         Ok(request) => request,
-        Err(error) => return rejected("invalid_request", error),
+        Err(error) => return rejected(Code::InvalidRequest, error),
     };
-    match request {
-        EngineRequest::Open { .. } | EngineRequest::Screenshot { .. } | EngineRequest::Export { .. } => {
-            native(protocol, request.method(), input)
-        }
-        EngineRequest::Get { .. }
-        | EngineRequest::Batch { .. }
-        | EngineRequest::Copy { .. }
-        | EngineRequest::ThemeExport { .. }
-        | EngineRequest::AttachmentsList { .. }
-        | EngineRequest::AttachmentsRead { .. }
-        | EngineRequest::Describe { .. }
-        | EngineRequest::Call { .. } => command::request_with_evaluator(request, protocol, None, evaluator().ok()),
-        _ => dispatch(request),
+    match request.route() {
+        hitslop_core::engine::Route::Document => command::request_with_evaluator(request, protocol, evaluator().ok()),
+        hitslop_core::engine::Route::File => dispatch(request),
     }
 }
 fn main() -> ExitCode {
@@ -176,6 +145,28 @@ fn main() -> ExitCode {
         println!("{}", hitslop_core::BUILD_ID);
         return ExitCode::SUCCESS;
     }
+    if args == ["--limits"] {
+        println!("{}", serde_json::to_string(&hitslop_core::app::AppDefinition::open_limits()).expect("limits encode"));
+        return ExitCode::SUCCESS;
+    }
+    if args.len() == 2 && args[0] == "--acceptance-vectors" {
+        let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+            let vectors = hitslop_core::app::AppDefinition::acceptance_vectors()?;
+            let folder = Path::new(&args[1]);
+            std::fs::create_dir_all(folder)?;
+            for (name, vector) in vectors {
+                std::fs::write(folder.join(format!("{name}.json")), serde_json::to_vec_pretty(&vector)?)?;
+            }
+            Ok(())
+        })();
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("Acceptance vectors: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     if let Some(folder) = std::env::var_os("HITSLOP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
         let _ = registry::use_folder(Path::new(&folder));
     }
@@ -189,7 +180,7 @@ fn main() -> ExitCode {
     let mut input = String::new();
     let reply = match std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input) {
         Ok(_) => request(&input, protocol),
-        Err(error) => rejected("invalid_request", error),
+        Err(error) => rejected(Code::InvalidRequest, error),
     };
     println!("{}", reply.trim_end());
     ExitCode::SUCCESS

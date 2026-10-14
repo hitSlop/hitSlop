@@ -10,7 +10,7 @@ let package = Package(
     .library(name: "HitSlopDocument", targets: ["HitSlopDocument"]),
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
-    .executable(name: "hitslop-native", targets: ["HitSlopNativeCLI"]),
+    .library(name: "HitSlopWidgets", targets: ["HitSlopWidgets"]),
   ],
   dependencies: [
     .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.19.2")
@@ -47,10 +47,11 @@ let package = Package(
     ),
     .target(
       name: "HitSlopHost",
-      dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument"],
+      dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopWidgets"],
       linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("WebKit")]
     ),
     .target(name: "HitSlopFeatures", dependencies: ["HitSlopCore"]),
+    .target(name: "HitSlopWidgets"),
     .testTarget(name: "HitSlopFeaturesTests", dependencies: ["HitSlopFeatures"]),
     .target(
       name: "HitSlopCatalog",
@@ -60,22 +61,14 @@ let package = Package(
       resources: [.process("Resources")],
       linkerSettings: [.linkedFramework("AppKit")]
     ),
-    .executableTarget(
-      name: "HitSlopNativeCLI",
-      dependencies: [
-        "HitSlopCore",
-        "HitSlopCoreBinding",
-        "HitSlopHost",
-        "HitSlopDocument",
-      ],
-      linkerSettings: [.linkedFramework("AppKit")]
-    ),
     .testTarget(
       name: "HitSlopCoreTests",
       dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
     .testTarget(
       name: "HitSlopHostTests",
-      dependencies: ["HitSlopHost", "HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport"]),
+      dependencies: [
+        "HitSlopHost", "HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument", "HitSlopTestSupport", "HitSlopWidgets",
+      ]),
     .testTarget(
       name: "HitSlopCatalogTests",
       dependencies: ["HitSlopCatalog", "HitSlopCore", "HitSlopDocument", "HitSlopFeatures", "HitSlopTestSupport"]

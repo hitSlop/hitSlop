@@ -1,5 +1,6 @@
 import Foundation
 import HitSlopCore
+import HitSlopTestSupport
 
 @testable import HitSlopHost
 
@@ -14,6 +15,7 @@ extension SlopDocumentWindowController {
     let controller = try await open(
       url: url, routing: commands.routing, progress: presentsWindow ? SlopOpeningProgress() : nil, telemetry: telemetry)
     commands.controller = controller
+    controller.window?.moveOffScreen()
     return controller
   }
 }

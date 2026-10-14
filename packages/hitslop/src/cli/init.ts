@@ -17,7 +17,6 @@ interface InitOptions {
   yes?: boolean;
 }
 
-
 /** The starter's `slop.ts` with one top-level field's line replaced. */
 function setField(slop: string, key: string, value: string) {
   const line = new RegExp(`^  ${key}: .*,$`, "m");
@@ -32,8 +31,16 @@ export async function initProject(target: string, options: InitOptions = {}, str
   });
   if (existing) throw new Error("Choose a new source directory");
   const slug = projectSlug(destination);
-  const candidate: AppMetadata = { slug, title: "My slop", description: "A hitSlop mini app.", author: { name: "Anonymous" }, categories: ["productivity"] };
-  const checkMetadata = async (value: AppMetadata) => { await execute({ method: "validateMetadata", metadata: value }); };
+  const candidate: AppMetadata = {
+    slug,
+    title: "My slop",
+    description: "A hitSlop mini app.",
+    author: { name: "Anonymous" },
+    categories: ["productivity"],
+  };
+  const checkMetadata = async (value: AppMetadata) => {
+    await execute({ method: "validateMetadata", metadata: value });
+  };
   await checkMetadata(candidate);
   const io = resolvePromptIO(streams);
   const interactive = !options.yes && !process.env.CI && io.input.isTTY && io.output.isTTY;
@@ -48,7 +55,10 @@ export async function initProject(target: string, options: InitOptions = {}, str
   ) {
     const check = async (value: string) => {
       try {
-        await checkMetadata({ ...candidate, [field]: field === "author" ? { name: value } : value });
+        await checkMetadata({
+          ...candidate,
+          [field]: field === "author" ? { name: value } : value,
+        });
       } catch {
         throw new Error(
           `${message} must be ${limits.minLength}–${limits.maxLength} characters${limits.pattern ? " and contain non-whitespace text" : ""}`,
@@ -92,7 +102,13 @@ export async function initProject(target: string, options: InitOptions = {}, str
   } catch {
     throw new Error("Choose one or two distinct categories");
   }
-  const author = await text("Author", options.author, "Anonymous", "author", ManifestText.authorName);
+  const author = await text(
+    "Author",
+    options.author,
+    "Anonymous",
+    "author",
+    ManifestText.authorName,
+  );
   const description = await text(
     "Description",
     options.description,
@@ -107,11 +123,14 @@ export async function initProject(target: string, options: InitOptions = {}, str
   slop = setField(slop, "description", JSON.stringify(description));
   slop = setField(slop, "author", `{ name: ${JSON.stringify(author)} }`);
   slop = setField(slop, "categories", JSON.stringify(categories));
-  const project: Record<string, unknown> = JSON.parse(
-    await readFile(join(cliRoot, "templates/checklist/package.json"), "utf8"),
-  );
+  const project: {
+    name: string;
+    devDependencies: Record<string, string>;
+    scripts?: Record<string, string>;
+  } = JSON.parse(await readFile(join(cliRoot, "templates/checklist/package.json"), "utf8"));
   project.name = slug;
-  project.devDependencies = { "hitslop": metadata.version };
+  // Beside this CLI, the starter pins the checker and TypeScript that `slop check` runs.
+  project.devDependencies.hitslop = metadata.version;
   project.scripts = {
     dev: "slop dev .",
     check: "slop check .",
@@ -139,7 +158,10 @@ export async function initProject(target: string, options: InitOptions = {}, str
     );
     await mkdir(join(destination, ".agents/skills"), { recursive: true });
     for (const name of await readdir(join(cliRoot, "skills")))
-      await symlink(`../../node_modules/hitslop/skills/${name}`, join(destination, ".agents/skills", name));
+      await symlink(
+        `../../node_modules/hitslop/skills/${name}`,
+        join(destination, ".agents/skills", name),
+      );
     await writeFile(
       join(destination, "AGENTS.md"),
       "Run bun install, then read slop.ts, BRIEF.md, .agents/skills/hitslop-authoring/SKILL.md, and .agents/skills/hitslop-design/SKILL.md. Build the slop described in BRIEF.md. Update the title, description, and categories in slop.ts to match what you build. Choose a visual direction suited to its purpose. Use plain CSS, slop.ts theme colors, and typed document handles. Run bun run check and bun run build.\n\n**Do not create an automated test or test suite for each slop.** Creating, styling, animating, or updating a slop does not require new tests. Use existing checks/builds and hands-on preview/export review. Shared SDK, storage, or host regressions belong in existing tests at their owning boundary; do not duplicate that coverage in example-specific tests.\n\nThe CLI, SDK and project guides come from the pinned hitslop package. Project skill links follow node_modules/hitslop when dependencies are upgraded. Use the project's bun run scripts for authoring.\n",

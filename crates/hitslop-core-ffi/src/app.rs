@@ -1,12 +1,14 @@
 //! Typed app and catalog projections. Only core's format module decodes stored JSON.
 use hitslop_core::app::{
-    self, AppMetadata, Author, Background, Category, StandardFrame, ThemeInput, Views, WindowDefinition, WindowFrame,
+    self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WidgetOptions,
+    WindowDefinition, WindowFrame,
 };
-use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, Summary};
+use hitslop_core::file::{Kind, ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, Summary};
 use hitslop_core::shape::Silhouette;
 
 #[uniffi::remote(Enum)]
 pub enum Category {
+    Popular,
     Productivity,
     Utilities,
     Finance,
@@ -35,6 +37,12 @@ pub struct AppMetadata {
     pub categories: Vec<Category>,
 }
 #[uniffi::remote(Enum)]
+pub enum Capability {
+    Camera,
+    Microphone,
+    Speech,
+}
+#[uniffi::remote(Enum)]
 pub enum Background {
     Transparent,
     Glass,
@@ -57,6 +65,7 @@ pub struct StandardFrame {
     pub resizable: bool,
     pub lock_aspect: bool,
     pub background: Option<Background>,
+    pub radius: String,
     pub shape: Silhouette,
 }
 #[uniffi::remote(Record)]
@@ -66,8 +75,14 @@ pub struct ThemeInput {
 }
 #[uniffi::remote(Record)]
 pub struct Views {
+    pub preview: bool,
     pub export: bool,
     pub icon: bool,
+    pub widget: Option<WidgetOptions>,
+}
+#[uniffi::remote(Record)]
+pub struct WidgetOptions {
+    pub refresh_minutes: Option<u32>,
 }
 #[uniffi::remote(Record)]
 pub struct Summary {
@@ -87,7 +102,21 @@ pub struct ResourceInfo {
     pub size: u64,
     pub media_type: String,
 }
-
+#[uniffi::remote(Record)]
+pub struct ResourceSpan {
+    pub offset: u64,
+    pub length: u64,
+}
+#[uniffi::remote(Record)]
+pub struct ResponsePlan {
+    pub status: u16,
+    pub headers: std::collections::HashMap<String, String>,
+    pub span: Option<ResourceSpan>,
+}
+#[uniffi::export]
+pub fn resource_response(info: ResourceInfo, route: ResourceRoute, range: Option<String>) -> ResponsePlan {
+    hitslop_core::file::resource_response(&info, route, range.as_deref())
+}
 /// The native view of an accepted app. The original descriptor is opaque to Swift.
 #[derive(uniffi::Record)]
 pub struct AppDefinition {
@@ -95,6 +124,8 @@ pub struct AppDefinition {
     pub window: WindowDefinition,
     pub theme: Vec<ThemeInput>,
     pub views: Views,
+    /// What the app declared that this host implements; the host grants nothing else.
+    pub capabilities: Vec<Capability>,
     pub descriptor_json: String,
 }
 impl From<&app::AppDefinition> for AppDefinition {
@@ -104,6 +135,7 @@ impl From<&app::AppDefinition> for AppDefinition {
             window: app.window().clone(),
             theme: app.theme().to_vec(),
             views: app.views(),
+            capabilities: app.capabilities().to_vec(),
             descriptor_json: app.document_json().into(),
         }
     }
@@ -125,6 +157,7 @@ use hitslop_core::HostLimits;
 #[uniffi::remote(Record)]
 pub struct HostLimits {
     pub error_text: u64,
+    pub download_bytes: u64,
     pub storage_bytes: u64,
     pub theme_file: u64,
     pub push_items: u64,
@@ -138,7 +171,7 @@ pub struct HostLimits {
     pub max_window: u64,
     pub package_format: u64,
     pub runtime_abi: u64,
-    pub helper_protocol: u64,
+    pub engine_protocol: u64,
 }
 #[uniffi::export]
 pub fn host_limits() -> HostLimits {

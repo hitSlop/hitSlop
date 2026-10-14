@@ -50,7 +50,7 @@ extension HostTests {
       // Finishing at the controller boundary must also close native chrome and release WebKit.
       try await controller.finishClose()
       #expect(controller.window?.isVisible == false)
-      #expect(webView == nil)
+      #expect(await eventually(timeout: .seconds(5)) { webView == nil })
       #expect(try await command("batch", url: root, setTitle("Closed edit")).ok)
       #expect(try await savedValue(root)?["title"] as? String == "Closed edit")
       // An interactive reopen reads back exactly the saved state (the probe app writes nothing).
@@ -169,7 +169,11 @@ extension HostTests {
       let controller = try await SlopDocumentWindowController.open(url: root)
       try await controller.session.waitUntilReady()
       let old = controller.session.webView
-      if dead { controller.session.webViewWebContentProcessDidTerminate(old) }
+      if dead {
+        controller.session.webViewWebContentProcessDidTerminate(old)
+        // The window tells the person what stopped: the session's reason reaches the failure screen.
+        #expect(controller.failedOverlay?.rootView.screen.notice.title == "This slop's view stopped")
+      }
       try await controller.session.discardPending()
       #expect(controller.session.webView !== old)
       #expect(controller.session.webView.superview != nil)

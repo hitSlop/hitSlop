@@ -54,15 +54,17 @@ boundary and marker, are in the [engineering contract](docs/engineering-contract
 - Installing hitSlop never replaces the app inside an existing document. Only a write
   under the writer lock migrates a file; display reads never do.
 - Public boundaries (`ctx`, handles, error codes, `--slop-*`, host markup, the embed relay,
-  the command protocol's refusal path) grow additively. A change an old app cannot run
-  raises `runtimeABI` and keeps the old behavior through an adapter.
+  the command protocol's refusal path, capture program requests and replies) grow additively.
+  A change an old app cannot run raises `runtimeABI` and keeps the old behavior through an adapter.
+  Stored capture programs are governed by runtimeABI. Requests grow additively; reply readers
+  ignore unknown hints. Captures remain faithful and usable, while renderer fixes may change pixels.
 - Upgrade Loro (pinned exactly) only with the corpus passing.
 
 ## Authoring
 
-Directories with a `slop.ts` under `examples/slops` are active; `bundled.json` selects
+Directories with a `slop.ts` under `slops` are active; `bundled.json` selects
 shipped templates. Use plain CSS and `slop.ts` theme colors; read
-[product guidance](examples/slops/PRODUCT.md) and [authoring](docs/guides/authoring.md)
+[product guidance](slops/PRODUCT.md) and [authoring](docs/guides/authoring.md)
 for visual changes. `_vibe` is inspiration only.
 
 ## Testing
@@ -81,7 +83,9 @@ for visual changes. `_vibe` is inspiration only.
 - One runner, `bun run verify` ([testing](docs/testing.md)): it runs the tiers whose
   inputs changed since they last passed. Iterate with one tier (`bun run verify rust
   store::`); run `bun run verify` before calling a step done, and `bun run verify --native`
-  once at the end when Swift, the FFI or the helper changed. Release: `bun run release:check`.
+  once at the end when Swift or the FFI changed. Release: `bun run release:check`.
+- Rust builds and a full `bun run verify` can outlast an agent's command timeout: run
+  them in the background and iterate with a filtered tier.
 
 ## Commit and PR attribution
 
@@ -98,14 +102,10 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Deferred
 
-Development exception: an opt-in `dev-sync` native loopback proof (the `slop-room`
-development binary and the owner's shared session, `owner/sync.rs`) may use one authority
-and two temporary replica owners. Loro bytes stay in Rust; shared undo and attachment
-imports are disabled. The harness adds no released format or production endpoint.
-Shared-session fencing applies while its owners hold their locks; restart-safe sharing
-and durable request recovery remain deferred.
-
-Collaboration, a document history UI, schema evolution, synced folders, hosted
-catalog/publishing, accounts/auth and sharing. `archive/`, `spikes/`, `plans/`,
-`SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay local and are not active
-contracts. Shared decisions belong in the architecture, roadmap and ideas pages.
+Collaboration (the core and its relay protocol are proven: local owners exchanging Loro
+updates through a Durable Object byte relay; the production relay and clients are deferred,
+see the [roadmap](docs/roadmap.md)), a document history UI, schema evolution,
+synced folders, hosted catalog/publishing, accounts/auth and sharing. `archive/`,
+`spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
+local and are not active contracts. Shared decisions belong in the architecture, roadmap
+and ideas pages.

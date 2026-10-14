@@ -67,7 +67,8 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** today an agent learns about a person's edits only by polling `get`. MCP lets
   clients without a shell work on slops.
 - **Builds on:** the owner socket and its serde types in `crates/hitslop-core/src/wire`. The
-  socket takes one request per connection today, so streaming needs a new envelope.
+  socket takes one request per connection today, so streaming needs a new CLI protocol
+  with both sides updated, rather than an additive method in the current protocol.
 
 ### Gradient theme tokens
 
@@ -94,8 +95,9 @@ a person and their agent edit the same live document. What's missing is the slop
   change it. Without it, the slope ends at a cliff.
 - **Builds on:** `slop init`'s agent handoff and the build staging in
   `packages/hitslop/src/cli/build.ts`.
-- **Contract change:** templates contain no source today. Shipping source also raises
-  questions about licenses and private notes in briefs.
+- **Contract change:** templates contain no source today. Shipping source as a new asset class
+  raises `packageFormat`: the asset-key set is closed and has no reserved private prefix.
+  It also raises questions about licenses and private notes in briefs.
 - **Constraints:** compressed and optional, with a size limit and provenance; source
   files and dependency metadata only, never dependencies, build caches, credentials or
   chat history; extracted without executing code and never served to the page.
@@ -135,6 +137,9 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ### Permissions bound to the app's code
 
+- **Today:** apps declare camera, microphone and on-device speech use; the host gates
+  requests and macOS consent belongs to hitSlop. There is no per-slop decision or
+  code-bound permission store. See [capabilities](reference/runtime.md#security-boundaries).
 - **What:** grant a permission (microphone, camera, MIDI) to one app's code: the hash of
   its `app` row and assets, which in a single file are all the code there is. A remix
   or an upgrade asks again.
@@ -150,7 +155,9 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** teach the agent once, and every copy of the slop benefits.
 - **Builds on:** the file's `app` row, which `slop inspect` and `slop schema` already read
   for agents.
-- **Contract change:** the `app` row gains a column, which raises `packageFormat`.
+- **Contract change:** optional notes and prompt declarations can be added as members of
+  `definition_json` without a marker, because readers ignore unknown members. Anything
+  an older host must understand still raises its owning marker.
 
 ## Tools, not apps
 
@@ -174,6 +181,27 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** the no-code rung, on the Mac's own automation, with Siri and Spotlight for free.
 - **Builds on:** closed editing, which runs the owner without WebKit or authored code.
 
+### Query a document with SQL
+
+- **What:** `slop query DOC 'SELECT …'`, read-only SQL over a snapshot. The engine
+  registers virtual tables generated from the descriptor (a list of `$id` rows becomes a
+  table, as sqlelf does over ELF), computes them from Loro and stores nothing. Today the
+  same works without new code: `slop get DOC > doc.json`, then
+  `sqlite3 :memory: "SELECT … FROM json_each(CAST(readfile('doc.json') AS TEXT), '$.items')"`.
+- **Why:** Farid Zakaria's [SELF](https://fzakaria.com/2026/08/23/your-executable-is-a-sqlite-database)
+  posts, which inspired the `.slop` file, show how much tooling collapses into SQL once the
+  program and its state are one database. A `.slop` already answers `SELECT` for its app,
+  assets and artwork, but not for its saved values, which are Loro bytes.
+- **Builds on:** `get`'s snapshot. A stored SQL copy of the data would be a mirror, so
+  the tables exist only for the query.
+- **Open questions:** table naming freezes into a public boundary at launch, so wait for
+  a request a JSON read can't answer.
+- **Nearby:** a semantic `slop diff` of two files' apps and data, which pairs with
+  [additive app upgrades](#additive-app-upgrades) and starts from `inspect`'s
+  `appDigest`; a Spotlight importer that indexes saved text through the core, as Quick
+  Look reads artwork; and registering the `HSLP` application ID in SQLite's `magic.txt`
+  so `file` names a `.slop`.
+
 ### Export data
 
 - **What:** "Export data…" as JSON, CSV or Markdown, next to PNG and PDF.
@@ -184,66 +212,39 @@ a person and their agent edit the same live document. What's missing is the slop
 
 - **Menu-bar slops and widgets.** A `menubar` presentation for timers and players, and
   WidgetKit widgets rendered from the icon or export capture of saved state.
-- **History scrubber.** A timeline of the history a document keeps: all of it below
-  4 MiB, otherwise only the open session's. Restore applies an old version as a
-  new edit. A longer timeline needs a retention rule that bounds the cost of deleted
-  content, which Loro keeps in the starting state of any cut before the latest version.
+- **History scrubber.** A timeline of whatever history remains under the
+  [current retention policy](architecture.md#saving). Saved history can be pruned while
+  open or on close; reopening does not guarantee a retained timeline, and undo starts empty.
+  Restore applies an available old version as a new edit. A guaranteed longer timeline
+  would need a retention rule that bounds the cost of deleted content, which Loro keeps
+  in the starting state of any cut before the latest version.
 - **Household sharing.** A family's grocery list as home-cooked software, through the
   room described next.
 
 ### Sync between your own devices
 
 A Mac and an iPhone editing one document can use the same room model as people
-collaborating. Each keeps a `.slop` replica and its local writer lease. Shared edits
-require a connection to the authority; ordinary unshared documents continue offline.
-Replicate accepted Loro updates, not SQL rows or a second JSON document. Attachments
+collaborating. Each keeps a `.slop` replica and its local writer lease, edits offline and
+merges through the relay when it reconnects. Replicate Loro updates, not SQL rows or a
+second JSON document. Attachments
 travel separately by hash, so installed data and a complete exportable file are distinct
 states until its blobs arrive.
 
 ### Realtime collaboration on Durable Objects
 
-The selected direction (2026-10-07) is **one semantic writer per room**. It supersedes
-the earlier raw-update relay and independently writable replicas. A Durable Object is
-one possible future host; a native loopback proof must qualify the model first.
+The selected direction is local owners and a byte relay;
+[architecture](architecture.md#sync) describes it, and the [roadmap](roadmap.md#later)
+tracks what remains. What stays open:
 
-- **Authority:** the existing Rust owner validates and orders the same batches and named
-  commands as local documents. Commands evaluate against authority state; text uses its
-  existing version-aware merge. Clients do not author disconnected shared changes.
-- **Replicas:** each Rust owner keeps its file lock, installs validated accepted updates,
-  publishes immutable snapshots and persists them normally. Loro bytes stay in Rust.
-  Disconnection fences all shared mutation paths while preserving unsent drafts.
-- **Identity:** one document UUID and matching app digest/layout in the handshake.
-  Explicit Duplicate is independent and gets a fresh UUID. Bootstrap preserves the room
-  document identity. UUIDs are never Loro peer IDs.
-- **Transport:** a separate sync envelope around the existing mutation vocabulary,
-  with bounded requests, updates and snapshot transfer. It never borrows the command
-  protocol's number. Loro's framing and adapters may be useful for the hosted transport;
-  a raw update relay does not implement command authority.
-- **Local proof:** two editable development pages and CLI requests through one room,
-  accepted-update equality, ordered publications, reconnect/snapshot fallback and
-  identity refusals. No attachment imports or shared undo in this first proof. It
-  changes no production endpoint and writes no sync metadata.
-- **Durability track:** storage 2 adds atomic request receipts, client pending requests,
-  durable replica progress and epochs. Reuse the same request ID after an uncertain
-  reply; a changed payload under that ID refuses. Expired receipts do not prove an
-  operation was never accepted. Resolve pending outcomes before replacing replica state.
-- **Retention:** an authority can publish a new retained checkpoint and fence old bases.
-  Slow clients resync rather than merge offline edits; stale text bases preserve drafts
-  for recovery. Attachment transfer/reclamation and interrupted snapshot installation
-  need explicit tests before production sharing.
-- **Undo and presence:** whole-document `revert_to` is not personal undo. Authority
-  peers and temporary text peers need actor mapping before selective shared undo.
-  `EphemeralStore` remains a candidate for nondurable cursors and presence.
-- **Hosting gates:** qualify native-owner-to-WASM portability, restricted commands,
-  authentication, limits, Cloudflare execution and personal undo separately. Neither
-  the local proof nor schema identity proves these work.
+- **Presence:** cursors and who is here, probably through Loro's `EphemeralStore`, never
+  saved.
 
 Per-person persistent preferences remain a separate `s.local(node)` proposal. Today,
 keep temporary view state in Svelte and document content in fields. A new local-field
 kind would need Rust, SDK, fixtures, export semantics and a compatibility decision;
-it is not implied by the authority model.
+it is not implied by the relay.
 
-The archived examples still supply useful cases: Slide Deck's selected slide; volume
+The restored slops supply useful cases: Slide Deck's selected slide; volume
 and mute in Alien Radio, Metronome and Pocket Pod; Pocket Pod's playback and repeat;
 Pixel Art's selected color; Morning Pages' current key; and Wordle's mode. Decide each
 field's intended scope before introducing locality.
@@ -257,8 +258,8 @@ field's intended scope before introducing locality.
 
 Potential SDK additions remain presence, actor-aware attribution and selective undo.
 Index-addressed scalar-list edits need an explicit stale-base rule so another person's
-insertion cannot silently redirect an edit. These are separate design tasks; the local
-proof does not freeze their API or promise that every future addition is compatible.
+insertion cannot silently redirect an edit. These are separate design tasks; the relay
+does not freeze their API or promise that every future addition is compatible.
 
 ## What we won't take
 
@@ -266,3 +267,10 @@ The manifesto also argues for cloud sandboxes, organization-wide governance and 
 between model providers. Those serve an enterprise agent platform. hitSlop takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
 stays local, with no account.
+
+## Possible command extensions after launch
+
+Commands currently serve agents and take flat scalar arguments. Page command calls
+could add a context method behind a new runtime ABI; `s.row(list)` could add a checked
+argument kind, and nested arguments could widen package-format acceptance. None is
+required for launch. Pages share plain functions over `Scope` with commands today.

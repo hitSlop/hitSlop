@@ -1,14 +1,9 @@
 //! wasm-bindgen adapter for the shared document core.
 #![cfg(target_arch = "wasm32")]
-#[cfg(not(any(feature = "browser", feature = "evaluator")))]
+#[cfg(not(feature = "browser"))]
 mod test_adapter {
     use hitslop_core::{AppSpec, Applied, Document as Core, Origin};
     use wasm_bindgen::prelude::*;
-
-    #[wasm_bindgen(js_name = coreBuildId)]
-    pub fn core_build_id() -> String {
-        hitslop_core::BUILD_ID.into()
-    }
 
     fn error(e: hitslop_core::Error) -> JsValue {
         let value = js_sys::Object::new();
@@ -21,19 +16,13 @@ mod test_adapter {
         value.into()
     }
 
-    #[wasm_bindgen]
-    pub fn validate(schema_json: &str, initial_json: &str) -> Result<(), JsValue> {
-        hitslop_core::validate(schema_json, initial_json).map_err(error)
-    }
-
     /// A committed batch, as the page's `apply` reply carries it, with its publication. A text
-    /// edit (a set carrying `selection`) also has `authored` and its merged selection.
+    /// edit (a set carrying `selection`) also has its merged selection.
     #[wasm_bindgen(getter_with_clone)]
     pub struct ApplyResult {
         pub sequence: f64,
         pub ids: Vec<String>,
         pub publication: Option<String>,
-        pub authored: Option<String>,
         #[wasm_bindgen(js_name = selectionStart)]
         pub selection_start: Option<u32>,
         #[wasm_bindgen(js_name = selectionEnd)]
@@ -46,7 +35,6 @@ mod test_adapter {
             sequence: applied.sequence as f64,
             ids: applied.ids,
             publication: applied.publication,
-            authored: applied.text.map(|text| text.authored),
             selection_start: selection.map(|s| s[0]),
             selection_end: selection.map(|s| s[1]),
         }
@@ -103,5 +91,3 @@ mod test_adapter {
 
 #[cfg(feature = "browser")]
 mod browser;
-#[cfg(feature = "evaluator")]
-mod evaluator;

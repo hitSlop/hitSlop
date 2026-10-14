@@ -1,0 +1,9 @@
+Apple Color Emoji artwork and designs belong to Apple Inc.
+All rights reserved. Apple is a registered trademark of Apple Inc.
+
+The font was converted from the Apple Color Emoji font installed with macOS.
+The MIT license of the conversion tools does not cover the Apple emoji assets.
+The conversion's font embedding flags are technical metadata, not a license grant.
+
+Converter source: https://github.com/samuelngs/apple-emoji-ttf
+Converter license: AppleEmoji-converter-LICENSE.txt

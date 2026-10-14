@@ -6,14 +6,17 @@ import HitSlopDocument
 /// retry, close) go to the app, which runs them one at a time; pinning, the theme panel and
 /// the file's location only change the window, so the window does them at once.
 extension SlopDocumentWindowController {
+  public var canExport: Bool { session.file.views.export }
+
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
   /// follow. Closing, retrying and the save-failure sheet's choices always can; anything
   /// else waits for the app to accept commands and the page to show its content, and
-  /// importing a palette needs a document whose theme can change.
+  /// importing a palette needs a page that accepts work.
   public func isAvailable(_ command: SlopDocumentCommand) -> Bool {
     switch command {
     case .close, .retry, .retrySave, .discardUnsaved: true
-    case .importTheme: commandsEnabled && isContentReady && session.canEditTheme
+    case .sharePNG, .sharePDF, .exportPNG, .exportPDF: commandsEnabled && isContentReady && canExport
+    case .importTheme: commandsEnabled && isContentReady && session.acceptsPageWork
     default: commandsEnabled && isContentReady
     }
   }
@@ -22,15 +25,20 @@ extension SlopDocumentWindowController {
     routing.command(command)
   }
   /// Pinning keeps the window above others; it needs the page's content.
-  public var canPin: Bool { isContentReady && fullscreenRestore == nil && !fullscreenTransition }
+  public var canPin: Bool { isContentReady && fullscreen.saved == nil && !fullscreen.transitioning }
   public func togglePin() {
     guard canPin else { return }
     setPinned(!isPinned)
   }
-  /// The theme panel opens for a page whose palette can change, and always closes.
-  public var canToggleTheme: Bool { isThemeShown || (isContentReady && session.canEditTheme) }
+  /// The theme panel opens for a page that accepts work, and always closes.
+  public var canToggleTheme: Bool { isThemeShown || (isContentReady && session.acceptsPageWork) }
   public func toggleTheme() { setThemeShown(!isThemeShown) }
   public func perform(_ command: SlopDocumentCommand) async throws -> URL? {
+    switch command {
+    case .sharePNG, .sharePDF, .exportPNG, .exportPDF:
+      guard canExport else { throw SlopFailure("This slop does not support PNG or PDF export") }
+    default: break
+    }
     switch command {
     case .importTheme: try await importTheme()
     case .exportTheme: try await exportTheme()
@@ -40,15 +48,22 @@ extension SlopDocumentWindowController {
       panel.nameFieldStringValue =
         url.deletingPathExtension().lastPathComponent + " copy.slop"
       panel.startOnDesktop()
-      return try await duplicateDocument(to: await runSheet(panel))
-    case .share: try await shareCopy()
+      return try await duplicateDocument(to: await SlopPanels.select(panel, in: window))
+    case .share:
+      toolbar.willHide = { [weak self] in self?.sharePopover.dismiss() }
+      toolbar.show()
+      toolbar.panel?.contentView?.layoutSubtreeIfNeeded()
+      if let anchor = toolbar.shareAnchor { sharePopover.toggle(at: anchor) }
+    case .sharePDF: try await share(format: .pdf)
+    case .sharePNG: try await share(format: .png)
+    case .shareSlop: try await share(format: nil)
 
     case .exportPNG: try await export(.png)
     case .exportPDF: try await export(.pdf)
     case .retry:
       telemetry.send(.breadcrumb(.recovery, .started))
       do {
-        if session.isReady && !session.rendererDead {
+        if session.isReady {
           try await session.reloadInterface()
           updatePageFailure(nil)
           startLoading()
@@ -70,12 +85,6 @@ extension SlopDocumentWindowController {
     return nil
   }
 
-  /// A save or open panel as a sheet on the document window; nil when cancelled.
-  func runSheet(_ panel: NSSavePanel) async -> URL? {
-    let response = if let window { await panel.beginSheetModal(for: window) } else { await panel.begin() }
-    return response == .OK ? panel.url : nil
-  }
-
   func duplicateDocument(to target: URL?) async throws -> URL? {
     guard let target else {
       telemetry.send(.breadcrumb(.duplicate, .cancelled))
@@ -92,25 +101,50 @@ extension SlopDocumentWindowController {
     }
   }
 
-  /// Shares a copy of the document as a new logical document: everything the page has
-  /// accepted, saved and copied through the owner, never the live file.
-  func shareCopy() async throws {
-    telemetry.send(.breadcrumb(.share, .started))
-    do {
-      let operation = try await SlopShareOperation.prepare(filename: url.lastPathComponent, telemetry: telemetry) {
-        target in
+  /// Prepares a saved-state export, or an independently editable slop, in staging owned
+  /// by the share service. Neither path shares the live database.
+  func prepareShare(format: ExportFormat?) async throws -> SlopShareOperation {
+    if format != nil, !canExport { throw SlopFailure("This slop does not support PNG or PDF export") }
+    let filename =
+      format.map { url.deletingPathExtension().lastPathComponent + "." + $0.fileExtension }
+      ?? url.lastPathComponent
+    return try await SlopShareOperation.prepare(filename: filename, telemetry: telemetry) { target in
+      if let format {
+        await self.waitForPresentation()
+        guard self.isContentReady, self.session.isReady, self.presentedPageError == nil else {
+          throw SlopFailure("The document is not ready to share")
+        }
+        try await SlopRenderer.exportDocument(session: self.session, format: format, output: target)
+      } else {
         _ = try await self.copyDocument(to: target)
       }
-      try operation.present(in: isHiddenForClose ? nil : window?.contentView)
+    }
+  }
+
+  private func share(format: ExportFormat?) async throws {
+    telemetry.send(.breadcrumb(.share, .started))
+    sharePopover.beginPreparing(
+      format == .pdf ? "Preparing PDF…" : format == .png ? "Preparing image…" : "Preparing copy…")
+    do {
+      let operation = try await prepareShare(format: format)
+      guard sharePopover.isShown, !isHiddenForClose, window?.isVisible == true else { throw CancellationError() }
+      sharePopover.handOffToPicker()
+      try operation.present(
+        in: toolbar.shareAnchor,
+        pickerDismissed: { [weak self] in
+          self?.sharePopover.pickerDismissed()
+        })
     } catch {
-      reportLifecycleFailure(.share, error: error)
+      sharePopover.dismiss()
+      sharePopover.pickerDismissed()
+      reportLifecycleFailure(.share, error: error, format: format)
       throw error
     }
   }
 
   /// The copy and its artwork consume one saved source, even if the editor changes or closes.
   private func copyDocument(to target: URL) async throws -> URL {
-    let canRender = session.isReady && !session.rendererDead
+    let canRender = session.isReady
     let telemetry = telemetry
     return try await session.copy(to: target) { source in
       guard canRender else { return nil }
@@ -123,22 +157,16 @@ extension SlopDocumentWindowController {
     _ operation: SlopTelemetryEvent.Failure, error: Error,
     format: ExportFormat? = nil
   ) {
-    if SlopFailureContext.isCancellation(error) {
-      telemetry.send(.breadcrumb(operation, .cancelled))
-      return
-    }
-    if reportedSaveFailure || reportedRendererFailure {
-      telemetry.send(.breadcrumb(operation, .failed))
-      return
-    }
-    telemetry.failure(operation, error: error, format: format)
+    failures.lifecycle(operation, error: error, format: format, telemetry: telemetry)
   }
 
   private func export(_ format: ExportFormat) async throws {
+    guard canExport else { throw SlopFailure("This slop does not support PNG or PDF export") }
+    sharePopover.dismiss()
     let panel = NSSavePanel()
     panel.allowedContentTypes = [format == .png ? .png : .pdf]
     panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + "." + format.fileExtension
-    try await exportDocument(format: format, to: await runSheet(panel))
+    try await exportDocument(format: format, to: await SlopPanels.select(panel, in: window))
   }
 
   /// The one export path, for the menu and for `slop export` of this open document. A
@@ -172,20 +200,6 @@ extension SlopDocumentWindowController {
     NSWorkspace.shared.open(
       [url.deletingLastPathComponent()], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration(),
       completionHandler: nil)
-  }
-}
-
-extension SlopDocumentFailure {
-  /// How the coordinator treats a failed window command. Flush and close report a failed
-  /// save as the owner's `SaveFailure`, which the save-failure sheet already shows.
-  public init(command error: Error) {
-    if error is SaveFailure {
-      self = .save
-    } else if SlopFailureContext.isCancellation(error) {
-      self = .cancelled
-    } else {
-      self.init(error)
-    }
   }
 }
 

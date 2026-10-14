@@ -27,7 +27,7 @@ Playwright WebKit accepted edge-button clicks and text edits in rounded and wash
 variants. An actual pointer click into the visually transparent PNG washer hole did
 **not** reach an underlying button in the preview page. This is a known existing
 `previewFrame` gap: its CSS PNG mask clips pixels without excluding the hole from
-iframe input. The repeatable diagnostic is `scripts/shape-lab-browser.ts`; it
+iframe input. The repeatable diagnostic is `scripts/dev/shape-lab-browser.ts`; it
 returns failure for this case and records screenshots/results. No parity pass is claimed.
 
 

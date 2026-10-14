@@ -5,7 +5,9 @@ import { preview } from "./preview";
 
 let browserBridge: ((request: unknown) => Promise<string>) | undefined;
 /** Installed only by the host frame bootstrap, before authored code loads. */
-export function installBrowserBridge(bridge: (request: unknown) => Promise<string>) { browserBridge = bridge; }
+export function installBrowserBridge(bridge: (request: unknown) => Promise<string>) {
+  browserBridge = bridge;
+}
 export const hasBrowserBridge = () => Boolean(browserBridge);
 
 /** One native request path. WebKit correlates each reply with its returned promise. */

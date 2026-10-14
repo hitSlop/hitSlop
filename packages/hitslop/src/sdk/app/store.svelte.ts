@@ -1,13 +1,23 @@
 // The Svelte adapter, compiled into each slop. It depends only on ctx.
 import { mount, tick, unmount, type Component } from "svelte";
-import type { CaptureMode, SlopApp, SlopContext } from "../abi";
+import type { SlopApp, SlopContext } from "../abi";
 import type { Definition, LiveDocument, ObjectNode, Value } from "../schema";
 import { activate, deactivate, current } from "./context";
-import { bindCommands } from "../commands";
+import { documentContext } from "./document";
 import Root from "./Root.svelte";
-export type { SlopApp, SlopContext } from "../abi";
+export type { WidgetProps } from "../abi";
+export { getDocument } from "./document";
+export type { CaptureMode, CaptureProps } from "./capture-props";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
-export { capture, type CaptureMode, type CaptureTarget } from "./capture";
+export {
+  speech,
+  isSpeechError,
+  type SpeechError,
+  type SpeechClip,
+  type SpeechOptions,
+  type SpeechTranscript,
+  type SpeechUnavailableReason,
+} from "./speech";
 export { default as EditableText } from "./EditableText.svelte";
 export { notify } from "./notice.svelte";
 export { draft } from "./draft.svelte";
@@ -15,27 +25,25 @@ export { motion } from "./motion.svelte";
 export { bindText } from "./bind-text";
 
 /**
- * The generated entry adapts the components registered in `defineSlop` to the host.
- * Once mounted, `schema` is the live document; component filenames are unrestricted.
+ * The generated entry adapts App.svelte to the host. Each mount gives App's components
+ * their own reactive document, which they acquire with `getDocument(schema)`.
  */
-export function svelteApp(App: Component, options: {
-  schema: Definition<ObjectNode>;
-  commands?: Record<string, unknown>;
-  export?: Component<{ mode: Exclude<CaptureMode, "icon"> }>;
-  icon?: Component;
-}): SlopApp {
-  bindCommands(options.commands ?? {}, options.schema);
+export function svelteApp(App: Component, options: { schema: Definition<ObjectNode> }): SlopApp {
   return {
     descriptor: options.schema.descriptor,
     mount(ctx, target) {
       const adapter = createAdapter(ctx.document);
-      activate(ctx, options.schema, adapter.document);
+      activate(ctx);
       const release = () => {
         adapter.dispose();
         deactivate(ctx);
       };
       try {
-        const app = mount(Root, { target, props: { App, Export: options.export, Icon: options.icon } });
+        const app = mount(Root, {
+          target,
+          props: { App },
+          context: documentContext(options.schema, adapter.document),
+        });
         return {
           rendered: tick,
           unmount: async () => {

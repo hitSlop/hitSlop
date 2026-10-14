@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // The verify `types` tier lints packages/hitslop/src and scripts (docs/testing.md).
+  // Oxlint's correctness rules, plus the two promise rules that guard unobserved failures:
+  // Bun ends the CLI on an unhandled rejection. Svelte templates are not linted.
+  "plugins": ["eslint", "typescript", "unicorn", "oxc"],
+  "categories": { "correctness": "error" },
+  "options": { "typeAware": true },
+  "ignorePatterns": ["**/*.generated.*"],
+  "rules": {
+    "typescript/no-floating-promises": "error",
+    // Async callbacks handed to Connect and EventEmitter catch their own errors.
+    "typescript/no-misused-promises": ["error", { "checksVoidReturn": { "arguments": false } }],
+    // TypeScript narrows a variable that a closure reassigns (shell/owner/text.ts).
+    "typescript/await-thenable": "off",
+    // Noise here: method references, string spreading, template values.
+    "typescript/unbound-method": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/no-base-to-string": "off",
+    // The compiler owns unused locals (noUnusedLocals, foundation plan phase 8).
+    "eslint/no-unused-vars": "off",
+    "eslint/no-unused-expressions": ["error", { "allowShortCircuit": true, "allowTernary": true }]
+  }
+}

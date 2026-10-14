@@ -15,6 +15,7 @@ use serde_json::Value;
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub enum Category {
+    Popular,
     Productivity,
     Utilities,
     Finance,
@@ -40,6 +41,7 @@ impl Category {
 
     /// Catalog order is declaration order, independent of its stored string spelling.
     pub const ALL: &[Self] = &[
+        Self::Popular,
         Self::Productivity,
         Self::Utilities,
         Self::Finance,
@@ -75,6 +77,38 @@ pub struct AppMetadata {
     pub categories: Vec<Category>,
 }
 
+/// A device or host service an app declares it uses. The host admits a request only for a
+/// declared capability; the OS or browser permission still applies. Authoring refuses any
+/// value not listed here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
+pub enum Capability {
+    Camera,
+    Microphone,
+    Speech,
+}
+impl Capability {
+    pub const ALL: &[Self] = &Self::all();
+
+    const fn all() -> [Self; 3] {
+        let mut all = [Self::Camera; 3];
+        let mut next = Some(Self::Camera);
+        let mut index = 0;
+        while let Some(capability) = next {
+            all[index] = capability;
+            index += 1;
+            next = match capability {
+                Self::Camera => Some(Self::Microphone),
+                Self::Microphone => Some(Self::Speech),
+                Self::Speech => None,
+            };
+        }
+        assert!(index == all.len());
+        all
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
@@ -103,12 +137,26 @@ pub struct CommandInput {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct Views {
+    pub preview: bool,
     pub export: bool,
     pub icon: bool,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub widget: Option<WidgetOptions>,
 }
 
-/// Native window semantics, independent of the stored definition's decoding rules.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
+pub struct WidgetOptions {
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub refresh_minutes: Option<u32>,
+}
+
+/// Resolved host window semantics, independent of the stored definition's decoding rules.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct WindowDefinition {
     pub width: u32,
     pub height: u32,
@@ -116,19 +164,25 @@ pub struct WindowDefinition {
     pub frame: WindowFrame,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub enum WindowFrame {
     Standard { frame: StandardFrame },
     Skin { skin: String },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct StandardFrame {
     /// Whether fullscreen fits the authored composition instead of reflowing it.
     pub fullscreen_fit: bool,
     pub resizable: bool,
     pub lock_aspect: bool,
     pub background: Option<Background>,
+    /// CSS radius token exposed by the page shell; paths expose zero.
+    pub radius: String,
     pub shape: shape::Silhouette,
 }
 
@@ -149,6 +203,7 @@ pub struct AppDefinition {
     theme: Vec<ThemeInput>,
     views: Views,
     commands: Vec<CommandDefinition>,
+    capabilities: Vec<Capability>,
     spec: AppSpec,
 }
 
@@ -186,6 +241,11 @@ impl AppDefinition {
     pub fn commands(&self) -> &[CommandDefinition] {
         &self.commands
     }
+    /// The declared capabilities this host knows, sorted and without repeats. A saved
+    /// value this build does not know is never granted, so it is left out here.
+    pub fn capabilities(&self) -> &[Capability] {
+        &self.capabilities
+    }
     pub fn spec(&self) -> &AppSpec {
         &self.spec
     }
@@ -198,8 +258,8 @@ impl AppDefinition {
     pub fn document_json(&self) -> &str {
         self.stored.document.get()
     }
-    /// The shell's window projection keeps authored geometry; the native window uses
-    /// the normalized silhouette. Skin references are package URLs, never source paths.
+    /// CLI inspection retains authored geometry. Hosts use `window()` for resolved
+    /// semantics and the normalized silhouette. Skin references are package URLs.
     pub fn page_window(&self) -> crate::build::WindowInput {
         use package_format_1::Window;
         match &self.stored.window {
@@ -211,7 +271,7 @@ impl AppDefinition {
                     resizable: *resizable,
                     lock_aspect: *lock_aspect,
                     background: background.map(Into::into),
-                    shape: shape.clone(),
+                    shape: shape.clone().map(Into::into),
                 }
             }
             Window::Skin { width, height, fullscreenable, skin } => crate::build::WindowInput::Skin {

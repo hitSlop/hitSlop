@@ -59,7 +59,7 @@ public struct SlopFailureContext: Equatable, Sendable {
     }
   }
   public enum Reason: String, Sendable {
-    case unknown, storage, webContentTerminated, navigation, startup, presentation
+    case unknown, storage, webContentTerminated, navigation, startup, presentation, unresponsive
     // Reported under its earlier name, so the analytics series continues.
     case invalidFile = "invalidPackage"
     case missingFile, permission, diskFull, busy
@@ -84,6 +84,7 @@ public struct SlopFailureContext: Equatable, Sendable {
       case .icon: 15
       case .destinationExists: 17
       case .requiresUpdate: 18
+      case .unresponsive: 19
       }
     }
   }
@@ -101,8 +102,10 @@ public struct SlopFailureContext: Equatable, Sendable {
   public static func classify(_ error: Error) -> Self {
     if let diagnostic = error as? any SlopDiagnosticProviding { return diagnostic.diagnostic }
     // The core never replaces a file: creating, duplicating or sharing onto one is refused.
-    if let failure = error as? OwnerFailure, failure.refusal == .exists {
-      return .init(.rejection, reason: .destinationExists)
+    if let failure = error as? OwnerFailure {
+      if failure.reason == .exists { return .init(.rejection, reason: .destinationExists) }
+      if failure.reason == .requiresUpdate { return .init(.rejection, reason: .requiresUpdate) }
+      if failure.kind == .locked { return .init(.rejection, reason: .busy) }
     }
     // Never serialize the original NSError, its description, or userInfo.
     let native = error as NSError
@@ -115,11 +118,11 @@ public struct SlopFailureContext: Equatable, Sendable {
       default: break
       }
     }
-    if native.domain == NSPOSIXErrorDomain {
-      switch native.code {
-      case 2: return .init(reason: .missingFile)
-      case 1, 13: return .init(reason: .permission)
-      case 28: return .init(reason: .diskFull)
+    if native.domain == NSPOSIXErrorDomain, let code = Int32(exactly: native.code) {
+      switch POSIXErrorCode(rawValue: code) {
+      case .ENOENT: return .init(reason: .missingFile)
+      case .EPERM, .EACCES: return .init(reason: .permission)
+      case .ENOSPC: return .init(reason: .diskFull)
       default: break
       }
     }

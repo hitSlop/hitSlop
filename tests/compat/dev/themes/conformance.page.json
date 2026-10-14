@@ -1,0 +1,34 @@
+{
+  "steps": [
+    {
+      "values": {
+        "accent": "#123456",
+        "ink": "#654321"
+      },
+      "state": {
+        "overrides": {
+          "accent": "#123456",
+          "ink": "#654321"
+        },
+        "effective": {
+          "accent": "#123456",
+          "ink": "#654321",
+          "paper-tint": "#eef4ffaa"
+        }
+      }
+    },
+    {
+      "reset": "ink",
+      "state": {
+        "overrides": {
+          "accent": "#123456"
+        },
+        "effective": {
+          "accent": "#123456",
+          "ink": "#112233",
+          "paper-tint": "#eef4ffaa"
+        }
+      }
+    }
+  ]
+}

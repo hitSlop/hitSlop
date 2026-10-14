@@ -54,3 +54,21 @@ test("a refusal from a separately bundled author SDK reaches the shell as a refu
   expect([author.isRefused(outcome), author.isRejected(outcome)]).toEqual([true, true]);
   expect(author.isRefused(new shell.DocumentError("rejected", "Too long", "out_of_range"))).toBe(false);
 });
+
+// ctx.speech rejects with the shell's SpeechError; the author's separately bundled SDK
+// recognizes it by brand, and never mistakes it for a document outcome.
+test("an author recognizes a speech error from a separately bundled shell", async () => {
+  const load = async (entry: string) => {
+    const build = await Bun.build({ entrypoints: [new URL(entry, import.meta.url).pathname], target: "browser" });
+    expect(build.success).toBe(true);
+    return import("data:text/javascript;base64," + Buffer.from(await build.outputs[0]!.text()).toString("base64"));
+  };
+  const author = await load("../../src/sdk/errors.ts"),
+    shell = await load("../../src/sdk/internal.ts");
+  const error = new shell.SpeechError("unavailable", "No on-device recognizer for fr-CA", "locale");
+  expect(author.isSpeechError(error)).toBe(true);
+  expect(error).toMatchObject({ name: "SpeechError", code: "unavailable", reason: "locale" });
+  expect(author.isDocumentError(error)).toBe(false);
+  expect(author.isSpeechError(new Error("other"))).toBe(false);
+  expect(author.isSpeechError(new shell.DocumentError("closing", "Closing"))).toBe(false);
+});

@@ -7,7 +7,7 @@ not apply to live slop demos or documentation.
 ## Template wall data
 
 `src/data/templates.json` and `public/assets/templates/` are generated from every
-built template (`bun run build:templates`), except the Shape Lab instrument:
+built template (`bun run build:templates`):
 
 ```sh
 bun apps/landing/scripts/templates.ts

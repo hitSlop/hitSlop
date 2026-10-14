@@ -19,21 +19,37 @@ type Output = { stdout: string; stderr: string; code: number };
 
 /** Starts `command`: `output` resolves once it exits, whatever its status; `kill` stops it. */
 export function spawn(command: string[], options: RunOptions = {}) {
-  const shared = (stream: "stdin" | "stdout" | "stderr") => options.inherit?.includes(stream) ?? false;
+  const shared = (stream: "stdin" | "stdout" | "stderr") =>
+    options.inherit?.includes(stream) ?? false;
   const child = Bun.spawn(command, {
     cwd: options.cwd,
     env: options.env ?? process.env,
-    stdin: shared("stdin") ? "inherit" : options.stdin === undefined ? "ignore" : Buffer.from(options.stdin),
+    stdin: shared("stdin")
+      ? "inherit"
+      : options.stdin === undefined
+        ? "ignore"
+        : Buffer.from(options.stdin),
     stdout: shared("stdout") ? "inherit" : "pipe",
     stderr: shared("stderr") ? "inherit" : "pipe",
   });
   let timedOut = false;
-  const timer = options.timeout === undefined ? undefined : setTimeout(() => ((timedOut = true), child.kill()), options.timeout);
-  const text = (stream: unknown) => (stream instanceof ReadableStream ? new Response(stream).text() : "");
+  const timer =
+    options.timeout === undefined
+      ? undefined
+      : setTimeout(() => ((timedOut = true), child.kill()), options.timeout);
+  const text = (stream: unknown) =>
+    stream instanceof ReadableStream ? new Response(stream).text() : "";
   const output = (async (): Promise<Output> => {
     try {
-      const [stdout, stderr, code] = await Promise.all([text(child.stdout), text(child.stderr), child.exited]);
-      if (timedOut) throw new Error(`${basename(command[0]!)} did not finish within ${options.timeout! / 1000} s`);
+      const [stdout, stderr, code] = await Promise.all([
+        text(child.stdout),
+        text(child.stderr),
+        child.exited,
+      ]);
+      if (timedOut)
+        throw new Error(
+          `${basename(command[0]!)} did not finish within ${options.timeout! / 1000} s`,
+        );
       return { stdout, stderr, code };
     } finally {
       clearTimeout(timer);
@@ -52,7 +68,8 @@ export function exec(command: string[], options: RunOptions = {}): Promise<Outpu
 export function start(command: string[], options: RunOptions = {}) {
   const { output, kill } = spawn(command, options);
   const done = output.then(({ stdout, stderr, code }) => {
-    if (code) throw new Error(stderr.trim() || options.failure || `${basename(command[0]!)} failed`);
+    if (code)
+      throw new Error(stderr.trim() || options.failure || `${basename(command[0]!)} failed`);
     return stdout;
   });
   return { done, kill };
@@ -66,11 +83,16 @@ export function run(command: string[], options: RunOptions = {}): Promise<string
 /** The executable the environment variable `variable` names, or else the first of
  * `candidates` that exists; `missing` is the refusal when there is none. An override that
  * is not executable fails rather than falling back. */
-export async function findExecutable(variable: string, candidates: string[], missing: string): Promise<string> {
+export async function findExecutable(
+  variable: string,
+  candidates: string[],
+  missing: string,
+): Promise<string> {
   const override = process.env[variable];
   if (override !== undefined) {
     const path = resolve(override);
-    if (!override || !(await executable(path))) throw new Error(`${variable} is not executable: ${override}`);
+    if (!override || !(await executable(path)))
+      throw new Error(`${variable} is not executable: ${override}`);
     return path;
   }
   for (const path of candidates) if (await executable(path)) return path;

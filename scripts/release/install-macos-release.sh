@@ -45,7 +45,7 @@ echo "Building development-signed hitSlop Release for ${build_arch}…"
 
 app="$stage_dir/derived/Build/Products/Release/hitSlop.app"
 
-for required in "$app" "$app/Contents/Helpers/HitSlopApple_HitSlopDocument.bundle"; do
+for required in "$app" "$app/Contents/Helpers/hitslop-evaluator"; do
   if [ ! -e "$required" ]; then
     echo "Release output is missing: $required" >&2
     exit 70
@@ -80,4 +80,3 @@ for extension in "$destination"/Contents/PlugIns/*.appex; do /usr/bin/pluginkit 
 /usr/bin/killall Finder >/dev/null 2>&1 || true
 
 echo "Installed hitSlop $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$destination/Contents/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$destination/Contents/Info.plist"))"
-echo "Bundled helper: $destination/Contents/Helpers/hitslop-native"

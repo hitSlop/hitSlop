@@ -4,18 +4,13 @@ import HitSlopCoreBinding
 @preconcurrency import WebKit
 
 extension WKWebView {
+  private static let hostDispatch = "return JSON.stringify(await globalThis.__slop.dispatch(JSON.parse(request)))"
+
   /// The host and shell share a generated command vocabulary and one JavaScript entry. Both directions carry opaque JSON strings.
   @MainActor
-  public func callHost(_ request: HostRequest) async throws -> Any? {
-    try await callAsyncJavaScript(
-      "return JSON.stringify(await globalThis.__slop.dispatch(JSON.parse(request)))",
-      arguments: ["request": encodeHostRequest(request: request)], in: nil, contentWorld: .page)
-  }
-
-  @MainActor
-  public func callHost(_ request: HostRequest, completion: @escaping @MainActor (Result<Any, Error>) -> Void) {
+  func callHost(_ request: HostRequest, completion: @escaping @MainActor (Result<Any, Error>) -> Void) {
     callAsyncJavaScript(
-      "return JSON.stringify(await globalThis.__slop.dispatch(JSON.parse(request)))",
+      Self.hostDispatch,
       arguments: ["request": encodeHostRequest(request: request)], in: nil, in: .page, completionHandler: completion)
   }
 }

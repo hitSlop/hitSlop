@@ -25,40 +25,6 @@ test("HITSLOP_ENGINE names the engine, and must be executable", async () => {
   await expect(findEngine()).rejects.toThrow("HITSLOP_ENGINE is not executable");
 });
 
-test("document engine override is independent of the native renderer", async () => {
-  const { findEngine } = await import("../../src/cli/engine");
-  const root = await mkdtemp(join(tmpdir(), "hitslop-owner-engine-")); roots.push(root);
-  const engine = join(root, "slop-engine"); await writeFile(engine, "#!/bin/sh\n", { mode: 0o755 });
-  const old = process.env.HITSLOP_NATIVE_CLI;
-  try {
-    process.env.HITSLOP_NATIVE_CLI = join(root, "missing-renderer");
-    process.env.HITSLOP_ENGINE = engine;
-    expect(await findEngine()).toBe(engine);
-    process.env.HITSLOP_ENGINE = join(root, "missing-engine");
-    await expect(findEngine()).rejects.toThrow("HITSLOP_ENGINE is not executable");
-  } finally {
-    if (old === undefined) delete process.env.HITSLOP_NATIVE_CLI; else process.env.HITSLOP_NATIVE_CLI = old;
-  }
-});
-
-test("a renderer never selects the document engine", async () => {
-  const { findEngine } = await import("../../src/cli/engine");
-  const root = await mkdtemp(join(tmpdir(), "hitslop-owner-sibling-")); roots.push(root);
-  const helper = join(root, "hitslop-native"); await writeFile(helper, "#!/bin/sh\n", { mode: 0o755 });
-  const old = process.env.HITSLOP_NATIVE_CLI;
-  try {
-    delete process.env.HITSLOP_ENGINE;
-    process.env.HITSLOP_NATIVE_CLI = helper;
-    const own = await findEngine();
-    const engine = join(root, "slop-engine"); await writeFile(engine, "#!/bin/sh\n", { mode: 0o755 });
-    expect(await findEngine()).toBe(own);
-    // Authoring must keep the CLI's evaluated metadata and its validating core together.
-    expect(await findEngine()).not.toBe(engine);
-  } finally {
-    if (old === undefined) delete process.env.HITSLOP_NATIVE_CLI; else process.env.HITSLOP_NATIVE_CLI = old;
-  }
-});
-
 test("one JSON transport validates results and never retries ambiguous invocations", async () => {
   const { request } = await import("../../src/cli/engine");
   const root = await mkdtemp(join(tmpdir(), "hitslop-wire-")); roots.push(root);
@@ -66,10 +32,11 @@ test("one JSON transport validates results and never retries ambiguous invocatio
   for (const reply of [
     { ok: true, method: "call" },
     { ok: true, method: "templates", catalog: { folders: [], templates: [], issues: [] } },
-    { ok: true, method: "call", result: null, ids: [], unexpected: true },
     { ok: true, method: "call", result: null, ids: [1] },
     { ok: true, method: "call", ids: [] },
-    { ok: false, code: "future_outcome", error: "Unclassified" },
+    { ok: false, code: "rejected" },
+    { ok: false, error: "No code" },
+    { ok: false, code: 7, error: "Invalid code" },
   ]) {
     await writeFile(binary, `#!${process.execPath}
 const body = await Bun.stdin.json();
@@ -80,12 +47,47 @@ console.log(${JSON.stringify(JSON.stringify(reply))});
     await expect(request(body, { binary })).rejects.toThrow("Outcome unknown");
     const observed = await Bun.file(sent).json();
     expect(observed.body).toEqual(body);
-    expect(observed.args).toEqual(["--client-protocol", String((await import("../../src/schema/constants")).HelperProtocol.version)]);
+    expect(observed.args).toEqual(["--client-protocol", String((await import("../../src/schema/constants")).EngineProtocol.version)]);
   }
   await writeFile(binary, `#!${process.execPath}
-await Bun.stdin.json(); console.log(JSON.stringify({ok:true,method:"screenshot",output:null}));
+await Bun.stdin.json(); console.log(JSON.stringify({ok:true,method:"artwork.export",output:null}));
 `, { mode: 0o755 });
-  expect(await request({ method: "screenshot", documentPath: "a.slop", output: "a.png", target: "icon", ifPresent: true }, { binary })).toEqual({ ok: true, method: "screenshot", output: null });
+  expect(await request({ method: "artwork.export", file: "a.slop", target: "icon", output: "a.png" }, { binary })).toEqual({ ok: true, method: "artwork.export", output: null });
+});
+
+// A newer engine may add members to its replies; an older CLI reads the ones it knows and
+// ignores the rest, so a mutation that applied is never reported as an unknown outcome.
+test("replies may carry members this CLI does not know", async () => {
+  const { execute, request } = await import("../../src/cli/engine");
+  const root = await mkdtemp(join(tmpdir(), "hitslop-open-reply-")); roots.push(root);
+  const binary = join(root, "engine");
+  const answer = (reply: unknown) =>
+    writeFile(binary, `#!${process.execPath}
+await Bun.stdin.json(); console.log(${JSON.stringify(JSON.stringify(reply))});
+`, { mode: 0o755 });
+  const body = { method: "call" as const, documentPath: "a.slop", command: "addTask", args: {} };
+  await answer({ ok: true, method: "call", result: { n: 1 }, ids: ["r1"], later: { added: [true] } });
+  const applied = await execute(body, { binary });
+  expect(applied.ids).toEqual(["r1"]);
+  expect(applied.result).toEqual({ n: 1 });
+  await answer({ ok: true, method: "artwork.export", output: null, later: 1 });
+  expect((await request({ method: "artwork.export", file: "a.slop", target: "icon", output: "a.png" }, { binary })).ok).toBe(true);
+  // A refusal with extra members is still the refusal, with its outcome.
+  await answer({ ok: false, code: "rejected", error: "No such row", reason: "path_not_found", opIndex: 2, later: [1] });
+  await expect(execute(body, { binary })).rejects.toThrow("Refused ops[2] (path_not_found): No such row\nNot applied.");
+  await answer({ ok: false, code: "save_failed", error: "Disk full", later: {} });
+  await expect(execute(body, { binary })).rejects.toThrow("Disk full\nApplied, but not yet saved.");
+  // Extra members never stand in for the ones a reply needs.
+  for (const reply of [
+    { ok: true, method: "call", result: null, later: 1 },
+    { ok: true, method: "call", ids: [], later: 1 },
+    { ok: true, later: 1 },
+    { ok: false, code: "rejected", later: 1 },
+    { ok: false, error: "No code", later: 1 },
+  ]) {
+    await answer(reply);
+    await expect(request(body, { binary })).rejects.toThrow("Outcome unknown");
+  }
 });
 
 test("only protocol refusals suggest updating the CLI", async () => {
@@ -105,4 +107,62 @@ await Bun.stdin.json(); console.log(JSON.stringify({ok:false,code:"rejected",rea
   await expect(request({ method: "templates" }, { binary })).rejects.toBeInstanceOf(ExitStatus);
   await writeFile(binary, '#!/bin/sh\nexit 19\n', { mode: 0o755 });
   await expect(request({ method: "templates" }, { binary })).rejects.toThrow("Outcome unknown");
+});
+
+test("unfamiliar outcome codes preserve the message and advise inspection before retrying", async () => {
+  const { execute, request } = await import("../../src/cli/engine");
+  const root = await mkdtemp(join(tmpdir(), "hitslop-future-outcome-"));
+  roots.push(root);
+  const binary = join(root, "engine");
+  const reply = { ok: false, code: "future_outcome", error: "Unclassified failure" } as const;
+  await writeFile(
+    binary,
+    `#!${process.execPath}
+await Bun.stdin.json(); console.log(${JSON.stringify(JSON.stringify(reply))});
+`,
+    { mode: 0o755 },
+  );
+  const batch = { method: "batch" as const, documentPath: "a.slop", batch: { intents: [] } };
+  expect(await request(batch, { binary })).toEqual(reply);
+  await expect(execute(batch, { binary })).rejects.toThrow(
+    "Unclassified failure\nOutcome not recognized. Run slop get before issuing another edit.",
+  );
+  await expect(
+    execute({ method: "call", documentPath: "a.slop", command: "rename", args: {} }, { binary }),
+  ).rejects.toThrow(
+    "Unclassified failure\nOutcome not recognized. Run slop get before issuing another edit.",
+  );
+  await expect(
+    execute(
+      { method: "export", documentPath: "a.slop", format: "png", output: "a.png" },
+      { binary },
+    ),
+  ).rejects.toThrow(
+    "Unclassified failure\nOutcome not recognized. Inspect the document and output before retrying.",
+  );
+});
+
+test("known outcome guidance stays unchanged", async () => {
+  const { unwrap } = await import("../../src/cli/engine");
+  const guidance = {
+    rejected: "Not applied.",
+    owner_replaced: "Not applied. Run slop get before issuing another edit.",
+    closing: "Not applied. Run slop get before issuing another edit.",
+    owner_invalidated: "Not applied.",
+    save_failed: "Applied, but not yet saved. Run slop get before issuing another edit.",
+    unknown_outcome: "Outcome unknown. Run slop get before issuing another edit.",
+  };
+  for (const [code, outcome] of Object.entries(guidance)) {
+    const reply = { ok: false, code, error: "Failure" } as const;
+    expect(() => unwrap(reply, "batch")).toThrow(`Failure\n${outcome}`);
+    expect(() => unwrap(reply, "export")).toThrow(
+      code === "unknown_outcome"
+        ? "Failure\nOutcome unknown. Inspect the document and output before retrying."
+        : /^Failure$/,
+    );
+  }
+  for (const code of ["toString", "__proto__"])
+    expect(() => unwrap({ ok: false, code, error: "Future failure" }, "batch")).toThrow(
+      "Future failure\nOutcome not recognized. Run slop get before issuing another edit.",
+    );
 });

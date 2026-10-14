@@ -1,9 +1,9 @@
 //! Owner coordination across a deliberately delayed child. The actual restricted JS
 //! runtime is tested in hitslop-runner; here the oracle is state and lifecycle fencing.
 #![cfg(feature = "storage")]
-mod support;
+use crate::support;
 use hitslop_core::{
-    Origin, file,
+    Code, Origin, file,
     owner::{Failure, FailureKind, Owner, Reply, Request},
     store::Mode,
 };
@@ -179,12 +179,11 @@ fn a_second_conflict_and_invalid_results_are_not_replayed() {
         call(&owner, edit(&format!("Concurrent {attempt}"))).unwrap();
         fixture.reply(attempt, accepted("Command"));
     }
-    assert_eq!(receive(reply).unwrap_err().reason.as_deref(), Some("stale_base"));
+    assert_eq!(receive(reply).unwrap_err().reason, Some(Code::StaleBase));
     assert_eq!(title(&owner), "Concurrent 1");
-    for (attempt, output) in [
-        (2, json!({"ok":true,"intents":[],"result":null,"extra":true})),
-        (3, json!({"ok":false,"error":"Runtime failed"})),
-    ] {
+    for (attempt, output) in
+        [(2, json!({"ok":true,"intents":{},"result":null})), (3, json!({"ok":false,"error":"Runtime failed"}))]
+    {
         let reply = submit(&owner, command(json!({"title":"Command"})), None);
         fixture.input(attempt);
         fixture.reply(attempt, output);
@@ -196,18 +195,90 @@ fn a_second_conflict_and_invalid_results_are_not_replayed() {
 }
 
 #[test]
+fn command_envelopes_ignore_unknown_members_but_keep_required_fields_and_intents_strict() {
+    let fixture = Fixture::new();
+    let owner = fixture.open(true);
+    let reply = submit(&owner, command(json!({"title":"Command"})), None);
+    fixture.input(0);
+    let mut output = accepted("Command");
+    output["extra"] = json!(1);
+    fixture.reply(0, output);
+    assert!(matches!(receive(reply).unwrap(), Reply::Command { sequence: 1, .. }));
+    assert_eq!(title(&owner), "Command");
+
+    let reply = submit(&owner, command(json!({"title":"Ignored"})), None);
+    fixture.input(1);
+    fixture.reply(1, json!({"ok":false,"error":"Enter a title.","refused":true,"extra":1}));
+    let failure = receive(reply).unwrap_err();
+    assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(Code::Refused)));
+    assert_eq!(failure.message, "Enter a title.");
+
+    for (attempt, output) in [
+        json!({"ok":true,"intents":[{"type":"set","path":["title"],"value":"Ignored","extra":1}],"result":null,"extra":1}),
+        json!({"ok":true,"intents":[]}),
+        json!({"ok":true,"result":null}),
+        json!({"ok":"true","intents":[],"result":null}),
+        json!({"ok":true,"intents":{},"result":null}),
+        json!({"ok":false,"refused":true,"extra":1}),
+        json!({"ok":false,"error":1,"refused":true,"extra":1}),
+        json!({"ok":false,"error":"Enter a title.","refused":1,"extra":1}),
+    ].into_iter().enumerate() {
+        let reply = submit(&owner, command(json!({"title":"Ignored"})), None);
+        fixture.input(attempt + 2);
+        fixture.reply(attempt + 2, output);
+        let failure = receive(reply).unwrap_err();
+        assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(Code::EngineError)));
+        assert!(failure.message.contains("it returned an invalid reply"));
+        assert_eq!(title(&owner), "Command");
+    }
+    close(&owner);
+}
+
+// A command's reply stays raw JSON until the arm for its runtime ABI decodes the intents, so
+// an intent this core cannot decode is the evaluator's fault: a definite refusal, applied to
+// nothing, and the owner is left as it was.
+#[test]
+fn an_intent_that_does_not_decode_is_an_invalid_reply_and_applies_nothing() {
+    let fixture = Fixture::new();
+    let owner = fixture.open(true);
+    let undecodable = [
+        json!({"type":"teleport","path":["title"]}),
+        json!({"type":"set","path":["title"],"value":"Command","unexpected":1}),
+        json!({"type":"increment","path":["title"],"by":"1"}),
+        json!({"type":"set","value":"Command"}),
+        json!("set"),
+    ];
+    for (attempt, intent) in undecodable.into_iter().enumerate() {
+        let reply = submit(&owner, command(json!({"title":"Command"})), None);
+        fixture.input(attempt);
+        fixture.reply(attempt, json!({"ok":true,"intents":[intent],"result":null}));
+        let failure = receive(reply).unwrap_err();
+        assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(Code::EngineError)), "{attempt}");
+        assert!(failure.message.contains("it returned an invalid reply"), "{attempt}: {}", failure.message);
+        assert_eq!(title(&owner), "Saved");
+    }
+    // Nothing was applied, so the next accepted command is the document's first edit.
+    let reply = submit(&owner, command(json!({"title":"Command"})), None);
+    fixture.input(5);
+    fixture.reply(5, accepted("Command"));
+    assert!(matches!(receive(reply).unwrap(), Reply::Command { sequence: 1, .. }));
+    assert_eq!(title(&owner), "Command");
+    close(&owner);
+}
+
+#[test]
 fn a_refusal_for_the_person_keeps_its_message_under_its_own_reason() {
     let fixture = Fixture::new();
     let owner = fixture.open(true);
     for (attempt, output, reason) in [
-        (0, json!({"ok":false,"error":"Enter a title.","refused":true}), "refused"),
-        (1, json!({"ok":false,"error":"Enter a title."}), "invalid_request"),
+        (0, json!({"ok":false,"error":"Enter a title.","refused":true}), Code::Refused),
+        (1, json!({"ok":false,"error":"Enter a title."}), Code::InvalidRequest),
     ] {
         let reply = submit(&owner, command(json!({"title":"Command"})), None);
         fixture.input(attempt);
         fixture.reply(attempt, output);
         let failure = receive(reply).unwrap_err();
-        assert_eq!((failure.kind, failure.reason.as_deref()), (FailureKind::Rejected, Some(reason)));
+        assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(reason)));
         assert_eq!(failure.message, "Enter a title.");
     }
     assert_eq!(title(&owner), "Saved");
@@ -224,8 +295,8 @@ fn arguments_are_checked_before_launch_and_missing_evaluators_never_fall_back() 
     }
     let missing = call(&owner, command(json!({"title":"Valid"}))).unwrap_err();
     assert_eq!(
-        (missing.message.as_str(), missing.reason.as_deref()),
-        ("This hitSlop has no command evaluator", Some("engine_error"))
+        (missing.message.as_str(), missing.reason),
+        ("This hitSlop has no command evaluator", Some(Code::EngineError))
     );
     assert!(!fixture.dir.path().join("started-0").exists());
     assert_eq!(title(&owner), "Saved");

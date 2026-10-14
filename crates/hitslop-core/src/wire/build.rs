@@ -5,7 +5,7 @@ use crate::shape::Shape;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub use crate::app::{AppMetadata, Author, Background, Category, CommandInput, ThemeInput, Views};
+pub use crate::app::{AppMetadata, Author, Background, Capability, Category, CommandInput, ThemeInput, Views};
 
 /// A source declaration: the skin image is an imported URL. Acceptance resolves it
 /// to a resource key; the stored window never keeps a source URL.
@@ -49,11 +49,23 @@ pub struct BuildDeclaration {
     pub initial: Value,
     pub commands: Vec<CommandInput>,
     pub views: Views,
+    /// Devices and host services the app uses; absent means none. Unknown values are
+    /// refused here, at authoring, because only implemented capabilities are variants.
+    #[serde(default)]
+    pub capabilities: Vec<Capability>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
 pub struct BuildRoles {
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub export: Option<String>,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+    pub widget: Option<String>,
     pub ui: String,
     #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
     pub style: Option<String>,

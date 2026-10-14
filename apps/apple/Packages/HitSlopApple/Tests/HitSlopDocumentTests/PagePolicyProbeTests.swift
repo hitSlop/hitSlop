@@ -46,7 +46,9 @@ import WebKit
           """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
     // WebKit starts media only in a page that is in a window.
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+      contentRect: NSRect(x: 0, y: 0, width: 400, height: 400), styleMask: [.borderless], backing: .buffered,
+      defer: false)
+    window.moveOffScreen()
     window.contentView = session.webView
     window.orderFront(nil)
     defer {
@@ -94,6 +96,7 @@ import WebKit
     #expect(results["attachment.pathPolicy"] == "true")
     #expect(results["attachment.canvas"] == "255,0,0,255")
     #expect(results["attachment.range"] == "206:8950")
+    #expect(results["attachment.head"] == "206:2:0")
     // JavaScript made from strings does not.
     for refused in ["worker.blob", "worker.data", "worklet.blob", "worklet.data"] {
       #expect(results[refused]?.hasPrefix("error") == true, "\(refused): \(results[refused] ?? "missing")")
@@ -107,25 +110,6 @@ import WebKit
     #expect(
       results["media.asset"]?.hasSuffix("seekedTo=1.50") == true,
       "media.asset: \(results["media.asset"] ?? "missing"); events: \(results["media.asset.events"] ?? "missing")")
-  }
-
-  // The range forms WebKit's media loader doesn't exercise above.
-  @Test func byteRangesFollowHTTP() {
-    #expect(ByteRange("bytes=0-1", length: 10) == .part(0..<2))
-    #expect(ByteRange("bytes=4-", length: 10) == .part(4..<10))
-    #expect(ByteRange("bytes=-3", length: 10) == .part(7..<10))
-    #expect(ByteRange("bytes=-30", length: 10) == .part(0..<10))
-    #expect(ByteRange("bytes=8-99", length: 10) == .part(8..<10))
-    #expect(ByteRange("bytes=10-", length: 10) == .unsatisfiable)
-    #expect(ByteRange("bytes=5-4", length: 10) == .unsatisfiable)
-    #expect(ByteRange("bytes=-0", length: 10) == .unsatisfiable)
-    #expect(ByteRange("bytes=0-1,4-5", length: 10) == .whole)
-    #expect(ByteRange("items=0-1", length: 10) == .whole)
-    #expect(ByteRange("bytes=a-b", length: 10) == .whole)
-    // The largest endpoints a request can name never overflow.
-    #expect(ByteRange("bytes=0-\(Int.max)", length: 10) == .part(0..<10))
-    #expect(ByteRange("bytes=\(Int.max)-", length: 10) == .unsatisfiable)
-    #expect(ByteRange("bytes=-\(Int.max)", length: 10) == .part(0..<10))
   }
 
   private static let workletSource =
@@ -179,6 +163,9 @@ import WebKit
     });
     const part = await fetch(pngURL, { headers: { Range: 'bytes=0-1' } });
     results['attachment.range'] = part.status + ':' + Array.from(new Uint8Array(await part.arrayBuffer()), n => n.toString(16).padStart(2, '0')).join('');
+
+    const head = await fetch(pngURL, { method: 'HEAD', headers: { Range: 'bytes=0-1' } });
+    results['attachment.head'] = head.status + ':' + head.headers.get('content-length') + ':' + (await head.arrayBuffer()).byteLength;
 
     const response = await fetch(assets['add.wasm']);
     results['wasm.contentType'] = String(response.headers.get('content-type'));

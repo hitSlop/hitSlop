@@ -73,8 +73,6 @@ export async function generateTemplates(sources: { slug: string; file: string }[
     const templates: Template[] = [];
     const missingPreview: string[] = [];
     for (const { slug, file } of sources) {
-      // Developer acceptance workload; never advertise it as a product template.
-      if (slug === "shape-lab") continue;
       const { info } = await execute({ method: "inspect", file });
       if (info.metadata.slug !== slug) throw new Error(`Template slug mismatch: ${slug}`);
       const { metadata: manifest, defaults: colors, window: presentation } = info;

@@ -15,7 +15,7 @@ extension DocumentSession {
           reply(json, nil)
         case .host(let action):
           guard let self, self.view == requestedView else {
-            return reply(pageFailure(OwnerReplaced()), nil)
+            return reply(pageFailure(OwnerFailure.replaced), nil)
           }
           self.serveHost(action, reply: reply)
         }
@@ -28,7 +28,7 @@ extension DocumentSession {
   private func reportStorage(_ failure: OwnerFailure) {
     switch failure.kind {
     case .locked, .busy, .full, .moved, .saveFailed, .failed:
-      let diagnostic = SlopFailureContext.classify(failure.hostError)
+      let diagnostic = SlopFailureContext.classify(failure)
       delegate?.pageSession(self, storageFailure: diagnostic.reason == .unknown ? .init(reason: .storage) : diagnostic)
     case .rejected, .readOnly, .replaced, .closing, .closed, .invalidated: break
     }

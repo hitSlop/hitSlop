@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { fileDigest } from "../lib/artifacts";
+import { releaseNotesNames } from "./notes";
 
 export type ReleaseRecord = {
   commit: string; tag: string; macVersion: string; macBuild: string; run: string;
@@ -15,7 +16,7 @@ export function validateRecord(record: ReleaseRecord, tag: string, commit: strin
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name) || !/^[a-f0-9]{64}$/.test(hash))
       throw new Error("Invalid artifact record");
   }
-  for (const name of [`hitslop-${record.macVersion}.tgz`, "hitSlop.dmg", "hitSlop.zip", "appcast.xml"])
+  for (const name of [`hitslop-${record.macVersion}.tgz`, "hitSlop.dmg", "hitSlop.zip", "appcast.xml", ...Object.values(releaseNotesNames(record.macVersion))])
     if (!record.artifacts[name]) throw new Error(`Release record is missing ${name}`);
 }
 
@@ -39,9 +40,11 @@ export function appcastBuild(xml: string) {
 
 /** npm promotion can succeed before GitHub does; a retry must respect both. */
 export function preservesLatest(candidate: string, latest: string) {
-  if (![candidate, latest].every(version => /^\d+\.\d+\.\d+$/.test(version)))
-    throw new Error("Expected stable npm release versions");
-  const a = candidate.split(".").map(BigInt), b = latest.split(".").map(BigInt);
+  // npm can assign latest to the bootstrap package before the first stable release.
+  const previous = /^(\d+\.\d+\.\d+)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(latest);
+  if (!/^\d+\.\d+\.\d+$/.test(candidate) || !previous)
+    throw new Error("Expected a stable release candidate and valid npm latest version");
+  const a = candidate.split(".").map(BigInt), b = previous[1]!.split(".").map(BigInt);
   for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index]! > b[index]!;
   return true;
 }

@@ -1,27 +1,28 @@
 # Shared document core
 
-The document semantics every host uses: the Swift app, helper and `slop dev` use the
-native Rust engine. Bun SDK tests use the WASM adapter.
+The document semantics every host uses: the Swift app and the CLI's engine (`slop dev`
+included) use the native Rust core. Bun SDK tests use the WASM adapter.
 
 - `hitslop-core`: descriptor interpretation, Loro operations, publications and bytes; with
   `storage`, the `.slop` file, its writer lock and the save policy.
-- `hitslop-core-ffi`: UniFFI adapter used by the Apple host, its Quick Look extensions and
-  the native helper.
-- `hitslop-core-wasm`: wasm-bindgen adapter for SDK tests; not used by browser development.
+- `hitslop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
+- `hitslop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
 - `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
-  `pack`, `inspect`, `schema`); on a Mac it passes rendering to the native helper.
+  `pack`, `inspect`, `schema`); `pack` also renders the artwork a build does not supply
+  when asked. On macOS and Linux the engine exports closed documents in its own
+  restricted evaluator; on macOS it also opens documents in hitSlop.app.
 - `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with
   no storage dependency. The engine re-executes itself with `--evaluate-command`; the
   `hitslop-evaluator` binary provides the same child for native-host integration.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
 main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2
-and wasm-bindgen 0.2.127. `bun run verify rust` runs the workspace's lints and tests.
+and wasm-bindgen 0.2.129. `bun run verify rust` runs the workspace's lints and tests.
 Use `cargo fmt --all` to apply `rustfmt.toml` explicitly. Install the matching bindings generators and the test runner once
 (the uniffi library leaves out its generator, so every host build shares one Cargo graph):
 
 ```sh
-cargo install wasm-bindgen-cli --version 0.2.127 --locked --root generated/core-tools
+cargo install wasm-bindgen-cli --version 0.2.129 --locked --root generated/core-tools
 cargo install uniffi --version 0.32.2 --features cli --locked --root generated/core-tools --bin uniffi-bindgen
 brew install cargo-nextest
 bun run schema:generate
@@ -49,7 +50,14 @@ native consumer (the Swift package), rather than the locally installed SDK.
 
 The core's `file` owns the `.slop` file (one SQLite database holding the app and its
 saved state), every statement on its tables (every write in `file::rows`) and the checks
-every open runs; its `store` decides what a save writes (the checkpoint, the update log, theme
-overrides and attachments), its `owner` schedules saves, and its `registry` owns the
+every open runs; its `store` decides what a save writes (a snapshot or the updates since the last save, in `history`,
+with theme overrides and attachments), its `owner` schedules saves, and its `registry` owns the
 writer lock. Swift's `DocumentOwner` is the owner's façade.
 See [the architecture](../docs/architecture.md).
+
+The semantic implementation lives under `document/`: session history, frontier tokens,
+replication and history maintenance stay beside `Document`. The crate root re-exports its
+public types. `store/` separates save planning, attachments, native copies and browser
+storage; `file/` separates connections, acceptance and app reads. `owner/` keeps the
+actor's admission and save ordering together, with failures and serial persistence in
+child modules.

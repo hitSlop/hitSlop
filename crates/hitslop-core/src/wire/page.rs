@@ -1,18 +1,12 @@
 //! Same-build page messages. The owner parses once; native UI receives typed actions.
 use super::engine::True;
-use crate::{Code, Result, err};
+use crate::{Code, Result, app::Capability, err};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields, rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
 pub enum PageRequest {
-    #[serde(rename = "commands.run")]
-    CommandsRun {
-        name: String,
-        #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-        args: serde_json::Value,
-    },
     Open {},
     Apply {
         batch: super::Batch,
@@ -29,6 +23,16 @@ pub enum PageRequest {
     WindowResize {
         width: u32,
         height: u32,
+    },
+    /// Transcribes a recording the page already stored as an attachment, by its ID, so the
+    /// recording never travels through the page request again. Absent `locale` means the
+    /// person's own.
+    #[serde(rename = "speech.transcribe")]
+    SpeechTranscribe {
+        attachment: String,
+        #[serde(default)]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        locale: Option<String>,
     },
     Ready {},
     PageRecovered {},
@@ -48,6 +52,23 @@ pub enum PageErrorKind {
     Application,
 }
 impl PageRequest {
+    pub fn requires(&self) -> Option<Capability> {
+        match self {
+            Self::SpeechTranscribe { .. } => Some(Capability::Speech),
+            Self::Open {}
+            | Self::Apply { .. }
+            | Self::Flush {}
+            | Self::Undo {}
+            | Self::Redo {}
+            | Self::Config {}
+            | Self::AttachmentsPut { .. }
+            | Self::WindowResize { .. }
+            | Self::Ready {}
+            | Self::PageRecovered {}
+            | Self::Failed { .. }
+            | Self::PageError { .. } => None,
+        }
+    }
     pub fn decode(input: &str) -> Result<Self> {
         if input.len() > super::SOCKET_ATTACHMENT {
             return Err(err(Code::TooLarge, "Page request is too large"));
@@ -62,9 +83,6 @@ impl PageRequest {
             batch.check_size(super::PAGE_PAYLOAD)?;
         }
         let valid = match self {
-            Self::CommandsRun { name, args } => {
-                super::engine::valid_command_name(name) && crate::encode(args).len() <= super::PAGE_PAYLOAD
-            }
             Self::Apply { .. } => true,
             Self::AttachmentsPut { bytes } => bytes.len() <= super::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4,
             Self::WindowResize { width, height } => {
@@ -72,7 +90,16 @@ impl PageRequest {
                     && (super::WINDOW_MIN_HEIGHT..=super::WINDOW_MAX).contains(height)
             }
             Self::Failed { error } | Self::PageError { error, .. } => error.encode_utf16().count() <= super::ERROR_TEXT,
-            _ => true,
+            Self::SpeechTranscribe { attachment, locale } => {
+                super::valid_attachment_id(attachment) && locale.as_deref().is_none_or(super::valid_speech_locale)
+            }
+            Self::Open {}
+            | Self::Flush {}
+            | Self::Undo {}
+            | Self::Redo {}
+            | Self::Config {}
+            | Self::Ready {}
+            | Self::PageRecovered {} => true,
         };
         if valid { Ok(()) } else { Err(err(Code::InvalidRequest, "Invalid page request")) }
     }
@@ -81,25 +108,31 @@ impl PageRequest {
 /// Host-only operations. These cross UniFFI; document payloads do not.
 #[derive(Debug)]
 pub enum HostAction {
-    WindowResize { width: u32, height: u32 },
+    WindowResize {
+        width: u32,
+        height: u32,
+    },
+    /// The app declared `speech` and this page may use it. The host reads the recording
+    /// through the owner's resource reader, which verifies it before the provider decodes it.
+    SpeechTranscribe {
+        attachment: String,
+        locale: Option<String>,
+    },
     Ready,
     PageRecovered,
-    Failed { error: String },
-    PageError { kind: PageErrorKind, error: String },
+    Failed {
+        error: String,
+    },
+    PageError {
+        kind: PageErrorKind,
+        error: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
 #[serde(tag = "method", rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "page.generated.ts"))]
 pub enum PageSuccess {
-    #[serde(rename = "commands.run")]
-    CommandsRun {
-        ok: True,
-        sequence: u64,
-        ids: Vec<String>,
-        #[cfg_attr(feature = "ts", ts(type = "unknown"))]
-        result: Box<serde_json::value::RawValue>,
-    },
     Open {
         ok: True,
         state: String,
@@ -108,8 +141,6 @@ pub enum PageSuccess {
         ok: True,
         sequence: u64,
         ids: Vec<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        authored: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         selection_start: Option<usize>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -128,11 +159,10 @@ pub enum PageSuccess {
     },
     Config {
         ok: True,
-        read_only: bool,
         #[serde(rename = "runtimeABI")]
         runtime_abi: u64,
         style: bool,
-        window: super::build::WindowInput,
+        window: crate::app::WindowDefinition,
         #[cfg_attr(feature = "ts", ts(type = "object"))]
         descriptor: Box<serde_json::value::RawValue>,
     },
@@ -149,6 +179,11 @@ pub enum PageSuccess {
         width: f64,
         height: f64,
     },
+    #[serde(rename = "speech.transcribe")]
+    SpeechTranscribe {
+        ok: True,
+        outcome: SpeechOutcome,
+    },
     Ready {
         ok: True,
     },
@@ -162,9 +197,80 @@ pub enum PageSuccess {
         ok: True,
     },
 }
+/// What a transcription came to. Everything but `transcribed` reaches the author as a
+/// `SpeechError` with the same `code`; the page request itself still succeeded.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum SpeechOutcome {
+    /// `locale` is the one the recognizer used.
+    Transcribed {
+        text: String,
+        locale: String,
+    },
+    Unavailable {
+        reason: SpeechUnavailable,
+        message: String,
+    },
+    /// The page was replaced, closed or lost its renderer before the transcript was ready.
+    Cancelled {
+        message: String,
+    },
+    Failed {
+        message: String,
+    },
+}
+/// Why this host cannot transcribe: the app did not declare `speech`; this host has no
+/// speech service (`slop dev`, a browser copy); the OS cannot
+/// (too old, or recognition is off); this locale has no on-device recognizer, and the
+/// host never sends a recording off the device instead; the person declined; or the
+/// provider cannot decode this recording's format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum SpeechUnavailable {
+    NotDeclared,
+    Host,
+    System,
+    Locale,
+    Permission,
+    Format,
+}
+impl SpeechOutcome {
+    /// The answer of every host without a speech service.
+    pub fn unsupported_host() -> Self {
+        Self::Unavailable { reason: SpeechUnavailable::Host, message: "This host cannot transcribe speech".into() }
+    }
+    /// The provider's outcome as the page may receive it: messages shortened to the
+    /// diagnostic limit, and a transcript or locale beyond its limit refused.
+    fn bounded(self) -> Self {
+        let message = |text: String| -> String {
+            let mut units = 0;
+            text.chars()
+                .take_while(|c| {
+                    units += c.len_utf16();
+                    units <= super::ERROR_TEXT
+                })
+                .collect()
+        };
+        match self {
+            Self::Transcribed { text, .. } if text.len() > super::SPEECH_TEXT_BYTES => Self::Failed {
+                message: format!("The transcript is longer than {} MiB", super::SPEECH_TEXT_BYTES >> 20),
+            },
+            Self::Transcribed { locale, .. } if !super::valid_speech_locale(&locale) => {
+                Self::Failed { message: "The recognizer named an invalid locale".into() }
+            }
+            Self::Transcribed { .. } => self,
+            Self::Unavailable { reason, message: text } => Self::Unavailable { reason, message: message(text) },
+            Self::Cancelled { message: text } => Self::Cancelled { message: message(text) },
+            Self::Failed { message: text } => Self::Failed { message: message(text) },
+        }
+    }
+}
 /// Native results use the same serializer as owner results.
 pub enum HostReply {
     WindowResize { width: f64, height: f64 },
+    SpeechTranscribe { outcome: SpeechOutcome },
     Ready,
     PageRecovered,
     Failed,
@@ -184,6 +290,7 @@ impl HostReply {
                     false,
                 );
             }
+            Self::SpeechTranscribe { outcome } => PageSuccess::SpeechTranscribe { ok, outcome: outcome.bounded() },
             Self::Ready => PageSuccess::Ready { ok },
             Self::PageRecovered => PageSuccess::PageRecovered { ok },
             Self::Failed => PageSuccess::Failed { ok },
@@ -195,9 +302,28 @@ impl HostReply {
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub enum PagePush {
-    Publication { publication: super::Publication },
+#[cfg_attr(feature = "ts", ts(concrete(P = super::Publication)))]
+pub enum PagePush<P = super::Publication> {
+    Publication { publication: P },
     Resync,
+}
+
+impl PagePush {
+    /// Wraps a publication the core already encoded. Every accepted edit passes through
+    /// here, so the payload (up to `PAGE_PAYLOAD`) is not scanned again as JSON.
+    pub(crate) fn publication_json(publication: String) -> String {
+        let json = format!(r#"{{"type":"publication","publication":{publication}}}"#);
+        debug_assert_eq!(
+            json,
+            crate::encode(&PagePush::Publication {
+                publication: serde_json::value::RawValue::from_string(publication).expect("core publication"),
+            })
+        );
+        json
+    }
+    pub fn resync_json() -> String {
+        crate::encode(&Self::Resync)
+    }
 }
 
 /// Private host-to-shell calls. Authored apps only receive ctx.
@@ -205,9 +331,7 @@ pub enum PagePush {
 #[serde(tag = "method", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
 pub enum HostRequest {
-    Publish {
-        payload: String,
-    },
+    Publish { payload: String },
     Flush,
     Undo,
     Redo,
@@ -215,54 +339,9 @@ pub enum HostRequest {
     CancelClose,
     Close,
     ReloadInterface,
-    #[serde(rename = "capture.begin")]
-    CaptureBegin {
-        token: String,
-        mode: CaptureMode,
-    },
-    #[serde(rename = "capture.settle")]
-    CaptureSettle {
-        token: String,
-    },
-    #[serde(rename = "capture.restore")]
-    CaptureRestore {
-        token: String,
-    },
 }
 impl HostRequest {
     pub fn to_json(&self) -> String {
         crate::encode(self)
-    }
-}
-#[derive(Clone, Copy, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub enum CaptureMode {
-    Preview,
-    Export,
-    Icon,
-}
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub struct HostCaptureResult {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    pub dedicated: bool,
-}
-impl HostCaptureResult {
-    pub fn decode(input: &str) -> Result<Self> {
-        if input.len() > 4096 {
-            return Err(err(Code::TooLarge, "Capture result is too large"));
-        }
-        let result: Self =
-            serde_json::from_str(input).map_err(|_| err(Code::InvalidRequest, "Invalid capture result"))?;
-        if [result.x, result.y, result.width, result.height].into_iter().all(f64::is_finite) {
-            Ok(result)
-        } else {
-            Err(err(Code::InvalidRequest, "Invalid capture dimensions"))
-        }
     }
 }

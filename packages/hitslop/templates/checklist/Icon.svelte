@@ -1,3 +1,8 @@
+<script>
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <svg class="checklist-icon" viewBox="0 0 512 512" aria-hidden="true">
   <rect x="28" y="28" width="456" height="456" rx="98" fill="var(--slop-accent)" />
   <rect x="116" y="88" width="280" height="336" rx="24" fill="var(--slop-surface)" />

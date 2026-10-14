@@ -1,4 +1,5 @@
 #![cfg(feature = "storage")]
+use crate::support;
 use hitslop_core::{
     Origin, file,
     owner::{Event, Failure, FailureKind, Owner, Reply, Request},
@@ -10,7 +11,6 @@ use std::{
     sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
-mod support;
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {
     support::isolate_registry();
@@ -105,13 +105,16 @@ fn ordered_publications_flush_and_reopen_include_theme() {
         .collect();
     assert_eq!(sequences, vec![1, 2, 3]);
     call(&owner, Request::Flush).unwrap();
-    let published: Vec<Value> =
-        events
-            .try_iter()
-            .filter_map(|e| {
-                if let Event::Publication { json } = e { Some(serde_json::from_str(&json).unwrap()) } else { None }
-            })
-            .collect();
+    let published: Vec<Value> = events
+        .try_iter()
+        .filter_map(|e| {
+            if let Event::Publication { json } = e {
+                Some(serde_json::from_str::<Value>(&json).unwrap()["publication"].clone())
+            } else {
+                None
+            }
+        })
+        .collect();
     assert_eq!(published.iter().map(|p| p["sequence"].as_u64().unwrap()).collect::<Vec<_>>(), sequences);
     assert_eq!(published[1]["ops"], json!([]));
     assert_eq!(published[1]["theme"]["accent"], "#123456");
@@ -388,23 +391,6 @@ fn close_refuses_edits_and_holds_the_lock_until_its_final_write() {
     assert_eq!(saved_title(&path), "Before close");
 }
 
-// Failure: another connection holding the database (a backup during Duplicate) must be a
-// definite, retryable failure, never mistaken for a lost reply or a conflict.
-#[test]
-fn a_busy_database_fails_a_flush_that_a_retry_completes() {
-    let (_dir, path) = fixture();
-    let (owner, _) = open(&path, Mode::Document);
-    call(&owner, set("Retried")).unwrap();
-    let lock = rusqlite::Connection::open(&path).unwrap();
-    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Busy);
-    lock.execute_batch("ROLLBACK").unwrap();
-    drop(lock);
-    call(&owner, Request::Flush).unwrap();
-    assert_eq!(saved_title(&path), "Retried");
-    close(&owner);
-}
-
 // Failure: discard fenced an active save, then a failed reload (a moved file) left writing
 // latched forever and published nothing. Oracle: the failure is published, and once the
 // file is back another edit becomes durable and close releases ownership.
@@ -470,23 +456,160 @@ fn a_flush_during_a_discard_reload_settles_as_replaced() {
     close(&owner);
 }
 
-// A theme change is an edit: accepted in memory, saved by the owner's jobs, and waited for
-// by export, which fails while its save cannot complete. Oracle: the saved palette.
+// Another connection holding the database (a backup during Duplicate) is a definite,
+// retryable failure, never mistaken for a lost reply or a conflict: a flush fails and its
+// retry saves the edit; a theme export waits for its palette's save and fails with it.
+// Both run at once on their own documents, so the test waits out the busy timeout once.
 #[test]
-fn a_theme_export_waits_for_the_save_of_its_palette() {
-    let (_dir, path) = fixture();
-    let (owner, _) = open(&path, Mode::Document);
-    let lock = rusqlite::Connection::open(&path).unwrap();
-    lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    call(&owner, theme("#111111", Origin::Window)).unwrap();
-    assert_eq!(state(&owner)["theme"]["accent"], "#111111");
-    assert_eq!(call(&owner, Request::ExportTheme).unwrap_err().kind, FailureKind::Busy);
-    lock.execute_batch("ROLLBACK").unwrap();
-    drop(lock);
-    let Reply::ThemeFile { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
-    assert!(json.contains("#111111"));
-    close(&owner);
-    let (saved, _) = open(&path, Mode::Snapshot);
-    assert_eq!(state(&saved)["theme"]["accent"], "#111111");
-    close(&saved);
+fn a_busy_database_fails_a_flush_or_theme_export_that_a_retry_completes() {
+    let hold = |path: &std::path::Path| {
+        let lock = rusqlite::Connection::open(path).unwrap();
+        lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
+        lock
+    };
+    let flush = || {
+        let (_dir, path) = fixture();
+        let (owner, _) = open(&path, Mode::Document);
+        call(&owner, set("Retried")).unwrap();
+        let lock = hold(&path);
+        assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Busy);
+        lock.execute_batch("ROLLBACK").unwrap();
+        drop(lock);
+        call(&owner, Request::Flush).unwrap();
+        assert_eq!(saved_title(&path), "Retried");
+        close(&owner);
+    };
+    let theme_export = || {
+        let (_dir, path) = fixture();
+        let (owner, _) = open(&path, Mode::Document);
+        let lock = hold(&path);
+        call(&owner, theme("#111111", Origin::Window)).unwrap();
+        assert_eq!(state(&owner)["theme"]["accent"], "#111111");
+        assert_eq!(call(&owner, Request::ExportTheme).unwrap_err().kind, FailureKind::Busy);
+        lock.execute_batch("ROLLBACK").unwrap();
+        drop(lock);
+        let Reply::ThemeFile { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
+        assert!(json.contains("#111111"));
+        close(&owner);
+        let (saved, _) = open(&path, Mode::Snapshot);
+        assert_eq!(state(&saved)["theme"]["accent"], "#111111");
+        close(&saved);
+    };
+    std::thread::scope(|scope| {
+        for run in [scope.spawn(flush), scope.spawn(theme_export)] {
+            if let Err(panic) = run.join() {
+                std::panic::resume_unwind(panic);
+            }
+        }
+    });
+}
+
+/// A connection's sink, and what the owner tells it.
+fn sync_sink() -> (hitslop_core::owner::SyncSink, mpsc::Receiver<hitslop_core::owner::SyncEvent>) {
+    let (tx, rx) = mpsc::channel();
+    (
+        Arc::new(move |event| {
+            let _ = tx.send(event);
+        }),
+        rx,
+    )
+}
+
+/// Drains both connections: each frame an owner sends goes to the relay, whose replies go
+/// back to it and whose stored records go to the other joined owner. Returns once `done`
+/// holds of the owners' latest sync statuses (and whatever else it reads).
+fn pump(
+    relay: &mut support::relay::Relay,
+    owners: [(&Owner, &mpsc::Receiver<hitslop_core::owner::SyncEvent>); 2],
+    joined: &mut [bool; 2],
+    status: &mut [Option<hitslop_core::sync::Status>; 2],
+    done: impl Fn(&[Option<hitslop_core::sync::Status>; 2]) -> bool,
+) {
+    use hitslop_core::owner::SyncEvent;
+    use hitslop_core::sync::Frame;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    loop {
+        for i in 0..2 {
+            while let Ok(event) = owners[i].1.try_recv() {
+                match event {
+                    SyncEvent::Send { bytes } => {
+                        let (replies, stored) = relay.reply(&bytes);
+                        for reply in replies {
+                            joined[i] |= matches!(reply, Frame::Welcome { .. });
+                            owners[i].0.sync_frame(reply.encode());
+                        }
+                        if !stored.is_empty() && joined[1 - i] {
+                            owners[1 - i].0.sync_frame(Frame::Records(stored).encode());
+                        }
+                    }
+                    SyncEvent::Status { status: s } => status[i] = Some(s),
+                }
+            }
+        }
+        if done(status) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "sync did not settle: {status:?}");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+/// Two owners of one shared document, each opened from its own file, sync through their
+/// hooks alone: a host only moves frames between a connection's sink and the relay. An
+/// unshared document refuses to attach, and a shared one refuses to discard (other copies
+/// may already hold its edits).
+#[test]
+fn owners_of_a_shared_document_sync_through_their_hooks() {
+    use hitslop_core::owner::SyncEvent;
+    use hitslop_core::store::Share;
+    use hitslop_core::sync::{Frame, Status};
+    let (dir, path) = fixture();
+    let (a, _a_events) = open(&path, Mode::Document);
+    let (sink, unshared) = sync_sink();
+    a.sync_attach(sink);
+    let SyncEvent::Status { status: paused } = unshared.recv_timeout(Duration::from_secs(10)).unwrap() else {
+        panic!("an unshared document sends nothing")
+    };
+    assert!(matches!(paused, Status::Paused { .. }), "{paused:?}");
+    let share = Share { room: "room-1".into(), endpoint: "wss://relay.example".into() };
+    call(&a, Request::Share { share: share.clone() }).unwrap();
+    assert_eq!(a.share().unwrap(), Some(share.clone()));
+    let refused = call(&a, Request::Discard).unwrap_err();
+    assert_eq!(refused.reason, Some(hitslop_core::Code::InvalidRequest), "{refused:?}");
+    // The seed every replica starts from: a backup, which keeps the identity and share.
+    let seed = dir.path().join("seed.slop");
+    call(&a, Request::Backup { destination: seed.clone() }).unwrap();
+    let (b, _b_events) = open(&seed, Mode::Document);
+    assert_eq!(b.share().unwrap(), Some(share));
+
+    let (a_sink, a_sync) = sync_sink();
+    a.sync_attach(a_sink);
+    let SyncEvent::Send { bytes: hello } = a_sync.recv_timeout(Duration::from_secs(10)).unwrap() else {
+        panic!("a Hello first")
+    };
+    // The relay's room admits the app A presents; B, a copy of A, presents the same.
+    let Frame::Hello { app_digest, version, .. } = Frame::decode(&hello).unwrap() else { panic!("a Hello first") };
+    let mut relay = support::relay::Relay { app: app_digest, records: vec![], heads: version };
+    let mut joined = [false; 2];
+    let mut status = [None, None];
+    // The Hello already taken from A's sink still needs its answer.
+    let (replies, _) = relay.reply(&hello);
+    for reply in replies {
+        joined[0] |= matches!(reply, Frame::Welcome { .. });
+        a.sync_frame(reply.encode());
+    }
+    let (b_sink, b_sync) = sync_sink();
+    b.sync_attach(b_sink);
+    let synced = |status: &[Option<Status>; 2]| status.iter().all(|s| s == &Some(Status::Synced));
+    let owners = [(&a, &a_sync), (&b, &b_sync)];
+    pump(&mut relay, owners, &mut joined, &mut status, synced);
+    let title = |owner: &Owner| state(owner)["value"]["title"].clone();
+    call(&a, set("From A")).unwrap();
+    pump(&mut relay, owners, &mut joined, &mut status, |_| title(&b) == "From A");
+    call(&b, set("From B")).unwrap();
+    pump(&mut relay, owners, &mut joined, &mut status, |s| synced(s) && title(&a) == "From B");
+    // What arrived is saved like an edit.
+    call(&a, Request::Close { preview: None, icon: None }).unwrap();
+    let (reopened, _) = open(&path, Mode::Document);
+    assert_eq!(title(&reopened), "From B");
 }

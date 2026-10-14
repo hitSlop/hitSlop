@@ -56,7 +56,7 @@ _vibe/
 /SLOPS.todo
 /apps/promo/inspo/
 /deferred/
-/examples/archive/
+/tmp/bunch-invoice/
 
 /generated/
 .build-test-*/

@@ -4,7 +4,7 @@ use crate::{Code, Result, err};
 use png::{BitDepth, ColorType, DecodeOptions, Decoder, Limits};
 use std::io::Cursor;
 
-const DECODER_BYTES: usize = 8 << 20;
+use crate::wire::PNG_DECODER_BYTES as DECODER_BYTES;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Purpose {
@@ -75,7 +75,7 @@ pub fn check(bytes: &[u8], purpose: Purpose) -> Result<CheckedPng> {
         let scale = match purpose {
             Purpose::Preview => 1,
             Purpose::Icon => {
-                if (info.width, info.height) != (512, 512) {
+                if (info.width, info.height) != (crate::wire::ICON_SIDE, crate::wire::ICON_SIDE) {
                     return Err(invalid("Icon artwork must be 512 × 512 pixels"));
                 }
                 1

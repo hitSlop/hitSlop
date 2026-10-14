@@ -8,39 +8,51 @@ import { tmpdir } from "node:os";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { createDocument, engineRequest } from "../lib/native";
 import { verifyAppCommands } from "./app-commands";
-const app = resolve(process.argv[2] ?? "generated/app/hitSlop.app");
-const helper = join(app, "Contents/Helpers/hitslop-native");
+import { verifyArtifactCapabilities } from "./artifact-capabilities";
+const args = process.argv.slice(2);
+const unsigned = args.includes("--unsigned");
+const app = resolve(args.find((arg) => arg !== "--unsigned") ?? "generated/app/hitSlop.app");
+// Both bundles compile the intent directly. A package reference to a statically
+// linked module extracts JSON but cannot be resolved by macOS's intent registry.
+for (const bundle of [app, join(app, "Contents/PlugIns/hitSlop-Widgets.appex")]) {
+  const metadata = join(bundle, "Contents/Resources/Metadata.appintents");
+  const actions = JSON.parse(await readFile(join(metadata, "extract.actionsdata"), "utf8"));
+  assert.ok(actions.actions?.SlopWidgetIntent?.parameters?.some((p: { name: string }) => p.name === "slop"), "Missing widget document selection metadata");
+  assert.ok(actions.entities?.SlopWidgetEntity && actions.queries?.SlopWidgetQuery, "Missing widget document query metadata");
+  const packages = await readFile(join(metadata, "extract.packagedata"), "utf8").catch((error) => {
+    if (error.code === "ENOENT") return "{}";
+    throw error;
+  });
+  assert.deepEqual(JSON.parse(packages).includes ?? [], [], "Widget intent metadata must not reference an unbundled static package");
+}
 const evaluator = join(app, "Contents/Helpers/hitslop-evaluator");
 await run(["/usr/bin/codesign", "--verify", "--strict", evaluator]);
 await verifyAppCommands(app);
 const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findEngine();
-// Host and helper each bundle the page shell, byte-identical to the build; no engine WASM.
+// The host bundles the page shell, byte-identical to the build; no engine WASM.
 const shells = [...new Bun.Glob("**/shell/boot.js").scanSync({ cwd: app, onlyFiles: true })].map((p) =>
   dirname(join(app, p)),
 );
 assert.ok(shells.some((root) => root.startsWith(join(app, "Contents/Resources") + "/")), "Missing app page shell");
-assert.ok(shells.some((root) => root.startsWith(join(app, "Contents/Helpers") + "/")), "Missing helper page shell");
 const expected = await digest(shellDestinations.app, shellFiles);
 for (const root of shells) assert.equal(await digest(root, shellFiles), expected, `Page shell differs: ${root}`);
 assert.deepEqual([...new Bun.Glob("**/*.wasm").scanSync({ cwd: app, onlyFiles: true })], [], "The app must not bundle WASM");
 const folder = await mkdtemp(join(tmpdir(), "hitslop-release-verify-"));
 try {
   // Installed, without Bun or Node on the path.
-  const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin", HITSLOP_NATIVE_CLI: helper } };
-  const installed = (args: string[], executable = helper) => run([executable, ...args], placement);
+  const placement = { engine: documentEngine, cwd: folder, env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
+  const installed = (args: string[], executable: string) => run([executable, ...args], placement);
   const value = async (document: string) => (await engineRequest({ method: "get", documentPath: document }, placement)).state.value;
-  const appCore = (await installed(["--core-build"], join(app, "Contents/MacOS/hitSlop"))).trim();
-  const helperCore = (await installed(["--core-build"])).trim();
+  const appCore = (await installed(["--build-id"], join(app, "Contents/MacOS/hitSlop"))).trim();
   assert.ok(appCore.length > 0, "App did not identify its document core");
-  assert.equal(appCore, helperCore, "App and helper embed different document cores");
-  assert.equal(await installed(["--build-id"], documentEngine).then(s => s.trim()), helperCore, "Document engine and helper embed different cores");
-  assert.deepEqual(JSON.parse(await installed(["--protocol"], documentEngine)), JSON.parse(await installed(["--protocol"])), "Native tools serve different command protocols");
+  assert.equal(await installed(["--build-id"], documentEngine).then(s => s.trim()), appCore, "App and document engine embed different cores");
   assert.deepEqual([...new Bun.Glob("**/slop-engine").scanSync({ cwd: app })], [], "The Mac app must not bundle the npm engine");
   // A release is built from one tree, so the CLI's authoring core is the app's core.
   // Finder shows a .slop through the app's type declaration and its Quick Look extensions,
   // which read the file with the same core.
   const plist = async (path: string) => JSON.parse(await installed(["-convert", "json", "-o", "-", path], "/usr/bin/plutil"));
   const info = await plist(join(app, "Contents/Info.plist"));
+  await verifyArtifactCapabilities(info, app, unsigned);
   const type = info.UTExportedTypeDeclarations?.find((t: { UTTypeIdentifier: string }) => t.UTTypeIdentifier === "com.hitslop.slop");
   assert.ok(type?.UTTypeConformsTo?.includes("public.data"), "The .slop type must be a plain data file");
   const badge = type?.UTTypeIcons?.UTTypeIconBadgeName;
@@ -56,10 +68,13 @@ try {
     );
     let embedded = false;
     for (const binary of await readdir(join(appex, "Contents/MacOS")))
-      embedded ||= (await readFile(join(appex, "Contents/MacOS", binary))).includes(helperCore);
+      embedded ||= (await readFile(join(appex, "Contents/MacOS", binary))).includes(appCore);
     assert.ok(embedded, `Quick Look ${kind} embeds a different document core`);
   }
   const selected = (await builtTemplates()).templates.filter((t) => t.bundled).map((t) => t.slug);
+  const widget = await plist(join(app, "Contents/PlugIns/hitSlop-Widgets.appex/Contents/Info.plist"));
+  assert.equal(widget.NSExtension?.NSExtensionPointIdentifier, "com.apple.widgetkit-extension", "Missing image widget extension");
+  assert.ok(info.CFBundleURLTypes?.some((entry: { CFBundleURLSchemes?: string[] }) => entry.CFBundleURLSchemes?.includes("hitslop")), "Missing widget document-opening scheme");
   const starters = join(app, "Contents/Resources/StarterTemplates");
   assert.deepEqual((await readdir(starters)).sort(), selected.map((slug) => slug + ".slop").sort());
   const exhaustive = process.env.HITSLOP_TEMPLATE_EXHAUSTIVE === "1";
@@ -91,7 +106,7 @@ try {
   // Mutation semantics use a deliberate fixture, independent of bundled selection
   // and of the fields provided by any newly authored template.
   const mutation = join(folder, "mutation.slop");
-  const fixture = await buildTemplate(resolve("tests/apps/document"), undefined, join(folder, "fixture.slop"));
+  const fixture = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderViews: false });
   await createDocument(fixture, mutation, placement);
   await engineRequest({ method: "batch", documentPath: mutation, batch: { intents: [{ type: "set", path: ["title"], value: "Installed engine verified" }] } }, placement);
   assert.ok(String((await value(mutation) as { title: unknown }).title).startsWith("Installed engine verified"));

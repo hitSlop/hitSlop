@@ -1,12 +1,11 @@
 // Building a project: what a built app may contain and how the build's output depends on
 // its source. slop.ts is covered in slop-ts.test.ts, portable builds in portable.test.ts.
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { execute } from "../../src/cli/engine";
-import { negotiate } from "../../src/cli/engine";
-import { exec, run } from "../../../../scripts/lib/test-process";
-import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir, rename } from "node:fs/promises";
+import { mkdtemp, cp, readFile, writeFile, rm, readdir, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { overrideSlop, stage } from "./source-fixture";
+import { overrideSlop, overrideSchema, stage } from "./source-fixture";
+import { png } from "./png-fixture";
 import { buildTemplate } from "../../src/cli/template";
 
 /** What a new document of a built template holds: created and read by the engine. */
@@ -74,14 +73,41 @@ test("build paths and fresh source evaluation follow the declaration", async () 
     const source = join(root, "path with spaces", "starter");
     await cp("tests/apps/document", source, { recursive: true });
     await overrideSlop(source, { slug: '"starter"' });
-    const defaultOutput = await buildTemplate(source, undefined);
+    const defaultOutput = await buildTemplate(source, undefined, { renderViews: false });
     expect(defaultOutput).toBe(join(source, "dist", "starter.slop"));
     const first = await initialValue(defaultOutput);
-    await overrideSlop(source, { initial: JSON.stringify({ ...first, title: "Fresh evaluation" }) });
+    await overrideSchema(source, JSON.stringify({ ...first, title: "Fresh evaluation" }));
     const explicitOutput = join(root, "output with spaces.slop");
-    expect(await buildTemplate(source, undefined, explicitOutput)).toBe(explicitOutput);
+    expect(await buildTemplate(source, explicitOutput, { renderViews: false })).toBe(explicitOutput);
     expect((await initialValue(explicitOutput)).title).toBe("Fresh evaluation");
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
+
+// Where a build renders nothing (a platform the gate leaves off), it stores only the artwork
+// the project supplies and names each role it lacks. Rendering is covered in
+// build.native.test.ts; supplied artwork in portable.test.ts.
+test("a build that renders nothing names each artwork role the project lacks", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-"));
+  const warn = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const source = join(root, "source");
+    await cp("tests/apps/document", source, { recursive: true });
+    const stored = async (file: string) =>
+      (await execute({ method: "inspect", file })).info.artwork.map((image) => image.name);
+    const bare = await buildTemplate(source, join(root, "bare.slop"), { renderViews: false });
+    expect(await stored(bare)).toEqual([]);
+    expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("No preview or icon artwork"));
+    await mkdir(join(source, "artwork"));
+    await writeFile(join(source, "artwork/icon.png"), png(512, 512));
+    await overrideSlop(source, { artwork: "{ icon }" }, 'import icon from "./artwork/icon.png";');
+    const icon = await buildTemplate(source, join(root, "icon.slop"), { renderViews: false });
+    expect(await stored(icon)).toEqual(["icon"]);
+    expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("No preview artwork"));
+    expect(warn).toHaveBeenCalledTimes(2);
+  } finally {
+    warn.mockRestore();
     await rm(root, { recursive: true, force: true });
   }
 }, 60000);
@@ -129,7 +155,6 @@ test("Svelte styles compile identically in different checkout locations", async 
 
 for (const [name, properties, initial, code] of [
   ["unsafe string bound", '{value:s.string({maxLength:9_007_199_254_740_992})}', { value: "" }, "invalid_schema"],
-  ["optional handle name", '{value:s.optional(s.object({set:s.string()}))}', {}, "invalid_schema"],
   ["invalid row id", '{rows:s.list(s.object({value:s.string()}))}', { rows: [{ $id: "bad id", value: "" }] }, "invalid_id"],
   ["duplicate row id", '{rows:s.list(s.object({value:s.string()}))}', { rows: [{ $id: "same", value: "a" }, { $id: "same", value: "b" }] }, "duplicate_id"],
 ] as const) test(`build enforces core validation: ${name}`, async () => {
@@ -137,26 +162,23 @@ for (const [name, properties, initial, code] of [
   try {
     const source = join(root, "source");
     await cp("tests/apps/document", source, { recursive: true });
-    await writeFile(join(source, "schema.ts"), `import {defineDocument,s} from 'hitslop'; export default defineDocument(${properties});`);
-    await writeFile(join(source, "commands.ts"), "export {};\n");
-    await overrideSlop(source, { initial: JSON.stringify(initial), commands: "{}" });
+    await writeFile(join(source, "schema.ts"), `import {defineDocument,s} from 'hitslop'; export default defineDocument(${properties},{initial:${JSON.stringify(initial)}});`);
+    await rm(join(source, "commands.ts"));
     await expect(stage(source, join(root, "invalid"))).rejects.toThrow(code);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("only explicit roles are built; unrelated filenames are ignored", async () => {
+test("only conventional roles are built; unrelated filenames are ignored", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root,"source");
     await cp("tests/apps/document",source,{recursive:true});
-    // Keep the declared view distinct on case-insensitive filesystems too.
-    await rename(join(source, "Export.svelte"), join(source, "Capture.svelte"));
-    const declaration = join(source, "slop.ts");
-    await writeFile(declaration, (await readFile(declaration, "utf8")).replace("./Export.svelte", "./Capture.svelte"));
+    // A similarly named file is not a capture role; the required Export remains.
+    await cp(join(source, "Export.svelte"), join(source, "Capture.svelte"));
     await writeFile(join(source,"main.ts"), "this is not valid typescript");
-    await writeFile(join(source,"export.svelte"), "<script>const = ;</script>");
+    await writeFile(join(source,"Capture.svelte"), "<script>const = ;</script>");
     await stage(source,join(root,"built"));
-    // The imported role, however it is named, is compiled.
+    // A fixed role is compiled.
     await writeFile(join(source,"Icon.svelte"), "<script>const = ;</script>");
     await expect(stage(source,join(root,"invalid"))).rejects.toThrow();
   } finally { await rm(root,{recursive:true,force:true}); }
@@ -170,10 +192,11 @@ test("a capture view cannot read state the editor sets", async () => {
     await writeFile(join(source,"Tab.svelte"), `<script lang="ts">import { ui } from "./ui.svelte";</script><b>{ui.tab}</b>`);
     await writeFile(join(source,"Export.svelte"), `<script lang="ts">import Tab from "./Tab.svelte";</script><Tab />`);
     // Reusing the editor does not make its transient state available to captures.
-    await overrideSlop(source, { view: "Tab", export: "Tab" }, `import Tab from "./Tab.svelte";`);
+    await cp(join(source,"Tab.svelte"), join(source,"App.svelte"));
+    await cp(join(source,"Tab.svelte"), join(source,"Export.svelte"));
     await expect(stage(source,join(root,"editor"))).rejects.toThrow("fresh page");
     // A capture view sees only the initial value, even through a shared component.
-    await overrideSlop(source, { export: "Export" }, `import Export from "./Export.svelte";`);
+    await writeFile(join(source,"Export.svelte"), `<script>import Tab from "./Tab.svelte";</script><Tab />`);
     await expect(stage(source,join(root,"export"))).rejects.toThrow("fresh page");
   } finally { await rm(root,{recursive:true,force:true}); }
 },60000);

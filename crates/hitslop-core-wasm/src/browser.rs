@@ -134,7 +134,8 @@ impl BrowserCopy {
             &self.events,
             Event::Ready {
                 title: driver.owner().app().app.metadata().title.clone(),
-                window: driver.owner().app().app.page_window(),
+                window: driver.owner().app().app.window().clone(),
+                capabilities: driver.owner().app().app.capabilities().to_vec(),
             },
         );
         self.fresh = false;
@@ -156,7 +157,19 @@ impl BrowserCopy {
         match BrowserRequest::decode(json).map_err(error)? {
             BrowserRequest::Page { id, request } => self.page(id, &request)?,
             BrowserRequest::Flush { id } => self.page(id, r#"{"method":"flush"}"#)?,
-            BrowserRequest::Evaluated { output, error } => self.evaluated(output, error)?,
+            BrowserRequest::ResourcePlan { id, route, key, range } => {
+                let route = route_to_file(matches!(route, ResourceRoute::Attachment));
+                let info = self
+                    .driver
+                    .as_ref()
+                    .ok_or_else(|| error("Copy is not open"))?
+                    .store()
+                    .resource_info(route, &key)
+                    .map_err(error)?
+                    .ok_or_else(|| error("Resource not found"))?;
+                let plan = hitslop_core::file::resource_response(&info, route, range.as_deref());
+                push(&self.events, Event::ResourcePlan { id, size: info.size, plan });
+            }
             BrowserRequest::Resource { id, route, key, offset, length } => {
                 let attachment = matches!(route, ResourceRoute::Attachment);
                 let store = self.driver.as_ref().ok_or_else(|| error("Copy is not open"))?.store();
@@ -195,6 +208,10 @@ impl BrowserCopy {
                         push(&events, Event::Error { id: None, error: message });
                         page_wire::HostReply::PageError
                     }
+                    // A browser copy has no speech service; the page says so.
+                    page_wire::HostAction::SpeechTranscribe { .. } => {
+                        page_wire::HostReply::SpeechTranscribe { outcome: page_wire::SpeechOutcome::unsupported_host() }
+                    }
                 }
                 .to_json(),
             };
@@ -205,25 +222,12 @@ impl BrowserCopy {
     /// A negative delay means there is no pending timer.
     pub fn poll(&mut self, monotonic_ms: f64, unix_ms: f64) -> Result<f64, JsValue> {
         let driver = self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?;
-        driver.poll(monotonic_ms as u64, unix_ms as u64);
-        if let Some(input) = driver.take_evaluation() {
-            push(&self.events, Event::Evaluate { input });
-        }
-        // Envelope construction can itself enqueue a refused evaluation. Drive that
-        // completion before sleeping, so it cannot strand the caller.
         let next = driver.poll(monotonic_ms as u64, unix_ms as u64);
         Ok(next.map_or(-1.0, |n| n as f64))
     }
     pub fn events(&self) -> String {
         serde_json::to_string(&std::mem::take(&mut *self.events.lock().expect("worker events")))
             .expect("browser events")
-    }
-    pub fn evaluated(&mut self, output: Option<String>, failure: Option<String>) -> Result<(), JsValue> {
-        let result = match (output, failure) {
-            (Some(output), None) => Ok(output),
-            (_, failure) => Err(failure.unwrap_or_else(|| "Evaluator returned no output".into())),
-        };
-        self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?.evaluated(result).map_err(error)
     }
     #[wasm_bindgen(js_name = resourceInfo)]
     pub fn resource_info(&self, attachment: bool, key: &str) -> Result<String, JsValue> {

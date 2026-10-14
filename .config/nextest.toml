@@ -1,7 +1,26 @@
 # `bun run core:test` runs the Rust suite with cargo-nextest: one process per test, all
-# cores. A test still running after two minutes is a hang, reported by name.
+# cores. Ordinary tests still running after two minutes are reported as hangs.
 [profile.default]
 slow-timeout = { period = "20s", terminate-after = 6 }
+# Nightly and release only (`HITSLOP_NIGHTLY=1` or `verify --release` adds
+# `--ignore-default-filter`, as do explicitly filtered runs): storage-growth and
+# history-trim budgets, scheduling latency, large acceptance vectors, and a busy
+# display read that waits out the reader's timeouts. Ordinary runs retain the limits
+# ratchet and small acceptance vectors.
+default-filter = """not (
+  test(/::a_busy_file_is_reported_busy_not_as_having_no_artwork$/)
+  | test(/::closing_a_large_document_keeps_no_history_and_compaction_trims_to_now$/)
+  | test(/::a_session_too_large_to_keep_closes_with_no_history$/)
+  | test(/::a_small_document_keeps_its_history_when_closed$/)
+  | test(/::a_session_past_its_limit_trims_while_open$/)
+  | test(/::doodle_like_use_stays_bounded$/)
+  | test(/::checkpoints_reclaim_free_pages$/)
+  | test(/large_acceptance_vectors_/)
+)"""
+
+[[profile.default.overrides]]
+filter = "test(/large_acceptance_vectors_/)"
+slow-timeout = { period = "60s", terminate-after = 20 }
 
 [profile.ci]
 fail-fast = false

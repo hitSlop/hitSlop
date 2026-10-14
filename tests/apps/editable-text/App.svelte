@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { EditableText } from "hitslop/svelte";
-  import doc from "./schema";
+  import { EditableText, getDocument } from "hitslop/svelte";
+  import schema from "./schema";
+  const doc = getDocument(schema);
   let destination: HTMLInputElement;
   // A test-only bridge to the real public handle; no document semantics are mocked.
   (globalThis as any).setFixtureText = (text: string) => doc.fields.first.set(text);

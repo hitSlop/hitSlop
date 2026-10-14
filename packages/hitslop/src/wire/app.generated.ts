@@ -8,13 +8,25 @@ export type Author = { name: string, url?: string, };
 
 export type Background = "transparent" | "glass";
 
-export type BuildDeclaration = { metadata: AppMetadata, window: WindowInput, theme: Array<ThemeInput>, document: unknown, initial: unknown, commands: Array<CommandInput>, views: Views, };
+export type BuildDeclaration = { metadata: AppMetadata, window: WindowInput, theme: Array<ThemeInput>, document: unknown, initial: unknown, commands: Array<CommandInput>, views: Views,
+/**
+ * Devices and host services the app uses; absent means none. Unknown values are
+ * refused here, at authoring, because only implemented capabilities are variants.
+ */
+capabilities: Array<Capability>, };
 
 export type BuildInput = { packageFormat: number, runtimeABI: number, declaration: BuildDeclaration, roles: BuildRoles, resources: Array<ResourceInput>, artwork: ArtworkInput, };
 
-export type BuildRoles = { ui: string, style?: string, commands?: string, skin?: string, };
+export type BuildRoles = { preview?: string, export?: string, icon?: string, widget?: string, ui: string, style?: string, commands?: string, skin?: string, };
 
-export type Category = "productivity" | "utilities" | "finance" | "media" | "games" | "developer-tools" | "education" | "business" | "personal" | "health" | "creative" | "music" | "other";
+/**
+ * A device or host service an app declares it uses. The host admits a request only for a
+ * declared capability; the OS or browser permission still applies. Authoring refuses any
+ * value not listed here.
+ */
+export type Capability = "camera" | "microphone" | "speech";
+
+export type Category = "popular" | "productivity" | "utilities" | "finance" | "media" | "games" | "developer-tools" | "education" | "business" | "personal" | "health" | "creative" | "music" | "other";
 
 export type CommandInput = { name: string, description: string, args: unknown, };
 
@@ -30,9 +42,44 @@ path: string, };
 
 export type ResourceKind = "app" | "command";
 
+/**
+ * One corner length: points, or a percentage of the window's width or height.
+ */
+export type ShapeLength = { value: number, percent: boolean, };
+
+/**
+ * Absolute path commands in SVG's y-down coordinates. Lines, quadratics, arcs and the
+ * shorthand forms are all expressed as lines and cubics.
+ */
+export type ShapeSegment = { "kind": "move", x: number, y: number, } | { "kind": "line", x: number, y: number, } | { "kind": "cubic", x1: number, y1: number, x2: number, y2: number, x: number, y: number, } | { "kind": "close" };
+
+/**
+ * A window's shape, as the host draws it (it crosses to Swift as it is).
+ */
+export type Silhouette = { "kind": "radii", horizontal: Array<ShapeLength>, vertical: Array<ShapeLength>, } | { "kind": "path", segments: Array<ShapeSegment>, viewBoxWidth: number, viewBoxHeight: number, evenOdd: boolean, };
+
+export type StandardFrame = {
+/**
+ * Whether fullscreen fits the authored composition instead of reflowing it.
+ */
+fullscreenFit: boolean, resizable: boolean, lockAspect: boolean, background: Background | null,
+/**
+ * CSS radius token exposed by the page shell; paths expose zero.
+ */
+radius: string, shape: Silhouette, };
+
 export type ThemeInput = { token: string, color: string, };
 
-export type Views = { export: boolean, icon: boolean, };
+export type Views = { preview: boolean, export: boolean, icon: boolean, widget?: WidgetOptions, };
+
+export type WidgetOptions = { refreshMinutes?: number, };
+
+/**
+ * Resolved host window semantics, independent of the stored definition's decoding rules.
+ */
+export type WindowDefinition = { width: number, height: number, fullscreenable: boolean, frame: WindowFrame, };
+
+export type WindowFrame = { "kind": "standard", frame: StandardFrame, } | { "kind": "skin", skin: string, };
 
 /**
  * A source declaration: the skin image is an imported URL. Acceptance resolves it

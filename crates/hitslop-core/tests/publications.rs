@@ -1,7 +1,7 @@
 // Failure: row indexes or patches drift after structural changes, including several list
 // changes combined in one batch. Oracle: independent patch consumer + fresh snapshots,
 // with literal outcomes covered by conformance.rs.
-mod support;
+use crate::support;
 use hitslop_core::Document;
 use hitslop_core::Origin;
 use serde_json::{Value, json};

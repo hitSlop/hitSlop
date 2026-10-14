@@ -6,11 +6,15 @@ storage, or host regressions belong in existing tests at their owning boundary.
 
 Read slop.ts, AGENTS.md, and BRIEF.md, then edit slop.ts, schema.ts, and the UI source.
 Run the generated project's `bun run check` and `bun run dev`; refresh resets
-preview state. Vite watches source: component/CSS updates keep accepted edits, while a change to slop.ts or any non-component module it imports (document, commands, skin, artwork) resets disposable state. In the repository,
+preview state. Vite watches source: component/CSS updates keep accepted edits, while a change to slop.ts, schema.ts, commands.ts, their dependencies or the root role inventory resets disposable state. In the repository,
 use `bun slop COMMAND SOURCE`.
 
-Run `bun run build` (any platform), then `bun run register` on a Mac with a compatible installed app.
-Create a writable copy in the native catalog. Manually review close-after-type, reopen,
+Run `bun run build`, then `bun run register`; macOS and Linux render the preview and icon artwork
+you do not supply. Pack also renders every declared view, including Export PNG/PDF
+and all Widget families, even with supplied artwork; any view failure prevents publication.
+Each static role imports its own stylesheets in import order; `slop dev` still mounts
+static views inside the editor page. Create a writable copy in the
+Mac app's catalog. Manually review close-after-type, reopen,
 keyboard/IME, themes, duplication, and PNG/PDF. Inspect preview and icon artwork.
 Never edit a runtime master or publish private document state as a template.
 Hosted template publication is deferred; npm distributes the authoring tools.

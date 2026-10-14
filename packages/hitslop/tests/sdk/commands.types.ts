@@ -1,75 +1,30 @@
 import { defineDocument, s } from "../../src/sdk/schema";
-const doc = defineDocument({ title: s.text(), count: s.counter() });
-const rename = doc.command({ description: "Rename", args: { title: s.string() }, run({ tx, current }, { title }) { tx.fields.title.set(title); return current.count; } });
-function callers() {
-  const result: Promise<number> = rename({ title: "Next" });
-  // @ts-expect-error Required command arguments cannot be omitted.
-  rename();
-  // @ts-expect-error Argument inference comes from s.* descriptors.
-  rename({ title: 7 });
-  // @ts-expect-error Unknown fields are not arguments.
-  rename({ title: "Next", other: true });
-  return result;
-}
-// Commands run synchronously in the owner; an awaited write would fall outside the batch.
-// @ts-expect-error run cannot be async.
-doc.command({ description: "Later", args: {}, async run({ tx }) { tx.fields.count.increment(); } });
-// @ts-expect-error run cannot return a promise.
-doc.command({ description: "Later", args: {}, run: () => Promise.resolve(1) });
-
-// Row arguments: callers pass a row or its $id; run receives the row from `current`.
-const tasks = defineDocument({
-  tasks: s.list(s.object({ text: s.text(), done: s.boolean({ default: false }) })),
-  tags: s.list(s.string()),
-});
-type IsNever<T> = [T] extends [never] ? true : false;
-const restore = tasks.command({
-  description: "Restore",
-  args: { task: s.row("tasks"), note: s.string({ default: "" }) },
-  run({ tx }, { task, note }) {
-    const resolved: IsNever<typeof task> = false;
-    const text: string = task.text;
-    const filled: string = note;
-    tx.at(task).done.set(false);
-    return { resolved, text, filled };
+import { defineCommands } from "../../src/sdk/commands";
+const schema = defineDocument({ title: s.text(), count: s.counter() });
+const commands = defineCommands(schema, {
+  rename: {
+    description: "Rename", args: { title: s.string(), by: s.number({ default: 1 }), note: s.optional(s.string()), lane: s.enum(["a", "b"]) },
+    run({ tx, current }, { title, by, note, lane }) {
+      const text: string = title, amount: number = by, optional: string | undefined = note, choice: "a" | "b" = lane;
+      tx.fields.title.set(text);
+      tx.fields.count.increment(amount);
+      // @ts-expect-error Document fields retain their types.
+      tx.fields.title.set(7);
+      return { title, by, lane: choice, count: current.count, note: optional ?? "" };
+    },
   },
 });
-const missing = tasks.command({
-  description: "A row of a list that is not there",
-  args: { task: s.row("nothing") },
-  run(_, { task }) {
-    // The core refuses the declaration at check and build; the type is never.
-    const unresolved: IsNever<typeof task> = true;
-    return unresolved;
-  },
-});
-async function rowCallers(row: (typeof tasks.current.tasks)[number]) {
-  await restore({ task: row });
-  await restore({ task: row.$id, note: "back" });
-  // @ts-expect-error A row argument takes a row or its $id.
-  await restore({ task: 7 });
-  // @ts-expect-error Row arguments are required unless optional.
-  await restore({});
-  return missing;
-}
-void rowCallers;
-// Rows resolve only as required top-level arguments; nesting one is refused in the types
-// as at pack.
-tasks.command({
-  description: "Nested row",
-  // @ts-expect-error A row cannot sit inside an object argument.
-  args: { pick: s.object({ task: s.row("tasks") }) },
-  run() {},
-});
-tasks.command({
-  description: "Optional row",
-  // @ts-expect-error A row cannot be optional.
-  args: { task: s.optional(s.row("tasks")) },
-  run() {},
-});
-tasks.command({
-  description: "Row list",
-  // @ts-expect-error A list item cannot be a row.
-  args: { tasks: s.list(s.row("tasks")) },
-  run() {},
-});
+// @ts-expect-error Commands are not page callables.
+commands.rename({ title: "Next" });
+// @ts-expect-error Commands cannot be async.
+defineCommands(schema, { later: { description: "Later", args: {}, async run() {} } });
+// @ts-expect-error Commands cannot return a promise.
+defineCommands(schema, { later: { description: "Later", args: {}, run: () => Promise.resolve(1) } });
+// @ts-expect-error Commands cannot be generators.
+defineCommands(schema, { later: { description: "Later", args: {}, *run() { yield 1; } } });
+// @ts-expect-error Commands accept only scalar arguments.
+defineCommands(schema, { nested: { description: "Nested", args: { inner: s.object({ title: s.string() }) }, run() {} } });
+// @ts-expect-error Text is not a scalar command argument.
+defineCommands(schema, { text: { description: "Text", args: { title: s.text() }, run() {} } });
+// @ts-expect-error Lists are not command arguments.
+defineCommands(schema, { list: { description: "List", args: { list: s.list(s.string()) }, run() {} } });

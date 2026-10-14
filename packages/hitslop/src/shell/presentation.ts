@@ -1,5 +1,4 @@
-import type { WindowInput } from "../wire/app.generated";
-import { DefaultWindowRadius } from "../schema/constants";
+import type { WindowDefinition } from "../wire/app.generated";
 
 /** Host-supplied initial geometry, not the current viewport or a live resize API. */
 type PresentationStage = {
@@ -10,22 +9,15 @@ type PresentationStage = {
   radius?: string;
 };
 
-/** Maps a manifest presentation to the stage the native host would configure. */
-export function presentationStage(presentation: WindowInput): PresentationStage {
-  if (presentation.kind === "skin")
-    return {
-      mode: "skin",
-      width: presentation.width,
-      height: presentation.height,
-      resizable: false,
-    };
+/** Presents the frame resolved by Rust, shared with the native host. */
+export function presentationStage({ width, height, frame }: WindowDefinition): PresentationStage {
+  if (frame.kind === "skin") return { mode: "skin", width, height, resizable: false };
   return {
-    mode: presentation.background ?? "standard",
-    width: presentation.width,
-    height: presentation.height,
-    resizable: presentation.resizable ?? true,
-    radius:
-      typeof presentation.shape === "object" ? "0" : (presentation.shape ?? DefaultWindowRadius),
+    mode: frame.frame.background ?? "standard",
+    width,
+    height,
+    resizable: frame.frame.resizable,
+    radius: frame.frame.radius,
   };
 }
 
@@ -52,7 +44,9 @@ function presentationStageCSS(stage: PresentationStage): string {
     `:where(${root} body){-webkit-user-select:none;user-select:none}` +
     `:where(${root} input,${root} textarea,${root} [contenteditable=""],${root} [contenteditable="true"],${root} [contenteditable="plaintext-only"]){-webkit-user-select:text;user-select:text}` +
     `:where(${root} [data-slop-root],${root} body *:has([data-slop-root])){height:100%;min-height:0}` +
-    (stage.mode === "transparent" || stage.mode === "skin" ? `${root},${root} body{background:transparent}` : "") +
+    (stage.mode === "transparent" || stage.mode === "skin"
+      ? `${root},${root} body{background:transparent}`
+      : "") +
     (stage.mode === "skin" ? `:where(${root},${root} body){overflow:hidden}` : "")
   );
 }

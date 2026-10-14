@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findEngine, execute } from "../../src/cli/engine";
 import { negotiate } from "../../src/cli/engine";
+import { EngineProtocol } from "../../src/schema/constants";
 import { exec } from "../../../../scripts/lib/test-process";
 import { writeTemplate } from "./template-fixture";
 
@@ -75,6 +76,11 @@ test("document CLI rejects invalid files and malformed commands before mutation"
     const before = await readFile(root);
     expect((await cli("apply", root, "--op", "null")).code).not.toBe(0);
     expect((await cli("batch", root, "--ops", "null")).code).not.toBe(0);
+    // A second --op is refused, not silently dropped: several operations belong to batch.
+    const set = (value: string) => JSON.stringify({ type: "set", path: ["title"], value });
+    const repeated = await cli("apply", root, "--op", set("First"), "--op", set("Second"));
+    expect(repeated.code).not.toBe(0);
+    expect(repeated.error).toContain("slop batch");
     expect(await readFile(root)).toEqual(before);
   } finally {
     await rm(parent, { recursive: true, force: true });
@@ -108,6 +114,22 @@ test("engine document commands that name no protocol are refused before document
   }
 }, 60000);
 
+// The permanent refusal path: an engine that serves another protocol exits 2 with one line
+// naming the side to update, before it reads a request. The wording is part of the contract.
+test("the engine reports its protocol and refuses another with the permanent wording", async () => {
+  const { version } = EngineProtocol;
+  const direct = await exec([engine, "--protocol"]);
+  expect(direct.code).toBe(0);
+  expect(JSON.parse(direct.stdout)).toEqual({ version });
+  expect(await exec([engine, "--client-protocol", String(version), "--protocol"])).toEqual(direct);
+  const newer = await exec([engine, "--client-protocol", String(version + 1)]);
+  expect(newer.code).toBe(2);
+  expect(newer.stderr).toBe("This command needs a newer hitSlop app; update hitSlop\n");
+  const older = await exec([engine, "--client-protocol", "0"]);
+  expect(older.code).toBe(2);
+  expect(older.stderr).toBe("This hitSlop app needs a newer command line; update the hitSlop CLI\n");
+});
+
 test("create makes parent folders and reports the new document path", async () => {
   const folder = await mkdtemp(join(tmpdir(), "hsl-create-"));
   try {
@@ -128,12 +150,9 @@ test("templates lists the catalog and create takes a listed slug", async () => {
     const templates = join(folder, "templates");
     await writeTemplate(join(templates, "fixture-one.slop"));
     // Isolate the bundled catalog too: an installed pre-launch app may contain disposable old files.
-    const contents = join(folder, "Fixture.app/Contents");
-    await mkdir(join(contents, "Resources/StarterTemplates"), { recursive: true });
-    await mkdir(join(contents, "Helpers"));
-    const helper = join(contents, "Helpers/hitslop-native");
-    await writeFile(helper, "fixture");
-    const env = { HITSLOP_TEMPLATES_ROOT: templates, HITSLOP_NATIVE_CLI: helper };
+    const app = join(folder, "Fixture.app");
+    await mkdir(join(app, "Contents/Resources/StarterTemplates"), { recursive: true });
+    const env = { HITSLOP_TEMPLATES_ROOT: templates, HITSLOP_APP: app };
     const listed = await run(["templates"], env);
     expect(listed.code).toBe(0);
     const catalog = JSON.parse(listed.out);

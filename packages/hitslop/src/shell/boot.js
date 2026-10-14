@@ -1,4 +1,4 @@
-// Visible sessions. The runtime opens the document, then mounts assets/app.js.
+// Visible sessions. The runtime opens the document, then mounts assets/ui.js.
 try {
   const { boot } = await import("./index.js");
   await boot();
@@ -6,5 +6,7 @@ try {
   // This file is served unbundled, so it cannot import ErrorTextLimit (4096).
   const message = String(error).slice(0, 4096);
   document.body.textContent = `Could not open this document: ${message}`;
-  await globalThis.webkit?.messageHandlers?.hitslop.postMessage(JSON.stringify({ method: "failed", error: message })).catch(() => {});
+  await globalThis.webkit?.messageHandlers?.hitslop
+    ?.postMessage(JSON.stringify({ method: "failed", error: message }))
+    .catch(() => {});
 }

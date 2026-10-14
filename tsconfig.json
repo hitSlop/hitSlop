@@ -4,6 +4,14 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
     "types": [
@@ -20,6 +28,7 @@
   "exclude": [
     "**/node_modules/**",
     "**/dist/**",
-    "packages/hitslop/.crust/**"
+    "packages/hitslop/.crust/**",
+    "packages/hitslop/tests/**/*.types.ts"
   ]
 }

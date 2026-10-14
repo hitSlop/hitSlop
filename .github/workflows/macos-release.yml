@@ -59,6 +59,7 @@ jobs:
       - uses: ./.github/actions/prepare-checks
         with:
           cache-scope: release
+          bindings: full
           webkit: "true"
       - name: Download candidate engines
         env:
@@ -128,7 +129,7 @@ jobs:
           ditto "$RUNNER_TEMP/dmg/hitSlop.app" "$APP"
           hdiutil detach "$RUNNER_TEMP/dmg"
           test "$(lipo -archs "$APP/Contents/MacOS/hitSlop")" = "arm64"
-          test "$(lipo -archs "$APP/Contents/Helpers/hitslop-native")" = "arm64"
+          test "$(lipo -archs "$APP/Contents/Helpers/hitslop-evaluator")" = "arm64"
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
           stapler validate "dist/macos/hitSlop-${VERSION}.dmg"

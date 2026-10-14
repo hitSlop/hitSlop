@@ -15,7 +15,7 @@ pub enum Node {
         #[serde(default, deserialize_with = "present")]
         default: Option<bool>,
     },
-    /// An exact safe-integer total; increments serialize through the single writer.
+    /// A safe-integer total; concurrent increments add up (a Loro counter).
     Counter {},
     /// Last writer wins. Length bounds count Unicode code points.
     String {
@@ -68,7 +68,7 @@ pub enum Node {
 /// A record key: 1–256 UTF-16 units, not a reserved name.
 pub(super) fn valid_key(key: &str) -> bool {
     !key.is_empty()
-        && key.encode_utf16().count() <= 256
+        && key.encode_utf16().count() <= crate::wire::RECORD_KEY_MAX
         && !["$id", "__proto__", "constructor", "prototype"].contains(&key)
 }
 /// The stored form of a validated scalar.
@@ -106,30 +106,35 @@ fn declared_default(node: &Node) -> Option<Value> {
         _ => None,
     }
 }
-pub(super) const MAX_SCALAR_LIST: usize = 100_000;
-/// Whether replacing a value of this kind would discard identity-bearing collections.
-pub(super) fn holds_collections(node: &Node) -> bool {
-    match node {
-        Node::Text {} | Node::Counter {} | Node::List { .. } | Node::Record { .. } => true,
-        Node::Object { properties } => properties.values().any(holds_collections),
-        Node::Optional { inner } => holds_collections(inner),
-        _ => false,
-    }
-}
+pub(super) use crate::wire::MAX_SCALAR_LIST;
+/// Names no field can take: `constructor`, `prototype` and the `Object.prototype` methods,
+/// which a field of that name would shadow on a plain object. A handle's own members start
+/// with `$`, which no field name can, so no member name is reserved. The list does not
+/// grow: a stored descriptor is checked against it when its app opens.
+const RESERVED_FIELDS: [&str; 8] = [
+    "constructor",
+    "prototype",
+    "toString",
+    "toLocaleString",
+    "valueOf",
+    "hasOwnProperty",
+    "isPrototypeOf",
+    "propertyIsEnumerable",
+];
 impl Node {
     pub(super) fn check(&self, depth: usize) -> Result<()> {
-        if depth > 16 {
+        if depth > crate::wire::DESCRIPTOR_DEPTH {
             return Err(err(Code::TooLarge, "Descriptor depth"));
         }
         match self {
             Self::Object { properties } => {
-                if properties.len() > 1024 {
+                if properties.len() > crate::wire::DESCRIPTOR_FIELDS {
                     return Err(err(Code::TooLarge, "Descriptor fields"));
                 }
                 for (key, node) in properties {
                     if !key.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
                         || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
-                        || ["path", "node", "__proto__", "constructor", "prototype"].contains(&key.as_str())
+                        || RESERVED_FIELDS.contains(&key.as_str())
                     {
                         return Err(err(Code::InvalidSchema, "Field names are identifiers and not reserved"));
                     }
@@ -179,7 +184,7 @@ impl Node {
             }
             Self::Enum { values, .. } => {
                 let unique: BTreeSet<_> = values.iter().collect();
-                if values.is_empty() || values.len() > 1024 || unique.len() != values.len() {
+                if values.is_empty() || values.len() > crate::wire::ENUM_VALUES || unique.len() != values.len() {
                     return Err(err(Code::InvalidSchema, "Enum needs 1–1024 unique values"));
                 }
             }
@@ -191,11 +196,6 @@ impl Node {
                 }
                 if declared_default(inner).is_some() {
                     return Err(err(Code::InvalidSchema, "An optional field is absent until set; it has no default"));
-                }
-                if let Self::Object { properties } = &**inner
-                    && (properties.contains_key("set") || properties.contains_key("clear"))
-                {
-                    return Err(err(Code::InvalidSchema, "Optional object fields cannot shadow set or clear"));
                 }
                 inner.check(depth + 1)?;
             }
@@ -333,7 +333,7 @@ fn fields_only(node: &Node) -> Result<()> {
 }
 
 /// The longest description, in UTF-16 units.
-const DESCRIPTION: u64 = 500;
+use crate::wire::DESCRIPTOR_DESCRIPTION as DESCRIPTION;
 /// Checks a node's `description` and its children's, then removes them. Descriptions tell
 /// people and agents what a field means; they stay in the stored descriptor and never
 /// change what the descriptor means, so two that differ only in descriptions compare equal.

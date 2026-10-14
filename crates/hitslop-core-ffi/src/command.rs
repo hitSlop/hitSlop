@@ -1,13 +1,68 @@
 //! Native transport adapter. All routing, framing and document commands live in Rust;
-//! only a validated export request is handed to the native renderer.
+//! only a live owner's validated export request is handed to the native renderer.
 use super::*;
 use hitslop_core::command as core;
+use hitslop_core::engine::ExportFormat;
 use hitslop_core::owner::Failure;
+use hitslop_core::{Code, OutcomeCode};
+
+#[uniffi::remote(Enum)]
+pub enum ExportFormat {
+    Png,
+    Pdf,
+}
+#[uniffi::remote(Enum)]
+pub enum OutcomeCode {
+    Rejected,
+    OwnerReplaced,
+    Closing,
+    SaveFailed,
+    OwnerInvalidated,
+    UnknownOutcome,
+}
+#[uniffi::remote(Enum)]
+pub enum Code {
+    TypeMismatch,
+    OutOfRange,
+    PathNotFound,
+    InvalidKey,
+    Exists,
+    DuplicateId,
+    InvalidRequest,
+    InvalidId,
+    InvalidPath,
+    InvalidSchema,
+    TooLarge,
+    StaleBase,
+    InvalidBytes,
+    MissingDependencies,
+    EngineError,
+    InvalidShape,
+    RequiresUpdate,
+    IsTemplate,
+    Refused,
+}
+#[uniffi::export]
+pub fn parse_core_code(name: String) -> Option<Code> {
+    Code::from_name(&name)
+}
+#[uniffi::export]
+pub fn core_code_name(code: Code) -> String {
+    code.as_str().into()
+}
+#[uniffi::export]
+pub fn parse_outcome_code(name: String) -> Option<OutcomeCode> {
+    OutcomeCode::from_name(&name)
+}
+#[uniffi::export]
+pub fn outcome_code_name(code: OutcomeCode) -> String {
+    code.name()
+}
 
 #[derive(uniffi::Record)]
 pub struct NativeExportRequest {
     pub document_path: String,
-    pub format: Option<hitslop_core::engine::ExportFormat>,
+    pub format: Option<ExportFormat>,
     pub output: String,
 }
 #[derive(uniffi::Enum)]
@@ -32,6 +87,21 @@ impl NativeExportCompletion {
 #[uniffi::export(callback_interface)]
 pub trait NativeExportHandler: Send + Sync {
     fn export(&self, request: NativeExportRequest, completion: Arc<NativeExportCompletion>);
+}
+/// Consulted synchronously after the staged export is synced, immediately before publishing.
+#[uniffi::export(callback_interface)]
+pub trait NativeExportActivity: Send + Sync {
+    fn is_active(&self) -> bool;
+}
+/// The same exclusive, durable publisher used by closed-document exports. CoreError
+/// preserves rejected/exists and the unknown outcome of a post-publication sync failure.
+#[uniffi::export]
+pub fn publish_export(
+    bytes: Vec<u8>,
+    output: String,
+    activity: Box<dyn NativeExportActivity>,
+) -> Result<(), CoreError> {
+    Ok(hitslop_core::capture::publish_export(&bytes, Path::new(&output), || activity.is_active())?)
 }
 #[uniffi::export(callback_interface)]
 pub trait NativeCommandCompletion: Send + Sync {
@@ -79,18 +149,11 @@ impl NativeSocketServer {
 pub fn failure_reply(failure: Failure) -> String {
     core::failure(failure, false, false)
 }
-/// A request written in command `protocol`, as the engine runs it.
+/// A request written in command `protocol`, as the engine runs it, without its restricted
+/// evaluator: a closed document's export is refused.
 #[uniffi::export]
-pub fn command_request(
-    json: String,
-    protocol: u64,
-    exporter: Option<Box<dyn NativeExportHandler>>,
-    completion: Box<dyn NativeCommandCompletion>,
-) {
-    std::thread::spawn(move || {
-        let exporter = exporter.map(|e| Arc::new(Exporter(e)) as Arc<dyn core::ExportHandler>);
-        completion.complete(core::request(&json, protocol, exporter));
-    });
+pub fn command_request(json: String, protocol: u64, completion: Box<dyn NativeCommandCompletion>) {
+    std::thread::spawn(move || completion.complete(core::request(&json, protocol)));
 }
 #[uniffi::export]
 impl NativeOwner {
@@ -98,4 +161,9 @@ impl NativeOwner {
     pub fn page(&self, json: String, view: String, completion: Box<dyn PageCompletion>) {
         core::page(&self.0, view, &json, move |reply| completion.complete(reply));
     }
+}
+
+#[uniffi::export]
+pub fn resync_push() -> String {
+    hitslop_core::page_wire::PagePush::resync_json()
 }

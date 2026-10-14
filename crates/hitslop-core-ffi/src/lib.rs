@@ -92,7 +92,7 @@ pub fn writer_lock_held(path: String) -> Result<bool, CoreError> {
         Err(error) => Err(error.into()),
     }
 }
-/// The core build this library embeds; app and helper must report the same value.
+/// The core build this library embeds; app and engine must report the same value.
 #[uniffi::export]
 pub fn core_build_id() -> String {
     hitslop_core::BUILD_ID.into()
@@ -122,13 +122,22 @@ pub enum Kind {
 #[derive(uniffi::Record)]
 pub struct OpenedFile {
     pub kind: Kind,
+    pub package_format: u64,
+    pub runtime_abi: u64,
     pub app: AppDefinition,
     pub skin_png: Option<Vec<u8>>,
     pub byte_count: u64,
 }
 impl From<&file::OpenedApp> for OpenedFile {
     fn from(p: &file::OpenedApp) -> Self {
-        Self { kind: p.kind, app: AppDefinition::from(&p.app), skin_png: p.skin.clone(), byte_count: p.bytes }
+        Self {
+            kind: p.kind,
+            package_format: p.package_format,
+            runtime_abi: p.runtime_abi,
+            app: AppDefinition::from(&p.app),
+            skin_png: p.skin.clone(),
+            byte_count: p.bytes,
+        }
     }
 }
 #[uniffi::export]
@@ -158,7 +167,7 @@ pub struct TemplateRoot {
     pub path: String,
 }
 /// The template folders the catalog lists, the bundled starters first: the core's, so the
-/// app, its helper and the CLI list the same templates and keep new documents out of them.
+/// app and the CLI list the same templates and keep new documents out of them.
 #[uniffi::export]
 pub fn template_roots() -> Vec<TemplateRoot> {
     file::template_roots()
@@ -249,6 +258,5 @@ pub use owner::*;
 mod command;
 pub use command::*;
 
-mod native;
 mod page;
-pub use native::*;
+mod widgets;

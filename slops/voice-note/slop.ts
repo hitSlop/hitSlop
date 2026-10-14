@@ -1,0 +1,30 @@
+import { defineSlop } from "hitslop";
+
+export default defineSlop({
+  slug: "voice-note",
+  title: "Voice Note",
+  description: "A pocket dictation recorder: talk, keep the clip, and get an editable transcript made on-device.",
+  author: { name: "hitSlop", url: "https://hitslop.com" },
+  categories: ["productivity", "media"],
+  window: { kind: "standard", resizable: true, width: 460, height: 720 },
+  capabilities: ["microphone", "speech"],
+  theme: {
+    body: "#2a2723",
+    bodyEdge: "#151311",
+    faceplate: "#3a3631",
+    label: "#c9bfae",
+    record: "#e2483a",
+    recordDeep: "#8e2219",
+    lcd: "#1b1a14",
+    lcdInk: "#f3b04b",
+    lcdDim: "#5a4a2c",
+    paper: "#eef2dc",
+    paperShade: "#dfe6c6",
+    rule: "#a9c2b4",
+    margin: "#d3584b",
+    ink: "#26302b",
+    muted: "#5f6b62",
+    wire: "#9c9a94",
+    warn: "#8a4b0c",
+  },
+});

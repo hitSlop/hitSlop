@@ -22,7 +22,6 @@ public struct SlopSummary: Sendable {
 public typealias SlopCategory = HitSlopCoreBinding.SlopCategory
 extension SlopCategory: CaseIterable, RawRepresentable {
   public static var allCases: [SlopCategory] { categories() }
-  public static var schemaOrder: [SlopCategory] { allCases }
   public var rawValue: String { categoryName(category: self) }
   public init?(rawValue: String) {
     guard let value = parseCategory(name: rawValue) else { return nil }

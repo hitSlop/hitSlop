@@ -35,8 +35,6 @@ public struct SlopRequiresUpdate: LocalizedError, SlopDiagnosticProviding {
 /// A failure the core reported, said for the person.
 extension OwnerFailure: LocalizedError {
   public var errorDescription: String? { message }
-  /// The core error code a refusal names.
-  public var refusal: CoreErrorCode? { reason.flatMap(CoreErrorCode.init(rawValue:)) }
 }
 
 /// A hitSlop file, checked by the core: a template (the app its author built) or a document
@@ -46,6 +44,8 @@ public struct SlopFile: Sendable {
   /// The `.slop` file.
   public let url: URL
   public let kind: FileKind
+  public let packageFormat: Int
+  public let runtimeABI: Int
   /// The app's document descriptor (JSON), for the page and `slop schema`.
   public let descriptor: String
   /// The declared colors in the order the author wrote them.
@@ -53,6 +53,9 @@ public struct SlopFile: Sendable {
   public let metadata: AppMetadata
   public let window: WindowDefinition
   public let views: Views
+  /// The devices and host services the app declared that this build implements; the host
+  /// grants nothing else.
+  public let capabilities: Set<Capability>
   public let outline: SlopOutline
   public let lockAspect: Bool
   /// What the window shows behind the page.
@@ -74,12 +77,15 @@ public struct SlopFile: Sendable {
   public init(url root: URL, opened: OpenedFile) throws {
     self.url = root
     kind = opened.kind
+    packageFormat = Int(opened.packageFormat)
+    runtimeABI = Int(opened.runtimeAbi)
     descriptor = opened.app.descriptorJson
     themeTokens = opened.app.theme
     byteCount = Int64(opened.byteCount)
     metadata = opened.app.metadata
     window = opened.app.window
     views = opened.app.views
+    capabilities = Set(opened.app.capabilities)
     switch window.frame {
     case .standard(let frame):
       outline = .shape(SlopSilhouette(parsed: frame.shape))
@@ -109,7 +115,7 @@ public struct SlopFile: Sendable {
   public static func opening<T>(_ open: () throws -> T) throws -> T {
     do { return try open() } catch CoreError.Failure(let failure) {
       guard failure.kind == .rejected else { throw failure }
-      switch failure.refusal {
+      switch failure.reason {
       case .requiresUpdate: throw SlopRequiresUpdate()
       case .isTemplate: throw SlopError.template
       default: throw SlopError.invalid(failure.message)
@@ -177,7 +183,7 @@ public enum SlopBackdrop: Sendable {
 
 /// A slop's preview or icon artwork, read through the core.
 public enum SlopArtwork {
-  /// The core's artwork; its raw value is the name `slop screenshot --target` takes.
+  /// The core's artwork; its raw value is the `target` the engine's `artwork.export` takes.
   public typealias Name = Artwork
   /// The first of `preferred` the file holds, in one read; nil when it holds none. Throws
   /// when the file can't be read now (busy, or mid-recovery), so a caller can tell that

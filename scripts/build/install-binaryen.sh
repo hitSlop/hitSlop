@@ -4,7 +4,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 destination="$root/generated/core-tools/binaryen"
-version=132
+version="$(bun -e 'console.log((await Bun.file(process.argv[1]).json()).binaryen)' "$root/scripts/build/tool-versions.json")"
 check_version() {
   local reported
   reported="$("$1" --version 2>/dev/null)" || return 1

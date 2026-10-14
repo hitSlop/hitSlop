@@ -58,11 +58,13 @@ pub enum ArtworkTarget {
 }
 
 /// One request on the engine's standard input. Protocol negotiation stays outside it.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields, rename_all_fields = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields))]
 #[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
 pub enum EngineRequest {
+    #[serde(rename = "attachments.ref")]
+    AttachmentRef { file: String },
     #[serde(rename = "attachments.list")]
     AttachmentsList { document_path: String },
     #[serde(rename = "attachments.read")]
@@ -102,6 +104,9 @@ pub enum EngineRequest {
         file: String,
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         app: Box<RawValue>,
+        /// Check every declared view and store only unsupplied Preview/Icon artwork before publishing.
+        #[serde(default)]
+        render_views: bool,
     },
     #[serde(rename = "validateApp")]
     ValidateApp {
@@ -122,11 +127,76 @@ pub enum EngineRequest {
     },
     #[serde(rename = "open")]
     Open { document_path: String },
-    #[serde(rename = "screenshot")]
-    Screenshot { document_path: String, output: String, target: ArtworkTarget, if_present: bool },
+}
+
+/// Which engine dispatcher owns a request: a document's owner (an export renders a closed
+/// document's saved state without one), or the engine's file operations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Route {
+    Document,
+    File,
+}
+
+/// The document a request names, by reference or mutably; one list for both accessors.
+macro_rules! document_path {
+    ($request:expr) => {
+        match $request {
+            EngineRequest::Get { document_path }
+            | EngineRequest::Batch { document_path, .. }
+            | EngineRequest::Copy { document_path, .. }
+            | EngineRequest::ThemeExport { document_path }
+            | EngineRequest::AttachmentsList { document_path }
+            | EngineRequest::AttachmentsRead { document_path, .. }
+            | EngineRequest::Describe { document_path }
+            | EngineRequest::Call { document_path, .. }
+            | EngineRequest::Open { document_path }
+            | EngineRequest::Export { document_path, .. } => Some(document_path),
+            _ => None,
+        }
+    };
 }
 
 impl EngineRequest {
+    pub fn route(&self) -> Route {
+        match self {
+            Self::Get { .. }
+            | Self::Batch { .. }
+            | Self::Copy { .. }
+            | Self::Export { .. }
+            | Self::ThemeExport { .. }
+            | Self::AttachmentsList { .. }
+            | Self::AttachmentsRead { .. }
+            | Self::Describe { .. }
+            | Self::Call { .. } => Route::Document,
+            Self::AttachmentRef { .. }
+            | Self::Templates { .. }
+            | Self::Create { .. }
+            | Self::Inspect { .. }
+            | Self::ArtworkExport { .. }
+            | Self::Schema { .. }
+            | Self::Pack { .. }
+            | Self::ValidateApp { .. }
+            | Self::ValidateMetadata { .. }
+            | Self::Open { .. } => Route::File,
+        }
+    }
+    pub fn is_document(&self) -> bool {
+        self.route() == Route::Document
+    }
+    pub fn document_path(&self) -> Option<&str> {
+        document_path!(self).map(String::as_str)
+    }
+    pub fn document_path_mut(&mut self) -> Option<&mut String> {
+        document_path!(self)
+    }
+    pub(crate) fn socket_limit(&self) -> usize {
+        if matches!(self, Self::Batch { attachments: Some(_), .. }) {
+            super::SOCKET_ATTACHMENT
+        } else {
+            super::SOCKET_REQUEST
+        }
+    }
+
     /// Decode and check one bounded request. A future app must reach its marker
     /// check before any JSON value inside it is interpreted; serde's tagged-enum
     /// buffering cannot retain RawValue, so only that variant needs a raw path.
@@ -140,19 +210,21 @@ impl EngineRequest {
             method: String,
         }
         let header: Header = serde_json::from_str(input)?;
-        // RawValue is read directly from the input, before serde's tagged-enum buffer.
+        // RawValue is read directly from the input, before serde's tagged-enum buffer. Flags
+        // are optional booleans, false when absent.
         macro_rules! build_request {
-            ($variant:ident, $($field:ident),+) => {{
+            ($variant:ident, $($field:ident),+ $(; $($flag:ident = $name:literal),+)?) => {{
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
-                struct Envelope { #[serde(rename="method")] _method:String, app:Box<RawValue>, $($field:String),+ }
+                struct Envelope { #[serde(rename="method")] _method:String, app:Box<RawValue>, $($field:String,)+
+                    $($(#[serde(default, rename=$name)] $flag:bool,)+)? }
                 let value:Envelope=serde_json::from_str(input)?;
-                Self::$variant {app:value.app, $($field:value.$field),+}
+                Self::$variant {app:value.app, $($field:value.$field,)+ $($($flag:value.$flag,)+)?}
             }};
         }
         let request = match header.method.as_str() {
             "validateApp" => build_request!(ValidateApp, stage),
-            "pack" => build_request!(Pack, stage, file),
+            "pack" => build_request!(Pack, stage, file; render_views = "renderViews"),
             _ => serde_json::from_str(input)?,
         };
         request.check().map_err(serde_json::Error::custom)?;
@@ -161,6 +233,7 @@ impl EngineRequest {
 
     pub fn method(&self) -> &'static str {
         match self {
+            Self::AttachmentRef { .. } => "attachments.ref",
             Self::AttachmentsList { .. } => "attachments.list",
             Self::AttachmentsRead { .. } => "attachments.read",
             Self::ThemeExport { .. } => "theme.export",
@@ -179,7 +252,6 @@ impl EngineRequest {
             Self::Describe { .. } => "describe",
             Self::Call { .. } => "call",
             Self::Open { .. } => "open",
-            Self::Screenshot { .. } => "screenshot",
         }
     }
 
@@ -210,7 +282,6 @@ impl EngineRequest {
             }
             Self::Copy { document_path, output }
             | Self::Export { document_path, output, .. }
-            | Self::Screenshot { document_path, output, .. }
             | Self::ArtworkExport { file: document_path, output, .. } => {
                 check_path(document_path)?;
                 check_path(output)?;
@@ -223,7 +294,7 @@ impl EngineRequest {
                 check_path(stage)?;
                 check_path(file)?;
             }
-            Self::Inspect { file } | Self::Schema { file } => check_path(file)?,
+            Self::Inspect { file } | Self::Schema { file } | Self::AttachmentRef { file } => check_path(file)?,
             Self::Templates {} | Self::ValidateMetadata { .. } => {}
             Self::ValidateApp { stage, .. } => check_path(stage)?,
         }
@@ -244,7 +315,7 @@ pub(super) fn check_batch(batch: &super::Batch, attachments: Option<&[String]>) 
 }
 
 pub(crate) fn valid_command_name(name: &str) -> bool {
-    (1..=80).contains(&name.len())
+    (1..=super::COMMAND_NAME_BYTES).contains(&name.len())
         && name.as_bytes()[0].is_ascii_lowercase()
         && name.bytes().all(|byte| byte.is_ascii_alphanumeric())
 }
@@ -280,6 +351,17 @@ pub struct AttachmentInfo {
     pub id: String,
 
     pub byte_length: u64,
+}
+/// A local file's reference, before it is imported into a document.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
+pub struct AttachmentRef {
+    pub id: String,
+    pub byte_length: u64,
+    pub name: String,
+    pub mime_type: String,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -340,6 +422,7 @@ pub struct InspectInfo {
     pub metadata: crate::app::AppMetadata,
     pub window: super::build::WindowInput,
     pub views: crate::app::Views,
+    pub capabilities: Vec<crate::app::Capability>,
     pub assets: Vec<NamedSize>,
     pub artwork: Vec<NamedSize>,
     pub defaults: ThemeValues,
@@ -349,6 +432,8 @@ pub struct InspectInfo {
     pub bytes: u64,
 
     pub stored_asset_bytes: u64,
+    /// SHA-256 of the app row and its assets, lowercase hex: files with equal digests carry the same app.
+    pub app_digest: String,
     pub live: bool,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -378,6 +463,27 @@ pub struct DescribeState {
     #[cfg_attr(feature = "ts", ts(type = "Record<string, { description: string; args: Record<string, unknown> }>"))]
     pub commands: Value,
 }
+/// Where a packed template's artwork image came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
+pub enum ArtworkSource {
+    /// Imported with the build.
+    Supplied,
+    /// Rendered from the app's view while packing.
+    Rendered,
+    /// Neither: not rendered, or an icon the app does not draw.
+    Absent,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
+pub struct PackedArtwork {
+    pub preview: ArtworkSource,
+    pub icon: ArtworkSource,
+}
 
 /// Every successful result names its method and carries all fields that method promises.
 #[derive(Debug, Serialize, Deserialize)]
@@ -385,6 +491,8 @@ pub struct DescribeState {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
 pub enum EngineSuccess {
+    #[serde(rename = "attachments.ref")]
+    AttachmentRef { ok: True, reference: AttachmentRef },
     #[serde(rename = "get")]
     Get { ok: True, state: GetState },
     #[serde(rename = "batch")]
@@ -426,21 +534,15 @@ pub enum EngineSuccess {
         schema: Value,
     },
     #[serde(rename = "pack")]
-    Pack { ok: True },
+    Pack { ok: True, artwork: PackedArtwork },
     #[serde(rename = "validateApp")]
-    ValidateApp { ok: True },
+    ValidateApp { ok: True, window: crate::app::WindowDefinition, capabilities: Vec<crate::app::Capability> },
     #[serde(rename = "validateMetadata")]
     ValidateMetadata { ok: True },
     #[serde(rename = "describe")]
     Describe { ok: True, state: DescribeState },
     #[serde(rename = "open")]
     Open { ok: True, document_path: String },
-    #[serde(rename = "screenshot")]
-    Screenshot {
-        ok: True,
-        #[serde(deserialize_with = "required_option")]
-        output: Option<String>,
-    },
 }
 
 /// Nullable fields still have to be present; absence is a malformed acknowledgement.

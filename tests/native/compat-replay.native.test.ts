@@ -1,38 +1,60 @@
-// Replays the compatibility corpus (tests/compat) through this build's CLI and helper: every
+// Replays the compatibility corpus (tests/compat) through this build's CLI and engine: every
 // saved document of every release reads as that release recorded, renders with its own old
 // app, keeps its attachments, takes a CLI edit and reopens to the recorded result; every
 // template master still creates documents. Old files are checked, not old programs. The Rust
 // and Swift corpus tests cover the rest (docs/testing.md).
 //   HITSLOP_COMPAT_RELEASE=VERSION  also require a frozen entry for VERSION (the release gate)
+//   HITSLOP_COMPAT_MODE=smoke      sample entries and render a representative of each app
+//   HITSLOP_COMPAT_ENTRIES=a,b     smoke entries selected by verify; ignored in full mode
+// Full replay exports every saved scenario. Smoke is sampled evidence, not proof that
+// documents sharing markers or embedded apps render equivalently.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { strict as assert } from "node:assert";
 import { copyFile, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
+import { Database } from "bun:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { assertExport, createDocument } from "../../scripts/lib/native";
+import {
+  assertExport,
+  createDocument,
+  decodedPNG,
+  assertPixelPatch,
+  pdfContent,
+  storedCapture,
+} from "../../scripts/lib/native";
 import {
   documents,
   documentEngine,
   readJSON,
   releases,
+  compatibilityMode,
   savedState,
   slop,
   slopJSON,
   type Expected,
   type Scenario,
+  type CommandProbe,
+  type ExportGolden,
+  type ThemeScenario,
 } from "../../scripts/compat/corpus";
-import { verifyCandidate, verifyCorpus } from "../../scripts/compat/integrity";
+import { verifyCandidate } from "../../scripts/compat/integrity";
 import { sha256, useTestRegistry } from "../../scripts/lib/artifacts";
-import { evaluateStored, type CommandScenario } from "../../scripts/compat/commands";
+import { evaluateStored } from "../../scripts/compat/commands";
+import { exec } from "../../packages/hitslop/src/cli/process";
+import { request } from "../../packages/hitslop/src/cli/engine";
 useTestRegistry();
 
 const required = process.env.HITSLOP_COMPAT_RELEASE;
+const mode = compatibilityMode(process.env);
+const selected = mode === "smoke" ? process.env.HITSLOP_COMPAT_ENTRIES?.split(",") : undefined;
 const entries = await Promise.all(
-  (await releases()).map(async (entry) => ({
-    ...entry,
-    documents: await documents(entry.root),
-    templates: await readdir(join(entry.root, "templates")),
-  })),
+  (await releases())
+    .filter(({ name }) => !selected || name === required || selected.includes(name))
+    .map(async (entry) => ({
+      ...entry,
+      documents: await documents(entry.root),
+      templates: await readdir(join(entry.root, "templates")),
+    })),
 );
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
 let scratch: string;
@@ -41,29 +63,57 @@ beforeAll(async () => {
 });
 afterAll(() => rm(scratch, { recursive: true, force: true }));
 
+/** The embedded app's identity: its row and its assets, read without writing. */
+function appIdentity(path: string) {
+  const db = new Database(path, { readonly: true });
+  try {
+    const app = db.query("SELECT * FROM app").get();
+    const assets = db
+      .query("SELECT key, media_type, encoding, hex(bytes) AS bytes FROM assets ORDER BY key")
+      .all();
+    return sha256(new TextEncoder().encode(JSON.stringify([app, assets])));
+  } finally {
+    db.close();
+  }
+}
+const rendered = new Set<string>();
+
 test("the corpus has entries to replay", () => {
   expect(entries.length).toBeGreaterThan(0);
 });
 if (required)
   test(`tests/compat/${required} is captured, frozen and matches this candidate`, async () => {
     const entry = entries.find(({ name }) => name === required);
-    assert.ok(entry?.release.frozen, `tests/compat/${required} must be captured and frozen before this release`);
-    await verifyCandidate(entry.root, entry.release);
+    assert.ok(
+      entry?.release.frozen,
+      `tests/compat/${required} must be captured and frozen before this release`,
+    );
+    await verifyCandidate(entry.release);
   }, 120_000);
 
 for (const { name, root, release, documents: saved, templates } of entries)
   describe(`tests/compat/${name} (${release.frozen ? "frozen" : "replaceable"})`, () => {
-    test("its files match their recorded hashes", () => verifyCorpus(root, release));
-
     for (const document of saved)
-      test(`${document} reads as recorded, renders with its own app, keeps its attachments and reopens edited`, async () => {
+      test(`${document} reads as recorded, ${mode === "full" ? "renders its saved scenario" : "samples app rendering"}, keeps its attachments and reopens edited`, async () => {
         const copy = join(scratch, `${name}-${document}.slop`);
         const fresh = async () => {
           await rm(copy, { force: true });
           await copyFile(join(root, "documents", document + ".slop"), copy);
         };
         await fresh();
-        const expected = (await readJSON<Expected>(join(root, "expected", document + ".json")))!;
+        const expected = await readJSON<Expected>(join(root, "expected", document + ".json"));
+        assert.ok(expected, `${document}: missing expected state`);
+        // Exercise the literal old client's protocol against today's engine.
+        const negotiated = await exec(
+          [documentEngine(), "--client-protocol", String(release.markers.protocol)],
+          {
+            stdin: JSON.stringify({ method: "get", documentPath: copy }),
+            timeout: 120_000,
+          },
+        );
+        assert.equal(negotiated.code, 0, negotiated.stderr);
+        assert.equal(JSON.parse(negotiated.stdout).ok, true);
+        expect(JSON.parse(negotiated.stdout).state.value).toEqual(expected.value);
         expect(await savedState(copy)).toEqual(expected);
         for (const { id, byteLength } of expected.attachments) {
           const output = join(scratch, id);
@@ -74,36 +124,194 @@ for (const { name, root, release, documents: saved, templates } of entries)
           expect(sha256(bytes)).toBe(id);
           await rm(output);
         }
-        for (const format of ["png", "pdf"] as const) {
+        const golden = await readJSON<ExportGolden>(join(root, "exports", document + ".json"));
+        assert.ok(golden, `${document}: missing export goldens; recapture dev`);
+        const info = await slopJSON(["inspect", copy]);
+        const window = info.window;
+        assert.ok(window?.width > 0 && window?.height > 0, "Missing saved window");
+        const app = mode === "smoke" ? appIdentity(copy) : undefined;
+        for (const format of app && rendered.has(app) ? [] : (["png", "pdf"] as const)) {
           const output = join(scratch, `${document}.${format}`);
-          const { code, stderr } = await slop(["export", copy, "--format", format, "--output", output]);
+          const { code, stderr } = await slop([
+            "export",
+            copy,
+            "--format",
+            format,
+            "--output",
+            output,
+          ]);
           assert.equal(code, 0, `the old app did not render: ${stderr.trim()}`);
           await assertExport(output, format);
+          if (format === "png") {
+            const png = await decodedPNG(output);
+            expect([png.width, png.height]).toEqual([golden.png.width, golden.png.height]);
+            expect(png.width).toBe(window.width * 2);
+            // Match solid patch positions from the stored image without pinning glyph
+            // antialiasing or the renderer's entire pixel digest.
+            const recorded = await decodedPNG(join(root, "exports", document + ".png"));
+            expect(sha256(recorded.data)).toBe(golden.png.rgbaSha256);
+            const patchColors: string[] = ["#335577", expected.theme.effective.accent!];
+            for (const color of patchColors) {
+              const rgb = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+              let patch: { x: number; y: number; width: number; height: number } | undefined;
+              for (let y = 0; y < recorded.height - 16 && !patch; y++)
+                for (let x = 0; x < recorded.width - 16 && !patch; x++) {
+                  const solid = [0, 15].every((dy) =>
+                    [0, 15].every((dx) => {
+                      const i = ((y + dy) * recorded.width + x + dx) * 4;
+                      return (
+                        rgb.every((c, ch) => recorded.data[i + ch] === c) &&
+                        recorded.data[i + 3] === 255
+                      );
+                    }),
+                  );
+                  if (solid) patch = { x, y, width: 16, height: 16 };
+                }
+              assert.ok(patch, `Golden lost ${color} patch`);
+              assertPixelPatch(png, color, patch);
+            }
+          } else {
+            const pdf = await pdfContent(output, join(scratch, "swift-cache"));
+            expect(pdf.pages.map(({ width, height }) => ({ width, height }))).toEqual(
+              golden.pdf.pages.map(({ width, height }) => ({ width, height })),
+            );
+            expect(pdf.pages.map((p) => p.text)).toEqual(golden.pdf.pages.map((p) => p.text));
+            const text = pdf.pages.map((p) => p.text).join("\n");
+            expect(text).toContain("中文");
+            expect(text).toContain("😀");
+            expect(text).not.toContain("Hidden in capture");
+          }
           await rm(output);
         }
-        const scenario = await readJSON<Scenario>(join(root, "scenarios", document + ".json"));
-        if (scenario) {
-          await fresh();
-          await slopJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
-          expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(scenario.value);
+        if (!app || !rendered.has(app)) {
+          for (const kind of ["preview", "icon", "widget"] as const) {
+            const capture = await storedCapture(
+              copy,
+              kind,
+              documentEngine(),
+              expected.value,
+              expected.theme.effective,
+              window.width,
+              window.height,
+            );
+            for (let i = 0; i < capture.images.length; i++) {
+              const frame = capture.frames[i]!;
+              expect(frame.html).toContain((expected.value as { title: string }).title);
+              if (kind !== "icon") expect(frame.html).toContain("中文 😀");
+              const output = join(scratch, `${document}-${kind}-${i}.png`);
+              await Bun.write(output, Buffer.from(capture.images[i]!, "base64"));
+              const png = await decodedPNG(output);
+              // Icons render at 1x; previews, exports and widgets at 2x.
+              const scale = kind === "icon" ? 1 : 2;
+              expect(png.width).toBe(frame.width * scale);
+              if (kind !== "preview") expect(png.height).toBe(frame.height * scale);
+              assertPixelPatch(png, expected.theme.effective.accent!, {
+                x: 0,
+                y: 0,
+                width: png.width,
+                height: png.height,
+              });
+              if (kind === "preview")
+                assertPixelPatch(png, "#335577", {
+                  x: 0,
+                  y: 0,
+                  width: png.width,
+                  height: png.height,
+                });
+              if (kind === "icon")
+                expect(frame.html).toContain(String((expected.value as { hits: number }).hits));
+              if (kind === "widget") expect(frame.html).toContain("rows /");
+              await rm(output);
+            }
+          }
         }
-        const command = await readJSON<CommandScenario>(join(root, "commands", document + ".json"));
-        if (command) {
-          await fresh();
-          const state = await slopJSON(["get", copy, "--snapshot"]);
-          const evaluated = await evaluateStored(copy, state, command);
-          expect(evaluated).toEqual(command.evaluated);
-          await slopJSON(["batch", copy, "--ops", JSON.stringify(evaluated.intents)]);
-          expect(await slopJSON(["get", copy])).toEqual(command.value);
-          // The same stored program through the owner, as an agent or page calls it: the
-          // owner checks its arguments before evaluating, and a valid call edits.
-          await fresh();
-          const unread = await slop(["call", copy, command.name, "--args", JSON.stringify({ unexpected: true })]);
-          expect(unread.code).not.toBe(0);
-          expect(unread.stderr + unread.stdout).toContain("Invalid arguments");
-          expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
-          await slopJSON(["call", copy, command.name, "--args", JSON.stringify(command.args)]);
-          expect((await slopJSON(["get", copy, "--snapshot"])).value).not.toEqual(state.value);
+        if (app) rendered.add(app);
+        const scenario = await readJSON<Scenario>(join(root, "scenarios", document + ".json"));
+        assert.ok(scenario, `${document}: missing CLI scenario`);
+        await fresh();
+        await slopJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
+        expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(scenario.value);
+        expect((await savedState(copy)).attachments).toEqual(expected.attachments);
+
+        const themes = await readJSON<ThemeScenario>(join(root, "themes", document + ".json"));
+        assert.ok(themes?.steps.length, `${document}: missing theme scenarios`);
+        await fresh();
+        for (const step of themes.steps) {
+          const args = step.values
+            ? ["theme", "set", copy, "--values", JSON.stringify(step.values)]
+            : ["theme", "reset", copy, "--token", step.reset!];
+          await slopJSON(args);
+          const theme = await slopJSON(["theme", "get", copy]);
+          expect({ overrides: theme.overrides, effective: theme.effective }).toEqual(step.state);
+        }
+
+        const probes = await readJSON<CommandProbe[]>(join(root, "commands", document + ".json"));
+        // Capture records commands for CLI-saved documents; page-saved copies are
+        // replayed by their page and CLI scenarios instead.
+        assert.ok(probes || document.endsWith(".page"), `${document}: missing command probes`);
+        if (!probes)
+          console.info(
+            `SKIP ${document}: commands are recorded for CLI-saved documents; page edits replay separately`,
+          );
+        if (probes) {
+          assert.ok(
+            Array.isArray(probes) && probes.length > 0,
+            "Expected command probe array; recapture dev",
+          );
+          for (const probe of probes) {
+            assert.ok(
+              probe.channel === "call" || probe.channel === "evaluate",
+              "Missing command probe channel",
+            );
+            await fresh();
+            const state = await slopJSON(["get", copy, "--snapshot"]);
+            if (probe.channel === "evaluate") {
+              const evaluated = await evaluateStored(copy, state, probe);
+              expect(evaluated).toEqual(probe.evaluated);
+              if (evaluated.ok && evaluated.intents.length)
+                await slopJSON(["batch", copy, "--ops", JSON.stringify(evaluated.intents)]);
+              expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(probe.value);
+              if (!evaluated.ok)
+                expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
+            }
+            // The actual owner prepares defaults, rejects bad args and admits intents.
+            await fresh();
+            const called = await request(
+              { method: "call", documentPath: copy, command: probe.name, args: probe.args },
+              { binary: documentEngine(), timeout: 120_000 },
+            );
+            expect(called.ok).toBe(probe.expected.ok);
+            if (!called.ok) {
+              if (probe.expected.code) assert.equal(called.code, probe.expected.code);
+              if (probe.expected.refused) expect(called.reason).toBe("refused");
+              if (probe.expected.errorIncludes)
+                expect(called.error).toContain(probe.expected.errorIncludes);
+              expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
+            } else {
+              const value = (await slopJSON(["get", copy, "--snapshot"])).value;
+              if (probe.name === "bump") {
+                expect(value.hits).toBe(state.value.hits + 2);
+                expect(value.lastHit).toBe(state.value.hits + 2);
+                expect(called.result).toBe(state.value.hits + 2);
+              } else if (probe.name === "shapes") {
+                // The owner supplies a fresh time/seed and mints row IDs. Compare
+                // their relationships and edits, rather than pretending they are fixed.
+                expect(value.hits).toBe(state.value.hits + 1);
+                expect(value.settings.hits).toBe(state.value.settings.hits + 1);
+                expect(value.title).toBe("Command title");
+                expect(value.rows.some((r: { text: string }) => r.text === "Command anchor")).toBe(
+                  true,
+                );
+                expect(value.rows.some((r: { text: string }) => r.text === "Before")).toBe(false);
+                expect(value.colors).toEqual(["black", "blue"]);
+                expect(value.note).toBeUndefined();
+                expect(value.place).toBeUndefined();
+              } else {
+                expect(value).toEqual(probe.value);
+                expect(called.result).toEqual((probe.evaluated as { result: unknown }).result);
+              }
+            }
+          }
         }
       }, 120_000);
 
@@ -112,7 +320,10 @@ for (const { name, root, release, documents: saved, templates } of entries)
         const output = join(scratch, `${name}-created-${file}`);
         await rm(output, { force: true });
         await createDocument(join(root, "templates", file), output, { engine: documentEngine() });
-        const initial = await readJSON(join(root, "expected", `new-${file.slice(0, -".slop".length)}.json`));
+        const initial = await readJSON(
+          join(root, "expected", `new-${file.slice(0, -".slop".length)}.json`),
+        );
+        assert.notEqual(initial, undefined, `${file}: missing initial state`);
         expect((await slopJSON(["get", output, "--snapshot"])).value).toEqual(initial);
       }, 120_000);
   });

@@ -21,7 +21,7 @@ export async function verifyAppCommands(app: string) {
   const document = join(folder, "Commands.slop");
   let host: ReturnType<typeof testProcess> | undefined;
   try {
-    const template = await buildTemplate(resolve("tests/apps/document"), undefined, join(folder, "fixture.slop"));
+    const template = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderViews: false });
     await createDocument(template, document, placement);
     host = testProcess([join(app, "Contents/MacOS/hitSlop"), document], { ...placement, timeout: 60_000 });
     let exited = false;
@@ -53,7 +53,7 @@ export async function verifyAppCommands(app: string) {
     await host.stop();
     host = undefined;
     assert.deepEqual(await tasks(), accepted);
-    console.log("PASS app insert/row-argument/remove commands and reopen, without an evaluator override");
+    console.log("PASS app insert/row-ID/remove commands and reopen, without an evaluator override");
   } finally {
     if (host) await host.stop();
     await rm(folder, { recursive: true, force: true });

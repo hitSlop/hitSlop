@@ -16,10 +16,22 @@ import WebKit
       ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
   static let recording = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_RECORD"]
 
+  /// Only smoke runs may restrict entries. Nightly and release replay every scenario,
+  /// even if the caller inherited an ordinary run's entry selection.
+  static let selected: Set<String>? = {
+    let env = ProcessInfo.processInfo.environment
+    guard env["HITSLOP_COMPAT_MODE"] == "smoke", env["HITSLOP_NIGHTLY"] != "1",
+      env["HITSLOP_COMPAT_RELEASE"] == nil
+    else { return nil }
+    return env["HITSLOP_COMPAT_ENTRIES"].map { Set($0.split(separator: ",").map(String.init)) }
+  }()
+
   /// Every page scenario: `<entry>/pages/<document>.json`.
   static func cases() -> [String] {
     let entries = (try? FileManager.default.contentsOfDirectory(atPath: corpus.path)) ?? []
-    return entries.sorted().filter { recording == nil || $0 == recording }.flatMap { entry in
+    return entries.sorted().filter {
+      recording == nil ? selected?.contains($0) ?? true : $0 == recording
+    }.flatMap { entry in
       ((try? FileManager.default.contentsOfDirectory(atPath: corpus.appendingPathComponent("\(entry)/pages").path))
         ?? [])
         .filter { $0.hasSuffix(".json") }.sorted().map { "\(entry)/\(($0 as NSString).deletingPathExtension)" }
@@ -76,11 +88,6 @@ import WebKit
             as? Bool == true
         }
         #expect(shown, "\(name): a live CLI edit did not reach the page")
-      case "actions":
-        let actions = try #require(page["actions"] as? [[String: Any]])
-        #expect(!actions.isEmpty, "No actions for \(name)")
-        _ = try await session.webView.callAsyncJavaScript(
-          Self.actions, arguments: ["actions": actions], in: nil, contentWorld: .page)
       default: throw SlopFailure("Unknown page scenario for \(name)")
       }
       _ = try await session.webView.callAsyncJavaScript(
@@ -141,34 +148,6 @@ import WebKit
     })();
     """
   }
-
-  /// Frozen, explicit public UI actions. Missing controls fail instead of recording no-op edits.
-  static let actions = """
-    for (const action of actions) {
-      const matches = document.querySelectorAll(action.selector);
-      if (matches.length !== 1) throw new Error(`Expected one control: ${action.selector}`);
-      const field = matches[0];
-      if (field.disabled || field.readOnly || !field.getClientRects().length) throw new Error(`Unavailable control: ${action.selector}`);
-      if (action.click) { field.click(); await globalThis.__slop.flush(); continue; }
-      // Editable text first focuses its display, then mounts the native text control.
-      // Yield through the page barrier before the next action queries that control.
-      if (action.focus) { field.focus(); await globalThis.__slop.flush(); continue; }
-      if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement))
-        throw new Error(`Not an editable native control: ${action.selector}`);
-      field.focus();
-      field.value = action.value;
-      field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: action.value }));
-      field.dispatchEvent(new Event("change", { bubbles: true }));
-      if (action.enter) {
-        field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-        field.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
-      }
-      field.blur();
-      await globalThis.__slop.flush();
-      if (field.value !== action.value) throw new Error(`Control did not retain the edit: ${action.selector}`);
-    }
-    return true;
-    """
 
   static func ids(in value: Any) -> Set<String> {
     switch value {

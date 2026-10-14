@@ -154,6 +154,7 @@ struct SlopToolbar: View {
     var themeShown = false, canToggleTheme = false
     /// Whether the app accepts document operations now.
     var commandsEnabled = false
+    var canExport = false
   }
   let identity: SlopDocumentIdentity
   let controls: Controls
@@ -161,6 +162,7 @@ struct SlopToolbar: View {
   let drag: (NSEvent) -> Void
   let act: (Action) -> Void
   let editors: [(String, URL)]
+  let shareAnchor: (NSView) -> Void
   var body: some View {
     HStack(spacing: 6) {
       if controls.desktopControls {
@@ -185,14 +187,16 @@ struct SlopToolbar: View {
       icon(controls.themeShown ? "paintpalette.fill" : "paintpalette", controls.themeShown ? "Hide Theme" : "Theme") {
         act(.toggleTheme)
       }.disabled(!controls.canToggleTheme).background(SlopToolbarControlRegion())
-      icon("square.and.arrow.up", "Share a Copy…") {
-        act(.document(.share))
-      }.disabled(!controls.commandsEnabled).background(SlopToolbarControlRegion())
+      SlopShareButton(anchor: shareAnchor, action: { act(.document(.share)) })
+        .frame(width: 28, height: 28)
+        .disabled(!controls.commandsEnabled).background(SlopToolbarControlRegion())
       Menu {
         Button("Duplicate…") { act(.document(.duplicate)) }.disabled(!controls.commandsEnabled)
-        Divider()
-        Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)
-        Button("Export PDF…") { act(.document(.exportPDF)) }.disabled(!controls.commandsEnabled)
+        if controls.canExport {
+          Divider()
+          Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)
+          Button("Export PDF…") { act(.document(.exportPDF)) }.disabled(!controls.commandsEnabled)
+        }
         if !editors.isEmpty {
           Divider()
           ForEach(editors, id: \.1) { editor in Button(editor.0) { act(.openEditor(editor.1)) } }

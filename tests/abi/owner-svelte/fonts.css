@@ -1,1 +1,10 @@
-@font-face { font-family: "Conformance Hand"; src: url("./media/kalam.woff2") format("woff2"); }
+@font-face {
+  font-family: "Conformance Hand";
+  src: url("./media/kalam.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Conformance CJK";
+  src: url("./media/conformance-cjk.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+}

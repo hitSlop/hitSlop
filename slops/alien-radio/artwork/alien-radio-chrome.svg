@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="560" viewBox="0 0 720 560">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="0.78" y2="1">
+      <stop offset="0" stop-color="#efffa7"/>
+      <stop offset="0.22" stop-color="#caff42"/>
+      <stop offset="0.68" stop-color="#83bd1d"/>
+      <stop offset="1" stop-color="#344908"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#dbb9ff"/>
+      <stop offset="0.45" stop-color="#8c50dc"/>
+      <stop offset="1" stop-color="#291540"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#55534d"/>
+      <stop offset="0.5" stop-color="#151514"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <radialGradient id="eye">
+      <stop stop-color="#edffd7"/>
+      <stop offset="0.42" stop-color="#c7ff36"/>
+      <stop offset="1" stop-color="#4d6d12"/>
+    </radialGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#160b24" flood-opacity=".55"/>
+    </filter>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <pattern id="grill" width="11" height="11" patternUnits="userSpaceOnUse">
+      <circle cx="5.5" cy="5.5" r="2.5" fill="#080708"/>
+      <circle cx="5" cy="5" r="1" fill="#8d62b2" opacity=".42"/>
+    </pattern>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <path d="M314 68 Q316 18 360 3 Q404 18 406 68 L387 84 L333 84 Z" fill="#8c50dc" stroke="#18121d" stroke-width="7"/>
+    <circle cx="360" cy="31" r="10" fill="#c7ff36" stroke="#171313" stroke-width="5"/>
+    <path d="M326 66 Q360 46 394 66" fill="none" stroke="#f3ddff" stroke-width="4" opacity=".45"/>
+
+    <path d="M171 126 C137 101 74 108 44 151 C14 193 20 323 48 377 C72 422 125 425 166 398 L198 353 L195 164 Z" fill="#8c50dc" stroke="#111011" stroke-width="9"/>
+    <path d="M549 126 C583 101 646 108 676 151 C706 193 700 323 672 377 C648 422 595 425 554 398 L522 353 L525 164 Z" fill="#8c50dc" stroke="#111011" stroke-width="9"/>
+    <path d="M54 186 Q110 135 167 178 L166 344 Q105 392 54 335 Z" fill="url(#grill)" stroke="#201524" stroke-width="7"/>
+    <path d="M666 186 Q610 135 553 178 L554 344 Q615 392 666 335 Z" fill="url(#grill)" stroke="#201524" stroke-width="7"/>
+    <circle cx="111" cy="260" r="44" fill="none" stroke="#d8a7ff" stroke-width="6" opacity=".46"/>
+    <circle cx="609" cy="260" r="44" fill="none" stroke="#d8a7ff" stroke-width="6" opacity=".46"/>
+
+    <path d="M193 103 Q360 46 527 103 C557 114 574 143 574 179 L574 390 Q574 435 532 456 L443 501 Q405 522 360 522 Q315 522 277 501 L188 456 Q146 435 146 390 L146 179 C146 143 163 114 193 103 Z" fill="#bfe837" stroke="#10100e" stroke-width="11"/>
+    <path d="M187 129 Q360 75 533 129 L548 188 Q360 127 172 188 Z" fill="#e7ff8c" opacity=".62"/>
+    <path d="M164 332 Q360 416 556 332 L540 418 Q360 494 180 418 Z" fill="#6f9418" opacity=".58"/>
+    <path d="M211 115 Q360 66 509 115" fill="none" stroke="#f6ffc9" stroke-width="8" opacity=".7"/>
+    <path d="M179 366 Q360 447 541 366 L532 421 Q360 498 188 421 Z" fill="#6e9419" opacity=".44"/>
+    <path d="M211 135 H509 Q532 135 532 158 V293 Q532 316 509 316 H211 Q188 316 188 293 V158 Q188 135 211 135 Z" fill="#181817" stroke="#070707" stroke-width="8"/>
+    <path d="M205 151 H515" stroke="#77756c" stroke-width="3" opacity=".7"/>
+    <path d="M224 332 H496" stroke="#293506" stroke-width="7" stroke-linecap="round" opacity=".55"/>
+
+    <g fill="#1b1b18" stroke="#080807" stroke-width="5">
+      <circle cx="208" cy="398" r="38"/>
+      <circle cx="512" cy="398" r="38"/>
+      <path d="M278 459 Q360 490 442 459 L425 504 Q360 535 295 504 Z"/>
+    </g>
+    <circle cx="208" cy="398" r="25" fill="#8c50dc"/>
+    <circle cx="512" cy="398" r="25" fill="#8c50dc"/>
+    <circle cx="208" cy="398" r="9" fill="#c7ff36"/>
+    <circle cx="512" cy="398" r="9" fill="#c7ff36"/>
+    <path d="M302 474 Q360 494 418 474" fill="none" stroke="#c7ff36" stroke-width="5" stroke-dasharray="7 7"/>
+  </g>
+</svg>

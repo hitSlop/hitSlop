@@ -1,10 +1,11 @@
 //! A disposable development page runs against the production owner and command path.
 mod transport;
 use hitslop_core::{
+    Code,
     command::{self, PageDispatch},
     file::ResourceRoute,
     owner::{Event, Owner, Reply, Request},
-    page_wire::{HostAction, HostReply},
+    page_wire::{HostAction, HostReply, SpeechOutcome},
     preview::PreviewRequest,
     store::Mode,
 };
@@ -36,11 +37,6 @@ fn close(owner: &Owner, deadline: Instant) -> Result<(), String> {
     }
 }
 pub fn serve(path: &Path) -> ExitCode {
-    serve_configured(path, |_| Ok(()))
-}
-/// `serve`, with `configure` run on the owner before the page connects: the development
-/// room makes it a replica there.
-pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Result<(), String>) -> ExitCode {
     let Ok((mut transport, send)) = transport::Transport::new() else {
         return ExitCode::FAILURE;
     };
@@ -50,13 +46,12 @@ pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Resul
         let evaluator = crate::evaluator()?;
         let owner = Arc::new(Owner::open_with_evaluator(path, Mode::Document, Arc::new(move |event| {
             let message = match event {
-                Event::Publication { json: publication } => json!({"type":"push","pushes":[{"type":"publication","publication":serde_json::from_str::<Value>(&publication).expect("publication")}]}),
+                Event::Publication { json: publication } => json!({"type":"push","pushes":[serde_json::from_str::<Value>(&publication).expect("page push")]}),
                 Event::SaveStatus { status, failure } => json!({"type":"save","status":format!("{status:?}"),"error":failure.map(|f| f.message)}),
                 _ => return,
             };
             events.send(message);
         }), Some(evaluator)).map_err(|e| e.to_string())?);
-        configure(owner.clone())?;
         let resources = owner.resource_reader().map_err(|e| e.to_string())?;
         let view = "preview";
         owner.attach(view.into());
@@ -73,11 +68,17 @@ pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Resul
                         else {
                             return Err(error.to_string());
                         };
-                        send.send(json!({"type":"reply","id":id,"reply":crate::rejected("invalid_request", error)}));
+                        send.send(json!({"type":"reply","id":id,"reply":crate::rejected(Code::InvalidRequest, error)}));
                         continue;
                     }
                 };
                 match request {
+                    PreviewRequest::ResourcePlan { id, attachment_id, range } => {
+                        let resource = resources.info(ResourceRoute::Attachment, &attachment_id)
+                            .map(|info| json!({"type":"resource","id":id,"plan":info.map(|info| hitslop_core::file::resource_response(&info, ResourceRoute::Attachment, range.as_deref()))}))
+                            .unwrap_or_else(|e| json!({"type":"resource","id":id,"error":e.to_string()}));
+                        send.send(resource);
+                    }
                     PreviewRequest::Resource { id, attachment_id, offset, length } => {
                         let resource = (|| {
                             let info = resources.info(ResourceRoute::Attachment, &attachment_id)?;
@@ -93,28 +94,27 @@ pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Resul
                         }
                         let output = send.clone();
                         let pending = pending.clone();
-                        command::page(
-                            &owner,
-                            view.into(),
-                            &serde_json::to_string(&request).expect("page request"),
-                            move |result| {
-                                let reply = match result {
-                                    PageDispatch::Reply { json, .. } => json,
-                                    PageDispatch::Host { action } => match action {
-                                        HostAction::WindowResize { width, height } => {
-                                            HostReply::WindowResize { width: width.into(), height: height.into() }
-                                        }
-                                        HostAction::Ready => HostReply::Ready,
-                                        HostAction::PageRecovered => HostReply::PageRecovered,
-                                        HostAction::Failed { .. } => HostReply::Failed,
-                                        HostAction::PageError { .. } => HostReply::PageError,
+                        command::page_typed(&owner, view.into(), request, move |result| {
+                            let reply = match result {
+                                PageDispatch::Reply { json, .. } => json,
+                                PageDispatch::Host { action } => match action {
+                                    HostAction::WindowResize { width, height } => {
+                                        HostReply::WindowResize { width: width.into(), height: height.into() }
                                     }
-                                    .to_json(),
-                                };
-                                output.send(json!({"type":"reply","id":id,"reply":reply}));
-                                pending.fetch_sub(1, Ordering::SeqCst);
-                            },
-                        );
+                                    HostAction::Ready => HostReply::Ready,
+                                    HostAction::PageRecovered => HostReply::PageRecovered,
+                                    HostAction::Failed { .. } => HostReply::Failed,
+                                    HostAction::PageError { .. } => HostReply::PageError,
+                                    // The preview has no speech service; the page says so.
+                                    HostAction::SpeechTranscribe { .. } => {
+                                        HostReply::SpeechTranscribe { outcome: SpeechOutcome::unsupported_host() }
+                                    }
+                                }
+                                .to_json(),
+                            };
+                            output.send(json!({"type":"reply","id":id,"reply":reply}));
+                            pending.fetch_sub(1, Ordering::SeqCst);
+                        });
                     }
                 }
             }
@@ -129,7 +129,7 @@ pub fn serve_configured(path: &Path, configure: impl FnOnce(Arc<Owner>) -> Resul
     })();
     let mut failed = result.is_err();
     if let Err(error) = result {
-        let error = serde_json::value::RawValue::from_string(crate::rejected("invalid_request", error))
+        let error = serde_json::value::RawValue::from_string(crate::rejected(Code::InvalidRequest, error))
             .expect("serialized failure");
         send.send(json!({"type":"fatal","error":error}));
     }

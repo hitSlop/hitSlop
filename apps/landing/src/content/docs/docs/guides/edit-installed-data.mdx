@@ -57,14 +57,19 @@ Fields
   ["title"]: text (set) — The title shown in the window.
 
 Commands (slop call PATH NAME --args JSON)
+  Arguments accept only the listed fields.
+
   addTask — Add an unfinished task and return its stable row ID.
-    args: {"additionalProperties":false,"properties":{"text":{"type":"string"}},"required":["text"],"type":"object"}
+    text: string (required)
+
   archiveFinished — File every completed task and return the number filed.
-    args: {"additionalProperties":false,"properties":{},"type":"object"}
+    No arguments. Pass --args '{}'.
+
   removeTask — Remove a task from the checklist.
-    args: {"additionalProperties":false,"properties":{"task":{"description":"The $id of a row in tasks","maxLength":64,"minLength":1,"pattern":"^[A-Za-z0-9_-]+$","type":"string"}},"required":["task"],"type":"object"}
+    task: string (required) — The task's $id.
+
   restoreTask — Return a filed task to the active list, unfinished.
-    args: {"additionalProperties":false,"properties":{"task":{"description":"The $id of a row in tasks","maxLength":64,"minLength":1,"pattern":"^[A-Za-z0-9_-]+$","type":"string"}},"required":["task"],"type":"object"}
+    task: string (required) — The task's $id.
 
 Value (rows retain their $id)
 {
@@ -202,8 +207,13 @@ The CLI routes to the open document’s owner or edits a closed document without
 its interface. It never bypasses a busy writer. There is no editable `data.json` file;
 `get` is a read-only snapshot, and templates’ initial values do not change saved work.
 
-For text rewrites based on a read, use `get --snapshot` and pass its `version` with
-`apply --base` or `batch --base` so the edit merges with typing since that read.
+A text set replaces the field. When you rewrite text you read and someone may be typing
+in the open window, you can also pass the text you read as `from`: the edit then changes
+the field from that text and keeps anything typed since.
+
+```sh
+bunx hitslop apply Today.slop --op '{"type":"set","path":["title"],"value":"Little things, this week","from":"Little things, today"}'
+```
 
 ## More document commands
 

@@ -2,10 +2,10 @@ import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
-import HitSlopDocument
 import HitSlopTestSupport
 import Testing
 
+@testable import HitSlopDocument
 @testable import HitSlopHost
 
 extension HostTests {
@@ -79,7 +79,7 @@ extension HostTests {
       for sample in 0..<samples {
         let start = ContinuousClock.now
         let controller = try await SlopDocumentWindowController.open(url: root, presentsWindow: true)
-        let progress = controller.openingProgress
+        let progress = controller.presentation.progress
         let prepared = start.duration(to: .now)
         try await controller.session.waitUntilReady()
         let ready = start.duration(to: .now)
@@ -108,13 +108,13 @@ extension HostTests {
     #expect(Fixtures.pixels(stored) == Fixtures.pixels(before))
     let controller = try await SlopDocumentWindowController.open(url: root)
     controller.showWindow(nil)
-    #expect(controller.isLoading)
+    #expect(controller.presentation.loading)
     #expect(controller.window?.isVisible == false)
     controller.revealFromDock()
     #expect(controller.window?.isVisible == false)
     await controller.waitForPresentation()
     #expect(controller.session.isReady)
-    #expect(controller.openingProgress == nil)
+    #expect(controller.presentation.progress == nil)
     #expect(controller.window?.isVisible == true)
     #expect(controller.isContentReady)
     #expect(SlopArtwork.png(root, .preview) == stored, "opening never rewrites artwork")
@@ -134,7 +134,7 @@ extension HostTests {
       weak var webView = controller.session.webView
       _ = try await controller.perform(.close)
       await controller.waitForPresentation()
-      #expect(controller.openingProgress == nil)
+      #expect(controller.presentation.progress == nil)
       #expect(controller.window?.isVisible == false)
       #expect(!controller.session.isReady)
       // WebKit can finish asynchronous cancellation on the next run-loop turn.
@@ -167,7 +167,7 @@ extension HostTests {
     let controller = try await SlopDocumentWindowController.open(url: root)
     controller.showWindow(nil)
     await controller.waitForPresentation()
-    #expect(controller.openingProgress == nil)
+    #expect(controller.presentation.progress == nil)
     #expect(controller.window?.isVisible == true)
     #expect(controller.presentedPageError?.contains("startup fixture failure") == true)
     #expect(try await command("batch", url: root, setTitle("Recovered")).ok)
@@ -180,6 +180,52 @@ extension HostTests {
     controller.close()
   }
 
+  @Test @MainActor func aReadyTimeoutShowsOneFailureContextAndReopenRecovers() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      let script = stage.appendingPathComponent("assets/ui.js")
+      let probe = try Fixtures.addAsset(
+        stage, bytes: Data(contentsOf: script), ext: "js", mediaType: "text/javascript")
+      try Fixtures.writeApp(
+        """
+        import probe from "\(probe)";
+        export default { mount(ctx, target) {
+          if (ctx.document.current.title !== "Recovered fonts") {
+            Object.defineProperty(document, 'fonts', {value: {
+              size: 1, status: 'loading', forEach(){}, ready: new Promise(() => {})
+            }});
+          }
+          return probe.mount(ctx, target);
+        } };
+        """, to: stage)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    var contexts: [SlopFailureContext] = []
+    let controller = try await SlopDocumentWindowController.open(
+      url: root, telemetry: SlopTelemetry { if case .failed(.renderer, let context) = $0 { contexts.append(context) } })
+    controller.window?.moveOffScreen()
+    defer { controller.window?.orderOut(nil) }
+    await #expect(throws: (any Error).self) { try await controller.session.waitUntilReady(timeout: .seconds(1)) }
+    #expect(controller.session.rendererDead)
+    let notice = try #require(controller.failedOverlay?.rootView.screen.notice)
+    #expect(notice.title == "This slop stopped responding")
+    #expect(contexts == [.init(reason: .unresponsive)])
+    let context = try #require(contexts.first)
+    #expect(
+      notice.report.contains("Reason: \(context.reason.rawValue)\nClassification: \(context.classification.rawValue)"))
+    // Reopening with the same stalled fonts must return to the screen too.
+    controller.session.readyTimeout = .milliseconds(300)
+    await #expect(throws: (any Error).self) { _ = try await controller.perform(.retry) }
+    #expect(controller.session.rendererDead && controller.failedOverlay != nil)
+    controller.session.readyTimeout = Timeouts.pageReady
+    #expect(try await command("batch", url: root, setTitle("Recovered fonts")).ok)
+    _ = try await controller.perform(.retry)
+    await controller.waitForPresentation()
+    #expect(controller.isContentReady && controller.failedOverlay == nil)
+    #expect(Fixtures.isLocked(root))
+    try await controller.session.close()
+  }
+
   @Test @MainActor func hiddenOpenDoesNotPresentProgressOrDocument() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()
@@ -188,7 +234,7 @@ extension HostTests {
     await controller.waitForPresentation()
     #expect(controller.isContentReady)
     #expect(controller.window?.isVisible == false)
-    #expect(controller.openingProgress == nil)
+    #expect(controller.presentation.progress == nil)
     try await controller.session.close()
     controller.close()
   }
@@ -200,13 +246,13 @@ extension HostTests {
     defer { try? FileManager.default.removeItem(at: root) }
     // Fonts never load, so the page never reports ready and the window stays loading.
     let controller = try await SlopDocumentWindowController.open(url: root, presentsWindow: true)
-    let progress = try #require(controller.openingProgress)
+    let progress = try #require(controller.presentation.progress)
     progress.cancelOpening()
-    await eventually(timeout: .seconds(2)) { !controller.isLoading }
-    #expect(!controller.isLoading)
+    await eventually(timeout: .seconds(2)) { !controller.presentation.loading }
+    #expect(!controller.presentation.loading)
     #expect(!controller.isContentReady)
     #expect(controller.window?.isVisible == false)
-    #expect(controller.openingProgress == nil)
+    #expect(controller.presentation.progress == nil)
     #expect(FileManager.default.fileExists(atPath: root.path))
     // A cancelled document must release ownership, not merely hide its window.
     let reopened = try await SlopDocumentWindowController.open(url: root)
@@ -223,8 +269,8 @@ extension HostTests {
     }
     let controller = try await SlopDocumentWindowController.open(url: root)
     controller.showWindow(nil)
-    await eventually(timeout: .seconds(2)) { controller.openingProgress?.panel != nil }
-    #expect(controller.openingProgress?.panel?.isVisible == true)
+    await eventually(timeout: .seconds(2)) { controller.presentation.progress?.panel != nil }
+    #expect(controller.presentation.progress?.panel?.isVisible == true)
     #expect(controller.window?.isVisible == false)
     weak var view = controller.session.webView
     let export = Task { try await controller.exportDocument(format: .png, to: output) }
@@ -232,7 +278,7 @@ extension HostTests {
     _ = try await controller.perform(.close)
     await #expect(throws: (any Error).self) { try await export.value }
     #expect(!FileManager.default.fileExists(atPath: output.path))
-    #expect(controller.openingProgress == nil)
+    #expect(controller.presentation.progress == nil)
     await eventually(timeout: .seconds(1)) { view == nil }
     #expect(view == nil)
   }
@@ -285,7 +331,7 @@ private actor OpeningDelay {
 
 extension HostTests {
   // Failure: close awaited the app's unmount without a deadline, so a teardown that never
-  // settled blocked closing and render-session exports after the document was released.
+  // settled blocked closing and exports after the document was released.
   @Test @MainActor func aHungUnmountDoesNotBlockCloseOrExport() async throws {
     let root = try contractFixture { stage in
       try Data(
@@ -317,7 +363,7 @@ extension HostTests {
     #expect(try await command("get", url: root).ok)
     #expect(
       try await finishes(within: .seconds(10)) {
-        _ = try await SlopRenderer.withRenderSession(url: root) { try await SlopRenderer.exportPNGData(session: $0) }
+        _ = try await SlopRenderer.capture(url: root, output: .export(format: .png))
       })
   }
 
@@ -359,7 +405,7 @@ extension HostTests {
 
   // Gap: installing telemetry only after open returns loses early guest startup failures.
   // A disposable fixture throws before mounting; expect one sanitized authored incident.
-  @Test @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
+  @Test(.nightly) @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
     let root = try contractFixture { stage in
       try Data("throw new Error('private startup contents');".utf8).write(
         to: stage.appendingPathComponent("assets/ui.js"))
@@ -374,6 +420,8 @@ extension HostTests {
     #expect(failures.count == 1)
     #expect(failures.first?.classification == .authored)
     #expect(failures.first?.reason == .authoredException)
+    // The failure screen owns up: the slop's own code failed while it started.
+    #expect(controller.failedOverlay?.rootView.screen.notice.title == "This slop couldn't open")
     try await controller.session.close()
   }
 }

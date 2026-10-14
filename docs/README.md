@@ -15,6 +15,8 @@ published on hitslop.com. The pages here cover how the platform works and how to
 | Rules for platform changes | [Engineering contract](engineering-contract.md) |
 | Every document kind: snapshot, merge, writes, handles and CLI paths | [Document types](reference/document-types.md) |
 | File layout, limits, security, capture and telemetry | [Runtime reference](reference/runtime.md) |
+| Icon, preview and export rendering; desktop widget publication and refresh | [Capture architecture](architecture.md#close-export-and-capture) and [macOS widgets](architecture.md#macos-image-widgets) |
+| Camera, microphone, speech and their permission boundaries | [Capabilities](reference/runtime.md#security-boundaries) |
 | Operation shapes, ownership and tool identity | [CLI reference](guides/cli.md) |
 | Standards for the templates in this repository | [Authoring templates](guides/authoring.md) |
 | Work on the repository or add templates | [Development](guides/development.md) |
@@ -25,6 +27,7 @@ Packaged agent guidance lives in [packages/hitslop/skills](../packages/hitslop/s
 Measurements live in [`evidence/`](evidence/). They are frozen snapshots of the
 builds and environments named in each report, not current release acceptance. The
 [pre-launch simplification summary](evidence/prelaunch-simplification-2026-10-04.md)
-retains the decisions and integration findings from that work. Historical studies,
-spikes and working plans stay local and are not contracts; the architecture, direction
+retains the decisions and integration findings from that work. Superseded measurements
+stay in the local `archive/docs/evidence/` directory. Historical studies, spikes and
+working plans are not contracts; the architecture, direction
 and ideas above are the shared sources of truth.

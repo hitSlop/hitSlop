@@ -24,6 +24,12 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>A slop you open can use the camera when it declares it, for example to take a photo you keep in the document.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>A slop you open can use the microphone when it declares it, for example to record a voice note you keep in the document.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>A slop you open can turn a recording in the document into text when it declares speech. Recognition runs on this Mac; recordings are never sent to Apple.</string>
 	<key>FirebaseCrashlyticsCollectionEnabled</key>
 	<false/>
 	<key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key>
@@ -36,7 +42,12 @@
 	<string>https://github.com/hitSlop/hitslop/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>OHq/9CpeUKhI0BZFhSerL8wE/hzhhm/x4VO2qnB3RHw=</string>
-	<key>CFBundleDocumentTypes</key>
+		<key>CFBundleURLTypes</key>
+		<array><dict>
+			<key>CFBundleURLName</key><string>com.hitslop.widget</string>
+			<key>CFBundleURLSchemes</key><array><string>hitslop</string></array>
+		</dict></array>
+		<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleTypeExtensions</key>

@@ -127,7 +127,7 @@ test("text publications apply in code points", async () => {
   const store = new Store(open, () => {});
   try {
     store.load(await open());
-    const edit = core.applyBatch(JSON.stringify({ base: JSON.parse(core.state()).version, intents: [{ type: "set", path: ["title"], value: "a😀xb", from: "a😀b", selection: { start: 4, end: 4 } }] }));
+    const edit = core.applyBatch(JSON.stringify({ intents: [{ type: "set", path: ["title"], value: "a😀xb", from: "a😀b", selection: { start: 4, end: 4 } }] }));
     const publication = JSON.parse(edit.publication!);
     expect(publication.ops).toEqual([{ type: "text", path: ["title"], delta: [{ retain: 2 }, { insert: "x" }] }]);
     store.publish([{ type: "publication", publication }]);

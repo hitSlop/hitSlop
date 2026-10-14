@@ -1,0 +1,136 @@
+/* Fog: pale mint glass, quiet controls, room to exhale. */
+:root {
+  color-scheme: light;
+  --fg-glass: color-mix(in srgb, var(--slop-frost) 86%, transparent);
+  --fg-edge: color-mix(in srgb, var(--slop-accent) 80%, transparent);
+  --fg-type: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif;
+}
+
+html, body { margin: 0; background: var(--slop-surface); }
+body { font-family: var(--fg-type); color: var(--slop-onSurface); overflow: hidden; }
+button { -webkit-tap-highlight-color: transparent; }
+
+/* Still glass */
+.fg-glass { display: block; width: 100%; height: 100%; }
+.fg-room-top { stop-color: var(--slop-room); }
+.fg-room-bottom { stop-color: var(--slop-surface); }
+.fg-lamp { stop-color: var(--slop-lamp); }
+.fg-tile-line { fill: var(--slop-tile); opacity: 0.22; }
+.fg-frost { fill: var(--slop-frost); opacity: 0.72; }
+.fg-glass-title { fill: var(--slop-ink); font: 300 58px var(--fg-type); letter-spacing: -0.05em; }
+
+/* Start: one flowing composition, even with a permission error. */
+.fg-start { position: relative; height: 100%; overflow: auto; isolation: isolate; }
+.fg-start > .fg-glass { position: fixed; inset: 0; z-index: -1; }
+.fg-start::before { content: ""; position: fixed; inset: 0; z-index: -1; background: color-mix(in srgb, var(--slop-frost) 38%, transparent); }
+.fg-start-card {
+  box-sizing: border-box; min-height: 100%; padding: 30px 24px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+}
+.fg-start-mark { width: 56px; height: 56px; flex: none; stroke: var(--slop-tile); stroke-width: 4; stroke-linecap: round; }
+.fg-title { margin: -5px 0 0; font-size: clamp(76px, 17vmin, 108px); font-weight: 300; letter-spacing: -0.075em; line-height: 1; color: var(--slop-ink); padding-right: 0.075em; }
+.fg-subtitle { margin: 12px 0 26px; font-size: 14px; letter-spacing: 0.025em; color: var(--slop-muted); }
+.fg-start-body { width: min(100%, 360px); display: flex; flex-direction: column; align-items: center; }
+.fg-lede { margin: 0; font-size: 16px; line-height: 1.6; color: var(--slop-ink); }
+.fg-begin {
+  margin-top: 22px; min-height: 48px; padding: 0 32px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--slop-ink) 85%, var(--slop-accent));
+  background: var(--slop-ink); color: var(--slop-frost);
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--slop-ink) 10%, transparent), inset 0 1px 0 color-mix(in srgb, var(--slop-accent) 15%, transparent);
+  font: 600 15px/1 var(--fg-type); cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+.fg-begin:hover:not(:disabled) { background: color-mix(in srgb, var(--slop-ink) 85%, var(--slop-tile)); transform: translateY(-1px); }
+.fg-begin:active:not(:disabled) { transform: translateY(1px); }
+.fg-begin:disabled { opacity: 0.7; cursor: progress; }
+.fg-begin:focus-visible { outline: 2px solid var(--slop-ink); outline-offset: 4px; }
+.fg-private { margin: 24px 0 0; font-size: 12px; line-height: 1.5; color: var(--slop-muted); text-wrap: pretty; }
+.fg-private span { display: block; margin-top: 4px; }
+.fg-saved { margin: 12px 0 0; font-size: 12px; color: var(--slop-muted); }
+.fg-problem, .fg-notice { margin: 0; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.5; background: var(--fg-glass); }
+.fg-problem { display: grid; gap: 4px; color: var(--slop-alert); border: 1px solid color-mix(in srgb, var(--slop-alert) 25%, transparent); }
+.fg-problem span, .fg-notice { color: var(--slop-ink); }
+
+/* Live mirror */
+.fg-live { position: relative; height: 100%; overflow: hidden; background: var(--slop-surface); }
+.fg-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.fg-video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.fg-flash { position: absolute; inset: 0; background: var(--slop-accent); opacity: 0; pointer-events: none; transition: opacity 260ms ease-out; }
+.fg-flash[data-on] { opacity: 0.7; transition: none; }
+.fg-pill {
+  box-sizing: border-box; display: inline-flex; align-items: center; gap: 8px; margin: 0;
+  min-height: 44px; padding: 0 16px; border-radius: 999px;
+  background: var(--fg-glass); border: 1px solid var(--fg-edge);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--slop-ink) 6%, transparent);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  color: var(--slop-ink); font: 500 14px/1.3 var(--fg-type);
+}
+button.fg-pill { cursor: pointer; transition: background 120ms ease, transform 120ms ease; }
+button.fg-pill:hover { background: var(--slop-frost); }
+button.fg-pill:active { transform: translateY(1px); }
+button.fg-pill:focus-visible, .fg-shutter:focus-visible, .fg-help button:focus-visible {
+  outline: 2px solid var(--slop-ink); outline-offset: 3px; box-shadow: 0 0 0 5px var(--slop-accent);
+}
+.fg-top { position: absolute; top: 16px; left: 16px; display: flex; align-items: center; gap: 8px; }
+.fg-live-pill { font-size: 12px; padding: 0 12px; min-height: 34px; }
+.fg-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--slop-live); }
+.fg-actions { position: absolute; top: 16px; right: 16px; display: flex; gap: 8px; }
+.fg-status { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 12px 16px; border-radius: 16px; display: grid; gap: 4px; }
+.fg-status p { margin: 0; }
+.fg-status-detail { font-size: 12px; overflow-wrap: anywhere; max-height: 5em; overflow: auto; }
+
+/* The brush always lives at the bottom left. */
+.fg-brush { position: absolute; left: 16px; bottom: 20px; gap: 12px; background: color-mix(in srgb, var(--slop-ink) 46%, transparent); color: var(--slop-accent); }
+.fg-brush output { min-width: 2ch; font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+.fg-slider { position: relative; display: flex; align-items: center; width: clamp(80px, 17vw, 140px); height: 42px; touch-action: none; }
+.fg-slider-track { position: relative; width: 100%; height: 3px; border-radius: 9px; background: color-mix(in srgb, var(--slop-accent) 30%, transparent); }
+.fg-slider-range { position: absolute; height: 100%; border-radius: inherit; background: var(--slop-accent); }
+.fg-slider-thumb { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--slop-accent); box-shadow: 0 1px 4px color-mix(in srgb, var(--slop-ink) 25%, transparent); cursor: grab; }
+.fg-slider-thumb:active { cursor: grabbing; }
+.fg-slider-thumb:focus-visible { outline: 2px solid var(--slop-accent); outline-offset: 4px; }
+.fg-shutter { position: absolute; right: 18px; bottom: 14px; width: 58px; height: 58px; padding: 0; border-radius: 50%; border: 2px solid var(--slop-accent); background: color-mix(in srgb, var(--slop-ink) 20%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); display: grid; place-items: center; cursor: pointer; }
+.fg-shutter span { width: 44px; height: 44px; border-radius: 50%; background: var(--slop-accent); transition: transform 120ms ease; }
+.fg-shutter:hover span { transform: scale(0.94); }
+.fg-shutter:active span { transform: scale(0.86); }
+.fg-shutter:disabled span { opacity: 0.6; }
+
+/* Portal content owns its surface and typography. */
+.fg-help { z-index: 10; box-sizing: border-box; width: min(320px, calc(100vw - 28px)); max-height: var(--bits-popover-content-available-height); overflow: auto; padding: 18px; border-radius: 20px; background: var(--slop-frost); border: 1px solid var(--fg-edge); box-shadow: 0 12px 36px color-mix(in srgb, var(--slop-ink) 16%, transparent); color: var(--slop-ink); font: 14px/1.45 var(--fg-type); }
+.fg-help-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fg-help h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.fg-help-heading button { width: 44px; height: 44px; margin: -10px -10px -10px 0; border: 0; border-radius: 50%; background: transparent; color: var(--slop-muted); font: 24px/1 var(--fg-type); cursor: pointer; }
+.fg-help-heading button:hover { background: var(--slop-surface); }
+.fg-gestures { display: grid; gap: 14px; margin: 22px 0; }
+.fg-gestures > div { display: grid; grid-template-columns: 58px 1fr; gap: 12px; }
+.fg-gestures dt { font-weight: 600; }
+.fg-gestures dd { margin: 0; color: var(--slop-muted); }
+.fg-shortcuts { display: grid; gap: 8px; padding-top: 16px; border-top: 1px solid color-mix(in srgb, var(--slop-ink) 12%, transparent); }
+.fg-shortcuts span { display: flex; align-items: center; gap: 12px; }
+.fg-shortcuts kbd { min-width: 42px; padding: 3px 5px; box-sizing: border-box; border: 1px solid color-mix(in srgb, var(--slop-ink) 14%, transparent); border-radius: 5px; text-align: center; font: 12px var(--fg-type); }
+.fg-help > p { margin: 16px 0 0; color: var(--slop-muted); font-size: 12px; }
+
+/* Export and icon */
+.fg-export { background: var(--slop-surface); color: var(--slop-onSurface); }
+.fg-export-glass { width: 100%; overflow: hidden; }
+.fg-export-caption { margin: 0; padding: 14px 20px 16px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: baseline; font-size: 13px; color: var(--slop-muted); }
+.fg-export-name { font-size: 20px; font-weight: 500; letter-spacing: -0.04em; color: var(--slop-ink); text-transform: lowercase; }
+.fg-icon { width: 100%; height: 100%; overflow: hidden; border-radius: 22%; background: var(--slop-surface); box-shadow: inset 0 0 0 3px var(--fg-edge); }
+.fg-icon .fg-room-top { stop-color: color-mix(in srgb, var(--slop-room) 65%, var(--slop-ink)); }
+.fg-icon .fg-room-bottom { stop-color: var(--slop-tile); }
+
+@media (max-width: 520px) {
+  .fg-live-pill { position: absolute; left: 0; top: 52px; white-space: nowrap; }
+  .fg-status { top: 114px; }
+}
+@media (max-height: 450px) {
+  .fg-start-card { padding-block: 20px; }
+  .fg-start-mark { width: 36px; height: 36px; }
+  .fg-title { font-size: 64px; }
+  .fg-subtitle { margin: 8px 0 16px; }
+  .fg-begin { margin-top: 16px; }
+  .fg-private { margin-top: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fg-begin, button.fg-pill, .fg-shutter span, .fg-flash { transition: none; }
+  .fg-flash[data-on] { opacity: 0.25; }
+}

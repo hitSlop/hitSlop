@@ -22,16 +22,16 @@ import Testing
   }
   let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
-  // Failure: the helper validated a live reply, and the validator refuses JSON over 48 MiB,
+  // Failure: a live reply was validated, and the validator refuses JSON over 48 MiB,
   // while a closed reply went unchecked, so a large document read closed but not live.
   // Oracle: near-limit batches each apply once, and the live and closed reads of a reply
   // over 48 MiB agree.
-  @Test @MainActor func largeDocumentsReadTheSameLiveAndClosed() async throws {
+  @Test(.nightly) @MainActor func largeDocumentsReadTheSameLiveAndClosed() async throws {
     let root = try fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     let server = try owner.startServer(
-      exporter: NativeExports { _, _, _, _ in throw OwnerError.rejected("No renderer") })
+      exporter: NativeExports { _, _, _, _ in throw OwnerFailure.rejected("No renderer") })
     defer { server.stop() }
     // U+0001 is stored as one byte and written to JSON as six (`\u0001`): the reply outgrows
     // 48 MiB while the document stays far inside its 32 MiB.
@@ -85,16 +85,20 @@ import Testing
     #expect(try Data(contentsOf: template) == before)
   }
 
-  /// Only a file the core refuses reads as an invalid hitSlop file; a storage failure,
-  /// such as a document that is no longer there, keeps its own message.
-  @Test func storageFailuresAreNotReportedAsInvalidFiles() throws {
-    let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
+  /// A busy writer is a storage failure, not a refused file.
+  @Test func storageFailuresAreNotReportedAsInvalidFiles() async throws {
+    let root = try fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let owner = try DocumentOwner(url: root)
     do {
-      _ = try DocumentOwner(url: missing)
-      Issue.record("A missing document opened")
+      _ = try DocumentOwner(url: root)
+      Issue.record("A second writer opened")
     } catch let error as SlopError {
       Issue.record("A storage failure was reported as an invalid file: \(error.localizedDescription)")
-    } catch {}
+    } catch let failure as OwnerFailure {
+      #expect(failure.kind == .locked)
+    }
+    try await owner.close()
   }
 
   @Test func savesAndReopensWithoutWebKitOrAuthoredCode() async throws {
@@ -120,7 +124,7 @@ import Testing
     let owner = try DocumentOwner(url: root)
     _ = try await owner.apply(batch: increment)
     try await owner.close()
-    try Fixtures.sql(root, "UPDATE checkpoint SET bytes = x'00'")
+    try Fixtures.sql(root, "UPDATE history SET bytes = x'00' WHERE seq = (SELECT min(seq) FROM history)")
     #expect(throws: (any Error).self) { _ = try DocumentOwner(url: root) }
     #expect(!Fixtures.isLocked(root))
   }
@@ -332,11 +336,19 @@ import Testing
     owner.attach(view: "second")
     #expect(await page(owner, #"{"method":"open"}"#, view: "second") == nil)
     #expect(await page(owner, #"{"method":"open"}"#, view: "first")?.kind == .replaced)
-    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "first") }
+    await #expect {
+      _ = try await owner.apply(batch: self.increment, view: "first")
+    } throws: {
+      ($0 as? OwnerFailure)?.kind == .replaced
+    }
     _ = try await owner.apply(batch: increment, view: "second")
     try await owner.discardPending()
     owner.attach(view: "third")
-    await #expect(throws: OwnerReplaced.self) { _ = try await owner.apply(batch: self.increment, view: "second") }
+    await #expect {
+      _ = try await owner.apply(batch: self.increment, view: "second")
+    } throws: {
+      ($0 as? OwnerFailure)?.kind == .replaced
+    }
     #expect(await page(owner, #"{"method":"attachments.put","bytes":"AQ=="}"#, view: "second")?.kind == .replaced)
     #expect(try await hits(owner) == 0)
     try await owner.close()

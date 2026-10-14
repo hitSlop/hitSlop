@@ -11,7 +11,8 @@ The Rust core (`crates/hitslop-core`) enforces all of it. The SDK
 (`packages/hitslop/src/sdk`) gives authors types and adapters; the private shell implements
 the handles and immutable snapshots.
 
-`defineDocument` produces a plain object-root descriptor. Build validation calls the
+`defineDocument(fields, { initial })` returns plain definition data with an object-root `descriptor`.
+Initial values are required when a field has no default and cannot be omitted. Build validation calls the
 same Rust rules as native editing; the small TypeScript schema module is metadata and
 types, not a second validator. Catch document errors with `isDocumentError(error)`
 and semantic refusals with `isRejected(error)`; these guards work across the separately
@@ -31,7 +32,7 @@ export default defineDocument({
   tags: s.list(s.string()),
   checkins: s.record(s.integer({ min: 1 })),
   visits: s.counter(),
-});
+}, { initial: { mood: 3, lane: "todo" } });
 ```
 
 ## At a glance
@@ -45,7 +46,7 @@ export default defineDocument({
 | [`s.integer({min?, max?})`](#scalars) | `number` | last writer wins | `set`, `preview`, `value` |
 | [`s.enum([...])`](#scalars) | one of the values | last writer wins | `set`, `preview`, `value` |
 | [`s.counter()`](#counter) | `number` | increments add up | `increment` |
-| [`s.optional(inner)`](#optional) | the inner value, or absent | per inner kind | `set`, `clear` |
+| [`s.optional(inner)`](#optional) | the inner value, or absent | per inner kind | `set`, `clear` (`$set`, `$clear` for an object) |
 | [`s.object({...})`](#object) | object | per field | its fields' handles |
 | [`s.list(s.object({...}))`](#rows) | array of rows with `$id` | inserts, removes and moves keep identity | `insert`, `remove`, `move`, `item` |
 | [`s.list(scalar)`](#scalar-lists) | array of values | by position; one element: last writer wins | `insert`, `set`, `preview`, `remove`, `replace` |
@@ -58,6 +59,11 @@ Kinds nest:
 Trees and rich text are not implemented; no slop uses them.
 
 ## Common behavior
+
+Editor components acquire a `LiveDocument` with `getDocument(schema)` from
+`hitslop/svelte` during initialization; see [document access](../../apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles).
+`Value<typeof schema.descriptor>` is the readonly data type; `Tx<typeof schema>`
+types a shared edit. Static views receive [capture props](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#declare-capture-views).
 
 **Reads.**
 - `doc.current` is an immutable snapshot. Unchanged objects and rows keep their identity
@@ -128,7 +134,8 @@ document matching its descriptor, so a snapshot never holds a wrong type, an
 out-of-range value or a duplicate `$id`. Opening refuses a file whose saved state does
 not match (`invalid_bytes`) and changes nothing in it.
 
-**Error codes.**
+**Core reasons (`Code`).** These are the wire reply’s `reason`, distinct from its
+outcome `code`. `DocumentError.reason` exposes them to apps.
 
 | Code | Meaning |
 |---|---|
@@ -141,16 +148,16 @@ not match (`invalid_bytes`) and changes nothing in it.
 | `invalid_request` | a malformed request, rows addressed by index, or scalar elements by id |
 | `invalid_id` | a row `id` outside 1–64 characters of `A–Z a–z 0–9 _ -` |
 | `invalid_path` | a command path longer than 64 segments |
-| `stale_base` | a text edit whose `from` no longer matches the field at its version, a version before the document's retained history, or one from another history |
-| `invalid_version` | a version token that is not one the core issued |
+| `stale_base` | a command's `ifVersion` that no longer matches the document (the owner retries once) |
 | `too_large` | a batch over 1,000 intents, a request over 4 MiB, or a list or descriptor over its limit |
-| `refused` | a command called `refuse(message)`, or a row argument names a row that no longer exists; the message is for the person |
+| `refused` | a command called `refuse(message)`; the message is for the caller |
 
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
 imported), `invalid_shape` (a window shape), `requires_update` (an app format,
 storage or document layout newer than this build), `is_template` (a template opened as a
-document: create a document from it) and `engine_error` (an unexpected Loro failure). Codes may grow; `isDocumentError` recognizes a code an app has never seen.
+document: create a document from it) and `engine_error` (an unexpected Loro failure). Reasons may grow; `isDocumentError` recognizes the document-error envelope, while
+`isRejected` identifies a semantic refusal.
 
 **Paths** walk the schema from the root, in these segments:
 
@@ -168,7 +175,8 @@ neither side's typing is lost.
 - **`bindText(input, handle)`** keeps the user's text in the field and sends each change
   as "the field was X, now it is Y". The owner merges it with edits made elsewhere, and
   the caret stays put, including through IME composition. Retargeting or unmounting a
-  binding sends its unsent text first.
+  binding sends its unsent text first. If that send has an uncertain outcome that cannot
+  be resolved, the text is reported and is not kept once the control is gone.
 - **`EditableText`** (from `hitslop/svelte`, `field={handle}`) is that binding for any
   text, including a field in every row: it shows the text and mounts a textarea only
   while edited, since WebKit form controls are too expensive to mount by the thousand.
@@ -179,9 +187,9 @@ neither side's typing is lost.
 - **`text.set(value)`** replaces the whole field as the owner holds it when it applies
   the set. It uses a minimal edit script, so typing still on its way from a binding
   merges with it; typing the owner already accepted is replaced unless `value` keeps it.
-- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`. With `--base VERSION`
-  (the `version` of the `get --snapshot` you read the text with), the set changes the
-  field from its text at that version, so typing done since is kept.
+- **CLI:** `{"type":"set","path":["title"],"value":"Weekend"}`. With `"from"`, the field's
+  text as you read it with `get --snapshot`, the set changes the field from that text, so
+  typing done since is kept.
 
 ## Scalars
 
@@ -220,7 +228,10 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 
 - **Handle:** `increment(by = 1)`; a negative `by` subtracts. There is no reset.
 - **Snapshot:** a safe integer. An increment that would leave the safe range is refused
-  (`out_of_range`).
+  (`out_of_range`). Concurrent increments from several devices add up. The total is kept
+  as a Loro counter, exact while increments summed as absolute values over its whole
+  history stay below 2^53 (about 9×10^15). Beyond that envelope an off-by-one result
+  is possible, including after replacement, undo or reopen; no exactness is guaranteed.
 - **CLI:** `{"type":"increment","path":["visits"],"by":1}`.
 
 ## Optional
@@ -231,23 +242,36 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 - **Setting and clearing:**
   - `set(value)` gives it a value;
   - `clear()` removes it (clearing an unset field does nothing);
+  - an optional object's handle also carries the object's fields, so its own members are
+    `$set(value)` and `$clear()`, and a field may be named `set` or `clear`;
   - inserts and initial values may leave it out.
   - `null` is never a value.
 - **Optional objects:**
-  - `set` creates an absent object with creation defaults, or reconciles a complete
+  - `$set` creates an absent object with creation defaults, or reconciles a complete
     replacement with the existing object. Surviving text, lists and rows keep identity.
   - Fields of an unset object are `path_not_found`.
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
-- `set` on an object that is already set writes only the fields that differ.
-- Clearing and then setting creates a fresh incarnation. A text edit based on the old
-  incarnation is `path_not_found`, even when the new text happens to be identical.
+- `$set` on an object that is already set writes only the fields that differ.
+- Clearing and then setting writes the new value over the field's earlier content. A
+  text edit from the old text merges into the field that is there now; while the field is
+  cleared it is `path_not_found`.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
 
 `s.object({...})` groups fields, each edited through its handle. An object always exists
 (unless it is optional). The CLI's `replace` can reconcile its complete value in place.
+
+- **Field names:** ASCII letters, digits and `_`, starting with a letter. `constructor`,
+  `prototype` and the `Object.prototype` method names (`toString`, `toLocaleString`,
+  `valueOf`, `hasOwnProperty`, `isPrototypeOf`, `propertyIsEnumerable`) are refused
+  (`invalid_schema`); every other name is free, including `set`, `clear`, `path` and `node`.
+- **Handle members:** a handle that carries an object's fields (an object, a row, a
+  record entry, an optional object) names any member of its own with a leading `$`, which
+  no field name can have, so a member never shadows a field. Only an optional object has
+  members today: `$set` and `$clear`. Handles without fields (scalars, text, lists,
+  records, counters) keep plain names.
 
 ## Rows
 
@@ -256,7 +280,7 @@ by `$id`, never by position.
 
 - **Handle:**
   - `insert(value, { before | after })` mints the id and resolves `{id}`;
-  - `remove(id)`, `move(id, { before | after })`, `item(id)`.
+  - `remove(row)`, `move(row, { before | after })`, `item(row)`: row arguments and destinations accept a snapshot row or its `$id`, including inside `change()`.
   - Omitting the destination appends.
 - **Identity:** inserts, removes and moves from anywhere keep each row's `$id`; a removed
   row is no longer a valid target.
@@ -284,8 +308,7 @@ a 16×16 grid of colours.
 - **Positions:** an index means the position when the owner applies the edit, so an
   index read before another insertion can name a different element; a later `set` of
   one element wins.
-- **Publishing:** each change publishes the whole list. They are meant to be small (the
-  largest in the archive is 256 elements).
+- **Publishing:** each change publishes the whole list; use scalar lists for small values.
 - **CLI:**
   - `{"type":"insert","path":["tags"],"value":"urgent","index":0}`;
   - `{"type":"set","path":["tags",{"index":0}],"value":"later"}`;
@@ -307,7 +330,8 @@ widths by column. Values are scalars or objects.
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
 - **Entries behave like optional fields.** A new object entry receives creation
   defaults; replacing an existing entry requires a complete value and reconciles its
-  surviving children. Delete followed by put creates a fresh incarnation.
+  surviving children. Delete followed by put writes the new value over the entry's
+  earlier content.
 - **Fields:** edits to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
@@ -320,7 +344,7 @@ widths by column. Values are scalars or objects.
 - **Don't read a value and write it back** (`set(qty + 1)`): the snapshot may be a moment
   old. Use `increment` on a counter, or await the earlier writes before reading. A
   `change` makes its writes atomic, but reads the same snapshot.
-- **Don't write in `$effect` or on mount.** Put defaults in `slop.ts`'s `initial`. If an effect must
+- **Don't write in `$effect` or on mount.** Put defaults in the `initial` option of `defineDocument` in `schema.ts`. If an effect must
   create something, guard it so it runs once, because it can rerun before the write is
   accepted.
 - **Await an insert** before using its id outside `change`. Inside `change`, the id is
@@ -341,16 +365,16 @@ Layout 1:
 |---|---|
 | the authored document data | the root map `data`, one entry per field |
 | document theme overrides | the root map `theme`, declared color token → canonical color string |
-| `s.text()` | a `LoroText` |
+| `s.text()` | a parent-owned `LoroText` |
 | `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
 | `s.number()` | an f64 value; integral values project as integers |
 | `s.integer()` | an i64 value |
-| `s.counter()` | an i64 value, the total |
+| `s.counter()` | a parent-owned `LoroCounter`; the total projects as an integer |
 | `s.optional(inner)` | the inner kind's representation, or no entry when unset |
-| `s.object({...})` | a `LoroMap` |
-| `s.list(s.object({...}))` | a `LoroMovableList` of `LoroMap` rows, each with a `$id` string entry |
-| `s.list(scalar)` | a `LoroMovableList` of values |
-| `s.record(value)` | a `LoroMap` of key to the value's representation |
+| `s.object({...})` | a parent-owned `LoroMap` |
+| `s.list(s.object({...}))` | a parent-owned `LoroMap` of `rows` (a `LoroMap` of `$id` → `LoroMap` row) and `order` (a `LoroMovableList` of `$id` strings) |
+| `s.list(scalar)` | a parent-owned `LoroMovableList` of values |
+| `s.record(value)` | a parent-owned `LoroMap` of key to the value's representation |
 
 The theme map is host-owned and outside the authored descriptor. Defaults remain in the
 immutable app row; the effective palette combines them with these overrides. Per-color
@@ -359,24 +383,39 @@ advance the same publication sequence. JSON replacement targets `data`, so it ne
 replaces the theme. State carries the effective `theme`; publications include it when
 it changes, including on a theme-only edit.
 
-Every container is created with its value by `insert_container` and goes with it.
-Stored state always matches the descriptor: every row is a map with a unique `$id`
-string, and a map holds only declared fields (and a row's `$id`). Opening checks this.
+Containers are ordinary Loro children, created with their parent entry. Edits reuse a
+present container; creating an absent field, entry or row creates a new one. Removing it
+allows a history-trimming snapshot to discard its deleted content. Full checkpoints keep
+history, and the live session keeps its undo independently of a trimmed saved checkpoint.
+Application `$id`s survive undo; Loro's internal container IDs need not.
 
-Complete replacements retain surviving containers. Ordinary delete/clear followed by
-creation makes new containers. Undo of deletion restores the content with fresh map and
-text containers too, including a removed row; the restored row keeps its public `$id`.
-Text edits based on the deleted incarnation refuse with `path_not_found`; a binding
-opened on the restored version edits normally. Moving a surviving row keeps its
-containers and `$id`.
+These remain CRDT containers: edits to an existing shared text or counter merge. Two
+replicas independently creating the same absent field, record key or row ID create
+different containers, and the parent map chooses one complete container by last-writer-wins.
+Undo may restore a row in new containers, so remote edits to its previous containers need
+not follow it. The local owner serializes page, window and CLI writes; these creation and
+restoration races are limits of the deferred collaboration feature.
+
+Production sharing must qualify these conflicts. A future room may start fresh history
+from the local document's current app, values, row IDs, theme and attachments; it need
+not reuse local v1 history. The relay, session and owner hooks remain its foundation.
+
+A row list's application order is `order` read once per row at its first place, then
+rows `order` misses, by `$id`. Merging valid edits from several devices can leave `order`
+naming a row twice (two restores of one row), naming a removed row, or missing a row;
+every reading resolves those the same way, and `replace` writes a clean order.
+
+Stored state always matches the descriptor, and opening checks it: container kinds,
+scalar rules, valid row IDs and record keys, finite counters, and maps holding only
+declared fields. Any merge of valid edits passes this check (`tests/merge.rs`).
+
+Complete replacements retain surviving containers. A text edit addresses the field at
+its path and merges from the text it started from, so a binding edits a restored row
+normally. Moving a row keeps its containers and `$id`.
 
 Live commits record timestamps and an origin message: `page`, `agent` (CLI and socket),
-`command:<name>`, `window`, `undo`, `redo` or `create`. Retained history is bounded;
-these messages are attribution for the retained changes, not a durable audit log.
-Local history maintenance retains supported undo/redo while it fits the history budget.
-When it cannot fit, redo and older undo steps expire; a text edit needing a version before
-the retained floor refuses with `stale_base`. The rebuild preserves current row/text
-identities and the publication sequence. Undo remains session-only.
+`command:<name>`, `window`, `undo`, `redo` or `create`. These messages are attribution
+for the retained changes, not a durable audit log. Undo is session-only.
 Template creation uses the deterministic message `create` and timestamp zero. Rows in
 an app's initial value without a `$id` get one derived from their position by a frozen
 function (`identity.rs`), so packing the same app writes the same template.

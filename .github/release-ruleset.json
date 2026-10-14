@@ -28,6 +28,7 @@
         "required_status_checks": [
           { "context": "fast", "integration_id": 15368 },
           { "context": "native", "integration_id": 15368 },
+          { "context": "native-rust", "integration_id": 15368 },
           { "context": "linux-smoke", "integration_id": 15368 },
           { "context": "Gitleaks", "integration_id": 15368 },
           { "context": "Attribution", "integration_id": 15368 }

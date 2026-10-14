@@ -112,7 +112,7 @@ fn write_line(stream: &mut UnixStream, input: &str, deadline: Instant) -> Result
     }
     Ok(())
 }
-/// The helper's one exchange. Mutations are never retried here, including partial writes.
+/// A client's one exchange. Mutations are never retried here, including partial writes.
 pub fn call(path: &Path, input: &str) -> Result<String> {
     let header: crate::wire::socket::ProtocolHeader =
         serde_json::from_str(input).map_err(|_| Failure::rejected(Code::InvalidRequest, "Invalid socket request"))?;

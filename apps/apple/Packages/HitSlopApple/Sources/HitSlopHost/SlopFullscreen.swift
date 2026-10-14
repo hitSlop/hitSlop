@@ -49,38 +49,23 @@ final class SlopFullscreenSurface: NSView {
   }
 }
 
-struct SlopFullscreenRestore {
-  let frame: NSRect
-  let style: NSWindow.StyleMask
-  let level: NSWindow.Level
-  let aspect: NSSize
-  let shadow: Bool
-}
-
-extension SlopDocumentWindowController {
-  public var isFullscreen: Bool { window?.styleMask.contains(.fullScreen) == true }
-  public var canToggleFullscreen: Bool {
-    session.file.isFullscreenable && (isFullscreen || isContentReady) && !isHiddenForClose && !fullscreenTransition
+/// Desktop state retained only while AppKit owns the fullscreen transition.
+@MainActor final class FullscreenController {
+  struct Saved {
+    let frame: NSRect
+    let style: NSWindow.StyleMask
+    let level: NSWindow.Level
+    let aspect: NSSize
+    let shadow: Bool
   }
-  var documentComposition: ShapedView? {
-    (window?.contentView as? ShapedView) ?? (window?.contentView as? SlopFullscreenSurface)?.composition
-  }
+  var saved: Saved?
+  var transitioning = false
 
-  public func toggleFullscreen() {
-    guard canToggleFullscreen, let window else { return }
-    if !isFullscreen { prepareFullscreen() }
-    fullscreenTransition = true
-    toolbar.update()
-    window.toggleFullScreen(nil)
-  }
-
-  private func prepareFullscreen() {
-    guard fullscreenRestore == nil, let window, let composition = documentComposition else { return }
-    fullscreenRestore = SlopFullscreenRestore(
+  func prepare(window: NSWindow, composition: ShapedView, file: SlopFile) {
+    guard saved == nil else { return }
+    saved = FullscreenController.Saved(
       frame: window.frame, style: window.styleMask, level: window.level,
       aspect: window.contentAspectRatio, shadow: window.hasShadow)
-    closeThemePanel()
-    toolbar.hide()
     window.level = .normal
     window.contentResizeIncrements = NSSize(width: 1, height: 1)
     // Detach the old content before reparenting it. Install the opaque surface
@@ -89,8 +74,8 @@ extension SlopDocumentWindowController {
     window.contentView = nil
     let surface = SlopFullscreenSurface(
       composition: composition,
-      authoredSize: NSSize(width: session.file.width, height: session.file.height),
-      fit: session.file.fitsFullscreen)
+      authoredSize: NSSize(width: file.width, height: file.height),
+      fit: file.fitsFullscreen)
     window.contentView = surface
     window.isOpaque = true
     window.backgroundColor = .black
@@ -107,12 +92,11 @@ extension SlopDocumentWindowController {
     surface.needsLayout = true
   }
 
-  private func restoreDesktop() {
-    guard let window, let restore = fullscreenRestore, let composition = documentComposition else { return }
-    toolbar.hide()
+  func restore(window: NSWindow, composition: ShapedView, page: WKWebView?) {
+    guard let restore = saved else { return }
     composition.removeFromSuperview()
     composition.compositionScale = 1
-    session.webView.pageZoom = 1
+    page?.pageZoom = 1
     composition.bounds = NSRect(origin: .zero, size: restore.frame.size)
     window.contentView = composition
     window.styleMask = restore.style
@@ -129,26 +113,58 @@ extension SlopDocumentWindowController {
     composition.frame = NSRect(origin: .zero, size: window.contentLayoutRect.size)
     composition.bounds = NSRect(origin: .zero, size: composition.frame.size)
     for child in composition.subviews { child.frame = composition.bounds }
-    fullscreenRestore = nil
-    fullscreenTransition = false
+    saved = nil
+    transitioning = false
+  }
+
+}
+
+extension SlopDocumentWindowController {
+  public var isFullscreen: Bool { window?.styleMask.contains(.fullScreen) == true }
+  public var canToggleFullscreen: Bool {
+    session.file.isFullscreenable && (isFullscreen || isContentReady) && !isHiddenForClose && !fullscreen.transitioning
+  }
+  var documentComposition: ShapedView? {
+    (window?.contentView as? ShapedView) ?? (window?.contentView as? SlopFullscreenSurface)?.composition
+  }
+
+  public func toggleFullscreen() {
+    guard canToggleFullscreen, let window else { return }
+    if !isFullscreen { prepareFullscreen() }
+    fullscreen.transitioning = true
+    toolbar.update()
+    window.toggleFullScreen(nil)
+  }
+
+  private func prepareFullscreen() {
+    guard fullscreen.saved == nil, let window, let composition = documentComposition else { return }
+    closeThemePanel()
+    toolbar.hide()
+    fullscreen.prepare(window: window, composition: composition, file: session.file)
+  }
+
+  private func restoreDesktop() {
+    guard let window, fullscreen.saved != nil, let composition = documentComposition else { return }
+    toolbar.hide()
+    fullscreen.restore(window: window, composition: composition, page: session.isReady ? session.webView : nil)
     toolbar.update()
     toolbar.refresh()
   }
 
   public func windowWillEnterFullScreen(_ notification: Notification) {
     prepareFullscreen()
-    fullscreenTransition = true
+    fullscreen.transitioning = true
     toolbar.hide()
     toolbar.update()
   }
   public func windowDidEnterFullScreen(_ notification: Notification) {
-    fullscreenTransition = false
+    fullscreen.transitioning = false
     window?.contentView?.needsLayout = true
     toolbar.update()
     toolbar.refresh()
   }
   public func windowWillExitFullScreen(_ notification: Notification) {
-    fullscreenTransition = true
+    fullscreen.transitioning = true
     toolbar.hide()
     toolbar.update()
   }
@@ -161,7 +177,7 @@ extension SlopDocumentWindowController {
     DispatchQueue.main.async { [weak self] in self?.restoreDesktop() }
   }
   public func windowDidFailToExitFullScreen(_ window: NSWindow) {
-    fullscreenTransition = false
+    fullscreen.transitioning = false
     toolbar.update()
     toolbar.refresh()
   }

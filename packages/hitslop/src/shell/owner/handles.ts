@@ -1,7 +1,14 @@
-import type { OwnerIntent, OwnerPath as Path } from "../../schema/core";
-import type { Node } from "../../sdk/schema";
+import type { Anchor, OwnerIntent, OwnerPath as Path } from "../../schema/core";
+import type { Destination, Node, RowRef } from "../../sdk/schema";
 import { isScalar } from "../../sdk/internal";
 import { newID } from "../identity";
+const rowID = (row: RowRef): string => (typeof row === "string" ? row : row.$id);
+// Keep extra fields so normalization cannot turn a malformed anchor into an accepted one.
+const destination = (at: Destination): Anchor => ({
+  ...at,
+  ...("before" in at ? { before: rowID(at.before) } : { after: rowID(at.after) }),
+});
+
 export type Collector = (intent: OwnerIntent) => void;
 interface HandleHost {
   handle(node: Node, path: Path, collect: Collector | undefined): any;
@@ -45,21 +52,29 @@ export function handleFactory(host: HandleHost, mint: () => string = newID) {
     const text = <T extends object>(handle: T) =>
       collect
         ? handle
-        : Object.defineProperty(handle, "value", { enumerable: true, get: () => host.read(path) ?? "" });
+        : Object.defineProperty(handle, "value", {
+            enumerable: true,
+            get: () => host.read(path) ?? "",
+          });
     if (node.kind === "optional") {
       const clear = () => shown({ type: "clear", path });
       if (isScalar(node.inner)) return Object.freeze(bindable({ ...scalar(), clear }, true));
       if (node.inner.kind === "text")
-        return Object.freeze(text({ set: (value: string) => send({ type: "set", path, value }), clear }));
-      // An optional object: its fields, plus `set` to create or replace it and `clear`.
+        return Object.freeze(
+          text({ set: (value: string) => send({ type: "set", path, value }), clear }),
+        );
+      // An optional object: its fields, plus `$set` to create or replace it and `$clear`.
+      // This handle shares its names with the author's fields, so its own members start
+      // with `$`, which no field name can; the other optionals carry no fields and keep
+      // `set` and `clear`.
       const fields = make(node.inner, path, collect);
       const handle = Object.create(null);
       for (const name of Object.keys(fields))
         Object.defineProperty(handle, name, { enumerable: true, get: () => fields[name] });
-      Object.defineProperty(handle, "set", {
+      Object.defineProperty(handle, "$set", {
         value: (value: unknown) => send({ type: "set", path, value }),
       });
-      Object.defineProperty(handle, "clear", { value: clear });
+      Object.defineProperty(handle, "$clear", { value: clear });
       return Object.freeze(handle);
     }
     if (isScalar(node)) return Object.freeze(bindable(scalar(), false));
@@ -105,17 +120,17 @@ export function handleFactory(host: HandleHost, mint: () => string = newID) {
         }
         const item = node.item;
         return Object.freeze({
-          item: (id: string) => host.handle(item, [...path, { id }], collect),
-          insert: (value: unknown, at?: { before: string } | { after: string }) => {
+          item: (row: RowRef) => host.handle(item, [...path, { id: rowID(row) }], collect),
+          insert: (value: unknown, at?: Destination) => {
             const id = mint();
             return send(
-              { type: "insert", path, value, id, ...(at ? { at } : {}) },
+              { type: "insert", path, value, id, ...(at ? { at: destination(at) } : {}) },
               Object.freeze({ id }),
             );
           },
-          remove: (id: string) => send({ type: "remove", path, id }),
-          move: (id: string, at?: { before: string } | { after: string }) =>
-            send({ type: "move", path, id, ...(at ? { at } : {}) }),
+          remove: (row: RowRef) => send({ type: "remove", path, id: rowID(row) }),
+          move: (row: RowRef, at?: Destination) =>
+            send({ type: "move", path, id: rowID(row), ...(at ? { at: destination(at) } : {}) }),
         });
       }
       case "text":

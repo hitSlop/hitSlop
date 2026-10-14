@@ -13,14 +13,15 @@ export async function changedPaths(cwd: string, ref: string) {
 
 export type Preparation = <T>(name: string, action: () => Promise<T>) => Promise<T>;
 
-export type TestTier = "tooling" | "bun" | "cli" | "browser" | "native" | "packed";
+export type TestTier = "tooling" | "bun" | "cli" | "render" | "browser" | "native" | "packed";
 export function testInventory(files: string[]): Record<TestTier, string[]> {
-  const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], browser: [], native: [], packed: [] };
+  const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], render: [], browser: [], native: [], packed: [] };
   for (const file of files.sort()) {
-    if (file.startsWith("tests/examples/") || file.startsWith("examples/"))
+    if (file.startsWith("tests/examples/") || file.startsWith("slops/"))
       throw new Error(`Per-example tests are not allowed: ${file}`);
     const tier = file.startsWith("tests/packed/") ? "packed"
       : file.endsWith(".browser.test.ts") ? "browser"
+      : /^(tests\/native\/(?:render|landing)|packages\/hitslop\/tests\/cli\/build)\.native\.test\.ts$/.test(file) ? "render"
       : file.endsWith(".native.test.ts") ? "native"
       : file.startsWith("tests/verification/") ? "tooling"
       : file.startsWith("packages/hitslop/tests/cli/") ? "cli"
@@ -57,17 +58,4 @@ export async function retainReport(directory: string, latest: string, report: un
   await mkdir(directory, { recursive: true });
   await atomicJson(join(directory, "report.json"), report);
   await atomicJson(latest, report);
-}
-
-export function shardTests(ids: string[], count: number, timings: Record<string, number>) {
-  if (!ids.length || new Set(ids).size !== ids.length) throw new Error("Swift discovery returned no tests or duplicate test identities");
-  const groups = Array.from({ length: Math.max(1, Math.min(count, ids.length)) }, () => ({ ids: [] as string[], total: 0 }));
-  for (const id of [...ids].sort((a, b) => (timings[b] ?? 1) - (timings[a] ?? 1) || a.localeCompare(b))) {
-    const group = groups.reduce((a, b) => a.total <= b.total ? a : b);
-    group.ids.push(id); group.total += timings[id] ?? 1;
-  }
-  return groups.map(group => group.ids);
-}
-export function assertShardComplete(expected: string[], ran: number, code: number) {
-  if (code || ran !== expected.length) throw new Error(`Swift shard exited ${code}: ran ${ran} of ${expected.length} tests\n${expected.join("\n")}`);
 }

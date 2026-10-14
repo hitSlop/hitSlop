@@ -9,7 +9,11 @@ import { execute } from "../../packages/hitslop/src/cli/engine";
 import { png } from "../../packages/hitslop/tests/cli/png-fixture";
 import { PackageFormat, RuntimeABI } from "../../packages/hitslop/src/schema/constants";
 
-test("landing generation reads current templates and preserves outputs when a later input fails", async () => {
+// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// wording checks that never guard opening, editing or saving a document (docs/testing.md).
+const nightly = process.env.HITSLOP_NIGHTLY === "1";
+
+test.if(nightly)("landing generation reads current templates and preserves outputs when a later input fails", async () => {
   await prepareNativeFixtures();
   const destination = await mkdtemp(join(tmpdir(), "hitslop-landing-"));
   const source = { slug: "document-fixture", file: resolve("generated/native-fixtures/document-fixture.slop") };
@@ -38,7 +42,7 @@ test("landing generation reads current templates and preserves outputs when a la
   }
 }, 120_000);
 
-test("a skinned template without artwork keeps its dimensions and fallback tile", async () => {
+test.if(nightly)("a skinned template without artwork keeps its dimensions and fallback tile", async () => {
   const folder = await mkdtemp(join(tmpdir(), "hitslop-landing-skin-"));
   try {
     const stage = join(folder, "stage");
@@ -47,18 +51,24 @@ test("a skinned template without artwork keeps its dimensions and fallback tile"
     const key = `media/${createHash("sha256").update(image).digest("hex")}.png`;
     await writeFile(join(stage, "skin.png"), image);
     await writeFile(join(stage, "ui.js"), "export default { mount() { return {}; } };");
+    await writeFile(join(stage, "preview.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
+    await writeFile(join(stage, "icon.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
+    await writeFile(join(stage, "export.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
     const file = join(folder, "skin.slop");
-    await execute({ method: "pack", stage, file, app: {
+    await execute({ method: "pack", stage, file, renderViews: false, app: {
       packageFormat: PackageFormat, runtimeABI: RuntimeABI,
       declaration: {
         metadata: { slug: "skin", title: "Skin", description: "Landing fixture", author: { name: "hitSlop" }, categories: ["utilities"] },
         window: { kind: "skin", width: 320, height: 240, image: "/assets/" + key },
         document: { kind: "object", properties: {} }, initial: {},
-        theme: [{ token: "surface", color: "#112233" }], commands: [], views: { export: false, icon: false },
+        theme: [{ token: "surface", color: "#112233" }], commands: [], views: { preview: true, export: true, icon: true },
       },
-      roles: { ui: "ui.js", skin: key },
+      roles: { ui: "ui.js", preview: "preview.js", icon: "icon.js", export: "export.js", skin: key },
       resources: [
         { kind: "app", key: "ui.js", mediaType: "text/javascript", path: "ui.js" },
+        { kind: "app", key: "preview.js", mediaType: "text/javascript", path: "preview.js" },
+        { kind: "app", key: "icon.js", mediaType: "text/javascript", path: "icon.js" },
+        { kind: "app", key: "export.js", mediaType: "text/javascript", path: "export.js" },
         { kind: "app", key, mediaType: "image/png", path: "skin.png" },
       ], artwork: {},
     } });

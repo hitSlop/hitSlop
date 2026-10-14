@@ -21,19 +21,20 @@ svelte-check found 0 errors and 0 warnings
 /Users/you/my-slop/dist/my-slop.slop
 ```
 
-A build without supplied or native artwork also reports that no artwork was captured.
+`check` runs the project's own `svelte-check` and TypeScript, pinned by the starter; if the checker is missing, the CLI prints an install hint.
 
 Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
-Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` is newer than the CLI supports; update `hitslop` when it says so.
+Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` SDK version differs from the CLI's; use the project's scripts so they match. The build stamps the runtime ABI.
+
+Packing renders every declared view from the staged template: Preview, Icon, Export as PNG and PDF, and all Widget families. Supplied preview or icon PNGs do not bypass this check. A view failure names its role and prevents publication.
 
 ### Finder artwork
 
-A template's Finder preview and icon come from one of three places:
+A template's Finder preview and icon come from two sources:
 
 - **Your files.** Images you declare as `artwork: { preview, icon }` in `defineSlop` (imported like any asset) are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
-- **The Mac app.** `slop build . --artwork native` renders whichever of the two you didn't supply from your `export` and `icon` views. `bun run register` always does this. Native capture uses the installed hitSlop app; authoring never compiles Swift or installs another document engine.
-- **Neither.** The template has no artwork, and Finder shows hitSlop's document icon. Documents created from it still get their own artwork when they are first closed in hitSlop.
+- **Rendered for you.** On macOS and Linux, `bun run build` and `bun run register` render whichever of the two you didn't supply from your `Preview.svelte` and `Icon.svelte` views, in the same step that packs the template. This needs only the CLI: no hitSlop app, Swift or Xcode. If a view can't render, the build fails.
 
 ## Register a local template
 
@@ -50,6 +51,17 @@ Response after a successful build and artwork capture:
 Registration builds and installs an immutable master in `~/.hitslop/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering replaces the previous master once the new build is complete; it does not modify documents already created from it.
 
 For terminal document creation, see [create and open a writable document](/docs/guides/cli-workflows/#create-and-open-a-writable-document).
+
+## When a change doesn't appear
+
+A document contains the app version it was created with. Editing source, rebuilding a
+template, or reinstalling hitSlop does not replace the app inside that document. This
+also applies to fixes in a library, new capability declarations, and changes to defaults.
+
+For your own project, run `bun run register` and create a **new** document from that
+template. A plain `bun run build` updates `dist/SLUG.slop`, not the registered master.
+Keep the old document if it contains work you want to preserve; automatic app upgrades
+and schema migration are not available.
 
 ## Share a template or a document
 
@@ -77,4 +89,4 @@ See [icons and exports](/docs/guides/icons-and-exports/) for layouts and saved-s
 
 ## Release your source
 
-Include `slop.ts` and the modules, styles, assets and components it imports, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.
+Include the root role files (`slop.ts`, `schema.ts`, `App.svelte`, `Preview.svelte`, `Icon.svelte`, and any `Export.svelte`, `Widget.svelte` and `commands.ts`), the modules, styles and assets they import, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.

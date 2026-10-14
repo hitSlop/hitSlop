@@ -1,7 +1,7 @@
 //! An allowlist, installed before any authored JavaScript is evaluated. No filesystem,
 //! network, process creation or owner socket operations are available in the child.
 
-pub fn restrict() -> Result<(), String> {
+pub fn restrict(cpu_seconds: u64) -> Result<(), String> {
     let directory = if cfg!(target_os = "macos") { "/dev/fd" } else { "/proc/self/fd" };
     let descriptors = std::fs::read_dir(directory)
         .map_err(|e| e.to_string())?
@@ -17,10 +17,20 @@ pub fn restrict() -> Result<(), String> {
         for fd in descriptors.into_iter().filter(|fd| *fd > 2) {
             libc::close(fd);
         }
-        for (resource, value) in [(libc::RLIMIT_CPU, 3), (libc::RLIMIT_NOFILE, 3), (libc::RLIMIT_CORE, 0)] {
+        for (resource, value) in
+            [(libc::RLIMIT_CPU, cpu_seconds as libc::rlim_t), (libc::RLIMIT_NOFILE, 3), (libc::RLIMIT_CORE, 0)]
+        {
             let limit = libc::rlimit { rlim_cur: value, rlim_max: value };
             if libc::setrlimit(resource, &limit) != 0 {
                 return Err("Cannot limit command process".into());
+            }
+        }
+        // Darwin refuses finite RLIMIT_AS; its parent monitors resident memory instead.
+        #[cfg(target_os = "linux")]
+        {
+            let limit = libc::rlimit { rlim_cur: 2 << 30, rlim_max: 2 << 30 };
+            if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
+                return Err("Cannot limit evaluator address space".into());
             }
         }
     }
@@ -114,7 +124,7 @@ mod tests {
         const MARKER: &str = "HITSLOP_SANDBOX_PROBE";
         if std::env::var_os(MARKER).is_some() {
             let path = std::env::var_os(MARKER).unwrap();
-            super::restrict().unwrap();
+            super::restrict(3).unwrap();
             let file = std::fs::read(path);
             // SAFETY: socket takes numeric constants, returning an owned descriptor or
             // -1. If the sandbox failed to deny it, close it before reporting failure.

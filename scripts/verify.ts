@@ -14,7 +14,7 @@
  *   --keep-going  run every selected tier even after one fails
  *   --no-build    trust the existing builds
  *   --ci          CI reporting (nextest's ci profile) */
-import { tierInputs, sharedInputs, affectedTiers, type TierName } from "./lib/verification-inputs";
+import { tierInputs, sharedInputs, affectedTiers, touchesCompatibility, type TierName } from "./lib/verification-inputs";
 import { appendFile, lstat, mkdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { availableParallelism, tmpdir } from "node:os";
@@ -23,11 +23,12 @@ import { testInventory, checkoutLease, atomicJson, retainReport, changedPaths, t
 import { exec as testExec, verificationAbort } from "./lib/test-process";
 import { run } from "../packages/hitslop/src/cli/process";
 import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artifacts";
-import { debugHelper } from "./lib/native";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftTests } from "./lib/swift-tests";
+import { releases, replayedEntries, compatibilityMode } from "./compat/corpus";
+import { resolveWriters } from "./compat/writers";
 
-type Build = "browser" | "web" | "native" | "templates" | "packages" | "app";
+import { prerequisites, type Build } from "./build/preparation";
 type Tier = {
   name: TierName;
   /** Runs the tier; `args` are a single-tier run's own arguments. */
@@ -38,8 +39,8 @@ type Tier = {
   needs?: Build[];
   /** A native tier: macOS only, selected with --native. */
   native?: boolean;
-  /** Experimental qualification: run only when explicitly named. */
-  explicit?: boolean;
+  /** Run nightly, in a release, or when named; never by a default local or PR run. */
+  nightly?: boolean;
   /** Static checks run together, before the heavy tiers, with their output kept until done. */
   quick?: boolean;
 };
@@ -63,6 +64,27 @@ if (flag("--json") && !flag("--list")) throw new Error("--json requires --list")
 const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
 const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^v/, "") || undefined;
+// Nightly and release runs add expensive boundary cases, presentation, storage-growth
+// budgets and broader randomized coverage. Full compatibility is independently selectable.
+const nightly = release || process.env.HITSLOP_NIGHTLY === "1";
+if (nightly) process.env.HITSLOP_NIGHTLY = "1";
+else {
+  process.env.HITSLOP_MODEL_SEEDS ||= "4";
+  process.env.HITSLOP_MERGE_SEEDS ||= "8";
+  process.env.HITSLOP_COMPAT_SEEDS ||= "1";
+  process.env.HITSLOP_PUBLICATIONS_ROUNDS ||= "10";
+}
+const compatibilityBase = option("--base");
+const sensitive = compatibilityBase && touchesCompatibility((await changedPaths(repository, compatibilityBase)).paths);
+const compatibility = compatibilityMode({ ...process.env,
+  HITSLOP_COMPAT_MODE: sensitive ? "full" : process.env.HITSLOP_COMPAT_MODE || "smoke",
+});
+const nextestFilters = (args: string[]) =>
+  (nightly || args.length) && !args.includes("--ignore-default-filter") ? ["--ignore-default-filter"] : [];
+process.env.HITSLOP_COMPAT_MODE = compatibility;
+// Never let an inherited entry restriction weaken the selected coverage or its cache key.
+if (compatibility === "full") delete process.env.HITSLOP_COMPAT_ENTRIES;
+else process.env.HITSLOP_COMPAT_ENTRIES = replayedEntries(await releases(), false).map(({ name }) => name).join(",");
 // A release builds, and so tests, what ships: the `dist` Cargo profile (scripts/build/core.ts).
 if (release) process.env.HITSLOP_CARGO_PROFILE = "dist";
 const scratch = mkdtempSync(join(tmpdir(), "hitslop-verify-"));
@@ -102,7 +124,7 @@ async function quiet(command: string[], options: { env?: Record<string, string |
   return output;
 }
 
-const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts", "examples/slops/**/*.test.ts"]
+const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts", "slops/**/*.test.ts"]
   .flatMap(pattern => [...new Bun.Glob(pattern).scanSync(repository)]));
 
 /** `bun test` over `files`: positional `args` narrow them by path, options pass through. */
@@ -133,23 +155,35 @@ const tiers: Tier[] = [
     quick: true,
     inputs: tierInputs.types,
     run: async () => {
+      const tsc = (project: string) => quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", project]);
       const output = await Promise.all([
-        quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", "tsconfig.json"]),
+        quiet([process.execPath, "node_modules/prettier/bin/prettier.cjs", "--check", "packages/hitslop/src"]),
+        // Type-aware rules from .oxlintrc.json; .svelte templates are not linted.
+        quiet([process.execPath, "node_modules/oxlint/bin/oxlint", "packages/hitslop/src", "scripts"]),
+        // The type tests' own project relaxes only the unused rules: their checks are never read.
+        tsc("tsconfig.json").then(async (root) => [root, await tsc("packages/hitslop/tests/tsconfig.json")]),
         quiet([process.execPath, "scripts/templates/check.ts"]),
       ]);
-      console.log(output.filter(Boolean).join("\n"));
+      console.log(output.flat().filter(Boolean).join("\n"));
     },
   },
   {
     name: "bun",
-    needs: ["web"],
+    needs: ["sdk"],
     inputs: tierInputs.bun,
     run: (args) => bunTest(inventory.bun, [`--parallel=${Math.min(4, availableParallelism())}`, ...args]),
   },
   {
-    name: "cli", needs: ["web"],
+    name: "cli", needs: ["engine", "shell"],
     inputs: tierInputs.cli,
-    run: (args) => bunTest(inventory.cli, ["--parallel=1", "--timeout=30000", ...args]),
+    run: (args) => bunTest(inventory.cli, ["--parallel=1", "--timeout=120000", ...args]),
+  },
+  {
+    name: "render", needs: ["engine", "shell"], inputs: tierInputs.render,
+    run: (args) => bunTest(inventory.render, ["--parallel=1", "--timeout=120000", ...args], {
+      HITSLOP_TEST_EVIDENCE: runDirectory,
+      ...(release ? { HITSLOP_RENDER: "all" } : {}),
+    }),
   },
   {
     name: "rust",
@@ -158,32 +192,30 @@ const tiers: Tier[] = [
     // is for iterating, so it runs only the tests.
     run: async (args, prepare) => {
       if (!args.length) await prepare("Rust compilation and lints", async () => {
+        await quiet(["cargo", "fmt", "--all", "--", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
-        const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
-        await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
-        const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
-        for (const feature of ["browser", "evaluator"]) await quiet(["cargo", "clippy", "--locked", ...wasm, "--features", feature, "--", "-D", "warnings"], { env: {
-          CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
-          AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
-        } });
+        // The WASM adapter's lints do not depend on the host: Linux and release runs check
+        // them, so macOS runs skip two builds and Homebrew's clang.
+        if (process.platform === "linux" || release) {
+          const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
+          await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
+          const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
+          await quiet(["cargo", "clippy", "--locked", ...wasm, "--features", "browser", "--", "-D", "warnings"], { env: {
+            CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
+            AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
+          } });
+        }
         await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
       });
-      await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...args]);
+      await prepare("Compatibility writers", resolveWriters);
+      await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {
           await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);
           await quiet(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", "--no-run"]);
         });
-        await sh(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", ...(ci ? ["--profile", "ci"] : [])]);
+        await sh(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters([])]);
       }
-    },
-  },
-  {
-    name: "dev-sync", explicit: true, inputs: tierInputs["dev-sync"],
-    run: async (args, prepare) => {
-      const sync = ["-p", "hitslop-core", "-p", "slop-engine", "--features", "dev-sync"];
-      if (!args.length) await prepare("Development sync compilation and lints", () => quiet(["cargo", "clippy", "--locked", ...sync, "--all-targets", "--", "-D", "warnings"]));
-      await sh(["cargo", "nextest", "run", "--locked", ...sync, ...(ci ? ["--profile", "ci"] : []), ...args]);
     },
   },
   {
@@ -199,22 +231,24 @@ const tiers: Tier[] = [
     needs: ["packages"],
     // What the published packages ship: their sources, starter, skills and the page shell.
     inputs: tierInputs.packed,
-    // A release installs the packages against the native helper too.
-    run: (args) => bunTest(inventory.packed, args, release ? { HITSLOP_PACKED_NATIVE: "1" } : {}),
+    // A release also runs the packages' native workflow: register, create, theme and export.
+    run: (args) => bunTest(inventory.packed, ["--timeout=120000", ...args], release ? { HITSLOP_PACKED_NATIVE: "1" } : {}),
   },
   {
     name: "swift",
     native: true,
-    needs: ["native"],
+    needs: ["native", "shell"],
     inputs: tierInputs.swift,
     run: async (args, prepare) => {
+      if (!args.length) await prepare("Swift formatting", async () => {
+        await quiet([process.execPath, "scripts/lib/swift-format.ts", "--check"]);
+      });
       const fixtures = await prepare("Native fixtures", prepareNativeFixtures);
       // Benchmarks change the trial template's build stage before packing it.
       if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();
       await swiftTests({
         ...environment,
         HITSLOP_TEST_EVIDENCE: runDirectory,
-        HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
         HITSLOP_PRESENTATION_FIXTURES: JSON.stringify(fixtures),
       }, args, prepare);
     },
@@ -228,26 +262,17 @@ const tiers: Tier[] = [
     run: async () => {},
   },
   {
-    name: "browser", native: true, needs: ["browser"], inputs: tierInputs.browser,
-    run: async (args, prepare) => {
-      const filters = args.filter(arg => !arg.startsWith("-"));
-      const sync = inventory.browser.some(file => file.endsWith("live-sync.browser.test.ts") && (!filters.length || filters.some(filter => file.includes(filter))));
-      const syncEngine = join(repository, "target/dev-sync/release/slop-engine");
-      if (sync) await prepare("Development sync engine", () => quiet(["cargo", "build", "--locked", "--release", "-p", "slop-engine", "--features", "dev-sync", "--bins", "--target-dir", join(repository, "target/dev-sync")]));
-      await bunTest(inventory.browser, args, {
-        HITSLOP_TEST_EVIDENCE: runDirectory,
-        ...(sync ? { HITSLOP_DEV_SYNC_ENGINE: syncEngine } : {}),
-      });
-    },
+    // Playwright WebKit and Chrome: `slop dev`, EditableText and the local Chrome browser host.
+    name: "browser", native: true, nightly: true, needs: ["browser", "engine", "shell"], inputs: tierInputs.browser,
+    run: (args) => bunTest(inventory.browser, args, { HITSLOP_TEST_EVIDENCE: runDirectory }),
   },
   {
     name: "native",
     native: true,
-    needs: ["native"],
+    needs: ["engine", "shell"],
     inputs: tierInputs.native,
-    run: async (args, prepare) => {
-      await bunTest(inventory.native, args, {
-        HITSLOP_NATIVE_CLI: process.env.HITSLOP_NATIVE_CLI ?? debugHelper,
+    run: async (args) => {
+      await bunTest(inventory.native, ["--timeout=120000", ...args], {
         HITSLOP_TEST_EVIDENCE: runDirectory,
         // A release renders every bundled template and requires its frozen corpus entry.
         ...(release ? { HITSLOP_RENDER: "all" } : {}),
@@ -290,17 +315,17 @@ const inputsOf = (tier: Tier, files: Record<string, string>) =>
   Object.keys(files).filter((path) => [...sharedInputs, ...tier.inputs].some((pattern) => pattern.test(path))).sort();
 // A base/named listing does not consult the local pass cache. A default listing must
 // use the same toolchain identity as an actual run.
-const usesRust = (tier: Tier) => tier.name === "rust" || tier.name === "dev-sync" || tier.name === "contracts" || !!tier.needs?.length;
+const usesRust = (tier: Tier) => tier.name === "rust" || tier.name === "contracts" || !!tier.needs?.length;
 const candidates = named ? tiers.filter(tier => named.includes(tier.name))
-  : tiers.filter(tier => !tier.explicit && (!tier.native || flag("--native") || release));
+  : tiers.filter(tier => (!tier.nightly || nightly) && (!tier.native || flag("--native") || release));
 const listing = flag("--list") && (option("--base") || named || flag("--all") || release);
 const toolchains = {
   rust: !listing && candidates.some(usesRust) ? await run(["rustc", "--version"]).then(s => s.trim()) : null,
-  swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.native && tier.name !== "browser")
+  swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.name === "swift" || tier.name === "app")
     ? await run(["swift", "--version"]).then(s => s.trim()) : null,
 };
 const digestOf = (tier: Tier, files: Record<string, string>) =>
-  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.native && tier.name !== "browser" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", inputsOf(tier, files).map((path) => [path, files[path]])]));
+  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.name === "swift" || tier.name === "app" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", nightly, ["swift", "native"].includes(tier.name) ? compatibility : null, inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
 const differences = (tier: Tier, before: Record<string, string>, after: Record<string, string>) =>
   [...new Set([...inputsOf(tier, before), ...inputsOf(tier, after)])].filter((path) => before[path] !== after[path]);
@@ -349,7 +374,7 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
     return { selection: chosen.map((tier) => ({ tier, reason: "named", args: tierArgs })) };
   }
   const native = flag("--native") || release;
-  const eligible = tiers.filter((tier) => !tier.explicit && (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))));
+  const eligible = tiers.filter((tier) => (!tier.nightly || nightly) && (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))));
   if (flag("--all") || release) return { selection: eligible.map((tier) => ({ tier, reason: release ? "release" : "--all", args: [] })) };
   if (ref) return touched(ref, eligible, []);
   // Locally: every tier whose inputs changed since it last passed on this machine.
@@ -359,7 +384,7 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
     if (record?.digest === digestOf(tier, current)) continue;
     const before = record && history.snapshots[record.snapshot];
     const changed = before ? differences(tier, before, current) : [];
-    selection.push({ tier, reason: !record ? "has not passed here" : changed.length ? `${summary(changed)} changed since it passed` : "the toolchain changed since it passed", args: [] });
+    selection.push({ tier, reason: !record ? "has not passed here" : changed.length ? `${summary(changed)} changed since it passed` : "the toolchain or verification configuration changed since it passed", args: [] });
   }
   return { selection };
 }
@@ -367,7 +392,7 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
 const { selection, base } = await select();
 if (flag("--list") || !selection.length) {
   if (flag("--json")) {
-    console.log(JSON.stringify({ base: base ?? null, tiers: selection.map(({ tier, reason }) => ({ name: tier.name, reason })) }));
+    console.log(JSON.stringify({ base: base ?? null, compatibility, tiers: selection.map(({ tier, reason }) => ({ name: tier.name, reason })) }));
     process.exit(0);
   }
   if (!selection.length)
@@ -381,7 +406,7 @@ runDirectory = join(repository, ".hitslop/evidence/runs", runId);
 await mkdir(runDirectory, { recursive: true });
 const report = {
   runId, directory: runDirectory, command: process.argv.slice(2),
-  configuration: { profile: process.env.HITSLOP_CARGO_PROFILE || "release", bunWorkers: Math.min(4, availableParallelism()), cliWorkers: 1 },
+  configuration: { profile: process.env.HITSLOP_CARGO_PROFILE || "release", nightly, compatibility, bunWorkers: Math.min(4, availableParallelism()), cliWorkers: 1 },
   partial: tierArgs.length > 0,
   reusedBuild: flag("--no-build") || flag("--built"),
   certifiesDefaultRun: !tierArgs.length && !flag("--no-build") && !flag("--built"),
@@ -402,27 +427,14 @@ const report = {
 };
 
 const done = new Map<Build, Promise<void>>();
-/** Builds `name` once; a native build covers the web one. */
+/** Prepare only actual shared outputs, once per graph. */
 function build(name: Build): Promise<void> {
-  if (flag("--no-build") || (flag("--built") && (name === "native" || name === "templates"))) return Promise.resolve();
-  if (name === "web" && done.has("native")) return done.get("native")!;
+  if (flag("--no-build") || (flag("--built") && ["engine", "shell", "native", "sdk", "browser", "templates"].includes(name))) return Promise.resolve();
   if (!done.has(name))
     done.set(name, (async () => {
+      for (const dependency of prerequisites[name]) await build(dependency);
       const started = performance.now();
-      if (name === "web") {
-        await sh([process.execPath, "scripts/build/core.ts", "--wasm"]);
-        await sh([process.execPath, "scripts/build/shell.ts"]);
-        await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
-      }
-      if (name === "browser") {
-        await sh([process.execPath, "scripts/build/browser.ts"]);
-        await sh([process.execPath, "scripts/build/core.ts", "--engine"]);
-        await sh([process.execPath, "scripts/build/shell.ts"]);
-      }
-      if (name === "native") await sh([process.execPath, "scripts/build/build.ts"]);
-      if (name === "templates") await sh([process.execPath, "scripts/templates/build.ts"]);
-      if (name === "packages") await sh([process.execPath, "scripts/build/packages.ts"]);
-      if (name === "app") await sh([process.execPath, "scripts/build/apple.ts"]);
+      await sh([process.execPath, "scripts/build/build.ts", "--output", name]);
       report.builds.push({ name, seconds: (performance.now() - started) / 1000 });
     })());
   return done.get(name)!;
@@ -467,6 +479,7 @@ let passed = true;
 try {
   // Everything a release ships is built first, so tiers test the shipped artifacts.
   if (release) {
+    await sh([process.execPath, "scripts/release/notes.ts", "--check"]);
     await build("native");
     await build("templates");
   }
@@ -500,6 +513,7 @@ try {
   if (process.env.GITHUB_STEP_SUMMARY) {
     await appendFile(process.env.GITHUB_STEP_SUMMARY, [
       `\n### Verification: ${passed ? "passed" : "failed"}\n`,
+      `Compatibility coverage: ${compatibility}. Nightly checks: ${nightly ? "enabled" : "disabled"}.\n`,
       "| Tier | Result | Build/preparation | Tests |", "|---|---|---:|---:|",
       ...report.tiers.map(tier => `| ${tier.name} | ${tier.code ? "failed" : "passed"} | ${tier.buildSeconds.toFixed(1)}s | ${tier.seconds.toFixed(1)}s |`),
       `\nVerification wall time: ${seconds(started).toFixed(1)}s.\n`,

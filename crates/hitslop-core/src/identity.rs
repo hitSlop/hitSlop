@@ -17,28 +17,31 @@ pub(super) fn derived(seed: &str) -> String {
     }
     out
 }
-/// A row's stored `$id`, when it is a valid application ID.
-pub(super) fn stored_id(map: &LoroMap) -> Option<String> {
-    match map.get("$id") {
-        Some(ValueOrContainer::Value(loro::LoroValue::String(s))) if valid_id(&s) => Some(s.to_string()),
-        _ => None,
+pub(super) fn application_id() -> String {
+    let mut bytes = [0u8; 16];
+    random(&mut bytes);
+    let mut buffer = 0u32;
+    let mut bits = 0;
+    let mut out = String::new();
+    for byte in bytes {
+        buffer = (buffer << 8) | u32::from(byte);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(wire::ID_ALPHABET[((buffer >> bits) & 31) as usize] as char);
+        }
     }
+    out.push(wire::ID_ALPHABET[((buffer << (5 - bits)) & 31) as usize] as char);
+    out
 }
-/// Every row's `$id`, in order. Each row stores its own unique ID: the open-time check and
-/// every write keep it so.
-pub(super) fn rows(list: &LoroMovableList) -> Vec<String> {
-    let mut ids = Vec::with_capacity(list.len());
-    list.for_each(|row| {
-        ids.push(match row {
-            ValueOrContainer::Container(Container::Map(map)) => stored_id(&map).unwrap_or_default(),
-            _ => String::new(),
-        })
-    });
-    ids
-}
-#[cfg(feature = "storage")]
-#[test]
-fn derived_ids_are_stable() {
-    assert_eq!(derived("cid:7@12345:Map"), "x-r01fjb7pch2ptdbhx3heg86d");
-    assert_eq!(derived("2@99"), "x-8ytk4r1fvcw0kgf6n48rg87f");
+
+#[cfg(all(test, feature = "storage", not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derived_ids_are_stable() {
+        assert_eq!(derived("cid:7@12345:Map"), "x-r01fjb7pch2ptdbhx3heg86d");
+        assert_eq!(derived("2@99"), "x-8ytk4r1fvcw0kgf6n48rg87f");
+    }
 }

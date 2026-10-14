@@ -4,19 +4,22 @@ import type { LiveDocument } from "./schema";
  * default-exports a `SlopApp`; the shell opens the document, then calls
  * `mount(ctx, target)`. Apps reach the host only through `ctx`.
  *
- * Every released app.js keeps running against later shells. `ctx` grows additively;
+ * Every released ui.js keeps running against later shells. `ctx` grows additively;
  * a change an older app cannot run raises `RuntimeABI`, and the shell keeps the older
- * behavior for packages built at the lower level. New members of object-like handles
- * start with `$`, which no field name can, so they never shadow an author's fields.
+ * behavior for packages built at the lower level. A handle that carries an author's
+ * fields (an object, a row, a record entry, an optional object) starts any member of its
+ * own, now or later, with `$`, which no field name can, so none shadows a field: an
+ * optional object has `$set` and `$clear`. Handles without fields (scalars, text, lists,
+ * records, counters) keep plain names.
  *
  * The ABI is more than `ctx`: an app's bundles carry SDK code that meets the host here.
  * Each of these is released behavior and changes only behind a raised RuntimeABI:
  * - Page boot: the shell imports `/assets/ui.js` (default export `SlopApp`) and links
  *   `/assets/ui.css` when present; it mounts the app only when `SlopApp.descriptor` equals
  *   the file's stored descriptor as JSON, so the host passes that descriptor unnormalized.
- * - Command program (`commands.js`): it sets `globalThis.__slopCommands` (name → command)
- *   and `__slopDescribe`; a command carries `Symbol.for("slop.command")` →
- *   `{ definition, spec: { description, args, run }, name }`. The ABI's evaluator prelude
+ * - Command program (`commands.js`): it sets `globalThis.__slopCommands` to a set
+ *   branded with `Symbol.for("slop.command-set")` → `{ document, specs }`, and sets
+ *   `__slopDescribe`; specs map names to `{ description, args, run }`. The ABI's evaluator prelude
  *   defines `__slopRun(json)` and replies `{ ok, intents, result }` or `{ ok: false,
  *   error }`, with intents in the core's vocabulary for that ABI.
  * - Errors: `Symbol.for("slop.operation-error")` brands document outcomes; apps treat an
@@ -25,11 +28,13 @@ import type { LiveDocument } from "./schema";
  *   `{ ok: false, error, refused: true }`. The shell offers an unhandled refusal to the
  *   app as a cancelable `slop:refused` event on `document` whose `detail` is the
  *   message; an app that cancels it has shown the message, otherwise it is reported.
+ *   `Symbol.for("slop.speech-error")` brands a `SpeechError` from `ctx.speech`; its
+ *   `code` and `reason` may grow the same way.
  * - Markup the host styles: `[data-slop-root]` (the app's root, sized to the window),
- *   `[data-slop-capture-target]` and `[data-slop-active-target]` (capture targets,
- *   children of `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the
- *   attributes the host sets on `<html>`: `data-slop-presentation`, `data-slop-capture`,
- *   `data-slop-resizable`, `data-slop-renderer`, `data-slop-controls`. The Svelte root renders
+ *   `[data-slop-capture-target]` (the wrapper of a static view's markup, child of
+ *   `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the attributes the
+ *   host sets on `<html>`: `data-slop-presentation`, `data-slop-capture`,
+ *   `data-slop-resizable`, `data-slop-controls`. The Svelte root renders
  *   `[data-slop-notice]`, a status region holding the current notice as a `<p>`.
  * - CSS variables: `--slop-<token>` for each theme color and `--slop-window-radius`,
  *   `--slop-window-width` and `--slop-window-height`.
@@ -42,12 +47,10 @@ import type { LiveDocument } from "./schema";
  * expose the accepted immutable snapshot, not a promise of DOM paint. subscribe allows
  * multiple listeners; observe allows one adapter, with identity-safe cleanup so an old
  * adapter cannot detach its replacement. Text merge/IME/caret behavior stays in the host.
- * Capture detection, AbortSignal preparations and one target per role remain host APIs;
- * preparation includes hooks registered by the capture view itself, and cleanup pairs
- * with failed or canceled preparation. Draft, motion and notice presentation stay in
- * the SDK. They do not add host APIs. Rust owns the capture enum and shared limits.
- * The conformance app in the frozen corpus (`tests/abi/owner-svelte`) exercises these
- * against every later shell.
+ * Draft, motion and notice presentation stay in the SDK. They do not add host APIs.
+ * Static views (Preview, Export, Icon, Widget) render from their props and never meet
+ * `ctx`. Rust owns the capture kinds and shared limits. The conformance app in the frozen
+ * corpus (`tests/abi/owner-svelte`) exercises these against every later shell.
  */
 /** The runtime ABI this SDK's app-side code needs; `slop build` stamps it. */
 export { RuntimeABI } from "../schema/constants";
@@ -60,8 +63,18 @@ export type Scope<N extends ObjectNode> = {
 };
 export type AttachmentInfo = import("../schema/values").AttachmentInfo;
 export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
-export type { CaptureMode } from "../wire/page.generated";
-import type { CaptureMode } from "../wire/page.generated";
+export type { WidgetViewport as WidgetProps } from "../wire/page.generated";
+/** A recording stored with `attachments.import` (its reference), or its attachment ID. */
+export type SpeechClip = string | { readonly id: string };
+export interface SpeechOptions {
+  /** A locale identifier such as `"en-US"`; the person's own locale when absent. */
+  locale?: string;
+}
+export interface SpeechTranscript {
+  text: string;
+  /** The locale the recognizer used. */
+  locale: string;
+}
 
 export interface SlopApp {
   /** The document descriptor the app was built for (`svelteApp` declares its schema's); the
@@ -85,14 +98,6 @@ export interface SlopContext {
     /** Two-way text binding with IME composition and remote-edit transforms. */
     text(element: HTMLInputElement | HTMLTextAreaElement, handle: TextHandle): Binding<TextHandle>;
   };
-  readonly capture: {
-    /** True inside the host's export renderer. */
-    isRenderer(): boolean;
-    onPrepare(
-      handler: (mode: CaptureMode, signal: AbortSignal) => void | Promise<void>,
-    ): () => void;
-    registerTarget(kind: "icon" | "export", target: CaptureTarget): () => void;
-  };
   readonly attachments: {
     /** Stores the file, then runs `reference` synchronously (like `change`) to write
      * its reference; both are accepted together or the promise rejects. */
@@ -102,6 +107,12 @@ export interface SlopContext {
     ): Promise<AttachmentRef>;
     url(id: string): string;
     read(id: string): Promise<Blob>;
+  };
+  readonly speech: {
+    /** Transcribes a stored recording on this device. The host reads it by attachment ID,
+     * so it never crosses the page bridge again. Rejects with a `SpeechError` (brand
+     * `slop.speech-error`) when speech is unavailable, cancelled or failed. */
+    transcribe(clip: SpeechClip, options?: SpeechOptions): Promise<SpeechTranscript>;
   };
   readonly window: {
     /** Request a window content size; ignored where the host has no window. */
@@ -115,15 +126,9 @@ export interface Binding<H> {
   update(next: H): void;
   destroy(): void;
 }
-export interface CaptureTarget {
-  element: HTMLElement;
-  prepare(): void | Promise<void>;
-  restore(): void | Promise<void>;
-}
 
 export interface SlopDocument<N extends ObjectNode> extends LiveDocument<N> {
-  /** A named synchronous action; the host applies one guarded undo step. */
-  runCommand<R>(name: string, args: unknown): Promise<R>;
+  /** Observes accepted snapshot updates; returns an idempotent disposer. */
   subscribe(listener: () => void): () => void;
   /** Called whenever a scalar handle's `value` is read, so a framework adapter can
    * record the dependency (Svelte reads its own signal here). Replaces the active

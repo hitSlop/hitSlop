@@ -286,12 +286,24 @@
   .desktop[data-drag="false"] .grip-hint { display: none; }
   .desktop[data-drag="false"] .bar { cursor: default; }
   @media (max-width: 779px) {
+    .desktop { border-radius: 20px; box-shadow: 0 14px 30px #414d8220, 0 4px 0 #ffffff99; }
+    .menubar { padding-inline: 12px; gap: 8px; font-size: 12px; }
+    .menubar-right { gap: 8px; }
     .dock-tools { display: none; }
-    .surface { height: auto !important; padding: 18px 16px 104px; display: flex; align-items: center; gap: 16px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
-    .win { position: relative !important; left: auto !important; top: auto !important; flex: none; rotate: 0deg !important; scroll-snap-align: center; max-width: calc(100vw - 64px); }
-    .win[data-kind="video"] { width: min(var(--w), calc(100vw - 64px)); }
+    .surface, .desktop[data-drag="false"] .surface { height: auto !important; padding: 12px 12px 88px; display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; scroll-padding-inline: 12px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+    .win { position: relative !important; left: auto !important; top: auto !important; flex: none; rotate: 0deg !important; scroll-snap-align: start; max-width: 100%; touch-action: auto; }
+    .win[data-kind="video"] { width: 100%; }
+    .bar { padding-inline: 8px; gap: 6px; }
+    .bar .title { padding-right: 0; font-size: 11px; }
+    .play { width: 48px; height: 48px; }
+    .play svg { width: 24px; }
+    .play-label { left: 8px; bottom: 8px; padding: 4px 8px; font-size: 11px; }
+    .play-label small { font-size: 11px; }
     .grip-hint, .menubar-menus { display: none; }
-    .dock-app { width: 44px; height: 44px; font-size: 22px; }
+    .dock { max-width: calc(100% - 16px); padding: 8px 6px 12px; gap: 4px; overflow-x: auto; border-radius: 18px; }
+    .dock-app { width: 44px; height: 44px; flex: 0 0 44px; font-size: 22px; }
+    .dock-app:hover, .dock-app:focus-visible { transform: none; }
+    .tip { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { .win, .dock-app { transition: none; } }
 </style>
