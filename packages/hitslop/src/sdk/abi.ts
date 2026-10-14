@@ -6,8 +6,11 @@ import type { LiveDocument } from "./schema";
  *
  * Every released ui.js keeps running against later shells. `ctx` grows additively;
  * a change an older app cannot run raises `RuntimeABI`, and the shell keeps the older
- * behavior for packages built at the lower level. New members of object-like handles
- * start with `$`, which no field name can, so they never shadow an author's fields.
+ * behavior for packages built at the lower level. A handle that carries an author's
+ * fields (an object, a row, a record entry, an optional object) starts any member of its
+ * own, now or later, with `$`, which no field name can, so none shadows a field: an
+ * optional object has `$set` and `$clear`. Handles without fields (scalars, text, lists,
+ * records, counters) keep plain names.
  *
  * The ABI is more than `ctx`: an app's bundles carry SDK code that meets the host here.
  * Each of these is released behavior and changes only behind a raised RuntimeABI:

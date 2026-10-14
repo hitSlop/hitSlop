@@ -162,7 +162,7 @@
       image.src = url;
       await image.decode();
       await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
-        tx.fields.photo.set({ id: ref.id, mimeType: ref.mimeType });
+        tx.fields.photo.$set({ id: ref.id, mimeType: ref.mimeType });
       });
       announcement = "Photo added.";
     } catch (error) {
@@ -271,7 +271,7 @@ Start with one little moment.`}</p><button class="bj-pill" onclick={() => startE
   <Dialog.Root bind:open={profileOpen}>
     <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog">
       <div class="bj-dialog-heading"><div><Dialog.Title class="bj-dialog-title">Your little one</Dialog.Title><Dialog.Description class="bj-dialog-description">Make this little journal theirs.</Dialog.Description></div><Dialog.Close class="bj-icon-button" aria-label="Close profile"><Mark kind="close" size={23}/></Dialog.Close></div>
-      <div class="bj-profile-photo-edit">{@render portrait()}<div><input class="bj-sr-only" tabindex="-1" type="file" accept="image/jpeg,image/png,image/webp" bind:this={fileInput} onchange={importPhoto} aria-label="Baby photo"/><button class="bj-pill" disabled={importing} onclick={() => fileInput?.click()}><Mark kind="camera" size={20}/>{importing ? "Adding photo…" : photo ? "Change photo" : "Add a photo"}</button>{#if photo}<button class="bj-text-button" disabled={importing} onclick={() => { doc.fields.photo.clear(); photoError = ""; }}>Remove photo</button>{/if}<p class="bj-help">JPEG, PNG, or WebP · up to 10 MB</p></div></div>
+      <div class="bj-profile-photo-edit">{@render portrait()}<div><input class="bj-sr-only" tabindex="-1" type="file" accept="image/jpeg,image/png,image/webp" bind:this={fileInput} onchange={importPhoto} aria-label="Baby photo"/><button class="bj-pill" disabled={importing} onclick={() => fileInput?.click()}><Mark kind="camera" size={20}/>{importing ? "Adding photo…" : photo ? "Change photo" : "Add a photo"}</button>{#if photo}<button class="bj-text-button" disabled={importing} onclick={() => { doc.fields.photo.$clear(); photoError = ""; }}>Remove photo</button>{/if}<p class="bj-help">JPEG, PNG, or WebP · up to 10 MB</p></div></div>
       {#if photoError}<p class="bj-error" role="alert">{photoError}</p>{/if}
       <div class="bj-form"><label>Baby’s name<input placeholder="What’s their name?" use:bindText={doc.fields.name}/></label><label>Birthday <small>(optional)</small><input type="date" value={doc.current.birthday} max={today} onchange={setBirthday}/></label>{#if birthdayError}<p class="bj-error" role="alert">{birthdayError}</p>{/if}<div class="bj-field"><span>A favorite color</span><RadioGroup.Root class="bj-colors" aria-label="Favorite color" value={doc.current.color} onValueChange={value => { if (colors.includes(value as typeof colors[number])) doc.fields.color.set(value as typeof colors[number]); }}>{#each colors as color}<RadioGroup.Item value={color} aria-label={color} style={`--bj-swatch: var(--slop-${color})`}><span>{doc.current.color === color ? "✓" : ""}</span><small>{color}</small></RadioGroup.Item>{/each}</RadioGroup.Root></div><div class="bj-form-footer"><Dialog.Close class="bj-button">Done</Dialog.Close></div></div>
     </Dialog.Content></Dialog.Portal>

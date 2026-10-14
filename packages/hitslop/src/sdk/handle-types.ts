@@ -100,12 +100,15 @@ type ValueHandle<N extends Node, M extends Mode> =
 export type Handle<N extends Node, M extends Mode = "live"> =
   N extends OptionalNode<infer S>
     ? S extends ObjectNode
-      ? ValueHandle<S, M> & {
+      ? // This handle also carries the object's fields, so its own members start with `$`,
+        // which no field name can: a field may be named `set` or `clear`.
+        ValueHandle<S, M> & {
           /** Creates an absent object with defaults. An existing object requires all
            * required fields (the type cannot tell which; the owner refuses an incomplete
            * one); complete values reconcile children and remove omitted optionals. */
-          set(value: Input<S>): Write<M>;
-          clear(): Write<M>;
+          $set(value: Input<S>): Write<M>;
+          /** Removes the object (clearing an absent one does nothing). */
+          $clear(): Write<M>;
         }
       : S extends Text
         ? // An unset text reads as "": `set` or typing into a bound field creates it.

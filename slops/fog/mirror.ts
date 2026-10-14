@@ -38,7 +38,7 @@ export function setBrush(tx: Edit, radius: number) {
 /** Keeps a new snapshot; the previous one is dropped from the file when it closes. */
 export function keepSnapshot(tx: Edit, ref: FileRef, width: number, height: number, at: string) {
   if (!Number.isFinite(Date.parse(at))) refuse("That time is not a valid date.");
-  tx.fields.snapshot.set({
+  tx.fields.snapshot.$set({
     id: ref.id, name: ref.name, mimeType: ref.mimeType, byteLength: ref.byteLength,
     width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)), at,
   });
@@ -46,5 +46,5 @@ export function keepSnapshot(tx: Edit, ref: FileRef, width: number, height: numb
 
 export function clearSnapshot(tx: Edit, data: Mirror) {
   if (!data.snapshot) refuse("There is no saved snapshot to clear.");
-  tx.fields.snapshot.clear();
+  tx.fields.snapshot.$clear();
 }

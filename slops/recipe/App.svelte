@@ -170,7 +170,7 @@
     try {
       // The reference is written in the same step as the stored image.
       await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
-        tx.fields.photo.set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
+        tx.fields.photo.$set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
       });
     } catch {
       photoError = "That photo couldn’t be added. Try another image.";
@@ -231,7 +231,7 @@
             <button type="button" aria-label="Replace meal photo" onclick={() => picker?.click()}>
               <Camera size={13} />Replace
             </button>
-            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={() => doc.fields.photo.clear()}><X size={13} /></button>
+            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={() => doc.fields.photo.$clear()}><X size={13} /></button>
           </div>{/if}
           <input bind:this={picker} class="srOnly" data-slop-export="hide" type="file" accept="image/*" tabindex="-1" onchange={onPhoto} />
         </figure>
