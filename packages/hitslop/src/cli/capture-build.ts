@@ -10,15 +10,12 @@ import type { DefinitionBuildOptions } from "./definition-config";
 import { portableAssetURLs } from "./asset-url-transform";
 import { declaresModuleState } from "./capture-state";
 
-/** What a capture build reads besides its own graph: the editor build's emitted resources
- * and its stylesheets, which every capture imports first in the editor's order. */
+/** Each static role builds its own graph, including stylesheets and component CSS. */
 export type CaptureInputs = {
   source: string;
   roles: AppRoles;
   sdk: string;
-  ui: Map<string, Emitted>;
   options: DefinitionBuildOptions;
-  editorStyles: string[];
 };
 type Binding = [specifier: string, name: string];
 type Resolve = (specifier: string, importer: string) => Promise<string | undefined>;
@@ -54,7 +51,7 @@ export function refuseHostRuntime(id: string, sdk: string, error: (message: stri
  * build inspects the authored modules it compiles, before SSR erases unsupported calls. */
 export async function buildCapture(
   role: "widget" | "icon" | "preview" | "export",
-  { source, roles, sdk, ui, options, editorStyles }: CaptureInputs,
+  { source, roles, sdk, options }: CaptureInputs,
 ) {
   const component = roles[role];
   if (!component) return;
@@ -158,8 +155,7 @@ export async function buildCapture(
         return 'throw Error("Node services are unavailable in synchronous capture rendering");';
       if (styles.has(id)) return styles.get(id);
       if (id !== entry) return;
-      return `${editorStyles.map((path) => `import ${JSON.stringify(path)};`).join("\n")}
-import Component from ${JSON.stringify(component)};
+      return `import Component from ${JSON.stringify(component)};
 import {${renderer}} from ${JSON.stringify(join(sdk, role === "widget" ? "app/widget-render.ts" : "app/capture-render.ts"))};
 globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCaptureCSS)(json);`;
     },
@@ -281,11 +277,17 @@ globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCapt
   if ("on" in result) throw new Error("Capture builds cannot watch");
   let program = "";
   let css = "";
-  const resources = new Map(ui);
+  const resources = new Map<string, Emitted>();
   for (const output of Array.isArray(result) ? result : [result])
     for (const item of output.output) {
       if (item.type === "chunk") program += item.code;
-      else if (item.fileName.endsWith(".css"))
+      // Raw CSS URL imports are resources, not part of the role's cascade. Vite names
+      // only its combined stylesheet with this synthetic source name.
+      else if (
+        typeof item.source === "string" &&
+        item.names.includes("style.css") &&
+        item.originalFileNames.includes("style.css")
+      )
         css += "\n" + new TextDecoder().decode(bytesOf(item.source));
       else
         resources.set(item.fileName, {
@@ -295,11 +297,26 @@ globalThis.${functionName} = json => ${renderer}(Component,globalThis.__slopCapt
         });
     }
   // Resources are immutable bytes from the build inventory, never runtime filesystem URLs.
-  const inline = (text: string) =>
+  const urls = new Map<string, string>();
+  const visiting = new Set<string>();
+  const inline = (text: string): string =>
     text.replace(/\/assets\/([a-zA-Z0-9_./-]+)/g, (_, key: string) => {
+      const cached = urls.get(key);
+      if (cached) return cached;
       const resource = resources.get(key);
       if (!resource) throw new Error(`Capture references an asset no build emitted: ${key}`);
-      return `data:${resource.mediaType};base64,${Buffer.from(resource.bytes).toString("base64")}`;
+      if (visiting.has(key)) throw new Error(`Circular capture resource reference: ${key}`);
+      visiting.add(key);
+      // Vite also rewrites dependencies inside raw CSS assets. Resolve those before
+      // encoding the asset, so a nested URL never needs a filesystem or browser origin.
+      const bytes =
+        resource.mediaType === "text/css"
+          ? bytesOf(inline(new TextDecoder().decode(resource.bytes)))
+          : resource.bytes;
+      const url = `data:${resource.mediaType};base64,${Buffer.from(bytes).toString("base64")}`;
+      urls.set(key, url);
+      visiting.delete(key);
+      return url;
     });
   const sheet = postcss.parse(inline(css));
   // A package can introduce a missing global even when authored modules do not

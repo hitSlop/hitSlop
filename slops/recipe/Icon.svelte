@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 {#snippet cookbook()}
   <svg class="iconBook" viewBox="0 0 512 512" fill="none">
     <path d="M32 110Q142 76 256 118Q370 76 480 110V402Q368 370 256 412Q144 370 32 402Z" fill="currentColor" />

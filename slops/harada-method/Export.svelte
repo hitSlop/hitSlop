@@ -1,4 +1,6 @@
 <script lang="ts">
+import "hitslop/base.css";
+import "./styles.css";
 import type { CaptureProps } from "hitslop/svelte";
 import Check from "@lucide/svelte/icons/check";
 import type schema from "./schema";

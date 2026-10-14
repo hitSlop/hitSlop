@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "hitslop/base.css";
   import "./styles.css";
   // The export shows the last saved snapshot as it was kept, or the resting mirror when
   // none is saved. It never asks for the camera or microphone.

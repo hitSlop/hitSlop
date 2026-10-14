@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   </script>
 
 <div class={"md-iconSurface"} aria-hidden="true">

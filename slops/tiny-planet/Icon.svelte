@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <svg class="planet-icon" viewBox="0 0 400 400" aria-hidden="true">
   <rect width="400" height="400" fill="var(--slop-space)" />
   <circle cx="90" cy="80" r="3" fill="var(--slop-ink)" /><circle cx="320" cy="110" r="2.4" fill="var(--slop-ink)" /><circle cx="300" cy="320" r="3" fill="var(--slop-ink)" /><circle cx="70" cy="300" r="2.2" fill="var(--slop-ink)" />

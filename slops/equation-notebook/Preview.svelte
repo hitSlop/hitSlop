@@ -1,4 +1,7 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./mathlive-static.css";
+  import "./styles.css";
   import type { CaptureMode, CaptureProps } from "hitslop/svelte";
   import type schema from "./schema";
   import Capture from "./Export.svelte";

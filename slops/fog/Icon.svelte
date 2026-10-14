@@ -1,4 +1,5 @@
 <script lang="ts">
+  import "hitslop/base.css";
   import "./styles.css";
   import Glass from "./Glass.svelte";
 </script>

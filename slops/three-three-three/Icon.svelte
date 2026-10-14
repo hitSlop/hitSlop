@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <section class="ttt-render ttt-icon" data-slop-render="icon" aria-hidden="true">
   <article class="icon-page">
     <div class="icon-bands">

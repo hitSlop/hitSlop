@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   // The answer sheet in miniature: timing marks, the printed header, a filled answer bubble
   // and a short load strip. It is drawn with plain elements so it stays crisp at icon size.
   const bars = [0.9, 0.62, 0.74, 0.46, 0.55, 0.34, 0.4];

@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <div class="iconSurface" aria-hidden="true">
   <svg class="iconGraphic" viewBox="0 0 512 512" fill="none">
     <rect x="28" y="28" width="456" height="456" rx="104" style="fill: var(--slop-accentInk)"/>

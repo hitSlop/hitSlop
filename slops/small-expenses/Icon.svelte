@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <svg class="expenses-icon" viewBox="0 0 512 512" aria-hidden="true">
   <rect x="28" y="28" width="456" height="456" rx="98" fill="var(--slop-accent)" />
   <path d="M132 96h248v336l-31-17-31 17-31-17-31 17-31-17-31 17-31-17-31 17Z" fill="var(--slop-surface)" />

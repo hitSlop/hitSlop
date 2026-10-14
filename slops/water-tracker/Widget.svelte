@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import type { CaptureProps, WidgetProps } from "hitslop/svelte";
   import type schema from "./schema";
   import { intakeView } from "./intake";

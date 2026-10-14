@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <section class="cornell-render cornell-icon" data-slop-render="icon" aria-hidden="true">
   <div class="icon-sheet">
     <div class="icon-head">

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   // A steno pad with the recorder's red key. Independent of saved state and devices.
   import Spiral from "./Spiral.svelte";
 </script>

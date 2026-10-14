@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   // A fresh, read-only page: it renders saved frames only and never asks for the camera.
   import type { CaptureMode, CaptureProps } from "hitslop/svelte";
   import type schema from "./schema";

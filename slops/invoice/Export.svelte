@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import type { CaptureProps } from "hitslop/svelte";
   import { moneyLabel } from "../_shared/format";
   import type schema from "./schema";

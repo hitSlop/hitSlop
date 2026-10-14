@@ -1,3 +1,8 @@
+<script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
+</script>
+
 <div class="pocket-icon" aria-label="Pocket Sheet">
       <div class="pocket-icon-sheet">
         <span></span><b>A</b><b>B</b>

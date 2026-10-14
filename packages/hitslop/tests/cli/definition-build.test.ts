@@ -9,6 +9,83 @@ import { runInNewContext } from "node:vm";
 import { buildGraphs } from "../../src/cli/definition-config";
 import { portableAssetURLs } from "../../src/cli/asset-url-transform";
 
+import { execute } from "../../src/cli/engine";
+
+test("URL assets keep content-addressed keys alongside the bundled stylesheet", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-url-assets-"));
+  try {
+    const source = join(root, "source"),
+      stage = join(root, "stage");
+    const options = await definitionFixture(source);
+    const assets = ["x.css", "ui.css", "style.css", "x.js", "x.json"];
+    for (const name of assets)
+      await writeFile(
+        join(source, name),
+        name.endsWith(".css")
+          ? `.asset{--name:"${name}"}`
+          : name.endsWith(".json")
+            ? '{"asset":true}'
+            : "export const asset = true;",
+      );
+    await writeFile(
+      join(source, "x.css"),
+      '.asset{--name:"x.css";background:url("./lib/paper.svg")}',
+    );
+    const app = await readFile(join(source, "App.svelte"), "utf8");
+    await writeFile(
+      join(source, "App.svelte"),
+      app.replace(
+        '<script lang="ts">',
+        '<script lang="ts">' +
+          assets.map((name, i) => `import asset${i} from './${name}?url';`).join(""),
+      ) + assets.map((_, i) => `<a href={asset${i}}>Asset ${i}</a>`).join(""),
+    );
+    const { input } = await buildDefinition(source, stage, options);
+    expect(input.roles.style).toBe("ui.css");
+    const ui = await readFile(join(stage, "resources/ui.js"), "utf8");
+    for (const name of assets) {
+      const candidates = await Promise.all(
+        input.resources
+          .filter(
+            (resource) => resource.key.startsWith("media/") && resource.key.endsWith(extname(name)),
+          )
+          .map(async (resource) => ({
+            key: resource.key,
+            bytes: await readFile(join(stage, resource.path)),
+          })),
+      );
+      const emitted = candidates.find(({ bytes }) =>
+        bytes
+          .toString()
+          .includes(
+            name.endsWith(".css")
+              ? name
+              : name.endsWith(".json")
+                ? '"asset"'
+                : "export const asset",
+          ),
+      );
+      expect(emitted).toBeDefined();
+      const { key, bytes } = emitted!;
+      expect(key).toBe(resourceKey(bytes, name));
+      expect(ui).toContain(`/assets/${key}`);
+      if (name === "x.css")
+        expect(bytes.toString()).toContain(
+          `/assets/${resourceKey(await readFile(join(source, "lib/paper.svg")), "paper.svg")}`,
+        );
+    }
+    await execute({
+      method: "pack",
+      stage,
+      app: input,
+      file: join(root, "fixture.slop"),
+      renderViews: false,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
+
 test("capture roles require icon and preview while export is independent and optional", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-capture-roles-"));
   try {
@@ -39,7 +116,7 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
   try {
     const source = join(root, "source");
     const options = await definitionFixture(source);
-    const view = '<script>let {snapshot,family}=$props();</script><h1>{snapshot.title} {family}</h1><svg width="16" height="16"><rect width="16" height="16" fill="var(--slop-accent)"/><text>{snapshot.title}</text></svg>';
+    const view = '<script>import "./theme.css"; let {snapshot,family}=$props();</script><h1>{snapshot.title} {family}</h1><svg width="16" height="16"><rect width="16" height="16" fill="var(--slop-accent)"/><text>{snapshot.title}</text></svg>';
     await writeFile(join(source, "Widget.svelte"), view);
     const bundle = async () => new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("widget.js")!.bytes);
     const script = await bundle();
@@ -87,14 +164,14 @@ test("private widget SSR reads saved state, packages font aliases, and refuses w
     const attached = new TextDecoder().decode((await buildGraphs(source, options)).outputs.definition.get("export.js")!.bytes);
     const attachedContext: Record<string, any> = {};
     runInNewContext(attached, attachedContext);
-    const request = {kind:"export",width:320,height:240,snapshot:{},theme:{},resources:{photo:"data:image/png;base64," + "A".repeat(1024 * 1024)}};
+    const request = {kind:"export",width:320,height:240,snapshot:{},theme:{},attachments:{photo:"image/png"}};
     const image = JSON.parse(attachedContext.__slopCapture(JSON.stringify(request)));
     expect(image.frames[0].html.match(/src="slop-attachment:photo"/g)).toHaveLength(2);
     expect(image.frames[0].html).not.toContain("base64");
     expect(image.frames[0].html.length).toBeLessThan(1024);
     expect(image.frames[0].html).toContain('data-slop-capture="static"');
-    for (const resources of [{}, {photo:null}, {photo:""}, null])
-      expect(() => attachedContext.__slopCapture(JSON.stringify({...request,resources}))).toThrow("missing or is not a supported image");
+    for (const attachments of [{}, {photo:null}, {photo:"image/avif"}, {photo:""}, null])
+      expect(() => attachedContext.__slopCapture(JSON.stringify({...request,attachments}))).toThrow("missing or is not a supported image");
     await writeFile(join(source, "Export.svelte"), "<p>Capture</p>");
     await writeFile(join(source, "Widget.svelte"), view.replace("$props();", '$props(); snapshot.title="bad";'));
     const mutation = await bundle();
@@ -161,20 +238,43 @@ test("a capture keeps the stylesheets, images and fonts only it imports", async 
   try {
     const source = join(root, "source");
     const options = await definitionFixture(source);
-    await writeFile(join(source, "export.css"), '@font-face{font-family:Capture;src:url("./font.woff2") format("woff2")}p{--capture-only:7px;font-family:Capture}');
-    await writeFile(join(source, "Export.svelte"), '<script>import "./export.css"; import image from "./export.svg";</script><p>Export</p><img src={image} alt="Export image"/><style>p{--component-only:3px}</style>');
+    await writeFile(
+      join(source, "export.css"),
+      '@font-face{font-family:Capture;src:url("./font.woff2") format("woff2")}p{--capture-only:7px;font-family:Capture}',
+    );
+    await writeFile(
+      join(source, "Export.svelte"),
+      '<script>import "./export.css"; import image from "./export.svg";</script><p>Export</p><img src={image} alt="Export image"/><style>p{--component-only:3px}</style>',
+    );
     const { outputs } = await buildGraphs(source, options);
     const context: Record<string, any> = {};
     runInNewContext(new TextDecoder().decode(outputs.definition.get("export.js")!.bytes), context);
-    const result = JSON.parse(context.__slopCapture(JSON.stringify({kind:"export", width:320, height:240, snapshot:{title:"Saved"}, theme:{}})));
+    const result = JSON.parse(
+      context.__slopCapture(
+        JSON.stringify({
+          kind: "export",
+          width: 320,
+          height: 240,
+          snapshot: { title: "Saved" },
+          theme: {},
+        }),
+      ),
+    );
     expect(result.frames[0].css).toContain("--capture-only:7px");
     expect(result.frames[0].css).toContain("--component-only:3px");
-    expect(result.frames[0].html).toContain(`src="data:image/svg+xml;base64,${(await readFile(join(source, "export.svg"))).toString("base64")}"`);
-    expect(result.fonts.map((font: { family: string }) => font.family)).toEqual(expect.arrayContaining(["Capture", "Fixture"]));
-  } finally { await rm(root, { recursive: true, force: true }); }
+    expect(result.frames[0].html).toContain(
+      `src="data:image/svg+xml;base64,${(await readFile(join(source, "export.svg"))).toString("base64")}"`,
+    );
+    expect(result.fonts.map((font: { family: string }) => font.family)).toEqual(["Capture"]);
+    expect(result.frames[0].css).not.toContain(
+      `data:image/svg+xml;base64,${(await readFile(join(source, "lib/paper.svg"))).toString("base64")}`,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }, 60000);
 
-test("captures order stylesheets as the editor imports them, wherever the project is", async () => {
+test("captures use their own stylesheet graph in import order, wherever the project is", async () => {
   const programs: string[] = [];
   // The same project in two places builds the same capture programs.
   for (const place of ["a", join("another", "checkout")]) {
@@ -182,21 +282,103 @@ test("captures order stylesheets as the editor imports them, wherever the projec
     try {
       const source = join(root, place, "source");
       const options = await definitionFixture(source);
-      // Equal-strength rules for one element: the later stylesheet wins. The editor imports
-      // 1, Panel (which imports 2), 3 and 4; the export imports 5, then 1 again.
-      for (const n of [1, 2, 3, 4, 5]) await writeFile(join(source, `s${n}.css`), `.s${n}{--winner:${n}}`);
-      await writeFile(join(source, "Panel.svelte"), '<script>import "./s2.css";</script><p>Panel</p>');
-      await writeFile(join(source, "App.svelte"), '<script>import "./s1.css"; import Panel from "./Panel.svelte"; import "./s3.css"; import "./s4.css";</script><Panel/>');
-      await writeFile(join(source, "Export.svelte"), '<script>import "./s5.css"; import "./s1.css";</script><p class="s1 s2 s3 s4 s5">Export</p>');
-      const { outputs } = await buildGraphs(source, options);
-      const context: Record<string, any> = {};
-      runInNewContext(new TextDecoder().decode(outputs.definition.get("export.js")!.bytes), context);
-      const { css } = JSON.parse(context.__slopCapture(JSON.stringify({kind:"export", width:320, height:240, snapshot:{title:"Saved"}, theme:{}}))).frames[0];
-      expect([...css.matchAll(/--winner:(\d)/g)].map((match: string[]) => Number(match[1]))).toEqual([1, 2, 3, 4, 5]);
-      programs.push(["icon.js", "preview.js", "export.js"].map((key) => new TextDecoder().decode(outputs.definition.get(key)!.bytes)).join("\n"));
-    } finally { await rm(root, { recursive: true, force: true }); }
+      for (const n of [1, 2, 3, 4, 5])
+        await writeFile(join(source, `s${n}.css`), `.s${n}{--winner:${n}}`);
+      await writeFile(join(source, "s2.css"), '@import "./s3.css"; .s2{--winner:2}');
+      await writeFile(
+        join(source, "Panel.svelte"),
+        '<script>import "./s2.css";</script><p>Panel</p><style>p{--component:6}</style>',
+      );
+      await writeFile(
+        join(source, "App.svelte"),
+        '<script>import "./s1.css"; import "./s4.css";</script><p>Editor</p>',
+      );
+      for (const role of ["Preview", "Icon", "Export", "Widget"])
+        await writeFile(
+          join(source, role + ".svelte"),
+          '<script>import "./s5.css"; import Panel from "./Panel.svelte"; import "./s1.css"; import "./s5.css";</script><Panel/>',
+        );
+      const { outputs, inputs } = await buildGraphs(source, options);
+      expect(inputs.capture.has(join(source, "s4.css"))).toBe(false);
+      for (const role of ["preview", "icon", "export", "widget"]) {
+        const context: Record<string, any> = {};
+        runInNewContext(
+          new TextDecoder().decode(outputs.definition.get(role + ".js")!.bytes),
+          context,
+        );
+        const render = role === "widget" ? context.__slopWidget : context.__slopCapture;
+        const { css } = JSON.parse(
+          render(
+            JSON.stringify({
+              kind: role,
+              viewports: [{ family: "small", width: 320, height: 240 }],
+              width: 320,
+              height: 240,
+              snapshot: { title: "Saved" },
+              theme: {},
+            }),
+          ),
+        ).frames[0];
+        expect(
+          [...css.matchAll(/--winner:(\d)/g)].map((match: string[]) => Number(match[1])),
+        ).toEqual([5, 3, 2, 1]);
+        expect(css).toContain("--component:6");
+      }
+      programs.push(
+        ["icon.js", "preview.js", "export.js", "widget.js"]
+          .map((key) => new TextDecoder().decode(outputs.definition.get(key)!.bytes))
+          .join("\n"),
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }
   expect(programs[1]).toBe(programs[0]!);
+}, 60000);
+
+test("capture CSS URL assets remain resources and inline their own dependencies", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".build-test-capture-css-url-"));
+  try {
+    const options = await definitionFixture(root);
+    for (const name of ["raw.css", "style.css", "ui.css"]) {
+      await writeFile(join(root, name), '.raw{--raw-only:9;background:url("./lib/paper.svg")}');
+      await writeFile(join(root, "export.css"), `.export{--stylesheet-url:url("./${name}")}`);
+      await writeFile(
+        join(root, "Export.svelte"),
+        `<script>import "./export.css"; import raw from "./${name}?url";</script><a href={raw}>CSS asset</a>`,
+      );
+      const { outputs } = await buildGraphs(root, options);
+      const context: Record<string, any> = {};
+      runInNewContext(
+        new TextDecoder().decode(outputs.definition.get("export.js")!.bytes),
+        context,
+      );
+      const { css, html } = JSON.parse(
+        context.__slopCapture(
+          JSON.stringify({
+            kind: "export",
+            width: 320,
+            height: 240,
+            snapshot: { title: "Saved" },
+            theme: {},
+          }),
+        ),
+      ).frames[0];
+      expect(css).not.toContain("--raw-only");
+      expect(css).not.toContain("/assets/");
+      const urls = [css, html].map(
+        (text) => text.match(/data:text\/css;base64,([A-Za-z0-9+/=]+)/)![1],
+      );
+      // CSS url() keeps the raw file; a JS ?url import receives Vite's processed CSS.
+      expect(Buffer.from(urls[0]!, "base64").toString()).toBe(
+        await readFile(join(root, name), "utf8"),
+      );
+      const image = `data:image/svg+xml;base64,${(await readFile(join(root, "lib/paper.svg"))).toString("base64")}`;
+      expect(Buffer.from(urls[1]!, "base64").toString()).toContain(image);
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 }, 60000);
 
 test("portable asset URLs replace only Vite's import.meta URLs and keep a source map", () => {
@@ -208,7 +390,8 @@ test("portable asset URLs replace only Vite's import.meta URLs and keep a source
   expect(portableAssetURLs('const c=new URL("./z.png",import.meta.url).href;', "commands.js")).toBeUndefined();
 });
 
-const resourceKey = (bytes: Uint8Array, name: string) => `media/${createHash("sha256").update(bytes).digest("hex")}${extname(name)}`;
+const resourceKey = (bytes: Uint8Array, name: string) =>
+  `media/${createHash("sha256").update(bytes).digest("hex")}${extname(name)}`;
 
 test("conditional dependency exports preserve require and import semantics", async () => {
   const root = await mkdtemp(join(process.cwd(), ".build-test-definition-"));

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "hitslop/base.css";
+  import "./styles.css";
   import type { CaptureProps, WidgetProps } from "hitslop/svelte";
   import Check from "@lucide/svelte/icons/check";
   import Sparkle from "@lucide/svelte/icons/sparkle";

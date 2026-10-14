@@ -9,7 +9,13 @@ import {
   uiEntrySource,
 } from "./app-vite";
 import { portableAssetURLs } from "./asset-url-transform";
-import { resourceKey, bytesOf, typeOf, type Emitted } from "./definition-resources";
+import {
+  resourceKey,
+  bytesOf,
+  typeOf,
+  addressResources,
+  type Emitted,
+} from "./definition-resources";
 import { buildCapture, refuseHostRuntime } from "./capture-build";
 export type DefinitionBuildOptions = { alias?: Record<string, string> };
 const virtualEntry = "\0hitslop-definition-entry";
@@ -36,10 +42,6 @@ export async function buildGraphs(source: string, options: DefinitionBuildOption
   };
   const outputs = { ui: new Map<string, Emitted>(), definition: new Map<string, Emitted>() };
   const referencedUIAssets = new Set<string>();
-  // Captures import the editor's stylesheets first, in the order of its cascade: depth-first in
-  // import order, each at its first import. A chunk lists its modules in that execution order,
-  // which ui.css follows; the build's module table is a hash order that changes with paths.
-  let editorStyles: string[] = [];
   const previous = process.env.NODE_ENV;
   process.env.NODE_ENV = "production";
   try {
@@ -123,7 +125,15 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
               codeSplitting: false,
               entryFileNames: headless ? "commands.js" : "ui.js",
               assetFileNames(asset) {
-                if (asset.names.some((name) => name.endsWith(".css"))) return "ui.css";
+                // Vite gives the combined stylesheet a synthetic source name. CSS URL
+                // imports instead carry their real source path, even for style.css?url.
+                if (
+                  !headless &&
+                  typeof asset.source === "string" &&
+                  asset.names.includes("style.css") &&
+                  asset.originalFileNames.includes("style.css")
+                )
+                  return "ui.css";
                 return resourceKey(asset.source, asset.names[0] ?? "asset.bin");
               },
             },
@@ -151,11 +161,14 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
             ).viteMetadata;
             if (!metadata) throw new Error("Vite emitted a UI chunk without asset metadata");
             for (const key of metadata.importedAssets) referencedUIAssets.add(key);
-            editorStyles = item.moduleIds.filter(
-              (id) => !id.startsWith("\0") && !id.includes("?") && id.endsWith(".css"),
-            );
           }
         }
+      }
+      const addressed = addressResources(outputs[mode]);
+      if (!headless) {
+        const referenced = [...referencedUIAssets];
+        referencedUIAssets.clear();
+        for (const key of referenced) referencedUIAssets.add(addressed.get(key) ?? key);
       }
     }
     for (const role of ["widget", "icon", "preview", "export"] as const) {
@@ -163,9 +176,7 @@ globalThis.__slopDescribe = () => JSON.stringify({ok:true,declaration:describeAp
         source,
         roles,
         sdk,
-        ui: outputs.ui,
         options,
-        editorStyles,
       });
       if (!capture) continue;
       outputs.definition.set(`${role}.js`, {
