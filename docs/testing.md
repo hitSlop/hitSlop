@@ -292,9 +292,12 @@ are not committed in the corpus. Before Rust replay, `scripts/compat/writers.ts`
 it into `~/.cache/hitslop/compat-writers/<sha256>` (`HITSLOP_COMPAT_WRITERS` overrides the
 cache). A local `HITSLOP_ENGINE` or checkout engine must match both build ID and SHA-256;
 otherwise the resolver extracts the shipped engine from `hitslop@VERSION` and verifies it.
-Cached bytes are checked again; missing or corrupt writers fail replay. Unpublished
-`dev` has no registry fallback: retain its matching `target/dist/slop-engine` or verified
-cache, select the matching build with `HITSLOP_ENGINE`, or recapture dev last.
+Cached bytes are checked again; a missing or corrupt writer of a published release fails
+replay. The unpublished pre-launch `dev` entry has no registry fallback, and another build
+cannot reproduce the bytes of the engine that captured it, so its differential replay runs
+only where that exact engine is available (the machine that captured it, or a verified
+cache) and is otherwise skipped with a visible line; frozen releases always resolve from
+their npm package.
 
 Documents are written both ways a release writes them:
 through its CLI, and by its own app's page (`NAME.page.slop`, saved by the page

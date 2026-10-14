@@ -31,8 +31,10 @@ fn sorted(path: &Path) -> Vec<PathBuf> {
     found.sort();
     found
 }
-/// The hash-resolved writer, copied into `into` and made executable.
-fn released_engine(entry: &Path, into: &Path) -> PathBuf {
+/// The hash-resolved writer, copied into `into` and made executable. `None` only for an
+/// unpublished pre-launch (`dev`) entry whose captured engine is not on this machine; any
+/// published release must resolve (run `bun scripts/compat/writers.ts`).
+fn released_engine(entry: &Path, into: &Path) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     let release: Value = serde_json::from_slice(&std::fs::read(entry.join("release.json")).unwrap()).unwrap();
     let hash = release["writer"]["sha256"].as_str().expect("missing writer SHA-256; recapture dev");
@@ -42,13 +44,15 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
             .join(".cache/hitslop/compat-writers")
     });
     let writer = cache.join(hash);
-    let bytes = std::fs::read(&writer).unwrap_or_else(|error| {
-        panic!(
+    let bytes = match std::fs::read(&writer) {
+        Ok(bytes) => bytes,
+        Err(_) if release["writer"]["version"].as_str() == Some("dev") => return None,
+        Err(error) => panic!(
             "{}: missing resolved writer {}: {error}; run bun scripts/compat/writers.ts before Rust replay",
             entry.display(),
             writer.display()
-        )
-    });
+        ),
+    };
     use sha2::{Digest, Sha256};
     assert_eq!(
         Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
@@ -58,7 +62,7 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
     let copy = into.join("slop-engine");
     std::fs::copy(&writer, &copy).unwrap_or_else(|e| panic!("{}: no candidate writer: {e}", entry.display()));
     std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755)).unwrap();
-    copy
+    Some(copy)
 }
 /// The command protocol the entry's release speaks, as it recorded it.
 fn released_protocol(entry: &Path) -> String {
@@ -102,10 +106,18 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
     }
     support::isolate_registry();
     let (seeds, steps) = (support::workload("HITSLOP_COMPAT_SEEDS", 2), support::workload("HITSLOP_COMPAT_STEPS", 8));
-    let mut cases = 0;
+    let (mut cases, mut skipped) = (0, 0);
     for entry in sorted(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
         let dir = tempfile::tempdir().unwrap();
-        let (engine, protocol) = (released_engine(&entry, dir.path()), released_protocol(&entry));
+        let Some(engine) = released_engine(&entry, dir.path()) else {
+            eprintln!(
+                "SKIP: {}: its writer is the unpublished engine that captured it; freeze and publish the release to replay it",
+                entry.display()
+            );
+            skipped += 1;
+            continue;
+        };
+        let protocol = released_protocol(&entry);
         for template in sorted(&entry.join("templates")) {
             let slug = template.file_stem().unwrap().to_string_lossy().into_owned();
             for seed in 1..=seeds {
@@ -165,5 +177,5 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
             }
         }
     }
-    assert!(cases > 0, "tests/compat has no released engines to replay");
+    assert!(cases > 0 || skipped > 0, "tests/compat has no released engines to replay");
 }

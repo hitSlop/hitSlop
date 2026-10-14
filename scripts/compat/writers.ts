@@ -41,7 +41,7 @@ export async function resolveWriter(
     local?: string;
     fetch?: typeof fetch;
   } = {},
-): Promise<string> {
+): Promise<string | undefined> {
   assert.equal(writer?.platform, "darwin-arm64", "Missing writer metadata; recapture dev");
   assert.match(writer.sha256, /^[a-f0-9]{64}$/, "Invalid writer SHA-256");
   assert.ok(writer.buildId, "Missing writer build ID");
@@ -75,11 +75,10 @@ export async function resolveWriter(
     if (localID === writer.buildId && (await fileDigest(local)) === writer.sha256) {
       await copyFile(local, binary);
     } else {
-      assert.notEqual(
-        writer.version,
-        "dev",
-        "dev has no published writer: build its captured engine, set HITSLOP_ENGINE, or recapture dev last",
-      );
+      // An unpublished pre-launch entry's writer is the engine that captured it, and another
+      // build cannot reproduce its bytes: its differential replay is skipped, visibly, until the
+      // entry is frozen and published (then the writer resolves from the npm package).
+      if (writer.version === "dev") return undefined;
       const download = options.fetch ?? fetch;
       const metadata = await download(
         `https://registry.npmjs.org/hitslop/${encodeURIComponent(writer.version)}`,
@@ -123,7 +122,12 @@ export async function resolveWriter(
 export async function resolveWriters() {
   if (process.platform !== "darwin" || process.arch !== "arm64") return;
   for (const { name, release } of await releases()) {
-    console.log(`Compatibility writer ${name}: ${await resolveWriter(release.writer)}`);
+    const writer = await resolveWriter(release.writer);
+    console.log(
+      writer
+        ? `Compatibility writer ${name}: ${writer}`
+        : `Compatibility writer ${name}: skipped (unpublished pre-launch entry; its writer is the engine that captured it)`,
+    );
   }
 }
 
