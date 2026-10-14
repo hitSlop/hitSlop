@@ -69,7 +69,9 @@ fn source_version(document: &crate::Document, renderer: &fingerprint::Fingerprin
     // installed renderer/fonts and canvases so app updates refresh unchanged state.
     // Artwork writes and compaction still do not change the saved semantic version.
     let mut hash = Sha256::new();
-    hash.update(b"hitslop-widget-capture-v2:takumi\0");
+    // The version hashes the evaluator binary, but core-side capture preparation
+    // (image inventory, per-output budget) is outside that digest; changes there bump this tag.
+    hash.update(b"hitslop-widget-capture-v3:takumi\0");
     hash.update(renderer.digest);
     hash.update(widget_limits().scale.to_le_bytes());
     hash.update(crate::encode(&widget_viewports()).as_bytes());
