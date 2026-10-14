@@ -418,7 +418,7 @@ extension HostTests {
     var failure: Error?
     var rendered = false
     try #require(
-      try await finishesPageWork(within: .seconds(5)) {
+      try await finishesPageWork(within: .seconds(30)) {
         do { try await session.withCaptureSnapshot { _ in rendered = true } } catch { failure = error }
       })
     #expect(failure != nil)
@@ -454,7 +454,7 @@ extension HostTests {
     session.pageCallTimeout = .milliseconds(300)
     let pid = try await wedge(session)
     defer { if Darwin.kill(pid, 0) == 0 { Darwin.kill(pid, SIGKILL) } }
-    try #require(try await finishesPageWork(within: .seconds(5)) { _ = try await controller.perform(.close) })
+    try #require(try await finishesPageWork(within: .seconds(30)) { _ = try await controller.perform(.close) })
     #expect(!Fixtures.isLocked(root))
     #expect(try await savedValue(root)?["title"] as? String == "Saved before wedged close")
     #expect(await eventually(timeout: .seconds(5)) { Darwin.kill(pid, 0) != 0 && errno == ESRCH })
@@ -480,7 +480,7 @@ extension HostTests {
       arguments: [:], in: nil, contentWorld: .page)
     var failure: SlopDocumentFailure?
     try #require(
-      try await finishesPageWork(within: .seconds(8)) {
+      try await finishesPageWork(within: .seconds(30)) {
         do { _ = try await controller.perform(.close) } catch { failure = SlopDocumentFailure(error) }
       })
     #expect(session.rendererDead)
@@ -509,7 +509,9 @@ extension HostTests {
   return pid
 }
 
-// Poll so a missing deadline fails the assertion instead of hanging the test runner.
+// Poll so a missing deadline fails the assertion instead of hanging the test runner. The
+// bound is generous on purpose: a held database makes the close wait out SQLite's busy
+// timeout, and a slower machine must not turn that into a failure.
 @MainActor private func finishesPageWork(
   within limit: Duration, _ work: @escaping @MainActor () async throws -> Void
 ) async throws -> Bool {

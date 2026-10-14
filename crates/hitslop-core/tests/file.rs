@@ -46,9 +46,19 @@ fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
     ];
     let mut failures = Vec::new();
     for path in [link, dangling, folder, fifo, missing] {
-        // A refused leaf must not get a registry lock or discovery entry.
+        // A refused leaf must not get a registry lock or discovery entry. Lock files are never
+        // removed and a filesystem may reuse an inode number, so a file already under this
+        // leaf's name belongs to another document, not to this refusal.
         use std::os::unix::fs::MetadataExt;
-        let key = fs::symlink_metadata(&path).ok().map(|meta| format!("{:x}-{:x}", meta.dev(), meta.ino()));
+        let names: Vec<PathBuf> = fs::symlink_metadata(&path)
+            .ok()
+            .into_iter()
+            .flat_map(|meta| {
+                ["lock", "json", "json.tmp"]
+                    .map(|extension| registry_folder().join(format!("{:x}-{:x}.{extension}", meta.dev(), meta.ino())))
+            })
+            .collect();
+        let preexisting: Vec<bool> = names.iter().map(|name| name.exists()).collect();
         for (entry, open) in entries {
             let (tx, rx) = mpsc::channel();
             let supplied = path.clone();
@@ -61,10 +71,8 @@ fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
                 result => failures.push(format!("{entry}: {}: {result:?}", path.display())),
             }
         }
-        if let Some(key) = key {
-            for extension in ["lock", "json", "json.tmp"] {
-                assert!(!registry_folder().join(format!("{key}.{extension}")).exists());
-            }
+        for (name, existed) in names.iter().zip(&preexisting) {
+            assert!(*existed || !name.exists(), "{} was created for a refused leaf", name.display());
         }
         assert!(!path.with_extension("slop-journal").exists());
     }
