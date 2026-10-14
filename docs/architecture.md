@@ -280,7 +280,8 @@ its operations from the live Loro document.
   `owner_replaced`.
 - Save status flows one way, owner to window: the edited mark and the failure sheet. The
   page learns durability only through `flush`, which resolves once saved and rejects
-  when the save fails.
+  when the save fails. A renderer failure keeps the native save-recovery sheet above the
+  page's failure screen; retry saves through the retained owner without reopening the page.
 
 Storage is `document(id, uuid)`, `history(seq, bytes)` (a snapshot, then the updates saved
 after it) and, for a shared document, `share(room, endpoint)`. A shared document keeps its
@@ -467,7 +468,9 @@ expired pointer. App-side maintenance prunes confirmed missing/replaced files wh
 retaining cached images when their source is temporarily unavailable.
 
 Each choice has a host-minted ID and bookmark, with local file identity checked on
-resolution. Copies get different choices even when their content matches. A
+resolution. Renames and moves refresh the choice's title, source location and bookmark
+without replacing its images or capture time, and request a WidgetKit reload even when
+the content fingerprint is unchanged. Copies get different choices even when their content matches. A
 `hitslop://widget/<id>` URL resolves the source and routes through the existing document
 coordinator, which focuses an open document. Unavailable files report a native error.
 

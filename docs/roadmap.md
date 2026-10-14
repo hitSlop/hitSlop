@@ -188,6 +188,9 @@ scenario. See [native capture evidence](evidence/takumi-capture-2026-10-12.md) f
 macOS costs and the review checklist.
 Finish signed product testing of all sizes, appearance modes, refresh budgets and
 sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrower evidence.
+The [October 13 widget review](evidence/widget-review-2026-10-13.md) fixed rename/move
+metadata and refreshed the signed installation; the user confirmed Edit, desktop layering
+and dragging after stale development registrations were removed.
 The `slop dev` composition selector previews all three widget families with HMR. Broader desktop qualification, cache management UI and iOS hosting are pending.
 
 **Permissions and device services.** Code-bound grants and per-slop consent remain a

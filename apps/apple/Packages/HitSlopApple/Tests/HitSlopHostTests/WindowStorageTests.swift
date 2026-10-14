@@ -139,6 +139,43 @@ extension HostTests {
     #expect(!Fixtures.isLocked(root))
   }
 
+  // A stopped page must leave the native save-recovery sheet available: the live owner
+  // can still save the edits, without reopening WebKit or giving up its writer lock.
+  @Test @MainActor func rendererDeathKeepsFailedSaveRecoveryAvailable() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    defer { controller.window?.orderOut(nil) }
+    controller.window?.moveOffScreen()
+    let session = controller.session
+    try await session.waitUntilReady()
+    let hold = try Fixtures.DatabaseHold(root)
+    defer { hold.release() }
+    #expect(try await command("batch", url: root, setTitle("Saved after the page stopped")).code == .saveFailed)
+    let sheet = try #require(controller.window?.attachedSheet)
+    #expect(sheet.sheetParent === controller.window)
+
+    let pid = try #require(session.webView.value(forKey: "_webProcessIdentifier") as? Int32)
+    #expect(Darwin.kill(pid, SIGKILL) == 0)
+    await eventually(timeout: .seconds(5)) { session.rendererDead }
+    #expect(session.rendererDead)
+    #expect(controller.failedOverlay != nil)
+    #expect(sheet.sheetParent === controller.window, "renderer failure must retain native save recovery")
+    #expect(Set(sheet.contentView.map { buttons(in: $0) } ?? []) == ["Retry Save", "Keep Open"])
+    #expect(Fixtures.isLocked(root))
+    #expect(try liveDiscovery(path: root.path) != nil)
+
+    hold.release()
+    _ = try await controller.perform(.retrySave)
+    #expect(session.rendererDead, "saving must not depend on reopening the page")
+    #expect(controller.window?.attachedSheet == nil)
+    #expect(Fixtures.isLocked(root))
+    try await session.close()
+    #expect(!Fixtures.isLocked(root))
+    #expect(try await savedValue(root)?["title"] as? String == "Saved after the page stopped")
+  }
+
   // Gap: failed-save retry tests do not prove that explicit discard reloads bytes,
   // awaits the bridge, retains ownership, and remounts the visible app.
   @Test @MainActor func discardRestoresSavedStateWithoutReleasingOwnership() async throws {

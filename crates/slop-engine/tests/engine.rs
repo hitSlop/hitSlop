@@ -276,6 +276,28 @@ fn open_refuses_a_template_and_a_missing_named_app() {
     assert!(refused["error"].as_str().unwrap().contains("HITSLOP_APP"), "{refused}");
 }
 
+/// Linked parent folders are valid paths, but a linked document must be refused before
+/// choosing an app. Opening must not change the target's bytes.
+#[test]
+#[cfg(target_os = "macos")]
+fn open_refuses_a_linked_document_but_accepts_a_linked_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, document) = template_and_document(dir.path());
+    let saved = fs::read(&document).unwrap();
+    let missing = dir.path().join("Missing.app");
+    let open = |file: &Path| reply(&json!({"method":"open","documentPath":file}).to_string(), Some(&missing));
+    let link = dir.path().join("Linked document.slop");
+    std::os::unix::fs::symlink(&document, &link).unwrap();
+    let refused = open(&link);
+    assert_eq!(refused["code"], "rejected");
+    assert!(!refused["error"].as_str().unwrap().contains("HITSLOP_APP"), "{refused}");
+    let parent = dir.path().join("Linked parent");
+    std::os::unix::fs::symlink(dir.path(), &parent).unwrap();
+    let admitted = open(&parent.join(document.file_name().unwrap()));
+    assert!(admitted["error"].as_str().unwrap().contains("HITSLOP_APP"), "{admitted}");
+    assert_eq!(fs::read(&document).unwrap(), saved);
+}
+
 /// Opening a window needs macOS and hitSlop.app; elsewhere it refuses and changes nothing.
 #[test]
 #[cfg(not(target_os = "macos"))]
