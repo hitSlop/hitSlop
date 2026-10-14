@@ -67,7 +67,8 @@ fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
             });
             match rx.recv_timeout(Duration::from_secs(2)) {
                 Ok(Err(Error::Rejected(error)))
-                    if error.code == Code::InvalidRequest && error.message == "A document must be an existing regular file" => {}
+                    if error.code == Code::InvalidRequest
+                        && error.message == "A document must be an existing regular file" => {}
                 result => failures.push(format!("{entry}: {}: {result:?}", path.display())),
             }
         }
