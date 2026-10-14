@@ -260,7 +260,7 @@ fn evaluate(input: &Value) -> String {
     use std::process::{Command, Stdio};
     let engine = std::env::var_os("HITSLOP_ENGINE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/release/slop-engine"));
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/slop-engine"));
     let mut child = Command::new(&engine)
         .arg("--evaluate-command")
         .stdin(Stdio::piped())

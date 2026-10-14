@@ -187,8 +187,6 @@ const tiers: Tier[] = [
   },
   {
     name: "rust",
-    // The corpus replay evaluates stored commands with the engine this build produces.
-    needs: ["engine"],
     inputs: tierInputs.rust,
     // A full run compiles and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
