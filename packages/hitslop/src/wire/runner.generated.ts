@@ -2,4 +2,4 @@
 
 export type Job = { runtimeABI: number, bundle: string, request: string, mode: JobKind, };
 
-export type JobKind = "command" | "definition" | "widget" | "capture" | "pdf";
+export type JobKind = "command" | "definition" | "markup" | "widgetMarkup" | "widget" | "capture" | "pdf";

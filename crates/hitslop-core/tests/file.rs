@@ -39,9 +39,12 @@ fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
             hitslop_core::widgets::widget_viewports().iter().map(|v| png(v.width * 2, v.height * 2, 6)).collect();
         let widgets = serde_json::json!({"ok": true, "images": widget_images.iter()
             .map(|bytes| data_encoding::BASE64.encode(bytes)).collect::<Vec<_>>()});
+        let markup =
+            serde_json::json!({"frames":[{"kind":"preview","width":512,"height":512,"html":"","css":""}],"fonts":[]});
+        let widget_markup = serde_json::json!({"frames": hitslop_core::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
         let evaluator = hitslop_core::owner::Evaluator::new(
             "/bin/sh".into(),
-            vec!["-c".into(), format!(r#"input=$(/bin/cat); case "$input" in *'"mode":"widget"'*) printf '%s' '{widgets}';; *) printf '%s' '{reply}';; esac"#)],
+            vec!["-c".into(), format!(r#"input=$(/bin/cat); case "$input" in *'"mode":"markup"'*) printf '%s' '{markup}';; *'"mode":"widgetMarkup"'*) printf '%s' '{widget_markup}';; *'"mode":"widget"'*) printf '%s' '{widgets}';; *) printf '%s' '{reply}';; esac"#)],
         ).unwrap();
         let outputs = [
             CaptureOutput::Preview,
@@ -77,6 +80,162 @@ fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
         }
         assert_eq!(fs::read(&document).unwrap(), saved);
     }
+}
+
+/// A metadata-only markup stand-in and a bounded raster reply. The shell never
+/// evaluates authored code, so these tests isolate core image admission and reads.
+fn image_markup(ids: &[String], icon_ids: &[String]) -> hitslop_core::owner::Evaluator {
+    image_markup_before(ids, icon_ids, ":")
+}
+fn image_markup_before(ids: &[String], icon_ids: &[String], before: &str) -> hitslop_core::owner::Evaluator {
+    let frame = |kind: &str, ids: &[String]| {
+        serde_json::json!({"frames":[{
+        "html":ids.iter().step_by(2).map(|id| format!("<img src=\"slop-attachment:{id}\">" )).collect::<String>(),
+        "css":ids.iter().skip(1).step_by(2).map(|id| format!(".photo{{background:url(\"slop-attachment:{id}\")}}" )).collect::<String>(),
+        "width":512,"height":512,"kind":kind}],"fonts":[]})
+    };
+    let preview = frame("preview", ids);
+    let icon = frame("icon", icon_ids);
+    let widgets = serde_json::json!({"frames":hitslop_core::widgets::widget_viewports().iter().map(|v|serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+    let reply = serde_json::json!({"ok":true,"images":[data_encoding::BASE64.encode(&png(512,512,6))]});
+    let widget_reply = serde_json::json!({"ok":true,"images":hitslop_core::widgets::widget_viewports().iter().map(|v|data_encoding::BASE64.encode(&png(v.width*2,v.height*2,6))).collect::<Vec<_>>()});
+    // Only the small request prefix selects a reply; drain image bytes without
+    // copying or pattern-matching megabytes in the shell.
+    let script = format!(
+        r#"input=$(/usr/bin/head -c 4096); /bin/cat >/dev/null; {before}; case "$input" in *'"mode":"markup"'*) case "$input" in *'\"kind\":\"icon\"'*) printf '%s' '{icon}';; *) printf '%s' '{preview}';; esac;; *'"mode":"widgetMarkup"'*) printf '%s' '{widgets}';; *'"mode":"widget"'*) printf '%s' '{widget_reply}';; *) printf '%s' '{reply}';; esac"#
+    );
+    hitslop_core::owner::Evaluator::new("/bin/sh".into(), vec!["-c".into(), script]).unwrap()
+}
+fn capture_document(dir: &Path) -> PathBuf {
+    let source = stage(dir);
+    support::edit_input(&source, |input| {
+        input["declaration"]["views"]["widget"] = serde_json::json!({});
+        input["roles"]["widget"] = "widget.js".into();
+    });
+    support::add_asset(&source, "widget.js", "text/javascript", b"globalThis.__slopWidget = () => '{}';");
+    let template = dir.join("template.slop");
+    support::pack(&source, &template).unwrap();
+    let doc = dir.join("document.slop");
+    file::create_document(&template, &doc).unwrap();
+    doc
+}
+fn saved_images(path: &Path, count: usize, padded: bool) -> Vec<String> {
+    let store = Store::open(path, Mode::Document).unwrap();
+    let ids: Vec<_> = (0..count)
+        .map(|i| {
+            let mut bytes = Vec::new();
+            let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            if padded {
+                // Large encoded bytes, one pixel to decode. An unknown ancillary
+                // chunk keeps the PNG valid without adding raster work.
+                writer.write_chunk(png::chunk::ChunkType(*b"slOp"), &vec![0; 6 << 20]).unwrap();
+            }
+            writer.write_image_data(&[i as u8, 0, 0, 255]).unwrap();
+            writer.finish().unwrap();
+            store.put_attachment(&bytes).unwrap().id
+        })
+        .collect();
+    let mut doc = store.document().unwrap();
+    doc.apply_json(
+        &serde_json::json!({"intents":[{"type":"set","path":["title"],"value":ids.join(" ")}]}).to_string(),
+        Origin::Page,
+    )
+    .unwrap();
+    store.write(&store.job(&mut doc).unwrap().unwrap()).unwrap();
+    store.close().unwrap();
+    ids
+}
+#[test]
+fn capture_damaged_unused_image_never_blocks_outputs() {
+    use hitslop_core::capture::{CaptureFormat, CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = capture_document(dir.path());
+    let ids = saved_images(&doc, 1, false);
+    raw(&doc).execute("UPDATE attachments SET bytes=zeroblob(length(bytes))", []).unwrap();
+    let evaluator = image_markup(&[], &[]);
+    let results = render_batch(
+        &doc,
+        &evaluator,
+        &[
+            CaptureOutput::Preview,
+            CaptureOutput::Icon,
+            CaptureOutput::Export { format: CaptureFormat::Png },
+            CaptureOutput::Widgets,
+        ],
+    )
+    .unwrap();
+    for result in results {
+        assert!(result.result.is_ok(), "unused {}: {:?}", ids[0], result.result.err());
+    }
+}
+#[test]
+fn capture_used_damage_names_attachment_and_preserves_sibling() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let ids = saved_images(&doc, 1, false);
+    raw(&doc).execute("UPDATE attachments SET bytes=zeroblob(length(bytes))", []).unwrap();
+    // Preview references the damaged image; Icon has independent empty markup.
+    let evaluator = image_markup(&ids, &[]);
+    let results = render_batch(&doc, &evaluator, &[CaptureOutput::Preview, CaptureOutput::Icon]).unwrap();
+    let mut results = results.into_iter();
+    let error = results.next().unwrap().result.err().unwrap().to_string();
+    assert!(error.contains(&ids[0]), "{error}");
+    assert!(error.contains("Preview"), "{error}");
+    assert!(results.next().unwrap().result.is_ok());
+}
+#[test]
+fn capture_image_budget_is_per_output() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let ids = saved_images(&doc, 4, true); // Just over 24 MiB in state, just over 12 MiB per view.
+    let store = Store::open(&doc, Mode::Snapshot).unwrap();
+    let sizes: Vec<_> = store.attachments().unwrap().iter().map(|image| image.bytes).collect();
+    assert_eq!(sizes.len(), 4);
+    assert!(sizes.iter().sum::<u64>() > hitslop_runner::IMAGE_BYTES as u64);
+    assert!(sizes.iter().sum::<u64>() / 2 < hitslop_runner::IMAGE_BYTES as u64);
+    store.close().unwrap();
+    let results =
+        render_batch(&doc, &image_markup(&ids[..2], &ids[2..]), &[CaptureOutput::Preview, CaptureOutput::Icon])
+            .unwrap();
+    for result in results {
+        assert!(result.result.is_ok(), "{:?}", result.result.as_ref().err());
+    }
+    let results = render_batch(&doc, &image_markup(&ids, &[]), &[CaptureOutput::Preview]).unwrap();
+    let error = results.into_iter().next().unwrap().result.err().unwrap();
+    assert_eq!(code(error.clone()), Code::TooLarge);
+    assert!(error.to_string().contains("Preview"));
+}
+#[test]
+fn capture_markup_outside_image_inventory_names_the_id() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let unknown = "a".repeat(64);
+    let results =
+        render_batch(&doc, &image_markup(std::slice::from_ref(&unknown), &[]), &[CaptureOutput::Preview]).unwrap();
+    let error = results.into_iter().next().unwrap().result.err().unwrap().to_string();
+    assert!(error.contains(&unknown) && error.contains("inventory"), "{error}");
+}
+
+#[test]
+fn capture_attachment_removed_during_markup_fails_only_its_output() {
+    use hitslop_core::capture::{CaptureOutput, render_batch};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let ids = saved_images(&doc, 1, false);
+    let before = format!("/usr/bin/sqlite3 '{}' 'DELETE FROM attachments'", doc.display());
+    let results =
+        render_batch(&doc, &image_markup_before(&ids, &[], &before), &[CaptureOutput::Preview, CaptureOutput::Icon])
+            .unwrap();
+    let mut results = results.into_iter();
+    let error = results.next().unwrap().result.err().unwrap().to_string();
+    assert!(error.contains(&ids[0]) && error.contains("Preview"), "{error}");
+    assert!(results.next().unwrap().result.is_ok());
 }
 
 /// A closed export to `output`, as a PNG, with a deadline it never reaches.
@@ -236,7 +395,10 @@ fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_
         .map(|view| data_encoding::BASE64.encode(&png(view.width * 2, view.height * 2, 6)))
         .collect();
     let reply = serde_json::json!({"ok": true, "images": images});
-    let program = format!("/bin/cat >/dev/null; printf '%s' '{reply}'");
+    let batch = serde_json::json!({"frames":hitslop_core::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+    let program = format!(
+        r#"input=$(/bin/cat); case "$input" in *'"mode":"widgetMarkup"'*) printf '%s' '{batch}';; *) printf '%s' '{reply}';; esac"#
+    );
     let executable = directory.path().join("evaluator");
     symlink("/bin/sh", &executable).unwrap();
     let evaluator =
@@ -608,9 +770,8 @@ fn rendered_artwork_is_stored_as_supplied_artwork_is() {
     let packed = support::pack_rendering(&stage, &rendered, Some(&render)).unwrap();
     assert_eq!(packed, PackedArtwork { preview: Rendered, icon: Rendered });
     // Through the capture renderer too, which renders the staged template's initial values.
-    let evaluator = support::renderer(":", &png(512, 512, 6));
-    let capture =
-        |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_artwork(template, &evaluator, roles);
+    let evaluator = support::renderer_outputs(":", &png(512, 512, 6), b"%PDF-1.7\n%%EOF");
+    let capture = |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_views(template, &evaluator, roles);
     let captured = dir.path().join("Captured.slop");
     support::pack_rendering(&stage, &captured, Some(&capture)).unwrap();
     for (render, template) in [(&raw, &rendered), (&png(512, 512, 6), &captured)] {
@@ -633,10 +794,10 @@ fn rendered_artwork_is_stored_as_supplied_artwork_is() {
     assert!(temporaries(dir.path()).is_empty());
 }
 
-/// Supplied artwork wins role by role: packing renders only what its build does not
-/// supply, and nothing when it supplies both.
+/// Supplied artwork wins role by role; the callback still validates views when both
+/// images are supplied, with no artwork requested for storage.
 #[test]
-fn pack_renders_only_the_artwork_its_build_does_not_supply() {
+fn pack_stores_only_unsupplied_artwork_and_always_calls_the_renderer() {
     use hitslop_core::engine::{ArtworkSource::*, PackedArtwork};
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
@@ -652,7 +813,7 @@ fn pack_renders_only_the_artwork_its_build_does_not_supply() {
     assert_eq!(decoded(&file::artwork(&dir.path().join("Icon.slop"), &[Artwork::Icon]).unwrap().unwrap().1), pixels);
     support::artwork(&stage, "preview", &icon);
     assert_eq!(pack("Both.slop"), PackedArtwork { preview: Supplied, icon: Supplied });
-    assert!(asked.take().is_empty(), "nothing to render");
+    assert_eq!(asked.take(), [vec![]], "supplied artwork still needs its views checked");
 }
 
 /// Every template has a preview: one that cannot be rendered publishes nothing, an existing
@@ -717,8 +878,7 @@ fn an_icon_that_fails_to_render_fails_the_pack() {
     assert!(error.to_string().contains("artwork/icon.png"), "{error}");
     // The capture renderer's own icon failure fails its batch.
     let evaluator = support::renderer(":", &png(64, 48, 6));
-    let capture =
-        |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_artwork(template, &evaluator, roles);
+    let capture = |template: &Path, roles: &[Artwork]| hitslop_core::capture::render_views(template, &evaluator, roles);
     let error = support::pack_rendering(&stage, &existing, Some(&capture)).unwrap_err();
     assert!(error.to_string().contains("512"), "{error}");
     assert_eq!(fs::read(&existing).unwrap(), before);
@@ -1753,6 +1913,33 @@ fn attachment_urls_check_the_whole_blob_before_serving_even_one_byte() {
     store.close().unwrap();
 }
 
+// Failure: a category spelling a later build added made its files unopenable here, though the
+// name is only a catalog label. Oracle: the file lists, opens and edits, under `other`.
+#[test]
+fn a_category_this_build_does_not_know_reads_as_other() {
+    use hitslop_core::app::Category::{Other, Popular, Utilities};
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    for (primary, secondary, expected) in [
+        ("utilities", None, vec![Utilities]),
+        ("a-later-category", None, vec![Other]),
+        ("utilities", Some("a-later-category"), vec![Utilities, Other]),
+        ("a-later-category", Some("popular"), vec![Other, Popular]),
+        // Two spellings that read alike are one category, as a pair of equal ones always was.
+        ("a-later-category", Some("another-later-one"), vec![Other]),
+        ("a-later-category", Some("other"), vec![Other]),
+    ] {
+        raw(&doc)
+            .execute("UPDATE app SET category_primary=?, category_secondary=?", rusqlite::params![primary, secondary])
+            .unwrap();
+        assert_eq!(file::summary(&doc).unwrap().metadata.categories, expected, "{primary} {secondary:?}");
+        assert_eq!(file::open(&doc, true).unwrap().app.metadata().categories, expected);
+    }
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    assert_eq!(store.app().app.metadata().categories, [Other]);
+    store.close().unwrap();
+}
+
 /// A saved app is judged by its package format's acceptance, never by today's authoring
 /// rules: metadata `init` would now refuse and a damaged preview still open, edit, save
 /// and reopen. Artwork is cosmetic and reads as absent.
@@ -1779,6 +1966,48 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
     let reopened = Store::open(&doc, Mode::Snapshot).unwrap();
     assert!(reopened.document().unwrap().value().contains("Edited"));
     assert_eq!(reopened.app().app.metadata().title, title);
+}
+
+// Failure: a stored `application/octet-stream` label was compared with what the classifier
+// says today, so an attachment stored before the classifier knew its type read as damaged.
+// Oracle: the label is the fallback and always serves; any other label must match the
+// content, and a damaged blob is still damage.
+#[test]
+fn an_attachment_labelled_octet_stream_reads_whatever_the_classifier_now_says() {
+    use file::ResourceRoute::Attachment;
+    let dir = tempfile::tempdir().unwrap();
+    let doc = document(dir.path());
+    let store = Store::open(&doc, Mode::Document).unwrap();
+    let image = png(8, 8, 6);
+    let attachment = store.put_attachment(&image).unwrap();
+    assert_eq!(attachment.media_type, "image/png");
+    let relabel = |media_type: &str| {
+        raw(&doc)
+            .execute("UPDATE attachments SET media_type=? WHERE id=?", rusqlite::params![media_type, attachment.id])
+            .unwrap();
+    };
+    relabel("application/octet-stream");
+    let reader = store.resource_reader().unwrap();
+    let info = reader.info(Attachment, &attachment.id).unwrap().unwrap();
+    assert_eq!((info.media_type.as_str(), info.size), ("application/octet-stream", image.len() as u64));
+    assert_eq!(reader.read_range(Attachment, &attachment.id, 0, 8).unwrap(), Some(image[..8].to_vec()));
+    // Any other label that is not what the content is stays refused, with its own message.
+    relabel("image/jpeg");
+    let error = store.resource_reader().unwrap().info(Attachment, &attachment.id).unwrap_err();
+    assert!(error.to_string().contains("stored type does not match its content"), "{error}");
+    // Bytes that no longer match their identity are damaged under either label.
+    for media_type in ["image/png", "application/octet-stream"] {
+        relabel(media_type);
+        raw(&doc)
+            .execute("UPDATE attachments SET bytes=CAST(substr(bytes,1,length(bytes)-1) || x'00' AS BLOB)", [])
+            .unwrap();
+        let error = store.resource_reader().unwrap().info(Attachment, &attachment.id).unwrap_err();
+        assert!(error.to_string().contains("damaged"), "{media_type}: {error}");
+        raw(&doc)
+            .execute("UPDATE attachments SET bytes=? WHERE id=?", rusqlite::params![image, attachment.id])
+            .unwrap();
+    }
+    store.close().unwrap();
 }
 
 #[test]

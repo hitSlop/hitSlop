@@ -121,8 +121,16 @@ pub fn add_asset(stage: &std::path::Path, key: &str, media_type: &str, bytes: &[
 /// replies with one image, `bytes`, whatever it was asked for.
 #[cfg(feature = "storage")]
 pub fn renderer(before: &str, bytes: &[u8]) -> hitslop_core::owner::Evaluator {
+    renderer_outputs(before, bytes, bytes)
+}
+#[cfg(feature = "storage")]
+pub fn renderer_outputs(before: &str, bytes: &[u8], pdf: &[u8]) -> hitslop_core::owner::Evaluator {
     let reply = json!({"ok": true, "images": [data_encoding::BASE64.encode(bytes)]});
-    let script = format!("/bin/cat >/dev/null; {before}; printf '%s' '{reply}'");
+    let pdf = json!({"ok":true,"images":[data_encoding::BASE64.encode(pdf)]});
+    let batch = json!({"frames":[{"kind":"preview","width":512,"height":512,"html":"","css":""}],"fonts":[]});
+    let script = format!(
+        r#"input=$(/bin/cat); {before}; case "$input" in *'"mode":"markup"'*) printf '%s' '{batch}';; *'"mode":"pdf"'*) printf '%s' '{pdf}';; *) printf '%s' '{reply}';; esac"#
+    );
     hitslop_core::owner::Evaluator::new("/bin/sh".into(), vec!["-c".into(), script]).unwrap()
 }
 #[cfg(feature = "storage")]

@@ -16,18 +16,31 @@ pub fn evaluate(input: &[u8], interrupted: impl FnMut() -> bool + 'static) -> Re
 
 pub(crate) fn evaluate_job(input: Job<'_>, interrupted: impl FnMut() -> bool + 'static) -> Result<String, String> {
     let prelude = prelude(input.runtime_abi)?;
-    if matches!(input.mode, JobKind::Widget) {
+    if matches!(input.mode, JobKind::Widget | JobKind::Capture | JobKind::Pdf) {
+        if !input.bundle.is_empty() || !input.request.is_empty() {
+            return Err("Raster jobs cannot carry JavaScript or an authored request".into());
+        }
         #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
-        return crate::capture::evaluate(&input.bundle, &input.request, interrupted);
+        {
+            let raster = input.raster.ok_or("Raster job requires frames and images")?;
+            raster.batch.validate()?;
+            if serde_json::to_vec(&raster.batch).map_err(|e| e.to_string())?.len() > crate::MARKUP_BYTES {
+                return Err("Capture markup exceeds 16 MiB".into());
+            }
+            return crate::capture::raster(raster, input.mode);
+        }
         #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
-        return Err("Native widget rendering is unavailable".into());
+        return Err("Native capture rendering is unavailable".into());
     }
-    if matches!(input.mode, JobKind::Capture | JobKind::Pdf) {
+    if input.raster.is_some() {
+        return Err("JavaScript jobs cannot carry raster images".into());
+    }
+    if matches!(input.mode, JobKind::Markup | JobKind::WidgetMarkup) {
         #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
-        return crate::capture::evaluate_view(
+        return crate::capture::evaluate_markup(
             &input.bundle,
             &input.request,
-            matches!(input.mode, JobKind::Pdf),
+            if matches!(input.mode, JobKind::WidgetMarkup) { "__slopWidget" } else { "__slopCapture" },
             interrupted,
         );
         #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
@@ -41,7 +54,9 @@ pub(crate) fn evaluate_job(input: Job<'_>, interrupted: impl FnMut() -> bool + '
         let function = match input.mode {
             JobKind::Command => "__slopRun",
             JobKind::Definition => "__slopDescribe",
-            JobKind::Widget | JobKind::Capture | JobKind::Pdf => unreachable!("handled before the command realm"),
+            JobKind::Markup | JobKind::WidgetMarkup | JobKind::Widget | JobKind::Capture | JobKind::Pdf => {
+                unreachable!("handled before the command realm")
+            }
         };
         let run: Function = ctx.globals().get(function).catch(&ctx).map_err(|e| e.to_string())?;
         run.call::<_, String>((input.request.as_ref(),)).catch(&ctx).map_err(|e| e.to_string())

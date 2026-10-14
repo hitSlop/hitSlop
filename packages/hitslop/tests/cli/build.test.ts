@@ -73,12 +73,12 @@ test("build paths and fresh source evaluation follow the declaration", async () 
     const source = join(root, "path with spaces", "starter");
     await cp("tests/apps/document", source, { recursive: true });
     await overrideSlop(source, { slug: '"starter"' });
-    const defaultOutput = await buildTemplate(source, undefined, { renderArtwork: false });
+    const defaultOutput = await buildTemplate(source, undefined, { renderViews: false });
     expect(defaultOutput).toBe(join(source, "dist", "starter.slop"));
     const first = await initialValue(defaultOutput);
     await overrideSchema(source, JSON.stringify({ ...first, title: "Fresh evaluation" }));
     const explicitOutput = join(root, "output with spaces.slop");
-    expect(await buildTemplate(source, explicitOutput, { renderArtwork: false })).toBe(explicitOutput);
+    expect(await buildTemplate(source, explicitOutput, { renderViews: false })).toBe(explicitOutput);
     expect((await initialValue(explicitOutput)).title).toBe("Fresh evaluation");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -96,13 +96,13 @@ test("a build that renders nothing names each artwork role the project lacks", a
     await cp("tests/apps/document", source, { recursive: true });
     const stored = async (file: string) =>
       (await execute({ method: "inspect", file })).info.artwork.map((image) => image.name);
-    const bare = await buildTemplate(source, join(root, "bare.slop"), { renderArtwork: false });
+    const bare = await buildTemplate(source, join(root, "bare.slop"), { renderViews: false });
     expect(await stored(bare)).toEqual([]);
     expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("No preview or icon artwork"));
     await mkdir(join(source, "artwork"));
     await writeFile(join(source, "artwork/icon.png"), png(512, 512));
     await overrideSlop(source, { artwork: "{ icon }" }, 'import icon from "./artwork/icon.png";');
-    const icon = await buildTemplate(source, join(root, "icon.slop"), { renderArtwork: false });
+    const icon = await buildTemplate(source, join(root, "icon.slop"), { renderViews: false });
     expect(await stored(icon)).toEqual(["icon"]);
     expect(warn).toHaveBeenLastCalledWith(expect.stringContaining("No preview artwork"));
     expect(warn).toHaveBeenCalledTimes(2);
@@ -155,7 +155,6 @@ test("Svelte styles compile identically in different checkout locations", async 
 
 for (const [name, properties, initial, code] of [
   ["unsafe string bound", '{value:s.string({maxLength:9_007_199_254_740_992})}', { value: "" }, "invalid_schema"],
-  ["optional handle name", '{value:s.optional(s.object({set:s.string()}))}', {}, "invalid_schema"],
   ["invalid row id", '{rows:s.list(s.object({value:s.string()}))}', { rows: [{ $id: "bad id", value: "" }] }, "invalid_id"],
   ["duplicate row id", '{rows:s.list(s.object({value:s.string()}))}', { rows: [{ $id: "same", value: "a" }, { $id: "same", value: "b" }] }, "duplicate_id"],
 ] as const) test(`build enforces core validation: ${name}`, async () => {

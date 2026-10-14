@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 /// A host-configured child, never an in-process evaluator. Every call starts a
-/// fresh process and QuickJS realm; the host retains all document authority.
+/// fresh process; authored jobs use a fresh QuickJS realm. The host retains document authority.
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     executable: PathBuf,
@@ -65,15 +65,36 @@ impl Evaluator {
         let input = command_input(runtime_abi, bundle, request)?.into_bytes();
         self.run_input(input, JobKind::Command)
     }
-    /// A widget batch has its own bounded output; command limits remain unchanged.
-    pub fn widget(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        self.render(runtime_abi, bundle, request, JobKind::Widget)
+    pub fn markup(&self, runtime_abi: u64, bundle: &str, request: &str, widget: bool) -> Result<Batch, String> {
+        let output =
+            self.render(runtime_abi, bundle, request, if widget { JobKind::WidgetMarkup } else { JobKind::Markup })?;
+        if let Ok(reply) = serde_json::from_str::<RenderReply>(&output) {
+            return Err(reply.into_images().err().unwrap_or_else(|| "Expected capture markup, received images".into()));
+        }
+        Batch::decode(&output)
     }
-    pub fn capture(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        self.render(runtime_abi, bundle, request, JobKind::Capture)
-    }
-    pub fn pdf(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        self.render(runtime_abi, bundle, request, JobKind::Pdf)
+    pub fn raster(
+        &self,
+        runtime_abi: u64,
+        batch: Batch,
+        images: std::collections::BTreeMap<String, String>,
+        mode: JobKind,
+    ) -> Result<String, String> {
+        if !matches!(mode, JobKind::Widget | JobKind::Capture | JobKind::Pdf) {
+            return Err("Invalid raster job kind".into());
+        }
+        let input = serde_json::to_vec(&Job {
+            runtime_abi,
+            bundle: Cow::Borrowed(""),
+            request: Cow::Borrowed(""),
+            mode,
+            raster: Some(RasterRequest { batch, images }),
+        })
+        .map_err(|e| e.to_string())?;
+        if input.len() > INPUT {
+            return Err("Capture input is too large".into());
+        }
+        self.run_input(input, mode)
     }
     fn render(&self, runtime_abi: u64, bundle: &str, request: &str, mode: JobKind) -> Result<String, String> {
         let input = serde_json::to_vec(&Job {
@@ -81,6 +102,7 @@ impl Evaluator {
             bundle: Cow::Borrowed(bundle),
             request: Cow::Borrowed(request),
             mode,
+            raster: None,
         })
         .map_err(|e| e.to_string())?;
         if input.len() > INPUT {

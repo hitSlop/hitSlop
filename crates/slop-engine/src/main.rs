@@ -52,14 +52,14 @@ fn dispatch(request: EngineRequest) -> String {
                 let path = std::fs::canonicalize(&output).unwrap_or(PathBuf::from(output));
                 EngineSuccess::Create { ok: True, document_path: path.to_string_lossy().into_owned() }
             }
-            EngineRequest::Pack { stage, file: path, app, render_artwork } => {
+            EngineRequest::Pack { stage, file: path, app, render_views } => {
                 let (stage, path) = (Path::new(&stage), Path::new(&path));
-                let artwork = if render_artwork {
+                let artwork = if render_views {
                     let evaluator = evaluator().map_err(|e| {
                         refusal(Code::InvalidRequest, format!("Cannot start the capture renderer: {e}"))
                     })?;
                     let render = |template: &Path, roles: &[file::Artwork]| {
-                        hitslop_core::capture::render_artwork(template, &evaluator, roles)
+                        hitslop_core::capture::render_views(template, &evaluator, roles)
                     };
                     file::pack(app.get(), stage, path, Some(&render))?
                 } else {
@@ -144,6 +144,28 @@ fn main() -> ExitCode {
     if args == ["--build-id"] {
         println!("{}", hitslop_core::BUILD_ID);
         return ExitCode::SUCCESS;
+    }
+    if args == ["--limits"] {
+        println!("{}", serde_json::to_string(&hitslop_core::app::AppDefinition::open_limits()).expect("limits encode"));
+        return ExitCode::SUCCESS;
+    }
+    if args.len() == 2 && args[0] == "--acceptance-vectors" {
+        let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+            let vectors = hitslop_core::app::AppDefinition::acceptance_vectors()?;
+            let folder = Path::new(&args[1]);
+            std::fs::create_dir_all(folder)?;
+            for (name, vector) in vectors {
+                std::fs::write(folder.join(format!("{name}.json")), serde_json::to_vec_pretty(&vector)?)?;
+            }
+            Ok(())
+        })();
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("Acceptance vectors: {error}");
+                ExitCode::FAILURE
+            }
+        };
     }
     if let Some(folder) = std::env::var_os("HITSLOP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
         let _ = registry::use_folder(Path::new(&folder));

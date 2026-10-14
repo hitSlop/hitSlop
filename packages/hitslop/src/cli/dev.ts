@@ -45,7 +45,8 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
         app: built.input,
         stage: join(next, "stage"),
         file: join(next, "preview.slop"),
-        renderArtwork: false,
+        // Dev uses fast HTML previews; the full capture gate runs when packing a build.
+        renderViews: false,
       });
       const old = stage;
       input = built.input;

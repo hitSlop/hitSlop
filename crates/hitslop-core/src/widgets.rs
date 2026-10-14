@@ -49,7 +49,7 @@ pub struct WidgetRenderRequest<'a> {
     pub snapshot: &'a serde_json::Value,
     pub theme: &'a std::collections::BTreeMap<String, String>,
     pub viewports: Vec<WidgetViewport>,
-    pub resources: &'a std::collections::BTreeMap<String, String>,
+    pub attachments: &'a std::collections::BTreeMap<String, String>,
 }
 
 pub struct WidgetImage {
@@ -121,9 +121,12 @@ pub(crate) fn render_source(
         snapshot: &input.snapshot,
         theme: &input.theme,
         viewports: widget_viewports(),
-        resources: &input.resources,
+        attachments: &input.attachments,
     };
-    let result = evaluator.widget(store.app().runtime_abi, program, &crate::encode(&request)).map_err(invalid)?;
+    let batch = evaluator.markup(store.app().runtime_abi, program, &crate::encode(&request), true).map_err(invalid)?;
+    let images = source.images(&batch, crate::capture::CaptureOutput::Widgets)?;
+    let result =
+        evaluator.raster(store.app().runtime_abi, batch, images, hitslop_runner::JobKind::Widget).map_err(invalid)?;
     let reply: hitslop_runner::RenderReply =
         serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
     let images = reply.into_images().map_err(invalid)?;

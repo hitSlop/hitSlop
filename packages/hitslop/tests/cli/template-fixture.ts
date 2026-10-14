@@ -33,7 +33,7 @@ export async function writeTemplate(output: string, slug = "fixture-one") {
   for (const role of ["icon", "preview"]) await writeFile(join(stage, `assets/${role}.js`), await readFile(new URL("../../../../tests/fixtures/checklist/document/assets/export.js", import.meta.url)));
   await writeFile(join(stage, "artwork/preview.png"), png(1, 1));
   try {
-    await execute({ method: "pack", stage, file: output, app, renderArtwork: false });
+    await execute({ method: "pack", stage, file: output, app, renderViews: false });
   } finally {
     await rm(stage, { recursive: true, force: true });
   }

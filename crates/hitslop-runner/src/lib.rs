@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 mod protocol;
-pub use protocol::{Job, JobKind, JobLimits, RenderReply};
+pub use protocol::{Batch, Font, Frame, Job, JobKind, JobLimits, RasterRequest, RenderReply};
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
@@ -22,6 +22,8 @@ mod sandbox;
 pub use child::child;
 #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
 mod capture;
+pub const MARKUP_BYTES: usize = 16 << 20;
+pub const IMAGE_BYTES: usize = 24 << 20;
 pub const WIDGET_OUTPUT: usize = 8 << 20;
 pub const CAPTURE_OUTPUT: usize = 36 << 20;
 pub const PDF_OUTPUT: usize = 36 << 20;
@@ -40,6 +42,7 @@ pub fn command_input(runtime_abi: u64, bundle: &str, request: &str) -> Result<St
         bundle: Cow::Borrowed(bundle),
         request: Cow::Borrowed(request),
         mode: JobKind::Command,
+        raster: None,
     })
     .map_err(|e| e.to_string())?;
     if input.len() > INPUT {

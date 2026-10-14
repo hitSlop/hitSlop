@@ -104,9 +104,9 @@ pub enum EngineRequest {
         file: String,
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         app: Box<RawValue>,
-        /// Render the Preview and Icon artwork the build does not supply before publishing.
+        /// Check every declared view and store only unsupplied Preview/Icon artwork before publishing.
         #[serde(default)]
-        render_artwork: bool,
+        render_views: bool,
     },
     #[serde(rename = "validateApp")]
     ValidateApp {
@@ -224,7 +224,7 @@ impl EngineRequest {
         }
         let request = match header.method.as_str() {
             "validateApp" => build_request!(ValidateApp, stage),
-            "pack" => build_request!(Pack, stage, file; render_artwork = "renderArtwork"),
+            "pack" => build_request!(Pack, stage, file; render_views = "renderViews"),
             _ => serde_json::from_str(input)?,
         };
         request.check().map_err(serde_json::Error::custom)?;
@@ -315,7 +315,7 @@ pub(super) fn check_batch(batch: &super::Batch, attachments: Option<&[String]>) 
 }
 
 pub(crate) fn valid_command_name(name: &str) -> bool {
-    (1..=80).contains(&name.len())
+    (1..=super::COMMAND_NAME_BYTES).contains(&name.len())
         && name.as_bytes()[0].is_ascii_lowercase()
         && name.bytes().all(|byte| byte.is_ascii_alphanumeric())
 }

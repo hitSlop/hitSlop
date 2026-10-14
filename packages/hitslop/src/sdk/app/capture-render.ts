@@ -17,7 +17,7 @@ export function viewRenderer(
       .map(([key, value]) => `--slop-${key}:${value}`)
       .join(";");
     const icon = request.kind === "icon";
-    const props = { ...captureProps(request.snapshot, request.resources), mode: request.kind };
+    const props = { ...captureProps(request.snapshot, request.attachments), mode: request.kind };
     const html = captureHTML(render(component, { props }).body, request.theme);
     return JSON.stringify([
       {

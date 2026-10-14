@@ -39,9 +39,9 @@ export type EngineReply = EngineSuccess | Failure;
  */
 export type EngineRequest = { "method": "attachments.ref", file: string, } | { "method": "attachments.list", documentPath: string, } | { "method": "attachments.read", documentPath: string, attachmentID: string, } | { "method": "theme.export", documentPath: string, } | { "method": "get", documentPath: string, } | { "method": "batch", documentPath: string, batch: Batch, attachments?: Array<string>, } | { "method": "copy", documentPath: string, output: string, } | { "method": "export", documentPath: string, format: ExportFormat, output: string, } | { "method": "templates", } | { "method": "create", from: string, output: string, } | { "method": "inspect", file: string, } | { "method": "artwork.export", file: string, target: ArtworkTarget, output: string, } | { "method": "schema", file: string, } | { "method": "pack", stage: string, file: string, app: unknown,
 /**
- * Render the Preview and Icon artwork the build does not supply before publishing.
+ * Check every declared view and store only unsupplied Preview/Icon artwork before publishing.
  */
-renderArtwork: boolean, } | { "method": "validateApp", stage: string, app: unknown, } | { "method": "validateMetadata", metadata: AppMetadata, } | { "method": "describe", documentPath: string, } | { "method": "call", documentPath: string, command: string, args: unknown, } | { "method": "open", documentPath: string, };
+renderViews: boolean, } | { "method": "validateApp", stage: string, app: unknown, } | { "method": "validateMetadata", metadata: AppMetadata, } | { "method": "describe", documentPath: string, } | { "method": "call", documentPath: string, command: string, args: unknown, } | { "method": "open", documentPath: string, };
 
 /**
  * Every successful result names its method and carries all fields that method promises.

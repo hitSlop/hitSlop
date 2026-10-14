@@ -13,7 +13,7 @@ export function widgetRenderer(
 ) {
   return (json: string) => {
     const request: WidgetRenderRequest = JSON.parse(json);
-    const props = captureProps(request.snapshot, request.resources);
+    const props = captureProps(request.snapshot, request.attachments);
     const theme = Object.entries(request.theme)
       .map(([key, value]) => `--slop-${key}:${value}`)
       .join(";");
