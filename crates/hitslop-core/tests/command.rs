@@ -352,56 +352,81 @@ fn line(stream: &mut UnixStream) -> String {
     BufReader::new(stream).read_line(&mut text).unwrap();
     text
 }
+fn peer_reply(hello: Value, response: &str) -> (String, usize) {
+    let (dir, path) = document();
+    let owner = open(&path);
+    let saved = std::fs::read(&path).unwrap();
+    let listener = mock(&owner, dir.path());
+    listener.set_nonblocking(true).unwrap();
+    let response = response.to_owned();
+    let (stop, stopped) = mpsc::channel();
+    let peer = std::thread::spawn(move || {
+        let mut commands = 0;
+        loop {
+            if stopped.try_recv().is_ok() {
+                break;
+            }
+            let mut stream = match listener.accept() {
+                // macOS hands out accepted streams nonblocking like their listener.
+                Ok((stream, _)) => {
+                    stream.set_nonblocking(false).unwrap();
+                    stream
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(1));
+                    continue;
+                }
+                Err(error) => panic!("{error}"),
+            };
+            let input: Value = serde_json::from_str(&line(&mut stream)).unwrap();
+            if input["method"] == "hello" {
+                writeln!(stream, "{hello}").unwrap();
+                continue;
+            }
+            assert_eq!(input["request"]["method"], "batch");
+            commands += 1;
+            writeln!(stream, "{response}").unwrap();
+        }
+        commands
+    });
+    let mut input = batch(&path);
+    input.as_object_mut().unwrap().remove("protocol");
+    let answer = command::request(&input.to_string(), PROTOCOL);
+    stop.send(()).unwrap();
+    let commands = peer.join().unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), saved);
+    close(&owner);
+    (answer, commands)
+}
+
 #[test]
 fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
     for code in ["rejected", "owner_replaced", "closing", "save_failed", "unknown_outcome"] {
-        let (dir, path) = document();
-        let owner = open(&path);
-        let saved = std::fs::read(&path).unwrap();
-        let listener = mock(&owner, dir.path());
-        listener.set_nonblocking(true).unwrap();
-        let refusal = json!({"ok":false,"error":"Peer refusal","code":code});
-        let expected = refusal.clone();
-        let (stop, stopped) = mpsc::channel();
-        let peer = std::thread::spawn(move || {
-            let mut commands = 0;
-            loop {
-                if stopped.try_recv().is_ok() {
-                    break;
-                }
-                let mut stream = match listener.accept() {
-                    // macOS hands out accepted streams nonblocking like their listener.
-                    Ok((stream, _)) => {
-                        stream.set_nonblocking(false).unwrap();
-                        stream
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                        std::thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-                    Err(error) => panic!("{error}"),
-                };
-                let input: Value = serde_json::from_str(&line(&mut stream)).unwrap();
-                if input["method"] == "hello" {
-                    writeln!(stream, "{}", json!({"ok":true,"method":"hello"})).unwrap();
-                    continue;
-                }
-                commands += 1;
-                writeln!(stream, "{refusal}").unwrap();
-            }
-            commands
-        });
-        assert_eq!(run(batch(&path)), expected);
-        stop.send(()).unwrap();
-        let commands = peer.join().unwrap();
+        let refusal = json!({"ok":false,"error":"Peer refusal","code":code}).to_string();
+        let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello"}), &refusal);
+        assert_eq!(answer, refusal);
         if code == "closing" {
-            assert!(commands >= 1);
+            assert!(commands > 1, "closing refusal must retry during admission");
         } else {
             assert_eq!(commands, 1);
         }
-        assert_eq!(std::fs::read(&path).unwrap(), saved);
-        close(&owner);
     }
+}
+
+#[test]
+fn peer_hello_reply_accepts_unknown_members() {
+    let response = r#"{ "method": "batch", "ok": true }"#;
+    let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello","features":[]}), response);
+    assert_eq!(answer, response);
+    assert_eq!(commands, 1);
+}
+
+#[test]
+fn peer_unfamiliar_outcome_is_forwarded_byte_for_byte() {
+    let response = r#"{ "ok": false, "code": "future_outcome", "error": "Future peer message" }"#;
+    let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello"}), response);
+    assert_eq!(answer, response);
+    assert_eq!(commands, 1);
 }
 
 #[test]
@@ -752,7 +777,14 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     let outcome = &page_json(&undeclared)["outcome"];
     assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("notDeclared")));
     assert!(outcome["message"].as_str().unwrap().contains("capabilities"));
+    let typed = hitslop_core::page_wire::PageRequest::decode(&request).unwrap();
+    let (reply, received) = mpsc::channel();
+    command::page_typed(&owner, "page".into(), typed, move |dispatch| reply.send(dispatch).unwrap());
+    let typed = received.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(page_json(&typed)["outcome"]["reason"], "notDeclared");
+    assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
     close(&owner);
+    assert_eq!(page_json(&page(&owner, "page", &request))["code"], "closing");
 
     let (_dir, path) = document_declaring(&["speech"]);
     let owner = open(&path);

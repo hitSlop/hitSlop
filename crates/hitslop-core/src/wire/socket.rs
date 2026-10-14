@@ -73,7 +73,7 @@ pub(crate) enum Hello {
     Hello { protocol: u64 },
 }
 #[derive(Deserialize)]
-#[serde(tag = "method", deny_unknown_fields)]
+#[serde(tag = "method")]
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) enum HelloSuccess {
     #[serde(rename = "hello")]

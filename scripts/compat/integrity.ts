@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileDigest, repository } from "../lib/artifacts";
-import type { Release } from "./corpus";
+import { readJSON, type Expected, type Release } from "./corpus";
 
 /** Fingerprint producing inputs, excluding the corpus-only commit and build outputs. */
 export async function sourceFingerprint(root = repository): Promise<string> {
@@ -120,6 +120,8 @@ export async function verifyCorpus(root: string, release: Release) {
     // A document a page saved (`NAME.page`) was the result of NAME's page scenario.
     if (!name.endsWith(".page"))
       assert.ok(release.files[`pages/${name}.json`], `Missing page scenario: ${name}`);
+    const expected = await readJSON<Expected>(join(root, "expected", `${name}.json`));
+    assert.match(expected?.appDigest ?? "", /^[a-f0-9]{64}$/, `Missing appDigest: ${name}`);
   }
   for (const name of ["conformance", "conformance-compacted"])
     assert.ok(release.storage[name], `Missing required conformance case: ${name}`);
@@ -137,12 +139,23 @@ export async function verifyCorpus(root: string, release: Release) {
     release.producer.coreBuildID,
     `${release.release}: the writer was built from another core`,
   );
-  for (const [slug, hash] of Object.entries(release.templates))
+  assert.deepEqual(
+    Object.keys(release.templateAppDigests ?? {}).sort(),
+    Object.keys(release.templates).sort(),
+    "Missing template appDigest records",
+  );
+  for (const [slug, hash] of Object.entries(release.templates)) {
+    assert.match(
+      release.templateAppDigests[slug]!,
+      /^[a-f0-9]{64}$/,
+      `Invalid template appDigest: ${slug}`,
+    );
     assert.equal(
       await fileDigest(join(root, "templates", `${slug}.slop`)),
       hash,
       `Changed template: ${slug}`,
     );
+  }
 }
 
 /** Only the release being published must match current producing inputs. */

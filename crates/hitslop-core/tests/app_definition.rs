@@ -47,6 +47,26 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
 }
 
 #[test]
+fn reserved_theme_names_are_refused_at_authoring_and_open() {
+    for token in ["window-radius", "host-accent", "platform-accent", "ordinary-accent"] {
+        let mut value = definition();
+        value["theme"] = json!([{"token":token,"color":"#123456"}]);
+        let opened = read(&metadata(), &value);
+        value["metadata"] = metadata();
+        value["initial"] = json!({"title":"Initial"});
+        let declaration: BuildDeclaration = serde_json::from_value(value).unwrap();
+        let authored = AppDefinition::from_declaration(&declaration, None);
+        if token == "ordinary-accent" {
+            assert_eq!(opened.unwrap().theme()[0].token, token);
+            assert_eq!(authored.unwrap().theme()[0].token, token);
+        } else {
+            assert_eq!(opened.unwrap_err().code, Code::InvalidKey, "{token}");
+            assert_eq!(authored.unwrap_err().code, Code::InvalidKey, "{token}");
+        }
+    }
+}
+
+#[test]
 fn widget_role_and_refresh_policy_survive_pack_and_reopen() {
     assert!(read(&metadata(), &definition()).unwrap().views().widget.is_none());
     for options in [json!({}), json!({"refreshMinutes":15}), json!({"refreshMinutes":1440})] {
@@ -402,6 +422,15 @@ fn build_declarations_share_acceptance_and_check_initial_values() {
     assert!(AppDefinition::from_declaration(&input, None).is_err());
     assert!(AppDefinition::from_declaration(&input, Some("media/wrong.png")).is_err());
     assert!(AppDefinition::from_declaration(&input, Some(&key)).is_ok());
+}
+
+#[test]
+fn every_capability_is_in_all_and_is_granted_when_declared() {
+    let expected = [Capability::Camera, Capability::Microphone, Capability::Speech];
+    assert_eq!(Capability::ALL, expected);
+    let mut value = definition();
+    value["capabilities"] = serde_json::to_value(expected).unwrap();
+    assert_eq!(read(&metadata(), &value).unwrap().capabilities(), expected);
 }
 
 #[test]

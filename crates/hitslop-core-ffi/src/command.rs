@@ -88,6 +88,21 @@ impl NativeExportCompletion {
 pub trait NativeExportHandler: Send + Sync {
     fn export(&self, request: NativeExportRequest, completion: Arc<NativeExportCompletion>);
 }
+/// Consulted synchronously after the staged export is synced, immediately before publishing.
+#[uniffi::export(callback_interface)]
+pub trait NativeExportActivity: Send + Sync {
+    fn is_active(&self) -> bool;
+}
+/// The same exclusive, durable publisher used by closed-document exports. CoreError
+/// preserves rejected/exists and the unknown outcome of a post-publication sync failure.
+#[uniffi::export]
+pub fn publish_export(
+    bytes: Vec<u8>,
+    output: String,
+    activity: Box<dyn NativeExportActivity>,
+) -> Result<(), CoreError> {
+    Ok(hitslop_core::capture::publish_export(&bytes, Path::new(&output), || activity.is_active())?)
+}
 #[uniffi::export(callback_interface)]
 pub trait NativeCommandCompletion: Send + Sync {
     fn complete(&self, reply_json: String);

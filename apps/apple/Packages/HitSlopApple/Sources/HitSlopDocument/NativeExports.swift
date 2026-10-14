@@ -27,7 +27,11 @@ final class NativeExports: NativeExportHandler {
           throw SlopFailure("Document copying is unavailable in this host")
         }
         completion.complete(outcome: .success(output: request.output))
-      } catch { completion.complete(outcome: .failure(failure: OwnerFailure(error))) }
+      } catch {
+        // Diagnostic wrappers carry telemetry context; preserve the core export outcome.
+        let underlying = (error as? SlopDiagnosticError)?.underlying ?? error
+        completion.complete(outcome: .failure(failure: OwnerFailure(underlying)))
+      }
     }
   }
 }

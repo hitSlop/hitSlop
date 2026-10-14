@@ -122,8 +122,7 @@ pub fn export_saved(
     evaluator: &hitslop_runner::Evaluator,
     deadline: std::time::Instant,
 ) -> crate::store::Result<()> {
-    use crate::error::{failed, invalid, rejected};
-    use std::io::Write;
+    use crate::error::{invalid, rejected};
     let output = crate::file::resolve(output)?;
     // Before rendering: no file, folder or link (even a dangling one) is ever replaced.
     if std::fs::symlink_metadata(&output).is_ok() {
@@ -137,18 +136,33 @@ pub fn export_saved(
     let CaptureValue::Image { bytes: Some(bytes) } = rendered.into_iter().next().expect("one result").result? else {
         return Err(invalid("This slop has no native capture view; rebuild its template"));
     };
+    publish_export(&bytes, &output, || std::time::Instant::now() < deadline)
+}
+
+/// Publishes rendered bytes for both live and closed exports. The caller's activity or
+/// deadline is checked after the staged bytes are synced, immediately before the rename.
+/// A failure after publication reports an unknown outcome and keeps the destination.
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub fn publish_export(
+    bytes: &[u8],
+    output: &std::path::Path,
+    is_active: impl FnOnce() -> bool,
+) -> crate::store::Result<()> {
+    use crate::error::failed;
+    use std::io::Write;
+    let output = crate::file::resolve(output)?;
     let staged = crate::file::Staged::beside(&output)?;
     let write = || -> std::io::Result<()> {
         let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(staged.path())?;
-        file.write_all(&bytes)?;
+        file.write_all(bytes)?;
         file.sync_all()
     };
     write().map_err(|e| failed(format!("Cannot write the export: {e}")))?;
     // Immediately before publishing: a late result is discarded with its staged file.
-    if std::time::Instant::now() >= deadline {
+    if !is_active() {
         return Err(failed("Command timed out; output was not published"));
     }
-    staged.publish_new(&output, true)
+    staged.publish_new(&output, true)?.confirmed()
 }
 
 /// Inputs are prepared lazily after role admission, once for the entire batch. Even

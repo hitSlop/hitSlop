@@ -1,6 +1,6 @@
 //! Same-build page messages. The owner parses once; native UI receives typed actions.
 use super::engine::True;
-use crate::{Code, Result, err};
+use crate::{Code, Result, app::Capability, err};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -52,6 +52,23 @@ pub enum PageErrorKind {
     Application,
 }
 impl PageRequest {
+    pub fn requires(&self) -> Option<Capability> {
+        match self {
+            Self::SpeechTranscribe { .. } => Some(Capability::Speech),
+            Self::Open {}
+            | Self::Apply { .. }
+            | Self::Flush {}
+            | Self::Undo {}
+            | Self::Redo {}
+            | Self::Config {}
+            | Self::AttachmentsPut { .. }
+            | Self::WindowResize { .. }
+            | Self::Ready {}
+            | Self::PageRecovered {}
+            | Self::Failed { .. }
+            | Self::PageError { .. } => None,
+        }
+    }
     pub fn decode(input: &str) -> Result<Self> {
         if input.len() > super::SOCKET_ATTACHMENT {
             return Err(err(Code::TooLarge, "Page request is too large"));
@@ -76,7 +93,13 @@ impl PageRequest {
             Self::SpeechTranscribe { attachment, locale } => {
                 super::valid_attachment_id(attachment) && locale.as_deref().is_none_or(super::valid_speech_locale)
             }
-            _ => true,
+            Self::Open {}
+            | Self::Flush {}
+            | Self::Undo {}
+            | Self::Redo {}
+            | Self::Config {}
+            | Self::Ready {}
+            | Self::PageRecovered {} => true,
         };
         if valid { Ok(()) } else { Err(err(Code::InvalidRequest, "Invalid page request")) }
     }

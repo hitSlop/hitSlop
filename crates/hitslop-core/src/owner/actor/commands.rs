@@ -34,7 +34,6 @@ pub(super) struct Work {
     input: String,
 }
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(in crate::owner) struct Evaluation {
     #[serde(rename = "ok")]
     _ok: True,
@@ -42,7 +41,6 @@ pub(in crate::owner) struct Evaluation {
     result: Value,
 }
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Refusal {
     #[serde(rename = "ok")]
     _ok: False,
@@ -73,9 +71,14 @@ fn rejected(error: impl ToString) -> Failure {
     Failure::rejected(Code::InvalidRequest, error.to_string())
 }
 
-pub(super) fn worker(evaluator: Evaluator, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
+pub(super) fn worker(
+    run: impl Fn(u64, &str, &str) -> std::result::Result<String, String>,
+    work: mpsc::Receiver<Work>,
+    sender: mpsc::Sender<Message>,
+) {
     for work in work {
-        let output = evaluator.run(work.runtime_abi, &work.bundle, &work.input);
+        let output = catch_unwind(AssertUnwindSafe(|| run(work.runtime_abi, &work.bundle, &work.input)))
+            .unwrap_or_else(|_| Err("the evaluator panicked".into()));
         let done = work.finish(output);
         if let Err(mpsc::SendError(Message::Evaluated { mut invocation, .. })) = sender.send(done) {
             complete(take(&mut invocation.callback), Err(closed()));
@@ -233,5 +236,109 @@ impl Actor {
         }
         self.release_held();
         self.sync_resume();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn fixture() -> (tempfile::TempDir, Arc<store::Store>) {
+        crate::registry::use_folder(&std::env::temp_dir().join("hitslop-test-registry")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let assets = dir.path().join("assets");
+        std::fs::create_dir(&assets).unwrap();
+        std::fs::write(assets.join("ui.js"), "export default {}").unwrap();
+        std::fs::write(assets.join("commands.js"), "globalThis.__slopCommands = {};").unwrap();
+        let capture = include_str!("../../../../../tests/fixtures/checklist/document/assets/export.js");
+        for role in ["preview", "icon"] {
+            std::fs::write(assets.join(format!("{role}.js")), capture).unwrap();
+        }
+        let resources = ["ui", "commands", "preview", "icon"].map(|role| {
+            let kind = if role == "commands" { "command" } else { "app" };
+            json!({"kind":kind,"key":format!("{role}.js"),"mediaType":"text/javascript","path":format!("assets/{role}.js")})
+        });
+        let input = json!({
+            "packageFormat":1,"runtimeABI":1,
+            "declaration":{
+                "metadata":{"slug":"fixture","title":"Fixture","description":"A document","author":{"name":"Fixture"},"categories":["utilities"]},
+                "window":{"kind":"standard","width":320,"height":240},
+                "document":{"kind":"object","properties":{}},"initial":{},"theme":[],
+                "commands":[{"name":"run","description":"Run","args":{"kind":"object","properties":{}}}],
+                "views":{"preview":true,"icon":true,"export":false}
+            },
+            "roles":{"ui":"ui.js","commands":"commands.js","preview":"preview.js","icon":"icon.js"},
+            "resources":resources,
+            "artwork":{}
+        });
+        let template = dir.path().join("Template.slop");
+        crate::file::pack(&input.to_string(), dir.path(), &template, None).unwrap();
+        let document = dir.path().join("Document.slop");
+        crate::file::create_document(&template, &document).unwrap();
+        let store = Arc::new(store::Store::open(&document, store::Mode::Document).unwrap());
+        (dir, store)
+    }
+
+    #[test]
+    fn an_evaluator_panic_completes_and_the_worker_runs_the_next_command() {
+        let (_dir, store) = fixture();
+        let (persist, _storage) = mpsc::channel();
+        let mut actor = Actor::new(store, store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
+        let (evaluate, work) = mpsc::channel();
+        let (sender, messages) = mpsc::channel();
+        actor.evaluate = Some(evaluate);
+        let thread = std::thread::spawn(move || {
+            let calls = std::cell::Cell::new(0);
+            worker(
+                |_, _, _| {
+                    calls.set(calls.get() + 1);
+                    if calls.get() == 1 {
+                        panic!("injected evaluator panic");
+                    }
+                    Ok(json!({"ok":true,"intents":[],"result":"second command"}).to_string())
+                },
+                work,
+                sender,
+            );
+        });
+        for attempt in 0..2 {
+            let (reply, result) = mpsc::channel();
+            actor
+                .begin_command(
+                    "run".into(),
+                    "{}".into(),
+                    Origin::Agent,
+                    None,
+                    None,
+                    &mut Some(Box::new(move |answer| reply.send(answer).unwrap())),
+                )
+                .unwrap();
+            match messages.recv_timeout(Duration::from_secs(2)) {
+                Ok(message) => {
+                    actor.step(message);
+                }
+                Err(error) => {
+                    assert!(!actor.evaluating, "evaluation stayed set after the worker stopped: {error}");
+                    panic!("the evaluator did not complete: {error}");
+                }
+            }
+            assert!(!actor.evaluating);
+            let answer = result.recv_timeout(Duration::from_secs(2)).unwrap();
+            if attempt == 0 {
+                let failure = answer.unwrap_err();
+                assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(Code::EngineError)));
+                assert_eq!(failure.message, "The command evaluator failed: the evaluator panicked");
+            } else {
+                assert!(
+                    matches!(answer.unwrap(), Reply::Command { result_json, .. } if result_json == r#""second command""#)
+                );
+            }
+        }
+        let (reply, flushed) = mpsc::channel();
+        actor.dispatch(Request::Flush, None, None, Box::new(move |answer| reply.send(answer).unwrap()));
+        assert!(matches!(flushed.recv_timeout(Duration::from_secs(2)).unwrap().unwrap(), Reply::Unit));
+        actor.evaluate = None;
+        thread.join().unwrap();
     }
 }

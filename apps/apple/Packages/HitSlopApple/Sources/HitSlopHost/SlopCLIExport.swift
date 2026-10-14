@@ -1,7 +1,14 @@
 import Darwin
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import HitSlopDocument
+
+private final class ExportActivity: NativeExportActivity {
+  let deadline: NativeCommandDeadline
+  init(_ deadline: NativeCommandDeadline) { self.deadline = deadline }
+  func isActive() -> Bool { (try? deadline.check()) != nil }
+}
 
 extension SlopRenderer {
   /// `slop export` of an open document: its saved state, rendered after its owner drains
@@ -32,18 +39,23 @@ extension SlopRenderer {
   }
   private static func exists(_ output: URL) -> Error {
     SlopDiagnosticError(
-      CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: output.path]),
+      OwnerFailure(
+        kind: .rejected,
+        message:
+          "A file already exists at “\(output.lastPathComponent)”. Export cannot replace existing files. Choose a different name or location.",
+        reason: .exists, opIndex: nil),
       diagnostic: .init(.rejection, reason: .operationRejected))
   }
 
-  /// Writes the export after the last deadline check, so a late renderer result is
-  /// discarded, creating the file exclusively.
+  /// Rust stages and syncs the bytes, checks activity immediately before publishing,
+  /// then publishes exclusively and syncs the folder.
   static func publishExport(_ data: Data, to output: URL, deadline: NativeCommandDeadline) throws {
     try deadline.check()
     do {
-      try data.write(to: output, options: .withoutOverwriting)
-    } catch CocoaError.fileWriteFileExists {
-      throw exists(output)
+      try HitSlopCoreBinding.publishExport(bytes: data, output: output.path, activity: ExportActivity(deadline))
+    } catch CoreError.Failure(let failure) {
+      if failure.reason == .exists { throw exists(output) }
+      throw SlopDiagnosticError(failure, diagnostic: .classify(failure))
     }
   }
 }

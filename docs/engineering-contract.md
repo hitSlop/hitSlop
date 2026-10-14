@@ -20,7 +20,7 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | App behavior: `ctx`, handles, errors, the command prelude, stored capture programs and host DOM/CSS conventions | `app.runtime_abi`, stamped by the build | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's location and its `socket` and `documentPath` fields (other fields are ignored); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
+| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's `socket` and `documentPath` fields (other fields are ignored; its location is per platform); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
 
 ### Local browser storage
 
@@ -100,7 +100,9 @@ its markers together; reads that only display it (Quick Look, the catalog, `get`
 export) never migrate it. Public boundaries grow additively: `ctx` and handle
 methods (host members start with `$` exactly when the handle also carries authored
 fields; handles without authored fields keep plain names; reserved field names never grow),
-error and issue codes (apps treat unfamiliar ones as outcomes), `--slop-*`,
+error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports an
+unrecognized outcome and tells the user to inspect state before retrying; the engine relay
+forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--slop-*`,
 `data-slop-root`, the embed relay, and capture program requests and replies. The npm package ships the document engine; the Mac app contains its linked core
 and restricted evaluator. Release acceptance checks that the engine and the app contain
 the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
@@ -123,9 +125,11 @@ reply is therefore not a protocol bump. A category spelling this build does not 
 as `other`.
 
 A named command's reply stays raw JSON until the arm for its runtime ABI decodes it.
-`Intent`, `Segment`, `Anchor`, `Selection` and the `{ok, intents, result}` envelope are the
-frozen ABI-1 reply vocabulary: they change only additively. Any other change raises
-`runtimeABI` and freezes the old decoder in the same change.
+The `{ok, intents, result}` success envelope and refusal envelope readers ignore unknown
+members. Required fields and types remain checked; intents inside the ABI-1 arm still
+decode strictly as executing requests. `Intent`, `Segment`, `Anchor` and `Selection`
+are the frozen ABI-1 vocabulary. An incompatible change raises `runtimeABI` and freezes
+the old decoder in the same change.
 
 The [compatibility corpus](testing.md#compatibility-corpus) is the evidence: every
 release's templates and saved documents, replayed by every build. A frozen entry is never
@@ -153,7 +157,15 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
   attachments. No engine, source,
   dependencies or caches.
 
+### App identity
+
+`appDigest` hashes a fixed encoding of named app and asset columns with stable domain
+and field identifiers, never SQL query text. An inert schema extension therefore never
+changes an unchanged app's digest.
+
 ## Rules
+
+- Theme token names reserve the prefixes `window-`, `host-` and `platform-` for the host.
 
 - One edit path. The CLI forwards to the live owner's socket or takes the writer lock
   and runs the owner in-process, without WebKit or authored code. Never bypass a busy

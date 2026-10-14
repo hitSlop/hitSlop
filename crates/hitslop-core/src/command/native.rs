@@ -269,7 +269,7 @@ fn dispatch(
 struct Header {
     ok: bool,
     method: Option<String>,
-    code: Option<OutcomeCode>,
+    code: Option<String>,
 }
 fn header(json: &str) -> Result<Header> {
     serde_json::from_str(json).map_err(|_| Failure::new(FailureKind::Failed, "Invalid socket response"))
@@ -395,7 +395,8 @@ fn request_checked(input: EngineRequest, protocol: u64, evaluator: Option<owner:
         }
         match answer {
             Ok(reply)
-                if header(&reply).is_ok_and(|reply| reply.code == Some(OutcomeCode::Closing))
+                if header(&reply)
+                    .is_ok_and(|reply| reply.code.as_deref() == Some(OutcomeCode::Closing.name().as_str()))
                     && Instant::now() < admission =>
             {
                 // A closing refusal confirms this request was not admitted. Once the

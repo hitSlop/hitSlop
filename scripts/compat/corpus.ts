@@ -39,6 +39,8 @@ export type Release = {
    * u64 strings so capture never rounds them through a JavaScript number. */
   limits: { name: string; value: string; kind: "Max" | "Min" | "Exact" }[];
   templates: Record<string, string>;
+  /** App identity computed by the producing reader, independently of file hashes. */
+  templateAppDigests: Record<string, string>;
   /** The shipped darwin-arm64 writer, resolved by hash outside the corpus. */
   writer: { version: string; platform: "darwin-arm64"; sha256: string; buildId: string };
   toolchain: Record<string, string>;
@@ -49,6 +51,7 @@ export type Release = {
 };
 /** `expected/<name>.json`: the saved document as its release read it. */
 export type Expected = {
+  appDigest: string;
   value: unknown;
   theme: Pick<ThemeState, "overrides" | "effective">;
   attachments: AttachmentInfo[];
@@ -156,10 +159,12 @@ export async function slopJSON(args: string[]): Promise<any> {
 
 /** What a later build must reproduce: the value, not the version. */
 export async function savedState(document: string): Promise<Expected> {
+  const { appDigest } = await slopJSON(["inspect", document]);
   const state = await slopJSON(["get", document, "--snapshot"]);
   const theme: ThemeState = await slopJSON(["theme", "get", document]);
   const attachments: AttachmentInfo[] = await slopJSON(["attachments", "list", document]);
   return {
+    appDigest,
     value: state.value,
     theme: { overrides: theme.overrides, effective: theme.effective },
     attachments,

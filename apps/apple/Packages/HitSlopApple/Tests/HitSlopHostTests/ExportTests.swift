@@ -134,6 +134,96 @@ extension HostTests {
     try await session.close()
   }
 
+  @Test @MainActor func exportCancelledAfterStagingPublishesNothing() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let output = folder.appendingPathComponent("export.pdf")
+    // The command stops being active once its bytes have been staged. Publication must
+    // still consult it, even though the check before writing accepted the work.
+    let deadline = NativeCommandDeadline(active: {
+      (try? FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty) == true
+    })
+    #expect(throws: (any Error).self) {
+      try SlopRenderer.publishExport(Data("complete export".utf8), to: output, deadline: deadline)
+    }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+  }
+
+  @Test(arguments: [false, true])
+  @MainActor func liveExportPublishesCompleteBytesOrNothingWhenRenderingThrows(renderThrows: Bool) async throws {
+    let root = try contractFixture { stage in
+      if renderThrows {
+        try Data("globalThis.__slopCapture = () => { throw new Error('Capture failed'); };".utf8)
+          .write(to: stage.appendingPathComponent("assets/export.js"))
+      }
+    }
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let output = folder.appendingPathComponent("export.pdf")
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    await controller.waitForPresentation()
+    do {
+      let reply = try await request([
+        "method": "export", "documentPath": root.path, "format": "pdf", "output": output.path,
+      ])
+      #expect(reply["ok"] as? Bool == !renderThrows)
+      if renderThrows {
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+      } else {
+        let saved = try Data(contentsOf: output)
+        #expect(PDFDocument(data: saved) != nil)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["export.pdf"])
+      }
+      // Refused before rendering, including when the renderer itself would throw.
+      let previous = Data("an earlier export".utf8)
+      try previous.write(to: output)
+      let refused = try await request([
+        "method": "export", "documentPath": root.path, "format": "pdf", "output": output.path,
+      ])
+      #expect(refused["ok"] as? Bool == false)
+      #expect(refused["code"] as? String == "rejected")
+      #expect(refused["reason"] as? String == "exists")
+      #expect((refused["error"] as? String)?.contains("Choose a different name") == true)
+      #expect(try Data(contentsOf: output) == previous)
+      #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["export.pdf"])
+      try await controller.finishClose()
+    } catch {
+      try? await controller.finishClose()
+      throw error
+    }
+  }
+
+  @Test @MainActor func liveExportAcceptsLongDestinationNames() async throws {
+    let root = try contractFixture()
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let name = String(repeating: "e", count: 236) + ".pdf"
+    let output = folder.appendingPathComponent(name)
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    await controller.waitForPresentation()
+    do {
+      let reply = try await request([
+        "method": "export", "documentPath": root.path, "format": "pdf", "output": output.path,
+      ])
+      #expect(reply["ok"] as? Bool == true)
+      #expect(PDFDocument(data: try Data(contentsOf: output)) != nil)
+      #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == [name])
+      try await controller.finishClose()
+    } catch {
+      try? await controller.finishClose()
+      throw error
+    }
+  }
+
   @Test @MainActor func expiredExportCannotPublishOutput() throws {
     let root = try fixture()
     let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pdf")

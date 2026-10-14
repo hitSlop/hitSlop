@@ -1,16 +1,17 @@
 import { json } from "./json";
-import { EngineProtocol, OutcomeCodes, SocketLimits } from "../schema/constants";
-import type {
-  EngineRequest,
-  EngineRequestFor,
-  EngineMethod,
-  EngineReply,
-  EngineReplyFor,
-  EngineSuccess,
-} from "../wire/engine";
+import { EngineProtocol, SocketLimits } from "../schema/constants";
+import type { EngineRequest, EngineRequestFor, EngineMethod, EngineSuccess } from "../wire/engine";
+import type { Failure } from "../wire/engine.generated";
+import type { OutcomeCode } from "../schema/values";
 import { join } from "node:path";
 import { cliRoot, cliPackage, isGlobalInstall } from "./paths";
 import { findExecutable, exec } from "./process";
+
+/** Failure codes grow additively; an unfamiliar one carries no certainty about the edit. */
+type EngineFailure = Omit<Failure, "code"> & { code: OutcomeCode | (string & {}) };
+export type EngineReply = EngineSuccess | EngineFailure;
+export type EngineReplyFor<M extends EngineMethod> =
+  Extract<EngineSuccess, { method: M }> | EngineFailure;
 
 /** The file engine (`crates/slop-engine`): it builds and reads `.slop` files by the rules
  * the app opens them with, on any platform. `HITSLOP_ENGINE` names one; otherwise the
@@ -125,7 +126,6 @@ function acknowledged(value: unknown, method: EngineMethod): value is EngineRepl
     return (
       typeof reply.error === "string" &&
       typeof reply.code === "string" &&
-      (OutcomeCodes as readonly string[]).includes(reply.code) &&
       (reply.reason === undefined || typeof reply.reason === "string") &&
       (reply.opIndex === undefined ||
         (Number.isSafeInteger(reply.opIndex) && (reply.opIndex as number) >= 0))
@@ -148,7 +148,7 @@ const outcomes = {
   owner_invalidated: "Not applied.",
   save_failed: "Applied, but not yet saved. Run slop get before issuing another edit.",
   unknown_outcome: "Outcome unknown. Run slop get before issuing another edit.",
-} satisfies Record<import("../schema/values").OutcomeCode, string>;
+} satisfies Record<OutcomeCode, string>;
 
 /** One refusal format for authoring and document commands; transport validation stays above. */
 export function unwrap<M extends EngineMethod>(
@@ -162,9 +162,13 @@ export function unwrap<M extends EngineMethod>(
       reply.opIndex === undefined
         ? `${error}${reason}`
         : `Refused ops[${reply.opIndex}]${reason}: ${error}`;
-    const outcome =
-      method === "batch" || method === "call"
-        ? outcomes[reply.code]
+    const edit = method === "batch" || method === "call";
+    const outcome = !Object.hasOwn(outcomes, reply.code)
+      ? edit
+        ? "Outcome not recognized. Run slop get before issuing another edit."
+        : "Outcome not recognized. Inspect the document and output before retrying."
+      : edit
+        ? outcomes[reply.code as OutcomeCode]
         : reply.code === "unknown_outcome"
           ? "Outcome unknown. Inspect the document and output before retrying."
           : undefined;

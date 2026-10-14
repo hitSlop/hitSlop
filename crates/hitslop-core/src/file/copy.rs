@@ -10,6 +10,27 @@ use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
+/// Rename succeeded even when syncing its folder did not. Callers must retain the file
+/// and report an unknown outcome in that case, never a refusal or a retryable non-write.
+pub(crate) enum Publication {
+    Published,
+    DurabilityUnconfirmed(Error),
+}
+impl Publication {
+    fn after_sync(sync: Result<()>) -> Self {
+        match sync {
+            Ok(()) => Self::Published,
+            Err(error) => Self::DurabilityUnconfirmed(error),
+        }
+    }
+    pub(crate) fn confirmed(self) -> Result<()> {
+        match self {
+            Self::Published => Ok(()),
+            Self::DurabilityUnconfirmed(error) => Err(error),
+        }
+    }
+}
+
 /// A private temporary file beside `dest`, removed if it is never published.
 pub(crate) struct Staged {
     path: PathBuf,
@@ -18,15 +39,14 @@ pub(crate) struct Staged {
 impl Staged {
     pub(crate) fn beside(dest: &Path) -> Result<Self> {
         let dest = resolve(dest)?;
-        let name = dest.file_name().expect("a resolved path names its file").to_string_lossy();
-        Ok(Self { path: dest.with_file_name(format!(".{name}.{}.tmp", crate::random_hex(8))), published: false })
+        Ok(Self { path: dest.with_file_name(format!(".hitslop-{}.tmp", crate::random_hex(8))), published: false })
     }
     pub(crate) fn path(&self) -> &Path {
         &self.path
     }
     /// Publishes the finished file without replacing anything at `dest`; a durable one's
     /// folder entry is synced too.
-    pub(crate) fn publish_new(mut self, dest: &Path, durable: bool) -> Result<()> {
+    pub(crate) fn publish_new(mut self, dest: &Path, durable: bool) -> Result<Publication> {
         let (from, to) = (cstring(&self.path)?, cstring(&resolve(dest)?)?);
         #[cfg(target_os = "macos")]
         // SAFETY: valid C strings.
@@ -53,10 +73,7 @@ impl Staged {
             });
         }
         self.published = true;
-        if durable {
-            sync_folder(dest)?;
-        }
-        Ok(())
+        Ok(Publication::after_sync(if durable { sync_folder(dest) } else { Ok(()) }))
     }
     /// Publishes over a template, never over a document.
     pub(super) fn publish_template(mut self, dest: &Path) -> Result<()> {
@@ -75,7 +92,7 @@ impl Staged {
             sync_folder(dest)?;
             return Ok(());
         }
-        self.publish_new(dest, true)
+        self.publish_new(dest, true)?.confirmed()
     }
 }
 impl Drop for Staged {
@@ -139,8 +156,9 @@ pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool
     }
     check(&output, clean.is_some())?;
     output.close().map_err(|(_, e)| sqlite("close")(e))?;
-    staged.publish_new(dest, durable)
+    staged.publish_new(dest, durable)?.confirmed()
 }
+
 /// A new document from a template: a copy of it, its initial state included, with the
 /// document row added. Missing folders above `dest` are made once it may go there.
 pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
@@ -160,4 +178,20 @@ pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     // check must be exactly what opening the new document will run.
     crate::store::validate_saved(&read, accepted.app.spec())?;
     copy(&read, dest, true, true, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn published_but_unsynced_is_an_unknown_outcome() {
+        // No folder-sync fault hook: exercise the post-publication outcome mapping.
+        let publication = Publication::after_sync(Err(failed("Published; durability unconfirmed")));
+        assert!(matches!(&publication, Publication::DurabilityUnconfirmed(_)));
+        let reply = crate::command::failure(publication.confirmed().unwrap_err().into(), false, false);
+        let reply: serde_json::Value = serde_json::from_str(&reply).unwrap();
+        assert_eq!(reply["code"], "unknown_outcome");
+        assert!(Publication::after_sync(Ok(())).confirmed().is_ok());
+    }
 }

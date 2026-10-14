@@ -4,6 +4,29 @@ use hitslop_core::page_wire::{HostReply, HostRequest, PageRequest};
 use serde_json::json;
 
 #[test]
+fn each_page_request_classifies_its_required_capability() {
+    use hitslop_core::{app::Capability, page_wire::PageErrorKind};
+    for (request, required) in [
+        (PageRequest::Open {}, None),
+        (PageRequest::Apply { batch: serde_json::from_value(json!({"intents":[]})).unwrap() }, None),
+        (PageRequest::Flush {}, None),
+        (PageRequest::Undo {}, None),
+        (PageRequest::Redo {}, None),
+        (PageRequest::Config {}, None),
+        (PageRequest::AttachmentsPut { bytes: String::new() }, None),
+        (PageRequest::WindowResize { width: 320, height: 240 }, None),
+        (PageRequest::SpeechTranscribe { attachment: "a".repeat(64), locale: None }, Some(Capability::Speech)),
+        (PageRequest::Ready {}, None),
+        (PageRequest::PageRecovered {}, None),
+        (PageRequest::Failed { error: String::new() }, None),
+        (PageRequest::PageError { kind: PageErrorKind::Operation, error: String::new() }, None),
+    ] {
+        assert_eq!(request.requires(), required, "{request:?}");
+        request.check().unwrap();
+    }
+}
+
+#[test]
 fn page_requests_and_nested_batches_are_strict() {
     for value in [
         json!({"method":"open"}),

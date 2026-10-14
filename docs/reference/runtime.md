@@ -140,7 +140,7 @@ A slop's page, `slop://app`, has no HTTP(S) referrer, and some providers refuse 
 
 Bridge calls must originate in the main frame at `slop://app` and decode into the Rust serde request types. Page requests are bounded to 16 MiB, which holds the largest attachment upload (10 MiB, base64-encoded to about 13.3 MiB), with storage bounds checked before blob materialization. SQLite uses NOFOLLOW and `trusted_schema=OFF`. Socket requests are bounded to 1 MiB (16 MiB for a batch carrying attachments), one request per connection, with bounded concurrency/timeouts. The server command deadline is 30 seconds; the client waits 35 seconds.
 
-An export never replaces the document it renders. Capture stages output and publishes by atomic rename before its deadline. Failures do not replace existing output. A lost acknowledgement leaves an uncertain outcome; inspect the destination before retrying.
+An export never replaces the document it renders. Closed and live exports share one publisher: it stages the bytes beside the destination, syncs them, checks the deadline immediately before publishing and publishes by atomic rename, then syncs the folder. A failed write leaves no destination file. Existing output is never replaced. A lost acknowledgement, or publication whose directory sync is unconfirmed, leaves an uncertain outcome; inspect the destination before retrying.
 
 Slop-initiated blob/data downloads require a native save confirmation. Download bytes receive quarantine metadata before atomic installation, including replacement of existing files; a quarantine write failure leaves the destination unchanged.
 

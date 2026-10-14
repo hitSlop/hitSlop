@@ -97,7 +97,7 @@ const dirty = (await run(["git", "status", "--porcelain"])) !== "";
 if (frozen && dirty) throw new Error("Capture a frozen entry from a clean release candidate");
 
 // Build the producing tools rather than trusting an existing engine or inventory.
-await run([process.execPath, "run", "build"]);
+await run([process.execPath, "scripts/build/build.ts", "--prepare", "native,shell"]);
 const coreBuildID = await run([documentEngine(), "--build-id"]);
 const writerPath = await realpath(suppliedWriter ? resolve(suppliedWriter) : documentEngine());
 assert.equal(
@@ -542,6 +542,14 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
         ]),
       ),
     ),
+    templateAppDigests: Object.fromEntries(
+      await Promise.all(
+        Object.keys(templates).map(async (slug) => [
+          slug,
+          (await slopJSON(["inspect", join(root, "templates", slug + ".slop")])).appDigest,
+        ]),
+      ),
+    ),
     writer,
     toolchain: {
       rust: await version(["rustc", "--version"]),
@@ -636,7 +644,9 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
       if (evaluated.ok && probe.name === "nothing") assert.equal(result, null);
       if (evaluated.ok && probe.name === "shapes") {
         assert.deepEqual(
-          [...new Set<string>(evaluated.intents.map((intent: { type: string }) => intent.type))].sort((a, b) => a.localeCompare(b)),
+          [
+            ...new Set<string>(evaluated.intents.map((intent: { type: string }) => intent.type)),
+          ].sort((a, b) => a.localeCompare(b)),
           ["clear", "increment", "insert", "move", "remove", "set"],
         );
         assert.equal(result.now, release.clock);

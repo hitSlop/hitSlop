@@ -67,7 +67,8 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** today an agent learns about a person's edits only by polling `get`. MCP lets
   clients without a shell work on slops.
 - **Builds on:** the owner socket and its serde types in `crates/hitslop-core/src/wire`. The
-  socket takes one request per connection today, so streaming needs a new envelope.
+  socket takes one request per connection today, so streaming needs a new CLI protocol
+  with both sides updated, rather than an additive method in the current protocol.
 
 ### Gradient theme tokens
 
@@ -94,8 +95,9 @@ a person and their agent edit the same live document. What's missing is the slop
   change it. Without it, the slope ends at a cliff.
 - **Builds on:** `slop init`'s agent handoff and the build staging in
   `packages/hitslop/src/cli/build.ts`.
-- **Contract change:** templates contain no source today. Shipping source also raises
-  questions about licenses and private notes in briefs.
+- **Contract change:** templates contain no source today. Shipping source as a new asset class
+  raises `packageFormat`: the asset-key set is closed and has no reserved private prefix.
+  It also raises questions about licenses and private notes in briefs.
 - **Constraints:** compressed and optional, with a size limit and provenance; source
   files and dependency metadata only, never dependencies, build caches, credentials or
   chat history; extracted without executing code and never served to the page.
@@ -153,7 +155,9 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** teach the agent once, and every copy of the slop benefits.
 - **Builds on:** the file's `app` row, which `slop inspect` and `slop schema` already read
   for agents.
-- **Contract change:** the `app` row gains a column, which raises `packageFormat`.
+- **Contract change:** optional notes and prompt declarations can be added as members of
+  `definition_json` without a marker, because readers ignore unknown members. Anything
+  an older host must understand still raises its owning marker.
 
 ## Tools, not apps
 

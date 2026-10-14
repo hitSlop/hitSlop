@@ -186,19 +186,47 @@ pub(super) fn put_asset(
     .map_err(sqlite("write asset"))
 }
 
-/// The immutable app digest. Query text, row order and typed bytes are part of its encoding.
+/// SHA-256 encoding: ASCII `hitslop-app-1`, then `app` and `assets` in that order.
+/// Each table starts with 0xfe, its ASCII name (u64 big-endian byte length + bytes),
+/// the u64 big-endian field count, and each ASCII field name in the listed order
+/// (length + bytes). Rows ordered by id/key start with 0xff. Each field is a type
+/// tag (null=0, integer=1, real=2, text=3, blob=4), u64 big-endian byte length, then
+/// bytes: empty for null, i64 big-endian for integers, IEEE-754 bits big-endian for
+/// reals, or the stored text/blob bytes. Each table ends with 0xfd. Fetch SQL and
+/// physical column order are not encoded; no document state or metadata is included.
 pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
     digest.update(b"hitslop-app-1");
-    for query in ["SELECT * FROM app ORDER BY id", "SELECT * FROM assets ORDER BY key"] {
-        let mut statement = conn.prepare(query).map_err(sqlite("read app"))?;
-        let count = statement.column_count();
+    let app_fields = [
+        "id",
+        "package_format",
+        "runtime_abi",
+        "slug",
+        "title",
+        "description",
+        "author_name",
+        "author_url",
+        "category_primary",
+        "category_secondary",
+        "definition_json",
+    ];
+    let asset_fields = ["key", "media_type", "encoding", "size", "bytes"];
+    for (table, fields, order) in [("app", app_fields.as_slice(), "id"), ("assets", asset_fields.as_slice(), "key")] {
+        digest.update([0xfe]);
+        digest.update((table.len() as u64).to_be_bytes());
+        digest.update(table.as_bytes());
+        digest.update((fields.len() as u64).to_be_bytes());
+        for field in fields {
+            digest.update((field.len() as u64).to_be_bytes());
+            digest.update(field.as_bytes());
+        }
+        let query = format!("SELECT {} FROM {table} ORDER BY {order}", fields.join(","));
+        let mut statement = conn.prepare(&query).map_err(sqlite("read app"))?;
         let mut rows = statement.query([]).map_err(sqlite("read app"))?;
-        digest.update(query.as_bytes());
         while let Some(row) = rows.next().map_err(sqlite("read app"))? {
             digest.update([0xff]);
-            for column in 0..count {
+            for column in 0..fields.len() {
                 use rusqlite::types::ValueRef;
                 let (tag, bytes) = match row.get_ref(column).map_err(sqlite("read app"))? {
                     ValueRef::Null => (0, vec![]),
@@ -212,8 +240,66 @@ pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
                 digest.update(&bytes);
             }
         }
+        digest.update([0xfd]);
     }
     Ok(digest.finalize().into())
+}
+
+#[cfg(test)]
+mod digest_tests {
+    use super::*;
+
+    fn fixture() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(super::super::SCHEMA).unwrap();
+        conn.execute_batch(
+            "INSERT INTO assets VALUES('ui.js','text/javascript','identity',1,x'ff');
+             INSERT INTO assets VALUES('ui.css','text/css','identity',0,x'');
+             INSERT INTO app VALUES(1,1,1,'fixture','Fixture','A fixture','Author',NULL,'utilities',NULL,'{}');",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn app_digest_encoding_has_a_stable_vector() {
+        assert_eq!(
+            crate::hex(&app_digest(&fixture()).unwrap()),
+            "0a7287adc83628985f51a118412ca44a08bd8f278e3bb1f1531e920e27be577c"
+        );
+    }
+
+    #[test]
+    fn app_digest_is_independent_of_fetch_column_and_insertion_order() {
+        let conn = fixture();
+        let original = app_digest(&conn).unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER assets_insert;
+             ALTER TABLE app RENAME TO old_app;
+             CREATE TABLE app AS SELECT definition_json,category_secondary,category_primary,author_url,author_name,description,title,slug,runtime_abi,package_format,id FROM old_app;
+             DROP TABLE old_app;
+             ALTER TABLE assets RENAME TO old_assets;
+             CREATE TABLE assets AS SELECT bytes,size,encoding,media_type,key FROM old_assets ORDER BY key DESC;
+             DROP TABLE old_assets;",
+        )
+        .unwrap();
+        assert_eq!(app_digest(&conn).unwrap(), original);
+        conn.execute_batch("ALTER TABLE app ADD COLUMN optional TEXT; ALTER TABLE assets ADD COLUMN optional TEXT;")
+            .unwrap();
+        assert_eq!(app_digest(&conn).unwrap(), original, "unencoded columns cannot change app identity");
+    }
+
+    #[test]
+    fn app_digest_ignores_inert_schema_extensions() {
+        let conn = fixture();
+        let original = app_digest(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE x_inert(key TEXT PRIMARY KEY, value BLOB NOT NULL) STRICT;
+             INSERT INTO x_inert VALUES('future.optional',x'ff00');",
+        )
+        .unwrap();
+        assert_eq!(app_digest(&conn).unwrap(), original);
+    }
 }
 
 /// Streams pages from the caller's read transaction without retaining the file in memory.
