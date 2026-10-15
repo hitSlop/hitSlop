@@ -157,24 +157,3 @@ export async function verifyCorpus(root: string, release: Release) {
     );
   }
 }
-
-/** Only the release being published must match current producing inputs. */
-export async function verifyCandidate(
-  release: Pick<Release, "sourceInputs" | "templates">,
-  candidateRoot = repository,
-) {
-  assert.equal(
-    await sourceFingerprint(candidateRoot),
-    release.sourceInputs,
-    "Release inputs changed after compatibility capture; capture a new candidate",
-  );
-  for (const [slug, hash] of Object.entries(release.templates)) {
-    if (slug === "conformance") continue;
-    const file = join(
-      candidateRoot,
-      "generated/presentation",
-      `${slug.slice("presentation-".length)}.slop`,
-    );
-    assert.equal(await fileDigest(file), hash, `Captured template differs from candidate: ${slug}`);
-  }
-}

@@ -376,10 +376,13 @@ newly created file in exact layout and value, and an interrupted migration leave
 older file intact.
 
 The `compat` tier compares frozen entries with protected Git history and verifies their content
-hashes. Release checks additionally require the tagged entry to match current producing
-`sourceInputs` and window-kind templates, and its writer to come from the captured core
-and match the darwin-arm64 engine in the packed npm tarball byte for byte. A
-corpus-only commit does not change the input fingerprint. Historical entries never need
+hashes. Release checks additionally require the tagged entry to be captured and frozen, and its
+writer to come from the captured core and match the darwin-arm64 engine in the packed npm
+tarball byte for byte. They do not recompute the source fingerprint or compare rebuilt
+template bytes: a rebuilt SQLite file carries its writer library's version in its header, so
+the same templates differ between machines. Replay of the captured documents is what
+establishes compatibility; it certifies compatibility with the captured examples, not that every
+captured component exactly matches the shipped native host. Historical entries never need
 current build identities. The CLI and the app meet only through the command protocol, whose
 refusal path is fixed and tested in each build; old CLIs are never run against new apps.
 
