@@ -1,0 +1,96 @@
+{
+  "booleans": [
+    true
+  ],
+  "ceiling": 100,
+  "cells": {
+    "seed": {
+      "hits": 5,
+      "input": "Seed record",
+      "width": 12
+    }
+  },
+  "checkins": {
+    "seed": 1
+  },
+  "colors": [
+    "#335577"
+  ],
+  "count": 0,
+  "done": false,
+  "enabled": true,
+  "epoch": 42,
+  "extremes": [
+    -9007199254740991,
+    9007199254740991
+  ],
+  "files": [],
+  "hits": 3,
+  "label": "Seed label",
+  "lane": "todo",
+  "lanes": [
+    "todo"
+  ],
+  "lastHit": 0,
+  "lower": 0,
+  "measurements": {
+    "seed": 0.5
+  },
+  "memo": "Seed memo",
+  "note": "Seed optional",
+  "numbers": [
+    0.25
+  ],
+  "place": {
+    "name": "Seed place",
+    "visits": 1
+  },
+  "ratio": 0.5,
+  "rows": [
+    {
+      "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+      "done": false,
+      "hits": 2,
+      "notes": {
+        "seed": "Seed note"
+      },
+      "tags": [
+        "seed",
+        "tag"
+      ],
+      "text": "Seed row 中文 😀"
+    }
+  ],
+  "settings": {
+    "hits": 4,
+    "muted": false,
+    "volume": 5
+  },
+  "slides": [
+    {
+      "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+      "blocks": [
+        {
+          "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+          "text": "First block"
+        },
+        {
+          "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+          "text": "Second block"
+        }
+      ],
+      "title": "Nested composition"
+    }
+  ],
+  "stage": "todo",
+  "stages": {
+    "seed": "todo"
+  },
+  "switches": {
+    "seed": true
+  },
+  "title": "Svelte ABI conformance",
+  "upper": 0,
+  "version": "Authored version",
+  "weight": 0.25
+}
