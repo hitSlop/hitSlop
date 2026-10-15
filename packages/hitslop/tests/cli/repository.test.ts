@@ -127,3 +127,27 @@ test("engine staging refuses a prebuilt engine from another build and leaves not
     await rm(root, { recursive: true, force: true });
   }
 });
+
+// The corpus writer is the Engines workflow's build, and a release job's own build of its
+// platform is not byte-identical to it, so a matching prebuilt engine for this platform
+// ships as built. One from another commit or core is ignored and this machine's build ships.
+test("engine staging ships a matching prebuilt engine for this platform, else this machine's build", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-engines-"));
+  try {
+    const fresh = join(root, "slop-engine");
+    await writeFile(fresh, "#!/bin/sh\necho build-a\n", { mode: 0o755 });
+    const host = `${process.platform}-${process.arch}`;
+    const prebuilt = join(root, "prebuilt");
+    await mkdir(join(prebuilt, host), { recursive: true });
+    await writeFile(join(prebuilt, host, "slop-engine"), "ci-built binary");
+    await writeFile(join(prebuilt, host, "engine.json"), JSON.stringify({ commit: "c1", buildId: "build-a" }));
+    const engines = join(root, "engine");
+    await stageEngines(engines, prebuilt, fresh, "c1");
+    expect(await readFile(join(engines, host, "slop-engine"), "utf8")).toBe("ci-built binary");
+    await writeFile(join(prebuilt, host, "engine.json"), JSON.stringify({ commit: "c0", buildId: "build-a" }));
+    await stageEngines(engines, prebuilt, fresh, "c1");
+    expect(await readFile(join(engines, host, "slop-engine"), "utf8")).toBe("#!/bin/sh\necho build-a\n");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

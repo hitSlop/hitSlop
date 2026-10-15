@@ -9,8 +9,11 @@ import { publishFolder } from "../lib/artifacts";
  * this machine's build, and prebuilt ones for other platforms (`prebuilt/<platform>-<arch>/`,
  * from the Engines workflow). Each ships `engine.json`, the commit and core build it came
  * from; a prebuilt engine from another commit or core is refused, so every platform
- * validates by the same rules. Stages beside `engines` and renames, so a refusal leaves
- * nothing a later build could pick up. */
+ * validates by the same rules. The Engines workflow's build of this machine's own platform
+ * ships as built when it matches (a frozen corpus entry records that build as its writer,
+ * and this machine's own build is not byte-identical to it); otherwise `fresh` ships.
+ * Stages beside `engines` and renames, so a refusal leaves nothing a later build could
+ * pick up. */
 export async function stageEngines(engines: string, prebuilt: string, fresh: string, commit: string) {
   const expected = { commit, buildId: (await run([fresh, "--build-id"])).trim() };
   await publishFolder(engines, async (staging) => {
@@ -21,7 +24,12 @@ export async function stageEngines(engines: string, prebuilt: string, fresh: str
       await writeFile(join(staging, platform, "engine.json"), JSON.stringify(expected) + "\n");
     };
     const host = `${process.platform}-${process.arch}`;
-    await stage(host, fresh);
+    const hostBinary = join(prebuilt, host, "slop-engine");
+    const hostRecorded = existsSync(hostBinary)
+      ? await Bun.file(join(prebuilt, host, "engine.json")).json().catch(() => ({}))
+      : {};
+    const hostMatches = hostRecorded.commit === expected.commit && hostRecorded.buildId === expected.buildId;
+    await stage(host, hostMatches ? hostBinary : fresh);
     for (const platform of await readdir(prebuilt).catch(() => [] as string[])) {
       const binary = join(prebuilt, platform, "slop-engine");
       if (platform === host || !existsSync(binary)) continue;
