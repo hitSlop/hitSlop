@@ -1,0 +1,1766 @@
+[
+  {
+    "name": "bump",
+    "args": {
+      "by": 2
+    },
+    "channel": "evaluate",
+    "expected": {
+      "ok": true
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "ok": true,
+      "intents": [
+        {
+          "type": "increment",
+          "path": [
+            "hits"
+          ],
+          "by": 2
+        },
+        {
+          "type": "set",
+          "path": [
+            "lastHit"
+          ],
+          "value": 10
+        }
+      ],
+      "result": 10
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "compat 2",
+        "compat 1",
+        "#335577"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 10,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 10,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "note": "compat 2",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "place": {
+        "name": "Seed place",
+        "visits": 1
+      },
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        }
+      ],
+      "settings": {
+        "hits": 9,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Replay 2 é 中文",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  },
+  {
+    "name": "shapes",
+    "args": {},
+    "channel": "evaluate",
+    "expected": {
+      "ok": true
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "ok": true,
+      "intents": [
+        {
+          "type": "insert",
+          "path": [
+            "rows"
+          ],
+          "value": {
+            "text": "Command anchor"
+          },
+          "id": "00pg00000000103gb808179r0g"
+        },
+        {
+          "type": "insert",
+          "path": [
+            "rows"
+          ],
+          "value": {
+            "text": "Before"
+          },
+          "id": "keehjy947eb62ynnq5632x4xvr",
+          "at": {
+            "before": "00pg00000000103gb808179r0g"
+          }
+        },
+        {
+          "type": "insert",
+          "path": [
+            "rows"
+          ],
+          "value": {
+            "text": "After"
+          },
+          "id": "6p7mbqjm3b7fvfew48a3qn5mfw",
+          "at": {
+            "after": "00pg00000000103gb808179r0g"
+          }
+        },
+        {
+          "type": "move",
+          "path": [
+            "rows"
+          ],
+          "id": "keehjy947eb62ynnq5632x4xvr",
+          "at": {
+            "after": "6p7mbqjm3b7fvfew48a3qn5mfw"
+          }
+        },
+        {
+          "type": "move",
+          "path": [
+            "rows"
+          ],
+          "id": "6p7mbqjm3b7fvfew48a3qn5mfw"
+        },
+        {
+          "type": "remove",
+          "path": [
+            "rows"
+          ],
+          "id": "keehjy947eb62ynnq5632x4xvr"
+        },
+        {
+          "type": "clear",
+          "path": [
+            "note"
+          ]
+        },
+        {
+          "type": "clear",
+          "path": [
+            "place"
+          ]
+        },
+        {
+          "type": "set",
+          "path": [
+            "colors"
+          ],
+          "value": [
+            "red",
+            "green",
+            "blue"
+          ]
+        },
+        {
+          "type": "insert",
+          "path": [
+            "colors"
+          ],
+          "value": "white",
+          "index": 0
+        },
+        {
+          "type": "set",
+          "path": [
+            "colors",
+            {
+              "index": 0
+            }
+          ],
+          "value": "black"
+        },
+        {
+          "type": "remove",
+          "path": [
+            "colors"
+          ],
+          "index": 1,
+          "count": 2
+        },
+        {
+          "type": "set",
+          "path": [
+            "checkins",
+            "command"
+          ],
+          "value": 1
+        },
+        {
+          "type": "clear",
+          "path": [
+            "checkins",
+            "command"
+          ]
+        },
+        {
+          "type": "increment",
+          "path": [
+            "settings",
+            "hits"
+          ],
+          "by": 1
+        },
+        {
+          "type": "set",
+          "path": [
+            "title"
+          ],
+          "value": "Command title"
+        },
+        {
+          "type": "increment",
+          "path": [
+            "hits"
+          ],
+          "by": 1
+        }
+      ],
+      "result": {
+        "anchor": "00pg00000000103gb808179r0g",
+        "after": "6p7mbqjm3b7fvfew48a3qn5mfw",
+        "now": 1792065600000,
+        "random": 0.8328133311588317
+      }
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "black",
+        "blue"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 9,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 2,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        },
+        {
+          "$id": "00pg00000000103gb808179r0g",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Command anchor"
+        },
+        {
+          "$id": "6p7mbqjm3b7fvfew48a3qn5mfw",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "After"
+        }
+      ],
+      "settings": {
+        "hits": 10,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Command title",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  },
+  {
+    "name": "arguments",
+    "args": {
+      "boolean": true,
+      "string": "default",
+      "number": 0.5,
+      "integer": 7,
+      "enum": "todo"
+    },
+    "channel": "evaluate",
+    "expected": {
+      "ok": true
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "ok": true,
+      "intents": [],
+      "result": [
+        true,
+        "default",
+        0.5,
+        7,
+        "todo",
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "compat 2",
+        "compat 1",
+        "#335577"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 8,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 2,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "note": "compat 2",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "place": {
+        "name": "Seed place",
+        "visits": 1
+      },
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        }
+      ],
+      "settings": {
+        "hits": 9,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Replay 2 é 中文",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  },
+  {
+    "name": "arguments",
+    "args": {
+      "boolean": false,
+      "string": "explicit",
+      "number": 0.75,
+      "integer": 8,
+      "enum": "done",
+      "optionalBoolean": true,
+      "optionalString": "optional",
+      "optionalNumber": 0.25,
+      "optionalInteger": 9,
+      "optionalEnum": "done"
+    },
+    "channel": "evaluate",
+    "expected": {
+      "ok": true
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "ok": true,
+      "intents": [],
+      "result": [
+        false,
+        "explicit",
+        0.75,
+        8,
+        "done",
+        true,
+        "optional",
+        0.25,
+        9,
+        "done"
+      ]
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "compat 2",
+        "compat 1",
+        "#335577"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 8,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 2,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "note": "compat 2",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "place": {
+        "name": "Seed place",
+        "visits": 1
+      },
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        }
+      ],
+      "settings": {
+        "hits": 9,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Replay 2 é 中文",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  },
+  {
+    "name": "arguments",
+    "args": {},
+    "channel": "call",
+    "expected": {
+      "ok": true
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "method": "call",
+      "ok": true,
+      "result": [
+        true,
+        "default",
+        0.5,
+        7,
+        "todo",
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "ids": []
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "compat 2",
+        "compat 1",
+        "#335577"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 8,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 2,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "note": "compat 2",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "place": {
+        "name": "Seed place",
+        "visits": 1
+      },
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        }
+      ],
+      "settings": {
+        "hits": 9,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Replay 2 é 中文",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  },
+  {
+    "name": "nothing",
+    "args": {},
+    "channel": "evaluate",
+    "expected": {
+      "ok": true
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "ok": true,
+      "intents": [],
+      "result": null
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "compat 2",
+        "compat 1",
+        "#335577"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 8,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 2,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "note": "compat 2",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "place": {
+        "name": "Seed place",
+        "visits": 1
+      },
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        }
+      ],
+      "settings": {
+        "hits": 9,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Replay 2 é 中文",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  },
+  {
+    "name": "decline",
+    "args": {},
+    "channel": "evaluate",
+    "expected": {
+      "ok": false,
+      "refused": true
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "ok": false,
+      "error": "Not today.",
+      "refused": true
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "compat 2",
+        "compat 1",
+        "#335577"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 8,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 2,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "note": "compat 2",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "place": {
+        "name": "Seed place",
+        "visits": 1
+      },
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        }
+      ],
+      "settings": {
+        "hits": 9,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Replay 2 é 中文",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  },
+  {
+    "name": "bump",
+    "args": {
+      "by": "bad"
+    },
+    "channel": "call",
+    "expected": {
+      "ok": false,
+      "code": "rejected",
+      "errorIncludes": "Invalid arguments"
+    },
+    "now": 1792065600000,
+    "seed": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "evaluated": {
+      "ok": false,
+      "error": "Invalid arguments for bump at /by: must be a safe integer",
+      "code": "rejected",
+      "reason": "invalid_request"
+    },
+    "value": {
+      "attachment": "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+      "booleans": [
+        false,
+        true,
+        true
+      ],
+      "ceiling": 2,
+      "cells": {
+        "compat-1": {
+          "hits": 0,
+          "input": "Compat 1 ✓ café 🦊"
+        },
+        "compat-2": {
+          "hits": 0,
+          "input": "Replay 2 é 中文"
+        },
+        "seed": {
+          "hits": 5,
+          "input": "Seed record",
+          "width": 12
+        }
+      },
+      "checkins": {
+        "compat-1": 1,
+        "compat-2": 2,
+        "seed": 1
+      },
+      "colors": [
+        "compat 2",
+        "compat 1",
+        "#335577"
+      ],
+      "count": 2,
+      "done": false,
+      "enabled": false,
+      "epoch": 2,
+      "extremes": [
+        2,
+        1,
+        -9007199254740991,
+        9007199254740991
+      ],
+      "files": [
+        "628573c14df7827a4086f921bf1bc949f5f61efcde633b193655421911579610",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+        "2fba5b5947fe3f1d496bde66395e442dd284ba43e2b4302a8ca8496d46a74563",
+        "98f58a3a9ceacaa5bd4a582de165c60b5b5bff7a19d924c060a9ea5a00f679e0",
+        "6b0c95fe2dd56befe9e0b5991c9b16d1831c4c80b870c7b3294047499cb21a8e",
+        "c206ceceb6ddc36e4431e0177c8eb5ebd862fafb9dc8efa254af3dbfd5fe36ec",
+        "4a655e578cb5f0c3fec0660ade02987f70dbc492db7749892799aedc6d260286",
+        "93ba7260d8a7da7f1c380c0b6926af9997018a9dd9b5ce626e00600162a9cad8",
+        "041149186b23a9502aea5a4e81bbc9620d2b4b76b4bad94e36c744abcf9d3771",
+        "ed170739fd56b092435697c9ef928cd5844112867c5b617e4a3da72e3cbdf9d1",
+        "554c1bfa8d40e4bd197b2f7d29a77698f2e6d25749a95a22bef2447b7efb9597",
+        "68d9ed2adb24458ff173db06b41b9d1b6e228764c457030d63fad11b02bfae1e",
+        "70bf93310284b039f237e82db4407df3e3ca642fac2b9ebb02973764424c7418",
+        "51882a4124c1e0d3578ed37baf0ac043131e708d8b9f8acdbcde46e3db5d3b94",
+        "a3385444b5a2d2a44be21a2444e2b4f477bc2bccd13f4a1915139419717743cc",
+        "a947d980118219080478f2dc2a8932362a76c115d20bc1f862235b2da70d83ff",
+        "86edbaa24831badfa0a8b04bb410141e2ee4182b6d0014493fe262a7a331c20b",
+        "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+        "0c076fa2fd7d6ac065e1da49cfc2b8b0a64a3ccaf3a1f006fdf8767f26c9360a"
+      ],
+      "hits": 8,
+      "label": "compat 2",
+      "lane": "done",
+      "lanes": [
+        "todo",
+        "done",
+        "todo"
+      ],
+      "lastHit": 2,
+      "lower": 0.5,
+      "measurements": {
+        "compat-1": 0.25,
+        "compat-2": 0.5,
+        "seed": 0.5
+      },
+      "memo": "Replay 2 é 中文",
+      "note": "compat 2",
+      "numbers": [
+        0.5,
+        0.25,
+        0.25
+      ],
+      "photo": "ff7077074ee4dd93c15f5f422f634ce1fee51d805af10043a3c5406e8ffd5839",
+      "place": {
+        "name": "Seed place",
+        "visits": 1
+      },
+      "ratio": 0.5,
+      "rows": [
+        {
+          "$id": "compat-1",
+          "done": true,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-dgghtb7e5kq37f0njx2rnezk",
+          "done": false,
+          "hits": 2,
+          "notes": {
+            "seed": "Seed note"
+          },
+          "tags": [
+            "seed",
+            "tag"
+          ],
+          "text": "Seed row 中文 😀"
+        },
+        {
+          "$id": "compat-2",
+          "done": false,
+          "hits": 0,
+          "notes": {},
+          "tags": [],
+          "text": "Replay 2 é 中文"
+        }
+      ],
+      "settings": {
+        "hits": 9,
+        "muted": false,
+        "volume": 2
+      },
+      "slides": [
+        {
+          "$id": "compat-1",
+          "blocks": [],
+          "title": "Compat 1 ✓ café 🦊"
+        },
+        {
+          "$id": "x-611hw3t1mqm7pgacasdhqp8z",
+          "blocks": [
+            {
+              "$id": "x-tfvqkneg2g8jzh2av6kzp1jz",
+              "text": "First block"
+            },
+            {
+              "$id": "x-dxvqkneg3g8jfrv9v6kz61jz",
+              "text": "Second block"
+            }
+          ],
+          "title": "Nested composition"
+        },
+        {
+          "$id": "compat-2",
+          "blocks": [],
+          "title": "Replay 2 é 中文"
+        }
+      ],
+      "stage": "todo",
+      "stages": {
+        "compat-1": "done",
+        "compat-2": "todo",
+        "seed": "todo"
+      },
+      "switches": {
+        "compat-1": true,
+        "compat-2": false,
+        "seed": true
+      },
+      "title": "Replay 2 é 中文",
+      "upper": 0.5,
+      "version": "compat 2",
+      "weight": 0.5
+    }
+  }
+]
