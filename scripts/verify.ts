@@ -26,7 +26,7 @@ import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artif
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftTests } from "./lib/swift-tests";
 import { releases } from "./compat/corpus";
-import { resolveCorpora, verifyPreludes } from "./compat/corpora";
+import { resolveCorpora, verifyPreludes, verifyResolvedCorpora } from "./compat/corpora";
 import { resolveWriters } from "./compat/writers";
 
 import { prerequisites, type Build } from "./build/preparation";
@@ -393,16 +393,19 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
 let corpusPrepared = false;
 async function prepareCorpora() {
   if (corpusPrepared) return;
-  if (!process.env.HITSLOP_COMPAT_ROOT) {
-    const resolved = await resolveCorpora();
-    corpusIdentity = { inventory: resolved.inventory, offline: resolved.offline };
+  const recording = process.env.HITSLOP_COMPAT_RECORD;
+  if (recording) {
+    if (release || !flag("--no-build") || named?.length !== 1 || named[0] !== "swift" || !tierArgs.includes("CompatCorpusTests"))
+      throw new Error("Corpus recording is only allowed in the dedicated Swift capture pass");
+    corpusIdentity = "capture";
   } else {
-    const receipt = await Bun.file(join(process.env.HITSLOP_COMPAT_ROOT, ".inventory.json")).json().catch(() => undefined);
-    if (!receipt && !process.env.HITSLOP_COMPAT_RECORD) throw new Error("Compatibility root has no verified inventory; resolve corpora first");
-    corpusIdentity = receipt ? { inventory: receipt.inventory, offline: receipt.offline } : "capture";
+    const resolved = process.env.HITSLOP_COMPAT_ROOT ? undefined : await resolveCorpora();
+    corpusIdentity = await verifyResolvedCorpora(process.env.HITSLOP_COMPAT_ROOT!, { history: resolved?.entries });
   }
   const entries = await releases();
   if (!entries.length) throw new Error("No compatibility corpora to replay");
+  if (recording && (entries.length !== 1 || entries[0]!.name !== recording || entries[0]!.release.frozen))
+    throw new Error("Capture must select exactly its unfinished corpus entry");
   await verifyPreludes(entries);
   if (release && releaseTag && !entries.some(entry => entry.name === releaseTag && entry.release.frozen))
     throw new Error(`The frozen candidate corpus ${releaseTag} must be included in release replay`);

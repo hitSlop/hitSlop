@@ -90,8 +90,7 @@ export type Scenario = { ops: unknown[]; value: unknown };
 /** `pages/<name>.json`: an edit the old app makes in its own page, and the saved result
  * with page-minted row IDs replaced by `minted-N`. */
 export type Page = { script: "contractTest"; value: unknown };
-export async function releases(): Promise<{ name: string; root: string; release: Release }[]> {
-  const corpus = corpusRoot();
+export async function releases(corpus = corpusRoot()): Promise<{ name: string; root: string; release: Release }[]> {
   const found = [];
   for (const entry of await readdir(corpus, { withFileTypes: true }).catch(() => [])) {
     if (entry.name.startsWith(".")) continue;

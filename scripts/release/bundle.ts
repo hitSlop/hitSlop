@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { fileDigest, repository, verifyShellCopies } from "../lib/artifacts";
 import { releases } from "../compat/corpus";
+import { verifyResolvedCorpora } from "../compat/corpora";
 import { verifyCorpus } from "../compat/integrity";
 import { verifyPackedWriter } from "../compat/writers";
 import { enginePlatforms } from "../build/core";
@@ -13,6 +14,7 @@ import { validateRecord, type ReleaseRecord } from "./record";
 import { exec, run } from "../../packages/hitslop/src/cli/process";
 
 const { version, build, tag } = await projectVersion();
+await verifyResolvedCorpora(process.env.HITSLOP_COMPAT_ROOT!);
 const entry = (await releases()).find(entry => entry.name === version && entry.release.frozen);
 if (!entry) throw new Error("Missing frozen release corpus");
 await verifyCorpus(entry.root, entry.release);

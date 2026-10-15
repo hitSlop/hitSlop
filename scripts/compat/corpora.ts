@@ -9,14 +9,15 @@ import { assetBytes, releaseInventory, requiredAsset, type PublishedRelease } fr
 import { validateRecord, type ReleaseRecord } from "../release/record";
 import { verifyCorpus } from "./integrity";
 import { atomicJson } from "../lib/verification";
-import { corpusRoot, readJSON, type Release } from "./corpus";
+import { corpusRoot, readJSON, releases, type Release } from "./corpus";
+import requiredHistory from "./required-history.json";
 
 export type HistoricalRelease = { release: PublishedRelease; record: ReleaseRecord };
 export type CorpusInventory = Record<string, string>;
 export const corpusCache = () => resolve(process.env.HITSLOP_CORPUS_CACHE ?? join(homedir(), ".cache/hitslop/compat-corpora"));
 
-/** Both remembered inventory and the closure recorded in each immutable release make
- * disappearing history an error, including on a cold machine. Never recapture evidence. */
+/** Remembered inventory, the checked-in launch baseline and each release's closure
+ * detect disappearing history. Never recapture evidence. */
 export function verifyHistory(entries: HistoricalRelease[], known: CorpusInventory = {}): CorpusInventory {
   const inventory: CorpusInventory = {};
   for (const { release, record } of entries) {
@@ -34,7 +35,7 @@ export function verifyHistory(entries: HistoricalRelease[], known: CorpusInvento
 }
 
 export async function publishedHistory(options: {
-  list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>;
+  list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>; required?: CorpusInventory;
 } = {}): Promise<HistoricalRelease[]> {
   const all = await (options.list ?? releaseInventory)();
   const entries: HistoricalRelease[] = [];
@@ -42,7 +43,7 @@ export async function publishedHistory(options: {
     const bytes = await (options.download ?? assetBytes)(requiredAsset(release, "release-record.json").id);
     entries.push({ release, record: JSON.parse(bytes.toString()) });
   }
-  verifyHistory(entries);
+  verifyHistory(entries, options.required ?? requiredHistory);
   return entries;
 }
 
@@ -88,6 +89,54 @@ async function resolutionLease(cache: string) {
 }
 
 type Receipt = { entries: HistoricalRelease[]; inventory: CorpusInventory; offline: boolean };
+
+/** A receipt is an inventory claim, not evidence that the selected files cover it.
+ * Bind historical manifests to retained archives and hash every actual replay entry. */
+export async function verifyResolvedCorpora(root: string, options: {
+  cache?: string; dev?: string; required?: CorpusInventory; history?: HistoricalRelease[];
+  list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>;
+} = {}) {
+  const receipt = await readJSON<Receipt>(join(root, ".inventory.json"));
+  assert.ok(receipt, "Compatibility root has no verified inventory; resolve corpora first");
+  const offline = receipt.offline || process.env.HITSLOP_COMPAT_OFFLINE === "1";
+  if (offline && (process.env.CI || process.env.HITSLOP_RELEASE_TAG)) throw new Error("CI and release checks require fresh published history");
+  const history = options.history ?? (offline ? receipt.entries : await publishedHistory(options));
+  const inventory = verifyHistory(history, options.required ?? requiredHistory);
+  const cache = options.cache ?? corpusCache();
+  const known = await readJSON<Receipt>(join(cache, "history.json"));
+  verifyHistory(history, known?.inventory);
+  assert.deepEqual(receipt.inventory, inventory, "Compatibility inventory changed; resolve corpora again");
+  assert.deepEqual(verifyHistory(receipt.entries), inventory, "Compatibility receipt inventory mismatch");
+  const entries = await releases(root);
+  assert.ok(entries.length, "No compatibility corpora to replay");
+  assert.deepEqual((await readdir(root)).sort(), [".inventory.json", ...entries.map(entry => entry.name)].sort(), "Unexpected compatibility root entries");
+  for (const version of Object.keys(inventory))
+    assert.ok(entries.some(entry => entry.name === version), `Published corpus missing from replay: ${version}`);
+  const manifests: Record<string, string> = {};
+  let candidates = 0;
+  for (const entry of entries) {
+    const manifest = await readFile(join(entry.root, "release.json"));
+    assert.equal(entry.release.release, entry.name, "Corpus entry name differs from its manifest");
+    const published = history.find(item => item.record.macVersion === entry.name);
+    if (published) {
+      const archive = await cachedAsset(published, published.record.corpus.file, cache,
+        offline ? async () => { throw new Error("Offline asset not cached"); } : options.download);
+      const original = archiveFiles(await readFile(archive)).get("release.json");
+      assert.ok(original, "Published archive has no corpus manifest");
+      assert.equal(sha256(manifest), sha256(original), `Changed published corpus manifest: ${entry.name}`);
+      assert.ok(entry.release.frozen, "Published corpus is not frozen");
+      assert.equal(entry.release.commit, published.record.commit);
+    } else if (entry.name === "dev") {
+      assert.ok(!history.length && !entry.release.frozen, "Dev corpus is only allowed before launch");
+      assert.equal(sha256(manifest), await fileDigest(join(options.dev ?? join(repository, "tests/compat/dev"), "release.json")), "Changed prelaunch corpus manifest");
+    } else {
+      assert.ok(entry.release.frozen && /^\d+\.\d+\.\d+$/.test(entry.name) && ++candidates === 1, "Unexpected unpublished corpus entry");
+    }
+    await verifyCorpus(entry.root, entry.release);
+    manifests[entry.name] = sha256(manifest);
+  }
+  return { inventory, offline, manifests };
+}
 
 /** Reuse extracted bytes only after checking the manifest against the original archive
  * and every file against that manifest. Cache damage fails rather than becoming evidence. */
@@ -146,7 +195,7 @@ async function preparedSnapshot(output: string, roots: Record<string, string>, r
 
 export async function resolveCorpora(options: {
   cache?: string; output?: string; offline?: boolean; candidate?: string; dev?: string;
-  list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>;
+  list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>; required?: CorpusInventory;
 } = {}) {
   const cache = resolve(options.cache ?? corpusCache());
   const offline = options.offline ?? process.env.HITSLOP_COMPAT_OFFLINE === "1";
@@ -160,6 +209,7 @@ export async function resolveCorpora(options: {
     const entries = [...(discovered ?? prior?.entries ?? [])].sort((a, b) => a.record.macVersion.localeCompare(b.record.macVersion, "en", { numeric: true }));
     if (offline && !prior) throw new Error("No cached compatibility history; resolve online first");
     const inventory = verifyHistory(entries, prior?.inventory);
+    verifyHistory(entries, options.required ?? requiredHistory);
     if (offline) console.log("! OFFLINE compatibility replay: cached history only; does not certify a release");
     const output = resolve(options.output ?? join(repository, ".hitslop/compat"));
     const roots: Record<string, string> = {};

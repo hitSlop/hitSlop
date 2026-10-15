@@ -50,6 +50,9 @@ Standalone Rust, Swift and TypeScript tests use that pointer; run `bun run compa
 before them on a fresh checkout and whenever published history changes. The verifier
 passes a fixed snapshot through `HITSLOP_COMPAT_ROOT` so concurrent preparation cannot
 change an in-progress run. Candidate snapshots never replace the published pointer.
+An explicit root is checked against the required published inventory and original archive
+manifests before replay. Every selected manifest, including the candidate, contributes to
+the verifier's cache key; a receipt alone cannot stand in for missing evidence.
 Archives, extracted manifests and file hashes are checked again on reuse. Extracted files
 are read-only; replay makes only its disposable document copies writable. A corrupt
 cache fails with the affected path; remove only that cache entry and resolve again. Historical writer binaries come from the npm tarball attached to the
@@ -74,8 +77,12 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-Keep `tests/compat/dev` until the first public corpus passes cold-cache replay; then
-remove the prelaunch fixture and its fallback together.
+Keep `tests/compat/dev` until the first public corpus passes cold-cache replay. In the
+post-launch cleanup PR, pin that release's version and `corpus.sha256` from its retained
+record in `scripts/compat/required-history.json`, then remove the prelaunch fixture and
+its fallback together. The map is empty only before launch. Retain the first pin permanently;
+it prevents a cold machine from accepting empty history if every remote release disappears.
+Later releases do not require edits to this file; their recorded history provides the closure.
 
 ## Publication and recovery
 

@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile, symlink, realpath, stat, chmod } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile, symlink, realpath, stat, chmod, cp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { exec, run } from "../../packages/hitslop/src/cli/process";
 import { fileDigest, repository, sha256 } from "../../scripts/lib/artifacts";
 import { archiveFiles } from "../../scripts/lib/release-archive";
 import { corpusFiles, verifyCorpus } from "../../scripts/compat/integrity";
-import { publishedHistory, resolveCorpora, verifyHistory, type HistoricalRelease } from "../../scripts/compat/corpora";
+import { publishedHistory, resolveCorpora, verifyHistory, verifyResolvedCorpora, type HistoricalRelease } from "../../scripts/compat/corpora";
 import { copyCorpusDocument, releases, type Release } from "../../scripts/compat/corpus";
 import { resolveWriter, verifyPackedWriter } from "../../scripts/compat/writers";
 
@@ -47,7 +47,7 @@ test("published archives are verified, replayed from cache and cannot silently d
   try {
     const { entry, bytes } = await fixture(root);
     let downloads = 0;
-    const options = { cache: join(root, "cache"), output: join(root, "replays"), list: async () => [entry.release], download: async (id: number) => {
+    const options = { required: {}, cache: join(root, "cache"), output: join(root, "replays"), list: async () => [entry.release], download: async (id: number) => {
       if (id === 1) return Buffer.from(JSON.stringify(entry.record));
       downloads++;
       return bytes;
@@ -76,6 +76,7 @@ test("published archives are verified, replayed from cache and cannot silently d
     if (!process.env.CI) {
       const offline = await resolveCorpora({ ...options, offline: true, list: async () => { throw new Error("no network"); } });
       expect(offline.offline).toBe(true);
+      expect((await verifyResolvedCorpora(offline.root, { ...options, list: async () => { throw new Error("no network"); } })).offline).toBe(true);
     }
     await expect(resolveCorpora({ ...options, list: async () => [] })).rejects.toThrow("history missing or changed");
     const cached = join(root, "cache/assets", entry.record.corpus.sha256);
@@ -93,11 +94,70 @@ test("drafts do not break PR replay; published history must be immutable and tra
   const root = await mkdtemp(join(tmpdir(), "hitslop-history-"));
   try {
     const { entry } = await fixture(root);
-    expect(await publishedHistory({ list: async () => [{ ...entry.release, draft: true }], download: async () => { throw new Error("draft downloaded"); } })).toEqual([]);
+    expect(await publishedHistory({ required: {}, list: async () => [{ ...entry.release, draft: true }], download: async () => { throw new Error("draft downloaded"); } })).toEqual([]);
     expect(() => verifyHistory([{ ...entry, release: { ...entry.release, immutable: false } }])).toThrow("immutable");
     expect(() => verifyHistory([{ ...entry, record: { ...entry.record, qualified: { "0.9.0": "b".repeat(64) } } }])).toThrow("history missing or changed");
     expect(() => verifyHistory([{ ...entry, release: { ...entry.release, assets: [] } }])).toThrow("asset");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("a required first release cannot disappear on a cold machine", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-required-history-"));
+  try {
+    const { entry } = await fixture(root);
+    const options = { required: { "1.0.0": entry.record.corpus.sha256 },
+      download: async () => Buffer.from(JSON.stringify(entry.record)) };
+    expect(await publishedHistory({ required: {}, list: async () => [] })).toEqual([]);
+    expect(await publishedHistory({ ...options, list: async () => [entry.release] })).toHaveLength(1);
+    await expect(publishedHistory({ ...options, list: async () => [] })).rejects.toThrow("history missing or changed");
+    await expect(publishedHistory({ ...options, list: async () => [{ ...entry.release, draft: true }] })).rejects.toThrow("history missing or changed");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test.each(["identity", "partial root"])("replay %s includes the candidate and authentic complete history", async (scenario) => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-replay-identity-"));
+  const previous = process.env.HITSLOP_COMPAT_ROOT;
+  try {
+    const old = await fixture(root);
+    const candidate = await fixture(root, "2.0.0", 4);
+    const options = { required: {}, cache: join(root, "cache"), output: join(root, "replays"), list: async () => [old.entry.release],
+      download: async (id: number) => id === 1 ? Buffer.from(JSON.stringify(old.entry.record)) : old.bytes };
+    const published = await resolveCorpora(options);
+    const a = await resolveCorpora({ ...options, candidate: candidate.directory });
+    const manifest = JSON.parse(await readFile(join(candidate.directory, "release.json"), "utf8"));
+    manifest.clock++;
+    await writeFile(join(candidate.directory, "release.json"), JSON.stringify(manifest));
+    const b = await resolveCorpora({ ...options, candidate: candidate.directory });
+    if (scenario === "identity") {
+      const first = await verifyResolvedCorpora(a.root, options);
+      expect(first).not.toEqual(await verifyResolvedCorpora(published.root, options));
+      expect(first).not.toEqual(await verifyResolvedCorpora(b.root, options));
+      return;
+    }
+
+    const partial = join(root, "partial");
+    await mkdir(partial);
+    await cp(join(a.root, ".inventory.json"), join(partial, ".inventory.json"));
+    await symlink(await realpath(join(a.root, "2.0.0")), join(partial, "2.0.0"));
+    await expect(verifyResolvedCorpora(partial, options)).rejects.toThrow("missing");
+
+    // A self-consistent replacement manifest is still not the released evidence.
+    await cp(join(published.root, "1.0.0"), join(partial, "1.0.0"), { recursive: true, dereference: true });
+    const historicalManifest = join(partial, "1.0.0/release.json");
+    const altered = JSON.parse(await readFile(historicalManifest, "utf8"));
+    altered.clock++;
+    await chmod(historicalManifest, 0o600);
+    await writeFile(historicalManifest, JSON.stringify(altered));
+    await expect(verifyResolvedCorpora(partial, options)).rejects.toThrow("manifest");
+
+    // A stale receipt also cannot hide a release published since preparation.
+    candidate.entry.record.qualified = { "1.0.0": old.entry.record.corpus.sha256 };
+    await expect(verifyResolvedCorpora(published.root, { ...options, list: async () => [old.entry.release, candidate.entry.release],
+      download: async id => Buffer.from(JSON.stringify(id === 1 ? old.entry.record : candidate.entry.record)) })).rejects.toThrow("inventory");
+  } finally {
+    if (previous === undefined) delete process.env.HITSLOP_COMPAT_ROOT; else process.env.HITSLOP_COMPAT_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("candidate snapshots are isolated and cache corruption cannot replace the current corpus", async () => {
@@ -106,7 +166,7 @@ test("candidate snapshots are isolated and cache corruption cannot replace the c
   try {
     const old = await fixture(root);
     const candidate = await fixture(root, "2.0.0", 4);
-    const options = { cache: join(root, "cache"), output: join(root, "replays"), list: async () => [old.entry.release],
+    const options = { required: {}, cache: join(root, "cache"), output: join(root, "replays"), list: async () => [old.entry.release],
       download: async (id: number) => id === 1 ? Buffer.from(JSON.stringify(old.entry.record)) : old.bytes };
     const published = await resolveCorpora(options);
     const prepared = await resolveCorpora({ ...options, candidate: candidate.directory });
@@ -139,7 +199,7 @@ test("concurrent resolution reuses snapshots and a delayed response cannot regre
     const first = await fixture(root, "1.9.0");
     const second = await fixture(root, "1.10.0", 4);
     second.entry.record.qualified = { "1.9.0": first.entry.record.corpus.sha256 };
-    const options = { cache: join(root, "cache"), output: join(root, "replays"),
+    const options = { required: {}, cache: join(root, "cache"), output: join(root, "replays"),
       list: async () => [first.entry.release], download: async (id: number) => {
         if (id === 1) return Buffer.from(JSON.stringify(first.entry.record));
         if (id === 4) return Buffer.from(JSON.stringify(second.entry.record));
