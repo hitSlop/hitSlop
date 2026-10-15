@@ -68,6 +68,8 @@ jobs:
           gh run download "$GITHUB_RUN_ID" --pattern 'engine-*' --dir generated/engine-artifacts
           mkdir -p generated/engines
           for folder in generated/engine-artifacts/engine-*; do cp -R "$folder/" generated/engines/; done
+          # Artifact downloads drop the executable bit; the corpus writer must run.
+          chmod +x generated/engines/*/slop-engine
       - name: Resume recorded candidate
         id: candidate
         if: github.event_name == 'push'
@@ -88,6 +90,9 @@ jobs:
         run: bun run release:check ${{ github.event_name == 'push' && '--skip-app' || '' }}
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          # A frozen entry records the engine CI built for its release as its writer. Resolve
+          # it by hash from the candidate engines, since the version is not on npm until published.
+          HITSLOP_ENGINE: ${{ github.workspace }}/generated/engines/darwin-arm64/slop-engine
           # Tags require their frozen tests/compat entry.
           HITSLOP_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
       - name: Import Developer ID certificate
@@ -139,6 +144,13 @@ jobs:
           codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/hitSlop.app"
           spctl --assess --type execute "$RUNNER_TEMP/verify-zip/hitSlop.app"
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
+      # Archiving makes Xcode rewrite this tracked lockfile, and the release identity check
+      # fingerprints tracked sources, so the committed file is restored before it runs.
+      - name: Restore tracked files Xcode rewrote
+        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
+        run: |
+          git restore apps/apple/Packages/HitSlopApple/Package.resolved
+          git status --porcelain
       - name: Retain tested npm packages
         if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         run: |
