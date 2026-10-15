@@ -10,6 +10,16 @@ import { publishedHistory, resolveCorpora, verifyHistory, verifyResolvedCorpora,
 import { copyCorpusDocument, releases, type Release } from "../../scripts/compat/corpus";
 import { resolveWriter, verifyPackedWriter } from "../../scripts/compat/writers";
 
+test("corpus discovery permits a missing optional directory but surfaces filesystem errors", async () => {
+  const root = await mkdtemp(join(tmpdir(), "hitslop-corpus-discovery-"));
+  try {
+    expect(await releases(join(root, "missing"))).toEqual([]);
+    const file = join(root, "not-a-directory");
+    await writeFile(file, "invalid corpus root");
+    await expect(releases(file)).rejects.toMatchObject({ code: "ENOTDIR" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 async function fixture(root: string, version = "1.0.0", id = 1) {
   const directory = join(root, `original-${version}`);
   for (const dir of ["documents", "expected", "scenarios", "pages", "acceptance"]) await mkdir(join(directory, dir), { recursive: true });
