@@ -86,7 +86,7 @@ npm bootstrap/deprecations and public release changes are separate release work.
    window kind. The producing engine writes self-checked raw acceptance vectors with
    `--acceptance-vectors DIR` and records its `--limits` table. Rust replay must accept
    every vector and preserve its typed re-encoding; no recorded open/read/save limit may
-   become stricter. The entry pins physical storage SQL hashes and `sourceInputs` (the producing source fingerprint),
+   become stricter. The entry pins physical storage SQL hashes and records `sourceInputs` (the producing source fingerprint; informational, the release gate does not recompute it),
    while format-reader source and authoring rules may change. Commit only the corpus.
    Frozen entries are permanent; the prelaunch `dev` entry may be replaced and is never frozen. Each public version
    gets its own entry even when all format markers remain at 1. Keep the original
