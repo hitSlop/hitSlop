@@ -57,7 +57,8 @@ feed_prefix="${feed_prefix%/}/"
 # reported here have a usable private key. Xcode must select that exact identity.
 signing_identities=$(/usr/bin/security find-identity -v -p codesigning)
 resolved=$(printf '%s\n' "$signing_identities" \
-  | /usr/bin/awk -v identity="$identity" '$2 == identity || index($0, "\"" identity "\"") { print $2; exit }')
+  | /usr/bin/awk -v identity="$identity" -v team="$team_id" \
+      '$0 ~ /Developer ID Application:/ && index($0, "(" team ")") && ($2 == identity || index($0, "\"" identity "\"")) { print $2; exit }')
 if [ -z "$resolved" ]; then
   resolved=$(printf '%s\n' "$signing_identities" \
     | /usr/bin/awk -v team="$team_id" '$0 ~ /Developer ID Application:/ && index($0, "(" team ")") { print $2; exit }')
