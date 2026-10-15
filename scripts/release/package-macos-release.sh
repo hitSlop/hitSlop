@@ -53,16 +53,20 @@ if [ -z "$feed_prefix" ]; then
 fi
 feed_prefix="${feed_prefix%/}/"
 
-if ! /usr/bin/security find-identity -v -p codesigning | /usr/bin/grep -F "$identity" >/dev/null; then
-  resolved=$(/usr/bin/security find-identity -v -p codesigning \
+# Resolve to a fingerprint: certificates may share a name, but only identities
+# reported here have a usable private key. Xcode must select that exact identity.
+signing_identities=$(/usr/bin/security find-identity -v -p codesigning)
+resolved=$(printf '%s\n' "$signing_identities" \
+  | /usr/bin/awk -v identity="$identity" '$2 == identity || index($0, "\"" identity "\"") { print $2; exit }')
+if [ -z "$resolved" ]; then
+  resolved=$(printf '%s\n' "$signing_identities" \
     | /usr/bin/awk -v team="$team_id" '$0 ~ /Developer ID Application:/ && index($0, "(" team ")") { print $2; exit }')
-  if [ -n "$resolved" ]; then
-    identity=$resolved
-  else
-    echo "No Developer ID Application identity found for team $team_id." >&2
-    exit 69
-  fi
 fi
+if [ -z "$resolved" ]; then
+  echo "No Developer ID Application identity found for team $team_id." >&2
+  exit 69
+fi
+identity=$resolved
 
 stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hitslop-package.XXXXXX")
 stage_dir=$(CDPATH= cd -- "$stage_dir" && pwd -P)
@@ -78,7 +82,8 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-auth_args=
+# App Store Connect credentials are only for notarization. Archive/export use the
+# installed Developer ID identity and must never provision development certificates.
 key_path=
 if [ -n "${ASC_API_KEY_ID:-}" ] && [ -n "${ASC_API_ISSUER_ID:-}" ]; then
   if [ -n "${ASC_API_KEY_P8_FILE:-}" ]; then
@@ -86,9 +91,6 @@ if [ -n "${ASC_API_KEY_ID:-}" ] && [ -n "${ASC_API_ISSUER_ID:-}" ]; then
   elif [ -n "${ASC_API_KEY_P8:-}" ]; then
     key_path="$stage_dir/AuthKey.p8"
     printf '%s\n' "$ASC_API_KEY_P8" > "$key_path"
-  fi
-  if [ -n "$key_path" ]; then
-    auth_args="-allowProvisioningUpdates -authenticationKeyPath $key_path -authenticationKeyID $ASC_API_KEY_ID -authenticationKeyIssuerID $ASC_API_ISSUER_ID"
   fi
 fi
 
@@ -100,7 +102,6 @@ export_dir="$stage_dir/export"
 /bin/mkdir -p "$export_dir"
 
 echo "Archiving Apple-silicon Release…"
-# shellcheck disable=SC2086
 /usr/bin/xcodebuild \
   -skipPackagePluginValidation \
   -quiet \
@@ -112,18 +113,17 @@ echo "Archiving Apple-silicon Release…"
   ARCHS="arm64" \
   ONLY_ACTIVE_ARCH=YES \
   DEVELOPMENT_TEAM="$team_id" \
-  $auth_args \
+  CODE_SIGN_STYLE=Manual \
+  CODE_SIGN_IDENTITY="$identity" \
   archive
 
 echo "Exporting Developer ID app…"
-# shellcheck disable=SC2086
 /usr/bin/xcodebuild \
   -quiet \
   -exportArchive \
   -archivePath "$archive_path" \
   -exportPath "$export_dir" \
-  -exportOptionsPlist "$export_options" \
-  $auth_args
+  -exportOptionsPlist "$export_options"
 
 app="$export_dir/hitSlop.app"
 if [ ! -d "$app" ]; then
