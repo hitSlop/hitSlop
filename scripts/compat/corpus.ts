@@ -92,7 +92,10 @@ export type Scenario = { ops: unknown[]; value: unknown };
 export type Page = { script: "contractTest"; value: unknown };
 export async function releases(corpus = corpusRoot()): Promise<{ name: string; root: string; release: Release }[]> {
   const found = [];
-  for (const entry of await readdir(corpus, { withFileTypes: true }).catch(() => [])) {
+  for (const entry of await readdir(corpus, { withFileTypes: true }).catch(error => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  })) {
     if (entry.name.startsWith(".")) continue;
     const link = join(corpus, entry.name);
     if (!(await stat(link)).isDirectory()) continue;
