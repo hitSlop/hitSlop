@@ -8,7 +8,6 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { documentFromStage, engineRequest } from "../../scripts/lib/native";
-import { execute } from "../../packages/hitslop/src/cli/engine";
 import { negotiate } from "../../packages/hitslop/src/cli/engine";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { useTestRegistry } from "../../scripts/lib/artifacts";
@@ -71,20 +70,33 @@ test("an engine killed at any point of an edit leaves the document as it was or 
 
 test.if(!!app)("an acknowledged edit survives the death of the host that acknowledged it", async () => {
   // The real host owns a WebView and socket; acknowledge through the CLI, then kill it.
-  const root = await documentFromStage(fixture, join(folder, "Host.slop"), { engine: documentEngine });
-  const host = Bun.spawn([app!, root], { stdout: "ignore", stderr: "ignore" });
+  // Release hosts ignore HITSLOP_TEST_REGISTRY. Keep the app and every probe in the
+  // account registry, just as installed-app acceptance does, even under `verify`.
+  const env = { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" };
+  const placement = { engine: documentEngine, env };
+  const root = await documentFromStage(fixture, join(folder, "Host.slop"), placement);
+  await mkdir(".hitslop/evidence", { recursive: true });
+  const host = Bun.spawn([app!, root], { env, stdout: "pipe", stderr: "pipe" });
+  const stdout = new Response(host.stdout).text();
+  const stderr = new Response(host.stderr).text();
   try {
     const deadline = Date.now() + 15000;
     // The host is ready once it names its socket for commands.
-    while (!(await execute({ method: "inspect", file: root })) .info.live) {
-      if (Date.now() > deadline || host.exitCode !== null) throw new Error("Native host startup failed");
+    while (!(await engineRequest({ method: "inspect", file: root }, placement)).info.live) {
+      if (Date.now() > deadline || host.exitCode !== null)
+        throw new Error(`Native host startup failed (pid ${host.pid}, exit ${host.exitCode ?? "still running"}); see .hitslop/evidence/crash-native-host.log`);
       await Bun.sleep(30);
     }
-    await run([process.execPath, "packages/hitslop/src/cli/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })]);
+    await run([process.execPath, "packages/hitslop/src/cli/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
+      { env: { ...env, HITSLOP_ENGINE: documentEngine } });
+    expect(host.exitCode).toBeNull();
+    expect((await engineRequest({ method: "inspect", file: root }, placement)).info.live).toBe(true);
   } finally {
     host.kill("SIGKILL");
     await host.exited;
+    await writeFile(".hitslop/evidence/crash-native-host.log", `${app}\n${root}\n${await stdout}${await stderr}`);
   }
-  expect(await title(root)).toBe("Native acknowledged");
+  expect((await engineRequest({ method: "get", documentPath: root }, placement)).state.value)
+    .toMatchObject({ title: "Native acknowledged" });
   await evidence("crash-native-host", ["host:acknowledged-write-survives-death"]);
 }, 120_000);
