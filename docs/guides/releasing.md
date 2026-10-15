@@ -120,6 +120,10 @@ The first GitHub publication becomes a compatibility commitment even if npm late
 fails. Do not delete it to restart. Signing/notarization secrets are available only to
 candidate signing steps.
 
+Archive and export both use manual signing with the installed **Developer ID Application**
+certificate for direct DMG distribution. App Store Connect credentials are used only
+for notarization; packaging does not create development certificates or provisioning profiles.
+
 ## Website deployment
 
 `website.yml` checks, builds and deploys landing changes merged to `master`, or runs
