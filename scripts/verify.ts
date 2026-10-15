@@ -14,7 +14,7 @@
  *   --keep-going  run every selected tier even after one fails
  *   --no-build    trust the existing builds
  *   --ci          CI reporting (nextest's ci profile) */
-import { tierInputs, sharedInputs, affectedTiers, touchesCompatibility, type TierName } from "./lib/verification-inputs";
+import { tierInputs, sharedInputs, affectedTiers, type TierName } from "./lib/verification-inputs";
 import { appendFile, lstat, mkdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { availableParallelism, tmpdir } from "node:os";
@@ -25,7 +25,8 @@ import { run } from "../packages/hitslop/src/cli/process";
 import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artifacts";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftTests } from "./lib/swift-tests";
-import { releases, replayedEntries, compatibilityMode } from "./compat/corpus";
+import { releases } from "./compat/corpus";
+import { resolveCorpora, verifyPreludes } from "./compat/corpora";
 import { resolveWriters } from "./compat/writers";
 
 import { prerequisites, type Build } from "./build/preparation";
@@ -65,7 +66,7 @@ const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
 const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^v/, "") || undefined;
 // Nightly and release runs add expensive boundary cases, presentation, storage-growth
-// budgets and broader randomized coverage. Full compatibility is independently selectable.
+// budgets and broader randomized coverage. All compatibility replay is complete.
 const nightly = release || process.env.HITSLOP_NIGHTLY === "1";
 if (nightly) process.env.HITSLOP_NIGHTLY = "1";
 else {
@@ -74,17 +75,9 @@ else {
   process.env.HITSLOP_COMPAT_SEEDS ||= "1";
   process.env.HITSLOP_PUBLICATIONS_ROUNDS ||= "10";
 }
-const compatibilityBase = option("--base");
-const sensitive = compatibilityBase && touchesCompatibility((await changedPaths(repository, compatibilityBase)).paths);
-const compatibility = compatibilityMode({ ...process.env,
-  HITSLOP_COMPAT_MODE: sensitive ? "full" : process.env.HITSLOP_COMPAT_MODE || "smoke",
-});
 const nextestFilters = (args: string[]) =>
   (nightly || args.length) && !args.includes("--ignore-default-filter") ? ["--ignore-default-filter"] : [];
-process.env.HITSLOP_COMPAT_MODE = compatibility;
-// Never let an inherited entry restriction weaken the selected coverage or its cache key.
-if (compatibility === "full") delete process.env.HITSLOP_COMPAT_ENTRIES;
-else process.env.HITSLOP_COMPAT_ENTRIES = replayedEntries(await releases(), false).map(({ name }) => name).join(",");
+
 // A release builds, and so tests, what ships: the `dist` Cargo profile (scripts/build/core.ts).
 if (release) process.env.HITSLOP_CARGO_PROFILE = "dist";
 const scratch = mkdtempSync(join(tmpdir(), "hitslop-verify-"));
@@ -207,7 +200,15 @@ const tiers: Tier[] = [
         }
         await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
       });
-      await prepare("Compatibility writers", resolveWriters);
+      // Ask nextest which tests the actual filter selects. A filtered store:: run
+      // must not fetch history or writers; expressions and exclusions work too.
+      const listing = await logged(["cargo", "nextest", "list", "--locked", "--workspace", "--message-format", "json", ...nextestFilters(args), ...args]);
+      if (listing.code) throw new Error(`Cannot list selected Rust tests: ${listing.stderr}`);
+      const listed = JSON.parse(listing.stdout);
+      const matches = (module: string) => Object.values(listed["rust-suites"] as Record<string, { "binary-name": string; testcases: Record<string, { "filter-match": { status: string } }> }>).some(suite =>
+        Object.entries(suite.testcases).some(([name, test]) => name.startsWith(module + "::") && test["filter-match"].status === "matches"));
+      if (matches("compat") || matches("compat_writers")) await prepare("Compatibility corpora", prepareCorpora);
+      if (matches("compat_writers")) await prepare("Compatibility writers", resolveWriters);
       await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {
@@ -223,7 +224,6 @@ const tiers: Tier[] = [
     inputs: tierInputs.landing,
     run: async () => {
       await sh([process.execPath, "run", "check"], { cwd: join(repository, "apps/landing") });
-      if (release) await sh([process.execPath, "run", "build"], { cwd: join(repository, "apps/landing") });
     },
   },
   {
@@ -276,7 +276,6 @@ const tiers: Tier[] = [
         HITSLOP_TEST_EVIDENCE: runDirectory,
         // A release renders every bundled template and requires its frozen corpus entry.
         ...(release ? { HITSLOP_RENDER: "all" } : {}),
-        ...(release && releaseTag ? { HITSLOP_COMPAT_RELEASE: releaseTag } : {}),
         ...(release && !flag("--skip-app") ? { HITSLOP_APP_BINARY: join(repository, "generated/app/hitSlop.app/Contents/MacOS/hitSlop") } : {}),
       });
     },
@@ -324,8 +323,10 @@ const toolchains = {
   swift: !listing && process.platform === "darwin" && candidates.some(tier => tier.name === "swift" || tier.name === "app")
     ? await run(["swift", "--version"]).then(s => s.trim()) : null,
 };
+let corpusIdentity: unknown = null;
+const corpusTiers = new Set(["compat", "rust", "swift", "native", "browser", "app"]);
 const digestOf = (tier: Tier, files: Record<string, string>) =>
-  sha256(JSON.stringify([Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.name === "swift" || tier.name === "app" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", nightly, ["swift", "native"].includes(tier.name) ? compatibility : null, inputsOf(tier, files).map((path) => [path, files[path]])]));
+  sha256(JSON.stringify([corpusTiers.has(tier.name) ? corpusIdentity : null, Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.name === "swift" || tier.name === "app" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", nightly, inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
 const differences = (tier: Tier, before: Record<string, string>, after: Record<string, string>) =>
   [...new Set([...inputsOf(tier, before), ...inputsOf(tier, after)])].filter((path) => before[path] !== after[path]);
@@ -374,7 +375,7 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
     return { selection: chosen.map((tier) => ({ tier, reason: "named", args: tierArgs })) };
   }
   const native = flag("--native") || release;
-  const eligible = tiers.filter((tier) => (!tier.nightly || nightly) && (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))));
+  const eligible = tiers.filter((tier) => (!tier.nightly || nightly) && (native || !tier.native) && (tier.name !== "app" || (release && !flag("--skip-app"))) && !(release && tier.name === "landing"));
   if (flag("--all") || release) return { selection: eligible.map((tier) => ({ tier, reason: release ? "release" : "--all", args: [] })) };
   if (ref) return touched(ref, eligible, []);
   // Locally: every tier whose inputs changed since it last passed on this machine.
@@ -389,10 +390,36 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
   return { selection };
 }
 
-const { selection, base } = await select();
+let corpusPrepared = false;
+async function prepareCorpora() {
+  if (corpusPrepared) return;
+  if (!process.env.HITSLOP_COMPAT_ROOT) {
+    const resolved = await resolveCorpora();
+    corpusIdentity = { inventory: resolved.inventory, offline: resolved.offline };
+  } else {
+    const receipt = await Bun.file(join(process.env.HITSLOP_COMPAT_ROOT, ".inventory.json")).json().catch(() => undefined);
+    if (!receipt && !process.env.HITSLOP_COMPAT_RECORD) throw new Error("Compatibility root has no verified inventory; resolve corpora first");
+    corpusIdentity = receipt ? { inventory: receipt.inventory, offline: receipt.offline } : "capture";
+  }
+  const entries = await releases();
+  if (!entries.length) throw new Error("No compatibility corpora to replay");
+  await verifyPreludes(entries);
+  if (release && releaseTag && !entries.some(entry => entry.name === releaseTag && entry.release.frozen))
+    throw new Error(`The frozen candidate corpus ${releaseTag} must be included in release replay`);
+  Object.assign(environment, process.env);
+  corpusPrepared = true;
+}
+// Resolve before checking local pass digests: a newly published corpus invalidates a
+// previously green tier even when no source file changed. Listings stay network-free.
+let { selection, base } = await select();
+const possible = !named && !option("--base") ? candidates : selection.map(entry => entry.tier);
+if (!flag("--list") && possible.some(tier => corpusTiers.has(tier.name)) && !(named?.length === 1 && named[0] === "rust" && tierArgs.length)) {
+  await prepareCorpora();
+  ({ selection, base } = await select());
+}
 if (flag("--list") || !selection.length) {
   if (flag("--json")) {
-    console.log(JSON.stringify({ base: base ?? null, compatibility, tiers: selection.map(({ tier, reason }) => ({ name: tier.name, reason })) }));
+    console.log(JSON.stringify({ base: base ?? null, tiers: selection.map(({ tier, reason }) => ({ name: tier.name, reason })) }));
     process.exit(0);
   }
   if (!selection.length)
@@ -406,10 +433,10 @@ runDirectory = join(repository, ".hitslop/evidence/runs", runId);
 await mkdir(runDirectory, { recursive: true });
 const report = {
   runId, directory: runDirectory, command: process.argv.slice(2),
-  configuration: { profile: process.env.HITSLOP_CARGO_PROFILE || "release", nightly, compatibility, bunWorkers: Math.min(4, availableParallelism()), cliWorkers: 1 },
+  configuration: { profile: process.env.HITSLOP_CARGO_PROFILE || "release", nightly, bunWorkers: Math.min(4, availableParallelism()), cliWorkers: 1 },
   partial: tierArgs.length > 0,
   reusedBuild: flag("--no-build") || flag("--built"),
-  certifiesDefaultRun: !tierArgs.length && !flag("--no-build") && !flag("--built"),
+  certifiesDefaultRun: process.env.HITSLOP_COMPAT_OFFLINE !== "1" && !tierArgs.length && !flag("--no-build") && !flag("--built"),
   inventory, commands, toolchains,
   cancelled: false,
   mode: release ? "release" : flag("--all") ? "all" : selection.every(({ reason }) => reason === "named") ? "named" : "affected",
@@ -513,7 +540,7 @@ try {
   if (process.env.GITHUB_STEP_SUMMARY) {
     await appendFile(process.env.GITHUB_STEP_SUMMARY, [
       `\n### Verification: ${passed ? "passed" : "failed"}\n`,
-      `Compatibility coverage: ${compatibility}. Nightly checks: ${nightly ? "enabled" : "disabled"}.\n`,
+      `Compatibility replay: all entries. Nightly checks: ${nightly ? "enabled" : "disabled"}.\n`,
       "| Tier | Result | Build/preparation | Tests |", "|---|---|---:|---:|",
       ...report.tiers.map(tier => `| ${tier.name} | ${tier.code ? "failed" : "passed"} | ${tier.buildSeconds.toFixed(1)}s | ${tier.seconds.toFixed(1)}s |`),
       `\nVerification wall time: ${seconds(started).toFixed(1)}s.\n`,

@@ -6,31 +6,22 @@ import WebKit
 
 @testable import HitSlopDocument
 
-/// The compatibility corpus (tests/compat): every document a release saved must open in
+/// The prepared compatibility corpus: every document a release saved must open in
 /// this build, run its own old app's edits in a real page, save, close and reopen to the
 /// result that release recorded. `HITSLOP_COMPAT_RECORD=<entry>` records that entry's
 /// results instead (`bun run compat:capture`); a frozen entry is never recorded again.
 @Suite(.serialized) struct CompatCorpusTests {
   static let corpus = URL(
     fileURLWithPath: ProcessInfo.processInfo.environment["HITSLOP_COMPAT_ROOT"]
-      ?? Fixtures.repository.appendingPathComponent("tests/compat").path)
+      ?? Fixtures.repository.appendingPathComponent(".hitslop/compat/current").path
+  ).resolvingSymlinksInPath()
   static let recording = ProcessInfo.processInfo.environment["HITSLOP_COMPAT_RECORD"]
-
-  /// Only smoke runs may restrict entries. Nightly and release replay every scenario,
-  /// even if the caller inherited an ordinary run's entry selection.
-  static let selected: Set<String>? = {
-    let env = ProcessInfo.processInfo.environment
-    guard env["HITSLOP_COMPAT_MODE"] == "smoke", env["HITSLOP_NIGHTLY"] != "1",
-      env["HITSLOP_COMPAT_RELEASE"] == nil
-    else { return nil }
-    return env["HITSLOP_COMPAT_ENTRIES"].map { Set($0.split(separator: ",").map(String.init)) }
-  }()
 
   /// Every page scenario: `<entry>/pages/<document>.json`.
   static func cases() -> [String] {
     let entries = (try? FileManager.default.contentsOfDirectory(atPath: corpus.path)) ?? []
     return entries.sorted().filter {
-      recording == nil ? selected?.contains($0) ?? true : $0 == recording
+      recording == nil || $0 == recording
     }.flatMap { entry in
       ((try? FileManager.default.contentsOfDirectory(atPath: corpus.appendingPathComponent("\(entry)/pages").path))
         ?? [])
@@ -39,7 +30,7 @@ import WebKit
   }
 
   @Test func theCorpusHasPageScenarios() {
-    #expect(!Self.cases().isEmpty, "tests/compat has no page scenarios to replay")
+    #expect(!Self.cases().isEmpty, "No prepared page scenarios; run bun run compat:resolve before standalone tests")
   }
 
   @Test(arguments: cases()) @MainActor func oldAppsEditTheirSavedDocuments(_ name: String) async throws {
@@ -56,6 +47,7 @@ import WebKit
     if Self.recording == nil { #expect(!(page["value"] is NSNull), "No recorded result for \(name)") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".slop")
     try FileManager.default.copyItem(at: entry.appendingPathComponent("documents/\(parts[1]).slop"), to: root)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: root.path)
     defer { try? FileManager.default.removeItem(at: root) }
     let before = try await value(root)
 

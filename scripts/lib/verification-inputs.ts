@@ -14,7 +14,7 @@ export const tierInputs = {
   compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/hitslop-core\/src\/(app|file)\//],
   tooling: [
     /^tests\/verification\//,
-    /^scripts\/compat\/(check|corpus)\.ts$/,
+    /^scripts\/compat\//,
     /^scripts\/ci\//,
     /^\.github\/workflows\/(block-ai-attribution|secret-scan)\.yml$/,
     /^packages\/hitslop\/src\/cli\/process\.ts$/,
@@ -32,7 +32,7 @@ export const tierInputs = {
   cli: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/hitslop\/tests\/cli\/(?!.*\.(native|browser)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
   render: [...rustInputs, /^packages\/hitslop\/(src|shell)\//, /^packages\/hitslop\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^slops\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
   browser: [...rustInputs, /^packages\/hitslop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
-  rust: [...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
+  rust: [/^scripts\/compat\//, ...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
   landing: [/^apps\/landing\//],
   packed: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,

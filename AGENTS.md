@@ -41,9 +41,10 @@ From the first public release, a newer hitSlop must open, render, edit, save and
 every document a released build wrote. Downgrades are not supported. The full rules, by
 boundary and marker, are in the [engineering contract](docs/engineering-contract.md#compatibility).
 
-- The frozen corpus (`tests/compat/<release>/`, `"frozen": true`) passes in every build.
-  Never edit, regenerate or delete a frozen entry, its expectations or the command
-  prelude it froze; capture one per release ([releasing](docs/guides/releasing.md)).
+- Every public release carries its frozen compatibility corpus as an immutable release
+  asset. Affected builds replay all published corpora. Never replace, regenerate or delete
+  one, its expectations or the command prelude it froze. Capture is part of the candidate
+  workflow ([releasing](docs/guides/releasing.md)); `tests/compat/dev` is prelaunch only.
 - Persisted formats change only additively, or behind the marker that owns the change:
   `packageFormat` (the stored definition), `runtimeABI` (app-facing behavior), the storage
   version (tables, columns, triggers) or the document layout. Markers are requirements,

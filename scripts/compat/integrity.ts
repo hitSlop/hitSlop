@@ -1,48 +1,8 @@
 import { strict as assert } from "node:assert";
-import { createHash } from "node:crypto";
-import { lstat, readdir, readFile } from "node:fs/promises";
+import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileDigest, repository } from "../lib/artifacts";
 import { readJSON, type Expected, type Release } from "./corpus";
-
-/** Fingerprint producing inputs, excluding the corpus-only commit and build outputs. */
-export async function sourceFingerprint(root = repository): Promise<string> {
-  const git = Bun.spawn(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
-    cwd: root,
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [out, error, code] = await Promise.all([
-    new Response(git.stdout).text(),
-    new Response(git.stderr).text(),
-    git.exited,
-  ]);
-  assert.equal(code, 0, error);
-  const inputs = [...new Set(out.split("\0"))]
-    .filter(
-      (path) =>
-        /^(Cargo\.(toml|lock)|rust-toolchain\.toml|bun\.lock|package\.json|tsconfig[^/]*\.json)$/.test(
-          path,
-        ) ||
-        /^(crates|scripts|apps\/apple|tests\/abi|tests\/apps|tests\/presentation)\//.test(path) ||
-        /^packages\/(?:hitslop)\/(?:src\/|generated\/|acceptance\/|templates\/|skills\/|package\.json$)/.test(
-          path,
-        ),
-    )
-    .sort();
-  const hash = createHash("sha256");
-  for (const path of inputs) {
-    // A tracked file deleted in the working tree is not an input.
-    const bytes = await readFile(join(root, path)).catch((error) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    });
-    if (!bytes) continue;
-    hash.update(JSON.stringify(path));
-    hash.update(createHash("sha256").update(bytes).digest());
-  }
-  return hash.digest("hex");
-}
 
 export async function corpusFiles(root: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
@@ -129,7 +89,6 @@ export async function verifyCorpus(root: string, release: Release) {
   assert.equal(release.writer.platform, "darwin-arm64", "Invalid writer platform");
   assert.equal(release.writer.version, release.release, "Writer version differs from entry");
   assert.match(release.writer.sha256, /^[a-f0-9]{64}$/, "Invalid writer SHA-256");
-  assert.match(release.sourceInputs, /^[a-f0-9]{64}$/, "Missing source fingerprint");
   assert.ok(
     !Object.keys(release.files).some((path) => path.startsWith("engine/")),
     "Writer binaries belong in the hash cache, not the corpus",
@@ -155,26 +114,5 @@ export async function verifyCorpus(root: string, release: Release) {
       hash,
       `Changed template: ${slug}`,
     );
-  }
-}
-
-/** Only the release being published must match current producing inputs. */
-export async function verifyCandidate(
-  release: Pick<Release, "sourceInputs" | "templates">,
-  candidateRoot = repository,
-) {
-  assert.equal(
-    await sourceFingerprint(candidateRoot),
-    release.sourceInputs,
-    "Release inputs changed after compatibility capture; capture a new candidate",
-  );
-  for (const [slug, hash] of Object.entries(release.templates)) {
-    if (slug === "conformance") continue;
-    const file = join(
-      candidateRoot,
-      "generated/presentation",
-      `${slug.slice("presentation-".length)}.slop`,
-    );
-    assert.equal(await fileDigest(file), hash, `Captured template differs from candidate: ${slug}`);
   }
 }

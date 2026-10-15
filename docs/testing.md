@@ -31,8 +31,8 @@ openable, so its frozen entries never change.
 | Release tooling | `tests/release`, in `verify bun` | Artifact identity, publication recovery and promotion rules |
 | Presentation | `tests/presentation`, prepared for Swift/native tiers | Window shapes and capture fixtures |
 | Verification runner and CI policy | `tests/verification`, in `verify tooling` | Tier selection, evidence, subprocess lifecycle and attribution; no product build |
-| Landing/docs | `apps/landing`, `verify landing` | Public documentation and website checks; release includes the build |
-| Compatibility corpus | `tests/compat`, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
+| Landing/docs | `apps/landing`, `verify landing` | Public documentation and website checks; independent website workflow builds/deploys |
+| Compatibility corpus | Immutable release assets, replayed by the three tiers [below](#compatibility-corpus) | Every released template and saved document still opens, renders, edits and reopens |
 
 The core and runner Rust integration tests each build as one binary, `tests/main.rs` (`autotests = false`),
 so a change links once rather than once per file; a new test file is a `mod` there, or it
@@ -80,7 +80,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |
 | `render` | Engine-only artwork and export tests with engine/evaluator and shell, on macOS or Linux; one file worker, 120-second default test deadline |
 | `rust` | `cargo fmt --all -- --check`, Clippy with warnings denied (the workspace, plus the WASM adapter on Linux or release runs), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
-| `landing` | The site's type check (and build, on release) |
+| `landing` | The site's type check; `website.yml` builds and deploys separately |
 | `packed` | Engine/evaluator, shell, durable-browser WASM and skills, then `tests/packed` (120-second default deadline), when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | Swift formatting, native bindings, shell and fixtures, then one serial `swift test` invocation after compilation, with an isolated temporary directory and registry. Requires at least one executed test. Filtered runs (`verify swift --filter X`) pass Swift’s filters through, including `name\(` patterns |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
@@ -113,12 +113,11 @@ The packed preview uses an OS-assigned port and waits for its reported URL.
 ## Every change and nightly
 
 PRs run affected critical correctness checks for opening, editing, saving and reopening
-documents. Compatibility-sensitive changes also run full app-level corpus replay; other
-changes use smoke coverage when native tiers are selected. Rust always replays every corpus
-entry. Smoke coverage samples recent entries and representative app renders; matching
-markers or embedded apps does not prove saved scenarios behave equivalently.
+documents. Whenever corpus-consuming tiers run, they replay every published entry with
+full coverage. Matching markers or embedded apps does not prove saved scenarios behave
+equivalently. Historical-writer randomized differential tests run nightly and for releases.
 
-`HITSLOP_NIGHTLY=1` (set by scheduled/manual CI and release-branch pushes, and implied by
+`HITSLOP_NIGHTLY=1` (set by scheduled/manual CI and hotfix-branch pushes, and implied by
 `--release`) adds expensive boundary cases and broader qualification:
 
 | Nightly and release only | Where it is selected |
@@ -131,16 +130,11 @@ markers or embedded apps does not prove saved scenarios behave equivalently.
 | Landing generation, skills install, update notice, help wording, documentation examples, the tutorial build | `test.if(nightly)` in those files |
 | The `browser` tier (Playwright WebKit and Chrome) | the tier's `nightly` flag; `verify browser` runs it on demand |
 
-Full compatibility is independent of nightly checks. CI selects it for changes to Rust,
-native hosting/export, SDK/runtime contracts, corpus/fixtures and their build dependencies
-(`compatibilityInputs`). It replays every entry through Swift/native and exports every saved
-document to both PNG and PDF. Other changes retain the newest entry per marker generation
-and one representative render per embedded app. This is sampling, not an equivalence rule.
-`HITSLOP_COMPAT_MODE=full bun run verify --native` requests full compatibility locally without
-enabling expensive nightly cases. A local `--base REF` run expands automatically for sensitive
-changes; otherwise ordinary local runs default to smoke. Reports record the mode, and smoke
-passes cannot satisfy a full verification cache entry. Nightly and required-release replay
-override inherited smoke restrictions.
+Full compatibility is independent of nightly checks. Every selected corpus-consuming
+tier replays all entries; native replay exports every saved document to PNG and PDF.
+There is no smoke mode or per-marker sampling. `bun run verify --native` selects the
+native tiers whose inputs or corpus inventory changed, without enabling the extra
+nightly cases above.
 
 Explicit Rust filters bypass nextest's default exclusions, so
 `bun run verify rust a_busy_file_is_reported_busy_not_as_having_no_artwork` runs that test.
@@ -280,24 +274,24 @@ the required Rust, Swift and native tiers whenever their inputs change.
 Before launch there is one replaceable baseline, `tests/compat/dev`, not a historical
 public release. Starting with the first public release, capture a separate frozen
 collection for **each released version**. Later builds replay every collection; never
-rebuild old samples with current tools. These artifacts live in the test repository,
-not the installed application's bundle. The format markers can remain at 1 across
+rebuild old samples with current tools. These artifacts are immutable GitHub release assets, downloaded and verified for testing. The format markers can remain at 1 across
 many releases; release versions and format requirements are different things.
 
-Old files are checked, not old programs. `tests/compat/<release>/` stores original built
+Each corpus stores the original compiled programs as well as their saved files: built
 templates, saved documents (with their attachments), expected state, page scenarios,
 and writer metadata `{version, platform, sha256, buildId}` in `release.json`. The
 darwin-arm64 writer is the engine shipped in that release's npm package; engine binaries
-are not committed in the corpus. Before Rust replay, `scripts/compat/writers.ts` resolves
+are not committed in the corpus. Before historical-writer replay, `scripts/compat/writers.ts` resolves
 it into `~/.cache/hitslop/compat-writers/<sha256>` (`HITSLOP_COMPAT_WRITERS` overrides the
 cache). A local `HITSLOP_ENGINE` or checkout engine must match both build ID and SHA-256;
-otherwise the resolver extracts the shipped engine from `hitslop@VERSION` and verifies it.
+otherwise the resolver extracts it from the exact npm tarball attached to the immutable
+GitHub release and verifies the tarball and engine hashes.
 Cached bytes are checked again; a missing or corrupt writer of a published release fails
 replay. The unpublished pre-launch `dev` entry has no registry fallback, and another build
 cannot reproduce the bytes of the engine that captured it, so its differential replay runs
 only where that exact engine is available (the machine that captured it, or a verified
 cache) and is otherwise skipped with a visible line; frozen releases always resolve from
-their npm package.
+their retained npm package.
 
 Documents are written both ways a release writes them:
 through its CLI, and by its own app's page (`NAME.page.slop`, saved by the page
@@ -312,8 +306,8 @@ builds create, edit and render documents from. Shipped templates are not in it; 
 template render checks cover what ships now. It is regression evidence, not proof of all
 possible authored apps.
 
-`bun run compat:capture VERSION --frozen --writer generated/engines/darwin-arm64/slop-engine` builds the producing tools, records their
-`sourceInputs` (the producing source fingerprint) and identities, and captures into a temporary directory. It records
+The candidate workflow runs `bun run compat:capture VERSION --writer generated/engines/darwin-arm64/slop-engine --out dist/corpus`. It builds the producing tools, records their
+commit and core/writer identities, and captures outside Git. It records
 template file digests, each template and saved document's producing-reader `appDigest`,
 per-file hashes and the required case inventory. Replay pins app identity independently
 of file hashes through edit/save/close/reopen.
@@ -336,7 +330,7 @@ to be recorded or explicitly classified as not persisted. The physical `storage-
 definition remains hash-pinned; format-reader source is free to refactor and authoring
 rules are free to tighten while recorded acceptance remains unchanged. Only a completed
 capture is published and frozen. Recording an existing frozen entry is refused. Before launch `dev`
-may be recaptured with `bun run compat:capture dev` (without `--frozen`).
+may be recaptured with `bun run compat:capture dev`.
 
 - Rust (`crates/hitslop-core/tests/compat.rs`, in every `verify rust`) replays saved
   values, themes, app digests, edits, save/close and reopen. It also checks every entry’s
@@ -353,19 +347,17 @@ may be recaptured with `bun run compat:capture dev` (without `--frozen`).
   generated batches in its own protocol, and this core must read exactly what that engine
   reads, then edit, save, trim and reopen them. This differential replay runs only on
   darwin-arm64 and prints a visible skip elsewhere. Requests in older protocols live only in
-  this test. 2 seeds × 8 batches per template by default (1 seed on an ordinary `verify`); the weekly `Core model` run uses
+  this test. Historical-writer differential tests run nightly and for releases, or when
+  explicitly selected; ordinary PRs keep deterministic corpus replay. The weekly `Core model` run uses
   16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
 - Native replay (`tests/native/compat-replay.native.test.ts`) checks original app
   rendering, PNG/PDF content, attachments, theme changes/reset, stored
   Preview/Icon/Widget programs and template creation, through this build's CLI
-  (the `compat` tier checks inventory and hashes). Full coverage exports every saved
-  document, including different values saved with the same app. Smoke coverage samples the
-  entries `replayedEntries` chooses and renders each embedded app once; its other documents
-  still read, edit and reopen. Sensitive changes, nightly and releases use full coverage.
-  Stored command programs replay twice: deterministically through the
-  evaluator with their recorded clock and seed, and through the owner with `slop call`
-  (argument refusal first, then an edit). A release also sets `HITSLOP_COMPAT_RELEASE`, which requires the tagged
-  frozen entry.
+  (the `compat` tier checks inventory and hashes). It exports every saved document,
+  including different values saved with the same app. Stored command programs replay
+  twice: deterministically through the evaluator with their recorded clock and seed,
+  and through the owner with `slop call` (argument refusal first, then an edit).
+  Release verification explicitly requires its frozen candidate entry before replay.
 - Swift (`CompatCorpusTests`) runs the old conformance app's own scenario, which includes a
   page edit and a live agent command, requires an actual saved edit and checks reopen.
   With producing tools already built, run it with
@@ -375,13 +367,37 @@ Each storage-version bump adds two Rust tests: a frozen file migrated by a write
 newly created file in exact layout and value, and an interrupted migration leaves the
 older file intact.
 
-The `compat` tier compares frozen entries with protected Git history and verifies their content
-hashes. Release checks additionally require the tagged entry to match current producing
-`sourceInputs` and window-kind templates, and its writer to come from the captured core
-and match the darwin-arm64 engine in the packed npm tarball byte for byte. A
-corpus-only commit does not change the input fingerprint. Historical entries never need
-current build identities. The CLI and the app meet only through the command protocol, whose
-refusal path is fixed and tested in each build; old CLIs are never run against new apps.
+The `compat` tier verifies every resolved corpus's content hashes, immutable storage SQL,
+required case inventory and versioned command prelude. `scripts/compat/corpora.ts` discovers
+all public immutable releases, checks history closure, and verifies each archive.
+It extracts once into `~/.cache/hitslop/compat-corpora/trees/<sha>/`, verifies extracted
+files again on reuse and makes them read-only, then atomically activates a snapshot of version links at
+`.hitslop/compat/current`. Candidate entries live in a separate snapshot. Editing tests explicitly make only
+their disposable document copies writable; templates are read directly from the cache. Preparation
+is serialized and a delayed discovery response cannot regress remembered history.
+
+`bun run verify` prepares history automatically. Before plain `cargo nextest`, Xcode
+or standalone native tests, run `bun run compat:resolve`; these readers resolve the
+`current` pointer once for their process. They fail with preparation instructions if
+it is missing. Raw tests use the last prepared inventory, so prepare again after new
+releases. Verifier and capture subprocesses receive a fixed `HITSLOP_COMPAT_ROOT` to
+keep a run isolated from other preparations. Historical writer tests additionally
+need `bun scripts/compat/writers.ts` when run outside the verifier.
+
+CI requires fresh inventory; explicit local `HITSLOP_COMPAT_OFFLINE=1` replay is visibly
+non-certifying. The corpus inventory forms part of verification pass digests, so a new
+public release invalidates relevant passes. Listings and filtered Rust tests that
+exclude compatibility do not resolve history or writers. Cache corruption is an error;
+remove the named cache entry and resolve again without changing published evidence.
+
+Release checks additionally require the candidate corpus to be captured and frozen, its
+commit to be the workflow commit, and its writer to match the darwin-arm64 engine in the
+retained npm tarball byte for byte. The candidate's signed-app smoke opens each historical
+saved document in the actual packaged owner, checks recorded call probes including refusals,
+then edits/saves/reopens it. Swift remains responsible for the old compiled page's behavior.
+Historical entries never need current build identities. CLI protocol versions evolve with
+the current host; old file reads use today's protocol, and mismatches must return exit 2
+without changing file bytes. See [releasing](guides/releasing.md).
 
 ## CI
 
@@ -390,18 +406,18 @@ refusal path is fixed and tested in each build; old CLIs are never run against n
 | `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
 | `fast` (Ubuntu 24.04) | Affected compatibility integrity, tooling, generated-contract, type, Bun, CLI, engine-render, installed-package and landing checks |
 | `native` (macOS 15 ARM64) | Affected `swift,native` tiers: native page edits, the CLI, and the app-level old-file replay |
-| `native-rust` (macOS 15 ARM64) | The affected `rust` tier, in parallel with `native`: platform SQLite, Darwin sandbox and old-writer compatibility replay. WASM lints run on Linux only |
+| `native-rust` (macOS 15 ARM64) | The affected `rust` tier, in parallel with `native`: platform SQLite, Darwin sandbox and deterministic historical-file replay. WASM lints run on Linux only |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
 | `qualification` (nightly/manual) | Playwright browser integration and the macOS portable CLI/package matrix; not required for merging |
 | `release-templates` (Ubuntu, nightly/manual) | Builds, caches and renders the full template corpus with the engine and shell, without Swift/Xcode or WASM tools |
-| Release macOS (`v*` tag, or manual dry run) | Every run checks release acceptance; only tag runs sign, notarize, publish and deploy |
+| Release (`workflow_dispatch`) | Candidate builds/tests/signs/notarizes once; environment approval publishes the retained app/npm/corpus bytes; website deployment is independent |
 
-CI runs on pull requests, pushes to `master` or `release/*`, nightly at 09:17 UTC
+CI runs on pull requests, pushes to `master` or `hotfix/*`, nightly at 09:17 UTC
 (03:17 Saskatchewan time), and manual dispatch. Feature-branch pushes don't repeat PR
-checks. PRs into `master` and master pushes select affected tiers. PRs into `release/*`,
-release-branch pushes, nightly and manual runs select **all required tiers**, regardless
+checks. PRs into `master` and master pushes select affected tiers. PRs into `hotfix/*`,
+hotfix-branch pushes, nightly and manual runs select **all required tiers**, regardless
 of changed paths. Required PR jobs do not install Playwright browsers. Portable CLI/package suites run once on Linux; their macOS repeat lives in
 nightly/manual qualification. Rust runs on both operating systems because SQLite,
 locking, sandboxing and the historical macOS writers have platform-specific behavior.
@@ -455,7 +471,7 @@ from filling an immutable cache key before the full suite finishes.
 Playwright WebKit and Chrome are installed only for nightly/manual qualification and
 release verification; required PR jobs do not download browsers.
 
-The attribution workflow covers PRs into `master` and `release/*`, uses
+The attribution workflow covers PRs into `master` and `hotfix/*`, uses
 `pull_request_target` and publishes a separate
 `Attribution` commit status on the inspected PR head. Its checkout and validator come
 from the default branch; incoming Git objects are read without checking out or executing

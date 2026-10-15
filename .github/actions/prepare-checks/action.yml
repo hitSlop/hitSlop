@@ -22,6 +22,8 @@ inputs:
 runs:
   using: composite
   steps:
+    - shell: bash
+      run: echo "GH_TOKEN=${{ github.token }}" >> "$GITHUB_ENV"
     - id: started
       shell: bash
       run: echo "seconds=$(date +%s)" >> "$GITHUB_OUTPUT"
@@ -61,17 +63,21 @@ runs:
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - id: compat-writers-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.rust == 'true' && runner.os == 'macOS' && runner.arch == 'ARM64' && github.event_name != 'pull_request'
+      if: inputs.rust == 'true' && github.event_name != 'pull_request'
       with:
-        path: ~/.cache/hitslop/compat-writers
-        key: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-${{ hashFiles('tests/compat/**/release.json') }}
+        path: |
+          ~/.cache/hitslop/compat-writers
+          ~/.cache/hitslop/compat-corpora
+        key: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-
     - id: compat-writers-cache-restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.rust == 'true' && runner.os == 'macOS' && runner.arch == 'ARM64' && github.event_name == 'pull_request'
+      if: inputs.rust == 'true' && github.event_name == 'pull_request'
       with:
-        path: ~/.cache/hitslop/compat-writers
-        key: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-${{ hashFiles('tests/compat/**/release.json') }}
+        path: |
+          ~/.cache/hitslop/compat-writers
+          ~/.cache/hitslop/compat-corpora
+        key: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-
     - id: tools-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

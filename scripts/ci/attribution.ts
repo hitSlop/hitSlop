@@ -10,7 +10,7 @@ const generatedAgent = /^(?:claude|anthropic|codex|openai|copilot|github copilot
 export type Finding = { source: string; line: string };
 /** Release fixes follow the same trusted attribution policy as development PRs. */
 export function protectedPullBase(ref: string): boolean {
-  return ref === "master" || /^release\/[^/]+$/.test(ref);
+  return ref === "master" || /^hotfix\/[^/]+$/.test(ref);
 }
 export function assistantIdentity(name: string, email: string): boolean {
   return assistantName.test(name.trim()) || assistantAddress.test(email.trim());

@@ -43,8 +43,10 @@ dist/
 **/.svelte-check/
 **/.svelte-kit/
 .hitslop/
+# Maintainer's versioned manual sanity library; preserve and back up locally.
+/release-sanity/
 *.slop
-# The compatibility corpus commits released templates and documents byte for byte.
+# Prelaunch compatibility fixtures are tracked; released corpora are release assets.
 !/tests/compat/*/templates/*.slop
 !/tests/compat/*/documents/*.slop
 _vibe/

@@ -1,139 +1,144 @@
-/** Resumable publication. Run only in the serialized release workflow. Artifacts are
- * immutable; the registry and GitHub, rather than a local success flag, record progress. */
+/** Publication consumes one retained candidate. Each step reads remote state, verifies
+ * existing bytes and resumes without rebuilding, recapturing or replacing an asset. */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { exec, run } from "../../packages/hitslop/src/cli/process";
-import { fileDigest } from "../lib/artifacts";
-import { advancesBuild, appcastBuild, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "./record";
+import { fileDigest, sha256 } from "../lib/artifacts";
+import { assetBytes, requiredAsset, releaseRepository, type PublishedRelease } from "../lib/release-assets";
+import { publishedHistory, verifyHistory } from "../compat/corpora";
+import { assertQualified, preservesLatest, validateApproval, validateCandidate, validateRecord, verifyArtifacts, type ReleaseRecord } from "./record";
+import { checkReleaseHistory } from "./preflight";
 import { releaseNotesNames } from "./notes";
 
 const directory = "dist/macos";
-const releaseTag = process.env.GITHUB_REF_NAME;
-if (!releaseTag || !/^v\d+\.\d+\.\d+$/.test(releaseTag)) throw new Error("Expected a vX.Y.Z release tag");
-const tag = releaseTag;
+const tag = process.env.HITSLOP_RELEASE_TAG!;
+const commit = process.env.GITHUB_SHA!;
+if (!/^v\d+\.\d+\.\d+$/.test(tag ?? "") || !commit) throw new Error("Expected HITSLOP_RELEASE_TAG and GITHUB_SHA");
+if (process.env.GITHUB_REPOSITORY?.toLowerCase() !== releaseRepository.toLowerCase()) throw new Error("Unexpected release repository");
 const version = tag.slice(1);
-const releaseCommit = process.env.GITHUB_SHA;
-if (!releaseCommit) throw new Error("GITHUB_SHA is required");
-const commit = releaseCommit;
-const repository = process.env.GITHUB_REPOSITORY;
-if (!repository) throw new Error("GITHUB_REPOSITORY is required");
 const gh = (args: string[]) => run(["gh", ...args]);
-async function remoteRelease() {
-  const result = await exec(["gh", "api", `repos/${repository}/releases/tags/${tag}`]);
+const api = (path: string) => gh(["api", `repos/${releaseRepository}/${path}`]).then(text => JSON.parse(text));
+async function remoteRelease(): Promise<PublishedRelease | undefined> {
+  const result = await exec(["gh", "api", `repos/${releaseRepository}/releases/tags/${tag}`]);
   if (result.code) {
     if (result.stderr.includes("HTTP 404")) return undefined;
     throw new Error(result.stderr);
   }
-  return JSON.parse(result.stdout) as { assets: { name: string; id: number; digest?: string }[] };
+  return JSON.parse(result.stdout);
 }
-async function asset(id: number) {
-  // Preserve binary bytes: `run` is intentionally a text-only interface.
-  const child = Bun.spawn(["gh", "api", "-H", "Accept: application/octet-stream", `repos/${repository}/releases/assets/${id}`], { stdout: "pipe", stderr: "pipe" });
-  const [bytes, error, code] = await Promise.all([new Response(child.stdout).arrayBuffer(), new Response(child.stderr).text(), child.exited]);
-  if (code) throw new Error(error);
-  return Buffer.from(bytes);
+async function record(): Promise<ReleaseRecord> { return JSON.parse(await readFile(join(directory, "release-record.json"), "utf8")); }
+async function check() {
+  const saved = await record();
+  validateRecord(saved, tag, commit);
+  if (saved.run !== process.env.GITHUB_RUN_ID || !process.env.HITSLOP_CANDIDATE_SHA || await fileDigest(join(directory, "release-record.json")) !== process.env.HITSLOP_CANDIDATE_SHA)
+    throw new Error("Candidate record differs from the approved candidate job");
+  const workflow = await api(`actions/runs/${saved.run}`);
+  const jobs = await api(`actions/runs/${saved.run}/attempts/${saved.attempt}/jobs?per_page=100`);
+  validateCandidate(saved, workflow, jobs.jobs);
+  // Candidates are created only on attempt 1, so a review cannot authorize rebuilt bytes.
+  validateApproval(await api(`actions/runs/${saved.run}/approvals`));
+  await verifyArtifacts(saved, directory);
+  return saved;
 }
-async function check(record: ReleaseRecord) {
-  validateRecord(record, tag, commit);
-  await verifyArtifacts(record, directory);
-}
-async function record() { return JSON.parse(await readFile(join(directory, "release-record.json"), "utf8")) as ReleaseRecord; }
-async function mayPromote(candidate: ReleaseRecord) {
-  const npmLatest = await fetch("https://registry.npmjs.org/hitslop/latest");
-  if (npmLatest.ok) {
-    const published = await npmLatest.json() as { version: string };
-    if (!preservesLatest(version, published.version)) return false;
-  } else if (npmLatest.status !== 404) throw new Error(`Cannot check npm latest: ${npmLatest.status}`);
-  const latest = await exec(["gh", "api", `repos/${repository}/releases/latest`]);
-  if (latest.code) {
-    if (latest.stderr.includes("HTTP 404")) return true;
-    throw new Error(latest.stderr);
+async function compareRemote(remote: PublishedRelease, saved: ReleaseRecord) {
+  for (const name of ["release-record.json", ...Object.keys(saved.artifacts), "SHA256SUMS"]) {
+    const asset = requiredAsset(remote, name);
+    const expected = await fileDigest(join(directory, name));
+    const actual = asset.digest?.startsWith("sha256:") ? asset.digest.slice(7) : sha256(await assetBytes(asset.id));
+    if (actual !== expected) throw new Error(`Existing GitHub artifact differs: ${name}`);
   }
-  const release = JSON.parse(latest.stdout);
-  if (release.tag_name === tag) return true;
-  const recorded = release.assets.find((a: { name: string }) => a.name === "release-record.json");
-  if (recorded) return advancesBuild(candidate.macBuild, JSON.parse((await asset(recorded.id)).toString()).macBuild);
-  const appcast = release.assets.find((a: { name: string }) => a.name === "appcast.xml");
-  if (!appcast) throw new Error("Latest release has no build record or appcast; establish its build number before promotion");
-  return advancesBuild(candidate.macBuild, appcastBuild((await asset(appcast.id)).toString()));
+}
+async function qualification(saved: ReleaseRecord) {
+  const entries = await publishedHistory();
+  // A retry after locking our own release must still verify that exact record.
+  const own = entries.find(entry => entry.record.macVersion === version);
+  if (own) await compareRemote(own.release, saved);
+  const inventory = verifyHistory(entries);
+  delete inventory[version];
+  assertQualified(saved.qualified, inventory);
+  await checkReleaseHistory(version, saved.macBuild, saved);
 }
 
 const action = process.argv[2];
 await mkdir(directory, { recursive: true });
-if (action === "resume") {
+if (action === "restore") {
   const remote = await remoteRelease();
-  const manifest = remote?.assets.find(a => a.name === "release-record.json");
-  let resumed = false;
+  const manifest = remote?.assets.find(asset => asset.name === "release-record.json");
+  let restored = false;
   if (remote && manifest) {
-    const bytes = await asset(manifest.id);
+    const bytes = await assetBytes(manifest.id);
+    if (sha256(bytes) !== process.env.HITSLOP_CANDIDATE_SHA) throw new Error("Published candidate record mismatch");
     const saved: ReleaseRecord = JSON.parse(bytes.toString());
     validateRecord(saved, tag, commit);
     const names = [...Object.keys(saved.artifacts), "SHA256SUMS"];
-    const assets = names.map(name => remote.assets.find(asset => asset.name === name));
-    if (assets.every(asset => asset !== undefined)) {
+    if (names.every(name => remote.assets.some(asset => asset.name === name))) {
       await writeFile(join(directory, "release-record.json"), bytes);
-      for (const entry of assets) await writeFile(join(directory, entry.name), await asset(entry.id));
-    } else {
-      // Recover interrupted uploads from the complete candidate retained before staging.
-      await gh(["run", "download", saved.run, "--name", "release-candidate", "--dir", directory]);
-      if (!bytes.equals(await readFile(join(directory, "release-record.json")))) throw new Error("Candidate record differs from GitHub");
-    }
-    await check(saved);
-    resumed = true;
-  } else {
-    // A run can stop after retaining the candidate but before creating its draft.
-    const runID = process.env.GITHUB_RUN_ID;
-    if (!runID || !/^\d+$/.test(runID)) throw new Error("GITHUB_RUN_ID is required");
-    const artifacts = JSON.parse(await gh(["api", "--paginate", "--slurp", `repos/${repository}/actions/runs/${runID}/artifacts`]));
-    const candidate = artifacts.flatMap((page: { artifacts: { name: string; expired: boolean }[] }) => page.artifacts).find((a: { name: string }) => a.name === "release-candidate");
-    if (candidate) {
-      if (candidate.expired) throw new Error("The retained release candidate expired; recover its exact artifacts before resuming");
-      await gh(["run", "download", runID, "--name", "release-candidate", "--dir", directory]);
-      await check(await record());
-      resumed = true;
+      for (const name of names) await writeFile(join(directory, name), await assetBytes(requiredAsset(remote, name).id));
+      restored = true;
     }
   }
-  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `resumed=${resumed}\n`);
+  if (!restored) {
+    const id = process.env.HITSLOP_CANDIDATE_ID;
+    if (!/^\d+$/.test(id ?? "")) throw new Error("Candidate artifact ID is required");
+    const artifact = await api(`actions/artifacts/${id}`);
+    if (artifact.expired || String(artifact.workflow_run.id) !== process.env.GITHUB_RUN_ID || artifact.workflow_run.head_sha !== commit)
+      throw new Error("Candidate artifact expired or belongs to another run/commit");
+    await gh(["run", "download", process.env.GITHUB_RUN_ID!, "--name", artifact.name, "--dir", directory]);
+  }
+  await check();
 } else if (action === "stage") {
-  const saved = await record();
-  await check(saved);
+  const saved = await check();
+  await qualification(saved);
+  const ref = await exec(["gh", "api", `repos/${releaseRepository}/git/ref/tags/${tag}`]);
+  if (ref.code) {
+    if (!ref.stderr.includes("HTTP 404")) throw new Error(ref.stderr);
+    await gh(["api", "--method", "POST", `repos/${releaseRepository}/git/refs`, "-f", `ref=refs/tags/${tag}`, "-f", `sha=${commit}`]);
+  } else if (JSON.parse(ref.stdout).object.sha !== commit) throw new Error("Existing release tag points to a different commit");
   let remote = await remoteRelease();
   if (!remote) {
-    const notes = join(directory, releaseNotesNames(version).github);
-    await gh(["release", "create", tag, "--draft", "--verify-tag", "--title", `hitSlop ${version}`, "--notes-file", notes]);
+    await gh(["release", "create", tag, "--draft", "--verify-tag", "--title", `hitSlop ${version}`, "--notes-file", join(directory, releaseNotesNames(version).github)]);
     remote = await remoteRelease();
   }
-  if (!remote) throw new Error("Draft release was not found after creation");
+  if (!remote) throw new Error("Draft was not created");
   for (const name of ["release-record.json", ...Object.keys(saved.artifacts), "SHA256SUMS"]) {
-    const existing = remote.assets.find(a => a.name === name);
+    const existing = remote.assets.find(asset => asset.name === name);
     if (existing) {
-      const expected = await fileDigest(join(directory, name));
-      const actual = existing.digest?.startsWith("sha256:") ? existing.digest.slice(7) : createHash("sha256").update(await asset(existing.id)).digest("hex");
-      if (actual !== expected) throw new Error(`Existing GitHub artifact differs: ${name}`);
+      if (sha256(await assetBytes(existing.id)) !== await fileDigest(join(directory, name))) throw new Error(`Existing GitHub artifact differs: ${name}`);
     } else await gh(["release", "upload", tag, join(directory, name)]);
   }
+  await compareRemote((await remoteRelease())!, saved);
+} else if (action === "lock") {
+  const saved = await check();
+  const remote = await remoteRelease();
+  if (!remote) throw new Error("Stage the complete draft first");
+  await compareRemote(remote, saved);
+  if (remote.draft) await gh(["release", "edit", tag, "--draft=false", "--latest=false"]);
+  if (!(await remoteRelease())?.immutable) throw new Error("Published release is not immutable; enable immutable releases before publication");
 } else if (action === "npm") {
-  const saved = await record();
-  await check(saved);
+  const saved = await check();
+  const remote = await remoteRelease();
+  if (!remote?.immutable || remote.draft) throw new Error("Permanent release evidence must be public before npm publication");
+  await compareRemote(remote, saved);
   const tarball = join(directory, `hitslop-${version}.tgz`);
   const integrity = "sha512-" + createHash("sha512").update(await readFile(tarball)).digest("base64");
+  if (integrity !== saved.npmIntegrity) throw new Error("Retained npm integrity differs from the release record");
   const response = await fetch(`https://registry.npmjs.org/hitslop/${version}`);
   if (response.ok) {
     const published = await response.json() as { dist: { integrity: string } };
     if (published.dist.integrity !== integrity) throw new Error("npm already has different bytes for this version");
   } else if (response.status === 404) {
-    // A unique tag makes resuming an older run unable to roll back npm's latest tag.
     await run(["npm", "publish", tarball, "--access", "public", "--tag", `release-${version}`]);
   } else throw new Error(`Cannot check npm publication: ${response.status}`);
 } else if (action === "promote") {
-  const saved = await record();
-  await check(saved);
-  const promote = await mayPromote(saved);
-  if (promote) {
-    await run(["npm", "dist-tag", "add", `hitslop@${version}`, "latest"]);
-    // Publishing this release exposes its recorded appcast at releases/latest.
-    await gh(["release", "edit", tag, "--draft=false", "--latest"]);
-  }
-  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `promoted=${promote}\n`);
-} else throw new Error("Expected resume, stage, npm or promote");
+  const saved = await check();
+  await qualification(saved);
+  const response = await fetch("https://registry.npmjs.org/hitslop/latest");
+  if (response.ok && !preservesLatest(version, (await response.json() as { version: string }).version)) throw new Error("Cannot move npm latest backwards");
+  if (!response.ok && response.status !== 404) throw new Error(`Cannot check npm latest: ${response.status}`);
+  await run(["npm", "dist-tag", "add", `hitslop@${version}`, "latest"]);
+  await gh(["release", "edit", tag, "--latest"]);
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, "promoted=true\n");
+} else if (action === "check") {
+  await qualification(await check());
+} else throw new Error("Expected restore, check, stage, lock, npm or promote");

@@ -7,7 +7,7 @@ import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { run } from "../../packages/hitslop/src/cli/process";
 import { createDocument, engineRequest } from "../lib/native";
-import { verifyAppCommands } from "./app-commands";
+import { verifyAppCommands, verifyAppCorpus } from "./app-commands";
 import { verifyArtifactCapabilities } from "./artifact-capabilities";
 const args = process.argv.slice(2);
 const unsigned = args.includes("--unsigned");
@@ -28,6 +28,7 @@ for (const bundle of [app, join(app, "Contents/PlugIns/hitSlop-Widgets.appex")])
 const evaluator = join(app, "Contents/Helpers/hitslop-evaluator");
 await run(["/usr/bin/codesign", "--verify", "--strict", evaluator]);
 await verifyAppCommands(app);
+await verifyAppCorpus(app);
 const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findEngine();
 // The host bundles the page shell, byte-identical to the build; no engine WASM.
 const shells = [...new Bun.Glob("**/shell/boot.js").scanSync({ cwd: app, onlyFiles: true })].map((p) =>

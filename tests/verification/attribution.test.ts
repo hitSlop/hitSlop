@@ -6,8 +6,8 @@ import { assistantIdentity, attributionLines, inspectCommits, protectedPullBase 
 import { run } from "../../scripts/lib/test-process";
 
 test("attribution checks development and release PRs", () => {
-  for (const base of ["master", "release/1.0", "release/2.1"]) expect(protectedPullBase(base)).toBe(true);
-  for (const base of ["feature/foo", "release", "release/", "release/1.0/extra"]) expect(protectedPullBase(base)).toBe(false);
+  for (const base of ["master", "hotfix/1.0", "hotfix/2.1"]) expect(protectedPullBase(base)).toBe(true);
+  for (const base of ["feature/foo", "hotfix", "hotfix/", "hotfix/1.0/extra"]) expect(protectedPullBase(base)).toBe(false);
 });
 
 test("recognizes assistant credit without rejecting human collaborators or prose", () => {

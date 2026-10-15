@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createDocument, debugEngine, engineRequest } from "../lib/native";
 import { testProcess } from "../lib/test-process";
+import { request } from "../../packages/hitslop/src/cli/engine";
+import type { EngineRequestFor } from "../../packages/hitslop/src/wire/engine";
+import { copyCorpusDocument, documents, releases, readJSON, type Expected, type Scenario, type CommandProbe } from "../compat/corpus";
 
 type Task = { $id: string; text: string; done: boolean; archived: boolean };
 
@@ -54,6 +57,67 @@ export async function verifyAppCommands(app: string) {
     host = undefined;
     assert.deepEqual(await tasks(), accepted);
     console.log("PASS app insert/row-ID/remove commands and reopen, without an evaluator override");
+  } finally {
+    if (host) await host.stop();
+    await rm(folder, { recursive: true, force: true });
+  }
+}
+
+/** Packaged owner/evaluator acceptance. The old page's contractTest remains the
+ * responsibility of CompatCorpusTests; this checks the actual signed application's
+ * socket routing, original command responses, refusal semantics and persisted edits. */
+export async function verifyAppCorpus(app: string) {
+  const entries = await releases();
+  assert.ok(entries.length, "No corpus for packaged-app acceptance");
+  const folder = await mkdtemp(join(tmpdir(), "hitslop-app-corpus-"));
+  const placement = { engine: await debugEngine(), cwd: folder,
+    env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
+  let host: ReturnType<typeof testProcess> | undefined;
+  try {
+    for (const entry of entries) for (const name of await documents(entry.root)) {
+      const source = join(entry.root, "documents", `${name}.slop`);
+      const expected = await readJSON<Expected>(join(entry.root, "expected", `${name}.json`));
+      const scenario = await readJSON<Scenario>(join(entry.root, "scenarios", `${name}.json`));
+      assert.ok(expected && scenario, `${entry.name}/${name}: missing expected state or edit scenario`);
+      const probes = (await readJSON<CommandProbe[]>(join(entry.root, "commands", `${name}.json`)) ?? []).filter(probe => probe.channel === "call");
+      for (const probe of [undefined, ...probes]) {
+        const document = join(folder, "Historical.slop");
+        await rm(document, { force: true });
+        await copyCorpusDocument(source, document);
+        host = testProcess([join(app, "Contents/MacOS/hitSlop"), document], { ...placement, timeout: 90_000 });
+        let exited = false;
+        void host.output.finally(() => { exited = true; }).catch(() => {});
+        const live = async () => !exited && (await engineRequest({ method: "inspect", file: document }, placement)).info.live;
+        const deadline = Date.now() + 30_000;
+        while (!(await live())) {
+          if (exited || Date.now() > deadline) throw new Error(`App did not open ${entry.name}/${name}`);
+          await Bun.sleep(30);
+        }
+        const value = async () => (await engineRequest({ method: "get", documentPath: document }, placement)).state.value;
+        assert.deepEqual(await value(), expected.value);
+        if (probe) {
+          const outcome = await request({ method: "call", documentPath: document, command: probe.name, args: probe.args }, { binary: placement.engine, cwd: folder, env: placement.env });
+          assert.equal(outcome.ok, probe.expected.ok, `${entry.name}/${name}: ${probe.name}`);
+          if (outcome.ok) assert.deepEqual(outcome.result, (probe.evaluated as { result: unknown }).result);
+          else {
+            if (probe.expected.code) assert.equal(outcome.code, probe.expected.code);
+            if (probe.expected.refused) assert.equal(outcome.reason, "refused");
+            if (probe.expected.errorIncludes) assert.ok(outcome.error.includes(probe.expected.errorIncludes));
+          }
+          assert.deepEqual(await value(), probe.value);
+        } else {
+          await engineRequest({ method: "batch", documentPath: document,
+            batch: { intents: scenario.ops } as EngineRequestFor<"batch">["batch"] }, placement);
+          assert.deepEqual(await value(), scenario.value);
+        }
+        assert.ok(await live(), "Historical commands must use the running app, not a fallback closed owner");
+        const saved = await value();
+        await host.stop();
+        host = undefined;
+        assert.deepEqual(await value(), saved);
+        console.log(`PASS packaged corpus ${entry.name}/${name}: ${probe ? `call ${probe.name}` : "edit/save/reopen"}`);
+      }
+    }
   } finally {
     if (host) await host.stop();
     await rm(folder, { recursive: true, force: true });

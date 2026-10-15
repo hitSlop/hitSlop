@@ -24,15 +24,6 @@ export function touchesNativeGate(paths: string[]) {
   return touchesCompatibility(paths) || paths.some(path => [...sharedInputs, ...nativeGateInputs].some(pattern => pattern.test(path)));
 }
 
-/** Full compatibility does not enable unrelated nightly checks. No usable diff means
- * full coverage, including scheduled/manual runs and a newly created push branch. */
-export function ciCompatibility(env: Record<string, string | undefined>, paths?: string[]): "smoke" | "full" {
-  if (env.HITSLOP_NIGHTLY === "1" || env.GITHUB_EVENT_NAME === "schedule" || env.GITHUB_EVENT_NAME === "workflow_dispatch"
-    || env.GITHUB_BASE_REF?.startsWith("release/") || env.GITHUB_REF_NAME?.startsWith("release/")
-    || !paths || touchesCompatibility(paths)) return "full";
-  return "smoke";
-}
-
 export function verificationArgs(env: Record<string, string | undefined>): string[] {
   const args = ["--list", "--json", "--native"];
   const event = env.GITHUB_EVENT_NAME;
@@ -40,12 +31,12 @@ export function verificationArgs(env: Record<string, string | undefined>): strin
   if (event === "pull_request") {
     const base = env.GITHUB_BASE_REF;
     if (!base) throw new Error("A pull request requires its base branch");
-    return [...args, ...(base.startsWith("release/") ? ["--all"] : ["--base", `origin/${base}`])];
+    return [...args, ...(base.startsWith("hotfix/") ? ["--all"] : ["--base", `origin/${base}`])];
   }
   if (event === "push") {
     const ref = env.GITHUB_REF_NAME;
     if (!ref) throw new Error("A push requires its branch");
-    if (ref.startsWith("release/")) return [...args, "--all"];
+    if (ref.startsWith("hotfix/")) return [...args, "--all"];
     const before = env.CHANGE_BASE;
     if (!before || !/^[a-f0-9]{40}$/.test(before)) throw new Error("A push requires its previous commit");
     // A newly created branch has no previous commit to diff.
@@ -59,11 +50,9 @@ if (import.meta.main) {
   const base = process.env.GITHUB_BASE_REF;
   const ref = process.env.GITHUB_EVENT_NAME === "pull_request" ? `origin/${base}` : process.env.CHANGE_BASE;
   const paths = ref && ref !== "0".repeat(40) ? (await changedPaths(repository, ref)).paths : undefined;
-  const gate = process.env.GITHUB_EVENT_NAME !== "pull_request" || !base || base.startsWith("release/")
+  const gate = process.env.GITHUB_EVENT_NAME !== "pull_request" || !base || base.startsWith("hotfix/")
     || touchesNativeGate(paths ?? []);
-  const compatibility = ciCompatibility(process.env, paths);
-  console.log(JSON.stringify({ ...selection, compatibility, jobs: {
+  console.log(JSON.stringify({ ...selection, jobs: {
     ...ciJobs(selection.tiers.map((tier: { name: TierName }) => tier.name), process.env.GITHUB_EVENT_NAME, gate),
-    compatibility,
   } }));
 }

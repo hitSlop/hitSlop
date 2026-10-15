@@ -1,13 +1,12 @@
 {
-  "name": "Protect release branches",
+  "name": "Protect hotfix branches",
   "target": "branch",
-  "enforcement": "disabled",
+  "enforcement": "active",
   "bypass_actors": [],
   "conditions": {
-    "ref_name": { "include": ["refs/heads/release/*"], "exclude": [] }
+    "ref_name": { "include": ["refs/heads/hotfix/*"], "exclude": [] }
   },
   "rules": [
-    { "type": "deletion" },
     { "type": "non_fast_forward" },
     {
       "type": "pull_request",

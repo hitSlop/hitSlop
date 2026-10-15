@@ -27,6 +27,8 @@ const _: () = assert!(
     "add the new evaluator ABI arm before raising the marker"
 );
 
+const _: () = assert!(crate::RUNTIME_ABI == 1, "add a current_intents arm before raising RUNTIME_ABI");
+
 pub(super) struct Work {
     runtime_abi: u64,
     invocation: Invocation,

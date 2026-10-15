@@ -3,12 +3,13 @@
 // with documents saved through this build's CLI and by its own page, what they
 // read as and edits to replay on them; a template for each window kind; and the engine
 // that wrote them (the candidate writer).
-// Usage: bun run compat:capture RELEASE [--frozen] [--writer PATH]
+// Usage: bun run compat:capture RELEASE [--writer PATH] [--out DIR]
 // Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
-// release candidate with a clean tree, then commit it before tagging.
+// release candidate with a clean tree, then retain it as an immutable release asset.
 import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { PNG } from "pngjs";
 import {
   copyFile,
@@ -22,14 +23,13 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   EngineProtocol,
   PackageFormat,
   RuntimeABI,
 } from "../../packages/hitslop/src/schema/constants";
 import {
-  corpus,
   documentEngine,
   slop,
   slopJSON,
@@ -44,12 +44,9 @@ import {
   type Scenario,
 } from "./corpus";
 import { prepareNativeFixtures } from "../lib/native-fixtures";
-import { corpusFiles, sourceFingerprint, verifyCorpus } from "./integrity";
+import { corpusFiles, verifyCorpus } from "./integrity";
 import {
-  digest,
   fileDigest,
-  shellDestinations,
-  shellFiles,
   useTestRegistry,
   repository,
 } from "../lib/artifacts";
@@ -64,9 +61,13 @@ process.env.HITSLOP_CARGO_PROFILE = "dist";
 useTestRegistry();
 
 const [name, ...flags] = process.argv.slice(2);
-if (!name || !/^[a-z0-9][a-z0-9.-]*$/.test(name))
-  throw new Error("Usage: bun run compat:capture RELEASE [--frozen] [--writer PATH]");
-const frozen = flags.includes("--frozen");
+if (!name || (name !== "dev" && !/^\d+\.\d+\.\d+$/.test(name)))
+  throw new Error("Usage: bun run compat:capture RELEASE [--writer PATH] [--out DIR]");
+const frozen = name !== "dev";
+const outIndex = flags.indexOf("--out");
+const out = outIndex < 0 ? undefined : flags[outIndex + 1];
+if (outIndex >= 0 && (!out || out.startsWith("--"))) throw new Error("--out requires a directory");
+if (frozen && !out) throw new Error("Release capture requires --out dist/corpus");
 const writerIndex = flags.indexOf("--writer");
 const suppliedWriter = writerIndex < 0 ? undefined : flags[writerIndex + 1];
 if (writerIndex >= 0 && (!suppliedWriter || suppliedWriter.startsWith("--")))
@@ -74,7 +75,8 @@ if (writerIndex >= 0 && (!suppliedWriter || suppliedWriter.startsWith("--")))
 if (
   flags.some(
     (flag, index) =>
-      flag !== "--frozen" &&
+      flag !== "--out" &&
+      !(outIndex >= 0 && index === outIndex + 1) &&
       flag !== "--writer" &&
       !(writerIndex >= 0 && index === writerIndex + 1),
   )
@@ -84,9 +86,12 @@ if (name !== "dev" && !suppliedWriter)
   throw new Error("Release capture requires --writer generated/engines/darwin-arm64/slop-engine");
 if (process.env.HITSLOP_ENGINE)
   throw new Error("Capture uses the engine it builds; remove HITSLOP_ENGINE for capture");
-const destination = join(corpus, name);
+const destination = resolve(out ?? "tests/compat/dev");
+if (out && existsSync(destination)) throw new Error("Capture destination already exists; choose a new --out directory");
+if (frozen && (destination === join(repository, "tests") || destination.startsWith(join(repository, "tests") + "/")))
+  throw new Error("Release corpora belong outside tests/");
 const previous = await readJSON<Release>(join(destination, "release.json"));
-if (previous?.frozen) throw new Error(`tests/compat/${name} is frozen; it is never recaptured`);
+if (previous?.frozen) throw new Error(`${destination} is frozen; it is never recaptured`);
 const run = async (command: string[], cwd = repository) => {
   if (command[0] === process.execPath) console.log(`Capture: ${command.slice(1).join(" ")}`);
   const { stdout, stderr, code } = await exec(command, { cwd });
@@ -113,7 +118,6 @@ const writer: Release["writer"] = {
 };
 // Every CLI write uses the supplied shipped engine, not the checkout's local build.
 process.env.HITSLOP_ENGINE = writerPath;
-const capturedInputs = await sourceFingerprint();
 const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
 const work = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-capture-")));
@@ -513,10 +517,8 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
       ),
       protocol: EngineProtocol.version,
     },
-    sourceInputs: capturedInputs,
     producer: {
       coreBuildID,
-      shell: await digest(shellDestinations.app, shellFiles),
       // The command prelude this release ran; a frozen entry freezes it (scripts/build/runner.ts).
       runner: {
         [RuntimeABI]: await fileDigest(
@@ -689,16 +691,14 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
     await record(saved);
     measure(saved);
   }
-  if ((await sourceFingerprint()) !== capturedInputs)
-    throw new Error("Producing inputs changed during capture");
   assert.equal(await fileDigest(writerPath), writer.sha256, "Writer changed during capture");
   await resolveWriter(writer, { local: writerPath });
   release.files = await corpusFiles(root);
   release.frozen = frozen;
   await verifyCorpus(root, release);
   await writeFile(join(root, "release.json"), JSON.stringify(release, null, 2) + "\n");
-  await mkdir(corpus, { recursive: true });
-  await rm(destination, { recursive: true, force: true });
+  await mkdir(dirname(destination), { recursive: true });
+  if (!out) await rm(destination, { recursive: true, force: true });
   await rename(root, destination);
   console.log(`Captured ${resolve(destination)}`);
 } finally {

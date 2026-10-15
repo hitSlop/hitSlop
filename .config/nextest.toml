@@ -8,7 +8,8 @@ slow-timeout = { period = "20s", terminate-after = 6 }
 # display read that waits out the reader's timeouts. Ordinary runs retain the limits
 # ratchet and small acceptance vectors.
 default-filter = """not (
-  test(/::a_busy_file_is_reported_busy_not_as_having_no_artwork$/)
+  test(/^compat_writers::/)
+  | test(/::a_busy_file_is_reported_busy_not_as_having_no_artwork$/)
   | test(/::closing_a_large_document_keeps_no_history_and_compaction_trims_to_now$/)
   | test(/::a_session_too_large_to_keep_closes_with_no_history$/)
   | test(/::a_small_document_keeps_its_history_when_closed$/)

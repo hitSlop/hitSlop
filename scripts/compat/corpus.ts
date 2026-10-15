@@ -1,13 +1,19 @@
-// The compatibility corpus (tests/compat): packages and saved documents captured from a
+// The resolved compatibility corpus: packages and saved documents captured from a
 // release candidate, replayed by every later build. A frozen entry is never edited,
 // regenerated or deleted; see docs/testing.md#compatibility-corpus.
 import { repository } from "../lib/artifacts";
-import { readdir, readFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { readdir, readFile, realpath, stat, copyFile, chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import type { AttachmentInfo } from "../../packages/hitslop/src/wire/engine.generated";
 
-export const corpus = join(repository, "tests/compat");
+let preparedRoot: string | undefined;
+export function corpusRoot() {
+  if (process.env.HITSLOP_COMPAT_ROOT) return realpathSync(resolve(process.env.HITSLOP_COMPAT_ROOT));
+  try { return preparedRoot ??= realpathSync(join(repository, ".hitslop/compat/current")); }
+  catch (error) { throw new Error("No prepared compatibility corpus; run bun run compat:resolve before standalone tests", { cause: error }); }
+}
 /** The checkout engine. */
 export const documentEngine = () =>
   resolve(
@@ -30,8 +36,7 @@ export type Release = {
     layout: number;
     protocol: number;
   };
-  sourceInputs: string;
-  producer: { coreBuildID: string; shell: string; runner?: Record<string, string> };
+  producer: { coreBuildID: string; runner?: Record<string, string> };
   files: Record<string, string>;
   /** Physical storage definitions are immutable; later layouts add migrations. */
   storageSchemas: Record<string, string>;
@@ -86,46 +91,23 @@ export type Scenario = { ops: unknown[]; value: unknown };
  * with page-minted row IDs replaced by `minted-N`. */
 export type Page = { script: "contractTest"; value: unknown };
 export async function releases(): Promise<{ name: string; root: string; release: Release }[]> {
+  const corpus = corpusRoot();
   const found = [];
   for (const entry of await readdir(corpus, { withFileTypes: true }).catch(() => [])) {
-    if (!entry.isDirectory()) continue;
-    const root = join(corpus, entry.name);
+    if (entry.name.startsWith(".")) continue;
+    const link = join(corpus, entry.name);
+    if (!(await stat(link)).isDirectory()) continue;
+    const root = await realpath(link);
     const release = JSON.parse(await readFile(join(root, "release.json"), "utf8")) as Release;
     found.push({ name: entry.name, root, release });
   }
-  return found.sort((a, b) => a.name.localeCompare(b.name));
+  return found.sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true }));
 }
 
-export type CompatibilityMode = "smoke" | "full";
-
-/** Standalone replay is full. The verification runner explicitly chooses smoke when
- * appropriate; nightly and required-release replay cannot inherit a smoke restriction. */
-export function compatibilityMode(env: Record<string, string | undefined>): CompatibilityMode {
-  const mode = env.HITSLOP_COMPAT_MODE;
-  if (mode && mode !== "smoke" && mode !== "full")
-    throw new Error(`Invalid HITSLOP_COMPAT_MODE: ${mode}`);
-  return env.HITSLOP_NIGHTLY === "1" || env.HITSLOP_COMPAT_RELEASE || mode !== "smoke"
-    ? "full"
-    : "smoke";
-}
-
-/** Smoke samples recent entries from each marker generation; it does not establish
- * equivalence between their apps or saved scenarios. Full replay retains every entry.
- * Rust replays every entry in both modes. */
-export function replayedEntries<T extends { name: string; release: Release }>(
-  entries: T[],
-  all: boolean,
-): T[] {
-  if (all || entries.length <= 1) return entries;
-  const newest = (list: T[]) =>
-    list.reduce((a, b) => (b.release.captured > a.release.captured ? b : a));
-  const byMarkers = new Map<string, T[]>();
-  for (const entry of entries) {
-    const key = JSON.stringify(entry.release.markers);
-    byMarkers.set(key, [...(byMarkers.get(key) ?? []), entry]);
-  }
-  const chosen = new Set([newest(entries), ...[...byMarkers.values()].map(newest)]);
-  return entries.filter((entry) => chosen.has(entry));
+/** Evidence stays read-only; only the disposable document copy can be edited. */
+export async function copyCorpusDocument(source: string, destination: string) {
+  await copyFile(source, destination);
+  await chmod(destination, 0o600);
 }
 
 export async function documents(root: string): Promise<string[]> {

@@ -1,45 +1,62 @@
 name: Release hitSlop
 
 on:
-  push:
-    tags:
-      - "v*"
-  # Manual runs validate the full release gate without signing or publishing.
   workflow_dispatch:
-
-concurrency:
-  group: hitslop-release
-  cancel-in-progress: false
 
 permissions: {}
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.4.2"
+      - id: check
+        run: bun scripts/release/preflight.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
   engines:
+    needs: preflight
     uses: ./.github/workflows/engines.yml
     permissions:
       contents: read
-  release:
-    needs: engines
-    name: ${{ github.event_name == 'push' && 'Sign, notarize, and publish' || 'Release check (dry run)' }}
-    if: github.repository == 'hitslop/hitslop'
+  candidate:
+    needs: [preflight, engines]
+    name: Build and test candidate
     runs-on: macos-15
+    timeout-minutes: 180
     permissions:
-      contents: write
+      contents: read
       actions: read
-      id-token: write
-    # Signing and notarization secrets are scoped to the steps that use them, so
-    # dependency installs, the test suite and third-party actions never see them.
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      record-sha: ${{ steps.bundle.outputs.record-sha }}
     env:
-      # The gate and the archive build what ships: the `dist` Cargo profile.
       HITSLOP_CARGO_PROFILE: dist
+      HITSLOP_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
       HITSLOP_DEVELOPMENT_TEAM: "78UAXU8QG8"
       HITSLOP_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require a new dispatch for candidate builds
+        run: |
+          if [ "$GITHUB_RUN_ATTEMPT" != 1 ]; then
+            echo '::error::Start a new workflow dispatch to rebuild a candidate. Retry only failed publication jobs.'
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
       - name: Validate release secrets
-        if: github.event_name == 'push'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -61,37 +78,32 @@ jobs:
           cache-scope: release
           bindings: full
           webkit: "true"
+      - uses: ./.github/actions/native-cache
+        with:
+          templates: release
       - name: Download candidate engines
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           gh run download "$GITHUB_RUN_ID" --pattern 'engine-*' --dir generated/engine-artifacts
           mkdir -p generated/engines
           for folder in generated/engine-artifacts/engine-*; do cp -R "$folder/" generated/engines/; done
-      - name: Resume recorded candidate
-        id: candidate
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bun scripts/release/publish.ts resume
-      - uses: ./.github/actions/native-cache
-        with:
-          templates: release
-      - name: Check release identity
-        if: github.event_name == 'push'
-        run: bun scripts/release/bundle.ts --preflight
-      - run: bun install --cwd apps/landing --frozen-lockfile
+          chmod +x generated/engines/*/slop-engine
       - run: brew install xcodegen
-      # Tags accept the signed Release app during packaging instead of building a Debug app.
+      - name: Check the command prelude before capture
+        run: bun run compat:runner --check
+      - name: Capture this candidate outside Git
+        run: bun run compat:capture "${HITSLOP_RELEASE_TAG#v}" --writer generated/engines/darwin-arm64/slop-engine --out dist/corpus
+      - name: Resolve all released corpora and the candidate
+        run: bun scripts/compat/corpora.ts
+        env:
+          HITSLOP_COMPAT_CANDIDATE: ${{ github.workspace }}/dist/corpus
       - name: Validate release artifacts
-        if: steps.candidate.outputs.resumed != 'true'
-        run: bun run release:check ${{ github.event_name == 'push' && '--skip-app' || '' }}
+        run: |
+          bun run release:check --skip-app
+          test -z "$(git status --porcelain)"
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
-          # Tags require their frozen tests/compat entry.
-          HITSLOP_RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          HITSLOP_ENGINE: ${{ github.workspace }}/generated/engines/darwin-arm64/slop-engine
       - name: Import Developer ID certificate
-        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -108,7 +120,6 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
       - name: Package notarized DMG
-        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         env:
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
@@ -119,10 +130,9 @@ jobs:
           mkdir -p .hitslop/evidence
           scripts/release/package-macos-release.sh 2>&1 | tee .hitslop/evidence/packaging.log
       - name: Verify Gatekeeper
-        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${HITSLOP_RELEASE_TAG#v}"
           APP="$RUNNER_TEMP/verify/hitSlop.app"
           mkdir -p "$RUNNER_TEMP/verify"
           hdiutil attach "dist/macos/hitSlop-${VERSION}.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/dmg"
@@ -139,43 +149,32 @@ jobs:
           codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/hitSlop.app"
           spctl --assess --type execute "$RUNNER_TEMP/verify-zip/hitSlop.app"
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
-      - name: Retain tested npm packages
-        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
+      # Xcode rewrites its lockfile during archive. Restore that known rewrite, then
+      # require every tracked source to remain clean.
+      - name: Restore tracked files Xcode rewrote
+        run: |
+          git restore apps/apple/Packages/HitSlopApple/Package.resolved
+          test -z "$(git status --porcelain)"
+      - name: Retain tested packages and corpus
+        id: bundle
         run: |
           bun scripts/release/bundle.ts
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
-      - name: Retain complete candidate for interrupted uploads
-        if: github.event_name == 'push' && steps.candidate.outputs.resumed != 'true'
+      - name: Retain exact candidate
+        id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: release-candidate
+          name: release-candidate-${{ github.run_attempt }}
           path: dist/macos
           retention-days: 90
-      - name: Stage immutable GitHub artifacts
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bun scripts/release/publish.ts stage
-      - name: Prepare npm trusted publisher
-        if: github.event_name == 'push'
-        run: npm install -g npm@11.21.0
-      - name: Publish the tested npm tarball
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bun scripts/release/publish.ts npm
-      - name: Promote npm and Sparkle
-        id: promotion
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bun scripts/release/publish.ts promote
-      - name: Deploy documentation and landing page
-        if: steps.promotion.outputs.promoted == 'true'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bun run --cwd apps/landing deploy
+      - name: Manual acceptance instructions
+        run: |
+          {
+            echo '### Candidate ready for hand acceptance'
+            echo 'Download release-candidate-${{ github.run_attempt }}, install its DMG, and complete docs/guides/releasing.md.'
+            echo 'Approve the release environment only after accepting these exact bytes. Reject it for a rehearsal.'
+            echo 'Record SHA-256: ${{ steps.bundle.outputs.record-sha }}'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Remove temporary signing credentials
         if: always()
         run: |
@@ -188,9 +187,49 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
-          name: release-evidence
+          name: release-evidence-${{ github.run_attempt }}
           path: |
             .hitslop/evidence
             dist/macos/release-record.json
             dist/macos/SHA256SUMS
           include-hidden-files: true
+
+  publish:
+    needs: [preflight, candidate]
+    name: Publish accepted candidate
+    runs-on: ubuntu-latest
+    # Human acceptance of the retained DMG is the only approval. Waiting candidates
+    # do not lock publication; stale candidates fail after approval, before tagging.
+    environment: release
+    concurrency:
+      group: hitslop-publication
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HITSLOP_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      HITSLOP_CANDIDATE_ID: ${{ needs.candidate.outputs.artifact-id }}
+      HITSLOP_CANDIDATE_SHA: ${{ needs.candidate.outputs.record-sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: "1.4.2"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Restore and verify approved candidate
+        run: bun scripts/release/publish.ts restore
+      - name: Stage all exact assets
+        run: bun scripts/release/publish.ts stage
+      - name: Publish permanent compatibility evidence
+        run: bun scripts/release/publish.ts lock
+      - run: npm install -g npm@11.21.0
+      - name: Publish exact npm tarball
+        run: bun scripts/release/publish.ts npm
+      - name: Promote npm and Sparkle
+        run: bun scripts/release/publish.ts promote

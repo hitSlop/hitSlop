@@ -131,9 +131,16 @@ decode strictly as executing requests. `Intent`, `Segment`, `Anchor` and `Select
 are the frozen ABI-1 vocabulary. An incompatible change raises `runtimeABI` and freezes
 the old decoder in the same change.
 
+Code reachable from `shell/abi/1.ts` is ABI-1 behavior, including shared helpers. When
+new behavior must diverge, preserve or fork the diverging implementation under ABI 1.
+The checked-in command prelude is a runtime artifact: ordinary schema generation does
+not rebuild it. Explicit `bun run compat:runner` is only for an unreleased ABI; published
+prelude hashes are enforced by corpus verification.
+
 The [compatibility corpus](testing.md#compatibility-corpus) is the evidence: every
-release's templates and saved documents, replayed by every build. A frozen entry is never
-edited, regenerated or deleted. The corpus is regression evidence, not proof that every
+release's original compiled apps, templates and saved documents, retained as an immutable
+GitHub release asset and replayed by affected builds. The release record binds all historical
+corpus hashes tested by its candidate. A frozen entry is never edited, regenerated or deleted. The corpus is regression evidence, not proof that every
 possible document opens. Apps that embed external services depend on those services.
 
 Counters are exact while increments summed as absolute values over their whole history
