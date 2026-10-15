@@ -7,16 +7,14 @@ import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/veri
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
 import { assertSwiftTestsRan } from "../../scripts/lib/swift-tests";
-import { ciCompatibility, ciJobs, touchesNativeGate, verificationArgs } from "../../scripts/ci/select";
+import { ciJobs, touchesNativeGate, verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
   const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository,
-    env: { HITSLOP_COMPAT_MODE: "smoke", HITSLOP_NIGHTLY: "", HITSLOP_COMPAT_RELEASE: "" },
   });
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
     base: null,
-    compatibility: "smoke",
     tiers: ["compat", "rust", "swift", "native"].map(name => ({ name, reason: "named" })),
   });
 });
@@ -30,7 +28,7 @@ test("CI selection works before dependencies are installed", async () => {
     await cp(join(repository, "packages/hitslop/src"), join(root, "packages/hitslop/src"), { recursive: true });
     const initialized = await exec(["git", "init", "--quiet"], { cwd: root });
     expect(initialized.code).toBe(0);
-    const env = { ...process.env, HITSLOP_COMPAT_MODE: "smoke", HITSLOP_NIGHTLY: "", HITSLOP_COMPAT_RELEASE: "",
+    const env = { ...process.env, HITSLOP_NIGHTLY: "",
       GITHUB_EVENT_NAME: "workflow_dispatch", GITHUB_BASE_REF: "", CHANGE_BASE: "" };
     // Refuse auto-install so an eager build-tool import fails immediately, even offline.
     const listing = await exec([process.execPath, "--no-install", "scripts/verify.ts", "--list", "--json", "--native", "--all"], { cwd: root, env });
@@ -90,8 +88,8 @@ test("nightly, manual and release branches select the full suite; ordinary chang
   const full = ["--list", "--json", "--native", "--all"];
   for (const event of ["schedule", "workflow_dispatch"])
     expect(verificationArgs({ GITHUB_EVENT_NAME: event })).toEqual(full);
-  expect(verificationArgs({ GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "release/1.0" })).toEqual(full);
-  expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "release/1.0" })).toEqual(full);
+  expect(verificationArgs({ GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "hotfix/1.0" })).toEqual(full);
+  expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "hotfix/1.0" })).toEqual(full);
   expect(verificationArgs({ GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "master" })).toEqual(["--list", "--json", "--native", "--base", "origin/master"]);
   const before = "a".repeat(40);
   expect(verificationArgs({ GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "master", CHANGE_BASE: before })).toEqual(["--list", "--json", "--native", "--base", before]);
@@ -141,34 +139,13 @@ test("a pull request defers Swift/native tiers unless it affects a critical boun
   }
 });
 
-test("only sensitive changes expand ordinary PR compatibility; nightly and releases replay all", () => {
-  const pr = { GITHUB_EVENT_NAME: "pull_request", GITHUB_BASE_REF: "master" };
-  for (const path of ["docs/testing.md", "apps/landing/src/routes/+page.svelte", "packages/hitslop/src/cli/authoring.ts", "crates/hitslop-core/tests/store.rs",
-    "tests/native/render.native.test.ts", "apps/apple/Packages/HitSlopApple/Tests/HitSlopDocumentTests/DocumentOwnerTests.swift"]) {
-    expect(ciCompatibility(pr, [path])).toBe("smoke");
-  }
-  for (const path of ["crates/hitslop-core/src/store/save.rs", "apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/DocumentOwner.swift",
-    "packages/hitslop/src/sdk/index.ts", "packages/hitslop/src/shell/boot.js", "packages/hitslop/src/cli/documents.ts",
-    "tests/compat/dev/release.json", "tests/native/compat-replay.native.test.ts",
-    "apps/apple/Packages/HitSlopApple/Tests/HitSlopDocumentTests/CompatCorpusTests.swift",
-    "tests/apps/fixture-checklist/slop.ts", "scripts/lib/native.ts", "scripts/build/core.ts", "Cargo.lock", "bun.lock"]) {
-    expect(ciCompatibility(pr, [path])).toBe("full");
-    expect(touchesNativeGate([path])).toBe(true);
-  }
-  expect(ciCompatibility(pr)).toBe("full");
-  for (const env of [{ GITHUB_EVENT_NAME: "schedule" }, { GITHUB_EVENT_NAME: "workflow_dispatch" },
-    { ...pr, GITHUB_BASE_REF: "release/1.0" }, { GITHUB_EVENT_NAME: "push", GITHUB_REF_NAME: "release/1.0" }])
-    expect(ciCompatibility(env, [])).toBe("full");
-});
-
-test("verification propagates full compatibility independently of nightly checks", async () => {
-  for (const nightly of ["", "1"]) {
-    const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "swift,native"], {
-      cwd: repository, env: { HITSLOP_COMPAT_MODE: nightly ? "smoke" : "full", HITSLOP_NIGHTLY: nightly, HITSLOP_COMPAT_ENTRIES: "missing" },
-    });
-    expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout).compatibility).toBe("full");
-  }
+test("host release selection excludes the independent website checks", async () => {
+  const result = await exec([process.execPath, "scripts/verify.ts", "--release", "--list", "--json"], { cwd: repository });
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout).tiers.map((tier: { name: string }) => tier.name)).not.toContain("landing");
+  const ordinary = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "landing"], { cwd: repository });
+  expect(ordinary.code).toBe(0);
+  expect(JSON.parse(ordinary.stdout).tiers.map((tier: { name: string }) => tier.name)).toEqual(["landing"]);
 });
 
 test("test-only edits and build inputs still select their owning checks", () => {

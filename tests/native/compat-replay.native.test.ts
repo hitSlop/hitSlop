@@ -1,17 +1,12 @@
-// Replays the compatibility corpus (tests/compat) through this build's CLI and engine: every
+// Replays the prepared compatibility corpus through this build's CLI and engine: every
 // saved document of every release reads as that release recorded, renders with its own old
 // app, keeps its attachments, takes a CLI edit and reopens to the recorded result; every
 // template master still creates documents. Old files are checked, not old programs. The Rust
 // and Swift corpus tests cover the rest (docs/testing.md).
-//   HITSLOP_COMPAT_RELEASE=VERSION  also require a frozen entry for VERSION (the release gate)
-//   HITSLOP_COMPAT_MODE=smoke      sample entries and render a representative of each app
-//   HITSLOP_COMPAT_ENTRIES=a,b     smoke entries selected by verify; ignored in full mode
-// Full replay exports every saved scenario. Smoke is sampled evidence, not proof that
-// documents sharing markers or embedded apps render equivalently.
+import { EngineProtocol } from "../../packages/hitslop/src/schema/constants";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { strict as assert } from "node:assert";
-import { copyFile, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
-import { Database } from "bun:sqlite";
+import { mkdtemp, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -24,10 +19,10 @@ import {
 } from "../../scripts/lib/native";
 import {
   documents,
+  copyCorpusDocument,
   documentEngine,
   readJSON,
   releases,
-  compatibilityMode,
   savedState,
   slop,
   slopJSON,
@@ -37,25 +32,17 @@ import {
   type ExportGolden,
   type ThemeScenario,
 } from "../../scripts/compat/corpus";
-import { verifyCandidate } from "../../scripts/compat/integrity";
 import { sha256, useTestRegistry } from "../../scripts/lib/artifacts";
 import { evaluateStored } from "../../scripts/compat/commands";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import { request } from "../../packages/hitslop/src/cli/engine";
 useTestRegistry();
 
-const required = process.env.HITSLOP_COMPAT_RELEASE;
-const mode = compatibilityMode(process.env);
-const selected = mode === "smoke" ? process.env.HITSLOP_COMPAT_ENTRIES?.split(",") : undefined;
-const entries = await Promise.all(
-  (await releases())
-    .filter(({ name }) => !selected || name === required || selected.includes(name))
-    .map(async (entry) => ({
-      ...entry,
-      documents: await documents(entry.root),
-      templates: await readdir(join(entry.root, "templates")),
-    })),
-);
+const entries = await Promise.all((await releases()).map(async entry => ({
+  ...entry,
+  documents: await documents(entry.root),
+  templates: await readdir(join(entry.root, "templates")),
+})));
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
 let scratch: string;
 beforeAll(async () => {
@@ -63,49 +50,24 @@ beforeAll(async () => {
 });
 afterAll(() => rm(scratch, { recursive: true, force: true }));
 
-/** The embedded app's identity: its row and its assets, read without writing. */
-function appIdentity(path: string) {
-  const db = new Database(path, { readonly: true });
-  try {
-    const app = db.query("SELECT * FROM app").get();
-    const assets = db
-      .query("SELECT key, media_type, encoding, hex(bytes) AS bytes FROM assets ORDER BY key")
-      .all();
-    return sha256(new TextEncoder().encode(JSON.stringify([app, assets])));
-  } finally {
-    db.close();
-  }
-}
-const rendered = new Set<string>();
-
 test("the corpus has entries to replay", () => {
   expect(entries.length).toBeGreaterThan(0);
 });
-if (required)
-  test(`tests/compat/${required} is captured, frozen and matches this candidate`, async () => {
-    const entry = entries.find(({ name }) => name === required);
-    assert.ok(
-      entry?.release.frozen,
-      `tests/compat/${required} must be captured and frozen before this release`,
-    );
-    await verifyCandidate(entry.release);
-  }, 120_000);
-
 for (const { name, root, release, documents: saved, templates } of entries)
-  describe(`tests/compat/${name} (${release.frozen ? "frozen" : "replaceable"})`, () => {
+  describe(`corpus/${name} (${release.frozen ? "frozen" : "replaceable"})`, () => {
     for (const document of saved)
-      test(`${document} reads as recorded, ${mode === "full" ? "renders its saved scenario" : "samples app rendering"}, keeps its attachments and reopens edited`, async () => {
+      test(`${document} reads as recorded, renders its saved scenario, keeps its attachments and reopens edited`, async () => {
         const copy = join(scratch, `${name}-${document}.slop`);
         const fresh = async () => {
           await rm(copy, { force: true });
-          await copyFile(join(root, "documents", document + ".slop"), copy);
+          await copyCorpusDocument(join(root, "documents", document + ".slop"), copy);
         };
         await fresh();
         const expected = await readJSON<Expected>(join(root, "expected", document + ".json"));
         assert.ok(expected, `${document}: missing expected state`);
-        // Exercise the literal old client's protocol against today's engine.
+        // Saved formats survive upgrades; the CLI transport is the current protocol.
         const negotiated = await exec(
-          [documentEngine(), "--client-protocol", String(release.markers.protocol)],
+          [documentEngine(), "--client-protocol", String(EngineProtocol.version)],
           {
             stdin: JSON.stringify({ method: "get", documentPath: copy }),
             timeout: 120_000,
@@ -114,6 +76,14 @@ for (const { name, root, release, documents: saved, templates } of entries)
         assert.equal(negotiated.code, 0, negotiated.stderr);
         assert.equal(JSON.parse(negotiated.stdout).ok, true);
         expect(JSON.parse(negotiated.stdout).state.value).toEqual(expected.value);
+        if (release.markers.protocol !== EngineProtocol.version) {
+          const before = await Bun.file(copy).bytes();
+          const refused = await exec([documentEngine(), "--client-protocol", String(release.markers.protocol)], {
+            stdin: JSON.stringify({ method: "get", documentPath: copy }), timeout: 120_000,
+          });
+          assert.equal(refused.code, 2);
+          expect(await Bun.file(copy).bytes()).toEqual(before);
+        }
         expect(await savedState(copy)).toEqual(expected);
         for (const { id, byteLength } of expected.attachments) {
           const output = join(scratch, id);
@@ -129,8 +99,7 @@ for (const { name, root, release, documents: saved, templates } of entries)
         const info = await slopJSON(["inspect", copy]);
         const window = info.window;
         assert.ok(window?.width > 0 && window?.height > 0, "Missing saved window");
-        const app = mode === "smoke" ? appIdentity(copy) : undefined;
-        for (const format of app && rendered.has(app) ? [] : (["png", "pdf"] as const)) {
+        for (const format of ["png", "pdf"] as const) {
           const output = join(scratch, `${document}.${format}`);
           const { code, stderr } = await slop([
             "export",
@@ -183,49 +152,46 @@ for (const { name, root, release, documents: saved, templates } of entries)
           }
           await rm(output);
         }
-        if (!app || !rendered.has(app)) {
-          for (const kind of ["preview", "icon", "widget"] as const) {
-            const capture = await storedCapture(
-              copy,
-              kind,
-              documentEngine(),
-              expected.value,
-              expected.theme.effective,
-              window.width,
-              window.height,
-            );
-            for (let i = 0; i < capture.images.length; i++) {
-              const frame = capture.frames[i]!;
-              expect(frame.html).toContain((expected.value as { title: string }).title);
-              if (kind !== "icon") expect(frame.html).toContain("中文 😀");
-              const output = join(scratch, `${document}-${kind}-${i}.png`);
-              await Bun.write(output, Buffer.from(capture.images[i]!, "base64"));
-              const png = await decodedPNG(output);
-              // Icons render at 1x; previews, exports and widgets at 2x.
-              const scale = kind === "icon" ? 1 : 2;
-              expect(png.width).toBe(frame.width * scale);
-              if (kind !== "preview") expect(png.height).toBe(frame.height * scale);
-              assertPixelPatch(png, expected.theme.effective.accent!, {
+        for (const kind of ["preview", "icon", "widget"] as const) {
+          const capture = await storedCapture(
+            copy,
+            kind,
+            documentEngine(),
+            expected.value,
+            expected.theme.effective,
+            window.width,
+            window.height,
+          );
+          for (let i = 0; i < capture.images.length; i++) {
+            const frame = capture.frames[i]!;
+            expect(frame.html).toContain((expected.value as { title: string }).title);
+            if (kind !== "icon") expect(frame.html).toContain("中文 😀");
+            const output = join(scratch, `${document}-${kind}-${i}.png`);
+            await Bun.write(output, Buffer.from(capture.images[i]!, "base64"));
+            const png = await decodedPNG(output);
+            // Icons render at 1x; previews, exports and widgets at 2x.
+            const scale = kind === "icon" ? 1 : 2;
+            expect(png.width).toBe(frame.width * scale);
+            if (kind !== "preview") expect(png.height).toBe(frame.height * scale);
+            assertPixelPatch(png, expected.theme.effective.accent!, {
+              x: 0,
+              y: 0,
+              width: png.width,
+              height: png.height,
+            });
+            if (kind === "preview")
+              assertPixelPatch(png, "#335577", {
                 x: 0,
                 y: 0,
                 width: png.width,
                 height: png.height,
               });
-              if (kind === "preview")
-                assertPixelPatch(png, "#335577", {
-                  x: 0,
-                  y: 0,
-                  width: png.width,
-                  height: png.height,
-                });
-              if (kind === "icon")
-                expect(frame.html).toContain(String((expected.value as { hits: number }).hits));
-              if (kind === "widget") expect(frame.html).toContain("rows /");
-              await rm(output);
-            }
+            if (kind === "icon")
+              expect(frame.html).toContain(String((expected.value as { hits: number }).hits));
+            if (kind === "widget") expect(frame.html).toContain("rows /");
+            await rm(output);
           }
         }
-        if (app) rendered.add(app);
         const scenario = await readJSON<Scenario>(join(root, "scenarios", document + ".json"));
         assert.ok(scenario, `${document}: missing CLI scenario`);
         await fresh();

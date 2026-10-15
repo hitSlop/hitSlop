@@ -4,6 +4,19 @@ pub mod relay;
 use hitslop_core::Origin;
 use hitslop_core::{AppSpec, Applied, Document, Error};
 use serde_json::{Value, json};
+/// Pin the prepared snapshot for this test process. Standalone tests use the last
+/// resolved inventory; `verify` passes a freshly resolved, fixed snapshot explicitly.
+pub fn compat_root() -> std::path::PathBuf {
+    static ROOT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    ROOT.get_or_init(|| {
+        let path = std::env::var_os("HITSLOP_COMPAT_ROOT")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.hitslop/compat/current"));
+        std::fs::canonicalize(path)
+            .expect("No prepared compatibility corpus; run bun run compat:resolve before standalone tests")
+    })
+    .clone()
+}
 /// The writer-lock registry test runs use, so they never fill `~/.hitslop/live`.
 pub fn registry_folder() -> std::path::PathBuf {
     std::env::temp_dir().join("hitslop-test-registry")

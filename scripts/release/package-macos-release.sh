@@ -40,10 +40,10 @@ fi
 
 bun "$script_dir/notes.ts" --check
 
-if [ -n "${GITHUB_REF_NAME:-}" ]; then
+if [ -n "${HITSLOP_RELEASE_TAG:-}" ]; then
   expected="v$marketing_version"
-  if [ "$GITHUB_REF_NAME" != "$expected" ]; then
-    echo "Git tag $GITHUB_REF_NAME does not match MARKETING_VERSION $marketing_version (expected $expected)" >&2
+  if [ "$HITSLOP_RELEASE_TAG" != "$expected" ]; then
+    echo "Release $HITSLOP_RELEASE_TAG does not match MARKETING_VERSION $marketing_version (expected $expected)" >&2
     exit 78
   fi
 fi

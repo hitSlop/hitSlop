@@ -119,4 +119,4 @@ test("drafting context uses explicit committed endpoints, including initial-rele
     expect(initial).toContain("Supported authoring capabilities");
     expect(initial).not.toContain("Baseline history");
   } finally { await rm(root, { recursive: true, force: true }); }
-});
+}, 30_000); // Several real Git commits and context queries can exceed Bun's five-second default.

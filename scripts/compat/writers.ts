@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileDigest, sha256 } from "../lib/artifacts";
 import { run } from "../../packages/hitslop/src/cli/process";
+import { historicalPackage } from "./corpora";
 import { documentEngine, releases, type Release } from "./corpus";
 
 export const writerCache = () =>
@@ -39,7 +40,7 @@ export async function resolveWriter(
   options: {
     cache?: string;
     local?: string;
-    fetch?: typeof fetch;
+    package?: () => Promise<string>;
   } = {},
 ): Promise<string | undefined> {
   assert.equal(writer?.platform, "darwin-arm64", "Missing writer metadata; recapture dev");
@@ -79,24 +80,7 @@ export async function resolveWriter(
       // build cannot reproduce its bytes: its differential replay is skipped, visibly, until the
       // entry is frozen and published (then the writer resolves from the npm package).
       if (writer.version === "dev") return undefined;
-      const download = options.fetch ?? fetch;
-      const metadata = await download(
-        `https://registry.npmjs.org/hitslop/${encodeURIComponent(writer.version)}`,
-      );
-      assert.ok(metadata.ok, `Cannot fetch hitslop@${writer.version}: HTTP ${metadata.status}`);
-      const manifest = (await metadata.json()) as {
-        name: string;
-        version: string;
-        dist: { tarball: string };
-      };
-      assert.equal(manifest.name, "hitslop");
-      assert.equal(manifest.version, writer.version);
-      const url = new URL(manifest.dist.tarball);
-      assert.equal(url.protocol, "https:", "Writer tarball must use HTTPS");
-      const response = await download(url);
-      assert.ok(response.ok, `Cannot download writer: HTTP ${response.status}`);
-      const tarball = join(stage, "hitslop.tgz");
-      await writeFile(tarball, new Uint8Array(await response.arrayBuffer()));
+      const tarball = await (options.package ?? (() => historicalPackage(writer.version)))();
       await writeFile(binary, await packedWriter(tarball));
     }
     assert.equal(

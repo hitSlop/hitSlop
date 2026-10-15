@@ -2,7 +2,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master, "release/*"]
+    branches: [master, "hotfix/*"]
   schedule:
     - cron: "17 9 * * *"
   workflow_dispatch:
@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 env:
   # Scheduled/manual runs and release pushes add nightly checks; ordinary PRs stay lean.
-  HITSLOP_NIGHTLY: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref_name, 'release/'))) && '1' || '' }}
+  HITSLOP_NIGHTLY: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref_name, 'hotfix/'))) && '1' || '' }}
   CI_CACHE_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_namespace || '' }}
   # What a pull request or push changed: the pull request's target, or the commit a push
   # replaced. Nightly, manual and release-branch runs check all required tiers.
@@ -39,7 +39,6 @@ jobs:
       native-rust: ${{ steps.select.outputs.nativeRust }}
       rust: ${{ steps.select.outputs.rust }}
       qualification: ${{ steps.select.outputs.qualification }}
-      compatibility: ${{ steps.select.outputs.compatibility }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,7 +52,7 @@ jobs:
         run: |
           bun scripts/ci/select.ts > selection.json
           jq -r '.jobs | to_entries[] | "\(.key): \(.value)"' selection.json >> "$GITHUB_STEP_SUMMARY"
-          for job in fast native nativeRust rust deferred qualification compatibility; do
+          for job in fast native nativeRust rust deferred qualification; do
             echo "$job=$(jq -r --arg job "$job" '.jobs[$job]' selection.json)" >> "$GITHUB_OUTPUT"
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -93,8 +92,6 @@ jobs:
         if: contains(env.TIERS, 'landing')
       - run: bun run verify --ci --keep-going "$TIERS"
         if: env.TIERS != ''
-        env:
-          HITSLOP_COMPAT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before) || 'origin/master' }}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always() && env.TIERS != ''
         with:
@@ -108,7 +105,6 @@ jobs:
     timeout-minutes: 45
     env:
       TIERS: ${{ needs.select.outputs.native }}
-      HITSLOP_COMPAT_MODE: ${{ needs.select.outputs.compatibility }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

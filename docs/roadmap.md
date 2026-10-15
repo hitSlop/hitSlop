@@ -148,9 +148,10 @@ In order, with the reasoning in [ideas](ideas.md):
   shared service admission/completion API remain deferred; no new personal-data services are included in that work.
 - Compatibility readers ignore unknown members; versioned open/read/save limits and
   positive acceptance vectors are pinned by the corpus. Each release records its shipped
-  writer by hash and `sourceInputs`; replay resolves verified engines rather than
-  committing binaries. The conformance fixture covers public data, command, media,
-  presentation and capture boundaries; final candidate replay still requires capture.
+  writer by hash alongside its source commit. Corpora and exact writer packages live
+  in immutable release assets; replay downloads and verifies them. The conformance
+  fixture covers public data, command, media, presentation and capture boundaries.
+  The candidate workflow captures and tests once; approval publishes those exact bytes.
 - Static roles import their own CSS in import order, without editor stylesheet inheritance.
   Pack renders every declared view, including Export PNG/PDF and all Widget families,
   even with supplied artwork. `slop dev` still mounts static views inside the editor page.

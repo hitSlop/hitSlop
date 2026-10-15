@@ -39,6 +39,7 @@ fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
 /// written into each document's `meta` map when it is created. A build refuses a newer one.
 pub const LAYOUT: i64 = 1;
 const META: &str = "meta";
+const _: () = assert!(LAYOUT == 1, "add a layout arm to check_layout before raising LAYOUT");
 /// Refuses a document whose layout this build cannot read, before interpreting it. Each
 /// layout a released build wrote keeps its arm: raising `LAYOUT` adds an arm that reads
 /// the new layout and leaves the old ones reading (or migrating losslessly in memory).

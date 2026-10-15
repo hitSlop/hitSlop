@@ -1,4 +1,4 @@
-//! Documents a released engine wrote, opened by this core. Every corpus entry (`tests/compat`)
+//! Documents a released engine wrote, opened by this core. Every corpus entry (resolved release assets)
 //! resolves its candidate writer by hash: the darwin-arm64 engine its release built and wrote its
 //! documents with. That engine creates documents from the entry's templates and applies
 //! generated batches through its own request protocol (these requests are the only adapter
@@ -20,11 +20,6 @@ use support::ApplyJson;
 use support::generate::intent;
 use support::next;
 
-fn corpus() -> PathBuf {
-    std::env::var_os("HITSLOP_COMPAT_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/compat"))
-}
 fn sorted(path: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> =
         std::fs::read_dir(path).map(|dir| dir.map(|e| e.unwrap().path()).collect()).unwrap_or_default();
@@ -107,7 +102,7 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
     support::isolate_registry();
     let (seeds, steps) = (support::workload("HITSLOP_COMPAT_SEEDS", 2), support::workload("HITSLOP_COMPAT_STEPS", 8));
     let (mut cases, mut skipped) = (0, 0);
-    for entry in sorted(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
+    for entry in sorted(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
         let dir = tempfile::tempdir().unwrap();
         let Some(engine) = released_engine(&entry, dir.path()) else {
             eprintln!(
@@ -177,5 +172,5 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
             }
         }
     }
-    assert!(cases > 0 || skipped > 0, "tests/compat has no released engines to replay");
+    assert!(cases > 0 || skipped > 0, "Prepared compatibility corpus has no released engines to replay");
 }

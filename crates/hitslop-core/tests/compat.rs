@@ -1,4 +1,4 @@
-//! The compatibility corpus (`tests/compat`): every document file a release saved opens in
+//! The compatibility corpus (resolved release assets): every document file a release saved opens in
 //! this core and reads as that release recorded, takes the release's recorded edit, saves,
 //! trims its history on close and reopens to the recorded result. See docs/testing.md.
 use crate::support;
@@ -10,16 +10,12 @@ use hitslop_core::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 use support::ApplyJson;
 
-fn corpus() -> PathBuf {
-    std::env::var_os("HITSLOP_COMPAT_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/compat"))
-}
 fn entries(path: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> =
         std::fs::read_dir(path).map(|dir| dir.map(|e| e.unwrap().path()).collect()).unwrap_or_default();
@@ -58,7 +54,7 @@ fn attachments(store: &Store) -> Value {
 #[test]
 fn every_template_keeps_its_recorded_app_digest() {
     let mut cases = 0;
-    for entry in entries(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
+    for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
         let release = json_file(&entry.join("release.json")).unwrap();
         let recorded = release["templateAppDigests"].as_object().expect("missing template app digests; recapture dev");
         for template in entries(&entry.join("templates")) {
@@ -68,7 +64,7 @@ fn every_template_keeps_its_recorded_app_digest() {
             cases += 1;
         }
     }
-    assert!(cases > 0, "tests/compat has no template app digests to replay");
+    assert!(cases > 0, "Prepared compatibility corpus has no template app digests to replay");
 }
 
 /// Read every public resource through the same range reader the page uses. Private
@@ -155,7 +151,7 @@ fn owner_request(owner: &Owner, request: Request) -> Result<Reply, Failure> {
 fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
     support::isolate_registry();
     let mut cases = 0;
-    for entry in entries(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
+    for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
         for saved in
             entries(&entry.join("documents")).into_iter().filter(|p| p.extension().is_some_and(|e| e == "slop"))
         {
@@ -166,6 +162,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path().join("Document.slop");
             std::fs::copy(&saved, &root).unwrap();
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o600)).unwrap();
             hitslop_core::file::open(&root, true).unwrap_or_else(|e| panic!("{label}: the document is refused: {e}"));
             assert_eq!(
                 hitslop_core::file::inspect(&root).unwrap().app_digest,
@@ -225,13 +222,13 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
             cases += 1;
         }
     }
-    assert!(cases > 0, "tests/compat has no documents to replay");
+    assert!(cases > 0, "Prepared compatibility corpus has no documents to replay");
 }
 
 #[test]
 fn no_recorded_open_limit_becomes_stricter_or_disappears() {
     let mut cases = 0;
-    for entry in entries(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
+    for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
         let release = json_file(&entry.join("release.json")).unwrap();
         hitslop_core::app::AppDefinition::check_recorded_limits(&release["limits"].to_string()).unwrap_or_else(
             |error| {
@@ -240,7 +237,7 @@ fn no_recorded_open_limit_becomes_stricter_or_disappears() {
         );
         cases += 1;
     }
-    assert!(cases > 0, "tests/compat has no recorded limits");
+    assert!(cases > 0, "Prepared compatibility corpus has no recorded limits");
 }
 
 #[test]
@@ -255,7 +252,7 @@ fn large_acceptance_vectors_still_decode_and_reencode_equally() {
 
 fn check_stored_acceptance_vectors(large: bool) {
     let mut cases = 0;
-    for entry in entries(&corpus()).into_iter().filter(|path| path.join("release.json").exists()) {
+    for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
         let vectors: Vec<_> = entries(&entry.join("acceptance"))
             .into_iter()
             .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
@@ -278,7 +275,7 @@ fn check_stored_acceptance_vectors(large: bool) {
             cases += 1;
         }
     }
-    assert!(cases > 0, "tests/compat has no acceptance vectors");
+    assert!(cases > 0, "Prepared compatibility corpus has no acceptance vectors");
 }
 
 fn evaluate(input: &Value) -> String {
@@ -306,7 +303,7 @@ fn evaluate(input: &Value) -> String {
 fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
     support::isolate_registry();
     let mut cases = 0;
-    for entry in entries(&corpus()).into_iter().filter(|p| p.join("release.json").exists()) {
+    for entry in entries(&support::compat_root()).into_iter().filter(|p| p.join("release.json").exists()) {
         for saved in
             entries(&entry.join("documents")).into_iter().filter(|p| p.extension().is_some_and(|e| e == "slop"))
         {
@@ -323,6 +320,7 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
                 let dir = tempfile::tempdir().unwrap();
                 let root = dir.path().join("Document.slop");
                 std::fs::copy(&saved, &root).unwrap();
+                std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o600)).unwrap();
                 let store = Store::open(&root, Mode::Snapshot).unwrap();
                 let before = read(&root).0;
                 let app = store.app();
@@ -420,5 +418,5 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
             }
         }
     }
-    assert!(cases > 0, "tests/compat has no stored command probes");
+    assert!(cases > 0, "Prepared compatibility corpus has no stored command probes");
 }
