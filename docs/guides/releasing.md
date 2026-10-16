@@ -123,6 +123,9 @@ candidate signing steps.
 Archive and export both use manual signing with the installed **Developer ID Application**
 certificate for direct DMG distribution. App Store Connect credentials are used only
 for notarization; packaging does not create development certificates or provisioning profiles.
+Stapling and ticket validation retry ticket-service error 68 up to three times, waiting
+10, 20 and 40 seconds. Other errors fail immediately; exhausting the retries also fails
+the candidate. These retries never resubmit the app for notarization.
 
 ## Website deployment
 

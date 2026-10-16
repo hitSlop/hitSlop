@@ -142,7 +142,7 @@ jobs:
           test "$(lipo -archs "$APP/Contents/Helpers/hitslop-evaluator")" = "arm64"
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
-          stapler validate "dist/macos/hitSlop-${VERSION}.dmg"
+          sh scripts/release/stapler.sh validate "dist/macos/hitSlop-${VERSION}.dmg"
           bun scripts/release/artifact.ts "$APP"
           mkdir -p "$RUNNER_TEMP/verify-zip"
           ditto -x -k "dist/macos/hitSlop-${VERSION}.zip" "$RUNNER_TEMP/verify-zip"

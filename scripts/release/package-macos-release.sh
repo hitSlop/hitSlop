@@ -196,8 +196,8 @@ staple() {
   if [ "${SKIP_NOTARIZE:-}" = "1" ]; then
     return 0
   fi
-  /usr/bin/xcrun stapler staple "$file"
-  /usr/bin/xcrun stapler validate "$file"
+  /bin/sh "$script_dir/stapler.sh" staple "$file"
+  /bin/sh "$script_dir/stapler.sh" validate "$file"
 }
 
 echo "Zipping app for notarization…"
