@@ -69,6 +69,22 @@ slop theme set "My Wins.slop" --values '{"accent":"#7050ad"}'
 
 The [Tiny Wins tutorial below](#a-whole-slop-from-scratch) defines `countOne`. Each app exposes its own actions through `describe`; `apply` and `batch` also let agents edit individual fields directly. With the window open, each increment appears immediately and the theme command turns the accent purple. **Edit ▸ Undo** can undo agent edits too. Text edits supplied with the version the agent read merge with what you typed since. hitSlop doesn't upload your documents: the agent uses the same Rust document owner as the app, including for closed files.
 
+## Roadmap
+
+Here’s where we’re heading:
+
+- [ ] **More platforms.** Bring slops to iOS, iPadOS, Android, Windows and Linux.
+- [ ] **Realtime collaboration.** Work on the same lists, plans and little tools with other people, live.
+- [ ] **Your documents across devices.** Start on your Mac, pick up on your phone, and keep working offline.
+- [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
+- [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.
+- [ ] **A store for tiny apps.** Discover, publish and install community slops through an app-store-style catalog.
+- [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to slop,” MIDI, and richer audio and transcription—with permissions for each slop.
+
+See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. These are future directions, with no release dates yet.
+
+**What would you like to see?** [Tell us on Discord](https://discord.gg/cqKRZjAWv3).
+
 ## Small enough to be yours
 
 Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. Those are good reasons to make software.
@@ -136,10 +152,6 @@ Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitsl
 | Install agent guidance | `bun install -g hitslop`, then `slop skills install`; skills update with the global CLI |
 
 Document creation and editing run on macOS and Linux. The CLI carries its own engine, which also exports a closed document as PNG/PDF and renders template artwork on both platforms; opening a window needs the Mac app. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
-
-## Where it's going
-
-Next: ask your agent from the toolbar, see who changed what with a selective “Undo that,” and remix a slop someone sent you. See [direction](docs/roadmap.md) and [ideas](docs/ideas.md).
 
 ## Why Svelte?
 

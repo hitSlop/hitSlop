@@ -28,6 +28,13 @@ In order, with the reasoning in [ideas](ideas.md):
 4. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
    Both change the engineering contract and need a decision before work starts.
 
+Beyond those steps, the longer-term direction is native hosts for iOS/iPadOS, Android,
+Windows and Linux; realtime collaboration; offline-capable sync between your own
+devices; an app-store-style catalog for discovering, publishing and installing community
+slops; and deeper native integrations. These are directions without release dates or a
+platform delivery order. The [README roadmap](../README.md#roadmap) gives the short version;
+the work and prerequisites are below and in [ideas](ideas.md).
+
 ## Open now
 
 - Native `window.fullscreenable` and the local Chrome browser beta are implemented.
@@ -66,7 +73,8 @@ In order, with the reasoning in [ideas](ideas.md):
 - The first release ships with the current attachment, asset and storage limits; raising
   them later requires a storage-version bump. Qualify whole-document Time Machine copies
   at those limits.
-- Exercise the release engines on darwin-arm64, linux-x64 and linux-arm64 (Windows isn't planned).
+- Exercise the release engines on darwin-arm64, linux-x64 and linux-arm64 (Windows is
+  outside the current release targets; a native Windows host is a longer-term direction).
 - Loro is pinned to a git commit of its main branch (`c00c9fa`), because the fixes undo
   relies on are not on crates.io. Return to an exact crates.io version once one ships
   them, with the corpus passing. Re-check crates.io immediately before tagging: on
@@ -222,11 +230,16 @@ The `slop dev` composition selector previews all three widget families with HMR.
 
 **Permissions and device services.** Code-bound grants and per-slop consent remain a
 [proposal](ideas.md#permissions-bound-to-the-apps-code), as do additional devices such
-as MIDI. Browser transcription and a newer native speech backend are not implemented.
-New capability names require an implementation and owning-boundary tests; they are not
-authoring options today.
+as MIDI. [Native integrations and richer media](ideas.md#native-integrations-and-richer-media)
+also proposes calendar and reminder access, notifications, Shortcuts/Siri, a "Send to slop"
+share extension, packaged worker/audio-worklet support and broader transcription.
+Camera, microphone and supported on-device Mac transcription already work; browser
+transcription and a newer native speech backend are not implemented. New capability
+names require an implementation and owning-boundary tests; the proposed additions are
+not authoring options today.
 
-**Hosted templates.** A publishing service may accept validated immutable template
+**Hosted templates.** The goal is an app-store-style catalog where people discover,
+publish and install community slops. A publishing service may accept validated immutable template
 artifacts, expose a generated OpenAPI catalog, and download immutable cached masters.
 Creating a document still makes a writable local copy, and bundled and cached masters
 work offline. Plan a separate Cloudflare HTTP module with R2 artifacts and catalog
@@ -253,6 +266,12 @@ before shipping sharing.
 Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,
 JavaScriptCore, data.json, or a second semantic validator. Convergence tests around
 internal import/export do not constitute a shipped collaboration product.
+
+**Sync between your own devices.** A Mac and a phone can use the same relay model as
+collaborators: each owns a local document, edits offline and merges on reconnection.
+This depends on the production sync service, attachment sync and the corresponding
+platform hosts. See [the proposal](ideas.md#sync-between-your-own-devices). This is
+document replication, separate from iCloud or other synced-folder support.
 
 ## Deferred
 
