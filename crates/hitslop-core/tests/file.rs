@@ -767,6 +767,33 @@ fn document_uuid_is_immutable_and_malformed_identities_are_refused_without_write
     }
 }
 
+/// A recursive view named `app` never returns when queried; markers must refuse the file
+/// from the schema, before any statement runs on a file-supplied object.
+#[test]
+fn a_file_whose_app_is_a_view_is_refused_promptly_and_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let hostile = dir.path().join("Hostile.slop");
+    let conn = Connection::open(&hostile).unwrap();
+    conn.execute_batch(
+        "PRAGMA application_id=1213418576; PRAGMA user_version=1;
+         CREATE VIEW app AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n)
+         SELECT 1 id, 1 package_format, (SELECT max(x) FROM n) runtime_abi;",
+    )
+    .unwrap();
+    drop(conn);
+    let before = fs::read(&hostile).unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let probe = hostile.clone();
+    std::thread::spawn(move || {
+        let _ = sender.send((file::summary(&probe).is_err(), Store::open(&probe, Mode::Document).is_err()));
+    });
+    let (summary_refused, store_refused) =
+        receiver.recv_timeout(std::time::Duration::from_secs(10)).expect("a hostile app view is refused, not run");
+    assert!(summary_refused && store_refused);
+    assert_eq!(fs::read(&hostile).unwrap(), before);
+    assert!(file::open(&document(dir.path()), false).is_ok());
+}
+
 #[test]
 fn freshly_packed_pragmas_and_writer_journal_mode_are_pinned() {
     let dir = tempfile::tempdir().unwrap();
