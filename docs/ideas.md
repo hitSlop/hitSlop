@@ -221,6 +221,64 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Household sharing.** A family's grocery list as home-cooked software, through the
   room described next.
 
+### Other platforms
+
+The Swift host stays the Mac host. Windows, iOS, Android and Linux each get a thin host
+around the same Rust core and page shell. A host never owns document semantics, so a new
+one is a window, a WebView, one bridge and a lifecycle, not a second engine. Nothing here is
+scheduled; the [roadmap](roadmap.md#next) lists the prerequisites.
+
+**What every host owns, and nothing else.**
+- The window: shape, hit testing, pin level, fullscreen, toolbar.
+- `slop:` resources, served from the document through the core's resource reader with the
+  production CSP and headers.
+- One bridge channel. A message is admitted by the native sender (main frame and security
+  origin), never by a URL the page can reproduce. Swift does this in
+  `DocumentSession.swift`'s `didReceive` handler.
+- The session: the push queue, the host-to-page deadlines, the renderer-death path, flush,
+  `prepareClose` and `cancelClose`.
+- Failure and save-failure screens, quit and close handoff, the catalog, updates and telemetry.
+
+When a second host exists, this list should move into the [engineering
+contract](engineering-contract.md) as the rule for hosts.
+
+| Platform | Host | Notes |
+|---|---|---|
+| iOS | Native Swift: SwiftUI and `WKWebView`, reusing the Apple packages through UniFFI | WidgetKit, Quick Look and share extensions are Swift on Apple platforms anyway. No child processes, so the restricted evaluator needs an in-process form. |
+| Android | Native Kotlin: Activity and Android WebView, the core through UniFFI's Kotlin bindings | The WebView message-listener API reports the sender's origin and whether it is the main frame, which would give native admission. Not yet verified here. Same in-process evaluator need as iOS. |
+| Windows and Linux | One Rust desktop host on `tao` and `wry`, with the bridge admission and window-shape code owned by per-OS adapter modules | One codebase for two systems is the only case where `wry` pays for itself. Windows may use `webview2-com` directly; a Windows spike decides. |
+
+`wry` is not a fit for mobile, where it still needs Swift or Kotlin glue. Tauri is the same
+`wry` underneath, with a command layer the core already replaces. Electron has no per-pixel
+click-through for shaped windows. Qt WebEngine is heavy and LGPL. CEF through `cef-rs` with
+offscreen rendering would give exact shapes and frame identity everywhere, and is the
+fallback if a platform cannot give native frame identity; it is a large dependency with
+young Rust bindings.
+
+**Before any of them.** The core runs on Unix today: the owner socket, the writer registry,
+exclusive rename publication and the child-process evaluator. A Windows host first needs the
+platform-driver seam from the roadmap and a port of those drivers. iOS and Android need the
+evaluator to run in process.
+
+**What the [macOS `wry` spike](evidence/wry-host-spike-2026-10-16.md) found.**
+- Stock `wry` hands the page's IPC handler only the frame's URL, not `isMainFrame` or the
+  security origin. A same-URL sandboxed iframe was indistinguishable from the main frame.
+  A native message handler registered beside `wry`'s, about 90 lines on public WebKit API,
+  restored Swift's admission, and `wry`'s own `ipc` handler must never carry the document bridge.
+- `wry` makes a window transparent through a private WebKit key, so assume no Mac App Store.
+- Cursor polling makes clicks on transparent pixels reach the window behind, at about 9 ms
+  p95 with a small race at the edge. Swift's `hitTest` override, ported to the spike, was
+  reported by hand not to pass clicks through on macOS 26 (not instrumented); whether the
+  Swift host itself does is unchecked. Click-through is not required for a first host.
+- A real third-party slop opened, rendered, saved an edit and reopened with every asset served
+  from the document. That needs the host to link the core; the preview-owner protocol
+  cannot serve app assets.
+
+**Open risks, not yet tested.** Native frame identity on Linux (the `wry` documentation says
+the IPC URL does not identify the iframe on Linux and Android), WebView2's synthetic
+origin and its effect on the CSP, WebView2 frame handling, and mixed-DPI hit testing on
+Windows.
+
 ### Sync between your own devices
 
 A Mac and an iPhone editing one document can use the same room model as people

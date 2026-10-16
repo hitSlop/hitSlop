@@ -105,7 +105,8 @@ In order, with the reasoning in [ideas](ideas.md):
 - **Platform drivers and feature discovery.** Define a driver seam for the registry,
   socket, exclusive rename and evaluator, including an in-process evaluator story for
   iOS. Add a feature list to CLI `hello` and a host/feature handshake to page config;
-  reply readers already allow these additive members.
+  reply readers already allow these additive members. The drivers are the prerequisite
+  for [hosts on other platforms](ideas.md#other-platforms).
 - **Storage evolution.** Give lazy migration a "needed by this write" parameter, split
   `user_version` into read/write versions, and rename `artwork.png`. Keep the storage-2
   backup and interruption checklist above.
@@ -252,7 +253,7 @@ internal import/export do not constitute a shipped collaboration product.
 ## Deferred
 
 Account UI/Auth/App Check, a document history UI, schema evolution,
-iCloud and other synced folders, and other native platforms. [Ideas](ideas.md) proposes
+iCloud and other synced folders, and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
 Pre-launch documents are not migrated.
