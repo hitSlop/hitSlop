@@ -1,0 +1,1107 @@
+{
+  "review": {
+    "date": "2026-10-16",
+    "sourceCommit": "fce09d7661e9759e689b76d7788e37d8ce203c1f",
+    "releaseTag": "v1.0.0",
+    "releaseCommit": "0d2103991a93cf06377b9a4583964c4ddd4fa05c",
+    "coreBuildID": "309c082728ce5de9",
+    "seed": 20261016,
+    "platform": "Linux x86_64",
+    "python": "3.12.14",
+    "bun": "1.4.2"
+  },
+  "artifacts": {
+    "npmTarball": {
+      "name": "hitslop-1.0.0.tgz",
+      "sha256": "38c2bb3efb551526307971e8f03f76132b959018a1cf2a9ffe30fa19babd71c4"
+    },
+    "engine": {
+      "name": "package/engine/linux-x64/slop-engine",
+      "sha256": "439b91a0fbed620ab4914b98034cd48a22328dfd6d1a2239c27226712fdbe44c"
+    },
+    "corpus": {
+      "name": "compat-corpus-1.0.0.tar.gz",
+      "sha256": "a73c01b715c640730a8e901284cbe8b91178cfaf6ff494e13f75f93c297bd079"
+    }
+  },
+  "scope": {
+    "engine": "released Linux x64 binary; disposable corpus copies; isolated writer registry",
+    "draft": "production OwnerDocument module with mocked unknown-outcome transport",
+    "nativeWebKitExecuted": false,
+    "physicalPowerFailureTested": false,
+    "nativeOverloadReproduced": false
+  },
+  "verification": {
+    "types": {
+      "command": "bun run verify types",
+      "status": "passed"
+    },
+    "tooling": {
+      "command": "bun run verify tooling",
+      "status": "passed",
+      "tests": 39,
+      "expectations": 264
+    },
+    "full": {
+      "command": "bun run verify",
+      "status": "blocked at compiler identity before project build",
+      "rustcVersionProbeExit": -7,
+      "rustcVersionProbeStdout": "",
+      "rustcVersionProbeStderr": ""
+    },
+    "pythonSyntax": "passed",
+    "diffCheck": "passed",
+    "browser": "not run; browser installation downloads were truncated",
+    "macOSReleaseQualification": "not run in Linux environment"
+  },
+  "sections": {
+    "compat": {
+      "manifestFiles": 77,
+      "templates": 11,
+      "documents": 4,
+      "result": "passed"
+    },
+    "files": {
+      "ordinary-wrong-table": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0089,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "Unexpected document tables",
+          "code": "rejected",
+          "reason": "invalid_request"
+        },
+        "fileBytes": 8192,
+        "unchanged": true
+      },
+      "recursive-app-view": {
+        "exit": -9,
+        "timeout": true,
+        "seconds": 2.0068,
+        "stderr": "",
+        "stdout": "",
+        "fileBytes": 4096,
+        "unchanged": true
+      },
+      "future-storage": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0076,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "This document uses storage version 2; this hitSlop reads version 1",
+          "code": "rejected",
+          "reason": "requires_update"
+        },
+        "unchanged": true
+      },
+      "empty-history": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0102,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "The file has no saved state; keep it for recovery",
+          "code": "rejected",
+          "reason": "invalid_request"
+        },
+        "unchanged": true
+      },
+      "bad-checkpoint": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0094,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "invalid_bytes: Decode error: (Invalid import data)",
+          "code": "rejected"
+        },
+        "unchanged": true
+      }
+    },
+    "fuzz": {
+      "cases": 512,
+      "counts": {
+        "refused": 457,
+        "accepted": 55
+      },
+      "anomalies": []
+    },
+    "evaluator": {
+      "no-host-io": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0038,
+        "stderr": "",
+        "reply": {
+          "std": "undefined",
+          "os": "undefined",
+          "fetch": "undefined",
+          "process": "undefined",
+          "require": "undefined"
+        }
+      },
+      "infinite-loop": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 2.0021,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "Error: interrupted\n    at <anonymous> (eval_script:1:1)\n    at <eval> (eval_script:3:1)\n"
+        }
+      },
+      "stack-overflow": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0045,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "Error: Maximum call stack size exceeded\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n    at f (eval_script:2:21)\n"
+        }
+      },
+      "heap-exhaustion": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0058,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "Error: out of memory\n    at <anonymous> (eval_script:2:33)\n    at <eval> (eval_script:3:1)\n"
+        }
+      },
+      "oversized-result": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0161,
+        "stderr": "",
+        "reply": {
+          "ok": false,
+          "error": "Command output is too large"
+        }
+      },
+      "prototype-tamper": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0041,
+        "stderr": "",
+        "reply": {
+          "ok": true
+        }
+      },
+      "fresh-realm": {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0036,
+        "stderr": "",
+        "reply": {
+          "polluted": false
+        }
+      }
+    },
+    "concurrency": {
+      "requests": 240,
+      "acknowledged": 233,
+      "delta": 233,
+      "acknowledgedExactlyOnce": true,
+      "failures": {
+        "rejected": 7
+      }
+    },
+    "recovery": {
+      "edit": {
+        "method": "apply",
+        "ok": true,
+        "sequence": 1,
+        "ids": []
+      },
+      "busy": {
+        "ok": false,
+        "error": "document database is busy",
+        "code": "save_failed"
+      },
+      "retry": {
+        "method": "flush",
+        "ok": true
+      },
+      "moved": {
+        "ok": false,
+        "error": "document moved or replaced",
+        "code": "save_failed"
+      },
+      "restored": {
+        "method": "flush",
+        "ok": true
+      }
+    },
+    "crash": {
+      "largeInputTrials": 40,
+      "largeInputOutcomes": {
+        "old": 40
+      },
+      "smallInputTrials": [
+        {
+          "delay": 0.0001,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.0005,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.001,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.002,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.003,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.005,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.008,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.01,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.02,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.04,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.08,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.12,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.0001,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.0005,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.001,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.002,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.003,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.005,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.008,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.01,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.02,
+          "killed": true,
+          "exit": -9,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.04,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.08,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.12,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.0001,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.0005,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.001,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.002,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.003,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.005,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.008,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.01,
+          "killed": true,
+          "exit": -9,
+          "outcome": "old"
+        },
+        {
+          "delay": 0.02,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.04,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.08,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        },
+        {
+          "delay": 0.12,
+          "killed": false,
+          "exit": 0,
+          "outcome": "new"
+        }
+      ]
+    },
+    "atomic": {
+      "cases": 96,
+      "allRefused": true,
+      "allAtomic": true
+    },
+    "capacity": {
+      "samples": [
+        {
+          "insertedMiB": 1,
+          "saved": true,
+          "fileBytes": 1392640,
+          "rssKiB": 15872
+        },
+        {
+          "insertedMiB": 2,
+          "saved": true,
+          "fileBytes": 2445312,
+          "rssKiB": 19696
+        },
+        {
+          "insertedMiB": 3,
+          "saved": true,
+          "fileBytes": 3497984,
+          "rssKiB": 20820
+        },
+        {
+          "insertedMiB": 4,
+          "saved": true,
+          "fileBytes": 4550656,
+          "rssKiB": 26044
+        },
+        {
+          "insertedMiB": 5,
+          "saved": true,
+          "fileBytes": 10850304,
+          "rssKiB": 42672
+        },
+        {
+          "insertedMiB": 6,
+          "saved": true,
+          "fileBytes": 11907072,
+          "rssKiB": 43812
+        },
+        {
+          "insertedMiB": 7,
+          "saved": true,
+          "fileBytes": 12955648,
+          "rssKiB": 44936
+        },
+        {
+          "insertedMiB": 8,
+          "saved": true,
+          "fileBytes": 14012416,
+          "rssKiB": 54252
+        },
+        {
+          "insertedMiB": 9,
+          "saved": true,
+          "fileBytes": 15060992,
+          "rssKiB": 55396
+        },
+        {
+          "insertedMiB": 10,
+          "saved": true,
+          "fileBytes": 21364736,
+          "rssKiB": 71912
+        },
+        {
+          "insertedMiB": 11,
+          "saved": true,
+          "fileBytes": 22413312,
+          "rssKiB": 73056
+        },
+        {
+          "insertedMiB": 12,
+          "saved": true,
+          "fileBytes": 23461888,
+          "rssKiB": 74180
+        },
+        {
+          "insertedMiB": 13,
+          "saved": true,
+          "fileBytes": 24522752,
+          "rssKiB": 75304
+        },
+        {
+          "insertedMiB": 14,
+          "saved": true,
+          "fileBytes": 25571328,
+          "rssKiB": 76428
+        },
+        {
+          "insertedMiB": 15,
+          "saved": true,
+          "fileBytes": 31875072,
+          "rssKiB": 92968
+        },
+        {
+          "insertedMiB": 16,
+          "saved": true,
+          "fileBytes": 32923648,
+          "rssKiB": 110496
+        },
+        {
+          "insertedMiB": 17,
+          "saved": true,
+          "fileBytes": 18202624,
+          "rssKiB": 117780
+        },
+        {
+          "insertedMiB": 18,
+          "saved": true,
+          "fileBytes": 19251200,
+          "rssKiB": 118904
+        },
+        {
+          "insertedMiB": 19,
+          "saved": true,
+          "fileBytes": 20312064,
+          "rssKiB": 120044
+        },
+        {
+          "insertedMiB": 20,
+          "saved": true,
+          "fileBytes": 21360640,
+          "rssKiB": 121172
+        },
+        {
+          "insertedMiB": 21,
+          "saved": true,
+          "fileBytes": 22413312,
+          "rssKiB": 122292
+        },
+        {
+          "insertedMiB": 22,
+          "saved": true,
+          "fileBytes": 23457792,
+          "rssKiB": 138824
+        },
+        {
+          "insertedMiB": 23,
+          "saved": true,
+          "fileBytes": 24510464,
+          "rssKiB": 139948
+        },
+        {
+          "insertedMiB": 24,
+          "saved": true,
+          "fileBytes": 25559040,
+          "rssKiB": 141072
+        },
+        {
+          "insertedMiB": 25,
+          "saved": true,
+          "fileBytes": 26615808,
+          "rssKiB": 142208
+        },
+        {
+          "insertedMiB": 26,
+          "saved": true,
+          "fileBytes": 27668480,
+          "rssKiB": 143328
+        },
+        {
+          "insertedMiB": 27,
+          "saved": true,
+          "fileBytes": 28712960,
+          "rssKiB": 159856
+        },
+        {
+          "insertedMiB": 28,
+          "saved": true,
+          "fileBytes": 29761536,
+          "rssKiB": 160980
+        },
+        {
+          "insertedMiB": 29,
+          "saved": true,
+          "fileBytes": 30822400,
+          "rssKiB": 162104
+        },
+        {
+          "insertedMiB": 30,
+          "saved": true,
+          "fileBytes": 31870976,
+          "rssKiB": 163240
+        },
+        {
+          "insertedMiB": 31,
+          "saved": true,
+          "fileBytes": 32923648,
+          "rssKiB": 164368
+        },
+        {
+          "insertedMiB": 32,
+          "saved": false,
+          "fileBytes": 32923648,
+          "rssKiB": 214828
+        }
+      ],
+      "firstSaveFailure": {
+        "ok": false,
+        "error": "document is full",
+        "code": "save_failed"
+      },
+      "saveAfterDelete": {
+        "method": "flush",
+        "ok": true
+      }
+    },
+    "captures": [
+      {
+        "document": "conformance-compacted.page",
+        "format": "png",
+        "bytes": 205868,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0844,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.page.png"
+        }
+      },
+      {
+        "document": "conformance-compacted.page",
+        "format": "pdf",
+        "bytes": 43497,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0552,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.page.pdf"
+        }
+      },
+      {
+        "document": "conformance-compacted",
+        "format": "png",
+        "bytes": 144060,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0682,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.png"
+        }
+      },
+      {
+        "document": "conformance-compacted",
+        "format": "pdf",
+        "bytes": 41929,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0537,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.pdf"
+        }
+      },
+      {
+        "document": "conformance.page",
+        "format": "png",
+        "bytes": 205868,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0887,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.page.png"
+        }
+      },
+      {
+        "document": "conformance.page",
+        "format": "pdf",
+        "bytes": 43497,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0542,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.page.pdf"
+        }
+      },
+      {
+        "document": "conformance",
+        "format": "png",
+        "bytes": 144060,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0782,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.png"
+        }
+      },
+      {
+        "document": "conformance",
+        "format": "pdf",
+        "bytes": 41929,
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0599,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.pdf"
+        }
+      }
+    ],
+    "paths": {
+      "checks": {
+        "symlink-leaf-get": {
+          "exit": 0,
+          "timeout": false,
+          "seconds": 0.0095,
+          "stderr": "",
+          "reply": {
+            "ok": false,
+            "error": "A document must be an existing regular file",
+            "code": "rejected",
+            "reason": "invalid_request"
+          }
+        },
+        "hardlink-write": {
+          "exit": 0,
+          "timeout": false,
+          "seconds": 0.0028,
+          "stderr": "",
+          "reply": {
+            "ok": false,
+            "error": "This document has another hard link; duplicate it to edit a copy",
+            "code": "rejected",
+            "reason": "invalid_request"
+          }
+        },
+        "create-must-not-overwrite": {
+          "exit": 0,
+          "timeout": false,
+          "seconds": 0.0144,
+          "stderr": "",
+          "reply": {
+            "ok": false,
+            "error": "A file already exists there",
+            "code": "rejected",
+            "reason": "exists"
+          }
+        },
+        "copy-must-not-overwrite": {
+          "exit": 0,
+          "timeout": false,
+          "seconds": 0.0178,
+          "stderr": "",
+          "reply": {
+            "ok": false,
+            "error": "A file already exists there",
+            "code": "rejected",
+            "reason": "exists"
+          }
+        },
+        "export-must-not-overwrite": {
+          "exit": 0,
+          "timeout": false,
+          "seconds": 0.0027,
+          "stderr": "",
+          "reply": {
+            "ok": false,
+            "error": "A file already exists there",
+            "code": "rejected",
+            "reason": "exists"
+          }
+        }
+      },
+      "destinationPreserved": true
+    },
+    "soak": {
+      "edits": 12000,
+      "seconds": 613.264,
+      "p50ms": 50.989,
+      "p99ms": 52.741,
+      "maxms": 224.321,
+      "samples": [
+        {
+          "edits": 1,
+          "fileBytes": 344064
+        },
+        {
+          "edits": 1001,
+          "fileBytes": 1421312
+        },
+        {
+          "edits": 2001,
+          "fileBytes": 2494464
+        },
+        {
+          "edits": 3001,
+          "fileBytes": 3575808
+        },
+        {
+          "edits": 4001,
+          "fileBytes": 4657152
+        },
+        {
+          "edits": 5001,
+          "fileBytes": 5730304
+        },
+        {
+          "edits": 6001,
+          "fileBytes": 6811648
+        },
+        {
+          "edits": 7001,
+          "fileBytes": 7884800
+        },
+        {
+          "edits": 8001,
+          "fileBytes": 8966144
+        },
+        {
+          "edits": 9001,
+          "fileBytes": 10043392
+        },
+        {
+          "edits": 10001,
+          "fileBytes": 11124736
+        },
+        {
+          "edits": 11001,
+          "fileBytes": 12201984
+        }
+      ],
+      "savedValueVerified": true,
+      "measurementNote": "RSS readings from this long run were discarded: the initial sampler selected a process in the wrong PID namespace. Capacity and short-soak readings use the corrected sampler."
+    },
+    "captureInspection": [
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0689,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.png"
+        },
+        "document": "conformance",
+        "format": "png",
+        "bytes": 144060,
+        "size": [
+          960,
+          2560
+        ]
+      },
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.059,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.pdf"
+        },
+        "document": "conformance",
+        "format": "pdf",
+        "bytes": 41929,
+        "pages": 1,
+        "hasChinese": true,
+        "textLength": 467
+      },
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0637,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.png"
+        },
+        "document": "conformance-compacted",
+        "format": "png",
+        "bytes": 144060,
+        "size": [
+          960,
+          2560
+        ]
+      },
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0542,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.pdf"
+        },
+        "document": "conformance-compacted",
+        "format": "pdf",
+        "bytes": 41929,
+        "pages": 1,
+        "hasChinese": true,
+        "textLength": 467
+      },
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0916,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.page.png"
+        },
+        "document": "conformance.page",
+        "format": "png",
+        "bytes": 205868,
+        "size": [
+          960,
+          4394
+        ]
+      },
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.058,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance.page.pdf"
+        },
+        "document": "conformance.page",
+        "format": "pdf",
+        "bytes": 43497,
+        "pages": 1,
+        "hasChinese": true,
+        "textLength": 657
+      },
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0857,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.page.png"
+        },
+        "document": "conformance-compacted.page",
+        "format": "png",
+        "bytes": 205868,
+        "size": [
+          960,
+          4394
+        ]
+      },
+      {
+        "exit": 0,
+        "timeout": false,
+        "seconds": 0.0535,
+        "stderr": "",
+        "reply": {
+          "method": "export",
+          "ok": true,
+          "output": "conformance-compacted.page.pdf"
+        },
+        "document": "conformance-compacted.page",
+        "format": "pdf",
+        "bytes": 43497,
+        "pages": 1,
+        "hasChinese": true,
+        "textLength": 657
+      }
+    ],
+    "draft": {
+      "closeSucceeded": true,
+      "sends": 2,
+      "flushes": 1,
+      "savedValue": "before",
+      "reported": [
+        {
+          "code": "unknown_outcome",
+          "message": "connection lost"
+        },
+        {
+          "code": "unknown_outcome",
+          "message": "connection lost"
+        }
+      ],
+      "draftIncludedInRecoveryReport": false
+    },
+    "shortSoakRssValidation": [
+      {
+        "edits": 50,
+        "seconds": 2.514,
+        "rssKiB": 12664
+      },
+      {
+        "edits": 100,
+        "seconds": 5.071,
+        "rssKiB": 12920
+      },
+      {
+        "edits": 150,
+        "seconds": 7.622,
+        "rssKiB": 13228
+      },
+      {
+        "edits": 200,
+        "seconds": 10.173,
+        "rssKiB": 13352
+      },
+      {
+        "edits": 250,
+        "seconds": 12.728,
+        "rssKiB": 13488
+      },
+      {
+        "edits": 300,
+        "seconds": 15.278,
+        "rssKiB": 13872
+      }
+    ]
+  }
+}
