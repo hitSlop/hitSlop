@@ -345,3 +345,31 @@ impl HostRequest {
         crate::encode(self)
     }
 }
+
+/// Page-local text with an uncertain outcome. Recovery never applies it to the owner.
+#[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub struct UnresolvedDraft {
+    pub path: Vec<super::Segment>,
+    pub text: String,
+}
+impl UnresolvedDraft {
+    pub fn field_label(&self) -> String {
+        crate::encode(&self.path)
+    }
+}
+
+/// The private close barrier's reply; full drafts are separate from bounded diagnostics.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub struct ClosePreparation {
+    pub unresolved_drafts: Vec<UnresolvedDraft>,
+}
+impl ClosePreparation {
+    pub fn decode(input: &str) -> Result<Self> {
+        // This is a recovery copy of already-retained page memory, not an edit or a saved
+        // document. Applying the edit/diagnostic budget would truncate or strand drafts.
+        serde_json::from_str(input).map_err(|_| err(Code::InvalidRequest, "Invalid close preparation reply"))
+    }
+}

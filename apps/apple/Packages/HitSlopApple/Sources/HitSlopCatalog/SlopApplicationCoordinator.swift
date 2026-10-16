@@ -154,6 +154,7 @@ import SwiftUI
   var controllers: [UUID: SlopDocumentWindowController] = [:]
   /// Each document still opening's progress panel, which focus brings forward.
   private var openings: [UUID: SlopOpeningProgress] = [:]
+  private var quitCopies = QuitDraftCopies()
   var client: AppClient {
     AppClient(
       open: { [self] id, url in
@@ -168,14 +169,21 @@ import SwiftUI
         do { return try await perform(id, command: command) } catch { throw SlopDocumentFailure(error) }
       },
       prepareToQuit: { [self] id in
-        do { try await controller(id).prepareToClose(operation: .quit) } catch {
+        do {
+          try await controller(id).prepareToClose(operation: .quit) { [self] text in
+            quitCopies.copy(text, write: writeDrafts)
+          }
+        } catch {
           throw SlopDocumentFailure(error)
         }
       },
       finishQuit: { [self] id in
         do { try await finishQuit(id) } catch { throw SlopDocumentFailure(error) }
       },
-      cancelQuit: { [self] id in await controllers[id]?.cancelPreparedClose() },
+      cancelQuit: { [self] id in
+        quitCopies = QuitDraftCopies()
+        await controllers[id]?.cancelPreparedClose()
+      },
       replyToQuit: { allowed in NSApp.reply(toApplicationShouldTerminate: allowed) },
       alert: { [self] alert, id in coordinator?.present(alert, for: id) },
       commandsEnabled: { [self] id, enabled in controllers[id]?.setCommandsEnabled(enabled) },
@@ -212,8 +220,18 @@ import SwiftUI
     telemetry.send(.opened)
   }
   private func finishQuit(_ id: UUID) async throws {
+    // A failed later pasteboard write may have cleared an earlier copy. Re-establish
+    // all successful copies before the first window in this quit is destroyed.
+    guard quitCopies.restore(write: writeDrafts) else {
+      throw SlopFailure("The unresolved text could not be copied. Your documents are still open.")
+    }
     try await controller(id).finishClose(operation: .quit)
+    quitCopies = QuitDraftCopies()
     controllers.removeValue(forKey: id)
+  }
+  private func writeDrafts(_ text: String) -> Bool {
+    NSPasteboard.general.clearContents()
+    return NSPasteboard.general.setString(text, forType: .string)
   }
   func focus(_ id: UUID) {
     if presentsWindows {
@@ -227,5 +245,21 @@ import SwiftUI
     if command == .duplicate, result != nil { telemetry.send(.duplicated) }
     if command == .close { controllers.removeValue(forKey: id) }
     return result
+  }
+}
+
+/// Each Copy during one quit preserves the text copied from its earlier windows.
+struct QuitDraftCopies {
+  private var copies: [String] = []
+
+  mutating func copy(_ text: String, write: (String) -> Bool) -> Bool {
+    let combined = (copies + [text]).joined(separator: "\n\n---\n\n")
+    guard write(combined) else { return false }
+    copies.append(text)
+    return true
+  }
+
+  func restore(write: (String) -> Bool) -> Bool {
+    copies.isEmpty || write(copies.joined(separator: "\n\n---\n\n"))
   }
 }

@@ -3,6 +3,7 @@
 // with replies resolving before their publications arrive, as they can natively.
 import { expect, test } from "bun:test";
 import { OwnerDocument } from "../../src/shell/owner/document";
+import { hostDispatcher } from "../../src/shell/host-dispatch";
 import type { OwnerTransport } from "../../src/shell/owner/transport";
 import { wasmTransport } from "./wasm-transport";
 import { defineDocument, s, type Destination } from "hitslop";
@@ -774,6 +775,7 @@ test("a destroyed text binding retains its unresolvable draft without blocking c
   const doc = await OwnerDocument.open(def, transport, error => errors.push(error));
   const input = field();
   const binding = doc.bindText(input, doc.fields.value);
+  const apply = transport.apply;
   const refused = async () => { throw new DocumentError("unknown_outcome", "connection lost"); };
   transport.apply = refused;
   try {
@@ -781,17 +783,44 @@ test("a destroyed text binding retains its unresolvable draft without blocking c
     binding.destroy();
     input.value = "another field";
     await Bun.sleep(5);
-    await doc.prepareClose();
+    const { mountViewLifecycle } = await import("../../src/shell/view-lifecycle");
+    const target = { ownerDocument: new EventTarget(), inert: false } as unknown as HTMLElement;
+    const lifecycle = await mountViewLifecycle({
+      mount: () => ({ rendered() {}, unmount() {} }), document: doc, target,
+    });
+    expect(await lifecycle.prepareClose()).toEqual({ unresolvedDrafts: [{ path: ["value"], text: "unsent draft" }] });
+    expect(target.inert).toBe(true);
     expect(doc.unresolvedDrafts).toEqual([{ path: ["value"], text: "unsent draft" }]);
-    expect(errors.some(error => error instanceof Error &&
-      error.message.includes('["value"]') && error.message.includes("unsent draft"))).toBe(true);
+    const diagnostic = errors.find(error => error instanceof Error && error.message.includes("Unresolved text draft"));
+    expect(diagnostic).toBeInstanceOf(Error);
+    expect((diagnostic as Error).message).toContain('["value"]');
+    expect((diagnostic as Error).message).toContain("unknown_outcome");
+    expect((diagnostic as Error).message).toContain("connection lost");
+    expect(errors.every(error => !(error instanceof Error) || !error.message.includes("unsent draft"))).toBe(true);
     const drafts = doc.unresolvedDrafts;
+    lifecycle.cancelClose();
+    expect(target.inert).toBe(false);
+    expect(doc.unresolvedDrafts).toEqual(drafts);
     doc.discardUnresolvedDrafts();
     expect(doc.unresolvedDrafts).toEqual([]);
     expect(drafts).toEqual([{ path: ["value"], text: "unsent draft" }]);
     expect(doc.current.value).toBe("before");
     expect(JSON.parse(core.state()).value.value).toBe("before");
+    transport.apply = apply;
+    await doc.fields.value.set("after cancellation");
+    expect(doc.current.value).toBe("after cancellation");
   } finally { core.free(); }
+});
+
+// The host must receive the complete recovery payload, rather than the truncated issue
+// diagnostic. Preparing and cancelling close must leave the page's recovery copy intact.
+test("the native close reply carries complete drafts", async () => {
+  const drafts = [
+    { path: ["title"], text: "Long draft 🐈\n".repeat(1000) },
+    { path: ["rows", { id: "a" }, "text"], text: "第二份草稿" },
+  ];
+  const dispatch = hostDispatcher({ publish() {}, prepareClose: async () => ({ unresolvedDrafts: drafts }) });
+  expect(await dispatch({ method: "prepareClose" })).toEqual({ unresolvedDrafts: drafts });
 });
 
 // Failure: only a plain handle set/clear settled a preview, so writes through change(),

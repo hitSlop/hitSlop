@@ -1,9 +1,10 @@
-import { isRejected } from "../../sdk/errors";
+import { isDocumentError, isRejected } from "../../sdk/errors";
 import { DocumentError } from "../../sdk/internal";
 import type { OwnerIntent, OwnerPath as Path, OwnerState } from "../../schema/core";
 import type { Handle } from "../../sdk/internal";
 import type { Definition, Node, ObjectNode, Value } from "../../sdk/schema";
 import type { Segment } from "../../sdk/schema";
+import type { UnresolvedDraft } from "../../wire/page.generated";
 import { Store, type Changes } from "./store";
 import { readPath, pathKey } from "./path";
 import { SnapshotBindings } from "./snapshots";
@@ -18,11 +19,6 @@ const barrier = () => new DocumentError("closing", "Document barrier is active")
 /** How long an assigned `value` waits for the next assignment before it commits, like
  * the host's autosave idle. */
 const settleMS = 150;
-
-export interface UnresolvedDraft {
-  readonly path: readonly Segment[];
-  readonly text: string;
-}
 
 /** Page-side document state. It contains no CRDT and never writes persistent JSON. */
 export class OwnerDocument<N extends ObjectNode> {
@@ -400,16 +396,17 @@ export class OwnerDocument<N extends ObjectNode> {
           // Keep unresolved text for recovery without holding close barriers or replaying it.
           void binding
             .destroy()
-            .catch((error) => {
+            .catch((error: unknown) => {
               const draft: UnresolvedDraft = {
                 path: structuredClone(location.path),
                 text: binding.draftText,
               };
               this.drafts.push(draft);
+              const code = isDocumentError(error) ? `${error.code}: ` : "";
+              const message = error instanceof Error ? error.message : String(error);
               this.report(
                 new Error(
-                  `Unresolved text draft at ${JSON.stringify(draft.path)}:\n${draft.text}\n\n${error instanceof Error ? error.message : String(error)}`,
-                  { cause: error },
+                  `Unresolved text draft retained for recovery at ${pathKey(draft.path)}. ${code}${message}`,
                 ),
               );
             })

@@ -82,6 +82,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       phase = .closing(renderer, prepared: newValue)
     }
   }
+  private var closeDrafts: [UnresolvedTextDraft] = []
   var pageCallTimeout = Timeouts.pageCall
   var readyTimeout = Timeouts.pageReady
   public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
@@ -403,7 +404,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   /// A page call may outlive its view; only the current view can fail this session.
-  private func callPage(_ request: HostRequest) async throws {
+  @discardableResult private func callPage(_ request: HostRequest) async throws -> String {
     guard let page = liveWebView else { throw SlopFailure("Document renderer unavailable") }
     let name: String
     switch request {
@@ -419,13 +420,19 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     let timeout: Duration
     if case .reloadInterface = request { timeout = readyTimeout } else { timeout = pageCallTimeout }
     enum Outcome: Sendable {
-      case settled, expired
+      case settled(String)
+      case expired
       case failed(Error)
     }
     let (outcomes, result) = AsyncStream<Outcome>.makeStream()
     page.callHost(request) { reply in
       switch reply {
-      case .success: result.yield(.settled)
+      case .success(let value):
+        if let json = value as? String {
+          result.yield(.settled(json))
+        } else {
+          result.yield(.failed(SlopFailure("Invalid page reply")))
+        }
       case .failure(let error): result.yield(.failed(error))
       }
     }
@@ -444,7 +451,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       result.finish()
     }
     switch outcome {
-    case .settled: return
+    case .settled(let json): return json
     case .failed(let error): throw error
     case .expired:
       let elapsed = String(format: "%g s", timeout / .seconds(1))
@@ -568,8 +575,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     replaceWebView()
   }
 
-  public func prepareClose() async throws {
-    guard !closed, !closePrepared else { return }
+  @discardableResult public func prepareClose() async throws -> [UnresolvedTextDraft] {
+    guard !closed, !closePrepared else { return closeDrafts }
     guard !capturing else { throw SlopFailure("Document is exporting; try again when it finishes") }
     filePicker.cancel()
     fileSaver.cancel()
@@ -577,13 +584,14 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     cancelSpeech()
     do {
       if isReady {
-        try await callPage(.prepareClose)
+        closeDrafts = try decodeClosePreparation(json: await callPage(.prepareClose))
       }
       closePrepared = true
+      return closeDrafts
     } catch {
       if rendererDead {
         closePrepared = true
-        return
+        return closeDrafts
       }
       closing = false
       if let failure = owner.saveFailure { throw failure }
@@ -593,8 +601,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   public func cancelClose() async {
     closePrepared = false
+    closeDrafts = []
     if isReady {
-      try? await callPage(.cancelClose)
+      _ = try? await callPage(.cancelClose)
     }
     closing = false
   }
@@ -634,6 +643,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     // Native callbacks may run while storage releases its writer lease below.
     // Retire the session before tearing down the renderer they would access.
     phase = .closed
+    closeDrafts = []
     destroyWebView()
     completeWaiters(.failure(SlopFailure("Document closed")))
   }

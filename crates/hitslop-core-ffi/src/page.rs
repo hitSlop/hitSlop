@@ -66,3 +66,19 @@ pub fn encode_host_reply(reply: HostReply) -> String {
 pub fn encode_host_request(request: HostRequest) -> String {
     request.to_json()
 }
+
+/// Native presentation receives a field label, never an unparsed document path.
+#[derive(uniffi::Record)]
+pub struct UnresolvedTextDraft {
+    pub field: String,
+    pub text: String,
+}
+
+#[uniffi::export]
+pub fn decode_close_preparation(json: String) -> Result<Vec<UnresolvedTextDraft>, crate::CoreError> {
+    Ok(hitslop_core::page_wire::ClosePreparation::decode(&json)?
+        .unresolved_drafts
+        .into_iter()
+        .map(|draft| UnresolvedTextDraft { field: draft.field_label(), text: draft.text })
+        .collect())
+}

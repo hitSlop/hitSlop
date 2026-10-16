@@ -10,6 +10,106 @@ import Testing
 @testable import HitSlopHost
 
 extension HostTests {
+  // The page had retained the draft, but native close ignored its reply and destroyed
+  // the only recoverable copy. Exercise the real bridge and close cancellation path.
+  @Test @MainActor func unresolvedTextCloseCopiesDiscardsOrCancelsWithoutLosingOwnership() async throws {
+    _ = NSApplication.shared
+    for scenario in ["copy", "discard", "cancel", "copy failure"] {
+      let root = try contractFixture()
+      defer { try? FileManager.default.removeItem(at: root) }
+      let controller = try await SlopDocumentWindowController.open(url: root)
+      let session = controller.session
+      try await session.waitUntilReady()
+      let text = String(repeating: "Full draft 🐈\n", count: 1000)
+      _ = try await session.webView.callAsyncJavaScript(
+        """
+        const original = globalThis.__slop.prepareClose;
+        globalThis.__slop.prepareClose = async () => {
+          await original();
+          return {unresolvedDrafts: [
+            {path:['title'], text}, {path:['rows',{id:'a'},'text'], text:'第二份草稿'}
+          ]};
+        };
+        return true;
+        """, arguments: ["text": text], in: nil, contentWorld: .page)
+      var prompts = 0
+      var sawCopyFailure = false
+      session.pageCallTimeout = .seconds(1)
+      controller.draftRecovery.choose = { _, count, failed in
+        prompts += 1
+        #expect(count == 2)
+        if failed {
+          sawCopyFailure = true
+          return .cancel
+        }
+        // Waiting for a person must not expire the page call or kill its renderer.
+        if scenario == "cancel" { try? await Task.sleep(for: .milliseconds(1100)) }
+        switch scenario {
+        case "copy", "copy failure": return .copyAndClose
+        case "discard": return .discardAndClose
+        default: return .cancel
+        }
+      }
+      var copied: String?
+      var cancelled = false
+      do {
+        try await controller.prepareToClose { value in
+          copied = value
+          return scenario != "copy failure"
+        }
+      } catch is CancellationError { cancelled = true }
+      #expect(prompts == (scenario == "copy failure" ? 2 : 1))
+      #expect(cancelled == (scenario == "cancel" || scenario == "copy failure"))
+      #expect(sawCopyFailure == (scenario == "copy failure"))
+      #expect(!session.rendererDead && session.isReady)
+      #expect(Fixtures.isLocked(root))
+      #expect(!controller.isHiddenForClose)
+      if scenario == "copy" || scenario == "copy failure" {
+        #expect(copied?.contains(root.lastPathComponent) == true)
+        #expect(copied?.contains(text) == true)
+        #expect(copied?.contains("第二份草稿") == true)
+        #expect(copied?.contains(#"["rows",{"id":"a"},"text"]"#) == true)
+      } else {
+        #expect(copied == nil)
+      }
+      if cancelled {
+        let inert =
+          try await session.webView.callAsyncJavaScript(
+            "return document.body.inert", arguments: [:], in: nil, contentWorld: .page) as? Bool
+        #expect(inert == false)
+        #expect(try await command("batch", url: root, setTitle("Still editable")).ok)
+        controller.draftRecovery.choose = { _, _, _ in .discardAndClose }
+      }
+      try await controller.finishClose()
+      #expect(!Fixtures.isLocked(root))
+    }
+  }
+
+  @Test(.nightly) @MainActor func unresolvedTextPromptPresentsANativeSheetAndCancelKeepsTheWindow() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await SlopDocumentWindowController.open(url: root)
+    try await controller.session.waitUntilReady()
+    _ = try await controller.session.webView.callAsyncJavaScript(
+      """
+      const original = globalThis.__slop.prepareClose;
+      globalThis.__slop.prepareClose = async () => {
+        await original();
+        return {unresolvedDrafts:[{path:['title'],text:'Keep this text'}]};
+      };
+      return true;
+      """, arguments: [:], in: nil, contentWorld: .page)
+    let closing = Task { @MainActor in try await controller.prepareToClose() }
+    let window = try #require(controller.window)
+    #expect(await eventually { window.attachedSheet != nil })
+    if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertThirdButtonReturn) }
+    await #expect(throws: CancellationError.self) { try await closing.value }
+    #expect(Fixtures.isLocked(root) && controller.session.isReady)
+    controller.draftRecovery.choose = { _, _, _ in .discardAndClose }
+    try await controller.finishClose()
+  }
+
   @Test @MainActor func themeOverridesSurviveReloadDuplicateAndClosedEditing() async throws {
     _ = NSApplication.shared
     let root = try contractFixture()

@@ -395,3 +395,17 @@ import Testing
       .alert(.failure("Save failed"), nil), .reply(false),
     ])
 }
+
+@Test @MainActor func cancellingAnUnresolvedDraftPromptCancelsQuitWithoutAnErrorAlert() async {
+  let native = Native()
+  let model = await app(native, open: [documentID, otherID])
+  native.prepareToQuit = { id in if id == otherID { throw CancellationError() } }
+  model.requestQuit()
+  await model.settled()
+  #expect(model.quitPhase == .running && model.documents.count == 2)
+  #expect(model.acceptsCommands(documentID) && model.acceptsCommands(otherID))
+  #expect(
+    native.calls == [
+      .prepare(documentID), .prepare(otherID), .cancel(documentID), .cancel(otherID), .reply(false),
+    ])
+}

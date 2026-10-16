@@ -1,6 +1,6 @@
 import type { SlopPageHandle } from "./page-handle";
-
 import type { SlopView } from "../sdk/abi";
+import type { UnresolvedDraft } from "../wire/page.generated";
 
 /** A mounted view; rendered must wait for pending framework updates. */
 type DocumentView = Required<SlopView>;
@@ -29,7 +29,10 @@ export async function fontsSettled(page: Document) {
 /** The visible page's lifecycle, called by the native host through `globalThis.__slop`. */
 export async function mountViewLifecycle(options: {
   mount(): DocumentView | Promise<DocumentView>;
-  document: Pick<SlopPageHandle, "flush" | "undo" | "redo" | "prepareClose" | "cancelClose">;
+  document: Pick<SlopPageHandle, "flush" | "undo" | "redo" | "cancelClose"> & {
+    prepareClose(): Promise<void>;
+    readonly unresolvedDrafts: readonly UnresolvedDraft[];
+  };
   target: HTMLElement;
   recovered?: () => Promise<unknown>;
 }) {
@@ -63,6 +66,7 @@ export async function mountViewLifecycle(options: {
     prepareClose: async () => {
       await doc.prepareClose();
       target.inert = true;
+      return { unresolvedDrafts: [...doc.unresolvedDrafts] };
     },
     cancelClose: () => {
       doc.cancelClose();
@@ -76,5 +80,5 @@ export async function mountViewLifecycle(options: {
         console.error(error);
       }
     },
-  } satisfies Omit<import("./page-handle").SlopPageHandle, "publish">;
+  } satisfies Omit<SlopPageHandle, "publish">;
 }
