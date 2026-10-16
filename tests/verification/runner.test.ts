@@ -63,7 +63,7 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
   expect(affected("docs/architecture.md")).toEqual([]);
   expect(affected(".gitignore", "AGENTS.md", ".vscode/launch.json", ".agents/skills/hitslop-native/SKILL.md")).toEqual([]);
   expect(affected("packages/hitslop/skills/hitslop/SKILL.md")).not.toContain("contracts");
-  for (const path of ["tests/compat/dev/release.json", "scripts/compat/check.ts", "crates/hitslop-core/src/app/package_format_1.rs", "crates/hitslop-core/src/file/storage-1.sql"])
+  for (const path of ["scripts/compat/required-history.json", "scripts/compat/check.ts", "crates/hitslop-core/src/app/package_format_1.rs", "crates/hitslop-core/src/file/storage-1.sql"])
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
@@ -106,7 +106,7 @@ test("required CI keeps document compatibility and packaging, without browser qu
   expect(core.rust).toBe("rust");
   expect(core.fast.split(",")).toEqual(expect.arrayContaining(["contracts", "bun", "cli", "packed"]));
   expect(core.qualification).toBe("");
-  const corpus = jobs(["tests/compat/dev/release.json"]);
+  const corpus = jobs(["scripts/compat/required-history.json"]);
   expect(corpus.fast.split(",")).toContain("compat");
   expect(corpus.native).toBe("swift,native");
   const none = { native: "", nativeRust: "", rust: "", deferred: "", qualification: "" };
@@ -131,7 +131,7 @@ test("a pull request defers Swift/native tiers unless it affects a critical boun
   expect(deferred.native).toBe("");
   expect(deferred.deferred.split(",")).toContain("native");
   for (const path of ["crates/hitslop-core/src/file/open.rs", "apps/apple/Packages/HitSlopApple/Sources/HitSlopHost/SlopWindow.swift",
-    "packages/hitslop/src/shell/owner.ts", "tests/compat/dev/release.json", "tests/native/crash.native.test.ts",
+    "packages/hitslop/src/shell/owner.ts", "scripts/compat/required-history.json", "tests/native/crash.native.test.ts",
     "tests/apps/fixture-checklist/slop.ts", "scripts/lib/native.ts", "scripts/lib/native-fixtures.ts", "scripts/lib/swift-tests.ts",
     "packages/hitslop/src/sdk/index.ts"]) {
     expect(touchesNativeGate([path])).toBe(true);

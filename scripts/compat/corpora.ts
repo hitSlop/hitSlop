@@ -93,7 +93,7 @@ type Receipt = { entries: HistoricalRelease[]; inventory: CorpusInventory; offli
 /** A receipt is an inventory claim, not evidence that the selected files cover it.
  * Bind historical manifests to retained archives and hash every actual replay entry. */
 export async function verifyResolvedCorpora(root: string, options: {
-  cache?: string; dev?: string; required?: CorpusInventory; history?: HistoricalRelease[];
+  cache?: string; required?: CorpusInventory; history?: HistoricalRelease[];
   list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>;
 } = {}) {
   const receipt = await readJSON<Receipt>(join(root, ".inventory.json"));
@@ -126,9 +126,6 @@ export async function verifyResolvedCorpora(root: string, options: {
       assert.equal(sha256(manifest), sha256(original), `Changed published corpus manifest: ${entry.name}`);
       assert.ok(entry.release.frozen, "Published corpus is not frozen");
       assert.equal(entry.release.commit, published.record.commit);
-    } else if (entry.name === "dev") {
-      assert.ok(!history.length && !entry.release.frozen, "Dev corpus is only allowed before launch");
-      assert.equal(sha256(manifest), await fileDigest(join(options.dev ?? join(repository, "tests/compat/dev"), "release.json")), "Changed prelaunch corpus manifest");
     } else {
       assert.ok(entry.release.frozen && /^\d+\.\d+\.\d+$/.test(entry.name) && ++candidates === 1, "Unexpected unpublished corpus entry");
     }
@@ -194,7 +191,7 @@ async function preparedSnapshot(output: string, roots: Record<string, string>, r
 }
 
 export async function resolveCorpora(options: {
-  cache?: string; output?: string; offline?: boolean; candidate?: string; dev?: string;
+  cache?: string; output?: string; offline?: boolean; candidate?: string;
   list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>; required?: CorpusInventory;
 } = {}) {
   const cache = resolve(options.cache ?? corpusCache());
@@ -229,8 +226,6 @@ export async function resolveCorpora(options: {
       await verifyCorpus(directory, JSON.parse(manifest.toString()));
       return preparedTree(cache, `local-${sha256(manifest)}`, manifest, stage => cp(directory, stage, { recursive: true }));
     };
-    // Only the resolver supplies the prelaunch fixture. Raw tests require preparation.
-    if (!entries.length) roots.dev = (await localTree(options.dev ?? join(repository, "tests/compat/dev"))).root;
     const receipt = { entries, inventory, offline };
     const published = await preparedSnapshot(output, roots, receipt);
     let root = published;

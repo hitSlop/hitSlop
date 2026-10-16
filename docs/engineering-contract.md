@@ -4,11 +4,8 @@ How the system works is in [architecture](architecture.md).
 
 ## Compatibility
 
-Before launch we start fresh: no legacy handling, migration or backwards-compatible
-reader, and pre-launch documents are unsupported. Keep package format, runtime ABI,
-storage, document layout and internal protocol markers at 1 until the first public
-release; update that baseline in place during development. From the first public release, every
-document a released build wrote must open, render, edit, save and reopen in every later
+The compatibility promise starts with the public v1.0.0 release. Pre-launch documents
+are unsupported. Every document a released build wrote must open, render, edit, save and reopen in every later
 build, on supported macOS versions. Downgrades are not supported: an older build refuses
 newer formats with `requires_update` and writes nothing.
 

@@ -35,16 +35,16 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 
 ## Compatibility
 
-Before launch we start fresh: no legacy handling, migrations or backwards-compatible
-readers; pre-launch documents are unsupported and `tests/compat/dev` may be replaced.
-From the first public release, a newer hitSlop must open, render, edit, save and reopen
+Starting with public v1.0.0, a newer hitSlop must open, render, edit, save and reopen
 every document a released build wrote. Downgrades are not supported. The full rules, by
 boundary and marker, are in the [engineering contract](docs/engineering-contract.md#compatibility).
+Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
 
 - Every public release carries its frozen compatibility corpus as an immutable release
   asset. Affected builds replay all published corpora. Never replace, regenerate or delete
   one, its expectations or the command prelude it froze. Capture is part of the candidate
-  workflow ([releasing](docs/guides/releasing.md)); `tests/compat/dev` is prelaunch only.
+  workflow ([releasing](docs/guides/releasing.md)). Retain the first release's hash pin in
+  `scripts/compat/required-history.json` permanently.
 - Persisted formats change only additively, or behind the marker that owns the change:
   `packageFormat` (the stored definition), `runtimeABI` (app-facing behavior), the storage
   version (tables, columns, triggers) or the document layout. Markers are requirements,

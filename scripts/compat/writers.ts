@@ -42,13 +42,13 @@ export async function resolveWriter(
     local?: string;
     package?: () => Promise<string>;
   } = {},
-): Promise<string | undefined> {
-  assert.equal(writer?.platform, "darwin-arm64", "Missing writer metadata; recapture dev");
+): Promise<string> {
+  assert.equal(writer?.platform, "darwin-arm64", "Missing writer metadata");
   assert.match(writer.sha256, /^[a-f0-9]{64}$/, "Invalid writer SHA-256");
   assert.ok(writer.buildId, "Missing writer build ID");
   assert.match(
     writer.version,
-    /^(dev|\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/,
+    /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/,
     "Invalid writer version",
   );
   const cache = options.cache ?? writerCache(),
@@ -76,10 +76,6 @@ export async function resolveWriter(
     if (localID === writer.buildId && (await fileDigest(local)) === writer.sha256) {
       await copyFile(local, binary);
     } else {
-      // An unpublished pre-launch entry's writer is the engine that captured it, and another
-      // build cannot reproduce its bytes: its differential replay is skipped, visibly, until the
-      // entry is frozen and published (then the writer resolves from the npm package).
-      if (writer.version === "dev") return undefined;
       const tarball = await (options.package ?? (() => historicalPackage(writer.version)))();
       await writeFile(binary, await packedWriter(tarball));
     }
@@ -107,11 +103,7 @@ export async function resolveWriters() {
   if (process.platform !== "darwin" || process.arch !== "arm64") return;
   for (const { name, release } of await releases()) {
     const writer = await resolveWriter(release.writer);
-    console.log(
-      writer
-        ? `Compatibility writer ${name}: ${writer}`
-        : `Compatibility writer ${name}: skipped (unpublished pre-launch entry; its writer is the engine that captured it)`,
-    );
+    console.log(`Compatibility writer ${name}: ${writer}`);
   }
 }
 

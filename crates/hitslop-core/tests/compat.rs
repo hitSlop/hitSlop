@@ -56,7 +56,7 @@ fn every_template_keeps_its_recorded_app_digest() {
     let mut cases = 0;
     for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
         let release = json_file(&entry.join("release.json")).unwrap();
-        let recorded = release["templateAppDigests"].as_object().expect("missing template app digests; recapture dev");
+        let recorded = release["templateAppDigests"].as_object().expect("missing template app digests");
         for template in entries(&entry.join("templates")) {
             let slug = template.file_stem().unwrap().to_string_lossy();
             let digest = hitslop_core::file::inspect(&template).unwrap().app_digest;
@@ -166,7 +166,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
             hitslop_core::file::open(&root, true).unwrap_or_else(|e| panic!("{label}: the document is refused: {e}"));
             assert_eq!(
                 hitslop_core::file::inspect(&root).unwrap().app_digest,
-                expected["appDigest"].as_str().expect("missing document app digest; recapture dev"),
+                expected["appDigest"].as_str().expect("missing document app digest"),
                 "{label}: app digest changed"
             );
             let (state, theme) = read(&root);
@@ -230,11 +230,8 @@ fn no_recorded_open_limit_becomes_stricter_or_disappears() {
     let mut cases = 0;
     for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
         let release = json_file(&entry.join("release.json")).unwrap();
-        hitslop_core::app::AppDefinition::check_recorded_limits(&release["limits"].to_string()).unwrap_or_else(
-            |error| {
-                panic!("{}: {error}; recapture the pre-launch dev entry if its records are missing", entry.display())
-            },
-        );
+        hitslop_core::app::AppDefinition::check_recorded_limits(&release["limits"].to_string())
+            .unwrap_or_else(|error| panic!("{}: {error}", entry.display()));
         cases += 1;
     }
     assert!(cases > 0, "Prepared compatibility corpus has no recorded limits");
@@ -257,11 +254,7 @@ fn check_stored_acceptance_vectors(large: bool) {
             .into_iter()
             .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
             .collect();
-        assert!(
-            !vectors.is_empty(),
-            "{}: missing acceptance vectors; recapture the pre-launch dev entry",
-            entry.display()
-        );
+        assert!(!vectors.is_empty(), "{}: missing acceptance vectors", entry.display());
         for path in vectors {
             let stored = std::fs::read_to_string(&path).unwrap();
             if hitslop_core::app::AppDefinition::acceptance_vector_is_large(&stored)
@@ -314,7 +307,7 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
                 continue;
             }
             let probes = probes.unwrap_or_else(|| panic!("{name}: missing command probes"));
-            let probes = probes.as_array().expect("command records must be probe arrays; recapture dev");
+            let probes = probes.as_array().expect("command records must be probe arrays");
             assert!(!probes.is_empty(), "{name}: no command probes");
             for probe in probes {
                 let dir = tempfile::tempdir().unwrap();
