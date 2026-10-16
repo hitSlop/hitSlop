@@ -15,7 +15,9 @@
 
 Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
-Each one is a document you and your agent share, powered by Loro CRDTs (conflict-free replicated data types) that merge edits to text, lists and counters. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Everything stays on your Mac, in one `.slop` file (a SQLite database) you can keep, copy and send to a friend.
+**Install hitSlop once. Make and share little apps as files.** Each `.slop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with hitSlop, without packaging and signing a separate Mac app.
+
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay on your Mac, ready to keep, copy and share.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
@@ -69,22 +71,6 @@ slop theme set "My Wins.slop" --values '{"accent":"#7050ad"}'
 
 The [Tiny Wins tutorial below](#a-whole-slop-from-scratch) defines `countOne`. Each app exposes its own actions through `describe`; `apply` and `batch` also let agents edit individual fields directly. With the window open, each increment appears immediately and the theme command turns the accent purple. **Edit ▸ Undo** can undo agent edits too. Text edits supplied with the version the agent read merge with what you typed since. hitSlop doesn't upload your documents: the agent uses the same Rust document owner as the app, including for closed files.
 
-## Roadmap
-
-Here’s where we’re heading:
-
-- [ ] **More platforms.** Bring slops to iOS, iPadOS, Android, Windows and Linux.
-- [ ] **Realtime collaboration.** Work on the same lists, plans and little tools with other people, live.
-- [ ] **Your documents across devices.** Start on your Mac, pick up on your phone, and keep working offline.
-- [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
-- [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.
-- [ ] **A store for tiny apps.** Discover, publish and install community slops through an app-store-style catalog.
-- [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to slop,” MIDI, and richer audio and transcription—with permissions for each slop.
-
-See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. These are future directions, with no release dates yet.
-
-**What would you like to see?** [Tell us on Discord](https://discord.gg/cqKRZjAWv3).
-
 ## Small enough to be yours
 
 Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. Those are good reasons to make software.
@@ -100,7 +86,8 @@ so the catalog uses their latest changes.
 ## Keep the app. Keep the work.
 
 - Your documents live on your Mac. You don't need an account or a server.
-- A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder, and send the file itself to a friend who has hitSlop. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
+- A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder.
+- Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
 - Pin a slop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
@@ -117,21 +104,27 @@ cd weekend-kit
 bun install
 ```
 
-Setup asks what your slop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter includes a working checklist, your brief, and hitSlop's guidance for agents. Or open the folder in your agent yourself and try:
+Setup asks what your slop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter already works: it includes a checklist, its icon and export views, your brief, and hitSlop's guidance for agents. Try it before changing anything:
+
+```sh
+bun run dev       # Open the browser preview; preview data resets on refresh
+```
+
+Ask your agent to customize it, or open the folder in your agent yourself and try:
 
 > Read AGENTS.md, slop.ts, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use hitSlop's document APIs for saved data, and run the project checks when you're done.
 
-Ask for changes as you go ("Make the checkboxes bigger"). When it feels right:
+Ask for changes as you go ("Make the checkboxes bigger") and see them in the preview. When it feels right, stop the preview, then:
 
 ```sh
-bun run dev       # Try it in your browser; preview data resets on refresh
+bun run check     # Check types and components
 bun run build     # Package it as dist/weekend-kit.slop
-bun run register  # Add it to hitSlop's templates
+bun run register  # Optional: add it to your hitSlop templates
 ```
 
-Stop the preview before building.
+Send `dist/weekend-kit.slop` to someone with hitSlop. They can open it and create their own packing list; the template contains no personal document state.
 
-Open hitSlop, choose Weekend Kit under **Templates**, and select **Create**. Existing documents keep the app version they were made with, so make another version whenever you like.
+If you registered it, open hitSlop, choose Weekend Kit under **Templates**, and select **Create**. Existing documents keep the app version they were made with, so make another version whenever you like.
 
 [A whole slop, from scratch](#a-whole-slop-from-scratch) below builds a complete app with its export view and Finder icon · [Full tutorial](apps/landing/src/content/docs/docs/getting-started.mdx) · [Edit a document with your agent](apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
 
@@ -152,6 +145,22 @@ Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitsl
 | Install agent guidance | `bun install -g hitslop`, then `slop skills install`; skills update with the global CLI |
 
 Document creation and editing run on macOS and Linux. The CLI carries its own engine, which also exports a closed document as PNG/PDF and renders template artwork on both platforms; opening a window needs the Mac app. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
+
+## Roadmap
+
+Here’s where we’re heading:
+
+- [ ] **More platforms.** Bring slops to iOS, iPadOS, Android, Windows and Linux.
+- [ ] **Realtime collaboration.** Work on the same lists, plans and little tools with other people, live.
+- [ ] **Your documents across devices.** Start on your Mac, pick up on your phone, and keep working offline.
+- [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
+- [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.
+- [ ] **A store for tiny apps.** Discover, publish and install community slops through an app-store-style catalog.
+- [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to slop,” MIDI, and richer audio and transcription—with permissions for each slop.
+
+See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. These are future directions, with no release dates yet.
+
+**What would you like to see?** [Tell us on Discord](https://discord.gg/cqKRZjAWv3).
 
 ## Why Svelte?
 
@@ -375,7 +384,7 @@ Try the commands from [You and your agent, one document](#you-and-your-agent-one
 [![Bun](https://img.shields.io/badge/Bun-282522?style=flat&logo=bun&logoColor=white)](https://bun.sh/)
 [![hitslop on npm](https://img.shields.io/badge/npm-hitslop-CB3837?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/hitslop)
 
-A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a slop the same way.
+A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. Loro's CRDTs (conflict-free replicated data types) merge edits to text, lists and counters. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a slop the same way.
 
 | Layer | Built with | Role |
 | --- | --- | --- |

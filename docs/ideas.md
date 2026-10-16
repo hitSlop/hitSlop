@@ -70,6 +70,21 @@ a person and their agent edit the same live document. What's missing is the slop
   socket takes one request per connection today, so streaming needs a new CLI protocol
   with both sides updated, rather than an additive method in the current protocol.
 
+### `slop doctor`
+
+- **What:** a read-only diagnostic command that checks installation and PATH conflicts,
+  CLI/SDK alignment, engine availability and project skill links, then gives specific
+  next steps. Explain the distinction between source, registered templates and existing
+  documents when a rebuild appears to have done nothing.
+- **Why:** a working starter should lead quickly to a preview and a shareable file.
+  Setup problems should have answers a person or their agent can act on.
+- **Builds on:** the existing version checks, engine discovery, template inspection and
+  skill-link tooling. [tinyjs's doctor](https://github.com/tarwin/tinyjsapp/blob/main/docs/doctor.md)
+  is a useful model for actionable diagnostics.
+- **Constraints:** diagnosis does not repair installs, rebuild apps, replace a document's
+  app, execute authored code or bypass writer locks. Suggest explicit repair commands;
+  leave the person's files unchanged. This command is proposed, not available today.
+
 ### Gradient theme tokens
 
 - **What:** a template declares gradients beside its colors, and the theme panel's picker
@@ -191,7 +206,10 @@ describes today's APIs and platform limits.
 - **Calendars and reminders:** let a planner work with your calendar, or a grocery slop
   add a reminder, with explicit permission for the access it needs.
 - **Notifications:** let timers, habits and plans notify you at the right time, with
-  controls for which slops may send them.
+  controls for which slops may send them. A completed focus timer could notify you and
+  reopen its document when clicked. Decide scheduling, cancellation, sleep/wake and
+  closed-document behavior explicitly; a notification API does not imply a running
+  background page.
 - **Shortcuts, Siri and sharing:** the [App Intents and share extension proposal](#shortcuts-and-a-share-sheet)
   makes actions such as "Add to Grocery List" and "Send to slop" available outside its window.
 - **MIDI:** connect music tools to instruments and controllers after designing device
@@ -208,6 +226,21 @@ describes today's APIs and platform limits.
 Each integration needs its own platform support, consent and lifecycle design before an
 API is offered. Calendar/reminder synchronization rules, notification scheduling and
 background execution remain design work; this proposal sets no new API names or delivery order.
+
+### Runtime feature discovery
+
+- **What:** let an app discover what its current host can actually do, so it can adapt
+  its interface and offer a useful fallback when a feature is unavailable.
+- **Why:** a native document, development preview and browser copy do not have identical
+  services. For example, a voice notebook can still play its recording when on-device
+  transcription is unavailable. OS-name checks alone cannot describe that difference.
+- **Builds on:** the roadmap's CLI `hello` feature list and page host/feature handshake,
+  plus the existing capability declarations and typed service outcomes.
+  [tinyjs](https://github.com/tarwin/tinyjsapp)'s `tiny.system.capabilities()` illustrates
+  reporting support on the current machine.
+- **Constraints:** host support, an app's declared capabilities and the person's consent
+  are separate facts. Discovery grants no access and does not replace request-time
+  checks. Rust owns shared types; API shape and refresh behavior remain design work.
 
 ### Query a document with SQL
 
@@ -238,8 +271,9 @@ background execution remain design work; this proposal sets no new API names or 
 
 ## On the desktop, and with other people
 
-- **Menu-bar slops and widgets.** A `menubar` presentation for timers and players, and
-  WidgetKit widgets rendered from the icon or export capture of saved state.
+- **Widgets.** macOS image widgets already use dedicated `Widget.svelte` captures of
+  saved state. Release-candidate qualification and broader platform support remain;
+  see [widget qualification](roadmap.md#later).
 - **History scrubber.** A timeline of whatever history remains under the
   [current retention policy](architecture.md#saving). Saved history can be pruned while
   open or on close; reopening does not guarantee a retained timeline, and undo starts empty.
@@ -248,6 +282,23 @@ background execution remain design work; this proposal sets no new API names or 
   in the starting state of any cut before the latest version.
 - **Household sharing.** A family's grocery list as home-cooked software, through the
   room described next.
+
+### Menu-bar slops
+
+- **What:** a menu-bar presentation for a timer's remaining time, a player's controls or
+  a quick-capture action, with a way to open the document's editor.
+- **Why:** frequently used little tools should be reachable while their windows are out
+  of the way. This complements saved-state widgets.
+- **Builds on:** the existing document owner and native host. [tinyjs's tray and windowless
+  modes](https://github.com/tarwin/tinyjsapp#windowless-tray-agents) suggest exploring an
+  owner-backed menu-bar item that creates a WebView only when the editor is opened.
+- **Open questions:** which documents stay active, how their status and actions are
+  declared, how ownership and save failures appear without an editor, and what closing
+  the editor or quitting hitSlop means. Measure idle cost before choosing a lifecycle.
+- **Constraints:** this is a proposed presentation, not an implemented manifest value.
+  It does not introduce an unrestricted JavaScript backend or imply continuous execution
+  of authored code. Background scheduling needs its own design; edits keep the one owner
+  path and documents remain portable.
 
 ### Other platforms
 
