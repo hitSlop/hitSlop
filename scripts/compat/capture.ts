@@ -3,9 +3,9 @@
 // with documents saved through this build's CLI and by its own page, what they
 // read as and edits to replay on them; a template for each window kind; and the engine
 // that wrote them (the candidate writer).
-// Usage: bun run compat:capture RELEASE [--writer PATH] [--out DIR]
-// Before launch, `dev` is replaceable. A frozen entry is permanent: capture it from the
-// release candidate with a clean tree, then retain it as an immutable release asset.
+// Usage: bun run compat:capture RELEASE --writer PATH --out DIR
+// A frozen entry is permanent: capture it from the release candidate with a clean tree,
+// then retain it as an immutable release asset.
 import { Database } from "bun:sqlite";
 import { strict as assert } from "node:assert";
 import { createHash } from "node:crypto";
@@ -33,7 +33,6 @@ import {
   documentEngine,
   slop,
   slopJSON,
-  readJSON,
   savedState,
   type Expected,
   type ExportGolden,
@@ -61,13 +60,12 @@ process.env.HITSLOP_CARGO_PROFILE = "dist";
 useTestRegistry();
 
 const [name, ...flags] = process.argv.slice(2);
-if (!name || (name !== "dev" && !/^\d+\.\d+\.\d+$/.test(name)))
-  throw new Error("Usage: bun run compat:capture RELEASE [--writer PATH] [--out DIR]");
-const frozen = name !== "dev";
+if (!name || !/^\d+\.\d+\.\d+$/.test(name))
+  throw new Error("Usage: bun run compat:capture RELEASE --writer PATH --out DIR");
 const outIndex = flags.indexOf("--out");
 const out = outIndex < 0 ? undefined : flags[outIndex + 1];
 if (outIndex >= 0 && (!out || out.startsWith("--"))) throw new Error("--out requires a directory");
-if (frozen && !out) throw new Error("Release capture requires --out dist/corpus");
+if (!out) throw new Error("Release capture requires --out dist/corpus");
 const writerIndex = flags.indexOf("--writer");
 const suppliedWriter = writerIndex < 0 ? undefined : flags[writerIndex + 1];
 if (writerIndex >= 0 && (!suppliedWriter || suppliedWriter.startsWith("--")))
@@ -82,16 +80,14 @@ if (
   )
 )
   throw new Error("Unknown capture flag");
-if (name !== "dev" && !suppliedWriter)
+if (!suppliedWriter)
   throw new Error("Release capture requires --writer generated/engines/darwin-arm64/slop-engine");
 if (process.env.HITSLOP_ENGINE)
   throw new Error("Capture uses the engine it builds; remove HITSLOP_ENGINE for capture");
-const destination = resolve(out ?? "tests/compat/dev");
-if (out && existsSync(destination)) throw new Error("Capture destination already exists; choose a new --out directory");
-if (frozen && (destination === join(repository, "tests") || destination.startsWith(join(repository, "tests") + "/")))
+const destination = resolve(out);
+if (existsSync(destination)) throw new Error("Capture destination already exists; choose a new --out directory");
+if (destination === join(repository, "tests") || destination.startsWith(join(repository, "tests") + "/"))
   throw new Error("Release corpora belong outside tests/");
-const previous = await readJSON<Release>(join(destination, "release.json"));
-if (previous?.frozen) throw new Error(`${destination} is frozen; it is never recaptured`);
 const run = async (command: string[], cwd = repository) => {
   if (command[0] === process.execPath) console.log(`Capture: ${command.slice(1).join(" ")}`);
   const { stdout, stderr, code } = await exec(command, { cwd });
@@ -99,7 +95,7 @@ const run = async (command: string[], cwd = repository) => {
   return stdout.trim();
 };
 const dirty = (await run(["git", "status", "--porcelain"])) !== "";
-if (frozen && dirty) throw new Error("Capture a frozen entry from a clean release candidate");
+if (dirty) throw new Error("Capture a frozen entry from a clean release candidate");
 
 // Build the producing tools rather than trusting an existing engine or inventory.
 await run([process.execPath, "scripts/build/build.ts", "--prepare", "native,shell"]);
@@ -496,7 +492,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
 
   const version = async (command: string[]) => (await run(command)).split("\n")[0]!;
   const lock = await readFile(join(repository, "Cargo.lock"), "utf8");
-  const commit = (await run(["git", "rev-parse", "HEAD"])) + (dirty ? "-dirty" : "");
+  const commit = await run(["git", "rev-parse", "HEAD"]);
   const release: Release = {
     release: name,
     frozen: false,
@@ -694,11 +690,10 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
   assert.equal(await fileDigest(writerPath), writer.sha256, "Writer changed during capture");
   await resolveWriter(writer, { local: writerPath });
   release.files = await corpusFiles(root);
-  release.frozen = frozen;
+  release.frozen = true;
   await verifyCorpus(root, release);
   await writeFile(join(root, "release.json"), JSON.stringify(release, null, 2) + "\n");
   await mkdir(dirname(destination), { recursive: true });
-  if (!out) await rm(destination, { recursive: true, force: true });
   await rename(root, destination);
   console.log(`Captured ${resolve(destination)}`);
 } finally {

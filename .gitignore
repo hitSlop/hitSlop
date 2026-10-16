@@ -46,9 +46,6 @@ dist/
 # Maintainer's versioned manual sanity library; preserve and back up locally.
 /release-sanity/
 *.slop
-# Prelaunch compatibility fixtures are tracked; released corpora are release assets.
-!/tests/compat/*/templates/*.slop
-!/tests/compat/*/documents/*.slop
 _vibe/
 
 # Historical source, working plans and inspiration stay local.

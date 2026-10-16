@@ -271,9 +271,10 @@ embedded app, edit it, save it, and reopen the result without losing data or att
 Native page replay uses the actual WKWebView host, not Playwright. Keep these checks in
 the required Rust, Swift and native tiers whenever their inputs change.
 
-Before launch there is one replaceable baseline, `tests/compat/dev`, not a historical
-public release. Starting with the first public release, capture a separate frozen
-collection for **each released version**. Later builds replay every collection; never
+Capture a separate frozen collection for **each released version**, starting with v1.0.0.
+Its corpus hash is permanently pinned in `scripts/compat/required-history.json`; missing
+or changed public history fails even on a fresh machine. There is no prelaunch fallback.
+Later builds replay every collection; never
 rebuild old samples with current tools. These artifacts are immutable GitHub release assets, downloaded and verified for testing. The format markers can remain at 1 across
 many releases; release versions and format requirements are different things.
 
@@ -287,11 +288,8 @@ cache). A local `HITSLOP_ENGINE` or checkout engine must match both build ID and
 otherwise the resolver extracts it from the exact npm tarball attached to the immutable
 GitHub release and verifies the tarball and engine hashes.
 Cached bytes are checked again; a missing or corrupt writer of a published release fails
-replay. The unpublished pre-launch `dev` entry has no registry fallback, and another build
-cannot reproduce the bytes of the engine that captured it, so its differential replay runs
-only where that exact engine is available (the machine that captured it, or a verified
-cache) and is otherwise skipped with a visible line; frozen releases always resolve from
-their retained npm package.
+replay. Every historical writer must resolve from its exact local bytes or its retained
+npm package; unavailable writers are never skipped on darwin-arm64.
 
 Documents are written both ways a release writes them:
 through its CLI, and by its own app's page (`NAME.page.slop`, saved by the page
@@ -318,8 +316,8 @@ row payloads are Brotli-compressed JSON encoded as base64 within each vector fil
 replay checks the decoded rows, preserving full byte-bound cases within a 3 MiB
 aggregate vector budget. Vectors above 1 MiB of decompressed JSON run only in
 nightly/release checks (`large_acceptance_vectors_`); ordinary runs retain small
-vectors and the limits ratchet, and capture self-checks every vector. Every entry,
-including the replaceable `dev` entry, must carry these records. Vectors cover
+vectors and the limits ratchet, and capture self-checks every vector. Every entry
+must carry these records. Vectors cover
 open readers with future optional members, window kinds, widgets, capability spellings,
 and boundary-sized metadata, definitions, descriptors, themes and commands. Resource and
 saved-state size/count bounds are pinned by the limits table; raw app rows do not contain
@@ -329,8 +327,8 @@ explicit retired-limit list. The limits-module completeness test requires every 
 to be recorded or explicitly classified as not persisted. The physical `storage-1.sql`
 definition remains hash-pinned; format-reader source is free to refactor and authoring
 rules are free to tighten while recorded acceptance remains unchanged. Only a completed
-capture is published and frozen. Recording an existing frozen entry is refused. Before launch `dev`
-may be recaptured with `bun run compat:capture dev`.
+capture is published and frozen. Capture requires a release version, a candidate writer
+and a new output directory; an existing destination is refused.
 
 - Rust (`crates/hitslop-core/tests/compat.rs`, in every `verify rust`) replays saved
   values, themes, app digests, edits, save/close and reopen. It also checks every entry’s

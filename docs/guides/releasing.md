@@ -77,11 +77,10 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-Keep `tests/compat/dev` until the first public corpus passes cold-cache replay. In the
-post-launch cleanup PR, pin that release's version and `corpus.sha256` from its retained
-record in `scripts/compat/required-history.json`, then remove the prelaunch fixture and
-its fallback together. The map is empty only before launch. Retain the first pin permanently;
-it prevents a cold machine from accepting empty history if every remote release disappears.
+The first public release, v1.0.0, passed cold-cache replay. Its version and `corpus.sha256`
+from the retained release record are pinned in `scripts/compat/required-history.json`.
+Retain that pin permanently: it prevents a cold machine from accepting empty or changed
+history if the remote evidence disappears. There is no prelaunch fixture or fallback.
 Later releases do not require edits to this file; their recorded history provides the closure.
 
 ## Publication and recovery

@@ -43,7 +43,7 @@ export async function verifyCorpus(root: string, release: Release) {
   }
   assert.ok(
     Array.isArray(release.limits) && release.limits.length > 0,
-    "Missing open limits; recapture the pre-launch dev entry",
+    "Missing open limits",
   );
   const limitNames = new Set<string>();
   for (const limit of release.limits) {
@@ -62,7 +62,7 @@ export async function verifyCorpus(root: string, release: Release) {
   }
   assert.ok(
     Object.keys(release.files).some((path) => /^acceptance\/[^/]+\.json$/.test(path)),
-    "Missing acceptance vectors; recapture the pre-launch dev entry",
+    "Missing acceptance vectors",
   );
   assert.deepEqual(
     await corpusFiles(root),

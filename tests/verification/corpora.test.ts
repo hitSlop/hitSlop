@@ -111,6 +111,10 @@ test("drafts do not break PR replay; published history must be immutable and tra
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("the repository baseline refuses empty published history on a cold machine", async () => {
+  await expect(publishedHistory({ list: async () => [] })).rejects.toThrow("history missing or changed");
+});
+
 test("a required first release cannot disappear on a cold machine", async () => {
   const root = await mkdtemp(join(tmpdir(), "hitslop-required-history-"));
   try {
@@ -121,6 +125,7 @@ test("a required first release cannot disappear on a cold machine", async () => 
     expect(await publishedHistory({ ...options, list: async () => [entry.release] })).toHaveLength(1);
     await expect(publishedHistory({ ...options, list: async () => [] })).rejects.toThrow("history missing or changed");
     await expect(publishedHistory({ ...options, list: async () => [{ ...entry.release, draft: true }] })).rejects.toThrow("history missing or changed");
+    await expect(publishedHistory({ ...options, required: { "1.0.0": "b".repeat(64) }, list: async () => [entry.release] })).rejects.toThrow("history missing or changed");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -265,7 +270,7 @@ test("capture refuses an existing explicit destination before building or replac
   const root = await mkdtemp(join(tmpdir(), "hitslop-capture-destination-"));
   try {
     await writeFile(join(root, "keep"), "existing output");
-    const result = await exec([process.execPath, "scripts/compat/capture.ts", "dev", "--out", root], { cwd: repository, timeout: 10_000, env: { ...process.env, HITSLOP_ENGINE: undefined } });
+    const result = await exec([process.execPath, "scripts/compat/capture.ts", "2.0.0", "--writer", "unused-engine", "--out", root], { cwd: repository, timeout: 10_000, env: { ...process.env, HITSLOP_ENGINE: undefined } });
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("Capture destination already exists");
     expect(result.stdout).not.toContain("Capture: scripts/build");

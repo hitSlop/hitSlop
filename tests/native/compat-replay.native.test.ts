@@ -95,7 +95,7 @@ for (const { name, root, release, documents: saved, templates } of entries)
           await rm(output);
         }
         const golden = await readJSON<ExportGolden>(join(root, "exports", document + ".json"));
-        assert.ok(golden, `${document}: missing export goldens; recapture dev`);
+        assert.ok(golden, `${document}: missing export goldens`);
         const info = await slopJSON(["inspect", copy]);
         const window = info.window;
         assert.ok(window?.width > 0 && window?.height > 0, "Missing saved window");
@@ -222,7 +222,7 @@ for (const { name, root, release, documents: saved, templates } of entries)
         if (probes) {
           assert.ok(
             Array.isArray(probes) && probes.length > 0,
-            "Expected command probe array; recapture dev",
+            "Expected command probe array",
           );
           for (const probe of probes) {
             assert.ok(
