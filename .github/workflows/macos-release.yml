@@ -73,14 +73,18 @@ jobs:
               exit 1
             fi
           done
-      - uses: ./.github/actions/prepare-checks
+      - id: prepare
+        uses: ./.github/actions/prepare-checks
         with:
           cache-scope: release
           bindings: full
           webkit: "true"
-      - uses: ./.github/actions/native-cache
+          save-build-cache: "false"
+      - id: native-cache
+        uses: ./.github/actions/native-cache
         with:
           templates: release
+          save-build-cache: "false"
       - name: Download candidate engines
         run: |
           gh run download "$GITHUB_RUN_ID" --pattern 'engine-*' --dir generated/engine-artifacts
@@ -103,6 +107,37 @@ jobs:
         env:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
           HITSLOP_ENGINE: ${{ github.workspace }}/generated/engines/darwin-arm64/slop-engine
+      # actions/cache's automatic save runs only after a successful job. Preserve
+      # completed compilation now, so a later Apple service failure cannot discard it.
+      - name: Trim Rust cache before checkpointing
+        if: steps.prepare.outputs.rust-cache-hit != 'true'
+        run: bash scripts/ci/prune-cargo-target.sh
+      - name: Checkpoint Rust compilation
+        if: steps.prepare.outputs.rust-cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ steps.prepare.outputs.rust-cache-key }}
+      - name: Checkpoint binding generators
+        if: steps.prepare.outputs.tools-cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: generated/core-tools
+          key: ${{ steps.prepare.outputs.tools-cache-key }}
+      - name: Checkpoint SwiftPM compilation
+        if: steps.native-cache.outputs.swift-cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: apps/apple/Packages/HitSlopApple/.build
+          key: ${{ steps.native-cache.outputs.swift-cache-key }}
+      - name: Checkpoint completed templates
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: .hitslop/template-cache
+          key: ${{ steps.native-cache.outputs.template-cache-key }}
       - name: Import Developer ID certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}

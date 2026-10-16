@@ -127,6 +127,12 @@ Stapling and ticket validation retry ticket-service error 68 up to three times, 
 10, 20 and 40 seconds. Other errors fail immediately; exhausting the retries also fails
 the candidate. These retries never resubmit the app for notarization.
 
+Engine builds cache compilation per target and feature set. After release verification
+passes, the candidate saves its Rust, SwiftPM, binding-generator and template caches
+before signing and notarization, so a later packaging failure retains that work for
+the next dispatch. Every candidate still runs its checks; these caches do not reuse
+test results or authorize publication.
+
 ## Website deployment
 
 `website.yml` checks, builds and deploys landing changes merged to `master`, or runs

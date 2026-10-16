@@ -19,6 +19,22 @@ inputs:
   webkit:
     description: Install Playwright WebKit and Google Chrome for browser tests
     default: "false"
+  save-build-cache:
+    description: Save Rust and binding caches at job completion; disable when the caller checkpoints them explicitly
+    default: "true"
+outputs:
+  rust-cache-key:
+    description: Key for checkpointing compilation before later release steps
+    value: ${{ steps.cache-keys.outputs.rust }}
+  rust-cache-hit:
+    description: Whether the exact compilation cache was restored
+    value: ${{ steps.rust-cache.outputs.cache-hit || steps.rust-cache-restore.outputs.cache-hit }}
+  tools-cache-key:
+    description: Key for checkpointing binding generators
+    value: ${{ steps.cache-keys.outputs.tools }}
+  tools-cache-hit:
+    description: Whether the exact binding generator cache was restored
+    value: ${{ steps.tools-cache.outputs.cache-hit || steps.tools-cache-restore.outputs.cache-hit }}
 runs:
   using: composite
   steps:
@@ -38,28 +54,36 @@ runs:
       shell: bash
       run: |
         bun -e 'import pins from "./scripts/build/tool-versions.json"; for (const [name, version] of Object.entries(pins)) console.log(`${name}=${version}`)' >> "$GITHUB_OUTPUT"
+    - id: cache-keys
+      shell: bash
+      env:
+        RUST_KEY: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
+        TOOLS_KEY: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-${{ hashFiles('scripts/build/tool-versions.json') }}
+      run: |
+        echo "rust=$RUST_KEY" >> "$GITHUB_OUTPUT"
+        echo "tools=$TOOLS_KEY" >> "$GITHUB_OUTPUT"
     # Pull requests restore caches but never save them: a pull request's cache is visible
     # only to that pull request, and saving each one evicted the default branch's caches
     # from the repository's 10 GB budget. Pushes, nightly and manual runs save.
     - id: rust-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.rust == 'true' && github.event_name != 'pull_request'
+      if: inputs.rust == 'true' && github.event_name != 'pull_request' && inputs.save-build-cache == 'true'
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
+        key: ${{ steps.cache-keys.outputs.rust }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - id: rust-cache-restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.rust == 'true' && github.event_name == 'pull_request'
+      if: inputs.rust == 'true' && (github.event_name == 'pull_request' || inputs.save-build-cache != 'true')
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
+        key: ${{ steps.cache-keys.outputs.rust }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - id: compat-writers-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -81,16 +105,16 @@ runs:
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-
     - id: tools-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.rust == 'true' && inputs.bindings != 'none' && github.event_name != 'pull_request'
+      if: inputs.rust == 'true' && inputs.bindings != 'none' && github.event_name != 'pull_request' && inputs.save-build-cache == 'true'
       with:
         path: generated/core-tools
-        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-${{ hashFiles('scripts/build/tool-versions.json') }}
+        key: ${{ steps.cache-keys.outputs.tools }}
     - id: tools-cache-restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      if: inputs.rust == 'true' && inputs.bindings != 'none' && github.event_name == 'pull_request'
+      if: inputs.rust == 'true' && inputs.bindings != 'none' && (github.event_name == 'pull_request' || inputs.save-build-cache != 'true')
       with:
         path: generated/core-tools
-        key: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-${{ hashFiles('scripts/build/tool-versions.json') }}
+        key: ${{ steps.cache-keys.outputs.tools }}
     - id: bun-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.dependencies == 'true' && github.event_name != 'pull_request'
