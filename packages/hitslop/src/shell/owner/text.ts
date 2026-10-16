@@ -215,6 +215,9 @@ export function bindText(
     get detached() {
       return detached !== undefined;
     },
+    get draftText() {
+      return value();
+    },
     refresh: adopt,
     /** Sends unsent text now, ending a composition; the barrier awaits the result. */
     async commit() {
