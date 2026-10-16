@@ -16,11 +16,17 @@ export async function findRelease(tag: string, command = run): Promise<Published
 
 /** Resume the same draft after an interrupted upload. */
 export async function ensureDraftRelease(tag: string, notesFile: string, command = run): Promise<PublishedRelease> {
-  let release = await findRelease(tag, command);
-  if (!release) {
-    await command(["gh", "release", "create", tag, "--draft", "--verify-tag", "--title", `hitSlop ${tag.slice(1)}`, "--notes-file", notesFile]);
-    release = await findRelease(tag, command);
-  }
-  if (!release) throw new Error("Draft was not created");
-  return release;
+  const release = await findRelease(tag, command);
+  if (release) return release;
+  // Keep --verify-tag's refusal to create an unverified tag. The POST response owns
+  // the new draft's identity; listing it immediately can miss a successful creation.
+  await command(["gh", "api", `repos/${releaseRepository}/git/ref/tags/${tag}`]);
+  const created: PublishedRelease = JSON.parse(await command([
+    "gh", "api", "--method", "POST", `repos/${releaseRepository}/releases`,
+    "-f", `tag_name=${tag}`, "-f", `name=hitSlop ${tag.slice(1)}`,
+    "-F", "draft=true", "-F", `body=@${notesFile}`,
+  ]));
+  if (!Number.isSafeInteger(created.id) || created.id <= 0 || created.tag_name !== tag || !created.draft)
+    throw new Error("Created release identity differs from the requested draft");
+  return created;
 }
