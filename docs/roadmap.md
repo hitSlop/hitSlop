@@ -38,9 +38,10 @@ In order, with the reasoning in [ideas](ideas.md):
   delivery remain deferred. `slop dev` keeps its native owner.
   [Hardening evidence](evidence/browser-host-hardening-2026-10-08.md) records the scope
   and verification limits.
-- A text draft whose control is destroyed after an unknown-outcome send is kept in the
-  page shell (`unresolvedDrafts`) and shown in the issue badge. Add a native Copy / Discard
-  prompt so the text is recoverable when the window closes; the badge may truncate long text.
+- A text draft whose control is destroyed after an unknown-outcome send is retained in
+  the page shell. Native close/quit offers to copy the complete text, discard it or cancel;
+  cancelling retains the draft and resumes editing. Recovery after renderer termination
+  remains deferred. Qualify the prompt with the 1.0.1 release candidate.
 - Qualify the release candidate with the current [release checks](guides/releasing.md).
   Complete-value replacement, template acceptance, command declaration checks,
   dedicated captures and document UUID copy rules are implemented. Historical foundation

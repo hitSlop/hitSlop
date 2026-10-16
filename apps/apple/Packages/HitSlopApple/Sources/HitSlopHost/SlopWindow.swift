@@ -436,11 +436,14 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
   }
   private var closeTrace: SlopCloseTrace?
+  var draftRecovery = TextDraftRecovery()
   public override func close() {
     guard let window, windowShouldClose(window) else { return }
     super.close()
   }
-  public func prepareToClose(operation: SlopTelemetryEvent.Failure = .close) async throws {
+  public func prepareToClose(
+    operation: SlopTelemetryEvent.Failure = .close, copyDrafts: ((String) -> Bool)? = nil
+  ) async throws {
     sharePopover.dismiss()
     switch closeState {
     case .prepared, .closing, .closed: return
@@ -460,7 +463,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     }
     window?.makeFirstResponder(nil)
     do {
-      try await session.prepareClose()
+      let drafts = try await session.prepareClose()
+      if !drafts.isEmpty {
+        guard let window else { throw CancellationError() }
+        try await draftRecovery.resolve(
+          drafts, document: url.lastPathComponent, in: window, copy: copyDrafts ?? TextDraftRecovery.copy)
+      }
       closeState = .prepared(session.isReady ? .saved : .unavailable)
     } catch {
       reportLifecycleFailure(operation, error: error)

@@ -211,8 +211,12 @@ read as `from`. No version names the starting point, so no edit is ever too old 
   text this one sent.
 - During IME composition nothing is sent. Close and export commit a composition.
   Retargeting or unmounting a binding sends its unsent text first. If that send has an
-  uncertain outcome that cannot be resolved, the text is reported and is not kept once
-  the control is gone.
+  uncertain outcome that cannot be resolved, the page retains the draft and field path
+  in memory without replaying the edit. On Mac, close and quit offer Copy and Close,
+  Discard and Close, or Cancel before destroying that page. Copy includes full text;
+  diagnostics contain only a summary. Cancelling restores editing and retains the draft.
+  Copies from multiple windows during one quit accumulate on the clipboard. Recovery
+  remains page-local and does not survive renderer termination.
 
 A text set without `from` (a text handle's `set(value)`, or the CLI without it) replaces
 the whole field as it is when the owner applies it, through the same script.

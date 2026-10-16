@@ -6,6 +6,42 @@ import Testing
 
 @testable import HitSlopCatalog
 
+@Test func copiedDraftsFromOneQuitAccumulateWithoutAdmittingAFailedCopy() {
+  var copies = QuitDraftCopies()
+  var clipboard = ""
+  #expect(
+    copies.copy("First window") {
+      clipboard = $0
+      return true
+    })
+  #expect(!copies.copy("Failed window") { _ in false })
+  #expect(
+    copies.copy("Second window") {
+      clipboard = $0
+      return true
+    })
+  #expect(clipboard == "First window\n\n---\n\nSecond window")
+  #expect(
+    !copies.copy("Discarded after a failed copy") { _ in
+      clipboard = ""
+      return false
+    })
+  #expect(!copies.restore { _ in false })
+  #expect(
+    copies.restore {
+      clipboard = $0
+      return true
+    })
+  #expect(clipboard == "First window\n\n---\n\nSecond window")
+  copies = QuitDraftCopies()
+  #expect(
+    copies.copy("Next quit") {
+      clipboard = $0
+      return true
+    })
+  #expect(clipboard == "Next quit")
+}
+
 @MainActor private func coordinator(
   _ chosen: Locked<[CatalogEntry]>, alerts: Locked<[AppAlert]> = Locked([]), templates: URL
 ) -> SlopApplicationCoordinator {

@@ -4,6 +4,26 @@ use hitslop_core::page_wire::{HostReply, HostRequest, PageRequest};
 use serde_json::json;
 
 #[test]
+fn close_recovery_preserves_full_text_and_paths_without_putting_values_in_decode_errors() {
+    use hitslop_core::page_wire::ClosePreparation;
+    let text = "A long draft 🐈\n".repeat(1000);
+    let wire = json!({"unresolvedDrafts": [
+        {"path": ["rows", {"id":"a"}, "text"], "text": text},
+        {"path": ["title"], "text": "第二份草稿"}
+    ], "futureHint": true});
+    let reply = ClosePreparation::decode(&wire.to_string()).unwrap();
+    assert_eq!(reply.unresolved_drafts.len(), 2);
+    assert_eq!(reply.unresolved_drafts[0].text, text);
+    assert_eq!(reply.unresolved_drafts[0].field_label(), r#"["rows",{"id":"a"},"text"]"#);
+    assert_eq!(reply.unresolved_drafts[1].text, "第二份草稿");
+    assert!(ClosePreparation::decode(r#"{"unresolvedDrafts":[]}"#).unwrap().unresolved_drafts.is_empty());
+    for invalid in ["true", "{}", r#"{"unresolvedDrafts":[{"path":[true],"text":"private text"}]}"#] {
+        let error = ClosePreparation::decode(invalid).unwrap_err();
+        assert_eq!(error.message, "Invalid close preparation reply");
+    }
+}
+
+#[test]
 fn each_page_request_classifies_its_required_capability() {
     use hitslop_core::{app::Capability, page_wire::PageErrorKind};
     for (request, required) in [
