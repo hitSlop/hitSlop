@@ -19,6 +19,11 @@ const barrier = () => new DocumentError("closing", "Document barrier is active")
  * the host's autosave idle. */
 const settleMS = 150;
 
+export interface UnresolvedDraft {
+  readonly path: readonly Segment[];
+  readonly text: string;
+}
+
 /** Page-side document state. It contains no CRDT and never writes persistent JSON. */
 export class OwnerDocument<N extends ObjectNode> {
   readonly fields: Handle<N>;
@@ -26,6 +31,7 @@ export class OwnerDocument<N extends ObjectNode> {
   private readonly snapshots: SnapshotBindings;
   /** Each binding's drain: sends its unsent edit before a barrier saves. */
   private readonly drains = new Set<() => Promise<void>>();
+  private readonly drafts: UnresolvedDraft[] = [];
   /** Work the close and capture barriers wait for: writes, text sends, attachments. */
   private readonly pending = new Set<Promise<unknown>>();
   /** One FIFO queue for handle writes, so `insert` then `move` cannot reorder. */
@@ -84,6 +90,13 @@ export class OwnerDocument<N extends ObjectNode> {
   /** Effective palette from the same ordered owner frame as the document. */
   get theme(): OwnerState["theme"] {
     return this.store.state.theme;
+  }
+  /** Detached text that could not be resolved, retained for Copy / Discard after close starts. */
+  get unresolvedDrafts(): readonly UnresolvedDraft[] {
+    return structuredClone(this.drafts);
+  }
+  discardUnresolvedDrafts() {
+    this.drafts.length = 0;
   }
   subscribe(listener: () => void) {
     return this.snapshots.subscribe(listener);
@@ -384,11 +397,22 @@ export class OwnerDocument<N extends ObjectNode> {
         path: location.path,
         destroy: () => {
           stop();
-          // No control remains to retry a detached draft: report it once, then stop
-          // holding barriers so close can proceed.
+          // Keep unresolved text for recovery without holding close barriers or replaying it.
           void binding
             .destroy()
-            .catch((error) => this.report(error))
+            .catch((error) => {
+              const draft: UnresolvedDraft = {
+                path: structuredClone(location.path),
+                text: binding.draftText,
+              };
+              this.drafts.push(draft);
+              this.report(
+                new Error(
+                  `Unresolved text draft at ${JSON.stringify(draft.path)}:\n${draft.text}\n\n${error instanceof Error ? error.message : String(error)}`,
+                  { cause: error },
+                ),
+              );
+            })
             .finally(() => this.drains.delete(drain));
         },
       };
