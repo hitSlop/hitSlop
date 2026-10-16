@@ -10,6 +10,7 @@ import { publishedHistory, verifyHistory } from "../compat/corpora";
 import { assertQualified, preservesLatest, validateApproval, validateCandidate, validateRecord, verifyArtifacts, type ReleaseRecord } from "./record";
 import { checkReleaseHistory } from "./preflight";
 import { releaseNotesNames } from "./notes";
+import { ensureDraftRelease, findRelease } from "./github";
 
 const directory = "dist/macos";
 const tag = process.env.HITSLOP_RELEASE_TAG!;
@@ -19,14 +20,7 @@ if (process.env.GITHUB_REPOSITORY?.toLowerCase() !== releaseRepository.toLowerCa
 const version = tag.slice(1);
 const gh = (args: string[]) => run(["gh", ...args]);
 const api = (path: string) => gh(["api", `repos/${releaseRepository}/${path}`]).then(text => JSON.parse(text));
-async function remoteRelease(): Promise<PublishedRelease | undefined> {
-  const result = await exec(["gh", "api", `repos/${releaseRepository}/releases/tags/${tag}`]);
-  if (result.code) {
-    if (result.stderr.includes("HTTP 404")) return undefined;
-    throw new Error(result.stderr);
-  }
-  return JSON.parse(result.stdout);
-}
+const remoteRelease = () => findRelease(tag);
 async function record(): Promise<ReleaseRecord> { return JSON.parse(await readFile(join(directory, "release-record.json"), "utf8")); }
 async function check() {
   const saved = await record();
@@ -95,12 +89,7 @@ if (action === "restore") {
     if (!ref.stderr.includes("HTTP 404")) throw new Error(ref.stderr);
     await gh(["api", "--method", "POST", `repos/${releaseRepository}/git/refs`, "-f", `ref=refs/tags/${tag}`, "-f", `sha=${commit}`]);
   } else if (JSON.parse(ref.stdout).object.sha !== commit) throw new Error("Existing release tag points to a different commit");
-  let remote = await remoteRelease();
-  if (!remote) {
-    await gh(["release", "create", tag, "--draft", "--verify-tag", "--title", `hitSlop ${version}`, "--notes-file", join(directory, releaseNotesNames(version).github)]);
-    remote = await remoteRelease();
-  }
-  if (!remote) throw new Error("Draft was not created");
+  const remote = await ensureDraftRelease(tag, join(directory, releaseNotesNames(version).github));
   for (const name of ["release-record.json", ...Object.keys(saved.artifacts), "SHA256SUMS"]) {
     const existing = remote.assets.find(asset => asset.name === name);
     if (existing) {
