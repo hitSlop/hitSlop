@@ -181,6 +181,34 @@ a person and their agent edit the same live document. What's missing is the slop
 - **Why:** the no-code rung, on the Mac's own automation, with Siri and Spotlight for free.
 - **Builds on:** closed editing, which runs the owner without WebKit or authored code.
 
+### Native integrations and richer media
+
+These are future proposals, not supported capability declarations. Camera and microphone
+capture and on-device transcription of saved recordings already work on a supported Mac;
+the [capability guide](../apps/landing/src/content/docs/docs/guides/capabilities.mdx)
+describes today's APIs and platform limits.
+
+- **Calendars and reminders:** let a planner work with your calendar, or a grocery slop
+  add a reminder, with explicit permission for the access it needs.
+- **Notifications:** let timers, habits and plans notify you at the right time, with
+  controls for which slops may send them.
+- **Shortcuts, Siri and sharing:** the [App Intents and share extension proposal](#shortcuts-and-a-share-sheet)
+  makes actions such as "Add to Grocery List" and "Send to slop" available outside its window.
+- **MIDI:** connect music tools to instruments and controllers after designing device
+  declarations and permissions.
+- **Workers and audio worklets:** package local entry points for heavier background
+  processing and richer audio libraries. Keep the existing refusal of blob/data executable
+  code; this needs explicit build and host support.
+- **Broader transcription:** support transcription in browser copies and investigate a
+  newer native speech backend, while retaining a useful path when unavailable.
+- **Permissions for each slop:** build on [code-bound grants](#permissions-bound-to-the-apps-code),
+  so a person chooses which app can use an integration and reviews that choice after
+  a remix or upgrade.
+
+Each integration needs its own platform support, consent and lifecycle design before an
+API is offered. Calendar/reminder synchronization rules, notification scheduling and
+background execution remain design work; this proposal sets no new API names or delivery order.
+
 ### Query a document with SQL
 
 - **What:** `slop query DOC 'SELECT …'`, read-only SQL over a snapshot. The engine
