@@ -7,12 +7,14 @@ use rusqlite::Connection;
 use std::sync::OnceLock;
 
 type SchemaRow = (String, String, String, Option<String>);
-fn tables(conn: &Connection) -> Result<Vec<SchemaRow>> {
+/// At most `limit` rows, so a file with a huge schema is not enumerated in full.
+fn tables(conn: &Connection, limit: usize) -> Result<Vec<SchemaRow>> {
     let mut statement = conn
-        .prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name")
+        .prepare("SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name LIMIT ?1")
         .map_err(sqlite("read tables"))?;
-    let rows =
-        statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sqlite("read tables"))?;
+    let rows = statement
+        .query_map([limit as i64], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .map_err(sqlite("read tables"))?;
     rows.collect::<rusqlite::Result<_>>().map_err(sqlite("read tables"))
 }
 /// The tables and indexes `SCHEMA` makes, including SQLite's automatic primary-key
@@ -23,7 +25,7 @@ fn expected_tables(version: i64) -> &'static [SchemaRow] {
     LAYOUT.get_or_init(|| {
         let memory = Connection::open_in_memory().expect("in-memory database");
         memory.execute_batch(SCHEMA).expect("valid schema");
-        tables(&memory).expect("readable tables")
+        tables(&memory, usize::MAX >> 1).expect("readable tables")
     })
 }
 
@@ -72,6 +74,19 @@ pub(super) fn markers(conn: &Connection) -> Result<i64> {
     if version != STORAGE_VERSION {
         return Err(invalid("Unsupported document storage"));
     }
+    // The file chooses what `app` is. A view or virtual table would run its own SQL, with no
+    // bound, on this read, so only an ordinary table is queried before the exact layout is
+    // compared.
+    let ordinary: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='app' AND sql LIKE 'CREATE TABLE%'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(sqlite("read"))?;
+    if ordinary != 1 {
+        return Err(invalid("Unexpected document tables"));
+    }
     // Two named columns, which any newer app format keeps; the tables are compared next.
     let found =
         conn.query_row("SELECT package_format, runtime_abi FROM app WHERE id=1", [], |r| Ok((r.get(0)?, r.get(1)?)));
@@ -95,7 +110,8 @@ fn requirements(package_format: i64, runtime_abi: i64) -> Result<()> {
 }
 /// The exact tables, and at most one row, row 1, in each one-row table.
 pub(super) fn layout(conn: &Connection, version: i64) -> Result<()> {
-    if tables(conn)? != expected_tables(version) {
+    let expected = expected_tables(version);
+    if tables(conn, expected.len() + 1)? != expected {
         return Err(invalid("Unexpected document tables"));
     }
     // A file written without its CHECK constraints may hold other rows, which no read

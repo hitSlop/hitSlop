@@ -763,9 +763,9 @@ test("text refused before sending is sent once the document recovers", async () 
   } finally { transport.open = reopen; binding.destroy(); core.free(); }
 });
 
-// Failure: a destroyed binding whose final draft could not be committed stayed in the
-// barrier set, so every later close failed with no control left to fix it.
-test("a destroyed text binding with an unresolvable draft does not block close", async () => {
+// Failure: removing a destroyed binding from the barrier set also lost its unresolved
+// draft. Oracle: close succeeds, but the draft remains available to copy or discard.
+test("a destroyed text binding retains its unresolvable draft without blocking close", async () => {
   const { DocumentError } = await import("../../src/sdk/internal");
   const def = defineDocument({ value: s.text() });
   const core = wasm.WasmDocument.create(JSON.stringify(def.descriptor), JSON.stringify({ value: "before" }));
@@ -779,9 +779,17 @@ test("a destroyed text binding with an unresolvable draft does not block close",
   try {
     input.type("unsent draft");
     binding.destroy();
+    input.value = "another field";
     await Bun.sleep(5);
     await doc.prepareClose();
-    expect(errors.length).toBeGreaterThan(0);
+    expect(doc.unresolvedDrafts).toEqual([{ path: ["value"], text: "unsent draft" }]);
+    expect(errors.some(error => error instanceof Error &&
+      error.message.includes('["value"]') && error.message.includes("unsent draft"))).toBe(true);
+    const drafts = doc.unresolvedDrafts;
+    doc.discardUnresolvedDrafts();
+    expect(doc.unresolvedDrafts).toEqual([]);
+    expect(drafts).toEqual([{ path: ["value"], text: "unsent draft" }]);
+    expect(doc.current.value).toBe("before");
     expect(JSON.parse(core.state()).value.value).toBe("before");
   } finally { core.free(); }
 });
