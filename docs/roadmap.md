@@ -103,6 +103,10 @@ the work and prerequisites are below and in [ideas](ideas.md).
   in the dev preview; individual native checks do not qualify the entire collection.
   Check each in the built app and PNG/PDF export, and review the bundled selection.
   One example stays archived because its engine is AGPL.
+- **Author diagnostics.** Add a read-only [`slop doctor`](ideas.md#slop-doctor) for
+  installation and PATH conflicts, CLI/SDK alignment, engine availability and skill links.
+  Explain why a rebuilt template does not update an existing document, and suggest
+  concrete next steps. Repairs remain explicit actions.
 - **Preview asset serving.** `slop dev` serves only the slop folder and the CLI, so
   assets inside packages (fonts, models) must be copied into the slop to preview.
 - **Worker and worklet assets.** The shared page CSP is defined in Rust for native and
@@ -117,8 +121,11 @@ the work and prerequisites are below and in [ideas](ideas.md).
 - **Platform drivers and feature discovery.** Define a driver seam for the registry,
   socket, exclusive rename and evaluator, including an in-process evaluator story for
   iOS. Add a feature list to CLI `hello` and a host/feature handshake to page config;
-  reply readers already allow these additive members. The drivers are the prerequisite
-  for [hosts on other platforms](ideas.md#other-platforms).
+  reply readers already allow these additive members. [Feature discovery](ideas.md#runtime-feature-discovery)
+  should describe actual host support separately from an app's declarations and the
+  person's permissions, so apps can offer useful fallbacks on native and browser hosts.
+  API shape remains design work. The drivers are the prerequisite for
+  [hosts on other platforms](ideas.md#other-platforms).
 - **Storage evolution.** Give lazy migration a "needed by this write" parameter, split
   `user_version` into read/write versions, and rename `artwork.png`. Keep the storage-2
   backup and interruption checklist above.
@@ -227,6 +234,11 @@ sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrow
 The [October 13 widget review](evidence/widget-review-2026-10-13.md) records the location
 metadata fixes and removal of stale development registrations.
 The `slop dev` composition selector previews all three widget families with HMR. Broader desktop qualification, cache management UI and iOS hosting are pending.
+
+**Menu-bar presentation.** Explore [menu-bar slops](ideas.md#menu-bar-slops) for timers,
+players and quick capture, alongside the implemented widgets. Consider creating the
+WebView only when its editor is opened. Ownership, saving, quit behavior and any
+background work need a lifecycle design before this becomes an authoring option.
 
 **Permissions and device services.** Code-bound grants and per-slop consent remain a
 [proposal](ideas.md#permissions-bound-to-the-apps-code), as do additional devices such
