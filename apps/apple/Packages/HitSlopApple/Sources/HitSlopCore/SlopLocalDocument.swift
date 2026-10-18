@@ -9,9 +9,15 @@ public enum SlopLocalDocument {
   /// are resolved first.
   public static func requireLocal(_ url: URL) throws {
     var current = resolvingExistingAncestors(url)
+    let cloud = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents")
+    let cloudPath = resolvingExistingAncestors(cloud).path.lowercased()
+    let path = current.path.lowercased()
+    if path == cloudPath || path.hasPrefix(cloudPath + "/") {
+      throw SlopFailure("Keep active documents outside iCloud. Move this document to ~/hitSlop to edit it locally.")
+    }
     while current.path != "/" {
       if (try? current.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true {
-        throw SlopFailure("iCloud document locations are not supported. Move the document to a local folder.")
+        throw SlopFailure("Keep active documents outside iCloud. Move this document to ~/hitSlop to edit it locally.")
       }
       current.deleteLastPathComponent()
     }

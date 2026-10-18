@@ -918,6 +918,7 @@ name = "hitslop-core"
 version = "0.0.0"
 dependencies = [
  "brotli",
+ "cc",
  "data-encoding",
  "fluent-uri",
  "getrandom 0.2.17",

@@ -185,6 +185,25 @@ pub fn file_kind(path: String) -> Result<Kind, CoreError> {
 pub fn create_document(template: String, destination: String) -> Result<(), CoreError> {
     Ok(file::create_document(Path::new(&template), Path::new(&destination))?)
 }
+#[derive(uniffi::Record)]
+pub struct RelocatedDocument {
+    pub path: String,
+    pub cleanup_error: Option<String>,
+}
+/// An explicit local move, preserving document identity and all retained history.
+#[uniffi::export]
+pub fn relocate_document(source: String, folder: String) -> Result<RelocatedDocument, CoreError> {
+    #[cfg(target_os = "macos")]
+    {
+        let moved = file::relocate_document(Path::new(&source), Path::new(&folder))?;
+        Ok(RelocatedDocument { path: moved.path.to_string_lossy().into_owned(), cleanup_error: moved.cleanup_error })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (source, folder);
+        Err(store::Error::Failed("Moving a cloud document is unavailable on this platform".into()).into())
+    }
+}
 /// A slop's preview or icon artwork.
 #[uniffi::remote(Enum)]
 pub enum Artwork {

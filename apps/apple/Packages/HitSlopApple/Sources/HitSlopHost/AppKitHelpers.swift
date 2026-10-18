@@ -1,9 +1,10 @@
 import AppKit
+import HitSlopCore
 
 extension NSSavePanel {
-  /// Opens in the user's Desktop folder (open panels too, which inherit this).
-  public func startOnDesktop() {
-    directoryURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first
+  /// Uses a writable local folder, including when Desktop is synced to iCloud.
+  public func startInLocalDocuments() throws {
+    directoryURL = try SlopSaveLocation.folder()
   }
 }
 

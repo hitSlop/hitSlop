@@ -21,4 +21,10 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rustc-env=HITSLOP_CORE_BUILD_ID={hash:016x}");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+        && std::env::var_os("CARGO_FEATURE_STORAGE").is_some()
+    {
+        cc::Build::new().file("src/file/relocate.m").flag("-fobjc-arc").compile("hitslop_relocation");
+        println!("cargo:rustc-link-lib=framework=Foundation");
+    }
 }

@@ -31,6 +31,9 @@ png = { version = "=0.18.1", optional = true }
 [lib]
 doctest = false
 
+[build-dependencies]
+cc = "=1.5.1"
+
 [features]
 default = ["storage"]
 # Code generation only; never enabled by the WASM build or shipped native library.

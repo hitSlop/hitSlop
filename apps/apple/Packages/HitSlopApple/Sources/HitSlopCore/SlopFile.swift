@@ -128,6 +128,16 @@ public struct SlopFile: Sendable {
     try opening { try fileKind(path: url.path) }
   }
 
+  /// User-requested relocation. The core holds the source lease through validated copy
+  /// and coordinated cleanup; a cleanup warning means both files were retained.
+  public static func moveToLocalFolder(_ source: URL) throws -> (url: URL, warning: String?) {
+    let folder = try SlopSaveLocation.localFolder()
+    let result = try opening { try relocateDocument(source: source.path, folder: folder.path) }
+    let url = URL(fileURLWithPath: result.path)
+    SlopSaveLocation.remember(url)
+    return (url, result.cleanupError)
+  }
+
   public var width: Int { Int(window.width) }
   public var height: Int { Int(window.height) }
   /// Host fullscreen is opt-in and independent of desktop resizing.
