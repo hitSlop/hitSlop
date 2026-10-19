@@ -98,7 +98,7 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
       if let transport {
         if !isReady {
           try await transport.start()
-          Self.active.withLock { $0 = native }
+          Self.active.withLock { $0 = self.native }
           isReady = true
         }
         try await transport.sync(explicit: false)

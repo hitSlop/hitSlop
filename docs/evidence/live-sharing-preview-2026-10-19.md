@@ -80,6 +80,17 @@ passed portable and Swift/native integration checks. The integration run complet
 821.8 seconds; native replay passed 32 tests with one skip, including both released
 corpora (1.0.0 and 1.0.1).
 
+A later frozen-source run intermittently failed the existing
+`widgetOnlyCloseDoesNotRewriteDocumentArtwork` test: an unchanged close published
+another widget generation. Its focused repeat and the full Swift/native repeat passed
+without source changes (173.6 seconds for the full repeat). The cause remains
+unconfirmed; this failure is retained in the PR notes rather than treated as a fix.
+
+GitHub's Swift compiler also refused an unqualified `native` property read in the
+CloudKit resume closure because a local variable with that name is declared later.
+The read now explicitly uses `self.native`; the CI failure was compilation, distinct
+from the intermittent widget expectation.
+
 The arm64 iOS simulator target built with `ARCHS=arm64 ONLY_ACTIVE_ARCH=YES` and
 `CODE_SIGNING_ALLOWED=NO`. A generic simulator build initially attempted x86_64 too,
 which this Apple-silicon-only FFI artifact does not contain. No device installation or app launch was performed; the phone was not used.
