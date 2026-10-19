@@ -1,6 +1,6 @@
 /** Explicit deployed-preview qualification, using only disposable infrastructure fixtures.
  * Run after build/deploy: bun scripts/sharing/check-preview.ts
- * No invitation, capability or developer creation key is printed or included in reports. */
+ * No invitation, capability or identity token is printed or included in reports. */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -20,7 +20,7 @@ const checks:string[]=[];
 const note=(value:string)=>{checks.push(value);console.log(value);};
 const report=join(root,"report.json");
 const template=await buildTemplate(join(repository,"tests/apps/sharing"),join(root,"fixture.slop"),{renderViews:false});
-const child=spawn(join(repository,"target/debug/examples/preview"),[template,root,join(repository,".hitslop/sharing-preview/secrets.json")],{stdio:["pipe","pipe","pipe"]});
+const child=spawn(join(repository,"target/debug/examples/preview"),[template,root,process.env.HITSLOP_SHARING_TOKEN_FILE ?? join(repository,".hitslop/sharing-preview/identity-token")],{stdio:["pipe","pipe","pipe"]});
 let failure="";child.stderr.on("data",bytes=>{failure+=String(bytes);});
 const messages:any[]=[];let waiting:((value:any)=>void)|undefined;
 createInterface({input:child.stdout}).on("line",line=>{const value=JSON.parse(line);if(waiting){const next=waiting;waiting=undefined;next(value);}else messages.push(value);});

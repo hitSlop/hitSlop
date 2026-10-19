@@ -9,13 +9,24 @@ import SwiftUI
 
 /// Explicit developer auth proof. Named Firebase initialization never enables the
 /// default app's Analytics/Crashlytics collection in Debug or on the phone.
-@MainActor private final class SharingAccount: ObservableObject {
+@MainActor public final class SharingAccount: ObservableObject {
+  public static let shared = SharingAccount()
+  private init() {}
+  public var signedIn: Bool {
+    configure()
+    return auth?.currentUser != nil
+  }
+  public func token() async throws -> String {
+    configure()
+    guard let user = auth?.currentUser else { throw SlopFailure("Sign in to your sharing account first.") }
+    return try await user.getIDToken()
+  }
   @Published var fingerprint: String?
-  @Published var message = "Sign in to test your sharing account. Existing document sharing is unchanged."
+  @Published var message = "Sign in to create and manage shared slops. Joining a link does not require an account."
   @Published var busy = false
   private var auth: Auth?
   private var nonce: String?
-  func configure() {
+  public func configure() {
     guard auth == nil, SharingPreview.enabled else { return }
     let name = "sharing-auth"
     if FirebaseApp.app(name: name) == nil {
@@ -63,6 +74,7 @@ import SwiftUI
       let apple = OAuthProvider.appleCredential(withIDToken: token, rawNonce: nonce, fullName: nil)
       _ = try await auth.signIn(with: apple)
       updateIdentity()
+      NotificationCenter.default.post(name: .hitSlopSharingAccountChanged, object: nil)
       try await verify()
     } catch {
       // Auth errors can carry provider response data. Keep the UI/logs generic.
@@ -92,13 +104,14 @@ import SwiftUI
     do {
       try auth?.signOut()
       updateIdentity()
+      NotificationCenter.default.post(name: .hitSlopSharingAccountChanged, object: nil)
       message = "Signed out. Documents already joined on this device can continue syncing."
     } catch { message = "Could not sign out. Try again." }
   }
 }
 
 public struct SharingAccountView: View {
-  @StateObject private var account = SharingAccount()
+  @ObservedObject private var account = SharingAccount.shared
   public init() {}
   public var body: some View {
     VStack(alignment: .leading, spacing: 16) {

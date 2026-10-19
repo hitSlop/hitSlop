@@ -42,6 +42,7 @@
     "@types/pngjs": "6.0.5",
     "bits-ui": "^2.19.5",
     "hitslop": "workspace:*",
+    "miniflare": "4.20251105.0",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2004",
     "playwright": "1.64.0",

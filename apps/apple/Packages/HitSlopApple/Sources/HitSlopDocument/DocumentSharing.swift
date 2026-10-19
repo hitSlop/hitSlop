@@ -1,4 +1,6 @@
+import Combine
 import Foundation
+import HitSlopAccount
 import HitSlopCore
 import HitSlopCoreBinding
 import SwiftUI
@@ -8,74 +10,93 @@ private func sharingMessage(_ error: Error) -> String {
   return error.localizedDescription
 }
 
-/// Serial, off-main network work. The Rust client owns the transport and edits only
-/// through this document's existing owner. Credentials stay opaque at this boundary.
+private final class SharingStatusListener: SharingListener, @unchecked Sendable {
+  let update: @Sendable () -> Void
+  init(_ update: @escaping @Sendable () -> Void) { self.update = update }
+  func changed() { update() }
+}
+
+/// Off-main network work against the existing Rust document owner.
 private actor SharingDriver {
   let owner: NativeOwner
   let document: String
   var credential: String?
   var client: NativeSharing?
+  var listener: SharingStatusListener?
+  var accountPhase: SharingPhase?
   init(owner: NativeOwner, document: String) {
     self.owner = owner
     self.document = document
   }
-  func refresh(reconnect: Bool = false) throws -> SharingStatus? {
-    let saved = try SharingCredentials.read(document)
+  func observe(_ listener: SharingStatusListener) {
+    self.listener = listener
+    client?.listen(listener: listener)
+  }
+  func refresh(token: String?, reconnect: Bool = false) throws -> SharingStatus? {
+    var saved = try SharingCredentials.read(document)
+    var recoveryError: Error?
+    accountPhase = nil
+    if let token {
+      do {
+        let recovery = try sharingRecover(owner: owner, token: token)
+        accountPhase = recovery.phase
+        if let recovered = recovery.credential {
+          saved = recovered
+          try SharingCredentials.write(recovered, document: document)
+        }
+      } catch { recoveryError = error }
+    }
     if saved != credential || reconnect {
       client?.pause()
       client = nil
       credential = nil
       if let saved {
         let restored = try NativeSharing.restore(owner: owner, credential: saved)
-        try restored.connect()
+        if let listener { restored.listen(listener: listener) }
         client = restored
         credential = saved
+        try restored.connect()
       }
     }
-    return client?.status()
+    client?.setCreator(creator: accountPhase != nil)
+    if let recoveryError { throw recoveryError }
+    return status()
   }
-  func start() throws -> SharingStatus {
+  func status() -> SharingStatus? {
+    if accountPhase == .preparing {
+      return SharingStatus(
+        phase: .preparing, detail: "Finish creating this link on the device that started it.", link: nil, creator: true)
+    }
+    if let client { return client.status() }
+    guard let phase = accountPhase else { return nil }
+    return SharingStatus(
+      phase: phase,
+      detail: phase == .ended ? "Sharing ended" : "Finish creating this link on the device that started it.", link: nil,
+      creator: true)
+  }
+  func start(token: String) throws -> SharingStatus? {
     let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("hitSlop/SharingPreview/Seeds", isDirectory: true)
-    var saved = try SharingCredentials.read(document)
-    if saved == nil {
-      saved = try sharingPrepare(owner: owner, root: root.path)
-      try SharingCredentials.write(saved!, document: document)
-    }
-    let existing = try NativeSharing.restore(owner: owner, credential: saved!)
-    if existing.status().phase != .preparing {
-      client?.pause()
-      try existing.connect()
-      client = existing
-      credential = saved
-      return existing.status()
-    }
-    let staged = try sharingStage(owner: owner, credential: saved!)
-    try SharingCredentials.write(staged, document: document)
+      .appendingPathComponent("hitSlop/Sharing/Seeds", isDirectory: true)
     client?.pause()
-    client = nil
-    credential = nil
-    let restored = try NativeSharing.restore(owner: owner, credential: staged)
-    let published = try restored.publish(
-      createKey: ProcessInfo.processInfo.environment["HITSLOP_SHARING_CREATE_KEY"] ?? "")
-    // A published invitation is shown only after its recoverable credentials are saved.
+    let published = try sharingCreate(owner: owner, root: root.path, token: token)
     try SharingCredentials.write(published, document: document)
-    try restored.connect()
-    credential = published
-    client = restored
-    return restored.status()
+    return try refresh(token: token, reconnect: true)
   }
   func pause() {
     client?.pause()
     client = nil
     credential = nil
   }
-  func stop() throws -> SharingStatus? {
-    guard let client else { return nil }
-    let saved = try client.stop()
-    try SharingCredentials.write(saved, document: document)
-    credential = saved
-    return client.status()
+  func stop(token: String) throws -> SharingStatus? {
+    if let client, accountPhase != .preparing {
+      let saved = try client.stop(token: token)
+      try SharingCredentials.write(saved, document: document)
+      credential = saved
+    } else {
+      try sharingStopDocument(owner: owner, token: token)
+    }
+    accountPhase = .ended
+    return status()
   }
 }
 
@@ -84,38 +105,54 @@ private actor SharingDriver {
   @Published public private(set) var error: String?
   @Published public private(set) var busy = false
   private let driver: SharingDriver
-  private var polling: Task<Void, Never>?
   private var active = true
+  private var triggers: AnyCancellable?
   init(owner: DocumentOwner) {
     driver = SharingDriver(owner: owner.native, document: owner.documentID ?? "")
+    triggers = NotificationCenter.default.publisher(for: .hitSlopSharingAccountChanged)
+      .merge(with: NotificationCenter.default.publisher(for: .hitSlopSharingForeground))
+      .sink { [weak self] _ in Task { @MainActor [weak self] in self?.refresh() } }
     resume()
   }
   public func resume() {
-    guard polling == nil else { return }
     active = true
-    polling = Task { [weak self] in
-      while !Task.isCancelled {
-        guard let self, self.active else { return }
-        if !self.busy {
-          do {
-            let next = try await self.driver.refresh()
-            guard self.active, !Task.isCancelled else { return }
-            self.status = next
-          } catch { if self.active { self.error = sharingMessage(error) } }
-        }
-        try? await Task.sleep(for: .seconds(2))
+    let listener = SharingStatusListener { [weak self] in
+      Task { @MainActor [weak self] in
+        guard let self, self.active, !self.busy else { return }
+        self.status = await self.driver.status()
       }
+    }
+    Task { await driver.observe(listener) }
+    refresh()
+  }
+  public func refresh() {
+    run {
+      let token = try? await SharingAccount.shared.token()
+      return try await self.driver.refresh(token: token)
     }
   }
   public func pause() async {
     active = false
-    polling?.cancel()
-    polling = nil
     await driver.pause()
   }
-  public func create() { run { try await self.driver.start() } }
-  public func retry() { run { try await self.driver.refresh(reconnect: true) } }
-  public func stop() { run { try await self.driver.stop() } }
+  public func create() {
+    run {
+      let token = try await SharingAccount.shared.token()
+      return try await self.driver.start(token: token)
+    }
+  }
+  public func retry() {
+    run {
+      let token = try? await SharingAccount.shared.token()
+      return try await self.driver.refresh(token: token, reconnect: true)
+    }
+  }
+  public func stop() {
+    run {
+      let token = try await SharingAccount.shared.token()
+      return try await self.driver.stop(token: token)
+    }
+  }
   private func run(_ operation: @escaping @MainActor () async throws -> SharingStatus?) {
     guard active, !busy else { return }
     busy = true
@@ -125,7 +162,12 @@ private actor SharingDriver {
       do {
         let next = try await operation()
         if active { status = next }
-      } catch { if active { self.error = sharingMessage(error) } }
+      } catch {
+        if active {
+          self.error = sharingMessage(error)
+          status = await driver.status()
+        }
+      }
     }
   }
 

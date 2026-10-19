@@ -1,6 +1,13 @@
 import Foundation
 import Security
 
+extension Notification.Name {
+  public static let hitSlopSharingAccountChanged = Notification.Name("hitSlop.sharingAccountChanged")
+  public static let hitSlopSharingForeground = Notification.Name("hitSlop.sharingForeground")
+  public static let hitSlopJoinSharedSlop = Notification.Name("hitSlop.joinSharedSlop")
+  public static let hitSlopNewSyncedChecklist = Notification.Name("hitSlop.newSyncedChecklist")
+}
+
 /// This preview requires an explicit developer launch flag; it is absent from ordinary releases.
 public enum SharingPreview {
   public static let enabled: Bool = {
@@ -13,8 +20,7 @@ public enum SharingPreview {
   }()
 }
 
-/// Opaque Rust credentials. Swift never interprets their contents. Both signed apps use
-/// the same synchronizable access group; lack of iCloud Keychain does not block local use.
+/// Opaque Rust invitations, local to this device. Owner recovery uses the account service.
 public enum SharingCredentials {
   private static func query(_ document: String) throws -> [String: Any] {
     guard let group = Bundle.main.object(forInfoDictionaryKey: "SharingKeychainGroup") as? String,
@@ -22,10 +28,9 @@ public enum SharingCredentials {
     else { throw SlopFailure("Sharing preview requires the signed hitSlop app.") }
     return [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "com.hitslop.sharing-preview",
+      kSecAttrService as String: "com.hitslop.sharing-accounts-v1",
       kSecAttrAccount as String: document,
       kSecAttrAccessGroup as String: group,
-      kSecAttrSynchronizable as String: true,
       kSecUseDataProtectionKeychain as String: true,
     ]
   }
@@ -46,7 +51,7 @@ public enum SharingCredentials {
     var status = SecItemUpdate(query as CFDictionary, values as CFDictionary)
     if status == errSecItemNotFound {
       var item = query.merging(values) { _, new in new }
-      item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+      item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
       status = SecItemAdd(item as CFDictionary, nil)
       if status == errSecDuplicateItem { status = SecItemUpdate(query as CFDictionary, values as CFDictionary) }
     }

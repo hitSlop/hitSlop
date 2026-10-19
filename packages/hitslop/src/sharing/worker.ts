@@ -135,7 +135,7 @@ async function resourceSession(epoch: number) {
   const app = copy!.verifyResources(await metadata(manifest, epoch));
   const grant: ResourceGrant = { app };
   await checkedFetch(
-    frameOrigin(copyID) + "/_resources/" + new URL(connection.url).pathname.split("/")[2],
+    frameOrigin(copyID) + "/_resources/" + new URL(connection.url).pathname.split("/").at(-2),
     {
       method: "POST",
       credentials: "include",

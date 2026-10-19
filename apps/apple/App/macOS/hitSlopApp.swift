@@ -108,6 +108,7 @@ private struct UpdateSettingsView: View {
     }
   }
   func applicationDidBecomeActive(_ notification: Notification) {
+    NotificationCenter.default.post(name: .hitSlopSharingForeground, object: nil)
     SlopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
     SlopLibrary.shared.activated(true)
   }
@@ -204,6 +205,14 @@ private struct UpdateSettingsView: View {
   @objc private func togglePin() { coordinator.activeController?.togglePin() }
   @objc private func toggleTheme() { coordinator.activeController?.toggleTheme() }
   @objc private func showLiveSharing() { coordinator.activeController?.showLiveSharing() }
+  @objc private func joinSharedSlop() {
+    showCatalog()
+    DispatchQueue.main.async { NotificationCenter.default.post(name: .hitSlopJoinSharedSlop, object: nil) }
+  }
+  @objc private func newSyncedChecklist() {
+    showCatalog()
+    DispatchQueue.main.async { NotificationCenter.default.post(name: .hitSlopNewSyncedChecklist, object: nil) }
+  }
   @objc private func showSettings() {
     if settingsWindow == nil {
       let content = UpdateSettingsView(updater: updater).frame(width: 480, height: 340)
@@ -282,6 +291,8 @@ private struct UpdateSettingsView: View {
     fileItem.submenu = file
     file.delegate = self
     item(file, "New from Template…", #selector(showCatalog), "n")
+    item(file, "New Synced Checklist…", #selector(newSyncedChecklist), "")
+    if SharingPreview.enabled { item(file, "Join Shared Slop…", #selector(joinSharedSlop), "") }
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
     let recent = NSMenu(title: "Open Recent")
@@ -388,6 +399,7 @@ private struct UpdateSettingsView: View {
       menuItem.state = controller?.isThemeShown == true ? .on : .off
       return controller?.canToggleTheme ?? false
     case #selector(showLiveSharing): return controller?.canShowLiveSharing ?? false
+    case #selector(newSyncedChecklist): return SlopLibrary.shared.isReady
     default: return true
     }
   }

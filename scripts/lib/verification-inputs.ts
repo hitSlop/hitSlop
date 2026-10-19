@@ -34,6 +34,7 @@ export const tierInputs = {
   render: [...rustInputs, /^packages\/hitslop\/(src|shell)\//, /^packages\/hitslop\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^slops\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
   browser: [...rustInputs, /^packages\/hitslop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
   rust: [/^scripts\/compat\//, ...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
+  sharing: [...rustInputs, /^apps\/sharing\//, /^scripts\/sharing\//, /^scripts\/build\/sharing\.ts$/],
   landing: [/^apps\/landing\//],
   packed: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,

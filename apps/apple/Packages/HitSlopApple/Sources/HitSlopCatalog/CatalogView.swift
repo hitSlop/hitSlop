@@ -25,16 +25,6 @@ public struct CatalogView: View {
       CatalogSidebar(filter: model.filter, categories: model.categories, recentCount: model.recents.count) {
         model.select($0)
       }
-      .safeAreaInset(edge: .bottom) {
-        VStack {
-          if SharingPreview.enabled { Button("Join Shared Slop…") { showJoin = true } }
-          Button("New synced checklist", systemImage: "plus.icloud") {
-            libraryName = "Quick Checklist"
-            showLibraryName = true
-          }
-          .buttonStyle(.bordered).disabled(!library.isReady || creatingLibrary).padding(12)
-        }
-      }
       .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
     } content: {
       CatalogRail(
@@ -77,6 +67,14 @@ public struct CatalogView: View {
     .onAppear {
       model.start()
       library.start()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .hitSlopJoinSharedSlop)) { _ in
+      if SharingPreview.enabled { showJoin = true }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .hitSlopNewSyncedChecklist)) { _ in
+      guard library.isReady, !creatingLibrary else { return }
+      libraryName = "Quick Checklist"
+      showLibraryName = true
     }
     .onReceive(library.$entries) { entries in
       model.synced = entries.filter { !$0.deleted }.map { entry in

@@ -22,7 +22,7 @@ pub(crate) fn merge_seed(owner: &Owner, source: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn upload_app(key: &Credential, store: &Store, path: &Path) -> Result<()> {
+pub(crate) fn upload_app(key: &Credential, store: &Store, path: &Path, token: &str) -> Result<()> {
     let reader = store.resource_reader().map_err(fail)?;
     let mut resources = vec![];
     for asset in hitslop_core::file::inspect(path).map_err(fail)?.assets {
@@ -49,7 +49,7 @@ pub(crate) fn upload_app(key: &Credential, store: &Store, path: &Path) -> Result
         key,
         "POST",
         "resources",
-        Some(&key.admin),
+        Some(token),
         &serde_json::to_vec(&manifest).map_err(fail)?,
         &[("Content-Type", "application/json")],
     )?;
@@ -62,7 +62,7 @@ pub(crate) fn upload_app(key: &Credential, store: &Store, path: &Path) -> Result
             key,
             "PUT",
             &format!("asset/{}", item.hash),
-            Some(&key.admin),
+            Some(token),
             &bytes,
             &[("Content-Type", &item.media_type)],
         )?;

@@ -231,6 +231,10 @@ const tiers: Tier[] = [
     },
   },
   {
+    name: "sharing", nightly: true, needs: ["sharing"], inputs: tierInputs.sharing,
+    run: async () => { await sh([process.execPath, "scripts/sharing/check-accounts.ts"]); },
+  },
+  {
     name: "packed",
     needs: ["packages"],
     // What the published packages ship: their sources, starter, skills and the page shell.

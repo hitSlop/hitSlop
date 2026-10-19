@@ -85,12 +85,15 @@ pub(super) async fn entry(mut req: Request, env: Env) -> Result<Response> {
 
 impl SlopRoom {
     pub(super) async fn resource_fetch(&self, mut req: Request) -> Result<Response> {
-        if self.text("ended")?.is_some() {
+        if self.text("ended")?.is_some() || self.text("owner_uid")?.is_none() {
             return Response::error("Sharing ended", 410);
+        }
+        if self.text("published")?.is_none() {
+            return Response::error("Publication pending", 409);
         }
         let host = req.url()?.origin().ascii_serialization();
         if req.path().starts_with("/_resources/") {
-            if req.method() != Method::Post || !self.authorized(&req, false)? {
+            if req.method() != Method::Post || !self.authorized(&req, false).await? {
                 return denied();
             }
             let bytes = bounded_body(&mut req, CONTROL_BYTES).await?;
@@ -199,7 +202,7 @@ impl SlopRoom {
                     None => Response::error("Resources not ready", 409),
                 };
             }
-            if req.method() != Method::Post || !self.authorized(req, true)? {
+            if req.method() != Method::Post {
                 return denied();
             }
             let body = bounded_body(req, CONTROL_BYTES).await?;
@@ -228,10 +231,10 @@ impl SlopRoom {
         }
         let path = req.path();
         let parts: Vec<_> = path.split('/').collect();
-        if parts.len() != 5 || !resource_types::hash_id(parts[4]) {
+        if parts.len() != 6 || !resource_types::hash_id(parts[5]) {
             return Response::error("Not found", 404);
         }
-        let id = parts[4];
+        let id = parts[5];
         let blob = route == "blob";
         let key = format!("{room}/{}/{id}", if blob { "blobs" } else { "assets" });
         let bucket = self.env.bucket("SEEDS")?;
@@ -248,9 +251,6 @@ impl SlopRoom {
                     media_type: req.headers().get("Content-Type")?.unwrap_or_else(|| "application/octet-stream".into()),
                 }
             } else {
-                if !self.authorized(req, true)? {
-                    return denied();
-                }
                 let manifest: Manifest =
                     serde_json::from_str(&self.text("resources")?.ok_or_else(|| fail("Missing manifest"))?)?;
                 manifest.resources.into_iter().find(|r| r.hash == id).ok_or_else(|| fail("Unknown app resource"))?

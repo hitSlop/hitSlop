@@ -8,9 +8,8 @@ use hitslop_core::{
     owner::{Owner, Reply, Request},
     store::{Mode, Share, Store},
 };
-use hitslop_sharing_protocol::{
-    http::{Invitation, RoomInit},
-    resources::hash_id,
+use hitslop_sharing_protocol::http::{
+    AccountRoomInit, Invitation, ReserveRoom, RoomIdentity, RoomInit, RoomPhase, RoomReservation,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -21,6 +20,7 @@ use std::{
     time::Instant,
 };
 type Result<T> = std::result::Result<T, String>;
+type Notice = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
 fn fail(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
@@ -43,40 +43,75 @@ fn random() -> Result<String> {
     Ok(hex(&bytes))
 }
 
-/// Auth spike only. The token is transient and never enters document credentials.
+/// Tokens are transient request arguments; never saved with a document or credential.
 pub fn verify_account(token: &str) -> Result<hitslop_sharing_protocol::http::VerifiedAccount> {
-    if token.is_empty() || token.len() > hitslop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES {
-        return Err("Sign in required".into());
-    }
-    let agent = ureq::Agent::new_with_config(
-        ureq::Agent::config_builder()
-            .http_status_as_error(false)
-            .timeout_global(Some(std::time::Duration::from_secs(30)))
-            .build(),
-    );
-    let mut response = agent
-        .get(format!("{}/v1/auth/probe", hitslop_sharing_protocol::TRUSTED_ORIGIN))
-        .header("Authorization", &format!("Bearer {token}"))
-        .call()
-        .map_err(|_| "Identity service unavailable")?;
-    if response.status().as_u16() == 401 {
-        return Err("Sign in required".into());
-    }
-    if response.status().as_u16() != 200 {
-        return Err("Identity verification unavailable".into());
-    }
-    let bytes =
-        response.body_mut().with_config().limit(4096).read_to_vec().map_err(|_| "Identity reply unavailable")?;
-    serde_json::from_slice(&bytes).map_err(|_| "Invalid identity reply".into())
+    account_request("GET", "auth/probe", token, &[])
 }
-
+fn account_request<T: serde::de::DeserializeOwned>(method: &str, route: &str, token: &str, body: &[u8]) -> Result<T> {
+    if token.is_empty() || token.len() > hitslop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES {
+        return Err("Sign in to your sharing account first".into());
+    }
+    let bytes = transport::http_request(
+        method,
+        &format!("{}/v1/{route}", hitslop_sharing_protocol::TRUSTED_ORIGIN),
+        Some(token),
+        body,
+        &[("Content-Type", "application/json")],
+        hitslop_sharing_protocol::CONTROL_BYTES as u64,
+    )?;
+    serde_json::from_slice(&bytes).map_err(|_| "Invalid account reply".into())
+}
+fn access(document: &str, token: &str) -> Result<Option<RoomReservation>> {
+    let result: Option<RoomReservation> = account_request("GET", &format!("account/access/{document}"), token, &[])?;
+    if let Some(r) = &result {
+        validate_reservation(r, document)?;
+    }
+    Ok(result)
+}
+fn validate_reservation(r: &RoomReservation, document: &str) -> Result<()> {
+    let room =
+        |value: &str| value.len() == 32 && value.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c));
+    if r.document != document
+        || !hitslop_sharing_protocol::valid_copy(document)
+        || r.generation == 0
+        || !room(&r.room)
+        || r.previous_room.as_deref().is_some_and(|s| !room(s))
+        || r.capability.as_deref().is_some_and(|s| !hitslop_sharing_protocol::resources::hash_id(s))
+    {
+        return Err("Invalid account reservation".into());
+    }
+    Ok(())
+}
+fn owner_credential(owner: &Owner, r: &RoomReservation) -> Result<Credential> {
+    let key = Credential { invitation: r.invitation.clone().ok_or("Missing published invitation")?, ended: false };
+    key.invitation.validate()?;
+    if key.document != r.document || key.room != r.room || r.capability.as_ref() != Some(&key.capability) {
+        return Err("Invalid published reservation".into());
+    }
+    let share = owner.share().map_err(fail)?;
+    if share.as_ref().is_some_and(|s| s.endpoint == key.origin && r.previous_room.as_ref() == Some(&s.room)) {
+        request(owner, Request::Share { share: Share { room: key.room.clone(), endpoint: key.origin.clone() } })?;
+    } else {
+        validate_membership(share, &key)?;
+    }
+    Ok(key)
+}
+fn identity(r: &RoomReservation) -> RoomIdentity {
+    RoomIdentity { document: r.document.clone(), generation: r.generation, room: r.room.clone() }
+}
+fn validate_reservation_membership(share: Option<Share>, r: &RoomReservation) -> Result<()> {
+    if share.is_some_and(|s| {
+        s.endpoint != "cloudkit://library"
+            && (s.endpoint != hitslop_sharing_protocol::TRUSTED_ORIGIN
+                || (s.room != r.room && r.previous_room.as_ref() != Some(&s.room)))
+    }) {
+        return Err("Different room membership".into());
+    }
+    Ok(())
+}
 #[derive(Clone, Serialize, Deserialize)]
 struct Credential {
     invitation: Invitation,
-    admin: String,
-    seed: PathBuf,
-    init: Option<RoomInit>,
-    published: bool,
     ended: bool,
 }
 impl Deref for Credential {
@@ -91,23 +126,78 @@ impl Credential {
             return Err("Invalid sharing credentials".into());
         }
         let key: Self = serde_json::from_str(value).map_err(|_| "Invalid sharing credentials")?;
-        if key.origin != hitslop_sharing_protocol::TRUSTED_ORIGIN
-            || !hitslop_sharing_protocol::valid_copy(&key.document)
-            || key.room.len() != 32
-            || !key.room.bytes().all(|b| b.is_ascii_hexdigit())
-            || !hash_id(&key.capability)
-            || (!key.admin.is_empty() && !hash_id(&key.admin))
-        {
-            return Err("Untrusted sharing credentials".into());
-        }
-        if key.size != 0 {
-            key.invitation.validate()?;
-        }
+        key.invitation.validate()?;
         Ok(key)
     }
     fn encode(&self) -> Result<String> {
         serde_json::to_string(self).map_err(|_| "Cannot preserve sharing credentials".into())
     }
+}
+/// The immutable, owner-local SQLite seed IS the creation journal. Its stable room
+/// filename lets retries reconstruct metadata without a second JSON state machine.
+fn stage(owner: &Owner, root: &Path, reservation: &RoomReservation) -> Result<(PathBuf, RoomInit, Invitation)> {
+    validate_reservation(reservation, owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?)?;
+    if owner.app().document_uuid.as_deref() != Some(&reservation.document) {
+        return Err("Different sharing document".into());
+    }
+    let capability = reservation.capability.clone().ok_or("Sharing ended")?;
+    let binding = Share { room: reservation.room.clone(), endpoint: hitslop_sharing_protocol::TRUSTED_ORIGIN.into() };
+    validate_reservation_membership(owner.share().map_err(fail)?, reservation)?;
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(root).map_err(fail)?;
+    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700)).map_err(fail)?;
+    let path = root.join(format!("{}.slop", reservation.room));
+    request(owner, Request::Share { share: binding.clone() })?;
+    if !path.exists() {
+        // The core already stages, fsyncs and atomically publishes without replacing
+        // a destination. Reuse it instead of adding a second file publication path.
+        request(owner, Request::Backup { destination: path.clone() })?;
+    }
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(fail)?;
+    std::fs::File::open(&path).and_then(|f| f.sync_all()).map_err(fail)?;
+    let size = std::fs::metadata(&path).map_err(fail)?.len();
+    if size > hitslop_sharing_protocol::SEED_BYTES as u64 {
+        return Err("Sharing starts files up to 16 MiB. Your local document is retained.".into());
+    }
+    let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
+    if store.app().document_uuid.as_deref() != Some(&reservation.document)
+        || store.share().map_err(fail)? != Some(binding)
+    {
+        return Err("Pending seed identity mismatch".into());
+    }
+    let checkpoint = store.document().map_err(fail)?.checkpoint().map_err(fail)?;
+    let meta = loro::LoroDoc::decode_import_blob_meta(&checkpoint, true).map_err(|_| "Invalid seed history")?;
+    let mut seed: Vec<_> = meta.partial_end_vv.iter().map(|(&p, &n)| (format!("{p:016x}"), n as u32)).collect();
+    seed.sort();
+    let seed_hash = hex(&Sha256::digest(std::fs::read(&path).map_err(fail)?));
+    let init = RoomInit { app: hex(&store.app_digest().map_err(fail)?), seed, seed_hash: seed_hash.clone() };
+    let invitation = Invitation {
+        document: reservation.document.clone(),
+        room: reservation.room.clone(),
+        origin: hitslop_sharing_protocol::TRUSTED_ORIGIN.into(),
+        capability,
+        seed_hash,
+        size: size as u32,
+    };
+    invitation.validate()?;
+    Ok((path, init, invitation))
+}
+
+/// Initial seed catch-up belongs to the reconnecting transport. A document opened
+/// offline must not need a UI action or a credential-poll loop to recover later.
+fn bootstrap(owner: &Owner, key: &Credential) -> Result<()> {
+    let bytes = transport::http(key, "GET", "seed", Some(&key.capability), &[], &[])?;
+    if hex(&Sha256::digest(&bytes)) != key.seed_hash {
+        return Err("Seed checksum mismatch".into());
+    }
+    let stage = std::env::temp_dir().join(format!("hitslop-sharing-{}.slop", random()?));
+    let result = (|| {
+        private_file(&stage, &bytes)?;
+        resources::merge_seed(owner, &stage)
+    })();
+    let _ = std::fs::remove_file(&stage);
+    result?;
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -125,79 +215,107 @@ pub struct ClientStatus {
     pub link: Option<String>,
     pub creator: bool,
 }
+pub struct AccountAccess {
+    pub credential: Option<String>,
+    pub phase: Option<Phase>,
+}
 
 pub struct Client {
     owner: Arc<Owner>,
     key: Mutex<Credential>,
     connection: Mutex<Option<transport::Connection>>,
+    creator: std::sync::atomic::AtomicBool,
+    notice: Notice,
 }
 impl Client {
-    /// Allocate credentials first, without changing the document or contacting the service.
-    pub fn prepare(owner: &Owner, root: &Path) -> Result<String> {
-        if owner.share().map_err(fail)?.is_some_and(|s| s.endpoint != "cloudkit://library") {
-            return Err("Sharing details are missing. Reopen the invitation or make an independent copy.".into());
+    /// Creation is idempotent across devices and process restarts. Only the server
+    /// holds ownership; the local file freezes retry bytes, never admin authority.
+    pub fn create(owner: &Owner, root: &Path, token: &str) -> Result<String> {
+        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
+        let prior = access(document, token)?;
+        if let Some(r) = &prior {
+            if r.phase == RoomPhase::Published {
+                return owner_credential(owner, r)?.encode();
+            }
+            if r.phase == RoomPhase::Stopping {
+                return Err("Finish stopping this share before creating another".into());
+            }
         }
-        let document = owner.app().document_uuid.clone().ok_or("Only documents can be shared")?;
-        let room = random()?[..32].to_owned();
-        std::fs::create_dir_all(root).map_err(fail)?;
-        let root = std::fs::canonicalize(root).map_err(fail)?;
-        private_file(&root.join(format!("{room}.staging")), b"hitSlop sharing preparation")?;
-        Credential {
-            invitation: Invitation {
-                document,
-                room: room.clone(),
-                origin: hitslop_sharing_protocol::TRUSTED_ORIGIN.into(),
-                capability: random()?,
-                seed_hash: String::new(),
-                size: 0,
-            },
-            admin: random()?,
-            seed: root.join(format!("{room}.slop")),
-            init: None,
-            published: false,
-            ended: false,
+        let generation = prior
+            .as_ref()
+            .map_or(
+                Some(1),
+                |r| if r.phase == RoomPhase::Ended { r.generation.checked_add(1) } else { Some(r.generation) },
+            )
+            .ok_or("Sharing generation limit reached")?;
+        let reservation: RoomReservation = account_request(
+            "POST",
+            "account/reserve",
+            token,
+            &serde_json::to_vec(&ReserveRoom { document: document.into(), generation }).map_err(fail)?,
+        )?;
+        if reservation.phase != RoomPhase::Pending {
+            return Err("Reservation changed; reopen sharing and retry".into());
         }
-        .encode()
-    }
-    /// Called only after the host has persisted the pending credentials in Keychain.
-    pub fn stage(owner: &Owner, value: &str) -> Result<String> {
-        let mut key = Credential::decode(value)?;
-        if key.admin.is_empty() || owner.app().document_uuid.as_deref() != Some(&key.document) {
-            return Err("Different sharing document".into());
-        }
-        // This marker is local to prepare(), never in the document or Keychain.
-        // Another same-account device must not accidentally replace the pending seed.
-        if !key.seed.with_extension("staging").is_file() || (key.size != 0 && !key.seed.is_file()) {
-            return Err("Finish starting sharing on the original device".into());
-        }
-        let binding = Share { room: key.room.clone(), endpoint: key.origin.clone() };
-        if owner.share().map_err(fail)?.is_some_and(|s| s.endpoint != "cloudkit://library" && s != binding) {
-            return Err("Conflicting room membership".into());
-        }
-        request(owner, Request::Share { share: binding })?;
-        if !key.seed.exists() {
-            request(owner, Request::Backup { destination: key.seed.clone() })?;
-        }
-        let size = std::fs::metadata(&key.seed).map_err(|_| "Finish starting sharing on the original device")?.len();
-        if size > hitslop_sharing_protocol::SEED_BYTES as u64 {
-            return Err("This preview starts sharing files up to 16 MiB. Your local document is retained.".into());
-        }
-        let bytes = std::fs::read(&key.seed).map_err(fail)?;
-        let store = Store::open(&key.seed, Mode::Snapshot).map_err(fail)?;
-        if store.app().document_uuid.as_deref() != Some(&key.document)
-            || store.share().map_err(fail)? != owner.share().map_err(fail)?
+        let (path, init, invitation) = stage(owner, root, &reservation)?;
+        let key = Credential { invitation, ended: false };
+        transport::http(
+            &key,
+            "POST",
+            "init",
+            Some(token),
+            &serde_json::to_vec(&AccountRoomInit { identity: identity(&reservation), init }).map_err(fail)?,
+            &[("Content-Type", "application/json")],
+        )?;
+        let bytes = std::fs::read(&path).map_err(fail)?;
+        transport::http(&key, "PUT", "seed", Some(token), &bytes, &[])?;
+        let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
+        resources::upload_app(&key, &store, &path, token)?;
+        resources::upload_blobs(owner, &key, &mut resources::remote_blobs(&key)?)?;
+        let published: RoomReservation = account_request(
+            "POST",
+            "account/publish",
+            token,
+            &serde_json::to_vec(&identity(&reservation)).map_err(fail)?,
+        )?;
+        let invitation = published.invitation.ok_or("Publication is not ready")?;
+        // The server's canonical seed must be precisely the immutable file we staged.
+        if invitation.document != key.document
+            || invitation.room != key.room
+            || invitation.capability != key.capability
+            || invitation.origin != key.origin
+            || invitation.seed_hash != key.seed_hash
+            || invitation.size != key.size
         {
-            return Err("Pending seed identity mismatch".into());
+            return Err("Canonical seed differs; finish creation on the original device".into());
         }
-        let checkpoint = store.document().map_err(fail)?.checkpoint().map_err(fail)?;
-        let meta = loro::LoroDoc::decode_import_blob_meta(&checkpoint, true).map_err(|_| "Invalid seed history")?;
-        let mut seed: Vec<_> = meta.partial_end_vv.iter().map(|(&p, &n)| (format!("{p:016x}"), n as u32)).collect();
-        seed.sort();
-        key.invitation.seed_hash = hex(&Sha256::digest(&bytes));
-        key.invitation.size = size as u32;
-        key.init =
-            Some(RoomInit { app: hex(&store.app_digest().map_err(fail)?), seed, seed_hash: key.seed_hash.clone() });
-        key.encode()
+        let _ = std::fs::remove_file(path);
+        Credential { invitation, ended: false }.encode()
+    }
+    pub fn recover(owner: &Owner, token: &str) -> Result<AccountAccess> {
+        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
+        let Some(r) = access(document, token)? else {
+            return Ok(AccountAccess { credential: None, phase: None });
+        };
+        if r.invitation.is_some() {
+            let key = owner_credential(owner, &r)?;
+            return Ok(AccountAccess { credential: Some(key.encode()?), phase: Some(Phase::Offline) });
+        }
+        if validate_reservation_membership(owner.share().map_err(fail)?, &r).is_err() {
+            return Ok(AccountAccess { credential: None, phase: None });
+        }
+        Ok(AccountAccess {
+            credential: None,
+            phase: Some(if r.phase == RoomPhase::Ended { Phase::Ended } else { Phase::Preparing }),
+        })
+    }
+    pub fn stop_document(owner: &Owner, token: &str) -> Result<()> {
+        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
+        let r = access(document, token)?.ok_or("Only the creator can stop this share")?;
+        validate_reservation_membership(owner.share().map_err(fail)?, &r)?;
+        let _: RoomReservation =
+            account_request("POST", "account/stop", token, &serde_json::to_vec(&identity(&r)).map_err(fail)?)?;
+        Ok(())
     }
     pub fn restore(owner: Arc<Owner>, value: &str) -> Result<Self> {
         let key = Credential::decode(value)?;
@@ -205,49 +323,18 @@ impl Client {
             return Err("Different sharing document".into());
         }
         validate_membership(owner.share().map_err(fail)?, &key)?;
-        Ok(Self { owner, key: Mutex::new(key), connection: Mutex::new(None) })
-    }
-    /// The staged seed identity must already be persisted. Repeating this operation is safe.
-    pub fn publish(&self, create_key: &str) -> Result<String> {
-        let mut key = self.key.lock().expect("sharing key").clone();
-        if key.ended {
-            return Err("Sharing ended".into());
-        }
-        key.invitation.validate()?;
-        let init = key.init.as_ref().ok_or("Sharing is not staged")?;
-        if key.admin.is_empty() || create_key.is_empty() {
-            return Err("Sharing preview creation is not configured".into());
-        }
-        let bytes = std::fs::read(&key.seed).map_err(|_| "Finish starting sharing on the original device")?;
-        if hex(&Sha256::digest(&bytes)) != key.seed_hash {
-            return Err("Pending sharing seed changed".into());
-        }
-        transport::http(
-            &key,
-            "POST",
-            "init",
-            None,
-            &serde_json::to_vec(init).map_err(fail)?,
-            &[
-                ("X-Admin-Key", &key.admin),
-                ("X-Write-Key", &key.capability),
-                ("X-Preview-Create-Key", create_key),
-                ("Content-Type", "application/json"),
-            ],
-        )?;
-        transport::http(&key, "PUT", "seed", Some(&key.admin), &bytes, &[])?;
-        let store = Store::open(&key.seed, Mode::Snapshot).map_err(fail)?;
-        resources::upload_app(&key, &store, &key.seed)?;
-        resources::upload_blobs(&self.owner, &key, &mut resources::remote_blobs(&key)?)?;
-        key.published = true;
-        let encoded = key.encode()?;
-        *self.key.lock().expect("sharing key") = key;
-        Ok(encoded)
+        Ok(Self {
+            owner,
+            key: Mutex::new(key),
+            connection: Mutex::new(None),
+            creator: std::sync::atomic::AtomicBool::new(false),
+            notice: Arc::new(Mutex::new(None)),
+        })
     }
     pub fn connect(&self) -> Result<()> {
         self.pause();
         let key = self.key.lock().expect("sharing key").clone();
-        if !key.published || key.ended {
+        if key.ended {
             return Ok(());
         }
         key.invitation.validate()?;
@@ -255,27 +342,9 @@ impl Client {
         if self.owner.share().map_err(fail)?.is_some_and(|s| s.endpoint != "cloudkit://library" && s != binding) {
             return Err("Conflicting room membership".into());
         }
-        let bytes = match transport::http(&key, "GET", "seed", Some(&key.capability), &[], &[]) {
-            Ok(bytes) => bytes,
-            Err(message) if message == "Sharing ended" => {
-                self.key.lock().expect("sharing key").ended = true;
-                return Ok(());
-            }
-            Err(message) => return Err(message),
-        };
-        if hex(&Sha256::digest(&bytes)) != key.seed_hash {
-            return Err("Seed checksum mismatch".into());
-        }
-        let stage = std::env::temp_dir().join(format!("hitslop-sharing-{}.slop", random()?));
-        let result = (|| {
-            private_file(&stage, &bytes)?;
-            resources::merge_seed(&self.owner, &stage)
-        })();
-        let _ = std::fs::remove_file(&stage);
-        result?;
         request(&self.owner, Request::Share { share: binding })?;
         *self.connection.lock().expect("sharing connection") =
-            Some(transport::Connection::start(self.owner.clone(), key));
+            Some(transport::Connection::start(self.owner.clone(), key, self.notice.clone()));
         Ok(())
     }
     pub fn pause(&self) {
@@ -284,17 +353,25 @@ impl Client {
             connection.stop();
         }
     }
-    pub fn stop(&self) -> Result<String> {
+    pub fn stop(&self, token: &str) -> Result<String> {
         let mut key = self.key.lock().expect("sharing key").clone();
-        if key.admin.is_empty() {
-            return Err("Only the creator can stop sharing".into());
+        let r = access(&key.document, token)?.ok_or("Only the creator can stop this share")?;
+        if r.room != key.room {
+            return Err("This link was replaced; refresh sharing before stopping it".into());
         }
-        transport::http(&key, "DELETE", "stop", Some(&key.admin), &[], &[])?;
+        let _: RoomReservation =
+            account_request("POST", "account/stop", token, &serde_json::to_vec(&identity(&r)).map_err(fail)?)?;
         self.pause();
         key.ended = true;
         let value = key.encode()?;
         *self.key.lock().expect("sharing key") = key;
         Ok(value)
+    }
+    pub fn set_creator(&self, creator: bool) {
+        self.creator.store(creator, std::sync::atomic::Ordering::Relaxed);
+    }
+    pub fn listen(&self, notice: Arc<dyn Fn() + Send + Sync>) {
+        *self.notice.lock().unwrap() = Some(notice);
     }
     pub fn status(&self) -> ClientStatus {
         let key = self.key.lock().expect("sharing key");
@@ -302,8 +379,6 @@ impl Client {
             self.connection.lock().expect("sharing connection").as_ref().map_or("Offline".into(), |c| c.status());
         let phase = if key.ended || detail == "Ended" {
             Phase::Ended
-        } else if !key.published {
-            Phase::Preparing
         } else if detail == "Synced" {
             Phase::Synced
         } else if detail.starts_with("Paused") {
@@ -316,8 +391,8 @@ impl Client {
         ClientStatus {
             phase,
             detail,
-            creator: !key.admin.is_empty(),
-            link: if key.published { key.invitation.link().ok() } else { None },
+            creator: self.creator.load(std::sync::atomic::Ordering::Relaxed),
+            link: key.invitation.link().ok(),
         }
     }
 }
@@ -328,15 +403,7 @@ impl Drop for Client {
 }
 
 pub fn joined_credential(link: &str) -> Result<String> {
-    Credential {
-        invitation: Invitation::parse(link)?,
-        admin: String::new(),
-        seed: PathBuf::new(),
-        init: None,
-        published: true,
-        ended: false,
-    }
-    .encode()
+    Credential { invitation: Invitation::parse(link)?, ended: false }.encode()
 }
 pub fn invitation_document(link: &str) -> Result<String> {
     Ok(Invitation::parse(link)?.document)

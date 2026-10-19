@@ -395,9 +395,9 @@ pub fn invitation_request(json: &str, origin: &str) -> Result<String, JsValue> {
     serde_json::to_string(&hitslop_sharing_protocol::http::ConnectionPlan {
         document: key.document,
         size: key.size,
-        url: format!("{}/rooms/{}/seed", key.origin, key.room),
+        url: format!("{}/v1/rooms/{}/seed", key.origin, key.room),
         headers: [("Authorization".into(), format!("Bearer {}", key.capability))].into_iter().collect(),
-        socket: format!("{}/rooms/{}/sync", key.origin.replacen("https://", "wss://", 1), key.room),
+        socket: format!("{}/v1/rooms/{}/sync", key.origin.replacen("https://", "wss://", 1), key.room),
         protocols: vec![hitslop_sharing_protocol::SOCKET_PROTOCOL.into(), format!("cap.{}", key.capability)],
     })
     .map_err(error)

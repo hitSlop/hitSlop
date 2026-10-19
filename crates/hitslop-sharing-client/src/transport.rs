@@ -19,11 +19,27 @@ pub(crate) fn http(
     body: &[u8],
     headers: &[(&str, &str)],
 ) -> Result<Vec<u8>> {
+    let limit = if route == "seed" {
+        hitslop_sharing_protocol::SEED_BYTES as u64
+    } else if route.starts_with("blob/") {
+        hitslop_core::ATTACHMENT_FILE_BYTES as u64
+    } else {
+        hitslop_sharing_protocol::CONTROL_BYTES as u64
+    };
+    http_request(method, &format!("{}/v1/rooms/{}/{}", key.origin, key.room, route), token, body, headers, limit)
+}
+pub(crate) fn http_request(
+    method: &str,
+    url: &str,
+    token: Option<&str>,
+    body: &[u8],
+    headers: &[(&str, &str)],
+    limit: u64,
+) -> Result<Vec<u8>> {
     let agent = ureq::Agent::new_with_config(
         ureq::Agent::config_builder().http_status_as_error(false).timeout_global(Some(Duration::from_secs(30))).build(),
     );
-    let mut request =
-        ureq::http::Request::builder().method(method).uri(format!("{}/rooms/{}/{}", key.origin, key.room, route));
+    let mut request = ureq::http::Request::builder().method(method).uri(url);
     if let Some(token) = token {
         request = request.header("Authorization", format!("Bearer {token}"));
     }
@@ -32,21 +48,13 @@ pub(crate) fn http(
     }
     let mut response =
         agent.run(request.body(body.to_vec()).map_err(fail)?).map_err(|_| fail("Sharing service is unavailable"))?;
-    if response.status().as_u16() == 410 {
-        return Err("Sharing ended".into());
+    match response.status().as_u16() {
+        200 => {}
+        401 => return Err("Sign in to your sharing account first".into()),
+        410 => return Err("Sharing ended".into()),
+        409 => return Err("Sharing changed or creation is unfinished. Retry on the device that started it.".into()),
+        status => return Err(format!("Sharing service refused this request ({status})")),
     }
-    if response.status().as_u16() != 200 {
-        return Err(fail(format!("Relay HTTP status {}", response.status().as_u16())));
-    }
-    // ureq's limit reader errors when read_to_end probes EOF at the exact limit.
-    // Reserve one byte for that probe, then enforce our own inclusive Rust bound.
-    let limit = if route == "seed" {
-        hitslop_sharing_protocol::SEED_BYTES as u64
-    } else if route.starts_with("blob/") {
-        hitslop_core::ATTACHMENT_FILE_BYTES as u64
-    } else {
-        hitslop_sharing_protocol::CONTROL_BYTES as u64
-    };
     let bytes =
         response.body_mut().with_config().limit(limit + 1).read_to_vec().map_err(|_| fail("Relay body unavailable"))?;
     if bytes.len() as u64 > limit {
@@ -81,23 +89,58 @@ impl Queue {
         self.events.push_back(event);
     }
 }
+struct Status {
+    value: Mutex<String>,
+    notice: Notice,
+}
+impl Status {
+    fn set(&self, value: String) {
+        let changed = {
+            let mut old = self.value.lock().unwrap();
+            if *old == value {
+                false
+            } else {
+                *old = value;
+                true
+            }
+        };
+        if changed {
+            let callback = self.notice.lock().unwrap().clone();
+            if let Some(callback) = callback {
+                callback();
+            }
+        }
+    }
+}
 pub(crate) struct Connection {
     stop: Arc<AtomicBool>,
-    status: Arc<Mutex<String>>,
+    status: Arc<Status>,
     thread: Option<thread::JoinHandle<()>>,
 }
 impl Connection {
-    pub fn start(owner: Arc<Owner>, key: Credential) -> Self {
+    pub fn start(owner: Arc<Owner>, key: Credential, notice: Notice) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
-        let status = Arc::new(Mutex::new("connecting".into()));
+        let status = Arc::new(Status { value: Mutex::new("Connecting".into()), notice });
         let (running, output) = (stop.clone(), status.clone());
         let thread = thread::spawn(move || {
             let mut backoff = Duration::from_millis(250);
+            let mut bootstrapped = false;
             while !running.load(Ordering::Relaxed) {
-                match connected(&owner, &key, &running, &output) {
+                let attempt = (|| {
+                    if !bootstrapped {
+                        bootstrap(&owner, &key)?;
+                        bootstrapped = true;
+                    }
+                    connected(&owner, &key, &running, &output)
+                })();
+                match attempt {
                     Ok(true) => break,
-                    Ok(false) => *output.lock().unwrap() = "offline; reconnecting".into(),
-                    Err(error) => *output.lock().unwrap() = format!("offline; reconnecting: {error}"),
+                    Ok(false) => output.set("Offline; reconnecting".into()),
+                    Err(error) if error == "Sharing ended" => {
+                        output.set("Ended".into());
+                        break;
+                    }
+                    Err(error) => output.set(format!("Offline; reconnecting: {error}")),
                 }
                 let until = Instant::now() + backoff;
                 while Instant::now() < until && !running.load(Ordering::Relaxed) {
@@ -111,7 +154,7 @@ impl Connection {
         Self { stop, status, thread: Some(thread) }
     }
     pub fn status(&self) -> String {
-        self.status.lock().unwrap().clone()
+        self.status.value.lock().unwrap().clone()
     }
     pub fn stop(mut self) {
         self.stop.store(true, Ordering::Relaxed);
@@ -120,8 +163,8 @@ impl Connection {
         }
     }
 }
-fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &Mutex<String>) -> Result<bool> {
-    let mut req = format!("{}/rooms/{}/sync", key.origin.replacen("https://", "wss://", 1), key.room)
+fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &Status) -> Result<bool> {
+    let mut req = format!("{}/v1/rooms/{}/sync", key.origin.replacen("https://", "wss://", 1), key.room)
         .into_client_request()
         .map_err(fail)?;
     req.headers_mut()
@@ -151,7 +194,7 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &M
         Err(tungstenite::HandshakeError::Failure(tungstenite::Error::Http(response)))
             if response.status().as_u16() == 410 =>
         {
-            *status.lock().unwrap() = "Ended".into();
+            status.set("Ended".into());
             return Ok(true);
         }
         Err(_) => return Err("Relay socket unavailable".into()),
@@ -186,7 +229,7 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &M
                     SyncEvent::Status { status: s } => {
                         let terminal = matches!(s, hitslop_core::sync::Status::Paused { .. });
                         core_status = format!("{s:?}");
-                        *status.lock().unwrap() = core_status.clone();
+                        status.set(core_status.clone());
                         if terminal {
                             return Ok(true);
                         }
@@ -194,7 +237,7 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &M
                     SyncEvent::Send { bytes } => {
                         let frame = Frame::decode(&bytes).map_err(fail)?;
                         if matches!(&frame, Frame::Push { .. }) {
-                            *status.lock().unwrap() = "Syncing files".into();
+                            status.set("Syncing files".into());
                             resources::upload_blobs(owner, key, &mut uploaded)?;
                         }
                         let message = envelope::encode(frame).map_err(fail)?;
@@ -206,18 +249,18 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &M
                 Ok(Message::Binary(bytes)) => {
                     let frame = envelope::decode(&bytes).map_err(fail)?;
                     if matches!(&frame,Frame::Error{message,..} if message=="Sharing ended") {
-                        *status.lock().unwrap() = "Ended".into();
+                        status.set("Ended".into());
                         return Ok(true);
                     }
                     if matches!(frame, Frame::Records(_)) {
-                        *status.lock().unwrap() = "Receiving files".into();
+                        status.set("Receiving files".into());
                         resources::download_blobs(owner, key, &mut uploaded)?;
                     }
                     if !admission.frame(frame.encode()) {
                         return Ok(false);
                     }
                     request(owner, Request::State)?;
-                    *status.lock().unwrap() = core_status.clone();
+                    status.set(core_status.clone());
                 }
                 Ok(Message::Close(_)) => return Ok(false),
                 Ok(_) => {}

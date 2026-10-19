@@ -1,3 +1,4 @@
+import HitSlopAccount
 import HitSlopCoreBinding
 import SwiftUI
 
@@ -10,6 +11,7 @@ import SwiftUI
 public struct DocumentSharingView: View {
   @ObservedObject var model: DocumentSharing
   private let onDone: (() -> Void)?
+  @State private var showAccount = false
   @Environment(\.dismiss) private var dismiss
   public init(model: DocumentSharing, onDone: (() -> Void)? = nil) {
     self.model = model
@@ -20,6 +22,7 @@ public struct DocumentSharingView: View {
       Text("Live Sharing Preview").font(.title2.bold())
       Text("Anyone with the link can edit this document and access its retained history and files.")
         .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      Button("Sharing Account…") { showAccount = true }
       if let status = model.status {
         Text(status.phase == .ended ? "Sharing ended. Your local copy is kept." : status.detail)
           .accessibilityIdentifier("sharing-status")
@@ -36,9 +39,16 @@ public struct DocumentSharingView: View {
           if status.creator { Button("Stop Sharing", role: .destructive) { model.stop() } }
         } else if status.phase == .preparing {
           Button("Finish Creating Edit Link") { model.create() }
+          Button("Stop Sharing", role: .destructive) { model.stop() }
+        } else if status.phase == .ended {
+          Button("Create New Edit Link") { model.create() }
         }
       } else {
         Button("Create Edit Link") { model.create() }.accessibilityIdentifier("sharing-create")
+        Text(
+          "If this slop arrived from another device, open its edit link here or sign in as its creator to recover access."
+        )
+        .font(.footnote).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       if let error = model.error {
         Text(error).foregroundStyle(.red).textSelection(.enabled)
@@ -51,6 +61,14 @@ public struct DocumentSharingView: View {
         Button("Done") { if let onDone { onDone() } else { dismiss() } }
       }
     }.padding(24).frame(idealWidth: 420).disabled(model.busy)
+      .onAppear { model.refresh() }
+      .sheet(isPresented: $showAccount) {
+        VStack(alignment: .trailing) {
+          SharingAccountView()
+          Button("Done") { showAccount = false }
+        }.padding().frame(idealWidth: 440)
+      }
+
   }
 }
 

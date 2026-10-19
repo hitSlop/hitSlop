@@ -7,3 +7,6 @@ pub const ATTACHMENT_BYTES: usize = 104857600;
 pub const ATTACHMENT_COUNT: usize = 256;
 /// Host-owned Firebase ID tokens; these never enter a document or authored page.
 pub const IDENTITY_TOKEN_BYTES: usize = 16 * 1024;
+/// Account and relay admission policy, separate from document acceptance.
+pub const ACCOUNT_ROOMS: usize = 10;
+pub const ROOM_CONNECTIONS: usize = 32;

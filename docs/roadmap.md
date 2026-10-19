@@ -292,7 +292,7 @@ private-resource experiment passed scoped grants, app/media verification, seed/n
 delivery, offline import/reconnect and native/browser convergence
 ([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). The deliberately
 simple per-record inventory checks raised Mac/browser echo medians to 430–439 ms in that
-run. The integrated developer preview now adds the existing app's Share/Copy Link/Join/Stop
+run. The earlier integrated preview added the existing app's Share/Copy Link/Join/Stop
 controls, synchronizable opaque Keychain credentials, crash-safe staged publication,
 aggregate owner queue admission and process-local 60-second CloudKit checkpoints.
 It deploys a Loro-free Rust relay and private R2 resources, a trusted
@@ -313,21 +313,24 @@ after process reopen. A gated native Apple/Firebase panel, Rust/WASM token probe
 CloudKit diagnostic namespace/traces are added. Signed Mac Apple/Firebase sign-in and
 deployed Rust/WASM verification pass; matching Mac/iPhone UID remains unproven.
 See the [foundation evidence](evidence/live-sharing-accounts-foundation-2026-10-19.md)
-for the deployed result and outstanding build/device gates. Existing preview room
-ownership has not switched to accounts.
+for that proof and its device gates. The next account lifecycle slice is now implemented
+behind the developer flag ([account evidence](evidence/live-sharing-accounts-2026-10-19.md)).
 
-The next target is a public beta with native creators signed in through Apple/Firebase
-and account-free edit-link guests. First share Rust attachment inventory selection and
-seed upload caches from remote inventories; retain complete SQLite files and transfer
-ordering. Diagnose CloudKit discovery/post-Stop delivery independently, then prove
-same-UID native auth and deployed Worker verification. Account objects reserve/index
-rooms; each room enforces its owner UID. This replaces synchronizable sharing
-credentials, developer creation secrets and credential polling, while retaining a local
-immutable seed journal for crash-safe publication. Guests reopen links per device;
-sign-out keeps existing capability-based sync but requires sign-in for administration.
+The account lifecycle now reserves rooms per UID/document/generation, recovers owner
+invitations and checks a verified immutable owner UID in each room. Native creation,
+recovery and Stop use refreshed Firebase identity; guests use device-local invitations.
+The creator admin key, preview creation key, staging marker, synchronizable credential
+storage and two-second polling are removed. A stable immutable SQLite seed is the local
+retry journal. Rust callbacks report transport status; recovery runs on open,
+foreground, sign-in and Share. Re-share creates a new generation; Stop wins over late
+publication/uploads. Rust owns the 10-room/UID and 32-connection/room limits; new
+reservation creation has a kill switch and UID/IP limits. HTTP APIs use `/v1/`.
+The local real-WASM/SQLite DO/R2 check covers two creators and cold recovery; physical
+same-UID Mac/iPhone qualification and the updated deployed native/browser campaign
+remain separate gates. Existing unversioned preview rooms require remote retirement.
 
-Before beta, implement re-share generations, owner-based recovery, account deletion,
-quotas/throttles, a kill switch, privacy disclosures and Save Unshared Copy when the
+Before beta, implement account deletion, remaining resource/frame throttles and metrics,
+privacy disclosures and Save Unshared Copy when the
 source cannot save full history. Freeze HTTP and postcard-envelope contracts. Qualify
 native Join, integrated phone UI, same UUID/path/owner, WKWebView resources,
 background/relaunch and CloudKit delivery without cursor resets. Phone testing waits

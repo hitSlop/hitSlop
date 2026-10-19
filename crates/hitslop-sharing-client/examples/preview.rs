@@ -38,21 +38,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args_os().collect();
     let template = Path::new(args.get(1).ok_or("template required")?);
     let root = Path::new(args.get(2).ok_or("output folder required")?);
-    let secret = Path::new(args.get(3).ok_or("creation secret file required")?);
+    let secret = Path::new(args.get(3).ok_or("Firebase token file required")?);
     std::fs::create_dir_all(root)?;
     hitslop_core::registry::use_folder(&root.join("registry"))?;
     let path = root.join("native.slop");
     file::create_document(template, &path)?;
     let owner = Arc::new(Owner::open(&path, Mode::Document, Arc::new(|_| {}))?);
-    let pending = Client::prepare(&owner, &root.join("seeds"))?;
     let credentials = root.join("credentials.json");
-    save(&credentials, pending.as_bytes())?;
-    let staged = Client::stage(&owner, &pending)?;
-    save(&credentials, staged.as_bytes())?;
-    let client = Client::restore(owner.clone(), &staged)?;
-    let key: serde_json::Value = serde_json::from_slice(&std::fs::read(secret)?)?;
-    let published = client.publish(key["PREVIEW_CREATE_KEY"].as_str().ok_or("Missing creation key")?)?;
+    let token = std::fs::read_to_string(secret)?;
+    let published = Client::create(&owner, &root.join("seeds"), token.trim())?;
     save(&credentials, published.as_bytes())?;
+    let client = Client::restore(owner.clone(), &published)?;
+    client.set_creator(true);
     let link = client.status().link.ok_or("No invitation")?;
     save(&root.join("invitation.txt"), link.as_bytes())?;
     client.connect()?;
@@ -76,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     snapshot::request(&owner, Request::Backup { destination: path })?;
                 }
                 Control::Stop => {
-                    let ended = client.stop()?;
+                    let ended = client.stop(token.trim())?;
                     save(&credentials, ended.as_bytes())?;
                 }
                 Control::State => {}

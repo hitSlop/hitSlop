@@ -1,6 +1,6 @@
 //! Native sharing façade: no network frames or Loro bytes cross this boundary.
 use crate::owner::NativeOwner;
-use hitslop_sharing_client::{Client, ClientStatus, Phase};
+use hitslop_sharing_client::{AccountAccess, Client, ClientStatus, Phase};
 use hitslop_sharing_protocol::http::VerifiedAccount;
 use std::{path::Path, sync::Arc};
 
@@ -39,6 +39,15 @@ pub struct ClientStatus {
     pub link: Option<String>,
     pub creator: bool,
 }
+#[uniffi::remote(Record)]
+pub struct AccountAccess {
+    pub credential: Option<String>,
+    pub phase: Option<Phase>,
+}
+#[uniffi::export(callback_interface)]
+pub trait SharingListener: Send + Sync {
+    fn changed(&self);
+}
 
 #[derive(uniffi::Object)]
 pub struct NativeSharing(Client);
@@ -48,29 +57,36 @@ impl NativeSharing {
     pub fn restore(owner: Arc<NativeOwner>, credential: String) -> Result<Arc<Self>, SharingError> {
         Ok(Arc::new(Self(Client::restore(owner.0.clone(), &credential).map_err(failure)?)))
     }
-    pub fn publish(&self, create_key: String) -> Result<String, SharingError> {
-        self.0.publish(&create_key).map_err(failure)
-    }
     pub fn connect(&self) -> Result<(), SharingError> {
         self.0.connect().map_err(failure)
     }
     pub fn pause(&self) {
         self.0.pause();
     }
-    pub fn stop(&self) -> Result<String, SharingError> {
-        self.0.stop().map_err(failure)
+    pub fn stop(&self, token: String) -> Result<String, SharingError> {
+        self.0.stop(&token).map_err(failure)
+    }
+    pub fn set_creator(&self, creator: bool) {
+        self.0.set_creator(creator);
+    }
+    pub fn listen(&self, listener: Box<dyn SharingListener>) {
+        self.0.listen(Arc::new(move || listener.changed()));
     }
     pub fn status(&self) -> ClientStatus {
         self.0.status()
     }
 }
 #[uniffi::export]
-pub fn sharing_prepare(owner: Arc<NativeOwner>, root: String) -> Result<String, SharingError> {
-    Client::prepare(&owner.0, Path::new(&root)).map_err(failure)
+pub fn sharing_create(owner: Arc<NativeOwner>, root: String, token: String) -> Result<String, SharingError> {
+    Client::create(&owner.0, Path::new(&root), &token).map_err(failure)
 }
 #[uniffi::export]
-pub fn sharing_stage(owner: Arc<NativeOwner>, credential: String) -> Result<String, SharingError> {
-    Client::stage(&owner.0, &credential).map_err(failure)
+pub fn sharing_recover(owner: Arc<NativeOwner>, token: String) -> Result<AccountAccess, SharingError> {
+    Client::recover(&owner.0, &token).map_err(failure)
+}
+#[uniffi::export]
+pub fn sharing_stop_document(owner: Arc<NativeOwner>, token: String) -> Result<(), SharingError> {
+    Client::stop_document(&owner.0, &token).map_err(failure)
 }
 #[uniffi::export]
 pub fn sharing_document(link: String) -> Result<String, SharingError> {

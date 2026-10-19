@@ -702,7 +702,7 @@ and static host), `crates/hitslop-sharing-protocol` (Loro-free DTOs, byte envelo
 limits and resource policy) and `crates/hitslop-sharing-client` (native Rust transport).
 Rust generates TypeScript and OpenAPI; native UI uses UniFFI. Debug builds require an
 explicit launch flag; normal releases omit the feature. The new Share/Copy Link/Join/Stop
-controls use the current owner and shared synchronizable Keychain credentials.
+controls use the current owner, device-local invitations and Apple/Firebase creator identity.
 
 The trusted browser host/storage is `share.hitslop.com`; authored apps run on separate
 UUID subdomains of `dotslop.com`. SQLite uses OPFS in the trusted dedicated worker;
@@ -712,12 +712,22 @@ Worker is required. Incoming files are verified and installed through the owner 
 Records are applied. A failed transfer cancels its connection generation, including
 queued CaughtUp. Owner admission counts bytes before enqueue and rejects stale sockets.
 
-Creation persists credentials before staging, a stable seed identity before HTTP, and
-publication before showing a link. A local preparation marker prevents another device
-from replacing a pending seed. Retries reuse the room and immutable files. Joining
-reuses an open or known matching local file, or installs a missing canonical copy without
-requiring CloudKit. Stop tombstones the room and revokes remote access; local copies
-remain editable. Automatic CloudKit snapshots of relay documents are process-local
+A per-UID account Durable Object reserves/indexes rooms and privately retains their
+recoverable edit capability until Stop. A room independently verifies the immutable
+owner UID and generation on administration; it stores only the edit capability hash.
+Guests need no account and reopen links per device. Sign-out keeps existing local sync
+and cached links usable; creation, owner recovery and Stop require sign-in.
+
+Reservation precedes staging. An immutable local SQLite seed, named by reserved room,
+is the retry journal; there is no staging marker or JSON creation-state credential.
+Init accepts one seed identity, uploads remain immutable, and account publication waits
+for the seed and all app files. Stop clears the recoverable bearer secret before remote
+cleanup; late publication cannot resurrect it, and late uploads delete their writes.
+Re-share explicitly advances the generation, preserving UUID and local state. HTTP
+routes are under `/v1/`; transport callbacks replace credential polling. Recovery runs
+on open, foreground, account change and opening Share. Joining reuses an open or known
+matching file, or installs a missing canonical copy without requiring CloudKit. Stop
+revokes remote access; local copies remain editable. Automatic CloudKit snapshots of relay documents are process-local
 checkpoints at most once a minute; manual/background saves bypass that interval.
 
 A deployed native/browser fixture campaign passed private resources under cookie
@@ -725,18 +735,17 @@ restriction, concurrent edits, late join, interrupted receive ordering, connecte
 process reopen, SQLite download/native reopen and revocation
 ([integrated evidence](evidence/live-sharing-preview-2026-10-19.md)). The signed Mac app
 also passed creation, Copy Edit Link, credential restoration, native/browser edits and
-Stop. Native Join submission, phone UI, cross-device Keychain delivery and CloudKit
-discovery remain qualification gates.
-The next beta replaces synchronizable credentials with Apple/Firebase creator identity
-and server ownership. Account objects reserve/index rooms and recover owner invitations;
-room objects enforce immutable verified owner UID and generation on administration.
-Guests remain capability-based, reopen their link on each device and need no account.
-Sign-out preserves existing local capability-based sync; administration/recovery require
-sign-in. A local immutable seed journal remains necessary for crash-safe uploads.
-This is planned work, not a qualification claim for the developer preview. Public rollout
-also requires CloudKit/device qualification, account deletion, abuse controls and
-full-history recovery below. Offline web reopening and compaction remain deferred
-([roadmap](roadmap.md#later)).
+Stop under the earlier preview. Native Join submission, phone UI, account recovery
+and CloudKit discovery remain qualification gates for the replacement.
+The account lifecycle is implemented behind that same developer gate. The real WASM
+relay passes local SQLite DO/R2 qualification with two signed test identities,
+concurrent reservations, partial publication, guest-admin refusal, cold owner recovery,
+Stop/upload cleanup and re-share. This is separate from the earlier deployed preview
+campaign; see [account evidence](evidence/live-sharing-accounts-2026-10-19.md).
+Old unversioned preview ownership is unsupported and awaits operator retirement.
+Public rollout still requires signed Mac/iPhone identity/recovery and CloudKit checks,
+account deletion, remaining abuse controls and full-history recovery below. Offline
+web reopening and compaction remain deferred ([roadmap](roadmap.md#later)).
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
   credential the host keeps, never in the file or in authored code. Sharing uploads a
   backup of the document (same UUID and history) as the room's seed, and joining

@@ -15,20 +15,37 @@ copy remains editable offline; connected reload/reopen is qualified.
 
 The native UI is disabled by default. Debug builds require `--live-sharing-preview` or
 `HITSLOP_LIVE_SHARING_PREVIEW=1`. Release builds additionally require the explicit
-`HITSLOP_SHARING_PREVIEW` Swift compilation condition. Native creation requires
-`HITSLOP_SHARING_CREATE_KEY` in the developer launch environment; never put it into a
-bundle, invitation, browser build or tracked launch scheme. Receiving an invitation
-requires neither that key nor an iCloud library. Both signed Apple apps use the shared
-synchronizable Keychain group `$(AppIdentifierPrefix)com.hitslop.sharing`.
+`HITSLOP_SHARING_PREVIEW` Swift compilation condition. Native creators sign in with
+Apple through the separate Firebase account target. Guests need only an edit link;
+neither side needs an iCloud library. Invitations are stored in device-local Keychain
+items. CloudKit distributes the document, never its room credentials. A guest opens
+the link again on each device; an owner recovers it from their verified account.
+Signing out preserves existing capability-based sync and cached Copy Link, while
+creation, recovery and Stop require sign-in.
 
-Share preserves the current document UUID, path, owner and full history. Credentials are
-saved before staging; a local preparation marker prevents another device from staging
-a different seed. Its stable hash/version are saved before publication. Creation can
-retry the same room, seed and immutable resources. The invitation appears after
-publication and credential persistence. Join reuses an open or known matching file, or
-installs a missing canonical file in Application Support. Conflicting membership is
-refused. Stop tombstones the room, revokes new resource access and deletes its retained
-remote files; local copies remain usable.
+One SQLite Account Durable Object per verified UID reserves/indexes rooms. It keeps
+a recoverable plaintext edit capability privately until Stop; never log its responses.
+The room stores only the capability hash plus an immutable verified owner UID and
+room generation. It independently verifies Firebase identity on administration.
+Reservation → immutable local SQLite seed → room init/uploads → room publication →
+account finalization is retryable. The seed file itself is the local creation journal;
+there is no JSON creation-state credential or staging marker. Competing devices can
+reserve the same room, but cannot replace its first accepted seed. A failed upload
+can be finished on the device holding that seed, or cancelled with Stop.
+
+Share preserves UUID, path, owner and full history. Join reuses an open or known
+matching file, or installs a missing canonical file in Application Support. Conflicting
+active membership is refused. Stop tombstones before cleanup and forgets the registry's
+plaintext capability; in-flight uploads check the tombstone and remove late writes.
+Re-share explicitly increments the generation and creates a new room. Stale requests
+cannot stop the replacement. Each UID may have 10 active/pending/stopping rooms;
+each room admits 32 connections. `CREATION_ENABLED` disables new reservations;
+operator rate limits start at 5 creates/minute/UID and 20 requests/minute/IP.
+
+The preview remains disabled by default. Account deletion, full-history recovery,
+remaining abuse controls and physical-device qualification still gate a public beta.
+Old unversioned preview endpoints and credentials are unsupported; their remote
+resources still need operator retirement. Local documents are retained.
 
 ## Build and deploy
 
@@ -48,18 +65,26 @@ needs a proxied wildcard DNS record (`AAAA * → 100::`); the host config instal
 wildcard Worker route and the `share.hitslop.com` custom domain. Existing exact spike
 custom domains are retained. The landing site's apex Worker is separate.
 
-Deploy the relay first, configure `PREVIEW_CREATE_KEY` through `wrangler secret bulk`
-using an owner-readable, ignored JSON file, then deploy the host. The development
-machine's file is `.hitslop/sharing-preview/secrets.json`; it is not an installation
-artifact. Do not print the key or pass its value as a command argument.
+Deploy the relay first (the v2 migration adds the account namespace), then the host.
+No developer creation secret is shipped or accepted. The deployed fixture driver now
+requires a freshly refreshed Firebase ID token in an owner-readable file supplied by
+`HITSLOP_SHARING_TOKEN_FILE`; never put its contents in arguments or logs.
 
 ```sh
 wrangler deploy --config apps/sharing/wrangler.jsonc
-wrangler secret bulk .hitslop/sharing-preview/secrets.json --config apps/sharing/wrangler.jsonc
 wrangler deploy --config apps/sharing/host.wrangler.jsonc
 cargo build --locked -p hitslop-sharing-client --example preview
-bun scripts/sharing/check-preview.ts
+HITSLOP_SHARING_TOKEN_FILE=/private/path/to/token bun scripts/sharing/check-preview.ts
+bun run verify sharing
 ```
+
+`verify sharing` is an explicit qualification tier. It builds the real Rust WASM relay
+and runs it with SQLite DOs and private R2 in pinned Miniflare. Only that local
+runtime's Google certificate fetch is replaced by a local public test key. Production
+has no test identity path. It exercises two creators, concurrent/idempotent reservations,
+immutable init, partial publication, guest-admin refusal, cold owner recovery,
+Stop during upload with empty retained R2 afterward, re-share and delayed init.
+The normal `verify`/`--native` tiers remain the required portable/native checks.
 
 The explicit deployed check creates and stops disposable fixture rooms. It qualifies
 real native/browser edits, restricted-cookie private assets, late join, interrupted
@@ -69,7 +94,7 @@ are never included in the report. The preview example is a test driver, not a sh
 CLI sharing command. Ordinary CI uses `bun run verify` (including Worker WASM clippy);
 use `bun run verify --native` when native/FFI work is complete.
 
-## Account spike
+## Native identity
 
 The developer-gated native **Sharing Account** panel signs in with Apple through a
 separate, named Firebase app. It refreshes a Firebase ID token and passes that transient
@@ -81,10 +106,11 @@ cross-device comparison. Tokens and full UIDs are not logged or put in documents
 Firebase manages its own local login persistence. The signed Mac proof completed
 Apple sign-in and deployed verification successfully; the iPhone comparison is pending.
 
-This is an identity proof only: room creation, owner credentials and the existing
-Keychain preview path above have not switched to accounts. The public-beta account
-registry and owner-authorized administration remain gated on real native sign-in and
-matching Mac/iPhone identities.
+The account registry and native lifecycle now use this identity. The old creator
+admin capability, preview creation key, synchronizable credentials and credential
+polling have been removed. Transport callbacks drive status; owner recovery runs on
+open, foreground, account change and opening the sharing controls. Matching native
+Mac/iPhone identity and real second-device recovery are still qualification gates.
 
 The current build IDs remain `com.hitslop.app` (direct-download Mac) and
 `com.hitslop.iospreview` (development iOS). Both are grouped under the primary Apple
@@ -112,17 +138,19 @@ versioned binary protocol. There is no oRPC or second Swift HTTP client.
 - Immutable app and attachment limits are the core's existing acceptance limits.
 - Automatic CloudKit checkpoints for relay documents are at most once a minute per
   process. Manual/background saves bypass the interval; ordinary documents are unchanged.
-- Account sign-in is an isolated developer spike; no account-backed room ownership,
-  person-level permissions, read-only invitations, public catalog,
-  universal links or reliable offline web reopening.
-- The signed Mac app passed creation, Copy Edit Link, Keychain restoration after reopen,
-  native/browser edits, Stop and continued local editing. Native Join submission, phone
-  UI, cross-device Keychain delivery and CloudKit coexistence remain qualification gates.
-  Historical probes do not qualify these new controls. CloudKit discovery/cursor misses
+- Account-backed ownership is implemented behind the developer flag. Public beta
+  still needs account deletion, full-history rescue and remaining abuse controls.
+  Person-level permissions, read-only invitations, public catalog, universal links
+  and reliable offline web reopening remain deferred.
+- The earlier signed Mac preview passed creation, Copy Edit Link, credential restoration,
+  native/browser edits, Stop and continued local editing. The account-backed replacement
+  requires a fresh signed Mac/deployed campaign; phone UI, same-UID recovery, native Join
+  and CloudKit coexistence remain qualification gates. CloudKit discovery/cursor misses
   remain open.
 - No new latency claim: the previous resource probe measured 430–439 ms application
   echo RTT, including inventory/file coordination. One-way and paint latency are unknown.
 
 See the [architecture](../../docs/architecture.md#sync),
 [roadmap](../../docs/roadmap.md#later) and
-[integrated preview evidence](../../docs/evidence/live-sharing-preview-2026-10-19.md).
+[account lifecycle evidence](../../docs/evidence/live-sharing-accounts-2026-10-19.md)
+and [earlier preview evidence](../../docs/evidence/live-sharing-preview-2026-10-19.md).

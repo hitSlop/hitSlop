@@ -10,6 +10,56 @@ pub struct VerifiedAccount {
     pub auth_time: u64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub enum RoomPhase {
+    Pending,
+    Published,
+    Stopping,
+    Ended,
+}
+
+/// Private account response. Contains a recoverable bearer secret; never log it.
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RoomReservation {
+    pub document: String,
+    pub generation: u32,
+    pub room: String,
+    pub capability: Option<String>,
+    pub previous_room: Option<String>,
+    pub phase: RoomPhase,
+    pub invitation: Option<Invitation>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RoomIdentity {
+    pub document: String,
+    pub generation: u32,
+    pub room: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct ReserveRoom {
+    pub document: String,
+    pub generation: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct AccountRoomInit {
+    pub identity: RoomIdentity,
+    pub init: RoomInit,
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct ConnectionPlan {
@@ -62,6 +112,7 @@ pub struct ApiFailure {
 /// Sensitive host-owned data. Never forwarded to an authored page or printed in errors.
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Invitation {
     pub document: String,
     pub room: String,
@@ -153,6 +204,10 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     #[derive(OpenApi)]
     #[openapi(components(schemas(
         RoomInit,
+        AccountRoomInit,
+        ReserveRoom,
+        RoomIdentity,
+        RoomReservation,
         VerifiedAccount,
         ResourceGrant,
         ApiFailure,
@@ -168,40 +223,69 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut paths = serde_json::Map::new();
     for (path, methods) in [
         (
+            "/v1/account/access/{document}",
+            vec![("get", None, Some("RoomReservation"), "Recover the signed-in creator's room, or null when absent")],
+        ),
+        (
+            "/v1/account/reserve",
+            vec![("post", Some("ReserveRoom"), Some("RoomReservation"), "Reserve one room per document generation")],
+        ),
+        (
+            "/v1/account/publish",
+            vec![(
+                "post",
+                Some("RoomIdentity"),
+                Some("RoomReservation"),
+                "Finalize publication after all immutable files exist",
+            )],
+        ),
+        (
+            "/v1/account/stop",
+            vec![(
+                "post",
+                Some("RoomIdentity"),
+                Some("RoomReservation"),
+                "Tombstone the room and clear its recoverable capability",
+            )],
+        ),
+        (
             "/v1/auth/probe",
             vec![("get", None, Some("VerifiedAccount"), "Verify Firebase identity (developer auth spike)")],
         ),
         (
-            "/rooms/{room}/init",
+            "/v1/rooms/{room}/init",
             vec![(
                 "post",
-                Some("RoomInit"),
+                Some("AccountRoomInit"),
                 None,
-                "Initialize a room (developer creation key and creator keys required)",
+                "Initialize a reserved room (verified owner identity required)",
             )],
         ),
         (
-            "/rooms/{room}/seed",
+            "/v1/rooms/{room}/seed",
             vec![
                 ("get", None, None, "Download the canonical SQLite seed"),
                 ("put", None, None, "Publish the immutable SQLite seed (creator only)"),
             ],
         ),
         (
-            "/rooms/{room}/resources",
+            "/v1/rooms/{room}/resources",
             vec![
                 ("get", None, Some("Manifest"), "Read accepted app inventory"),
                 ("post", Some("Manifest"), None, "Publish immutable app inventory (creator only)"),
             ],
         ),
-        ("/rooms/{room}/asset/{hash}", vec![("put", None, None, "Publish an immutable app resource (creator only)")]),
         (
-            "/rooms/{room}/blob/{hash}",
+            "/v1/rooms/{room}/asset/{hash}",
+            vec![("put", None, None, "Publish an immutable app resource (creator only)")],
+        ),
+        (
+            "/v1/rooms/{room}/blob/{hash}",
             vec![("get", None, None, "Download an attachment"), ("put", None, None, "Publish an immutable attachment")],
         ),
-        ("/rooms/{room}/blobs", vec![("get", None, Some("ResourceList"), "Read retained attachment inventory")]),
+        ("/v1/rooms/{room}/blobs", vec![("get", None, Some("ResourceList"), "Read retained attachment inventory")]),
         (
-            "/rooms/{room}/stop",
+            "/v1/rooms/{room}/stop",
             vec![("delete", None, None, "Tombstone the room and remove retained files (creator only)")],
         ),
         (
@@ -223,10 +307,19 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             if path.contains("{hash}") {
                 parameters.push(serde_json::json!({"name":"hash","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}));
             }
+            if path.contains("{document}") {
+                parameters.push(serde_json::json!({"name":"document","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}));
+            }
             let mut operation = serde_json::json!({"summary":summary,"parameters":parameters,"security":[{"capability":[]}],"responses":{
                 "200":{"description":"Accepted"},"403":{"$ref":"#/components/responses/Refused"},"409":{"$ref":"#/components/responses/Refused"},"410":{"$ref":"#/components/responses/Refused"},"413":{"$ref":"#/components/responses/Refused"},"429":{"$ref":"#/components/responses/Refused"}
             }});
-            if path == "/v1/auth/probe" {
+            let creator = path.starts_with("/v1/account/")
+                || path == "/v1/auth/probe"
+                || path.ends_with("/init")
+                || path.ends_with("/stop")
+                || (method == "put" && (path.ends_with("/seed") || path.contains("/asset/")))
+                || (method == "post" && path.ends_with("/resources"));
+            if creator {
                 operation["security"] = serde_json::json!([{"firebaseIdentity":[]}]);
                 operation["responses"]["401"] = serde_json::json!({"$ref":"#/components/responses/Refused"});
             }
@@ -235,6 +328,10 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             }
             if let Some(name) = output {
                 operation["responses"]["200"]["content"] = serde_json::json!({"application/json":{"schema":if name=="ResourceList"{serde_json::json!({"type":"array","items":{"$ref":"#/components/schemas/Resource"}})}else{serde_json::json!({"$ref":format!("#/components/schemas/{name}")})}}});
+                if path.starts_with("/v1/account/access/") {
+                    operation["responses"]["200"]["content"]["application/json"]["schema"] =
+                        serde_json::json!({"anyOf":[{"type":"null"},{"$ref":"#/components/schemas/RoomReservation"}]});
+                }
             }
             operations.insert(method.into(), operation);
         }
@@ -242,7 +339,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     }
     doc.paths = serde_json::from_value(paths.into()).expect("static HTTP paths");
     let mut value = serde_json::to_value(doc).expect("OpenAPI document");
-    value["components"]["securitySchemes"] = serde_json::json!({"capability":{"type":"http","scheme":"bearer","description":"Room edit capability; creator-only routes instead require the creator capability. POST init also requires X-Preview-Create-Key, X-Admin-Key and X-Write-Key."}});
+    value["components"]["securitySchemes"] = serde_json::json!({"capability":{"type":"http","scheme":"bearer","description":"Room edit capability for guest data access. Creator administration requires a verified Firebase identity."}});
     value["components"]["securitySchemes"]["firebaseIdentity"] = serde_json::json!({"type":"http","scheme":"bearer","bearerFormat":"JWT","description":"Firebase ID token, not a room capability"});
     value["components"]["responses"] = serde_json::json!({"Refused":{"description":"Request refused; the local document is retained","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiFailure"}}}}});
     let doc = serde_json::from_value(value).expect("complete OpenAPI document");
