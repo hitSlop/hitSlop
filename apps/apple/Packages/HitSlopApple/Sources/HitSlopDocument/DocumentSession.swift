@@ -1,8 +1,13 @@
-import AppKit
 import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 @preconcurrency import WebKit
+
+#if os(macOS)
+  import AppKit
+#else
+  import UIKit
+#endif
 
 /// Whether a document's edits are durable. A failed save keeps the edits live and unsaved.
 public enum DocumentSaveStatus: Sendable, Equatable {
@@ -14,6 +19,8 @@ public enum DocumentSaveStatus: Sendable, Equatable {
 @MainActor
 public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   private var liveWebView: WKWebView?
+  /// Declarative hosts can redraw during close, after the renderer has been released.
+  public var currentWebView: WKWebView? { liveWebView }
   public var webView: WKWebView {
     guard let liveWebView else { preconditionFailure("Document WebView has been destroyed") }
     return liveWebView
@@ -473,6 +480,17 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
   }
 
+  /// Stop page-owned services and drain accepted edits while the host still has finite
+  /// background execution time. Expiration never discards the live owner's state.
+  public func pauseForBackground() async throws {
+    filePicker.cancel()
+    fileSaver.cancel()
+    cancelSpeech()
+    await liveWebView?.setCameraCaptureState(.none)
+    await liveWebView?.setMicrophoneCaptureState(.none)
+    try await saveAccepted()
+  }
+
   /// Edit ▸ Undo or Redo. A live page sends its unsent edits first, as the person sees
   /// them; otherwise the owner undoes directly.
   public func undo(redo: Bool = false) async throws {
@@ -494,6 +512,17 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   /// One of the document's artwork images, read by its owner, off the main thread.
   public func artwork(_ name: SlopArtwork.Name) async -> Data? {
     try? await owner.artwork(name)
+  }
+
+  /// Exports the complete saved file, including identity, history and last saved artwork.
+  /// Share a Copy remains the separate clean-copy operation below.
+  @discardableResult public func exportFile(to destination: URL) async throws -> URL {
+    guard !closed, !closing else { throw SlopFailure("Document is closing") }
+    return try await withCapture {
+      try await saveAccepted()
+      try await owner.exportFile(to: destination)
+      return try await SlopPreparation.run { try SlopFile.resolvedRoot(destination) }
+    }
   }
 
   /// Saves accepted edits and acquires one source for the artwork and clean copy.
@@ -718,18 +747,20 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   /// The socket and discovery file live as long as the owner, not the page.
   func startDiscovery() throws {
-    guard server == nil else { return }
-    server = try owner.startServer(
-      exporter: NativeExports(copy: { [weak self] output, deadline in
-        guard let self, acceptsPageWork else { throw OwnerFailure.closing }
-        try deadline.check()
-        _ = try await self.copy(to: output)
-        try deadline.check()
-      }) { [weak self] _, format, output, deadline in
-        guard let self, !closed, !closing else { throw OwnerFailure.closing }
-        guard let onExport, isReady else { throw SlopFailure("Export unavailable") }
-        try await onExport(format, output, deadline)
-      })
+    #if os(macOS)
+      guard server == nil else { return }
+      server = try owner.startServer(
+        exporter: NativeExports(copy: { [weak self] output, deadline in
+          guard let self, acceptsPageWork else { throw OwnerFailure.closing }
+          try deadline.check()
+          _ = try await self.copy(to: output)
+          try deadline.check()
+        }) { [weak self] _, format, output, deadline in
+          guard let self, !closed, !closing else { throw OwnerFailure.closing }
+          guard let onExport, isReady else { throw SlopFailure("Export unavailable") }
+          try await onExport(format, output, deadline)
+        })
+    #endif
   }
 
   private func publishDiscovery() throws { try server?.publish() }
@@ -763,10 +794,20 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 /// WebKit has no public transparent-background API on macOS. Keep this exception isolated.
 @MainActor public enum WebViewBackground {
   public static func get(_ view: WKWebView) -> Bool {
-    view.value(forKey: "drawsBackground") as? Bool ?? true
+    #if os(macOS)
+      view.value(forKey: "drawsBackground") as? Bool ?? true
+    #else
+      view.isOpaque
+    #endif
   }
   public static func set(_ value: Bool, on view: WKWebView) {
-    view.setValue(value, forKey: "drawsBackground")
+    #if os(macOS)
+      view.setValue(value, forKey: "drawsBackground")
+    #else
+      view.isOpaque = value
+      view.backgroundColor = value ? .systemBackground : .clear
+      view.scrollView.backgroundColor = view.backgroundColor
+    #endif
   }
 }
 
@@ -774,7 +815,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 /// WebKit has no public process-termination API; keep this exception isolated.
 @MainActor private enum WebViewProcess {
   static func terminate(_ view: WKWebView) {
-    let selector = NSSelectorFromString("_killWebContentProcessAndResetState")
-    if view.responds(to: selector) { view.perform(selector) }
+    #if os(macOS)
+      let selector = NSSelectorFromString("_killWebContentProcessAndResetState")
+      if view.responds(to: selector) { view.perform(selector) }
+    #else
+      view.stopLoading()
+    #endif
   }
 }

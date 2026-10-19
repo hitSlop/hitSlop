@@ -1,4 +1,4 @@
-//! Where documents may live: never in iCloud Drive, and new ones never among the templates.
+//! Document locations: iCloud uses private publication; other providers stay unsupported.
 //! Also where templates are listed from (`catalog`).
 
 use crate::error::{Result, invalid};
@@ -15,10 +15,8 @@ pub enum TemplateSource {
     Installed,
 }
 
-/// Where documents may not live, for this account and executable: iCloud Drive, whose
-/// syncing documents do not support yet, and the installed and bundled templates.
+/// Template locations for this account and executable.
 struct Places {
-    cloud: Option<PathBuf>,
     /// The template folders hosts list, the bundled starters first.
     listed: Vec<(TemplateSource, PathBuf)>,
     /// A template folder hosts do not list, which new documents still stay out of: the
@@ -70,7 +68,7 @@ impl Places {
             .into_iter()
             .chain(installed.map(|root| (TemplateSource::Installed, root)))
             .collect();
-        Self { cloud: home.map(|home| home.join("Library/Mobile Documents")), listed, unlisted }
+        Self { listed, unlisted }
     }
     /// Every template folder new documents stay out of.
     fn templates(&self) -> impl Iterator<Item = &Path> {
@@ -110,13 +108,15 @@ fn within(path: &Path, root: &Path, inclusive: bool) -> bool {
     (path.len() > root.len() || inclusive && path.len() == root.len())
         && root.iter().zip(&path).all(|(root, part)| lower(root) == lower(part))
 }
-/// Where a document may open for writing: a `.slop` file outside iCloud Drive.
-fn check_location(path: &Path, places: &Places) -> Result<()> {
+/// Where a document may open for writing: a `.slop` file in a supported location.
+fn check_location(path: &Path, _places: &Places) -> Result<()> {
     if path.extension().is_none_or(|ext| ext != "slop") {
         return Err(invalid("A document's name must end in .slop"));
     }
-    if places.cloud.as_deref().is_some_and(|cloud| within(path, cloud, true)) {
-        return Err(invalid("iCloud document locations are not supported. Move the document to a local folder."));
+    if let Some(home) = crate::registry::home()
+        && within(path, &home.join("Library/CloudStorage"), true)
+    {
+        return Err(invalid("This file provider is not supported yet. Save in a local folder or iCloud Drive."));
     }
     Ok(())
 }
@@ -127,6 +127,20 @@ fn check_destination(path: &Path, places: &Places) -> Result<()> {
         return Err(invalid("A document cannot be created among installed templates"));
     }
     Ok(())
+}
+/// Classified once when a writer opens or creates a document. Metadata queries never
+/// download an evicted item. Desktop/Documents may be ubiquitous without a symlink.
+pub(crate) fn is_icloud(path: &Path) -> Result<bool> {
+    let path = real(path);
+    if let Some(home) = crate::registry::home() {
+        if within(&path, &home.join("Library/CloudStorage"), true) {
+            return Ok(false);
+        }
+        if within(&path, &home.join("Library/Mobile Documents"), true) {
+            return Ok(true);
+        }
+    }
+    super::access::ubiquitous(&path)
 }
 /// Refuses a document opened for writing where documents may not live. The app and the
 /// engine both open documents through the store, so they share the rule.
@@ -144,25 +158,21 @@ mod tests {
 
     // Places stand in for the account's: a test never names the real iCloud Drive.
     #[test]
-    fn documents_stay_out_of_icloud_and_new_ones_out_of_the_templates() {
+    fn icloud_locations_are_allowed_and_new_documents_stay_out_of_templates() {
         let dir = tempfile::tempdir().unwrap();
         let root = fs::canonicalize(dir.path()).unwrap();
         let (cloud, templates) = (root.join("cloud"), root.join("templates"));
         fs::create_dir_all(&cloud).unwrap();
         fs::create_dir_all(&templates).unwrap();
         std::os::unix::fs::symlink(&cloud, root.join("alias")).unwrap();
-        let places = Places {
-            cloud: Some(cloud.clone()),
-            listed: vec![(TemplateSource::Installed, templates.clone())],
-            unlisted: None,
-        };
+        let places = Places { listed: vec![(TemplateSource::Installed, templates.clone())], unlisted: None };
         for (path, location, destination) in [
             (root.join("notes"), false, false),
             (root.join("Notes.SLOP"), false, false),
             (cloud.clone(), false, false),
-            (cloud.join("new/Doc.slop"), false, false),
-            (root.join("alias/Doc.slop"), false, false),
-            (root.join("CLOUD/Doc.slop"), false, false),
+            (cloud.join("new/Doc.slop"), true, true),
+            (root.join("alias/Doc.slop"), true, true),
+            (root.join("CLOUD/Doc.slop"), true, true),
             // A template folder refuses new documents; a document already there still opens.
             (templates.join("Doc.slop"), true, false),
             (templates.join("cache/publisher/1.slop"), true, false),

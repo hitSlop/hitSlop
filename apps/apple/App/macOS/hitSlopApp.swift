@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import HitSlopCatalog
 import HitSlopCore
 import HitSlopDocument
@@ -47,6 +48,8 @@ private struct UpdateSettingsView: View {
     coordinator.checkForUpdates = { [updaterController] in updaterController.checkForUpdates(nil) }
     return coordinator
   }()
+  private var libraryChanges: AnyCancellable?
+  private var libraryWindows: AnyCancellable?
   private var recentMenu: NSMenu?
   private var exportMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
@@ -61,6 +64,22 @@ private struct UpdateSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
+    NSApp.registerForRemoteNotifications()
+    SlopLibrary.shared.start()
+    libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
+      [weak self] _ in
+      SlopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
+    }
+    libraryChanges = SlopLibrary.shared.$entries.sink { [weak self] entries in
+      guard let self else { return }
+      SlopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
+      for entry in entries where entry.deleted {
+        for controller in self.coordinator.documentControllers
+        where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
+          controller.close()
+        }
+      }
+    }
     SlopWidgetPublisher.shared.start(
       activeSelections: {
         let configurations: [WidgetInfo] = await withCheckedContinuation { continuation in
@@ -85,6 +104,13 @@ private struct UpdateSettingsView: View {
     } else {
       urls.forEach(openDocument)
     }
+  }
+  func applicationDidBecomeActive(_ notification: Notification) {
+    SlopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
+    SlopLibrary.shared.activated(true)
+  }
+  func applicationDidResignActive(_ notification: Notification) {
+    SlopLibrary.shared.activated(false)
   }
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {

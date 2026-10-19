@@ -148,9 +148,8 @@ public struct SlopFile: Sendable {
     return root
   }
 
-  /// A document's canonical URL for its owner: `resolvedRoot`, on a local volume.
+  /// A document's canonical URL for its owner: `resolvedRoot`; Rust chooses local storage or iCloud publication.
   public static func documentRoot(_ url: URL) throws -> URL {
-    try SlopLocalDocument.requireLocal(url)
     return try resolvedRoot(url)
   }
 

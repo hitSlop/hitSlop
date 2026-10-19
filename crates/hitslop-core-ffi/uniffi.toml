@@ -25,3 +25,7 @@ ThemeInput = "ThemeToken"
 "ThemeInput.token" = "name"
 "ThemeInput.color" = "value"
 Summary = "FileSummary"
+
+Entry = "LibraryEntry"
+Upload = "LibraryUpload"
+Issue = "LibraryIssue"

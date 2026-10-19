@@ -4,6 +4,16 @@ Today hitSlop is a signed Mac app and one matching npm package. People create lo
 documents from bundled or installed templates, edit them in the window or through the CLI
 (their coding agent included), and export PNG and PDF.
 
+An unshipped Mac/iPhone library preview adds account-scoped CloudKit whole-file sync,
+named creation, shared catalog branding, and phone-generated icon/preview artwork on
+close. It starts with Quick Checklist on iOS 26; the Mac minimum stays 15.2. Production
+qualification, broader templates, rename, widgets, and compaction are follow-ups.
+
+The file preview also supports iCloud Drive and synced Desktop/Documents on the Mac by
+keeping live SQLite work private and publishing complete files on flush/close. A real
+one-Mac iCloud happy path passed; two-Mac behavior and provider edge cases remain
+unqualified. This is separate from the CloudKit Synced Library.
+
 ## Where we're heading
 
 AI made writing a small tool cheap. What's still missing is a place where those tools live,
@@ -267,6 +277,29 @@ describes the design and its accepted limits, and
 [ideas](ideas.md#realtime-collaboration-on-durable-objects) holds the open proposals
 (presence, per-person `s.local` state).
 
+The Rust Worker has passed a disposable hosted probe, and real owners have passed local
+full-file seed and simulated CloudKit coexistence checks
+([evidence](evidence/live-sharing-spikes-2026-10-18.md)). Signed isolated Mac/iPhone probes
+passed shared Keychain delivery, native Rust relay convergence, real checkpoint throttling
+and phone background/kill/relaunch
+([device evidence](evidence/live-sharing-native-spike-2026-10-18.md)). A public fixture also
+passed real HTTPS hitslop.com/dotslop.com origin/storage checks, native/browser concurrency,
+late join, process reopen and SQLite download/native reopen. Connected application echo
+RTT medians were 144–168 ms ([web evidence](evidence/live-sharing-web-spike-2026-10-18.md));
+one-way and paint latency were not measured. Embedded Service Workers were denied under
+Chrome cookie restriction; direct immutable fixture UI assets passed instead. A follow-up
+private-resource experiment passed scoped grants, app/media verification, seed/new blob
+delivery, offline import/reconnect and native/browser convergence
+([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). The deliberately
+simple per-record inventory checks raised Mac/browser echo medians to 430–439 ms in that
+run. Next qualify interrupted receives, resource lifecycle and native resource UI, then
+build the minimal three-host Share/Join/status slice. Connected web opening is the initial
+scope; reliable offline reopening remains deferred. Separately investigate
+the CloudKit fetch/cursor misses, qualify crash-safe room credential publication and the
+owner's aggregate incoming byte budget, and settle restart checkpoint eligibility before
+shipping. The native hardening does not block independent resource experiments. No shipping
+editor UI is connected to the relay yet.
+
 Still to build: the production relay (room creation with write and read keys, R2 for the
 seed and attachments, rate limits, quotas, server compaction); the Mac client (a socket
 connection with backoff, Share and Join, the room key in the Keychain, a sync status line);
@@ -288,7 +321,7 @@ document replication, separate from iCloud or other synced-folder support.
 ## Deferred
 
 Account UI/Auth/App Check, a document history UI, schema evolution,
-iCloud and other synced folders, and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
+production qualification of iCloud file publication, other synced folders, and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
 Pre-launch documents are not migrated.

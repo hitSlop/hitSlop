@@ -40,6 +40,10 @@ pub fn theme_request(change: ThemeChange) -> Request {
 pub enum Request {
     /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
+    #[cfg(not(target_arch = "wasm32"))]
+    MergeSnapshot {
+        bytes: Vec<u8>,
+    },
     Apply {
         batch: crate::Batch,
         origin: Origin,
@@ -52,7 +56,10 @@ pub enum Request {
         args_json: String,
         origin: Origin,
     },
+    /// Explicit native/CLI flush also publishes an iCloud file.
     Flush,
+    /// Page/capture barrier: local durability remains available after publication fails.
+    FlushLocal,
     Discard,
     Close {
         preview: Option<Vec<u8>>,
@@ -76,6 +83,13 @@ pub enum Request {
     },
     Artwork {
         name: Artwork,
+    },
+    /// Derived images are admitted only for the saved state they were rendered from.
+    #[cfg(not(target_arch = "wasm32"))]
+    SetArtwork {
+        source_version: String,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
     },
     Attachments,
     ReadAttachment {
@@ -200,6 +214,16 @@ impl Owner {
     ) -> Result<Self> {
         let path = file::resolve(path)?;
         let store = Arc::new(store::Store::open(&path, mode)?);
+        Self::from_store(path, store, mode, listener, evaluator)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn from_store(
+        path: PathBuf,
+        store: Arc<store::Store>,
+        mode: store::Mode,
+        listener: Listener,
+        evaluator: Option<Evaluator>,
+    ) -> Result<Self> {
         let (sender, epoch) = match actor::spawn(store.clone(), mode, listener, evaluator) {
             Ok(started) => started,
             Err(failure) => {

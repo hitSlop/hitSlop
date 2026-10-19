@@ -16,6 +16,33 @@ const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
 
 #[test]
+fn files_import_creates_an_independent_document_without_writing_the_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = document(dir.path());
+    let original = Store::open(&source, Mode::Document).unwrap();
+    original.set_artwork(&[(Artwork::Icon, &png(512, 512, 6))]).unwrap();
+    original
+        .set_share(&hitslop_core::store::Share { room: "source-room".into(), endpoint: "wss://relay.example".into() })
+        .unwrap();
+    original.close().unwrap();
+    let before = fs::read(&source).unwrap();
+    let uuid = file::open(&source, true).unwrap().document_uuid;
+    let imported = dir.path().join("imported.slop");
+    Store::import_copy(&source, &imported).unwrap();
+    assert_ne!(file::open(&imported, true).unwrap().document_uuid, uuid);
+    assert_eq!(file::artwork(&imported, &[Artwork::Icon]).unwrap(), file::artwork(&source, &[Artwork::Icon]).unwrap());
+    assert_eq!(fs::read(&source).unwrap(), before);
+    let saved = fs::read(&imported).unwrap();
+    assert!(Store::import_copy(&source, &imported).is_err());
+    assert_eq!(fs::read(&imported).unwrap(), saved);
+    assert_eq!(fs::read(&source).unwrap(), before);
+    let store = Store::open(&imported, Mode::Document).unwrap();
+    assert_eq!(store.document().unwrap().value(), INITIAL);
+    assert!(store.share().unwrap().is_none(), "an independent import never joins the source's relay");
+    store.close().unwrap();
+}
+
+#[test]
 fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
     use std::os::unix::ffi::OsStrExt;
     use std::sync::mpsc;
@@ -36,13 +63,17 @@ fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
     // SAFETY: `name` is a valid NUL-terminated path for this call.
     assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
     type Entry = (&'static str, fn(&Path) -> Result<(), Error>);
-    let entries: [Entry; 6] = [
+    let entries: [Entry; 7] = [
         ("kind", |path| file::kind(path).map(|_| ())),
         ("inspect", |path| file::inspect(path).map(|_| ())),
         ("descriptor", |path| file::descriptor(path).map(|_| ())),
         ("snapshot", |path| Store::open(path, Mode::Snapshot)?.close()),
         ("document", |path| Store::open(path, Mode::Document)?.close()),
         ("lease", |path| Lease::acquire(path).map(drop)),
+        ("import", |path| {
+            let folder = tempfile::tempdir().unwrap();
+            Store::import_copy(path, &folder.path().join("imported.slop"))
+        }),
     ];
     let mut failures = Vec::new();
     for path in [link, dangling, folder, fifo, missing] {

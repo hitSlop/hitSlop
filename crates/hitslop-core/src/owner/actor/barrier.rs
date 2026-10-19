@@ -76,9 +76,14 @@ impl Actor {
 
 /// Saved-state fences cover all earlier queued writes, including command evaluation.
 pub(super) fn fence(request: &Request) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    if matches!(request, Request::MergeSnapshot { .. } | Request::SetArtwork { .. }) {
+        return true;
+    }
     matches!(
         request,
         Request::Flush
+            | Request::FlushLocal
             | Request::Copy { .. }
             | Request::CaptureSource { .. }
             | Request::Backup { .. }
@@ -89,6 +94,10 @@ pub(super) fn fence(request: &Request) -> bool {
 
 /// Requests that change the document.
 pub(super) fn edits(request: &Request) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    if matches!(request, Request::MergeSnapshot { .. } | Request::SetArtwork { .. }) {
+        return true;
+    }
     matches!(
         request,
         Request::Apply { .. } | Request::Command { .. } | Request::Undo { .. } | Request::PutAttachment { .. }

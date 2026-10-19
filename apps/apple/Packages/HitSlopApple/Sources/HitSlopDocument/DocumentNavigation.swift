@@ -1,7 +1,12 @@
-import AppKit
 import HitSlopCore
 import HitSlopCoreBinding
 @preconcurrency import WebKit
+
+#if os(macOS)
+  import AppKit
+#else
+  import UIKit
+#endif
 
 /// WebKit navigation, download and file-selection policy for the current page.
 extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
@@ -15,6 +20,7 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     )
   }
 
+  @available(iOS 18.4, *)
   public func webView(
     _ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
     initiatedByFrame frame: WKFrameInfo,
@@ -23,7 +29,7 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     guard isCurrent(webView), acceptsPageWork,
       frame.isMainFrame, frame.securityOrigin.protocol == "slop",
       frame.securityOrigin.host == "app", let window = webView.window,
-      window.isVisible
+      window.canPresentDocumentPanel
     else {
       completionHandler(nil)
       return
@@ -54,12 +60,16 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     _ type: WKMediaCaptureType, isMainFrame: Bool, origins: [(protocol: String, host: String)],
     in webView: WKWebView
   ) -> Bool {
-    guard isCurrent(webView), acceptsPageWork, isMainFrame,
-      origins.allSatisfy({ $0.protocol == "slop" && $0.host == "app" }),
-      webView.window?.isVisible == true,
-      let required = Self.capabilities(capturing: type)
-    else { return false }
-    return required.isSubset(of: file.capabilities)
+    #if os(iOS)
+      return false  // Camera and microphone qualification follows the local editor proof.
+    #else
+      guard isCurrent(webView), acceptsPageWork, isMainFrame,
+        origins.allSatisfy({ $0.protocol == "slop" && $0.host == "app" }),
+        webView.window?.isVisible == true,
+        let required = Self.capabilities(capturing: type)
+      else { return false }
+      return required.isSubset(of: file.capabilities)
+    #endif
   }
 
   /// The declaration a capture needs: both devices for a combined request.
@@ -119,7 +129,11 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     if action.navigationType == .linkActivated, action.sourceFrame.isMainFrame,
       let url = action.request.url, ["https", "http"].contains(url.scheme)
     {
-      NSWorkspace.shared.open(url)
+      #if os(macOS)
+        NSWorkspace.shared.open(url)
+      #else
+        UIApplication.shared.open(url)
+      #endif
     }
     decisionHandler(.cancel)
   }

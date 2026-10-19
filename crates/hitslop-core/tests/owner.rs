@@ -89,6 +89,55 @@ fn theme(color: &str, origin: Origin) -> Request {
     }
 }
 
+#[cfg(feature = "snapshot-spike")]
+#[test]
+fn whole_file_snapshot_merges_through_owner_preserving_identity_theme_and_blobs() {
+    use hitslop_core::{snapshot_spike as snapshot, store::Share};
+    let (dir, path) = fixture();
+    let (left, _) = open(&path, Mode::Document);
+    call(
+        &left,
+        Request::Share { share: Share { room: "snapshot-room".into(), endpoint: "https://relay.example".into() } },
+    )
+    .unwrap();
+    let seed = dir.path().join("seed.slop");
+    call(&left, Request::Backup { destination: seed.clone() }).unwrap();
+    let id = snapshot::inspect(&seed).unwrap().id;
+    let replica = dir.path().join("replica.slop");
+    snapshot::install(&seed, &replica, &id).unwrap();
+    assert!(snapshot::install(&seed, &replica, &id).is_err(), "install never overwrites a replica");
+    let (right, _) = open(&replica, Mode::Document);
+    call(&left, set("Offline title")).unwrap();
+    call(&right, theme("#123456", Origin::Window)).unwrap();
+    let Reply::Attachment { item } = call(&right, Request::PutAttachment { bytes: b"snapshot blob".to_vec() }).unwrap()
+    else {
+        panic!("blob")
+    };
+    let incoming = dir.path().join("incoming.slop");
+    call(&right, Request::Backup { destination: incoming.clone() }).unwrap();
+    snapshot::merge(&left, &incoming).unwrap();
+    let union = snapshot::inspect(&path).unwrap();
+    snapshot::merge(&left, &incoming).unwrap();
+    assert_eq!(snapshot::inspect(&path).unwrap().version, union.version, "repeated delivery is idempotent");
+    assert_eq!(state(&left)["value"]["title"], "Offline title");
+    assert_eq!(state(&left)["theme"]["accent"], "#123456");
+    assert!(
+        matches!(call(&left, Request::ReadAttachment { id: item.id }).unwrap(), Reply::Bytes { bytes: Some(bytes) } if bytes == b"snapshot blob")
+    );
+    let merged = dir.path().join("merged.slop");
+    call(&left, Request::Backup { destination: merged.clone() }).unwrap();
+    snapshot::merge(&right, &merged).unwrap();
+    assert_eq!(snapshot::inspect(&replica).unwrap().fingerprint, union.fingerprint);
+    close(&left);
+    close(&right);
+    let (left, _) = open(&path, Mode::Document);
+    assert_eq!(snapshot::inspect(&path).unwrap().id, id);
+    assert_eq!(snapshot::inspect(&path).unwrap().fingerprint, union.fingerprint);
+    let (_other_dir, unrelated) = fixture();
+    assert!(snapshot::merge(&left, &unrelated).unwrap_err().contains("another document"));
+    close(&left);
+}
+
 #[test]
 fn ordered_publications_flush_and_reopen_include_theme() {
     let (_dir, path) = fixture();

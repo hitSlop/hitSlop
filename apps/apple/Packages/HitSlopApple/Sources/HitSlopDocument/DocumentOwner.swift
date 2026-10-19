@@ -56,19 +56,24 @@ public final class DocumentOwner: Sendable {
     self.events = events
     file = try SlopFile(url: url, opened: owner.app())
     assets = try storeCall { try owner.resourceReader() }
+    if mode == .document { try SlopLibrary.register(owner: owner) }
   }
 
   /// The app and its renderer ship this sibling helper. Missing helpers refuse commands;
   /// they never cause authored code to execute in the page or native process.
   public static var evaluatorPath: String? {
-    #if DEBUG
-      if let path = ProcessInfo.processInfo.environment["HITSLOP_EVALUATOR"] { return path }
+    #if os(iOS)
+      return nil
+    #else
+      #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["HITSLOP_EVALUATOR"] { return path }
+      #endif
+      let candidates = [
+        Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/hitslop-evaluator"),
+        Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("hitslop-evaluator"),
+      ].compactMap { $0 }
+      return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }?.path
     #endif
-    let candidates = [
-      Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/hitslop-evaluator"),
-      Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("hitslop-evaluator"),
-    ].compactMap { $0 }
-    return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }?.path
   }
 
   /// What the owner has said, so nothing asks it, and who hears it next.
@@ -180,6 +185,9 @@ public final class DocumentOwner: Sendable {
   func captureSource(to destination: URL) async throws {
     try await unit(.captureSource(destination: destination.path))
   }
+  func exportFile(to destination: URL) async throws {
+    try await unit(.backup(destination: destination.path))
+  }
   func artwork(_ name: SlopArtwork.Name) async throws -> Data? {
     guard case .bytes(let bytes) = try await call(.artwork(name: name)) else {
       throw SlopFailure("Invalid artwork response")
@@ -216,6 +224,14 @@ public final class DocumentOwner: Sendable {
   func exportTheme() async throws -> String {
     guard case .themeFile(let json) = try await call(.exportTheme) else { throw SlopFailure("Invalid theme export") }
     return json
+  }
+  func installArtwork(_ artwork: CapturedArtwork) async throws {
+    if try await SlopLibrary.publishArtwork(
+      owner: native, sourceVersion: artwork.sourceVersion, preview: artwork.preview, icon: artwork.icon)
+    {
+      return
+    }
+    try await unit(.setArtwork(sourceVersion: artwork.sourceVersion, preview: artwork.preview, icon: artwork.icon))
   }
   public func close(artwork: SlopRenderedArtwork? = nil) async throws {
     try await unit(.close(preview: artwork?.preview, icon: artwork?.icon))

@@ -48,7 +48,7 @@ impl Staged {
     /// folder entry is synced too.
     pub(crate) fn publish_new(mut self, dest: &Path, durable: bool) -> Result<Publication> {
         let (from, to) = (cstring(&self.path)?, cstring(&resolve(dest)?)?);
-        #[cfg(target_os = "macos")]
+        #[cfg(target_vendor = "apple")]
         // SAFETY: valid C strings.
         let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
         #[cfg(target_os = "linux")]
@@ -130,6 +130,9 @@ pub(crate) type Clean<'a> = &'a dyn Fn(&Connection) -> Result<()>;
 /// deleted, skips the syncs. `clean` changes the staged copy before its checks, which then
 /// include SQLite's quick check.
 pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool, clean: Option<Clean>) -> Result<()> {
+    if super::is_icloud(dest)? {
+        return copy_to_cloud(source, dest, create, durable, clean);
+    }
     let staged = Staged::beside(dest)?;
     let mut output = writer(staged.path(), true)?;
     if !durable {
@@ -159,6 +162,37 @@ pub(crate) fn copy(source: &Connection, dest: &Path, create: bool, durable: bool
     staged.publish_new(dest, durable)?.confirmed()
 }
 
+/// Creation and clean copies also keep their SQLite journals outside the synced folder.
+pub(super) fn copy_to_cloud(
+    source: &Connection,
+    dest: &Path,
+    create: bool,
+    durable: bool,
+    clean: Option<Clean>,
+) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let root = crate::registry::sessions_folder()?.join(format!("create-{}", crate::random_hex(16)));
+    fs::create_dir_all(&root).map_err(failed)?;
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).map_err(failed)?;
+    struct Cleanup(std::path::PathBuf);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let _cleanup = Cleanup(root.clone());
+    let local = root.join("document.slop");
+    copy(source, &local, create, durable, clean)?;
+    super::access::claim(dest, true, |resolved| {
+        let staged = Staged::beside(resolved)?;
+        super::access::clone_file(&local, staged.path())?;
+        if durable {
+            super::access::sync_file(staged.path())?;
+        }
+        staged.publish_new(resolved, durable)?.confirmed()
+    })
+}
+
 /// A new document from a template: a copy of it, its initial state included, with the
 /// document row added. Missing folders above `dest` are made once it may go there.
 pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
@@ -166,6 +200,9 @@ pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     if let Some(folder) = dest.parent().filter(|folder| !folder.as_os_str().is_empty()) {
         fs::create_dir_all(folder).map_err(|e| failed(format!("Cannot make the document's folder: {e}")))?;
     }
+    super::access::reading(template, |template| create_from_downloaded_template(template, dest))
+}
+fn create_from_downloaded_template(template: &Path, dest: &Path) -> Result<()> {
     let source = reader(template)?;
     // The app and its complete saved state are checked in the same read as the copy:
     // a template the owner would refuse to open publishes nothing.

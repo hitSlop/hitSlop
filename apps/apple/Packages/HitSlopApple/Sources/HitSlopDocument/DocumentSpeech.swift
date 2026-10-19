@@ -113,20 +113,29 @@ extension DocumentSession {
   func serveSpeech(
     attachment: String, locale: String?, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void
   ) {
-    guard acceptsPageWork else {
-      return reply(
+    #if os(iOS)
+      reply(
         encodeHostReply(
           reply: .speechTranscribe(
-            outcome: .unavailable(reason: .host, message: "Speech is unavailable while the document is busy"))), nil)
-    }
-    let id = UUID()
-    let recognizer = speechRecognizer
-    let assets = owner.assets
-    speechTasks[id] = Task { [weak self] in
-      let outcome = await SpeechTranscription.run(recognizer, attachment: attachment, locale: locale, assets: assets)
-      self?.speechTasks[id] = nil
-      reply(encodeHostReply(reply: .speechTranscribe(outcome: outcome)), nil)
-    }
+            outcome: .unavailable(
+              reason: .host,
+              message: "Speech is unavailable in the iPhone preview"))), nil)
+    #else
+      guard acceptsPageWork else {
+        return reply(
+          encodeHostReply(
+            reply: .speechTranscribe(
+              outcome: .unavailable(reason: .host, message: "Speech is unavailable while the document is busy"))), nil)
+      }
+      let id = UUID()
+      let recognizer = speechRecognizer
+      let assets = owner.assets
+      speechTasks[id] = Task { [weak self] in
+        let outcome = await SpeechTranscription.run(recognizer, attachment: attachment, locale: locale, assets: assets)
+        self?.speechTasks[id] = nil
+        reply(encodeHostReply(reply: .speechTranscribe(outcome: outcome)), nil)
+      }
+    #endif
   }
 
   /// Ends every transcription this page started; each replies `cancelled`.

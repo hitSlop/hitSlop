@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "HitSlopApple",
-  platforms: [.macOS(.v15)],
+  platforms: [.macOS(.v15), .iOS("26.0")],
   products: [
     .library(name: "HitSlopCore", targets: ["HitSlopCore"]),
     .library(name: "HitSlopFirebase", targets: ["HitSlopFirebase"]),
@@ -34,7 +34,8 @@ let package = Package(
       name: "HitSlopCore",
       // The core parses window silhouettes, so manifest geometry has one parser.
       dependencies: ["HitSlopCoreBinding"],
-      linkerSettings: [.linkedFramework("ImageIO")]
+      resources: [.process("Resources")],
+      linkerSettings: [.linkedFramework("ImageIO"), .linkedFramework("CloudKit")]
     ),
     .target(
       name: "HitSlopFirebase",

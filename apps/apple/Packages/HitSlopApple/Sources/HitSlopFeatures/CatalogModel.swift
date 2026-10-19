@@ -25,12 +25,13 @@ extension SlopCategory {
 }
 
 public enum CatalogFilter: Hashable, Sendable {
-  case all, recents
+  case all, recents, synced
   case category(SlopCategory)
   public var title: String {
     switch self {
     case .all: "Templates"
     case .recents: "Recents"
+    case .synced: "Synced"
     case .category(let category): category.label
     }
   }
@@ -43,11 +44,13 @@ public struct CatalogArtwork: Hashable, Sendable {
   public let name: SlopArtwork.Name
   public let modifiedAt: Date?
   public let byteCount: Int?
-  public init(file: URL, name: SlopArtwork.Name, modifiedAt: Date?, byteCount: Int?) {
+  public let revision: String?
+  public init(file: URL, name: SlopArtwork.Name, modifiedAt: Date?, byteCount: Int?, revision: String? = nil) {
     self.file = file
     self.name = name
     self.modifiedAt = modifiedAt
     self.byteCount = byteCount
+    self.revision = revision
   }
 }
 
@@ -62,6 +65,7 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
   public var title: String
   public var slug = ""
   public var isBundled = false
+  public var isSynced = false
   public var description = ""
   public var categories: [SlopCategory] = []
   public var authorName: String?
@@ -82,7 +86,7 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
     guard case .recent(let url) = source else { return nil }
     return SlopDocumentIdentity(url: url)
   }
-  public var displayTitle: String { documentIdentity?.filename ?? title }
+  public var displayTitle: String { isSynced ? title : (documentIdentity?.filename ?? title) }
   public var searchableText: String {
     ([title, description, authorName ?? "", documentIdentity?.path ?? "", documentIdentity?.folderPath ?? ""]
       + categories.flatMap { [$0.rawValue, $0.label] })
@@ -168,6 +172,8 @@ public struct CatalogClient {
 
   public init(client: CatalogClient) { self.client = client }
 
+  public var synced: [CatalogEntry] = []
+
   public var categories: [SlopCategory] {
     let present = Set(local.flatMap(\.categories))
     return SlopCategory.allCases.filter { present.contains($0) }
@@ -178,6 +184,7 @@ public struct CatalogClient {
     case .all: items = local
     case .category(let category): items = local.filter { $0.categories.contains(category) }
     case .recents: items = recents
+    case .synced: items = synced
     }
     let search = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
     return search.isEmpty ? items : items.filter { $0.searchableText.contains(search) }

@@ -393,6 +393,17 @@ impl Actor {
                 return Ok(None);
             }
             Request::State => Reply::State { reading: self.core.reading()?, sequence: self.core.sequence() },
+            #[cfg(not(target_arch = "wasm32"))]
+            Request::MergeSnapshot { bytes } => {
+                self.mutation()?;
+                if !self.store.is_shared() {
+                    return Err(Failure::rejected(Code::InvalidRequest, "Snapshot sync requires retained history"));
+                }
+                if let Some(result) = self.edited(|core| core.import_remote(&[&bytes]))? {
+                    self.accepted(result.sequence, result.publication, result.theme_changed);
+                }
+                Reply::Unit
+            }
             Request::Apply { batch, origin } => {
                 self.mutation()?;
                 let result = self.edited(|core| core.apply_batch(batch, origin))?;
@@ -406,8 +417,17 @@ impl Actor {
                 Reply::Applied { sequence: result.sequence, ids: result.ids, text: None }
             }
             Request::Theme => Reply::Theme { state: self.core.theme_state()?, sequence: self.core.sequence() },
-            Request::Flush => {
+            Request::FlushLocal => {
                 self.wait(callback, AfterSave::Reply(Reply::Unit))?;
+                return Ok(None);
+            }
+            Request::Flush => {
+                let next = if self.store.publishes_file() {
+                    AfterSave::Storage(StorageAction::Publish)
+                } else {
+                    AfterSave::Reply(Reply::Unit)
+                };
+                self.wait(callback, next)?;
                 return Ok(None);
             }
             Request::ExportTheme => {
@@ -425,6 +445,15 @@ impl Actor {
             }
             Request::Backup { destination } => {
                 self.wait(callback, AfterSave::Storage(StorageAction::Backup(destination)))?;
+                return Ok(None);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            Request::SetArtwork { source_version, preview, icon } => {
+                self.mutation()?;
+                if self.core.reading()?.version != source_version {
+                    return Err(Failure::new(FailureKind::Replaced, "Artwork source changed"));
+                }
+                self.wait(callback, AfterSave::Storage(StorageAction::SetArtwork { source_version, preview, icon }))?;
                 return Ok(None);
             }
             Request::Close { preview, icon } => {

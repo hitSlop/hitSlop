@@ -32,7 +32,13 @@ png = { version = "=0.18.1", optional = true }
 doctest = false
 
 [features]
-default = ["storage"]
+default = ["storage", "desktop"]
+# Desktop process execution and socket hosting. Mobile hosts keep the same owner and
+# durable storage without linking a child-process implementation.
+desktop = ["storage", "hitslop-runner/process"]
+mobile-capture = ["storage", "hitslop-runner/capture-in-process"]
+# Local CloudKit whole-file feasibility harness; not enabled by shipping hosts.
+snapshot-spike = ["storage"]
 # Code generation only; never enabled by the WASM build or shipped native library.
 ts = ["dep:ts-rs", "storage", "hitslop-runner/ts"]
 # Durable storage for native hosts: the document file (SQLite), the writer lock and the
@@ -71,3 +77,6 @@ required-features = ["storage"]
 [[example]]
 name = "export_bindings"
 required-features = ["ts"]
+
+[build-dependencies]
+cc = "1"

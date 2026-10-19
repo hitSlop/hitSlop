@@ -7,6 +7,7 @@ use crate::wire::engine::{
 };
 use crate::{file, lock, registry, socket, store};
 use serde::Deserialize;
+#[cfg(feature = "desktop")]
 use serde_json::json;
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
@@ -16,6 +17,7 @@ pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(35);
 const ADMISSION: Duration = Duration::from_secs(2);
 /// The permanent preflight has no document path and never admits an operation.
+#[cfg(feature = "desktop")]
 pub(crate) fn preflight(input: &str) -> Option<String> {
     #[derive(Deserialize)]
     struct Method {

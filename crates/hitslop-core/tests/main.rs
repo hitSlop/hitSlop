@@ -20,6 +20,8 @@ mod engine_wire;
 #[cfg(feature = "storage")]
 mod file;
 mod images;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+mod library;
 mod media;
 mod merge;
 mod metadata;

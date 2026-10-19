@@ -185,6 +185,11 @@ pub fn file_kind(path: String) -> Result<Kind, CoreError> {
 pub fn create_document(template: String, destination: String) -> Result<(), CoreError> {
     Ok(file::create_document(Path::new(&template), Path::new(&destination))?)
 }
+/// A Files import: source stays untouched; destination has its own identity and state.
+#[uniffi::export]
+pub fn import_document(source: String, destination: String) -> Result<(), CoreError> {
+    Ok(store::Store::import_copy(Path::new(&source), Path::new(&destination))?)
+}
 /// A slop's preview or icon artwork.
 #[uniffi::remote(Enum)]
 pub enum Artwork {
@@ -260,3 +265,5 @@ pub use command::*;
 
 mod page;
 mod widgets;
+
+mod library;

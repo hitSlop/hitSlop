@@ -362,18 +362,42 @@ describe origins; they are neither unique request IDs nor a durable audit log.
 A template holds an app; a document holds an app and its saved state. Creating a
 document copies a template and adds its identity and initial Loro checkpoint in one
 transaction; nothing is ever unpacked. The core decides where a document may live, for
-the app and the engine alike: opening one for writing needs a `.slop` name outside iCloud
-Drive, and creating or copying one also refuses the installed and bundled templates
+the app and the engine alike: opening one for writing needs a `.slop` name in a supported
+location, and creating or copying one also refuses installed and bundled templates
 (`file::document_location`, `file::document_destination`). The regular-file, no-link-leaf
 rule has one owner in the core (`file::existing` / `registry::regular`), used by every
-document request, `open` included. Swift adds only what
-Foundation alone can tell, a folder iCloud syncs such as Desktop and Documents. The writer
+document request, `open` included. Rust classifies iCloud Drive and ubiquitous
+Desktop/Documents folders through a thin Foundation adapter; other CloudStorage providers
+remain refused. Reads do not inherit a write-location refusal. The writer
 lock is an `flock` on a registry file outside the document (`~/.hitslop/live`, named by
 the file's device and inode), never on the database: closing any second descriptor on a
 SQLite file drops SQLite's own locks. The lock holder publishes discovery beside it and
 removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its journal
 after the path, and Apple's SQLite never writes again through a connection whose file
 was renamed. When the file is back where it was opened, the store reconnects and saves.
+
+On macOS, iCloud documents use a private working store under Application Support. The
+existing Rust Store and owner edit that SQLite file, so rollback journals stay local.
+The public file keeps its ordinary inode lease and socket discovery. Explicit native/CLI flush and successful close publish a complete clone through coordinated
+Foundation safe-save, acquire the candidate's lease before replacement, and transfer
+ownership and discovery to the new public inode. Creating/copying into iCloud similarly
+finishes SQLite work privately before publishing a complete file. Local documents retain
+the direct store and resource-reader path; they have no presenter or coordination per
+operation. Location is classified at open; changing Desktop/Documents sync while a local
+writer is already open is outside this preview's qualified path. Close documents before
+changing that setting and reopen them afterwards.
+
+The private session record is durable before replacement and retains a candidate receipt
+until the replacement and directory sync are confirmed. Reopening the same cloud path
+recovers its private edits under the session lock and public lease. A cheap identity/size/
+mtime fence detects external changes; only changed stats or uncertain recovery require
+hashing, against an immutable last-published clone. There are no empty SQLite reservations
+on public inodes: the supported ownership boundary is the hitSlop lease plus coordinated
+safe-save, not arbitrary simultaneous raw SQLite writers. Page flush barriers guarantee local durability without waiting for publication. A
+conflict retains ownership and the private edits; Duplicate and Share a Copy still read the private store. Cloud
+moves, automatic launch recovery, bounded provider waits and two-Mac provider qualification
+remain follow-ups. Recents uses metadata placeholders for evicted files rather than
+downloading them. This is preview storage support, not a real-provider qualification claim.
 
 The native Share popover offers PDF, PNG image and editable slop-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
@@ -421,6 +445,10 @@ for its requested outputs, reporting each result independently. One failed outpu
 discard the others. Close requests artwork and eligible widgets in the same batch.
 Each output starts two restricted children: Markup evaluates synchronous QuickJS SSR;
 Raster receives frames, fonts and selected images and never executes JavaScript.
+The iOS preview uses the same Rust capture pipeline in-process on a serial background
+queue for icon and preview PNGs. QuickJS retains its heap/stack limits and cooperative
+deadline; native raster work has no child-process crash isolation. Authored commands
+remain unavailable on iOS. The Mac renderer continues to use restricted children.
 A typed job envelope supplies separate markup, widget, PNG and PDF budgets.
 Parent and child share render replies and typed failure serialization; the parent
 validates reply combinations. Authored requests carry serialized JSON with image IDs
@@ -603,6 +631,45 @@ history keeps nothing alive.
 
 ## Sync
 
+### Apple library preview
+
+The development Mac/iPhone preview keeps managed documents in account-scoped Application
+Support. One Swift `CKSyncEngine` transports a complete `.slop` CKAsset per document in
+the fixed `Library` zone. Rust owns library metadata, retained history, writer admission,
+staging, merging through the existing owner, and receipts. Swift carries file paths and
+opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
+
+Creation asks for a catalog name, independent of fields inside the authored app. Rename
+is deferred. Both catalogs share the app icon and bundled Baloo 2 headings; controls and
+body copy use native fonts. The iPhone editor extends only its page-colored background
+under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
+
+Leaving an edited iPhone document refreshes its icon and preview from an immutable saved
+source. Managed Mac documents use the same version-checked artwork publication path;
+ordinary Mac documents keep their existing close behavior. A stale or failed capture
+keeps the previous artwork and cannot prevent a save. Derived images never edit Loro.
+Rust library metadata records the artwork's source version. A content-derived asset
+revision detects artwork-only uploads and invalidates catalog caches. Receipts confirm
+the revision actually staged; downloads adopt artwork only when its source matches the
+merged document state. Library merges
+require the same document identity and app slug, equivalent parsed data descriptors and
+the same theme token names and defaults. UI/code and description changes do not block
+state sync; each existing replica retains its own embedded app. Schema evolution
+still requires a migration, and the owner validates every merged state against its local
+contract. Supported file/runtime marker checks remain in force. Stale fallback images do not participate in asset revisions, so
+different fallback pictures cannot create a replication loop.
+
+A CloudKit download preserves any existing local relay binding. The library supplies its
+history-retention placeholder only when the installed document has no share row;
+checkpoint delivery does not change an existing owner's room membership.
+
+This is a Development-container preview. Production schema/container qualification,
+broader mobile templates, existing-file moves, widgets, and history compaction remain
+follow-up work. Ordinary iCloud files use the separate private-publication path above;
+they do not become CloudKit library documents.
+
+### Relay
+
 A shared document syncs through a relay, one Cloudflare Durable Object per room. Every
 copy is a local owner under its own session peer and runs its own commands. An edit is
 saved locally and sent to the relay independently, so neither waits for the other and
@@ -611,7 +678,24 @@ Loro updates copies push, indexed by the operation spans they hold, and backfill
 by its version vector. It never reads Loro, validates state or runs commands. The core side
 is implemented and tested in this repository. A local Durable Object experiment also
 qualified the protocol on Cloudflare's runtime
-([evidence](evidence/sync-spikes-2026-10.md)); that relay source is not in this repository.
+([evidence](evidence/sync-spikes-2026-10.md)). A later Rust Worker passed a disposable
+hosted probe, and real SQLite owners passed local full-file seed and simulated CloudKit
+coexistence checks ([evidence](evidence/live-sharing-spikes-2026-10-18.md)). Signed isolated
+Mac/iPhone probes also passed shared Keychain delivery, native Rust TLS relay convergence,
+actual CloudKit checkpoint throttling and phone background/kill/relaunch
+([device evidence](evidence/live-sharing-native-spike-2026-10-18.md)). CloudKit discovery
+and a later checkpoint required diagnostic cursor resets and remain an investigation; the candidate
+throttle is process-local. A later public fixture passed hosted Chrome origins/storage,
+native/browser convergence and echo round-trip timing on real hitslop.com/dotslop.com
+hostnames ([web evidence](evidence/live-sharing-web-spike-2026-10-18.md)). Embedded Service
+Workers were denied under cookie restriction; the passing hosted experiment used direct
+immutable fixture UI files. A follow-up private-resource experiment passed Chrome
+partitioned HttpOnly grants, private app/media loading, seed/new attachment delivery,
+offline import/reconnect and native/browser inventory convergence
+([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). Its conservative
+HTTP inventory checks add latency; connected opening is required. Native resource UI,
+receive-transfer fault ordering, resource lifecycle and production qualification remain open.
+These probes and relay sources remain ignored experiments.
 The production relay and the Mac app's connection are deferred ([roadmap](roadmap.md#later)).
 
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a

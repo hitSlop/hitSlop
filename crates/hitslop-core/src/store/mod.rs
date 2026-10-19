@@ -51,6 +51,8 @@ struct Backing {
     conn: Option<Connection>,
     #[cfg(not(target_arch = "wasm32"))]
     lease: Option<Lease>,
+    #[cfg(not(target_arch = "wasm32"))]
+    publication: Option<file::publication::Session>,
 }
 struct Account {
     meta: Metadata,
@@ -91,6 +93,8 @@ pub struct Store {
     /// The file's device and inode when opened; a rename or replacement is `Moved`.
     #[cfg(not(target_arch = "wasm32"))]
     inode: (u64, u64),
+    #[cfg(not(target_arch = "wasm32"))]
+    publishes_file: bool,
     /// The app the document was built with, checked once when it opened.
     app: OpenedApp,
     backing: Mutex<Backing>,
@@ -157,6 +161,22 @@ impl Store {
     /// saved state, or a template's initial values, once.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: &Path, mode: Mode) -> Result<Self> {
+        let publication = if mode == Mode::Document && file::is_icloud(path)? {
+            file::document_location(path)?;
+            Some(file::publication::Session::open(path)?)
+        } else {
+            None
+        };
+        Self::open_backing(path, mode, publication)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn open_backing(
+        path: &Path,
+        mode: Mode,
+        mut publication: Option<file::publication::Session>,
+    ) -> Result<Self> {
+        let private = publication.as_ref().map(|session| session.working());
+        let path = private.as_deref().unwrap_or(path);
         let (lease, conn, app) = match mode {
             Mode::Document => {
                 file::document_location(path)?;
@@ -186,9 +206,10 @@ impl Store {
         Ok(Self {
             path: path.to_owned(),
             inode,
+            publishes_file: publication.is_some(),
             app,
             owned: AtomicBool::new(lease.is_some()),
-            backing: Mutex::new(Backing { conn: Some(conn), lease }),
+            backing: Mutex::new(Backing { conn: Some(conn), lease, publication: publication.take() }),
             account: Mutex::new(Account::new()),
         })
     }
@@ -353,16 +374,54 @@ impl Store {
     /// close keeps ownership.
     pub fn close(&self) -> Result<()> {
         let mut backing = lock(&self.backing);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let Backing { publication, conn, .. } = &mut *backing;
+            if let (Some(session), Some(conn)) = (publication, conn.as_ref()) {
+                session.publish(conn)?;
+            }
+        }
         if let Some(open) = backing.conn.take()
             && let Err((open, e)) = open.close()
         {
             backing.conn = Some(open);
             return Err(failed(format!("close; retaining document ownership: {e}")));
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(session) = &backing.publication {
+            session.finish()?;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        backing.publication.take();
         self.owned.store(false, Ordering::Release);
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(lease) = backing.lease.take() {
             lease.withdraw();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn publishes_file(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.publishes_file
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            false
+        }
+    }
+
+    /// Explicit flush publishes a cloud session after queued saves. Autosaves remain
+    /// local and never wait on a provider. Local and browser stores have no extra work.
+    pub fn publish(&self) -> Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut backing = lock(&self.backing);
+            let Backing { publication, conn, .. } = &mut *backing;
+            if let Some(session) = publication {
+                session.publish(conn.as_ref().ok_or(Error::Closed)?)?;
+            }
         }
         Ok(())
     }
@@ -380,11 +439,19 @@ impl Store {
     /// Names the live owner for clients: a writer publishes its socket in the registry.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
-        lock(&self.backing).lease.as_ref().ok_or(Error::Closed)?.publish(json)
+        let mut backing = lock(&self.backing);
+        if let Some(session) = &mut backing.publication {
+            return session.publish_discovery(json);
+        }
+        backing.lease.as_ref().ok_or(Error::Closed)?.publish(json)
     }
     #[cfg(not(target_arch = "wasm32"))]
     pub fn withdraw_discovery(&self) {
-        if let Some(lease) = &lock(&self.backing).lease {
+        let mut backing = lock(&self.backing);
+        if let Some(session) = &mut backing.publication {
+            session.withdraw();
+        }
+        if let Some(lease) = &backing.lease {
             lease.withdraw();
         }
     }

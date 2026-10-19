@@ -182,7 +182,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub fn open(path: &Path, integrity: bool) -> Result<OpenedApp> {
-    opened(&reader(path)?, path, integrity)
+    super::access::reading(path, |path| opened(&reader(path)?, path, integrity))
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn checked(path: &Path) -> Result<(Connection, Kind)> {
@@ -204,7 +204,7 @@ pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Ve
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub fn kind(path: &Path) -> Result<Kind> {
-    Ok(summary(path)?.kind)
+    super::access::reading(path, |path| Ok(summary(path)?.kind))
 }
 /// Copies existing cosmetic artwork without running the app or changing its file.
 /// A caller provides a fresh output path; existing files are never overwritten.

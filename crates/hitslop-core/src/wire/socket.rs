@@ -67,14 +67,14 @@ pub(crate) fn check_protocol(input: &str) -> Result<(), Error> {
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields)]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
 pub(crate) enum Hello {
     #[serde(rename = "hello")]
     Hello { protocol: u64 },
 }
 #[derive(Deserialize)]
 #[serde(tag = "method")]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "desktop"))]
 pub(crate) enum HelloSuccess {
     #[serde(rename = "hello")]
     Hello {

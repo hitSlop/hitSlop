@@ -187,6 +187,9 @@ const tiers: Tier[] = [
       if (!args.length) await prepare("Rust compilation and lints", async () => {
         await quiet(["cargo", "fmt", "--all", "--", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
+        // Compile the mobile host graph independently: workspace feature unification
+        // otherwise hides accidental desktop dependencies and unavailable-service code.
+        await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--", "-D", "warnings"]);
         // The WASM adapter's lints do not depend on the host: Linux and release runs check
         // them, so macOS runs skip two builds and Homebrew's clang.
         if (process.platform === "linux" || release) {
