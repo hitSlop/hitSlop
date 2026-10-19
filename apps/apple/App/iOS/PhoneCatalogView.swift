@@ -133,7 +133,7 @@ struct PhoneCatalogView: View {
             }
           ) {
             template in
-            NavigationLink(value: template) {
+            NavigationLink(value: PhoneRoute.template(template)) {
               PhoneSlopRow(
                 url: template.url, title: template.title, subtitle: template.categories.joined(separator: " · "))
             }.buttonStyle(.plain).accessibilityLabel(template.title)

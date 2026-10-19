@@ -18,7 +18,7 @@ import WebKit
   }
   /// The page shell owns every page; a document supplies only its app's assets.
   nonisolated private static let visiblePage = Data(
-    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>hitSlop</title></head><body><script type=\"module\" src=\"/__shell__/boot.js\"></script></body></html>"
+    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\"><title>hitSlop</title></head><body><script type=\"module\" src=\"/__shell__/boot.js\"></script></body></html>"
       .utf8)
   /// Scripts only from the document and the shell; WebAssembly may compile (MilkDrop presets
   /// compile their equations at runtime). Inline, `blob:` and `data:` scripts stay refused.

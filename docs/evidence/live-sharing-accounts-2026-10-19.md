@@ -4,6 +4,10 @@ This slice replaces preview ownership behind the existing, disabled-by-default n
 developer flag. It follows the [identity/attachment foundation](live-sharing-accounts-foundation-2026-10-19.md).
 It does not qualify a public beta or physical Mac/iPhone recovery.
 
+The subsequent [physical phone campaign](live-sharing-phone-2026-10-19.md) records
+same-UID recovery, live edits, lifecycle checks and the CloudKit startup regression.
+The results below describe the earlier implementation slice.
+
 ## Implementation
 
 - A SQLite Account Durable Object per verified Firebase UID reserves one room per

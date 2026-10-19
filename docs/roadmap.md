@@ -311,7 +311,8 @@ The beta foundation now shares Rust attachment selection and seeds transfer cach
 from server inventory. The deployed reconnect check passes with zero attachment PUTs
 after process reopen. A gated native Apple/Firebase panel, Rust/WASM token probe and
 CloudKit diagnostic namespace/traces are added. Signed Mac Apple/Firebase sign-in and
-deployed Rust/WASM verification pass; matching Mac/iPhone UID remains unproven.
+deployed Rust/WASM verification pass. A later physical device pass confirms matching
+Mac/iPhone UID and account recovery; see the [phone evidence](evidence/live-sharing-phone-2026-10-19.md).
 See the [foundation evidence](evidence/live-sharing-accounts-foundation-2026-10-19.md)
 for that proof and its device gates. The next account lifecycle slice is now implemented
 behind the developer flag ([account evidence](evidence/live-sharing-accounts-2026-10-19.md)).
@@ -325,17 +326,24 @@ retry journal. Rust callbacks report transport status; recovery runs on open,
 foreground, sign-in and Share. Re-share creates a new generation; Stop wins over late
 publication/uploads. Rust owns the 10-room/UID and 32-connection/room limits; new
 reservation creation has a kill switch and UID/IP limits. HTTP APIs use `/v1/`.
-The local real-WASM/SQLite DO/R2 check covers two creators and cold recovery; physical
-same-UID Mac/iPhone qualification and the updated deployed native/browser campaign
-remain separate gates. Existing unversioned preview rooms require remote retirement.
+The local real-WASM/SQLite DO/R2 check covers two creators and cold recovery. The
+physical Mac/iPhone pass confirms initial CloudKit discovery, owner invitation recovery
+without transferring a link, live edits both ways, background catch-up and second-device
+Stop. It exposed a cold-launch library registration race, now protected by a native
+integration regression. The repeat passes post-Stop CloudKit delivery, re-share recovery,
+native Mac Join reusing the open owner and phone background/kill/relaunch. The updated deployed
+browser campaign remains a separate gate. Existing unversioned preview rooms
+require remote retirement.
 
 Before beta, implement account deletion, remaining resource/frame throttles and metrics,
 privacy disclosures and Save Unshared Copy when the
 source cannot save full history. Freeze HTTP and postcard-envelope contracts. Qualify
-native Join, integrated phone UI, same UUID/path/owner, WKWebView resources,
-background/relaunch and CloudKit delivery without cursor resets. Phone testing waits
-until the user is ready. Keep connected web opening as the first scope. No new latency
-measurement was made by the integrated campaign; earlier echo RTT is not one-way/paint.
+signed-out guest/offline paths and phone resources. The full-display editor and native
+Back/loading are verified; the user will check the physical edge-swipe gesture.
+Keep connected web opening as
+the first scope. Four same-device relay acknowledgement samples in the physical run
+were 83–152 ms; cold bootstrap/inventory took longer. These are not one-way or paint
+latency measurements, and do not establish a percentile.
 
 Later: person-level permissions, read-only invitations, public catalog, browser creator
 accounts, CLI share/join, reliable offline web reopening and room compaction/retention.

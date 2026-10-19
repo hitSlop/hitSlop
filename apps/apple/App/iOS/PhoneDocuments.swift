@@ -9,6 +9,7 @@ import WebKit
   @Published var templates: [PhoneTemplate] = []
   @Published var localTitles: [URL: String] = [:]
   @Published var session: DocumentSession?
+  @Published var opening = false
   @Published var busy = false
   @Published var saveStatus: DocumentSaveStatus = .saved
   var saveDescription: String {
@@ -65,6 +66,7 @@ import WebKit
         }
         try await session.close()
         self.session = nil
+        self.opening = false
       }
       try await SlopLibrary.shared.delete(entry)
     }
@@ -79,6 +81,7 @@ import WebKit
       }
       try await session.close()
       self.session = nil
+      self.opening = false
       self.message = "Deleted on another device. Any unsynced edits are kept as a local slop."
     }
   }
@@ -108,12 +111,24 @@ import WebKit
       }.value
     }
   }
-  private func perform(_ operation: @escaping @MainActor () async throws -> Void) {
-    guard !busy else { return }
+  private func perform(
+    completion: @escaping @MainActor (Bool) -> Void = { _ in },
+    _ operation: @escaping @MainActor () async throws -> Void
+  ) {
+    guard !busy else {
+      completion(false)
+      return
+    }
     busy = true
     Task {
       defer { busy = false }
-      do { try await operation() } catch { message = error.localizedDescription }
+      do {
+        try await operation()
+        completion(true)
+      } catch {
+        message = error.localizedDescription
+        completion(false)
+      }
     }
   }
   func importDocument(_ source: URL) {
@@ -148,15 +163,24 @@ import WebKit
     try await show(url)
   }
   private func show(_ url: URL) async throws {
-    let opened = try await DocumentSession.open(url: url)
-    opened.delegate = self
-    session = opened
-    saveStatus = .saved
-    opened.load()
+    opening = true
+    do {
+      let opened = try await DocumentSession.open(url: url)
+      opened.delegate = self
+      session = opened
+      saveStatus = .saved
+      opened.load()
+    } catch {
+      opening = false
+      throw error
+    }
   }
-  func close() {
-    guard let session else { return }
-    perform {
+  func close(completion: @escaping @MainActor (Bool) -> Void = { _ in }) {
+    guard let session else {
+      completion(true)
+      return
+    }
+    perform(completion: completion) {
       let drafts = try await session.prepareClose()
       guard drafts.isEmpty else {
         await session.cancelClose()
@@ -167,6 +191,7 @@ import WebKit
       }
       try await session.close()
       self.session = nil
+      self.opening = false
       self.refresh()
       await SlopLibrary.shared.refresh()
       Task { await SlopLibrary.shared.saveToCloud() }
@@ -224,8 +249,12 @@ import WebKit
     UIApplication.shared.endBackgroundTask(backgroundID)
     backgroundID = .invalid
   }
-  func pageSessionDidBecomeReady(_ session: DocumentSession) {}
-  func pageSessionRecovered(_ session: DocumentSession) {}
+  func pageSessionDidBecomeReady(_ session: DocumentSession) {
+    if self.session === session { opening = false }
+  }
+  func pageSessionRecovered(_ session: DocumentSession) {
+    if self.session === session { opening = false }
+  }
   func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     self.saveStatus = saveStatus
     if case .failed(let failure) = saveStatus { message = failure.localizedDescription }
@@ -235,7 +264,10 @@ import WebKit
   }
   func pageSession(_ session: DocumentSession, themeChanged theme: SlopThemeState) {}
   func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) { message = issue.message }
-  func pageSession(_ session: DocumentSession, didFail error: Error) { message = error.localizedDescription }
+  func pageSession(_ session: DocumentSession, didFail error: Error) {
+    if self.session === session { opening = false }
+    message = error.localizedDescription
+  }
   func pageSession(_ session: DocumentSession, didReplace webView: WKWebView) { objectWillChange.send() }
   func pageSession(_ session: DocumentSession, resizeContentTo size: CGSize) throws -> CGSize {
     session.webView.bounds.size

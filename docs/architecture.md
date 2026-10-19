@@ -735,15 +735,24 @@ restriction, concurrent edits, late join, interrupted receive ordering, connecte
 process reopen, SQLite download/native reopen and revocation
 ([integrated evidence](evidence/live-sharing-preview-2026-10-19.md)). The signed Mac app
 also passed creation, Copy Edit Link, credential restoration, native/browser edits and
-Stop under the earlier preview. Native Join submission, phone UI, account recovery
-and CloudKit discovery remain qualification gates for the replacement.
+Stop under the earlier preview. A subsequent physical Mac/iPhone pass confirmed the
+same Firebase identity, CloudKit discovery, account-based owner recovery, live edits
+in both directions, background catch-up and Stop from the second device
+([phone evidence](evidence/live-sharing-phone-2026-10-19.md)). It exposed a cold-launch
+owner registration race; the native registry now registers already-open writers when
+the asynchronous library connects. Rust continues to own those writers and merges.
 The account lifecycle is implemented behind that same developer gate. The real WASM
 relay passes local SQLite DO/R2 qualification with two signed test identities,
 concurrent reservations, partial publication, guest-admin refusal, cold owner recovery,
 Stop/upload cleanup and re-share. This is separate from the earlier deployed preview
 campaign; see [account evidence](evidence/live-sharing-accounts-2026-10-19.md).
 Old unversioned preview ownership is unsupported and awaits operator retirement.
-Public rollout still requires signed Mac/iPhone identity/recovery and CloudKit checks,
+The physical repeat also passed replacement-generation recovery, native Join reusing
+an open Mac owner, background/kill/relaunch, and post-Stop CloudKit delivery without
+cursor resets. The iPhone editor uses native navigation and a full-display page under
+system glass controls. Its initial loading view blocks editing until page readiness;
+subsequent synchronization keeps valid saved copies editable.
+Public rollout still requires signed-out guest/offline and deployed browser qualification,
 account deletion, remaining abuse controls and full-history recovery below. Offline
 web reopening and compaction remain deferred ([roadmap](roadmap.md#later)).
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a

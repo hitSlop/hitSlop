@@ -127,6 +127,12 @@ cursor persistence and event counts, with hashed cursor/version fingerprints and
 document payloads or record IDs. Do not delete cursors as a recovery step. This
 instrumentation does not yet establish the cause of the earlier discovery misses.
 
+`HITSLOP_SHARING_TRACE=1` independently enables native Rust transport timing. It logs
+fixed event names and wall-clock milliseconds for bootstrap, socket lifecycle,
+inventory, push/ack and record/file receipt. It logs no tokens, capabilities, room
+IDs or payloads. Use same-device send/ack pairs for round trips; timestamps across
+uncalibrated devices do not measure one-way or visible latency.
+
 Rust owns HTTP DTOs, the invitation, resource policy, binary envelope and shared limits.
 `bun run schema:generate` generates TS and `openapi.json`. HTTP callers use those types;
 OpenAPI describes metadata/file routes, while WebSocket updates use the separately
@@ -142,13 +148,15 @@ versioned binary protocol. There is no oRPC or second Swift HTTP client.
   still needs account deletion, full-history rescue and remaining abuse controls.
   Person-level permissions, read-only invitations, public catalog, universal links
   and reliable offline web reopening remain deferred.
-- The earlier signed Mac preview passed creation, Copy Edit Link, credential restoration,
-  native/browser edits, Stop and continued local editing. The account-backed replacement
-  requires a fresh signed Mac/deployed campaign; phone UI, same-UID recovery, native Join
-  and CloudKit coexistence remain qualification gates. CloudKit discovery/cursor misses
-  remain open.
-- No new latency claim: the previous resource probe measured 430–439 ms application
-  echo RTT, including inventory/file coordination. One-way and paint latency are unknown.
+- The account-backed physical Mac/iPhone pass confirms same UID, initial CloudKit
+  discovery, owner recovery without a link, bidirectional live edits, background
+  catch-up and Stop from the second device. Cold opening exposed a library registration
+  race; a native regression protects the fix, and the physical repeat passes post-Stop
+  CloudKit delivery, re-share, native Mac Join reuse and phone background/kill/relaunch.
+  Signed-out guest/offline paths and the updated deployed browser campaign remain gates.
+- Four physical native acknowledgement samples were 83–152 ms; initial bootstrap and
+  inventory were slower. One-way and paint latency are unknown. See the qualifications
+  and limitations in the [phone evidence](../../docs/evidence/live-sharing-phone-2026-10-19.md).
 
 See the [architecture](../../docs/architecture.md#sync),
 [roadmap](../../docs/roadmap.md#later) and

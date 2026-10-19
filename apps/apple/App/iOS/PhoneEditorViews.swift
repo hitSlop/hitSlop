@@ -17,24 +17,28 @@ struct PhoneEditorView: View {
       if let webView = session.currentWebView {
         PhoneWebView(webView: webView)
           .id(ObjectIdentifier(webView))
-          .background(Color(uiColor: pageBackground).ignoresSafeArea(.container, edges: .bottom))
+          .ignoresSafeArea(.container)
+          .background(Color(uiColor: pageBackground).ignoresSafeArea(.container))
           .onReceive(webView.publisher(for: \.underPageBackgroundColor)) { color in
             pageBackground = color ?? .systemBackground
           }
       }
     }
-    .toolbar(.visible, for: .navigationBar)
-    .navigationTitle(library.entry(at: session.file.url)?.title ?? session.file.metadata.title)
-    .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .topBarLeading) {
-        Button {
-          model.close()
-        } label: {
-          Label("Recents", systemImage: "chevron.left")
+    .allowsHitTesting(!model.opening)
+    .overlay {
+      if model.opening {
+        ZStack {
+          Color(uiColor: pageBackground).ignoresSafeArea(.container)
+          ProgressView("Opening slop…").font(.callout)
         }
-        .disabled(model.busy)
       }
+    }
+    .toolbar(.visible, for: .navigationBar)
+    .toolbarBackground(.hidden, for: .navigationBar)
+    .navigationTitle("")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbarRole(.editor)
+    .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Menu {
           Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
@@ -52,6 +56,7 @@ struct PhoneEditorView: View {
           Image(systemName: "ellipsis").font(.title3)
         }
         .accessibilityLabel("Document actions").accessibilityIdentifier("document-actions")
+        .disabled(model.opening || model.busy)
       }
     }
     .sheet(isPresented: $showSharing) {
@@ -62,7 +67,10 @@ struct PhoneEditorView: View {
 
 private struct PhoneWebView: UIViewRepresentable {
   let webView: WKWebView
-  func makeUIView(context: Context) -> WKWebView { webView }
+  func makeUIView(context: Context) -> WKWebView {
+    webView.scrollView.contentInsetAdjustmentBehavior = .never
+    return webView
+  }
   func updateUIView(_ view: WKWebView, context: Context) {}
 }
 

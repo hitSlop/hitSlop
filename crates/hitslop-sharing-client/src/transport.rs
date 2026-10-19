@@ -11,6 +11,26 @@ use std::{
 };
 use tungstenite::{Message, client::IntoClientRequest, stream::MaybeTlsStream};
 
+fn trace(event: &str) {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *ENABLED.get_or_init(|| std::env::var("HITSLOP_SHARING_TRACE").is_ok_and(|v| v == "1")) {
+        let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        eprintln!("hitslop.sharing time={time} event={event}");
+    }
+}
+fn trace_frame(frame: &Frame, incoming: bool) {
+    let event = match (incoming, frame) {
+        (false, Frame::Hello { .. }) => "send_hello",
+        (false, Frame::Push { .. }) => "send_push",
+        (true, Frame::Welcome { .. }) => "receive_welcome",
+        (true, Frame::Records(_)) => "receive_records",
+        (true, Frame::CaughtUp) => "receive_caught_up",
+        (true, Frame::Ack { .. }) => "receive_ack",
+        (true, Frame::Error { .. }) => "receive_error",
+        _ => "unexpected_frame",
+    };
+    trace(event);
+}
 pub(crate) fn http(
     key: &Credential,
     method: &str,
@@ -128,8 +148,10 @@ impl Connection {
             while !running.load(Ordering::Relaxed) {
                 let attempt = (|| {
                     if !bootstrapped {
+                        trace("bootstrap_start");
                         bootstrap(&owner, &key)?;
                         bootstrapped = true;
+                        trace("bootstrap_done");
                     }
                     connected(&owner, &key, &running, &output)
                 })();
@@ -148,6 +170,7 @@ impl Connection {
                 }
                 backoff = (backoff * 2).min(Duration::from_secs(8));
             }
+            trace("supervisor_stopped");
             owner.sync_detach();
             let _ = request(&owner, Request::State);
         });
@@ -204,6 +227,7 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &S
         MaybeTlsStream::Rustls(s) => s.get_ref(),
         _ => return Err(fail("Unsupported TLS transport")),
     };
+    trace("socket_opened");
     stream.set_read_timeout(Some(Duration::from_millis(5))).map_err(fail)?;
     stream.set_write_timeout(Some(Duration::from_secs(10))).map_err(fail)?;
     socket.set_config(|c| {
@@ -214,10 +238,13 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &S
     let sink = queue.clone();
     let admission = owner.sync_connection(Arc::new(move |e| sink.lock().unwrap().enqueue(e)));
     request(owner, Request::State)?;
+    trace("owner_attached");
     let mut core_status = "Syncing".to_owned();
     let mut uploaded = Vec::new();
     let result = (|| {
+        trace("inventory_start");
         uploaded = resources::remote_blobs(key)?;
+        trace("inventory_done");
         while !stop.load(Ordering::Relaxed) {
             let pending = std::mem::take(&mut *queue.lock().unwrap());
             if pending.overflow {
@@ -236,9 +263,12 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &S
                     }
                     SyncEvent::Send { bytes } => {
                         let frame = Frame::decode(&bytes).map_err(fail)?;
+                        trace_frame(&frame, false);
                         if matches!(&frame, Frame::Push { .. }) {
                             status.set("Syncing files".into());
+                            trace("upload_blobs_start");
                             resources::upload_blobs(owner, key, &mut uploaded)?;
+                            trace("upload_blobs_done");
                         }
                         let message = envelope::encode(frame).map_err(fail)?;
                         socket.send(Message::Binary(message.into())).map_err(|_| fail("Socket send failed"))?;
@@ -248,13 +278,16 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &S
             match socket.read() {
                 Ok(Message::Binary(bytes)) => {
                     let frame = envelope::decode(&bytes).map_err(fail)?;
+                    trace_frame(&frame, true);
                     if matches!(&frame,Frame::Error{message,..} if message=="Sharing ended") {
                         status.set("Ended".into());
                         return Ok(true);
                     }
                     if matches!(frame, Frame::Records(_)) {
                         status.set("Receiving files".into());
+                        trace("download_blobs_start");
                         resources::download_blobs(owner, key, &mut uploaded)?;
+                        trace("download_blobs_done");
                     }
                     if !admission.frame(frame.encode()) {
                         return Ok(false);
@@ -274,6 +307,7 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &S
     let _ = socket.close(None);
     let _ = socket.flush();
     admission.detach();
+    trace("socket_detached");
     let _ = request(owner, Request::State);
     result
 }

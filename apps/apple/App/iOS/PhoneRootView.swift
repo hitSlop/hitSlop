@@ -4,12 +4,23 @@ import HitSlopDocument
 import SwiftUI
 import UniformTypeIdentifiers
 
+enum PhoneRoute: Hashable {
+  case template(PhoneTemplate)
+  case document(URL)
+
+  var isDocument: Bool {
+    if case .document = self { return true }
+    return false
+  }
+}
+
 struct PhoneRootView: View {
   @StateObject private var model = PhoneDocuments()
   @ObservedObject private var library = SlopLibrary.shared
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var tab = PhoneTab.recents
-  @State private var path: [PhoneTemplate] = []
+  @State private var path: [PhoneRoute] = []
   @State private var query = ""
   @State private var category = "Popular"
   @State private var showSettings = false
@@ -18,20 +29,21 @@ struct PhoneRootView: View {
   @State private var showSharingAccount = false
 
   var body: some View {
-    NavigationStack(path: $path) {
-      Group {
-        if let session = model.session {
-          PhoneEditorView(session: session, model: model, library: library)
-        } else {
-          PhoneCatalogView(
-            model: model, library: library, tab: $tab, showSettings: $showSettings, query: $query, category: $category
-          )
-          .toolbar(.hidden, for: .navigationBar)
-        }
-      }
-      .navigationDestination(for: PhoneTemplate.self) { template in
-        PhoneTemplateDetail(template: template, creating: model.busy, canCreate: library.isReady) {
-          model.create(template, name: $0)
+    NavigationStack(path: navigationPath) {
+      PhoneCatalogView(
+        model: model, library: library, tab: $tab, showSettings: $showSettings, query: $query, category: $category
+      )
+      .toolbar(.hidden, for: .navigationBar)
+      .navigationDestination(for: PhoneRoute.self) { route in
+        switch route {
+        case .template(let template):
+          PhoneTemplateDetail(template: template, creating: model.busy, canCreate: library.isReady) {
+            model.create(template, name: $0)
+          }
+        case .document(let url):
+          if let session = model.session, session.file.url == url {
+            PhoneEditorView(session: session, model: model, library: library)
+          }
         }
       }
       .overlay {
@@ -109,11 +121,13 @@ struct PhoneRootView: View {
       library.start()
       await model.loadTemplates()
     }
-    .onChange(of: model.session != nil) { _, opened in
-      library.editorOpen = opened
-      if opened {
-        path.removeAll()
+    .onChange(of: model.session?.file.url) { _, url in
+      library.editorOpen = url != nil
+      if let url {
+        withAnimation(reduceMotion ? nil : .default) { path = [.document(url)] }
         tab = .recents
+      } else {
+        withAnimation(reduceMotion ? nil : .default) { path.removeAll(where: \.isDocument) }
       }
     }
     .onChange(of: library.entries) { _, _ in model.libraryChanged() }
@@ -124,5 +138,22 @@ struct PhoneRootView: View {
       if phase == .background { model.saveInBackground() }
     }
     .onOpenURL { model.importDocument($0) }
+  }
+
+  private var navigationPath: Binding<[PhoneRoute]> {
+    Binding(
+      get: { path },
+      set: { next in
+        let leavingDocument = path.contains(where: \.isDocument) && !next.contains(where: \.isDocument)
+        path = next
+        if leavingDocument {
+          model.close { closed in
+            // A failed flush retains its owner and returns to the editor for Retry.
+            if !closed, let url = model.session?.file.url {
+              withAnimation(reduceMotion ? nil : .default) { path = [.document(url)] }
+            }
+          }
+        }
+      })
   }
 }

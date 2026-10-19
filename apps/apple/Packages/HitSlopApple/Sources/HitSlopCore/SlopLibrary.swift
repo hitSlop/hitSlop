@@ -13,17 +13,44 @@ public typealias SyncedSlop = LibraryEntry
 extension LibraryEntry: Identifiable {}
 extension CloudFailure: LocalizedError { var errorDescription: String? { description } }
 
+/// Connects the library to document owners regardless of which finishes opening first.
+final class LibraryOwners: Sendable {
+  private struct OwnerReference { weak var owner: NativeOwner? }
+  private struct State {
+    var library: NativeLibrary?
+    var owners: [OwnerReference] = []
+  }
+  private let active = Mutex(State())
+  var library: NativeLibrary? { active.withLock { $0.library } }
+  func register(_ owner: NativeOwner) throws {
+    try active.withLock { state in
+      state.owners.removeAll { $0.owner == nil }
+      state.owners.append(OwnerReference(owner: owner))
+      try state.library?.registerOwner(owner: owner)
+    }
+  }
+  func activate(_ library: NativeLibrary?) throws {
+    try active.withLock { state in
+      state.owners.removeAll { $0.owner == nil }
+      for reference in state.owners {
+        if let owner = reference.owner { try library?.registerOwner(owner: owner) }
+      }
+      state.library = library
+    }
+  }
+}
+
 /// Native presentation of the account-scoped Rust library. No document state lives here.
 @MainActor public final class SlopLibrary: ObservableObject {
   public static let shared = SlopLibrary()
-  nonisolated private static let active = Mutex<NativeLibrary?>(nil)
+  nonisolated private static let active = LibraryOwners()
   public nonisolated static func register(owner: NativeOwner) throws {
-    try active.withLock { try $0?.registerOwner(owner: owner) }
+    try active.register(owner)
   }
   public nonisolated static func publishArtwork(owner: NativeOwner, sourceVersion: String, preview: Data?, icon: Data?)
     async throws -> Bool
   {
-    guard let library = active.withLock({ $0 }) else { return false }
+    guard let library = active.library else { return false }
     return try await Task.detached(priority: .utility) {
       try library.publishArtwork(owner: owner, sourceVersion: sourceVersion, preview: preview, icon: icon)
     }.value
@@ -82,7 +109,7 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
       guard try await container.accountStatus() == .available else {
         await transport?.stop()
         isReady = false
-        Self.active.withLock { $0 = nil }
+        try Self.active.activate(nil)
         status = "Sign in to iCloud to sync your slops."
         return
       }
@@ -91,14 +118,14 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
       if !account.isEmpty && account != fingerprint {
         await transport?.stop()
         isReady = false
-        Self.active.withLock { $0 = nil }
+        try Self.active.activate(nil)
         status = "Not syncing. Your previous account’s local slops are kept on this device."
         return
       }
       if let transport {
         if !isReady {
+          try Self.active.activate(self.native)
           try await transport.start()
-          Self.active.withLock { $0 = self.native }
           isReady = true
         }
         try await transport.sync(explicit: false)
@@ -125,7 +152,7 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
         try NativeLibrary.open(root: libraryRoot.path, account: fingerprint)
       }.value
       self.native = native
-      Self.active.withLock { $0 = native }
+      try Self.active.activate(native)
       let transport = LibraryTransport(
         library: native, database: container.privateCloudDatabase,
         zone: CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName), account: fingerprint)
@@ -147,7 +174,7 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
       if !stats.failure.isEmpty {
         isReady = false
         status = "Not syncing. \(stats.failure)"
-        Self.active.withLock { $0 = nil }
+        try Self.active.activate(nil)
       }
     } catch { status = libraryMessage(error) }
   }

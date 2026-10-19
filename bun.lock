@@ -5,6 +5,7 @@
     "": {
       "name": "hitslop",
       "devDependencies": {
+        "@cloudflare/workers-types": "4.20251106.1",
         "@lucide/svelte": "1.52.0",
         "@types/bun": "1.4.2",
         "@types/pngjs": "6.0.5",
@@ -96,6 +97,8 @@
     "@cloudflare/workerd-linux-arm64": ["@cloudflare/workerd-linux-arm64@1.20251105.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-5zkxQCqLjwrqZVVJh92J2Drv6xifkP8kN2ltjHdwZQlVzfDW48d7tAtCm1ZooUv204ixvZFarusCfL+IRjExZg=="],
 
     "@cloudflare/workerd-windows-64": ["@cloudflare/workerd-windows-64@1.20251105.0", "", { "os": "win32", "cpu": "x64" }, "sha512-6BpkfjBIbGR+4FBOcZGcWDLM0XQuoI6R9Dublj/BKf4pv0/xJ4zHdnaYUb5NIlC75L55Ouqw0CEJasoKlMjgnw=="],
+
+    "@cloudflare/workers-types": ["@cloudflare/workers-types@4.20251106.1", "", {}, "sha512-+oD+w4K9VYMb1/d3lQ4A7GIV7Im6xpwaCRAXSUSeYKWw5LSQSpai1kJXh7LGIVE9HnJv9gXKpjaMSgcffW4Igw=="],
 
     "@crustjs/core": ["@crustjs/core@0.5.4", "", { "dependencies": { "@crustjs/utils": "^0.2.2" }, "peerDependencies": { "typescript": "^7.0.0" }, "optionalPeers": ["typescript"] }, "sha512-/+z5abfCYVlfWlyqAy2aAilOaxwL//sFAvPpgwEnLbrN12USKT/ElBXmtjg9/K8SKmOnLvrouzA6J3rdDOlyMA=="],
 
