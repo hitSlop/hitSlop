@@ -7,6 +7,7 @@ let package = Package(
   products: [
     .library(name: "HitSlopCore", targets: ["HitSlopCore"]),
     .library(name: "HitSlopFirebase", targets: ["HitSlopFirebase"]),
+    .library(name: "HitSlopAccount", targets: ["HitSlopAccount"]),
     .library(name: "HitSlopDocument", targets: ["HitSlopDocument"]),
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
@@ -36,6 +37,14 @@ let package = Package(
       dependencies: ["HitSlopCoreBinding"],
       resources: [.process("Resources")],
       linkerSettings: [.linkedFramework("ImageIO"), .linkedFramework("CloudKit")]
+    ),
+    .target(
+      name: "HitSlopAccount",
+      dependencies: [
+        "HitSlopCore", "HitSlopCoreBinding",
+        .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
+        .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+      ]
     ),
     .target(
       name: "HitSlopFirebase",

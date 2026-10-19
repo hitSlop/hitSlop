@@ -27,6 +27,7 @@ interface BrowserCopy {
   verifyResources(json: string): string;
   attachmentInventory(): string;
   missingAttachments(json: string): string;
+  missingUploads(json: string): string;
   installAttachment(item: string, bytes: Uint8Array, monotonic: number, unix: number): void;
   export(write: (bytes: Uint8Array) => void): void;
   importBegin(size: number): void;
@@ -61,13 +62,19 @@ let generation = 0,
   backoff = 250;
 let lastStatus = "";
 let sending = 0;
+let receiving = 0;
 let connection: ConnectionPlan;
 let networkAbort: AbortController | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let ended = false;
 let resourcesReady = false;
-const uploaded = new Set<string>();
+const remoteAttachments = new Map<string, Resource>();
 const sharingEvent = (event: SharingEvent) => postMessage(event);
+function reportSync(status: string) {
+  if (status === lastStatus) return;
+  lastStatus = status;
+  sharingEvent({ type: "sync", status });
+}
 class TransportError extends Error {
   constructor(readonly status: number) {
     super("File transport refused: " + status);
@@ -143,11 +150,12 @@ async function resourceSession(epoch: number) {
   }
 }
 async function uploadFiles(epoch: number) {
-  sharingEvent({ type: "sync", status: "Syncing files" });
+  reportSync("Syncing files");
   sharingEvent({ type: "files", status: "Uploading files" });
-  for (const item of JSON.parse(copy!.attachmentInventory()) as Resource[]) {
+  for (const item of JSON.parse(
+    copy!.missingUploads(JSON.stringify([...remoteAttachments.values()])),
+  ) as Resource[]) {
     currentEpoch(epoch);
-    if (uploaded.has(item.hash)) continue;
     const chunks: Uint8Array[] = [];
     for (let at = 0; at < item.size; at += BrowserHost.chunkBytes)
       chunks.push(
@@ -163,20 +171,30 @@ async function uploadFiles(epoch: number) {
       epoch,
     );
     currentEpoch(epoch);
-    uploaded.add(item.hash);
+    remoteAttachments.set(item.hash, item);
   }
 }
 async function receiveFiles(epoch: number) {
-  sharingEvent({ type: "sync", status: "Receiving files" });
+  receiving = epoch;
+  try {
+    await receiveInventory(epoch);
+  } finally {
+    if (receiving === epoch) receiving = 0;
+  }
+}
+async function receiveInventory(epoch: number) {
+  reportSync("Receiving files");
   sharingEvent({ type: "files", status: "Receiving files" });
   const list = await checkedFetch(
     connection.url.replace(/seed$/, "blobs"),
     { headers: connection.headers },
     epoch,
   );
-  for (const item of JSON.parse(
-    copy!.missingAttachments(await metadata(list, epoch)),
-  ) as Resource[]) {
+  const inventory = await metadata(list, epoch);
+  const missing = JSON.parse(copy!.missingAttachments(inventory)) as Resource[];
+  // Rust validated the complete inventory, including metadata for existing hashes.
+  for (const item of JSON.parse(inventory) as Resource[]) remoteAttachments.set(item.hash, item);
+  for (const item of missing) {
     const response = await checkedFetch(
       connection.url.replace(/seed$/, "blob/" + item.hash),
       { headers: connection.headers },
@@ -186,7 +204,6 @@ async function receiveFiles(epoch: number) {
     if (bytes.length !== item.size) throw new Error("Incomplete attachment");
     currentEpoch(epoch);
     copy!.installAttachment(JSON.stringify(item), bytes, performance.now(), Date.now());
-    uploaded.add(item.hash);
   }
   sharingEvent({ type: "files", status: "Files ready" });
 }
@@ -203,10 +220,10 @@ function resourceFailure(error: unknown, epoch = generation) {
   if (opened) poll();
   if (error instanceof TransportError && error.status === 410) {
     ended = true;
-    sharingEvent({ type: "sync", status: "Sharing ended" });
+    reportSync("Sharing ended");
     return;
   }
-  sharingEvent({ type: "sync", status: "Offline; reconnecting" });
+  reportSync("Offline; reconnecting");
   clearTimeout(reconnectTimer);
   if (!ended)
     reconnectTimer = setTimeout(() => {
@@ -219,7 +236,9 @@ async function connectSocket() {
   networkAbort?.abort();
   networkAbort = new AbortController();
   const epoch = ++generation;
+  remoteAttachments.clear();
   await resourceSession(epoch);
+  await receiveFiles(epoch);
   currentEpoch(epoch);
   const ws = new WebSocket(connection.socket, connection.protocols);
   socket = ws;
@@ -286,10 +305,7 @@ function flushSocket() {
     ended = true;
     socket.close(1000, "Sharing paused");
   }
-  if (state !== lastStatus) {
-    lastStatus = state;
-    sharingEvent({ type: "sync", status: state });
-  }
+  if (receiving !== generation) reportSync(state);
   let frame: Uint8Array | undefined;
   try {
     frame = copy.nextSyncFrame();

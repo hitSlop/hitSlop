@@ -8,7 +8,7 @@ export default {
     const trusted = url.origin === SharingHost.origin;
     const authored = url.protocol === "https:" && url.hostname.endsWith(`.${SharingHost.domain}`);
     if (!trusted && !authored) return new Response("Unknown origin", { status: 403 });
-    if ((trusted && (url.pathname.startsWith("/rooms/") || url.pathname === "/health")) ||
+    if ((trusted && (url.pathname.startsWith("/rooms/") || url.pathname.startsWith("/v1/") || url.pathname === "/health")) ||
         (authored && /^\/(assets|attachments|_resources)\//.test(url.pathname)))
       return env.RELAY.fetch(request);
     if (request.method !== "GET" && request.method !== "HEAD")

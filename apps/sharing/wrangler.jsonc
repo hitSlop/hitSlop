@@ -3,9 +3,12 @@
   "main": "../../generated/sharing/relay/worker/shim.mjs",
   "compatibility_date": "2026-10-19",
   "workers_dev": false,
-  "vars": { "BROWSER_ORIGIN": "https://share.hitslop.com" },
+  "vars": { "BROWSER_ORIGIN": "https://share.hitslop.com", "FIREBASE_PROJECT": "hitslopapp", "AUTH_PROBE_ENABLED": "1" },
   "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "SlopRoom" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SlopRoom"] }],
   "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "hitslop-sharing-preview" }],
-  "ratelimits": [{ "name": "CREATE_LIMIT", "namespace_id": "27924741", "simple": { "limit": 20, "period": 60 } }]
+  "ratelimits": [
+    { "name": "CREATE_LIMIT", "namespace_id": "27924741", "simple": { "limit": 20, "period": 60 } },
+    { "name": "AUTH_LIMIT", "namespace_id": "27924742", "simple": { "limit": 120, "period": 60 } }
+  ]
 }

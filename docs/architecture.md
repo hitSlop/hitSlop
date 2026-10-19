@@ -727,7 +727,15 @@ process reopen, SQLite download/native reopen and revocation
 also passed creation, Copy Edit Link, credential restoration, native/browser edits and
 Stop. Native Join submission, phone UI, cross-device Keychain delivery and CloudKit
 discovery remain qualification gates.
-Production rollout, offline web reopening, accounts and room compaction remain deferred
+The next beta replaces synchronizable credentials with Apple/Firebase creator identity
+and server ownership. Account objects reserve/index rooms and recover owner invitations;
+room objects enforce immutable verified owner UID and generation on administration.
+Guests remain capability-based, reopen their link on each device and need no account.
+Sign-out preserves existing local capability-based sync; administration/recovery require
+sign-in. A local immutable seed journal remains necessary for crash-safe uploads.
+This is planned work, not a qualification claim for the developer preview. Public rollout
+also requires CloudKit/device qualification, account deletion, abuse controls and
+full-history recovery below. Offline web reopening and compaction remain deferred
 ([roadmap](roadmap.md#later)).
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
   credential the host keeps, never in the file or in authored code. Sharing uploads a

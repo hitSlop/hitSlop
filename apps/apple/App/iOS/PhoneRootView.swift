@@ -1,3 +1,4 @@
+import HitSlopAccount
 import HitSlopCore
 import HitSlopDocument
 import SwiftUI
@@ -14,6 +15,7 @@ struct PhoneRootView: View {
   @State private var showSettings = false
   @State private var importAfterSettings = false
   @State private var showJoin = false
+  @State private var showSharingAccount = false
 
   var body: some View {
     NavigationStack(path: $path) {
@@ -66,6 +68,7 @@ struct PhoneRootView: View {
           Section {
             if SharingPreview.enabled {
               Button("Join Shared Slop", systemImage: "person.2") { showJoin = true }
+              Button("Sharing Account", systemImage: "person.crop.circle") { showSharingAccount = true }
             }
             Button("Import from Files", systemImage: "square.and.arrow.down") {
               importAfterSettings = true
@@ -79,6 +82,12 @@ struct PhoneRootView: View {
           SharingJoinView { link in
             try await model.join(link)
             showSettings = false
+          }
+        }
+        .sheet(isPresented: $showSharingAccount) {
+          NavigationStack {
+            SharingAccountView()
+              .toolbar { Button("Done") { showSharingAccount = false } }
           }
         }
       }.tint(PhoneStyle.accent)

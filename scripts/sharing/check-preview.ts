@@ -50,6 +50,14 @@ async function restrict(page:Page,context:BrowserContext){
 let contexts:BrowserContext[]=[];
 let stopped=false;
 try {
+  const probe="https://share.hitslop.com/v1/auth/probe";
+  const unknownKey=[{alg:"RS256",kid:"hitslop-deliberately-unknown-test-key"},{sub:"test-user"}].map(part=>Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")+"."+Buffer.alloc(256).toString("base64url");
+  for(const token of [undefined,"malformed",unknownKey]) {
+    const response=await fetch(probe,{headers:token?{Authorization:"Bearer "+token}:{}});
+    assert.equal(response.status,401,"Auth probe must refuse absent or untrusted identities");
+    assert.equal((await response.json() as {code:string}).code,"sign_in_required");
+  }
+  note("The gated auth probe refuses anonymous, malformed and unknown-key identities; valid native identity remains a separate qualification");
   const ready=await next();assert(ready.ready,"Native client failed to publish");
   const invitation=(await readFile(join(root,"invitation.txt"),"utf8")).trim();
   const first=await openProfile("chrome-a");contexts.push(first);
@@ -113,9 +121,19 @@ try {
   note("A browser download preserves canonical UUID, edits and the new attachment and opens in the native engine");
   const reopen=page.url();await first.close();contexts=contexts.filter(context=>context!==first);
   const restored=await chromium.launchPersistentContext(join(root,"chrome-a"),{channel:"chrome",headless:true});contexts.push(restored);
+  let resumedBlobPuts=0;
+  restored.on("request",request=>{if(request.method()==="PUT"&&/\/rooms\/[^/]+\/blob\//.test(new URL(request.url()).pathname))resumedBlobPuts++;});
   const reopened=await restored.newPage();await restrict(reopened,restored);await reopened.goto(reopen);
   await reopened.frameLocator("iframe").getByText(label,{exact:true}).waitFor({timeout:45_000});
   note("Connected process reopen retains the browser copy and its edits");
+  const resumed="resumed-"+Date.now();
+  const resumedApp=reopened.frameLocator("iframe");
+  await resumedApp.getByRole("textbox",{name:"New row",exact:true}).fill(resumed);
+  await resumedApp.getByRole("button",{name:"Add row",exact:true}).click();
+  await until(async()=>(await control({method:"state"})).state.value.rows.some((row:any)=>row.text===resumed),"Reopened browser edit did not reach native owner");
+  await until(async()=>(await reopened.locator("#sync").textContent())==="Synced","Reopened browser did not finish syncing");
+  assert.equal(resumedBlobPuts,0,"Reopened browser re-uploaded an existing attachment");
+  note("Process reopen and a new edit reuse remote attachment inventory without blob PUTs");
   await control({method:"stop"});stopped=true;
   await until(async()=>(await reopened.locator("#sync").textContent())==="Sharing ended","Room stop did not reach the browser");
   assert.equal((await fetch(frame.url()+"assets/ui.js",{headers:{Cookie:`${resourceCookie.name}=${resourceCookie.value}`}})).status,410);

@@ -307,16 +307,36 @@ SQLite download/native reopen and stopping/revocation
 also passed creation, Copy Edit Link, credential restoration, native/browser edits,
 Stop and continued local editing. The feature stays disabled by default.
 
-Next qualify native Join submission, the integrated iPhone UI, shared Keychain delivery, same UUID/path/owner
-on Share and Join, background/relaunch and actual CloudKit coexistence without cursor
-resets. Phone testing waits until the user is ready. Then choose the smallest preview
-rollout. Keep connected web opening as the first scope. No new latency measurement was
-made by the integrated campaign; the earlier echo RTT is not a one-way/paint estimate.
+The beta foundation now shares Rust attachment selection and seeds transfer caches
+from server inventory. The deployed reconnect check passes with zero attachment PUTs
+after process reopen. A gated native Apple/Firebase panel, Rust/WASM token probe and
+CloudKit diagnostic namespace/traces are added. Signed Mac Apple/Firebase sign-in and
+deployed Rust/WASM verification pass; matching Mac/iPhone UID remains unproven.
+See the [foundation evidence](evidence/live-sharing-accounts-foundation-2026-10-19.md)
+for the deployed result and outstanding build/device gates. Existing preview room
+ownership has not switched to accounts.
 
-Later: accounts and person-level permissions, read-only invitations, public catalog,
-CLI share/join, reliable offline web reopening, room compaction/retention and abuse
-controls for a public service. Initial seeds and retained relay updates each have a
-16 MiB preview limit. Qualify
+The next target is a public beta with native creators signed in through Apple/Firebase
+and account-free edit-link guests. First share Rust attachment inventory selection and
+seed upload caches from remote inventories; retain complete SQLite files and transfer
+ordering. Diagnose CloudKit discovery/post-Stop delivery independently, then prove
+same-UID native auth and deployed Worker verification. Account objects reserve/index
+rooms; each room enforces its owner UID. This replaces synchronizable sharing
+credentials, developer creation secrets and credential polling, while retaining a local
+immutable seed journal for crash-safe publication. Guests reopen links per device;
+sign-out keeps existing capability-based sync but requires sign-in for administration.
+
+Before beta, implement re-share generations, owner-based recovery, account deletion,
+quotas/throttles, a kill switch, privacy disclosures and Save Unshared Copy when the
+source cannot save full history. Freeze HTTP and postcard-envelope contracts. Qualify
+native Join, integrated phone UI, same UUID/path/owner, WKWebView resources,
+background/relaunch and CloudKit delivery without cursor resets. Phone testing waits
+until the user is ready. Keep connected web opening as the first scope. No new latency
+measurement was made by the integrated campaign; earlier echo RTT is not one-way/paint.
+
+Later: person-level permissions, read-only invitations, public catalog, browser creator
+accounts, CLI share/join, reliable offline web reopening and room compaction/retention.
+Initial seeds and retained relay updates each have a 16 MiB preview limit. Qualify
 [container-creation and undo conflicts](reference/document-types.md#storage-layout)
 before shipping sharing.
 Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,
@@ -331,7 +351,7 @@ document replication, separate from iCloud or other synced-folder support.
 
 ## Deferred
 
-Account UI/Auth/App Check, a document history UI, schema evolution,
+App Check, a document history UI, schema evolution,
 production qualification of iCloud file publication, other synced folders, and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.

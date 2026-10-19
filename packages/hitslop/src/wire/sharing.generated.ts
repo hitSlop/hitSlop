@@ -15,3 +15,8 @@ export type RoomInit = { app: string, seed: Array<[string, number]>, seed_hash: 
 export type SharingControl = { "type": "joinCredential", credential: string, };
 
 export type SharingEvent = { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, };
+
+/**
+ * Auth spike response. Never returns a bearer token or any sharing capability.
+ */
+export type VerifiedAccount = { uid: string, auth_time: number, };

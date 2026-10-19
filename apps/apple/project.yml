@@ -26,7 +26,9 @@ targets:
     platform: iOS
     sources:
       - path: App/iOS
-        excludes: [Info.plist, hitSlop.entitlements]
+        excludes: [Info.plist, hitSlop.entitlements, GoogleService-Info.plist]
+      - path: App/iOS/GoogleService-Info.plist
+        buildPhase: resources
       - path: App/Shared/Assets.xcassets
       - path: ../../generated/ios/StarterTemplates
         type: folder
@@ -36,6 +38,8 @@ targets:
         product: HitSlopCore
       - package: HitSlopApple
         product: HitSlopDocument
+      - package: HitSlopApple
+        product: HitSlopAccount
       - target: hitSlop-iOS-Thumbnail
     settings:
       base:
@@ -132,6 +136,8 @@ targets:
         product: HitSlopCore
       - package: HitSlopApple
         product: HitSlopFirebase
+      - package: HitSlopApple
+        product: HitSlopAccount
       - package: Sparkle
         product: Sparkle
       - target: hitSlop-QuickLookThumbnail

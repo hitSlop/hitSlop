@@ -43,6 +43,33 @@ fn random() -> Result<String> {
     Ok(hex(&bytes))
 }
 
+/// Auth spike only. The token is transient and never enters document credentials.
+pub fn verify_account(token: &str) -> Result<hitslop_sharing_protocol::http::VerifiedAccount> {
+    if token.is_empty() || token.len() > hitslop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES {
+        return Err("Sign in required".into());
+    }
+    let agent = ureq::Agent::new_with_config(
+        ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .timeout_global(Some(std::time::Duration::from_secs(30)))
+            .build(),
+    );
+    let mut response = agent
+        .get(format!("{}/v1/auth/probe", hitslop_sharing_protocol::TRUSTED_ORIGIN))
+        .header("Authorization", &format!("Bearer {token}"))
+        .call()
+        .map_err(|_| "Identity service unavailable")?;
+    if response.status().as_u16() == 401 {
+        return Err("Sign in required".into());
+    }
+    if response.status().as_u16() != 200 {
+        return Err("Identity verification unavailable".into());
+    }
+    let bytes =
+        response.body_mut().with_config().limit(4096).read_to_vec().map_err(|_| "Identity reply unavailable")?;
+    serde_json::from_slice(&bytes).map_err(|_| "Invalid identity reply".into())
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Credential {
     invitation: Invitation,
@@ -211,7 +238,7 @@ impl Client {
         transport::http(&key, "PUT", "seed", Some(&key.admin), &bytes, &[])?;
         let store = Store::open(&key.seed, Mode::Snapshot).map_err(fail)?;
         resources::upload_app(&key, &store, &key.seed)?;
-        resources::upload_blobs(&self.owner, &key, &mut Default::default())?;
+        resources::upload_blobs(&self.owner, &key, &mut resources::remote_blobs(&key)?)?;
         key.published = true;
         let encoded = key.encode()?;
         *self.key.lock().expect("sharing key") = key;

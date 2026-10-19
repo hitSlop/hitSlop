@@ -1,6 +1,5 @@
 use super::*;
 use hitslop_sharing_protocol::resources::{self as resource_types, Manifest, Resource};
-use std::collections::HashSet;
 
 /// The incoming seed is transport-bounded; a valid local file may have grown beyond
 /// CloudKit's preview checkpoint limit. Keep that policy out of relay reconnection.
@@ -70,42 +69,42 @@ pub(crate) fn upload_app(key: &Credential, store: &Store, path: &Path) -> Result
     }
     Ok(())
 }
-pub(crate) fn upload_blobs(owner: &Owner, key: &Credential, uploaded: &mut HashSet<String>) -> Result<()> {
+fn local_blobs(owner: &Owner) -> Result<Vec<Resource>> {
     let Reply::Attachments { items } = request(owner, Request::Attachments)? else {
         return Err(fail("Missing attachment inventory"));
     };
-    for item in items {
-        if uploaded.contains(&item.id) {
-            continue;
-        }
-        let Reply::Bytes { bytes: Some(bytes) } = request(owner, Request::ReadAttachment { id: item.id.clone() })?
+    Ok(items
+        .into_iter()
+        .map(|item| Resource { key: item.id.clone(), hash: item.id, size: item.bytes, media_type: item.media_type })
+        .collect())
+}
+pub(crate) fn remote_blobs(key: &Credential) -> Result<Vec<Resource>> {
+    let list = transport::http(key, "GET", "blobs", Some(&key.capability), &[], &[])?;
+    let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
+    resource_types::validate(&items, true).map_err(fail)?;
+    Ok(items)
+}
+pub(crate) fn upload_blobs(owner: &Owner, key: &Credential, uploaded: &mut Vec<Resource>) -> Result<()> {
+    for item in resource_types::missing_attachments(&local_blobs(owner)?, uploaded).map_err(fail)? {
+        let Reply::Bytes { bytes: Some(bytes) } = request(owner, Request::ReadAttachment { id: item.hash.clone() })?
         else {
             return Err(fail("Missing attachment bytes"));
         };
         transport::http(
             key,
             "PUT",
-            &format!("blob/{}", item.id),
+            &format!("blob/{}", item.hash),
             Some(&key.capability),
             &bytes,
             &[("Content-Type", &item.media_type)],
         )?;
-        uploaded.insert(item.id);
+        uploaded.push(item);
     }
     Ok(())
 }
-pub(crate) fn download_blobs(owner: &Owner, key: &Credential) -> Result<()> {
-    let Reply::Attachments { items } = request(owner, Request::Attachments)? else {
-        return Err(fail("Missing attachment inventory"));
-    };
-    let have: HashSet<_> = items.into_iter().map(|i| i.id).collect();
-    let list = transport::http(key, "GET", "blobs", Some(&key.capability), &[], &[])?;
-    let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
-    resource_types::validate(&items, true).map_err(fail)?;
-    for item in items {
-        if have.contains(&item.hash) {
-            continue;
-        }
+pub(crate) fn download_blobs(owner: &Owner, key: &Credential, uploaded: &mut Vec<Resource>) -> Result<()> {
+    let remote = remote_blobs(key)?;
+    for item in resource_types::missing_attachments(&remote, &local_blobs(owner)?).map_err(fail)? {
         let bytes = transport::http(key, "GET", &format!("blob/{}", item.hash), Some(&key.capability), &[], &[])?;
         let accepted = hitslop_core::store::Attachment::from_bytes(&bytes).map_err(fail)?;
         if accepted.id != item.hash || accepted.bytes != item.size || accepted.media_type != item.media_type {
@@ -118,5 +117,6 @@ pub(crate) fn download_blobs(owner: &Owner, key: &Credential) -> Result<()> {
             return Err(fail("Attachment identity changed"));
         }
     }
+    *uploaded = remote;
     Ok(())
 }

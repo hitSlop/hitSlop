@@ -48,6 +48,7 @@ pub async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
     let status = response.status_code();
     let headers = response.headers().clone();
     let code = match status {
+        401 => "sign_in_required",
         400 | 413 | 422 => "invalid_request",
         403 => "denied",
         404 => "not_found",
@@ -116,6 +117,29 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         return Response::error("Protocol refused", 403);
     }
     let path = req.path();
+    if path == "/v1/auth/probe" && env.var("AUTH_PROBE_ENABLED").ok().is_some_and(|v| v.to_string() == "1") {
+        if req.method() != Method::Get {
+            return Response::error("Method refused", 405);
+        }
+        let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "local".into());
+        if !env.rate_limiter("AUTH_LIMIT")?.limit(ip).await?.success {
+            return Response::error("Rate limited", 429);
+        }
+        let mut response = match crate::auth::identity(&req, &env).await {
+            Ok(claims) => Response::from_json(&hitslop_sharing_protocol::http::VerifiedAccount {
+                uid: claims.sub,
+                auth_time: claims.auth_time,
+            })?,
+            Err(crate::auth::IdentityError::Denied) => Response::error("Sign in required", 401)?,
+            Err(crate::auth::IdentityError::Unavailable) => Response::error("Identity service unavailable", 503)?,
+        };
+        response.headers_mut().set("Cache-Control", "no-store")?;
+        if let Some(origin) = origin {
+            response.headers_mut().set("Access-Control-Allow-Origin", &origin)?;
+            response.headers_mut().set("Vary", "Origin")?;
+        }
+        return Ok(response);
+    }
     if path == "/health" {
         return Response::ok("hitslop-sharing-preview");
     }

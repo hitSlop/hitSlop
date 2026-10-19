@@ -58,13 +58,15 @@ impl BrowserCopy {
     }
     #[wasm_bindgen(js_name = missingAttachments)]
     pub fn missing_attachments(&self, json: &str) -> Result<String, JsValue> {
-        let mut items: Vec<Resource> = serde_json::from_str(json).map_err(error)?;
-        resource_types::validate(&items, true).map_err(error)?;
-        let store = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?.store();
-        let have: std::collections::HashSet<_> =
-            store.attachments().map_err(error)?.into_iter().map(|i| i.id).collect();
-        items.retain(|i| !have.contains(&i.hash));
-        serde_json::to_string(&items).map_err(error)
+        let remote: Vec<Resource> = serde_json::from_str(json).map_err(error)?;
+        let local: Vec<Resource> = serde_json::from_str(&self.attachment_inventory()?).map_err(error)?;
+        serde_json::to_string(&resource_types::missing_attachments(&remote, &local).map_err(error)?).map_err(error)
+    }
+    #[wasm_bindgen(js_name = missingUploads)]
+    pub fn missing_uploads(&self, json: &str) -> Result<String, JsValue> {
+        let remote: Vec<Resource> = serde_json::from_str(json).map_err(error)?;
+        let local: Vec<Resource> = serde_json::from_str(&self.attachment_inventory()?).map_err(error)?;
+        serde_json::to_string(&resource_types::missing_attachments(&local, &remote).map_err(error)?).map_err(error)
     }
     #[wasm_bindgen(js_name = installAttachment)]
     pub fn install_attachment(

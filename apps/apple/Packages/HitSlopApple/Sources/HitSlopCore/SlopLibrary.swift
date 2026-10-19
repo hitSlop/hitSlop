@@ -106,16 +106,29 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
         return
       }
       account = fingerprint
-      let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      var root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("hitSlop/Library/\(fingerprint)", isDirectory: true)
+      var zoneName = "Library"
+      #if DEBUG
+        if let namespace = ProcessInfo.processInfo.environment["HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE"] {
+          guard !namespace.isEmpty, namespace.utf8.count <= 64,
+            namespace.utf8.allSatisfy({
+              (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45
+            })
+          else { throw CloudFailure("Invalid diagnostic library namespace") }
+          root = root.appendingPathComponent("Diagnostics/\(namespace)", isDirectory: true)
+          zoneName = "Diagnostic-" + namespace
+        }
+      #endif
+      let libraryRoot = root
       let native = try await Task.detached(priority: .utility) {
-        try NativeLibrary.open(root: root.path, account: fingerprint)
+        try NativeLibrary.open(root: libraryRoot.path, account: fingerprint)
       }.value
       self.native = native
       Self.active.withLock { $0 = native }
       let transport = LibraryTransport(
         library: native, database: container.privateCloudDatabase,
-        zone: CKRecordZone.ID(zoneName: "Library", ownerName: CKCurrentUserDefaultName), account: fingerprint)
+        zone: CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName), account: fingerprint)
       self.transport = transport
       try await transport.start()
       isReady = true

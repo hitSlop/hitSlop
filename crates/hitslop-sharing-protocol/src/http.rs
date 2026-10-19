@@ -1,6 +1,15 @@
 //! HTTP metadata only. Document state travels as SQLite seeds and opaque updates.
 use serde::{Deserialize, Serialize};
 
+/// Auth spike response. Never returns a bearer token or any sharing capability.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct VerifiedAccount {
+    pub uid: String,
+    pub auth_time: u64,
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct ConnectionPlan {
@@ -144,6 +153,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     #[derive(OpenApi)]
     #[openapi(components(schemas(
         RoomInit,
+        VerifiedAccount,
         ResourceGrant,
         ApiFailure,
         crate::resources::Manifest,
@@ -157,6 +167,10 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     // all JSON request and response schemas come from these Rust DTOs.
     let mut paths = serde_json::Map::new();
     for (path, methods) in [
+        (
+            "/v1/auth/probe",
+            vec![("get", None, Some("VerifiedAccount"), "Verify Firebase identity (developer auth spike)")],
+        ),
         (
             "/rooms/{room}/init",
             vec![(
@@ -202,15 +216,20 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     ] {
         let mut operations = serde_json::Map::new();
         for (method, input, output, summary) in methods {
-            let mut parameters = vec![
-                serde_json::json!({"name":"room","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{32}$"}}),
-            ];
+            let mut parameters = vec![];
+            if path.contains("{room}") {
+                parameters.push(serde_json::json!({"name":"room","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{32}$"}}));
+            }
             if path.contains("{hash}") {
                 parameters.push(serde_json::json!({"name":"hash","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}));
             }
             let mut operation = serde_json::json!({"summary":summary,"parameters":parameters,"security":[{"capability":[]}],"responses":{
                 "200":{"description":"Accepted"},"403":{"$ref":"#/components/responses/Refused"},"409":{"$ref":"#/components/responses/Refused"},"410":{"$ref":"#/components/responses/Refused"},"413":{"$ref":"#/components/responses/Refused"},"429":{"$ref":"#/components/responses/Refused"}
             }});
+            if path == "/v1/auth/probe" {
+                operation["security"] = serde_json::json!([{"firebaseIdentity":[]}]);
+                operation["responses"]["401"] = serde_json::json!({"$ref":"#/components/responses/Refused"});
+            }
             if let Some(name) = input {
                 operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{name}")}}}});
             }
@@ -224,6 +243,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     doc.paths = serde_json::from_value(paths.into()).expect("static HTTP paths");
     let mut value = serde_json::to_value(doc).expect("OpenAPI document");
     value["components"]["securitySchemes"] = serde_json::json!({"capability":{"type":"http","scheme":"bearer","description":"Room edit capability; creator-only routes instead require the creator capability. POST init also requires X-Preview-Create-Key, X-Admin-Key and X-Write-Key."}});
+    value["components"]["securitySchemes"]["firebaseIdentity"] = serde_json::json!({"type":"http","scheme":"bearer","bearerFormat":"JWT","description":"Firebase ID token, not a room capability"});
     value["components"]["responses"] = serde_json::json!({"Refused":{"description":"Request refused; the local document is retained","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiFailure"}}}}});
     let doc = serde_json::from_value(value).expect("complete OpenAPI document");
     doc

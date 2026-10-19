@@ -172,8 +172,9 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &M
     let admission = owner.sync_connection(Arc::new(move |e| sink.lock().unwrap().enqueue(e)));
     request(owner, Request::State)?;
     let mut core_status = "Syncing".to_owned();
-    let mut uploaded = std::collections::HashSet::new();
+    let mut uploaded = Vec::new();
     let result = (|| {
+        uploaded = resources::remote_blobs(key)?;
         while !stop.load(Ordering::Relaxed) {
             let pending = std::mem::take(&mut *queue.lock().unwrap());
             if pending.overflow {
@@ -210,7 +211,7 @@ fn connected(owner: &Arc<Owner>, key: &Credential, stop: &AtomicBool, status: &M
                     }
                     if matches!(frame, Frame::Records(_)) {
                         *status.lock().unwrap() = "Receiving files".into();
-                        resources::download_blobs(owner, key)?;
+                        resources::download_blobs(owner, key, &mut uploaded)?;
                     }
                     if !admission.frame(frame.encode()) {
                         return Ok(false);

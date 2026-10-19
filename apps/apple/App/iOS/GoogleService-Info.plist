@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>25557365307-978u8hcr9t2bt9jlqjphu7gj86ma6co6.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.25557365307-978u8hcr9t2bt9jlqjphu7gj86ma6co6</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBiK8oIjSlGEDzNcyW8C6klzrS089YGD1Q</string>
+	<key>GCM_SENDER_ID</key>
+	<string>25557365307</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.hitslop.iospreview</string>
+	<key>PROJECT_ID</key>
+	<string>hitslopapp</string>
+	<key>STORAGE_BUCKET</key>
+	<string>hitslopapp.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:25557365307:ios:060f92fd1550177b79e21e</string>
+</dict>
+</plist>

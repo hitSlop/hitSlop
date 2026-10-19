@@ -32,6 +32,26 @@ actor LibraryTransport: CKSyncEngineDelegate {
   private var retryAt: [String: Date] = [:]
   private var blockedVersions: [String: String] = [:]
   private var sent = 0, fetched = 0, conflicts = 0, explicitFetches = 0
+  private var generation = UUID().uuidString
+  private var eventSequence = 0
+  private let diagnostics = ProcessInfo.processInfo.environment["HITSLOP_LIBRARY_TRACE"] == "1"
+  private func fingerprint(_ bytes: Data) -> String {
+    SHA256.hash(data: bytes).prefix(8).map { String(format: "%02x", $0) }.joined()
+  }
+  private func trace(_ event: String, _ fields: [String: String] = [:]) {
+    guard diagnostics else { return }
+    eventSequence += 1
+    var fields = fields
+    fields["subsystem"] = "hitslop.library"
+    fields["generation"] = generation
+    fields["sequence"] = String(eventSequence)
+    fields["event"] = event
+    fields["time"] = Date().ISO8601Format()
+    fields["checkpointSafe"] = String(checkpointSafe)
+    if let bytes = try? JSONEncoder().encode(fields) {
+      FileHandle.standardError.write(bytes + Data([10]))
+    }
+  }
   init(library: NativeLibrary, database: CKDatabase, zone: CKRecordZone.ID, account: String) {
     self.library = library
     self.database = database
@@ -41,14 +61,19 @@ actor LibraryTransport: CKSyncEngineDelegate {
   func start(automatic: Bool = true) async throws {
     failure = nil
     _ = try await database.save(CKRecordZone(zoneID: zone))
-    let saved = try library.engineState().map {
+    let savedBytes = try library.engineState()
+    let saved = try savedBytes.map {
       try JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: $0)
     }
     var config = CKSyncEngine.Configuration(database: database, stateSerialization: saved, delegate: self)
     config.automaticallySync = automatic
     // The development container is also used by the preserved feasibility apps.
     // Never discover and reuse another app's database subscription.
-    config.subscriptionID = (Bundle.main.bundleIdentifier ?? "com.hitslop") + ".Library"
+    let suffix = zone.zoneName == "Library" ? "" : "." + fingerprint(Data(zone.zoneName.utf8))
+    config.subscriptionID = (Bundle.main.bundleIdentifier ?? "com.hitslop") + ".Library" + suffix
+    generation = UUID().uuidString
+    eventSequence = 0
+    trace("start", ["cursor": savedBytes.map(fingerprint) ?? "none", "automatic": String(automatic)])
     engine = CKSyncEngine(config)
     for entry in try library.entries() where entry.problem != nil {
       incoming.insert(entry.id)
@@ -57,6 +82,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
     try enqueue()
   }
   func stop() async {
+    trace("stop")
     let old = engine
     engine = nil
     if let old { await old.cancelOperations() }
@@ -87,10 +113,14 @@ actor LibraryTransport: CKSyncEngineDelegate {
         issues[id] = libraryMessage(error)
       }
     }
+    trace("fetch_database_begin")
     try await engine.fetchChanges()
+    trace("fetch_database_end")
     // Discover zones first, then force a refresh of this zone even when no
     // notification has marked it dirty in the engine's saved state.
+    trace("fetch_zone_begin")
     try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
+    trace("fetch_zone_end")
     try await sendOnly(explicit: explicit)
   }
   private func hasEligibleChanges() throws -> Bool {
@@ -184,23 +214,37 @@ actor LibraryTransport: CKSyncEngineDelegate {
       (record["format"] as? Int) == 1
     else { throw CloudFailure("This synced slop needs a newer hitSlop.") }
     let path = (record["payload"] as? CKAsset)?.fileURL?.path
+    trace("receive_begin", ["version": fingerprint(Data(version.utf8))])
     try library.receive(
       id: record.recordID.recordName, title: title, template: template,
       asset: path, version: version, fields: fields(record), deleted: deleted,
       artworkVersion: record["artworkVersion"] as? String, assetRevision: record["assetRevision"] as? String)
+    trace("receive_accepted", ["version": fingerprint(Data(version.utf8))])
     issues.removeValue(forKey: record.recordID.recordName)
     incoming.remove(record.recordID.recordName)
     retryAt.removeValue(forKey: record.recordID.recordName)
   }
 
   func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
-    guard failure == nil, syncEngine === engine else { return }
+    guard failure == nil, syncEngine === engine else {
+      trace("ignored_callback")
+      return
+    }
     do {
       switch event {
       case .stateUpdate(let update):
         let bytes = try JSONEncoder().encode(update.stateSerialization)
-        if checkpointSafe { try library.saveEngineState(bytes: bytes) } else { pendingCheckpoint = bytes }
+        trace("cursor_received", ["cursor": fingerprint(bytes)])
+        if checkpointSafe {
+          try library.saveEngineState(bytes: bytes)
+          trace("cursor_persisted", ["cursor": fingerprint(bytes)])
+        } else {
+          pendingCheckpoint = bytes
+        }
       case .fetchedRecordZoneChanges(let changes):
+        trace(
+          "fetched_records",
+          ["modifications": String(changes.modifications.count), "deletions": String(changes.deletions.count)])
         // An asset fetch can suspend this actor. Keep a concurrent engine callback
         // from advancing its durable cursor past work Rust has not accepted yet.
         let wasSafe = checkpointSafe
@@ -232,11 +276,15 @@ actor LibraryTransport: CKSyncEngineDelegate {
           checkpointSafe = true
           if let pendingCheckpoint {
             try library.saveEngineState(bytes: pendingCheckpoint)
+            trace("cursor_persisted", ["cursor": fingerprint(pendingCheckpoint)])
             self.pendingCheckpoint = nil
           }
         }
         try enqueue()
       case .sentRecordZoneChanges(let changes):
+        trace(
+          "sent_records",
+          ["saved": String(changes.savedRecords.count), "failed": String(changes.failedRecordSaves.count)])
         for record in changes.savedRecords where record.recordID.zoneID == zone {
           guard let version = record["snapshotVersion"] as? String else {
             throw CloudFailure("Missing uploaded version")
@@ -277,10 +325,14 @@ actor LibraryTransport: CKSyncEngineDelegate {
           throw CloudFailure("iCloud account changed; this account's local files are retained")
         }
       case .didFetchRecordZoneChanges(let result):
+        trace("fetched_zone_end", ["error": String(result.error != nil)])
         if let error = result.error, !transient(error) { throw error }
       default: break
       }
-    } catch { if !transient(error) { failure = String(describing: error) } }
+    } catch {
+      trace("callback_failed", ["transient": String(transient(error))])
+      if !transient(error) { failure = String(describing: error) }
+    }
   }
   private func transient(_ error: Error) -> Bool {
     guard let error = error as? CKError else { return false }

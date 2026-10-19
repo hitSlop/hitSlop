@@ -13,6 +13,7 @@ doctest = false
 
 [dependencies]
 hitslop-sharing-client = { path = "../hitslop-sharing-client" }
+hitslop-sharing-protocol = { path = "../hitslop-sharing-protocol" }
 hitslop-core = { path = "../hitslop-core", default-features = false, features = ["storage"] }
 # Without its default `cargo-metadata`, which only the bindings generator uses: every host
 # build then shares one dependency graph. The generator is installed on its own

@@ -57,6 +57,25 @@ pub fn validate(items: &[Resource], attachments: bool) -> Result<(), String> {
     }
     Ok(())
 }
+/// Transfer only absent immutable blobs. Both inventories are untrusted at this
+/// boundary; a matching hash with different metadata must never become a cache hit.
+pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Result<Vec<Resource>, String> {
+    validate(required, true)?;
+    validate(present, true)?;
+    let present: std::collections::HashMap<_, _> = present.iter().map(|item| (&item.hash, item)).collect();
+    let mut missing = Vec::new();
+    for item in required {
+        if let Some(existing) = present.get(&item.hash) {
+            if item.size != existing.size || item.media_type != existing.media_type {
+                return Err("Attachment inventory metadata mismatch".into());
+            }
+        } else {
+            missing.push(item.clone());
+        }
+    }
+    Ok(missing)
+}
+
 fn passive(kind: &str) -> bool {
     matches!(
         kind,
@@ -77,4 +96,40 @@ fn passive(kind: &str) -> bool {
             | "video/mp4"
             | "video/webm"
     )
+}
+
+#[cfg(test)]
+mod transfer_tests {
+    use super::*;
+    fn blob(hash: char) -> Resource {
+        let hash = hash.to_string().repeat(64);
+        Resource { key: hash.clone(), hash, size: 42, media_type: "image/png".into() }
+    }
+    #[test]
+    fn attachment_transfers_skip_remote_blobs_and_recover_lost_upload_replies() {
+        let local = vec![blob('a'), blob('b')];
+        let remote = vec![blob('a')];
+        assert_eq!(missing_attachments(&local, &remote).unwrap()[0].hash, local[1].hash);
+        assert!(missing_attachments(&remote, &local).unwrap().is_empty());
+        // The upload succeeded but its reply was lost: the next inventory is enough
+        // to skip it, without reading its bytes or retaining the previous connection.
+        assert!(missing_attachments(&local, &local).unwrap().is_empty());
+        assert_eq!(missing_attachments(&local, &[]).unwrap().len(), 2);
+    }
+    #[test]
+    fn attachment_cache_hits_require_valid_matching_metadata() {
+        let local = vec![blob('a')];
+        let mut remote = local.clone();
+        remote[0].size += 1;
+        assert!(missing_attachments(&local, &remote).is_err());
+        remote = local.clone();
+        remote[0].media_type = "image/jpeg".into();
+        assert!(missing_attachments(&remote, &local).is_err());
+        remote = local.clone();
+        remote.push(blob('a'));
+        assert!(missing_attachments(&local, &remote).is_err());
+        remote = local.clone();
+        remote[0].hash = "invalid".into();
+        assert!(missing_attachments(&local, &remote).is_err());
+    }
 }

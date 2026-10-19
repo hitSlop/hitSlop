@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import HitSlopAccount
 import HitSlopCatalog
 import HitSlopCore
 import HitSlopDocument
@@ -53,6 +54,7 @@ private struct UpdateSettingsView: View {
   private var recentMenu: NSMenu?
   private var exportMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
+  private var sharingAccountWindow: NSWindow?
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
   var updater: SPUUpdater { updaterController.updater }
@@ -215,6 +217,20 @@ private struct UpdateSettingsView: View {
     settingsWindow?.makeKeyAndOrderFront(nil)
     NSApp.activate()
   }
+  @objc private func showSharingAccount() {
+    guard SharingPreview.enabled else { return }
+    if sharingAccountWindow == nil {
+      let content = SharingAccountView().frame(minWidth: 440, minHeight: 260)
+      let window = NSWindow(contentViewController: NSHostingController(rootView: content))
+      window.title = "Sharing Account"
+      window.styleMask = [.titled, .closable]
+      window.isReleasedWhenClosed = false
+      window.center()
+      sharingAccountWindow = window
+    }
+    sharingAccountWindow?.makeKeyAndOrderFront(nil)
+    NSApp.activate()
+  }
   @objc private func openWebsite() { NSWorkspace.shared.open(URL(string: "https://hitslop.com")!) }
   @objc private func openRecent(_ sender: NSMenuItem) {
     if let url = sender.representedObject as? URL { openDocument(url) }
@@ -246,6 +262,7 @@ private struct UpdateSettingsView: View {
     updates.target = updaterController
     app.addItem(.separator())
     item(app, "Settings…", #selector(showSettings), ",")
+    if SharingPreview.enabled { item(app, "Sharing Account…", #selector(showSharingAccount), "") }
     app.addItem(.separator())
     let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
     let servicesMenu = NSMenu(title: "Services")

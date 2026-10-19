@@ -69,6 +69,38 @@ are never included in the report. The preview example is a test driver, not a sh
 CLI sharing command. Ordinary CI uses `bun run verify` (including Worker WASM clippy);
 use `bun run verify --native` when native/FFI work is complete.
 
+## Account spike
+
+The developer-gated native **Sharing Account** panel signs in with Apple through a
+separate, named Firebase app. It refreshes a Firebase ID token and passes that transient
+token through UniFFI to the Rust client. `GET /v1/auth/probe` verifies it in the Rust
+Worker against Google's signing certificates and the configured Firebase project.
+The panel compares the returned UID with Firebase's UID and displays a short hash for
+cross-device comparison. Tokens and full UIDs are not logged or put in documents.
+`AUTH_PROBE_ENABLED` controls this route; `AUTH_LIMIT` throttles it by IP.
+Firebase manages its own local login persistence. The signed Mac proof completed
+Apple sign-in and deployed verification successfully; the iPhone comparison is pending.
+
+This is an identity proof only: room creation, owner credentials and the existing
+Keychain preview path above have not switched to accounts. The public-beta account
+registry and owner-authorized administration remain gated on real native sign-in and
+matching Mac/iPhone identities.
+
+The current build IDs remain `com.hitslop.app` (direct-download Mac) and
+`com.hitslop.iospreview` (development iOS). Both are grouped under the primary Apple
+sign-in ID `com.hitslop`, and both have Firebase registrations in `hitslopapp`.
+Production iOS and a future Mac build distributed through its same App Store record
+must use that record's `com.hitslop` bundle ID. Changing these development IDs is not
+needed to prove shared sign-in identity.
+
+For CloudKit diagnosis, a Debug build can opt into `HITSLOP_LIBRARY_TRACE=1` and a
+fresh `HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE` (1–64 ASCII letters, digits or hyphens).
+Use the same namespace on both test devices. It isolates the local library metadata
+and CloudKit zone from the ordinary library. Traces describe engine lifecycle,
+cursor persistence and event counts, with hashed cursor/version fingerprints and no
+document payloads or record IDs. Do not delete cursors as a recovery step. This
+instrumentation does not yet establish the cause of the earlier discovery misses.
+
 Rust owns HTTP DTOs, the invitation, resource policy, binary envelope and shared limits.
 `bun run schema:generate` generates TS and `openapi.json`. HTTP callers use those types;
 OpenAPI describes metadata/file routes, while WebSocket updates use the separately
@@ -80,7 +112,8 @@ versioned binary protocol. There is no oRPC or second Swift HTTP client.
 - Immutable app and attachment limits are the core's existing acceptance limits.
 - Automatic CloudKit checkpoints for relay documents are at most once a minute per
   process. Manual/background saves bypass the interval; ordinary documents are unchanged.
-- No accounts, person-level permissions, read-only invitations, public catalog,
+- Account sign-in is an isolated developer spike; no account-backed room ownership,
+  person-level permissions, read-only invitations, public catalog,
   universal links or reliable offline web reopening.
 - The signed Mac app passed creation, Copy Edit Link, Keychain restoration after reopen,
   native/browser edits, Stop and continued local editing. Native Join submission, phone

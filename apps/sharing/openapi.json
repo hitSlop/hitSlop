@@ -527,6 +527,47 @@
           }
         ]
       }
+    },
+    "/v1/auth/probe": {
+      "get": {
+        "summary": "Verify Firebase identity (developer auth spike)",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifiedAccount"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -634,6 +675,24 @@
             "type": "string"
           }
         }
+      },
+      "VerifiedAccount": {
+        "type": "object",
+        "description": "Auth spike response. Never returns a bearer token or any sharing capability.",
+        "required": [
+          "uid",
+          "auth_time"
+        ],
+        "properties": {
+          "auth_time": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "uid": {
+            "type": "string"
+          }
+        }
       }
     },
     "responses": {
@@ -653,6 +712,12 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Room edit capability; creator-only routes instead require the creator capability. POST init also requires X-Preview-Create-Key, X-Admin-Key and X-Write-Key."
+      },
+      "firebaseIdentity": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Firebase ID token, not a room capability"
       }
     }
   }
