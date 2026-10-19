@@ -18,8 +18,9 @@ use persistence::perform;
 #[cfg(not(target_arch = "wasm32"))]
 use persistence::persistence;
 use persistence::{StorageAction, Work};
+pub(super) use sync::Admission;
 use sync::{Link, SyncMessage};
-pub use sync::{SyncEvent, SyncSink};
+pub use sync::{SyncConnection, SyncEvent, SyncSink};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn spawn(

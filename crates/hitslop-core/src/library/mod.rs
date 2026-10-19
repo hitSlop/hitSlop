@@ -90,6 +90,7 @@ struct Inner {
     // Failed temporary owners keep their writer lease and unsaved state for retry.
     retained: HashMap<String, Arc<Owner>>,
     artwork_cache: RefCell<HashMap<String, (u64, std::time::SystemTime, String)>>,
+    relay_checkpoint: HashMap<String, std::time::Instant>,
 }
 pub struct Library {
     root: PathBuf,
@@ -134,6 +135,7 @@ impl Library {
                 live: HashMap::new(),
                 retained: HashMap::new(),
                 artwork_cache: RefCell::new(HashMap::new()),
+                relay_checkpoint: HashMap::new(),
             }),
         }))
     }
@@ -289,6 +291,39 @@ impl Library {
             .map_err(Error::from)?;
         inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, source_version])?;
         Ok(true)
+    }
+    /// Automatic CloudKit snapshots are checkpoints for relay documents. Manual saves,
+    /// background saves and ordinary library documents keep their existing behavior.
+    pub fn stage_allowed(&self, id: &str, explicit: bool) -> Result<bool> {
+        Self::valid_id(id)?;
+        let inner = self.inner.lock().unwrap();
+        self.checkpoint_allowed(&inner, id, explicit)
+    }
+    fn checkpoint_allowed(&self, inner: &Inner, id: &str, explicit: bool) -> Result<bool> {
+        if explicit || inner.relay_checkpoint.get(id).is_none_or(|at| at.elapsed().as_secs() >= 60) {
+            return Ok(true);
+        }
+        let entry = self.entry(inner, id)?;
+        if entry.deleted {
+            return Ok(true);
+        }
+        let share = if let Some(owner) = inner.live.get(id).and_then(Weak::upgrade) {
+            owner.share().map_err(failed)?
+        } else {
+            Store::open(Path::new(&entry.path), Mode::Snapshot).map_err(failed)?.share().map_err(failed)?
+        };
+        Ok(share.is_none_or(|s| s.endpoint == "cloudkit://library"))
+    }
+    pub fn stage_sync(&self, id: &str, explicit: bool) -> Result<Option<Upload>> {
+        Self::valid_id(id)?;
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if !self.checkpoint_allowed(&inner, id, explicit)? {
+                return Ok(None);
+            }
+            inner.relay_checkpoint.insert(id.into(), std::time::Instant::now());
+        }
+        self.stage(id).map(Some)
     }
     pub fn stage(&self, id: &str) -> Result<Upload> {
         Self::valid_id(id)?;

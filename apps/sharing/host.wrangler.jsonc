@@ -1,0 +1,12 @@
+{
+  "name": "hitslop-sharing-host-preview",
+  "main": "http.ts",
+  "compatibility_date": "2026-10-19",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "share.hitslop.com", "custom_domain": true },
+    { "pattern": "*.dotslop.com/*", "zone_name": "dotslop.com" }
+  ],
+  "assets": { "directory": "../../generated/sharing/assets", "binding": "ASSETS", "run_worker_first": true },
+  "services": [{ "binding": "RELAY", "service": "hitslop-sharing-relay-preview" }]
+}

@@ -10,6 +10,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     hitslop_core::preview::PreviewRequest::export_all(&config)?;
     hitslop_core::browser_wire::BrowserRequest::export_all(&config)?;
     hitslop_core::browser_wire::BrowserEvent::export_all(&config)?;
+    hitslop_sharing_protocol::http::RoomInit::export_all(&config)?;
+    hitslop_sharing_protocol::http::ResourceGrant::export_all(&config)?;
+    hitslop_sharing_protocol::http::ApiFailure::export_all(&config)?;
+    hitslop_sharing_protocol::http::ConnectionPlan::export_all(&config)?;
+    hitslop_sharing_protocol::http::SharingControl::export_all(&config)?;
+    hitslop_sharing_protocol::http::SharingEvent::export_all(&config)?;
+    hitslop_sharing_protocol::resources::Manifest::export_all(&config)?;
     EngineRequest::export_all(&config)?;
     EngineReply::export_all(&config)?;
     BuildInput::export_all(&config)?;
@@ -29,6 +36,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (name, value) in hitslop_core::bindings::constants() {
         constants.push_str(&format!("export const {name} = {} as const;\n", serde_json::to_string(&value)?));
     }
+    constants.push_str(&format!("export const SharingHost = {} as const;\n",serde_json::to_string(&serde_json::json!({
+        "origin":hitslop_sharing_protocol::TRUSTED_ORIGIN,"domain":hitslop_sharing_protocol::AUTHORED_DOMAIN,
+        "socketProtocol":hitslop_sharing_protocol::SOCKET_PROTOCOL,"seedBytes":hitslop_sharing_protocol::SEED_BYTES,
+        "queueBytes":hitslop_sharing_protocol::QUEUED_BYTES,"queueFrames":hitslop_sharing_protocol::QUEUED_FRAMES,
+        "controlBytes":hitslop_sharing_protocol::CONTROL_BYTES,"resourceRenewMs":hitslop_sharing_protocol::RESOURCE_RENEW_MS,
+        "hostPolicy":hitslop_sharing_protocol::host_policy(),"pagePolicy":hitslop_sharing_protocol::page_policy()
+    }))?));
+    std::fs::write(
+        directory.join("sharing.openapi.json"),
+        hitslop_sharing_protocol::http::openapi().to_pretty_json()?,
+    )?;
     std::fs::write(directory.join("constants.generated.ts"), constants)?;
     // ts-rs exports types. Small value registries come from their Rust data directly.
     std::fs::write(

@@ -87,8 +87,12 @@ import WebKit
     Task { do { try await session.saveAccepted() } catch { message = error.localizedDescription } }
   }
   private func refresh() {
-    documents = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
-      .filter { $0.pathExtension == "slop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    let shared = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("hitSlop/SharedDocuments", isDirectory: true)
+    documents = [folder, shared].flatMap {
+      (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
+    }
+    .filter { $0.pathExtension == "slop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     let paths = documents
     Task {
       localTitles = await Task.detached(priority: .utility) {
@@ -137,6 +141,12 @@ import WebKit
     }
   }
   func open(_ url: URL) { perform { try await self.show(url) } }
+  func join(_ link: String) async throws {
+    guard session == nil else { throw SlopFailure("Close your current document before joining another.") }
+    let url = try await DocumentSharing.join(link, candidates: documents)
+    refresh()
+    try await show(url)
+  }
   private func show(_ url: URL) async throws {
     let opened = try await DocumentSession.open(url: url)
     opened.delegate = self

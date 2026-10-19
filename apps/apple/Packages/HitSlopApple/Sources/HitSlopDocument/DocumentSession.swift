@@ -110,6 +110,14 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   /// Whether Edit ▸ Undo and Redo have anything to do in this document.
   public private(set) var undoAvailability = UndoState(canUndo: false, canRedo: false)
   let owner: DocumentOwner
+  public var documentID: String? { owner.documentID }
+  public private(set) var sharing: DocumentSharing?
+  private final class SharedSession {
+    weak var value: DocumentSession?
+    init(_ value: DocumentSession) { self.value = value }
+  }
+  private static var sharingSessions: [String: SharedSession] = [:]
+  static func sharedSession(document: String) -> DocumentSession? { sharingSessions[document]?.value }
   private var server: NativeSocketServer?
   /// The attached page's token (see `makeWebView`).
   private(set) var view = UUID().uuidString
@@ -147,6 +155,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     observeOwner()
     configureFileSaver()
     makeWebView()
+    if SharingPreview.enabled, let document = documentID {
+      sharing = DocumentSharing(owner: owner)
+      Self.sharingSessions[document] = SharedSession(self)
+    }
   }
   private func configureFileSaver() {
     fileSaver.window = { [weak self] in self?.liveWebView?.window }
@@ -489,6 +501,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     await liveWebView?.setCameraCaptureState(.none)
     await liveWebView?.setMicrophoneCaptureState(.none)
     try await saveAccepted()
+    await sharing?.pause()
   }
 
   /// Edit ▸ Undo or Redo. A live page sends its unsent edits first, as the person sees
@@ -657,11 +670,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     // Discovery goes before the writer lock, so it can never name the next owner. A
     // failed close keeps ownership, so commands reach this session again.
     server?.withdraw()
+    await sharing?.pause()
     do {
       let interval = trace?.begin("Rust owner close")
       defer { trace?.end("Rust owner close", interval) }
       try await owner.close(artwork: artwork)
     } catch {
+      sharing?.resume()
       try? publishDiscovery()
       await cancelClose()
       throw error

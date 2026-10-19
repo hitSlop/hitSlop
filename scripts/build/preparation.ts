@@ -5,6 +5,7 @@ export const prerequisites = {
   native: ["engine"],
   sdk: [],
   browser: [],
+  sharing: [],
   templates: ["engine", "shell"],
   packages: ["engine", "shell", "browser"],
   app: [],

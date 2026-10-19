@@ -35,7 +35,8 @@ and a Service Worker resource channel bound to that frame client. Each successfu
 pending text, pass a Rust save barrier, and stream the current database through Chrome’s Save As dialog, including theme and attachments. Unique temporary exports are deleted
 when writing finishes or abandoned-copy cleanup acquires the lock. Resource delivery
 uses bounded chunks, incremental attachment verification and a bounded decoded cache. Browser storage is local to the profile and is not a backup.
-Safari, mobile and hosted sharing are deferred.
+Safari and mobile browser support are deferred. Hosted sharing has a separate,
+disabled-by-default developer preview described under [Sync](#sync).
 
 `slop dev` uses a temporary `.slop`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
@@ -402,7 +403,8 @@ downloading them. This is preview storage support, not a real-provider qualifica
 The native Share popover offers PDF, PNG image and editable slop-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
 format runs through the document command queue. PDF and PNG use the saved-state export
-renderer. Share URL and live collaboration are disabled coming-soon controls.
+renderer. Live collaboration is available only in the explicitly enabled developer
+preview described under [Sync](#sync).
 
 Duplicate and Share Slop File flush what the page accepted and acquire a temporary saved
 source through the owner. Both artwork and the new document come from that source, so
@@ -693,11 +695,40 @@ immutable fixture UI files. A follow-up private-resource experiment passed Chrom
 partitioned HttpOnly grants, private app/media loading, seed/new attachment delivery,
 offline import/reconnect and native/browser inventory convergence
 ([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). Its conservative
-HTTP inventory checks add latency; connected opening is required. Native resource UI,
-receive-transfer fault ordering, resource lifecycle and production qualification remain open.
-These probes and relay sources remain ignored experiments.
-The production relay and the Mac app's connection are deferred ([roadmap](roadmap.md#later)).
+HTTP inventory checks add latency; connected opening is required.
 
+The integrated developer preview now lives in `apps/sharing` (deployable Rust Worker
+and static host), `crates/hitslop-sharing-protocol` (Loro-free DTOs, byte envelope,
+limits and resource policy) and `crates/hitslop-sharing-client` (native Rust transport).
+Rust generates TypeScript and OpenAPI; native UI uses UniFFI. Debug builds require an
+explicit launch flag; normal releases omit the feature. The new Share/Copy Link/Join/Stop
+controls use the current owner and shared synchronizable Keychain credentials.
+
+The trusted browser host/storage is `share.hitslop.com`; authored apps run on separate
+UUID subdomains of `dotslop.com`. SQLite uses OPFS in the trusted dedicated worker;
+IndexedDB stores the copy catalog. Host-scoped partitioned HttpOnly resource cookies
+renew independently; authored pages never receive the invitation. No embedded Service
+Worker is required. Incoming files are verified and installed through the owner before
+Records are applied. A failed transfer cancels its connection generation, including
+queued CaughtUp. Owner admission counts bytes before enqueue and rejects stale sockets.
+
+Creation persists credentials before staging, a stable seed identity before HTTP, and
+publication before showing a link. A local preparation marker prevents another device
+from replacing a pending seed. Retries reuse the room and immutable files. Joining
+reuses an open or known matching local file, or installs a missing canonical copy without
+requiring CloudKit. Stop tombstones the room and revokes remote access; local copies
+remain editable. Automatic CloudKit snapshots of relay documents are process-local
+checkpoints at most once a minute; manual/background saves bypass that interval.
+
+A deployed native/browser fixture campaign passed private resources under cookie
+restriction, concurrent edits, late join, interrupted receive ordering, connected
+process reopen, SQLite download/native reopen and revocation
+([integrated evidence](evidence/live-sharing-preview-2026-10-19.md)). The signed Mac app
+also passed creation, Copy Edit Link, credential restoration, native/browser edits and
+Stop. Native Join submission, phone UI, cross-device Keychain delivery and CloudKit
+discovery remain qualification gates.
+Production rollout, offline web reopening, accounts and room compaction remain deferred
+([roadmap](roadmap.md#later)).
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
   credential the host keeps, never in the file or in authored code. Sharing uploads a
   backup of the document (same UUID and history) as the room's seed, and joining

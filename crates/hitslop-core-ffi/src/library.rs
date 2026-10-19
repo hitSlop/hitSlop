@@ -67,6 +67,12 @@ impl NativeLibrary {
     ) -> Result<bool, LibraryError> {
         Ok(self.0.publish_artwork(&owner.0, &source_version, preview, icon)?)
     }
+    pub fn stage_allowed(&self, id: String, explicit: bool) -> Result<bool, LibraryError> {
+        Ok(self.0.stage_allowed(&id, explicit)?)
+    }
+    pub fn stage_sync(&self, id: String, explicit: bool) -> Result<Option<core::Upload>, LibraryError> {
+        Ok(self.0.stage_sync(&id, explicit)?)
+    }
     pub fn stage(&self, id: String) -> Result<core::Upload, LibraryError> {
         Ok(self.0.stage(&id)?)
     }

@@ -53,7 +53,7 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
         if let transport, foreground {
           do {
             try await transport.tick()
-            if editorOpen && seconds % 15 == 0 { try await transport.sync() }
+            if editorOpen && seconds % 15 == 0 { try await transport.sync(explicit: false) }
             await refresh()
           } catch {
             status = libraryMessage(error)
@@ -101,7 +101,7 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
           Self.active.withLock { $0 = native }
           isReady = true
         }
-        try await transport.sync()
+        try await transport.sync(explicit: false)
         await refresh()
         return
       }
@@ -120,7 +120,7 @@ extension CloudFailure: LocalizedError { var errorDescription: String? { descrip
       try await transport.start()
       isReady = true
       status = "iCloud connected"
-      try await transport.sync()
+      try await transport.sync(explicit: false)
       await refresh()
     } catch { status = libraryMessage(error) }
   }

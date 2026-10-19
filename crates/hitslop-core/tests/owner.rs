@@ -564,6 +564,75 @@ fn sync_sink() -> (hitslop_core::owner::SyncSink, mpsc::Receiver<hitslop_core::o
     )
 }
 
+#[test]
+fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement() {
+    use hitslop_core::{
+        owner::SyncEvent,
+        store::Share,
+        sync::{Frame, Permission, Status},
+    };
+    for frame in [vec![0; hitslop_core::sync::MAX_FRAME], Vec::new()] {
+        let (_dir, path) = fixture();
+        let (owner, _) = open(&path, Mode::Document);
+        call(
+            &owner,
+            Request::Share { share: Share { room: "bounded-room".into(), endpoint: "https://relay.example".into() } },
+        )
+        .unwrap();
+        let (sink, events) = sync_sink();
+        let old = owner.sync_connection(sink);
+        call(&owner, Request::State).unwrap();
+        while events.try_recv().is_ok() {}
+        let (blocked, wait) = mpsc::channel();
+        let (release, gate) = mpsc::channel();
+        owner.submit(
+            Request::State,
+            None,
+            Box::new(move |_| {
+                blocked.send(()).unwrap();
+                gate.recv().unwrap();
+            }),
+        );
+        wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        let count = if frame.is_empty() { hitslop_sharing_protocol::QUEUED_FRAMES } else { 2 };
+        for _ in 0..count {
+            assert!(old.frame(frame.clone()));
+        }
+        let refused = !old.frame(vec![0]);
+        release.send(()).unwrap();
+        assert!(refused, "Owner admission must bound both queued bytes and frame count");
+        loop {
+            if matches!(events.recv_timeout(Duration::from_secs(5)).unwrap(), SyncEvent::Reconnect) {
+                break;
+            }
+        }
+        call(&owner, set("Local editing survives overflow")).unwrap();
+        let (sink, next) = sync_sink();
+        let replacement = owner.sync_connection(sink);
+        let version = loop {
+            if let SyncEvent::Send { bytes } = next.recv_timeout(Duration::from_secs(5)).unwrap()
+                && let Frame::Hello { version, .. } = Frame::decode(&bytes).unwrap()
+            {
+                break version;
+            }
+        };
+        old.detach();
+        assert!(!old.frame(Frame::CaughtUp.encode()));
+        assert!(replacement.frame(Frame::Welcome { permission: Permission::Write, version }.encode()));
+        assert!(replacement.frame(Frame::CaughtUp.encode()));
+        loop {
+            if matches!(
+                next.recv_timeout(Duration::from_secs(5)).unwrap(),
+                SyncEvent::Status { status: Status::Synced }
+            ) {
+                break;
+            }
+        }
+        assert_eq!(state(&owner)["value"]["title"], "Local editing survives overflow");
+        close(&owner);
+    }
+}
+
 /// Drains both connections: each frame an owner sends goes to the relay, whose replies go
 /// back to it and whose stored records go to the other joined owner. Returns once `done`
 /// holds of the owners' latest sync statuses (and whatever else it reads).
@@ -592,6 +661,7 @@ fn pump(
                         }
                     }
                     SyncEvent::Status { status: s } => status[i] = Some(s),
+                    SyncEvent::Reconnect => panic!("Unexpected overflow in the bounded relay fixture"),
                 }
             }
         }

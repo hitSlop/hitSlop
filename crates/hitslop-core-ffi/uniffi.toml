@@ -29,3 +29,6 @@ Summary = "FileSummary"
 Entry = "LibraryEntry"
 Upload = "LibraryUpload"
 Issue = "LibraryIssue"
+
+Phase = "SharingPhase"
+ClientStatus = "SharingStatus"

@@ -10,6 +10,7 @@ struct PhoneEditorView: View {
   @ObservedObject var model: PhoneDocuments
   @ObservedObject var library: SlopLibrary
   @State private var pageBackground = UIColor.systemBackground
+  @State private var showSharing = false
 
   var body: some View {
     Group {
@@ -40,6 +41,9 @@ struct PhoneEditorView: View {
           Button("Redo", systemImage: "arrow.uturn.forward") { model.undo(redo: true) }
           Button("Theme", systemImage: "paintpalette") { model.showTheme = true }
           Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { Task { await library.syncNow() } }
+          if session.sharing != nil {
+            Button("Live Sharing", systemImage: "person.2") { showSharing = true }
+          }
           Button("Back Up File", systemImage: "square.and.arrow.up") { model.export() }
             .accessibilityIdentifier("export-file")
           Divider()
@@ -49,6 +53,9 @@ struct PhoneEditorView: View {
         }
         .accessibilityLabel("Document actions").accessibilityIdentifier("document-actions")
       }
+    }
+    .sheet(isPresented: $showSharing) {
+      if let sharing = session.sharing { DocumentSharingView(model: sharing) }
     }
   }
 }

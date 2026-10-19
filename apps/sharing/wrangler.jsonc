@@ -1,0 +1,11 @@
+{
+  "name": "hitslop-sharing-relay-preview",
+  "main": "../../generated/sharing/relay/worker/shim.mjs",
+  "compatibility_date": "2026-10-19",
+  "workers_dev": false,
+  "vars": { "BROWSER_ORIGIN": "https://share.hitslop.com" },
+  "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "SlopRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SlopRoom"] }],
+  "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "hitslop-sharing-preview" }],
+  "ratelimits": [{ "name": "CREATE_LIMIT", "namespace_id": "27924741", "simple": { "limit": 20, "period": 60 } }]
+}

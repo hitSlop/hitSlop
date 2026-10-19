@@ -4,4 +4,5 @@
 <key>com.apple.developer.icloud-container-identifiers</key><array><string>iCloud.com.hitslop.syncspike</string></array>
 <key>com.apple.developer.icloud-container-environment</key><string>Development</string>
 <key>aps-environment</key><string>development</string>
+<key>keychain-access-groups</key><array><string>$(AppIdentifierPrefix)com.hitslop.sharing</string></array>
 </dict></plist>

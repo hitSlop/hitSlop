@@ -18,7 +18,13 @@ impl BrowserDriver {
         let (persist, work) = mpsc::channel();
         let actor = Actor::new(store.clone(), store::Mode::Document, listener, persist)?;
         actor.start();
-        Ok(Self { owner: Owner { sender, store, path: PathBuf::from(name) }, actor, messages, work, stopped: false })
+        Ok(Self {
+            owner: Owner { sender, store, path: PathBuf::from(name), sync_admission: Arc::default() },
+            actor,
+            messages,
+            work,
+            stopped: false,
+        })
     }
     /// Drive the shared save barrier before a synchronous export. No authored work runs here.
     pub fn flush(&mut self) -> Result<()> {

@@ -1,6 +1,6 @@
 /** Input ownership shared by local verification and CI scheduling. */
 const rustBuildInputs = [/^Cargo\.(toml|lock)$/, /^\.cargo\//, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
-const rustInputs = [/^crates\//, ...rustBuildInputs];
+const rustInputs = [/^crates\//, /^apps\/sharing\/src\//, /^apps\/sharing\/Cargo.toml$/, ...rustBuildInputs];
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
@@ -20,6 +20,7 @@ export const tierInputs = {
     /^packages\/hitslop\/src\/cli\/process\.ts$/,
   ],
   contracts: [
+    /^apps\/sharing\/openapi.json$/,
     ...rustInputs,
     /^packages\/hitslop\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
     /^scripts\/build\/(generate|rust-bindings)\.ts$/,

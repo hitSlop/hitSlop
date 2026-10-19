@@ -26,6 +26,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
   private var checkpointSafe = true
   private var pendingCheckpoint: Data?
   private var syncing = false
+  private var explicitCheckpoint = false
   private var observed: [String: (String, Date)] = [:]
   private var incoming: Set<String> = []
   private var retryAt: [String: Date] = [:]
@@ -62,12 +63,20 @@ actor LibraryTransport: CKSyncEngineDelegate {
   }
   func enqueue() throws {
     guard let engine else { return }
-    let dirty = try library.entries().filter { $0.dirty && issues[$0.id] == nil }.map {
+    let entries = try library.entries()
+    let eligible = try entries.filter { entry in
+      guard entry.dirty, issues[entry.id] == nil else { return false }
+      return try library.stageAllowed(id: entry.id, explicit: explicitCheckpoint)
+    }
+    let excluded = Set(entries.map(\.id)).subtracting(eligible.map(\.id))
+    engine.state.remove(
+      pendingRecordZoneChanges: excluded.map { .saveRecord(CKRecord.ID(recordName: $0, zoneID: zone)) })
+    let dirty = eligible.map {
       CKSyncEngine.PendingRecordZoneChange.saveRecord(CKRecord.ID(recordName: $0.id, zoneID: zone))
     }
     engine.state.add(pendingRecordZoneChanges: dirty)
   }
-  func sync() async throws {
+  func sync(explicit: Bool = true) async throws {
     guard !syncing else { return }
     guard let engine else { throw CloudFailure("Not syncing") }
     syncing = true
@@ -82,14 +91,22 @@ actor LibraryTransport: CKSyncEngineDelegate {
     // Discover zones first, then force a refresh of this zone even when no
     // notification has marked it dirty in the engine's saved state.
     try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
-    try await sendOnly()
+    try await sendOnly(explicit: explicit)
   }
-  func sendOnly() async throws {
+  private func hasEligibleChanges() throws -> Bool {
+    for entry in try library.entries() where entry.dirty && issues[entry.id] == nil {
+      if try library.stageAllowed(id: entry.id, explicit: explicitCheckpoint) { return true }
+    }
+    return false
+  }
+  func sendOnly(explicit: Bool = false) async throws {
+    explicitCheckpoint = explicit
+    defer { explicitCheckpoint = false }
     guard let engine else { throw CloudFailure("Sync paused") }
     for _ in 0..<4 {
       try check()
       try enqueue()
-      guard try library.entries().contains(where: { $0.dirty && issues[$0.id] == nil }) else { return }
+      guard try hasEligibleChanges() else { return }
       do { try await engine.sendChanges() } catch {
         try check()
         // A handled conflict still surfaces as an aggregate partial failure.
@@ -100,7 +117,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
       }
     }
     try check()
-    guard try !library.entries().contains(where: { $0.dirty && issues[$0.id] == nil }) else {
+    guard try !hasEligibleChanges() else {
       throw CloudFailure("Still waiting to upload")
     }
   }
@@ -283,7 +300,13 @@ actor LibraryTransport: CKSyncEngineDelegate {
         let change = CKSyncEngine.PendingRecordZoneChange.saveRecord(id)
         guard context.options.scope.contains(change) else { continue }
         let upload: LibraryUpload
-        do { upload = try library.stage(id: entry.id) } catch {
+        do {
+          guard let staged = try library.stageSync(id: entry.id, explicit: explicitCheckpoint) else {
+            syncEngine.state.remove(pendingRecordZoneChanges: [.saveRecord(id)])
+            continue
+          }
+          upload = staged
+        } catch {
           issues[entry.id] = libraryMessage(error)
           blockedVersions[entry.id] = entry.assetRevision
           if case LibraryError.Failed(.busy, _) = error { retryAt[entry.id] = Date().addingTimeInterval(5) }

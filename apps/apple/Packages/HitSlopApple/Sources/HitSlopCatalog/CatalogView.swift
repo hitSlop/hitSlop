@@ -12,6 +12,7 @@ public struct CatalogView: View {
   @State private var showLibraryName = false
   @State private var libraryName = "Quick Checklist"
   @State private var creatingLibrary = false
+  @State private var showJoin = false
   @FocusState private var searchFocused: Bool
   @Environment(\.scenePhase) private var scenePhase
 
@@ -25,11 +26,14 @@ public struct CatalogView: View {
         model.select($0)
       }
       .safeAreaInset(edge: .bottom) {
-        Button("New synced checklist", systemImage: "plus.icloud") {
-          libraryName = "Quick Checklist"
-          showLibraryName = true
+        VStack {
+          if SharingPreview.enabled { Button("Join Shared Slop…") { showJoin = true } }
+          Button("New synced checklist", systemImage: "plus.icloud") {
+            libraryName = "Quick Checklist"
+            showLibraryName = true
+          }
+          .buttonStyle(.bordered).disabled(!library.isReady || creatingLibrary).padding(12)
         }
-        .buttonStyle(.bordered).disabled(!library.isReady || creatingLibrary).padding(12)
       }
       .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
     } content: {
@@ -115,6 +119,16 @@ public struct CatalogView: View {
       Button("Create") { createSynced() }.disabled(libraryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
     .preferredColorScheme(.light)
+    .sheet(isPresented: $showJoin) {
+      SharingJoinView { link in
+        let candidates = model.recents.compactMap { entry -> URL? in
+          if case .recent(let url) = entry.source { return url }
+          return nil
+        }
+        let url = try await DocumentSharing.join(link, candidates: candidates)
+        model.primaryAction(CatalogEntry(id: url.path, source: .recent(url), title: "Shared Slop"))
+      }
+    }
   }
   private func createSynced() {
     guard !creatingLibrary else { return }

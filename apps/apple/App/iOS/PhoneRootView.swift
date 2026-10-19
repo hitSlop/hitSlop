@@ -1,4 +1,5 @@
 import HitSlopCore
+import HitSlopDocument
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -12,6 +13,7 @@ struct PhoneRootView: View {
   @State private var category = "Popular"
   @State private var showSettings = false
   @State private var importAfterSettings = false
+  @State private var showJoin = false
 
   var body: some View {
     NavigationStack(path: $path) {
@@ -62,6 +64,9 @@ struct PhoneRootView: View {
             Text("Your edits save on this device first, then sync to your other devices.").foregroundStyle(.secondary)
           }
           Section {
+            if SharingPreview.enabled {
+              Button("Join Shared Slop", systemImage: "person.2") { showJoin = true }
+            }
             Button("Import from Files", systemImage: "square.and.arrow.down") {
               importAfterSettings = true
               showSettings = false
@@ -70,6 +75,12 @@ struct PhoneRootView: View {
         }
         .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
         .toolbar { Button("Done") { showSettings = false } }
+        .sheet(isPresented: $showJoin) {
+          SharingJoinView { link in
+            try await model.join(link)
+            showSettings = false
+          }
+        }
       }.tint(PhoneStyle.accent)
     }
     .sheet(isPresented: Binding(get: { model.exported != nil }, set: { if !$0 { model.finishExport() } })) {
@@ -99,6 +110,7 @@ struct PhoneRootView: View {
     .onChange(of: library.entries) { _, _ in model.libraryChanged() }
     .onChange(of: scenePhase) { _, phase in
       library.activated(phase == .active)
+      if phase == .active { model.session?.sharing?.resume() }
       if phase == .inactive { model.saveOnInactive() }
       if phase == .background { model.saveInBackground() }
     }

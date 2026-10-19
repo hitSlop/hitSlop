@@ -36,6 +36,32 @@ fn close(owner: &Owner) {
 }
 
 #[test]
+fn relay_checkpoints_throttle_automatic_staging_but_manual_saves_and_ordinary_documents_do_not() {
+    let (dir, template) = fixture();
+    let library = Library::open(&dir.path().join("library"), "account").unwrap();
+    let entry = library.create(&template, "Checkpoint").unwrap();
+    let owner = Arc::new(Owner::open(std::path::Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap());
+    library.register(&owner).unwrap();
+    assert!(library.stage_sync(&entry.id, false).unwrap().is_some());
+    assert!(library.stage_allowed(&entry.id, false).unwrap());
+    snapshot::request(
+        &owner,
+        Request::Share {
+            share: hitslop_core::store::Share { room: "relay".into(), endpoint: "https://relay.example".into() },
+        },
+    )
+    .unwrap();
+    assert!(!library.stage_allowed(&entry.id, false).unwrap());
+    assert!(library.stage_sync(&entry.id, false).unwrap().is_none());
+    assert!(library.stage_sync(&entry.id, true).unwrap().is_some());
+    assert!(!library.stage_allowed(&entry.id, false).unwrap());
+    close(&owner);
+    drop(library);
+    let reopened = Library::open(&dir.path().join("library"), "account").unwrap();
+    assert!(reopened.stage_allowed(&entry.id, false).unwrap());
+}
+
+#[test]
 fn merges_use_the_live_owner_publish_and_acknowledge_the_actual_uploaded_version() {
     let (dir, template) = fixture();
     let left = Library::open(&dir.path().join("left"), "account").unwrap();

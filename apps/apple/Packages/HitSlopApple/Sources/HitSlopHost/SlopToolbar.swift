@@ -143,7 +143,7 @@ struct SlopToolbar: View {
   enum Action {
     /// A document operation, which the app runs like the menu bar's.
     case document(SlopDocumentCommand)
-    case close, minimize, toggleFullscreen, togglePin, toggleTheme, reveal, copyPath
+    case close, minimize, toggleFullscreen, togglePin, toggleTheme, reveal, copyPath, liveSharing
     case openEditor(URL)
   }
   /// What the controls show and whether each is available.
@@ -155,6 +155,7 @@ struct SlopToolbar: View {
     /// Whether the app accepts document operations now.
     var commandsEnabled = false
     var canExport = false
+    var liveSharing = false
   }
   let identity: SlopDocumentIdentity
   let controls: Controls
@@ -191,6 +192,10 @@ struct SlopToolbar: View {
         .frame(width: 28, height: 28)
         .disabled(!controls.commandsEnabled).background(SlopToolbarControlRegion())
       Menu {
+        if controls.liveSharing {
+          Button("Live Sharing…") { act(.liveSharing) }.disabled(!controls.commandsEnabled)
+          Divider()
+        }
         Button("Duplicate…") { act(.document(.duplicate)) }.disabled(!controls.commandsEnabled)
         if controls.canExport {
           Divider()

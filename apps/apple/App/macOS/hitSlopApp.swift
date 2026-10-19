@@ -201,6 +201,7 @@ private struct UpdateSettingsView: View {
   @objc private func toggleFullscreen() { coordinator.activeController?.toggleFullscreen() }
   @objc private func togglePin() { coordinator.activeController?.togglePin() }
   @objc private func toggleTheme() { coordinator.activeController?.toggleTheme() }
+  @objc private func showLiveSharing() { coordinator.activeController?.showLiveSharing() }
   @objc private func showSettings() {
     if settingsWindow == nil {
       let content = UpdateSettingsView(updater: updater).frame(width: 480, height: 340)
@@ -274,6 +275,7 @@ private struct UpdateSettingsView: View {
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
     item(file, "Share…", .share)
+    if SharingPreview.enabled { item(file, "Live Sharing…", #selector(showLiveSharing), "") }
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
     export.submenu = exportMenu
@@ -368,6 +370,7 @@ private struct UpdateSettingsView: View {
     case #selector(toggleTheme):
       menuItem.state = controller?.isThemeShown == true ? .on : .off
       return controller?.canToggleTheme ?? false
+    case #selector(showLiveSharing): return controller?.canShowLiveSharing ?? false
     default: return true
     }
   }

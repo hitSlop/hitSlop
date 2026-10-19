@@ -292,22 +292,33 @@ private-resource experiment passed scoped grants, app/media verification, seed/n
 delivery, offline import/reconnect and native/browser convergence
 ([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). The deliberately
 simple per-record inventory checks raised Mac/browser echo medians to 430–439 ms in that
-run. Next qualify interrupted receives, resource lifecycle and native resource UI, then
-build the minimal three-host Share/Join/status slice. Connected web opening is the initial
-scope; reliable offline reopening remains deferred. Separately investigate
-the CloudKit fetch/cursor misses, qualify crash-safe room credential publication and the
-owner's aggregate incoming byte budget, and settle restart checkpoint eligibility before
-shipping. The native hardening does not block independent resource experiments. No shipping
-editor UI is connected to the relay yet.
+run. The integrated developer preview now adds the existing app's Share/Copy Link/Join/Stop
+controls, synchronizable opaque Keychain credentials, crash-safe staged publication,
+aggregate owner queue admission and process-local 60-second CloudKit checkpoints.
+It deploys a Loro-free Rust relay and private R2 resources, a trusted
+`share.hitslop.com` browser host and isolated UUID `dotslop.com` app origins. Rust owns
+HTTP DTOs/OpenAPI, the binary protocol and native transport. No oRPC or Swift HTTP
+implementation is needed.
 
-Still to build: the production relay (room creation with write and read keys, R2 for the
-seed and attachments, rate limits, quotas, server compaction); the Mac client (a socket
-connection with backoff, Share and Join, the room key in the Keychain, a sync status line);
-attachment sync; a way to save a full shared document's live state as a new, unshared copy;
-CLI `share` and `join`; the browser host's connection; and hosted-latency qualification.
-Qualify [container-creation and undo conflicts](reference/document-types.md#storage-layout)
+The deployed fixture campaign passes native/browser convergence, late join, restricted
+cookie resources, interrupted receive ordering, connected browser process reopening,
+SQLite download/native reopen and stopping/revocation
+([integrated evidence](evidence/live-sharing-preview-2026-10-19.md)). The signed Mac app
+also passed creation, Copy Edit Link, credential restoration, native/browser edits,
+Stop and continued local editing. The feature stays disabled by default.
+
+Next qualify native Join submission, the integrated iPhone UI, shared Keychain delivery, same UUID/path/owner
+on Share and Join, background/relaunch and actual CloudKit coexistence without cursor
+resets. Phone testing waits until the user is ready. Then choose the smallest preview
+rollout. Keep connected web opening as the first scope. No new latency measurement was
+made by the integrated campaign; the earlier echo RTT is not a one-way/paint estimate.
+
+Later: accounts and person-level permissions, read-only invitations, public catalog,
+CLI share/join, reliable offline web reopening, room compaction/retention and abuse
+controls for a public service. Initial seeds and retained relay updates each have a
+16 MiB preview limit. Qualify
+[container-creation and undo conflicts](reference/document-types.md#storage-layout)
 before shipping sharing.
-
 Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,
 JavaScriptCore, data.json, or a second semantic validator. Convergence tests around
 internal import/export do not constitute a shipped collaboration product.

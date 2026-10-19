@@ -8,7 +8,7 @@ use crate::{Origin, store, theme};
 #[cfg(target_arch = "wasm32")]
 pub use actor::BrowserDriver;
 use actor::Message;
-pub use actor::{SyncEvent, SyncSink};
+pub use actor::{SyncConnection, SyncEvent, SyncSink};
 pub use failure::{Failure, FailureKind};
 #[cfg(not(target_arch = "wasm32"))]
 pub use hitslop_runner::Evaluator;
@@ -194,6 +194,7 @@ fn take(callback: &mut Option<Completion>) -> Completion {
 /// A queue handle, independent of any page lifetime. Its store retains the writer lock
 /// until a successful close; a failed save never releases it.
 pub struct Owner {
+    sync_admission: Arc<std::sync::Mutex<actor::Admission>>,
     sender: mpsc::Sender<Message>,
     store: Arc<store::Store>,
     path: PathBuf,
@@ -233,7 +234,7 @@ impl Owner {
                 return Err(failure);
             }
         };
-        Ok(Self { sender, store, path, epoch })
+        Ok(Self { sender, store, path, epoch, sync_admission: Arc::default() })
     }
     /// Serial admission for host actions, including immutable page configuration.
     /// The host still fences the WebView when the asynchronous result arrives.

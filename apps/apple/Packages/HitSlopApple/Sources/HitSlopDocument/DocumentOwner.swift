@@ -18,7 +18,8 @@ public struct UndoState: Sendable, Equatable {
 public final class DocumentOwner: Sendable {
   public let file: SlopFile
   let assets: ResourceReader
-  private let native: NativeOwner
+  let native: NativeOwner
+  public var documentID: String? { sharingOwnerDocument(owner: native) }
   private let events: Events
 
   /// What the owner tells its document, in the owner's order, on the owner's queue.
