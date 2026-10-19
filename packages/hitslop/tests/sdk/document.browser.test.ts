@@ -8,18 +8,22 @@ import { build } from "vite";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { sveltePlugin } from "../../src/cli/app-vite";
+import type { EnvironmentSnapshot } from "../../src/sdk/environment";
 
 const files = {
   "schema.ts": `import { defineDocument, s } from "hitslop";
 export default defineDocument({ label: s.string() }, { initial: { label: "" } });
 export const other = defineDocument({ label: s.string() }, { initial: { label: "" } });`,
   "Label.svelte": `<script lang="ts">
-  import { getDocument } from "hitslop/svelte";
+  import { getDocument, getEnvironment } from "hitslop/svelte";
   import schema from "./schema";
   const doc = getDocument(schema);
+  const environment = getEnvironment();
+  (window as any).environments.push(environment);
   (window as any).acquired.push(doc);
 </script>
-<h1>{doc.current.label}</h1>`,
+<h1>{doc.current.label}</h1>
+<p data-environment>{environment.current.platform}/{environment.current.device}/{environment.current.layout}</p>`,
   "App.svelte": `<script lang="ts">
   import { getDocument } from "hitslop/svelte";
   import schema from "./schema";
@@ -48,6 +52,7 @@ import App from "./App.svelte";
 import Other from "./Other.svelte";
 const win = window as any;
 win.acquired = [];
+win.environments = [];
 win.apps = { App: svelteApp(App, { schema }), Other: svelteApp(Other, { schema }) };
 win.context = (label: string) => {
   let current = Object.freeze({ label });
@@ -157,6 +162,42 @@ test("a remount acquires a fresh document and the previous one stops listening",
     return { listening, afterUnmount, fresh: first !== second, shown };
   });
   expect(result).toEqual({ listening: 1, afterUnmount: 0, fresh: true, shown: "Reloaded" });
+});
+
+test("getEnvironment is reactive per mount, cleans up and falls back on older hosts", async () => {
+  await page.setViewportSize({ width: 639, height: 800 });
+  const result = await page.evaluate(async () => {
+    const win = window as any;
+    const target = document.getElementById("c")!;
+    const owner = win.context("Environment");
+    let current: EnvironmentSnapshot = Object.freeze({ platform: "macos", device: "desktop", layout: "compact" });
+    const listeners = new Set<() => void>();
+    owner.ctx.environment = {
+      get current() { return current; },
+      subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
+    };
+    const view = await win.apps.App.mount(owner.ctx, target);
+    await view.rendered();
+    const environment = win.environments.at(-1);
+    const before = target.querySelector("[data-environment]")!.textContent;
+    current = Object.freeze({ platform: "macos", device: "desktop", layout: "regular" });
+    for (const listener of listeners) listener();
+    await view.rendered();
+    const changed = target.querySelector("[data-environment]")!.textContent;
+    await view.unmount();
+    const count = listeners.size;
+    current = Object.freeze({ platform: "ios", device: "phone", layout: "compact" });
+    for (const listener of listeners) listener();
+    const retained = environment.current.platform;
+    const older = await win.apps.App.mount(win.context("Older host").ctx, target);
+    await older.rendered();
+    win.olderEnvironmentView = older;
+    return { before, changed, count, retained, fallback: target.querySelector("[data-environment]")!.textContent };
+  });
+  expect(result).toEqual({ before: "macos/desktop/compact", changed: "macos/desktop/regular", count: 0, retained: "macos", fallback: "unknown/unknown/compact" });
+  await page.setViewportSize({ width: 640, height: 800 });
+  await page.locator("#c [data-environment]").filter({ hasText: "unknown/unknown/regular" }).waitFor();
+  await page.evaluate(async () => { await (window as any).olderEnvironmentView.unmount(); });
 });
 
 test("getDocument refuses calls after initialization and a definition the app did not mount", async () => {

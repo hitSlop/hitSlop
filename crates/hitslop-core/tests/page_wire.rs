@@ -33,6 +33,7 @@ fn each_page_request_classifies_its_required_capability() {
         (PageRequest::Undo {}, None),
         (PageRequest::Redo {}, None),
         (PageRequest::Config {}, None),
+        (PageRequest::HostEnvironment {}, None),
         (PageRequest::AttachmentsPut { bytes: String::new() }, None),
         (PageRequest::WindowResize { width: 320, height: 240 }, None),
         (PageRequest::SpeechTranscribe { attachment: "a".repeat(64), locale: None }, Some(Capability::Speech)),
@@ -51,6 +52,7 @@ fn page_requests_and_nested_batches_are_strict() {
     for value in [
         json!({"method":"open"}),
         json!({"method":"config"}),
+        json!({"method":"host.environment"}),
         json!({"method":"flush"}),
         json!({"method":"apply", "batch":{"intents":[]}}),
         json!({"method":"window.resize", "width":240, "height":180}),
@@ -63,6 +65,7 @@ fn page_requests_and_nested_batches_are_strict() {
     for value in [
         json!({"method":"open", "extra":true}),
         json!({"method":"config", "extra":true}),
+        json!({"method":"host.environment", "platform":"macos"}),
         json!({"method":"attachments.list"}),
         json!({"method":"apply", "batch":{}}),
         json!({"method":"apply", "batch":""}),
@@ -104,6 +107,17 @@ fn requests_are_bounded_before_their_payloads_are_interpreted() {
 
 #[test]
 fn native_actions_and_host_requests_use_the_same_serializer() {
+    use hitslop_core::page_wire::{HostDevice, HostEnvironment, HostPlatform};
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(
+            &HostReply::Environment {
+                environment: HostEnvironment { platform: HostPlatform::Macos, device: HostDevice::Desktop },
+            }
+            .to_json()
+        )
+        .unwrap(),
+        json!({"ok":true,"method":"host.environment","environment":{"platform":"macos","device":"desktop"}})
+    );
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&HostReply::Ready.to_json()).unwrap(),
         json!({"ok":true,"method":"ready"})

@@ -47,6 +47,11 @@ the work and prerequisites are below and in [ideas](ideas.md).
 
 ## Open now
 
+- An additive authoring environment API exposes native platform/device identity and
+  reactive compact/regular viewport layout to Svelte and editor CSS. Browser identity
+  stays unknown. `slop dev` device presets preserve accepted edits; static captures
+  remain independent. See the [authoring guide](guides/authoring.md#platform-device-and-responsive-layout).
+
 - Native `window.fullscreenable` and the local Chrome browser beta are implemented.
   The same Rust owner/store powers independent OPFS copies, bounded resource reads,
   command workers and Save As downloads back to native. Identity, export barriers,
@@ -332,13 +337,24 @@ without transferring a link, live edits both ways, background catch-up and secon
 Stop. It exposed a cold-launch library registration race, now protected by a native
 integration regression. The repeat passes post-Stop CloudKit delivery, re-share recovery,
 native Mac Join reusing the open owner and phone background/kill/relaunch. The updated deployed
-browser campaign remains a separate gate. Existing unversioned preview rooms
+browser campaign now passes with a signed Mac creator and signed-out native/browser
+guests, including deliberate offline/reconnect, connected refresh/process reopen,
+attachment barriers, download/native reopen, zero redundant attachment PUTs and Stop
+([tester evidence](evidence/authoring-environment-2026-10-19.md)). Existing unversioned preview rooms
 require remote retirement.
 
-Before beta, implement account deletion, remaining resource/frame throttles and metrics,
-privacy disclosures and Save Unshared Copy when the
-source cannot save full history. Freeze HTTP and postcard-envelope contracts. Qualify
-signed-out guest/offline paths and phone resources. The full-display editor and native
+This slice targets a gated tester preview. Its deployed guest/offline/browser campaign
+passes; broader device/resource qualification remains open. An independent
+review of #46 and the #47 → #48 → #49 stack found no P0/P1 blocker in the inspected
+authorization, lifecycle, CloudKit and relocation paths; it was not stress qualification.
+It identified one additional follow-up: native guests cannot yet replace an ended room
+membership when opening a new generation after Stop/re-share.
+
+Before broader sharing, prioritize Save Unshared Copy from accepted in-memory state
+when source history cannot save, then account deletion/Apple revocation and privacy
+disclosures. Complete remaining resource/frame throttles and metrics, and freeze HTTP
+and postcard-envelope contracts. Qualify broader phone resources and offline cases.
+The full-display editor and native
 Back/loading are verified; the user will check the physical edge-swipe gesture.
 Keep connected web opening as
 the first scope. Four same-device relay acknowledgement samples in the physical run

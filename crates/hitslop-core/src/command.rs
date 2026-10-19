@@ -200,6 +200,7 @@ fn page_validated(
             Err(_) => return reply(page_failure(invalid("Invalid attachment bytes"), false)),
         },
         request @ (PageRequest::Config {}
+        | PageRequest::HostEnvironment {}
         | PageRequest::WindowResize { .. }
         | PageRequest::Ready {}
         | PageRequest::PageRecovered {}
@@ -208,6 +209,7 @@ fn page_validated(
         | PageRequest::SpeechTranscribe { .. }) => {
             let dispatch = match request {
                 PageRequest::Config {} => page_config(owner).map(page_success),
+                PageRequest::HostEnvironment {} => Ok(PageDispatch::Host { action: HostAction::Environment }),
                 PageRequest::WindowResize { width, height } => {
                     Ok(PageDispatch::Host { action: HostAction::WindowResize { width, height } })
                 }

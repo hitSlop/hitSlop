@@ -11,7 +11,7 @@ imports the app's `assets/ui.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell supplies the runtime. The single `hitslop` npm package ships
 the CLI, author SDK, contracts, templates, skills and locally served runtime. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
-`bind.text`, attachments, `speech.transcribe`, `window.resize` and
+`bind.text`, attachments, `speech.transcribe`, `window.resize`, optional `environment` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view may supply `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes and attachments stay in the page shell.
@@ -21,6 +21,17 @@ framework dependency hook: replacing it installs the new adapter, and disposing 
 adapter cannot detach the replacement. Text composition, caret transforms and merges
 stay in the host binding. Draft submission, motion and notice presentation are SDK
 helpers compiled into the app, without separate host APIs.
+
+`ctx.environment` supplies an immutable `current` snapshot (`platform`, `device`,
+`layout`) and `subscribe(listener)` with idempotent disposal. `getEnvironment()` adapts
+it to each Svelte editor mount. Native identity comes from the typed `host.environment`
+host action, not the Rust owner's process or a user agent. Browser identity is unknown;
+the shell computes layout from the document viewport using Rust's 640 CSS-pixel
+breakpoint. The optional member has a real SDK fallback on older hosts: unknown identity
+and live viewport layout. It adds no runtime ABI requirement or document fields.
+New shells install `data-slop-platform`, `data-slop-device` and `data-slop-layout` on
+`<html>` before editor mount. They are absent from static captures and static dev views.
+Older shells lack these attributes, so authored CSS keeps a usable base layout.
 
 The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture and
 controls attributes, the notice region, `--slop-*` variables, `__slopCommands`,

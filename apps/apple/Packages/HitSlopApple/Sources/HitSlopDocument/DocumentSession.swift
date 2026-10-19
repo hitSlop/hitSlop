@@ -383,6 +383,20 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   func serveHost(_ request: HostAction, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
     guard !closed else { return reply(pageFailure(OwnerFailure.closed), nil) }
     switch request {
+    case .environment:
+      #if os(macOS)
+        let environment = HostEnvironment(platform: .macos, device: .desktop)
+      #else
+        let device: HostDevice
+        switch UIDevice.current.userInterfaceIdiom {
+        case .phone: device = .phone
+        case .pad: device = .tablet
+        case .mac: device = .desktop
+        default: device = .unknown
+        }
+        let environment = HostEnvironment(platform: .ios, device: device)
+      #endif
+      reply(encodeHostReply(reply: .environment(environment: environment)), nil)
     case .windowResize(let width, let height):
       do {
         guard file.isResizable, let delegate, !closing, !closed

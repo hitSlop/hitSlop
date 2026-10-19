@@ -93,6 +93,15 @@
           <optgroup label="Widget" {{widgets}}>{{families}}</optgroup>
         </select>
       </label>
+      <label>
+        Device
+        <select aria-label="Device preset">
+          <option value="browser">Browser</option>
+          <option value="iphone">iPhone</option>
+          <option value="ipad">iPad</option>
+          <option value="mac">Mac</option>
+        </select>
+      </label>
       <small>Browser layout; <code>slop build</code> shows the final image.</small>
       <output role="status"></output>
     </div>
@@ -101,6 +110,7 @@
       class="stage"
       data-view="editor"
       data-aspect="{{aspect}}"
+      data-environments="{{environments}}"
       style="--editor-width: {{width}}px; --editor-height: {{height}}px"
     >
       <div class="window"><iframe src="/app.html" title="{{title}}" {{allow}}></iframe></div>

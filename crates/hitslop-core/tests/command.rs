@@ -521,6 +521,11 @@ fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
     ));
     assert_eq!(page_json(&request("page", 0))["reason"], "invalid_request");
     assert_eq!(page_json(&request("retired", 640))["code"], "owner_replaced");
+    assert!(matches!(
+        page(&owner, "page", r#"{"method":"host.environment"}"#),
+        PageDispatch::Host { action: HostAction::Environment }
+    ));
+    assert_eq!(page_json(&page(&owner, "retired", r#"{"method":"host.environment"}"#))["code"], "owner_replaced");
     close(&owner);
 }
 // The page's document requests run through the core: replies the page reads, refusals it

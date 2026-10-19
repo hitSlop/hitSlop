@@ -33,6 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ThemeFile::export_all(&config)?;
     hitslop_core::page_wire::PageRequest::export_all(&config)?;
     hitslop_core::page_wire::PageSuccess::export_all(&config)?;
+    hitslop_core::page_wire::HostLayout::export_all(&config)?;
     hitslop_core::page_wire::PagePush::<Publication>::export_all(&config)?;
     hitslop_core::page_wire::HostRequest::export_all(&config)?;
     hitslop_core::page_wire::ClosePreparation::export_all(&config)?;

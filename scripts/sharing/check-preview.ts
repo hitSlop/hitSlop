@@ -20,7 +20,8 @@ const checks:string[]=[];
 const note=(value:string)=>{checks.push(value);console.log(value);};
 const report=join(root,"report.json");
 const template=await buildTemplate(join(repository,"tests/apps/sharing"),join(root,"fixture.slop"),{renderViews:false});
-const child=spawn(join(repository,"target/debug/examples/preview"),[template,root,process.env.HITSLOP_SHARING_TOKEN_FILE ?? join(repository,".hitslop/sharing-preview/identity-token")],{stdio:["pipe","pipe","pipe"]});
+const invitationFile=process.env.HITSLOP_SHARING_INVITATION_FILE;
+const child=spawn(join(repository,"target/debug/examples/preview"),[template,root,invitationFile ?? process.env.HITSLOP_SHARING_TOKEN_FILE ?? join(repository,".hitslop/sharing-preview/identity-token"),...(invitationFile?["--guest"]:[])],{stdio:["pipe","pipe","pipe"]});
 let failure="";child.stderr.on("data",bytes=>{failure+=String(bytes);});
 const messages:any[]=[];let waiting:((value:any)=>void)|undefined;
 createInterface({input:child.stdout}).on("line",line=>{const value=JSON.parse(line);if(waiting){const next=waiting;waiting=undefined;next(value);}else messages.push(value);});
@@ -33,8 +34,8 @@ const next=async()=>{
 };
 const control=async(value:object)=>{child.stdin.write(JSON.stringify(value)+"\n");const result=await next();assert(!result.error,"Native operation failed");return result;};
 const edit=(batch:Batch)=>control({method:"edit",batch});
-async function until(check:()=>Promise<boolean>,label:string){
-  const deadline=Date.now()+45_000;
+async function until(check:()=>Promise<boolean>,label:string,timeout=45_000){
+  const deadline=Date.now()+timeout;
   while(!await check()){assert(Date.now()<deadline,label);await new Promise(resolve=>setTimeout(resolve,40));}
 }
 async function openProfile(name:string){
@@ -59,6 +60,7 @@ try {
   }
   note("The gated auth probe refuses anonymous, malformed and unknown-key identities; valid native identity remains a separate qualification");
   const ready=await next();assert(ready.ready,"Native client failed to publish");
+  note(invitationFile ? "A signed-out native guest joins the disposable owner-app invitation without a Firebase session" : "A verified account creates and publishes the disposable native fixture");
   const invitation=(await readFile(join(root,"invitation.txt"),"utf8")).trim();
   const first=await openProfile("chrome-a");contexts.push(first);
   const page=await first.newPage();await restrict(page,first);
@@ -79,12 +81,31 @@ try {
   const native="native-"+Date.now();await edit({intents:[{type:"insert",path:["rows"],value:{text:native}}]});
   await app.getByText(native,{exact:true}).waitFor();
   note("Browser and native edits converge through their existing Rust owners");
+  // Pausing the native transport leaves the real owner and local save path running.
+  await control({method:"pause"});
+  const offlineNative="native-offline-"+Date.now();
+  await edit({intents:[{type:"insert",path:["rows"],value:{text:offlineNative}}]});
+  assert.equal(await app.getByText(offlineNative,{exact:true}).count(),0,"Paused native edit must remain local");
+  await control({method:"resume"});
+  await app.getByText(offlineNative,{exact:true}).waitFor({timeout:45_000});
+  // An already-open signed-out browser also keeps editing through a real disconnect.
+  await first.setOffline(true);
+  const offlineBrowser="browser-offline-"+Date.now();
+  await add(offlineBrowser);
+  await app.getByText(offlineBrowser,{exact:true}).waitFor();
+  assert(!(await control({method:"state"})).state.value.rows.some((row:any)=>row.text===offlineBrowser),"Offline guest edit must remain local");
+  await first.setOffline(false);
+  await until(async()=>(await control({method:"state"})).state.value.rows.some((row:any)=>row.text===offlineBrowser),"Offline browser edit did not catch up");
+  note("Native pause/edit/reconnect and signed-out browser offline edits converge without replacing local state");
   const second=await openProfile("chrome-b");contexts.push(second);const late=await second.newPage();await restrict(late,second);await late.goto(invitation);
   await late.frameLocator("iframe").getByText(native,{exact:true}).waitFor({timeout:45_000});
   const otherFrame=late.frames().find(frame=>frame.url().includes("."+SharingHost.domain))!;
   const cookie=await first.cookies(frame.url());const resourceCookie=cookie.find(cookie=>cookie.name==="__Host-slop-resource");assert(resourceCookie);
   assert.equal((await fetch(otherFrame.url()+"assets/ui.js",{headers:{Cookie:`${resourceCookie.name}=${resourceCookie.value}`}})).status,403);
   note("A late browser joins the canonical document; a sibling host cannot reuse its resource cookie");
+  await page.reload();
+  await page.frameLocator("iframe").getByText(offlineBrowser,{exact:true}).waitFor({timeout:45_000});
+  note("Connected browser refresh retains accepted guest edits and catches up");
   // Hold all blob reads after the first failure. CaughtUp queued behind failed Records
   // must never publish a reference to a file which the owner has not installed.
   let blocked=false,release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});
@@ -134,7 +155,11 @@ try {
   await until(async()=>(await reopened.locator("#sync").textContent())==="Synced","Reopened browser did not finish syncing");
   assert.equal(resumedBlobPuts,0,"Reopened browser re-uploaded an existing attachment");
   note("Process reopen and a new edit reuse remote attachment inventory without blob PUTs");
-  await control({method:"stop"});stopped=true;
+  if(invitationFile){
+    note("Ready for Stop: stop this disposable room in its signed-in native owner app");
+    await until(async()=>(await reopened.locator("#sync").textContent())==="Sharing ended","Native owner has not stopped the disposable room",300_000);
+  }else await control({method:"stop"});
+  stopped=true;
   await until(async()=>(await reopened.locator("#sync").textContent())==="Sharing ended","Room stop did not reach the browser");
   assert.equal((await fetch(frame.url()+"assets/ui.js",{headers:{Cookie:`${resourceCookie.name}=${resourceCookie.value}`}})).status,410);
   await reopened.frameLocator("iframe").getByRole("textbox",{name:"New row",exact:true}).fill("Local after stop");
@@ -149,7 +174,7 @@ try {
   console.error(message);process.exitCode=1;
 } finally {
   for(const context of contexts)await context.close().catch(()=>{});
-  if(!stopped&&child.exitCode===null)await control({method:"stop"}).catch(()=>{});
+  if(!stopped&&!invitationFile&&child.exitCode===null)await control({method:"stop"}).catch(()=>{});
   if(child.exitCode===null)await control({method:"quit"}).catch(()=>{});
   child.stdin.end();child.kill();
 }

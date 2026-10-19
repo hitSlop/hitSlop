@@ -227,6 +227,9 @@ impl BrowserCopy {
             let json = match dispatch {
                 hitslop_core::command::PageDispatch::Reply { json, .. } => json,
                 hitslop_core::command::PageDispatch::Host { action } => match action {
+                    page_wire::HostAction::Environment => {
+                        page_wire::HostReply::Environment { environment: page_wire::HostEnvironment::unknown() }
+                    }
                     page_wire::HostAction::WindowResize { width, height } => {
                         page_wire::HostReply::WindowResize { width: width as f64, height: height as f64 }
                     }

@@ -17,6 +17,7 @@ import type {} from "./page-handle";
 import { hostDispatcher } from "./host-dispatch";
 import { ErrorTextLimit, type RuntimeABI } from "../schema/constants";
 import { preview } from "./preview";
+import { installEnvironment } from "./environment";
 
 const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.hitslop) || hasBrowserBridge();
 /** Reports a page error to the host, or to the console in the browser preview. */
@@ -105,7 +106,16 @@ export async function boot() {
   );
   app.catch(() => {});
   const opened = openDocument(native);
+  const hostEnvironment = call({ method: "host.environment" });
+  // Observe a failure immediately, even while document opening is still in progress.
+  void hostEnvironment.catch(() => {});
   const { config, doc, attachments } = await opened;
+  const environment = installEnvironment(
+    preview.host?.environment?.current ?? (await hostEnvironment).environment,
+  );
+  preview.host?.environment?.subscribe(() => {
+    environment.setHost(preview.host!.environment!.current);
+  });
   if (native && config.style) {
     await new Promise<void>((resolve, reject) => {
       const style = document.createElement("link");
@@ -124,6 +134,7 @@ export async function boot() {
   };
   const ctx = contextFor(config.runtimeABI)(doc as Document<ObjectNode>, {
     attachments,
+    environment: environment.environment,
     speech: ownerSpeech(),
     resize: async (size) => {
       if (native) await call({ method: "window.resize", ...size });

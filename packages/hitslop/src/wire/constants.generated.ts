@@ -1,4 +1,5 @@
 // Generated from hitslop-core's contracts. Do not edit.
+export const CompactLayoutWidth = 640 as const;
 export const BrowserHost = {"chunkBytes":1048576,"containerFormat":1,"fileBytes":268435456,"port":41238,"protocol":1} as const;
 export const BrowserResourcePolicy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: blob:; media-src 'self' https: blob:; frame-src https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; worker-src 'self'; base-uri 'none'; frame-ancestors http://127.0.0.1:41238" as const;
 export const BrowserHostPolicy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self'; worker-src 'self'; img-src 'self' blob:; frame-src http://*.localhost:41238; base-uri 'none'; frame-ancestors 'none'" as const;

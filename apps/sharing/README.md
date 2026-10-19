@@ -70,6 +70,16 @@ No developer creation secret is shipped or accepted. The deployed fixture driver
 requires a freshly refreshed Firebase ID token in an owner-readable file supplied by
 `HITSLOP_SHARING_TOKEN_FILE`; never put its contents in arguments or logs.
 
+Alternatively, create a disposable `tests/apps/sharing` document in the signed Mac
+app, share it there, and save Copy Edit Link to an owner-readable local file. Run the
+campaign with `HITSLOP_SHARING_INVITATION_FILE` pointing to that file. The Rust driver
+then joins as a signed-out native guest; browser profiles are also signed out. This
+avoids exporting the Mac Firebase session. When the campaign prints `Ready for Stop`,
+stop the disposable room in its signed-in owner app (the check waits up to five minutes).
+The campaign checks native pause/edit/reconnect, open-browser offline editing,
+connected refresh, download/native reopen and revocation. Keep invitation files and
+campaign directories private; neither credentials nor full UIDs belong in reports.
+
 ```sh
 wrangler deploy --config apps/sharing/wrangler.jsonc
 wrangler deploy --config apps/sharing/host.wrangler.jsonc
@@ -104,13 +114,16 @@ The panel compares the returned UID with Firebase's UID and displays a short has
 cross-device comparison. Tokens and full UIDs are not logged or put in documents.
 `AUTH_PROBE_ENABLED` controls this route; `AUTH_LIMIT` throttles it by IP.
 Firebase manages its own local login persistence. The signed Mac proof completed
-Apple sign-in and deployed verification successfully; the iPhone comparison is pending.
+Apple sign-in and deployed verification successfully. The subsequent physical
+Mac/iPhone pass confirms matching identity and second-device owner recovery; see
+the [phone evidence](../../docs/evidence/live-sharing-phone-2026-10-19.md).
 
 The account registry and native lifecycle now use this identity. The old creator
 admin capability, preview creation key, synchronizable credentials and credential
 polling have been removed. Transport callbacks drive status; owner recovery runs on
-open, foreground, account change and opening the sharing controls. Matching native
-Mac/iPhone identity and real second-device recovery are still qualification gates.
+open, foreground, account change and opening the sharing controls. The signed-out guest,
+offline and refreshed account-backed browser happy paths now pass; see the
+[tester evidence](../../docs/evidence/authoring-environment-2026-10-19.md).
 
 The current build IDs remain `com.hitslop.app` (direct-download Mac) and
 `com.hitslop.iospreview` (development iOS). Both are grouped under the primary Apple
@@ -153,7 +166,9 @@ versioned binary protocol. There is no oRPC or second Swift HTTP client.
   catch-up and Stop from the second device. Cold opening exposed a library registration
   race; a native regression protects the fix, and the physical repeat passes post-Stop
   CloudKit delivery, re-share, native Mac Join reuse and phone background/kill/relaunch.
-  Signed-out guest/offline paths and the updated deployed browser campaign remain gates.
+  The updated deployed campaign passes signed-out native/browser joining, deliberate
+  offline/reconnect, connected refresh/process reopen, attachment barriers,
+  download/native reopen and Stop. Broader phone/resource qualification remains open.
 - Four physical native acknowledgement samples were 83–152 ms; initial bootstrap and
   inventory were slower. One-way and paint latency are unknown. See the qualifications
   and limitations in the [phone evidence](../../docs/evidence/live-sharing-phone-2026-10-19.md).

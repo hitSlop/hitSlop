@@ -26,9 +26,10 @@ export async function createFixture(repository: string, source: string) {
   import Circle from '@lucide/svelte/icons/circle';
   import schema from './schema';
   import {local} from './probe.svelte';
-  import {attachments, getDocument} from 'hitslop/svelte';
+  import {attachments, getDocument, getEnvironment} from 'hitslop/svelte';
   import Child from './Child.svelte';
   const doc = getDocument(schema);
+  const environment = getEnvironment();
   const addRow = ({text}: {text: string}) => doc.fields.tasks.insert({text});
   (globalThis as any).__devProbe = {doc, addRow, attachments};
   let error = $state('');
@@ -38,6 +39,7 @@ export async function createFixture(repository: string, source: string) {
   }
 </script>
   <main data-probe>
+    <output data-environment>{environment.current.platform}/{environment.current.device}/{environment.current.layout}</output>
     <h1>Revision zero</h1><Circle aria-label="Dependency icon" />
     <Child />
     <button onclick={add}>Add row</button>
@@ -46,7 +48,10 @@ export async function createFixture(repository: string, source: string) {
     <button onclick={() => local.count++}>Local {local.count}</button>
     <output data-error>{error}</output>
   </main>
-<style>h1 { color: rgb(20, 40, 60); }</style>
+<style>
+  h1 { color: rgb(20, 40, 60); }
+  :global(html[data-slop-platform="macos"][data-slop-device="desktop"][data-slop-layout="compact"]) [data-environment] { color: rgb(11, 22, 33); }
+</style>
 `,
   );
 }
