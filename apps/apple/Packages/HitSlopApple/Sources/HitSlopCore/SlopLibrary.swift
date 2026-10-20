@@ -107,7 +107,7 @@ final class LibraryOwners: Sendable {
         status = "iCloud sync is available in the signed hitSlop app."
         return
       }
-      let container = self.container ?? CKContainer(identifier: "iCloud.com.hitslop.syncspike")
+      let container = self.container ?? CKContainer(identifier: "iCloud.com.hitslop.app")
       self.container = container
       let accountStatus = try await container.accountStatus()
       guard accountStatus == .available else {
