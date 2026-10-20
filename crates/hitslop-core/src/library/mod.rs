@@ -233,12 +233,17 @@ impl Library {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ids.iter().map(|id| self.entry(&inner, id)).collect()
     }
-    fn with_owner<T>(&self, inner: &mut Inner, id: &str, work: impl FnOnce(&Owner) -> Result<T>) -> Result<T> {
+    /// Work must be idempotent: it reruns on the saved file when a live owner closes during it.
+    fn with_owner<T>(&self, inner: &mut Inner, id: &str, mut work: impl FnMut(&Owner) -> Result<T>) -> Result<T> {
         let existing = inner.retained.get(id).cloned().or_else(|| inner.live.get(id).and_then(Weak::upgrade));
         if let Some(owner) = existing
             && snapshot::request(&owner, Request::State).is_ok()
         {
-            return work(&owner);
+            let result = work(&owner);
+            // Closing saves first, so the file holds everything the closed owner had.
+            if result.is_ok() || snapshot::request(&owner, Request::State).is_ok() {
+                return result;
+            }
         }
         let owner = Arc::new(Owner::open(&self.path(id), Mode::Document, Arc::new(|_| {}))?);
         let result = work(&owner);
