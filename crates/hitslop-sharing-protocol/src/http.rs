@@ -1,65 +1,65 @@
 //! HTTP metadata only. Document state travels as SQLite seeds and opaque updates.
 use serde::{Deserialize, Serialize};
 
-/// Auth spike response. Never returns a bearer token or any sharing capability.
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct VerifiedAccount {
-    pub uid: String,
-    pub auth_time: u64,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum RoomPhase {
-    Pending,
-    Published,
-    Stopping,
+    Uploading,
+    Live,
     Ended,
 }
 
-/// Private account response. Contains a recoverable bearer secret; never log it.
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct RoomReservation {
+pub struct CreateRoom {
     pub document: String,
-    pub generation: u32,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct CreatedRoom {
     pub room: String,
-    pub capability: Option<String>,
-    pub previous_room: Option<String>,
+    pub capability: String,
     pub phase: RoomPhase,
-    pub invitation: Option<Invitation>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct RoomIdentity {
-    pub document: String,
-    pub generation: u32,
+pub struct AccountRoom {
     pub room: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct ReserveRoom {
+pub struct RoomInit {
+    pub owner_uid: String,
     pub document: String,
-    pub generation: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AccountRoomInit {
-    pub identity: RoomIdentity,
-    pub init: RoomInit,
+pub struct RoomInfo {
+    pub document: String,
+    pub phase: RoomPhase,
+    pub seed_hash: Option<String>,
+    pub seed_size: Option<u32>,
+    pub app: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub capability: Option<String>,
 }
-
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct ConnectionPlan {
@@ -88,15 +88,6 @@ pub enum SharingEvent {
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct RoomInit {
-    pub app: String,
-    pub seed: Vec<(String, u32)>,
-    pub seed_hash: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResourceGrant {
     pub app: String,
 }
@@ -109,49 +100,34 @@ pub struct ApiFailure {
     pub message: String,
 }
 
-/// Sensitive host-owned data. Never forwarded to an authored page or printed in errors.
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+/// A bearer capability stays in the fragment of a pinned-origin link.
+#[derive(Clone)]
 pub struct Invitation {
-    pub document: String,
     pub room: String,
-    pub origin: String,
     pub capability: String,
-    pub seed_hash: String,
-    pub size: u32,
 }
 impl Invitation {
     pub fn validate(&self) -> Result<(), String> {
-        let hex = crate::resources::hash_id;
-        if self.origin != crate::TRUSTED_ORIGIN
-            || !crate::valid_copy(&self.document)
-            || self.room.len() != 32
-            || !self.room.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-            || !hex(&self.capability)
-            || !hex(&self.seed_hash)
-            || self.size < 100
-            || self.size as usize > crate::SEED_BYTES
-        {
-            return Err("Untrusted or malformed sharing link".into());
+        if !crate::valid_room(&self.room) || !crate::resources::hash_id(&self.capability) {
+            return Err("Sharing link is no longer valid".into());
         }
         Ok(())
     }
     pub fn link(&self) -> Result<String, String> {
         self.validate()?;
-        let bytes = serde_json::to_vec(self).map_err(|_| "Cannot encode sharing link")?;
-        Ok(format!("{}/join#{}", crate::TRUSTED_ORIGIN, data_encoding::BASE64URL_NOPAD.encode(&bytes)))
+        Ok(format!("{}/join#{}.{}", crate::TRUSTED_ORIGIN, self.room, self.capability))
     }
     pub fn parse(link: &str) -> Result<Self, String> {
-        if link.len() > 4096 {
-            return Err("Sharing link is too long".into());
-        }
         let prefix = format!("{}/join#", crate::TRUSTED_ORIGIN);
-        let encoded = link.trim().strip_prefix(&prefix).ok_or("Untrusted sharing link")?;
-        let bytes = data_encoding::BASE64URL_NOPAD.decode(encoded.as_bytes()).map_err(|_| "Invalid sharing link")?;
-        let key: Self = serde_json::from_slice(&bytes).map_err(|_| "Invalid sharing link")?;
-        key.validate()?;
-        Ok(key)
+        let link = link.trim();
+        if link.len() != prefix.len() + 32 + 1 + 64 {
+            return Err("Sharing link is no longer valid".into());
+        }
+        let fragment = link.strip_prefix(&prefix).ok_or("Sharing link is no longer valid")?;
+        let (room, capability) = fragment.split_once('.').ok_or("Sharing link is no longer valid")?;
+        let invitation = Self { room: room.into(), capability: capability.into() };
+        invitation.validate()?;
+        Ok(invitation)
     }
 }
 
@@ -160,28 +136,19 @@ mod tests {
     use super::*;
     #[test]
     fn invitations_pin_the_host_identity_limits_and_keep_capabilities_in_the_fragment() {
-        let key = Invitation {
-            document: "00000000-0000-4000-8000-000000000001".into(),
-            room: "a".repeat(32),
-            origin: crate::TRUSTED_ORIGIN.into(),
-            capability: "b".repeat(64),
-            seed_hash: "c".repeat(64),
-            size: 4096,
-        };
+        let key = Invitation { room: "a".repeat(32), capability: "b".repeat(64) };
         let link = key.link().unwrap();
         assert_eq!(link.split('#').next(), Some("https://share.hitslop.com/join"));
         assert_eq!(Invitation::parse(&link).unwrap().capability, key.capability);
-        assert!(Invitation::parse(&link.replace("share.hitslop.com", "share.hitslop.com.attacker.example")).is_err());
-        assert!(Invitation::parse(&(link.clone() + "/trailing")).is_err());
-        let mut other = key.clone();
-        other.origin = "https://attacker.example".into();
-        assert!(other.link().is_err());
-        other = key.clone();
-        other.size = crate::SEED_BYTES as u32 + 1;
-        assert!(other.link().is_err());
-        other = key;
-        other.document = "..".into();
-        assert!(other.link().is_err());
+        for invalid in [
+            link.replace("share.hitslop.com", "share.hitslop.com.attacker.example"),
+            link.clone() + "/trailing",
+            link.to_uppercase(),
+            link.replace("https://", "http://"),
+            format!("{}/join#{}", crate::TRUSTED_ORIGIN, "a".repeat(100)),
+        ] {
+            assert!(Invitation::parse(&invalid).is_err());
+        }
     }
     #[test]
     fn authored_origins_require_one_exact_canonical_copy_uuid() {
@@ -203,12 +170,11 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     use utoipa::OpenApi;
     #[derive(OpenApi)]
     #[openapi(components(schemas(
-        RoomInit,
-        AccountRoomInit,
-        ReserveRoom,
-        RoomIdentity,
-        RoomReservation,
-        VerifiedAccount,
+        CreateRoom,
+        CreatedRoom,
+        AccountRoom,
+        RoomInfo,
+        RoomPhase,
         ResourceGrant,
         ApiFailure,
         crate::resources::Manifest,
@@ -223,56 +189,36 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut paths = serde_json::Map::new();
     for (path, methods) in [
         (
-            "/v1/account/access/{document}",
-            vec![("get", None, Some("RoomReservation"), "Recover the signed-in creator's room, or null when absent")],
+            "/v1/rooms",
+            vec![("post", Some("CreateRoom"), Some("CreatedRoom"), "Create or recover the document's current room")],
         ),
         (
-            "/v1/account/reserve",
-            vec![("post", Some("ReserveRoom"), Some("RoomReservation"), "Reserve one room per document generation")],
+            "/v1/account/rooms/{document}",
+            vec![("get", None, Some("AccountRoom"), "Look up the signed-in owner's current room, or null")],
         ),
         (
-            "/v1/account/publish",
-            vec![(
-                "post",
-                Some("RoomIdentity"),
-                Some("RoomReservation"),
-                "Finalize publication after all immutable files exist",
-            )],
+            "/v1/rooms/{room}",
+            vec![
+                ("get", None, Some("RoomInfo"), "Read room metadata; only its owner receives the capability"),
+                ("delete", None, None, "End the room and purge retained files"),
+            ],
         ),
         (
-            "/v1/account/stop",
-            vec![(
-                "post",
-                Some("RoomIdentity"),
-                Some("RoomReservation"),
-                "Tombstone the room and clear its recoverable capability",
-            )],
-        ),
-        (
-            "/v1/auth/probe",
-            vec![("get", None, Some("VerifiedAccount"), "Verify Firebase identity (developer auth spike)")],
-        ),
-        (
-            "/v1/rooms/{room}/init",
-            vec![(
-                "post",
-                Some("AccountRoomInit"),
-                None,
-                "Initialize a reserved room (verified owner identity required)",
-            )],
+            "/v1/rooms/{room}/open",
+            vec![("post", None, Some("RoomInfo"), "Open a room after its seed and app resources are uploaded")],
         ),
         (
             "/v1/rooms/{room}/seed",
             vec![
                 ("get", None, None, "Download the canonical SQLite seed"),
-                ("put", None, None, "Publish the immutable SQLite seed (creator only)"),
+                ("put", None, None, "Replace the SQLite seed while Uploading (owner only)"),
             ],
         ),
         (
             "/v1/rooms/{room}/resources",
             vec![
                 ("get", None, Some("Manifest"), "Read accepted app inventory"),
-                ("post", Some("Manifest"), None, "Publish immutable app inventory (creator only)"),
+                ("post", Some("Manifest"), None, "Replace app inventory while Uploading (owner only)"),
             ],
         ),
         (
@@ -284,10 +230,6 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             vec![("get", None, None, "Download an attachment"), ("put", None, None, "Publish an immutable attachment")],
         ),
         ("/v1/rooms/{room}/blobs", vec![("get", None, Some("ResourceList"), "Read retained attachment inventory")]),
-        (
-            "/v1/rooms/{room}/stop",
-            vec![("delete", None, None, "Tombstone the room and remove retained files (creator only)")],
-        ),
         (
             "/_resources/{room}",
             vec![(
@@ -310,27 +252,37 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             if path.contains("{document}") {
                 parameters.push(serde_json::json!({"name":"document","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}));
             }
+            if method == "put" && path.ends_with("/seed") {
+                for header in ["X-Sharing-SHA256", "X-Sharing-App", "X-Sharing-Version"] {
+                    parameters.push(
+                        serde_json::json!({"name":header,"in":"header","required":true,"schema":{"type":"string"}}),
+                    );
+                }
+            }
             let mut operation = serde_json::json!({"summary":summary,"parameters":parameters,"security":[{"capability":[]}],"responses":{
                 "200":{"description":"Accepted"},"403":{"$ref":"#/components/responses/Refused"},"409":{"$ref":"#/components/responses/Refused"},"410":{"$ref":"#/components/responses/Refused"},"413":{"$ref":"#/components/responses/Refused"},"429":{"$ref":"#/components/responses/Refused"}
             }});
             let creator = path.starts_with("/v1/account/")
-                || path == "/v1/auth/probe"
-                || path.ends_with("/init")
-                || path.ends_with("/stop")
+                || path == "/v1/rooms"
+                || path.ends_with("/open")
+                || method == "delete"
                 || (method == "put" && (path.ends_with("/seed") || path.contains("/asset/")))
                 || (method == "post" && path.ends_with("/resources"));
             if creator {
                 operation["security"] = serde_json::json!([{"firebaseIdentity":[]}]);
                 operation["responses"]["401"] = serde_json::json!({"$ref":"#/components/responses/Refused"});
             }
+            if (method == "get" && path == "/v1/rooms/{room}") || (method == "put" && path.contains("/blob/")) {
+                operation["security"] = serde_json::json!([{"firebaseIdentity":[]},{"capability":[]}]);
+            }
             if let Some(name) = input {
                 operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{name}")}}}});
             }
             if let Some(name) = output {
                 operation["responses"]["200"]["content"] = serde_json::json!({"application/json":{"schema":if name=="ResourceList"{serde_json::json!({"type":"array","items":{"$ref":"#/components/schemas/Resource"}})}else{serde_json::json!({"$ref":format!("#/components/schemas/{name}")})}}});
-                if path.starts_with("/v1/account/access/") {
+                if path.starts_with("/v1/account/rooms/") {
                     operation["responses"]["200"]["content"]["application/json"]["schema"] =
-                        serde_json::json!({"anyOf":[{"type":"null"},{"$ref":"#/components/schemas/RoomReservation"}]});
+                        serde_json::json!({"anyOf":[{"type":"null"},{"$ref":"#/components/schemas/AccountRoom"}]});
                 }
             }
             operations.insert(method.into(), operation);

@@ -267,7 +267,7 @@ impl Library {
         self.with_owner(&mut inner, id, |owner| {
             snapshot::request(
                 owner,
-                Request::Share { share: Share { room: id.clone(), endpoint: "cloudkit://library".into() } },
+                Request::Share { share: Share { room: id.clone(), endpoint: crate::LIBRARY_SHARE_ENDPOINT.into() } },
             )
             .map_err(failed)?;
             Ok(())
@@ -318,7 +318,7 @@ impl Library {
         } else {
             Store::open(Path::new(&entry.path), Mode::Snapshot).map_err(failed)?.share().map_err(failed)?
         };
-        Ok(share.is_none_or(|s| s.endpoint == "cloudkit://library"))
+        Ok(share.is_none_or(|s| s.endpoint == crate::LIBRARY_SHARE_ENDPOINT))
     }
     pub fn stage_sync(&self, id: &str, explicit: bool) -> Result<Option<Upload>> {
         Self::valid_id(id)?;
@@ -459,7 +459,9 @@ impl Library {
                 if owner.share()?.is_none() {
                     snapshot::request(
                         owner,
-                        Request::Share { share: Share { room: id.into(), endpoint: "cloudkit://library".into() } },
+                        Request::Share {
+                            share: Share { room: id.into(), endpoint: crate::LIBRARY_SHARE_ENDPOINT.into() },
+                        },
                     )
                     .map_err(failed)?;
                 }

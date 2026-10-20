@@ -270,92 +270,30 @@ and checksums, immutable release identity and abuse controls are prerequisites. 
 worker kept in a local `deferred/` archive is unsupported scaffolding. The local app
 needs no document server.
 
-**Collaboration**, separate from hosted discovery: each device edits its own `.slop`, and
-copies exchange Loro updates through a Durable Object byte relay. The core is in place and
-proven against the relay on Cloudflare's runtime; [architecture](architecture.md#sync)
-describes the design and its accepted limits, and
-[ideas](ideas.md#realtime-collaboration-on-durable-objects) holds the open proposals
-(presence, per-person `s.local` state).
+**Collaboration**, separate from hosted discovery, is a developer-gated preview.
+Each device edits its own `.slop` through the Rust owner and exchanges opaque updates
+through a Loro-free Durable Object relay. The Room owns Uploading, Live and Ended;
+the Account indexes current rooms and enforces the ten-room quota. Creation retries can
+replace Uploading seeds, abandoned uploads expire after 24 hours, and Stop purges remote
+resources and frees quota. Re-share creates a new room. Short capability links fetch seed
+metadata from the room; verified owners recover links through the account index.
 
-The Rust Worker has passed a disposable hosted probe, and real owners have passed local
-full-file seed and simulated CloudKit coexistence checks
-([evidence](evidence/live-sharing-spikes-2026-10-18.md)). Signed isolated Mac/iPhone probes
-passed shared Keychain delivery, native Rust relay convergence, real checkpoint throttling
-and phone background/kill/relaunch
-([device evidence](evidence/live-sharing-native-spike-2026-10-18.md)). A public fixture also
-passed real HTTPS hitslop.com/dotslop.com origin/storage checks, native/browser concurrency,
-late join, process reopen and SQLite download/native reopen. Connected application echo
-RTT medians were 144–168 ms ([web evidence](evidence/live-sharing-web-spike-2026-10-18.md));
-one-way and paint latency were not measured. Embedded Service Workers were denied under
-Chrome cookie restriction; direct immutable fixture UI assets passed instead. A follow-up
-private-resource experiment passed scoped grants, app/media verification, seed/new blob
-delivery, offline import/reconnect and native/browser convergence
-([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). The deliberately
-simple per-record inventory checks raised Mac/browser echo medians to 430–439 ms in that
-run. The earlier integrated preview added the existing app's Share/Copy Link/Join/Stop
-controls, synchronizable opaque Keychain credentials, crash-safe staged publication,
-aggregate owner queue admission and process-local 60-second CloudKit checkpoints.
-It deploys a Loro-free Rust relay and private R2 resources, a trusted
-`share.hitslop.com` browser host and isolated UUID `dotslop.com` app origins. Rust owns
-HTTP DTOs/OpenAPI, the binary protocol and native transport. No oRPC or Swift HTTP
-implementation is needed.
-
-The deployed fixture campaign passes native/browser convergence, late join, restricted
-cookie resources, interrupted receive ordering, connected browser process reopening,
-SQLite download/native reopen and stopping/revocation
-([integrated evidence](evidence/live-sharing-preview-2026-10-19.md)). The signed Mac app
-also passed creation, Copy Edit Link, credential restoration, native/browser edits,
-Stop and continued local editing. The feature stays disabled by default.
-
-The beta foundation now shares Rust attachment selection and seeds transfer caches
-from server inventory. The deployed reconnect check passes with zero attachment PUTs
-after process reopen. A gated native Apple/Firebase panel, Rust/WASM token probe and
-CloudKit diagnostic namespace/traces are added. Signed Mac Apple/Firebase sign-in and
-deployed Rust/WASM verification pass. A later physical device pass confirms matching
-Mac/iPhone UID and account recovery; see the [phone evidence](evidence/live-sharing-phone-2026-10-19.md).
-See the [foundation evidence](evidence/live-sharing-accounts-foundation-2026-10-19.md)
-for that proof and its device gates. The next account lifecycle slice is now implemented
-behind the developer flag ([account evidence](evidence/live-sharing-accounts-2026-10-19.md)).
-
-The account lifecycle now reserves rooms per UID/document/generation, recovers owner
-invitations and checks a verified immutable owner UID in each room. Native creation,
-recovery and Stop use refreshed Firebase identity; guests use device-local invitations.
-The creator admin key, preview creation key, staging marker, synchronizable credential
-storage and two-second polling are removed. A stable immutable SQLite seed is the local
-retry journal. Rust callbacks report transport status; recovery runs on open,
-foreground, sign-in and Share. Re-share creates a new generation; Stop wins over late
-publication/uploads. Rust owns the 10-room/UID and 32-connection/room limits; new
-reservation creation has a kill switch and UID/IP limits. HTTP APIs use `/v1/`.
-The local real-WASM/SQLite DO/R2 check covers two creators and cold recovery. The
-physical Mac/iPhone pass confirms initial CloudKit discovery, owner invitation recovery
-without transferring a link, live edits both ways, background catch-up and second-device
-Stop. It exposed a cold-launch library registration race, now protected by a native
-integration regression. The repeat passes post-Stop CloudKit delivery, re-share recovery,
-native Mac Join reusing the open owner and phone background/kill/relaunch. The updated deployed
-browser campaign now passes with a signed Mac creator and signed-out native/browser
-guests, including deliberate offline/reconnect, connected refresh/process reopen,
-attachment barriers, download/native reopen, zero redundant attachment PUTs and Stop
-([tester evidence](evidence/authoring-environment-2026-10-19.md)). Existing unversioned preview rooms
-require remote retirement.
-
-This slice targets a gated tester preview. Its deployed guest/offline/browser campaign
-passes; broader device/resource qualification remains open. One follow-up: native guests cannot yet replace an ended room
-membership when opening a new generation after Stop/re-share.
+Native Apple/Firebase identity authorizes creation, recovery and Stop. Guests need only
+the link. Device-local credentials stay outside documents and CloudKit. One browser host
+supports local Service Worker resources and hosted cookie-based resources on isolated
+`dotslop.com` origins. Connected web opening is required; open copies keep editing offline.
+Rust owns HTTP DTOs/OpenAPI, the binary protocol and transport; native UI uses UniFFI.
+See the [architecture](architecture.md#relay), [sharing README](../apps/sharing/README.md)
+and historical [device](evidence/live-sharing-phone-2026-10-19.md) and
+[native/browser evidence](evidence/authoring-environment-2026-10-19.md).
 
 Before broader sharing, prioritize Save Unshared Copy from accepted in-memory state
-when source history cannot save, then account deletion/Apple revocation and privacy
-disclosures. Complete remaining resource/frame throttles and metrics, and freeze HTTP
-and postcard-envelope contracts. Qualify broader phone resources and offline cases.
-The full-display editor and native
-Back/loading are verified; the user will check the physical edge-swipe gesture.
-Keep connected web opening as
-the first scope. Four same-device relay acknowledgement samples in the physical run
-were 83–152 ms; cold bootstrap/inventory took longer. These are not one-way or paint
-latency measurements, and do not establish a percentile.
-
-Later: person-level permissions, read-only invitations, public catalog, browser creator
-accounts, CLI share/join, reliable offline web reopening and room compaction/retention.
-Initial seeds and retained relay updates each have a 16 MiB preview limit. Qualify
+when source history cannot save, account deletion/Apple revocation, privacy disclosures,
+remaining resource/frame throttles and metrics, frozen HTTP/binary contracts, and broader
+phone/resource qualification. Guests replacing ended memberships, person-level permissions,
+read-only links, browser creator accounts, CLI share/join, reliable offline web reopening
+and room compaction remain deferred. Initial seeds and retained relay updates each have
+a 16 MiB preview limit. Qualify
 [container-creation and undo conflicts](reference/document-types.md#storage-layout)
 before shipping sharing.
 Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,

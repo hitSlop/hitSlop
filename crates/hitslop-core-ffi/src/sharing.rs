@@ -1,7 +1,6 @@
 //! Native sharing façade: no network frames or Loro bytes cross this boundary.
 use crate::owner::NativeOwner;
 use hitslop_sharing_client::{AccountAccess, Client, ClientStatus, Phase};
-use hitslop_sharing_protocol::http::VerifiedAccount;
 use std::{path::Path, sync::Arc};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -13,13 +12,8 @@ fn failure(message: String) -> SharingError {
     SharingError::Failed { message }
 }
 
-#[uniffi::remote(Record)]
-pub struct VerifiedAccount {
-    pub uid: String,
-    pub auth_time: u64,
-}
 #[uniffi::export]
-pub fn sharing_verify_account(token: String) -> Result<VerifiedAccount, SharingError> {
+pub fn sharing_verify_account(token: String) -> Result<(), SharingError> {
     hitslop_sharing_client::verify_account(&token).map_err(failure)
 }
 
@@ -77,8 +71,8 @@ impl NativeSharing {
     }
 }
 #[uniffi::export]
-pub fn sharing_create(owner: Arc<NativeOwner>, root: String, token: String) -> Result<String, SharingError> {
-    Client::create(&owner.0, Path::new(&root), &token).map_err(failure)
+pub fn sharing_create(owner: Arc<NativeOwner>, token: String) -> Result<String, SharingError> {
+    Client::create(&owner.0, &token).map_err(failure)
 }
 #[uniffi::export]
 pub fn sharing_recover(owner: Arc<NativeOwner>, token: String) -> Result<AccountAccess, SharingError> {

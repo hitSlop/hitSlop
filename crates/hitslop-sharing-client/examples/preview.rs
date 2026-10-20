@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let published = if let Some(link) = &invitation {
         hitslop_sharing_client::joined_credential(link.trim())?
     } else {
-        Client::create(&owner, &root.join("seeds"), token.trim())?
+        Client::create(&owner, token.trim())?
     };
     save(&credentials, published.as_bytes())?;
     let client = Client::restore(owner.clone(), &published)?;

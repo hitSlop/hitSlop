@@ -9,12 +9,28 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
-use hitslop_sharing_protocol::{envelope, http::Invitation};
+use hitslop_sharing_protocol::{
+    envelope,
+    http::{Invitation, RoomInfo, RoomPhase},
+};
 fn invitation(link: &str, origin: &str) -> Result<Invitation, JsValue> {
     if origin != hitslop_sharing_protocol::TRUSTED_ORIGIN {
         return Err(error("Untrusted sharing host"));
     }
     Invitation::parse(link).map_err(error)
+}
+/// Room metadata comes from an authenticated GET, never from the link or authored frame.
+fn room_info(json: &str) -> Result<RoomInfo, JsValue> {
+    let info: RoomInfo = serde_json::from_str(json).map_err(error)?;
+    if info.phase != RoomPhase::Live
+        || !hitslop_sharing_protocol::valid_copy(&info.document)
+        || !info.seed_hash.as_deref().is_some_and(hitslop_sharing_protocol::resources::hash_id)
+        || !info.app.as_deref().is_some_and(hitslop_sharing_protocol::resources::hash_id)
+        || !info.seed_size.is_some_and(|size| size >= 100 && size as usize <= hitslop_sharing_protocol::SEED_BYTES)
+    {
+        return Err(error("Room is not live or has invalid metadata"));
+    }
+    Ok(info)
 }
 #[derive(Default)]
 struct SyncQueue {
@@ -308,25 +324,40 @@ impl BrowserCopy {
 #[wasm_bindgen]
 impl BrowserCopy {
     #[wasm_bindgen(js_name = openJoined)]
-    pub fn open_joined(&mut self, json: &str, origin: &str) -> Result<(), JsValue> {
-        let key = invitation(json, origin)?;
-        if self.fresh && self.imported_hash.as_deref() != Some(key.seed_hash.as_str()) {
+    pub fn open_joined(&mut self, link: &str, origin: &str, metadata: &str) -> Result<(), JsValue> {
+        let key = invitation(link, origin)?;
+        let info = room_info(metadata)?;
+        if self.fresh && self.imported_hash.as_deref() != info.seed_hash.as_deref() {
             return Err(error("Seed checksum mismatch"));
         }
         // An ordinary local import still calls open(), renewing identity. Joining is
-        // a separate operation preserving the canonical full seed and its share row.
+        // a separate operation preserving document identity and binding the validated room.
+        let imported = self.fresh;
         self.fresh = false;
         self.open()?;
-        let driver = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?;
-        let share = driver.owner().share().map_err(error)?.ok_or_else(|| error("Seed is not shared"))?;
-        if driver.owner().app().document_uuid.as_deref() != Some(key.document.as_str())
-            || share.room != key.room
-            || share.endpoint != key.origin
+        let driver = self.driver.as_mut().ok_or_else(|| error("Copy missing"))?;
+        let share = driver.owner().share().map_err(error)?;
+        if driver.owner().app().document_uuid.as_deref() != Some(info.document.as_str())
+            || Some(hex(&driver.store().app_digest().map_err(error)?)).as_deref() != info.app.as_deref()
+            || share.is_some_and(|share| {
+                share.endpoint != hitslop_core::LIBRARY_SHARE_ENDPOINT
+                    && (share.endpoint != origin || (!imported && share.room != key.room))
+            })
         {
             self.driver = None;
             self.events.lock().unwrap().clear();
             return Err(error("Seed identity or membership mismatch"));
         }
+        let (send, receive) = std::sync::mpsc::channel();
+        driver.owner().submit(
+            owner::Request::Share { share: hitslop_core::store::Share { room: key.room, endpoint: origin.into() } },
+            None,
+            Box::new(move |reply| {
+                let _ = send.send(reply);
+            }),
+        );
+        driver.poll(0, js_sys::Date::now() as u64);
+        receive.try_recv().map_err(|_| error("Sharing membership is still saving"))?.map_err(error)?;
         Ok(())
     }
     #[wasm_bindgen(js_name = syncAttach)]
@@ -393,14 +424,15 @@ impl BrowserCopy {
 }
 
 #[wasm_bindgen(js_name = invitationRequest)]
-pub fn invitation_request(json: &str, origin: &str) -> Result<String, JsValue> {
-    let key = invitation(json, origin)?;
+pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<String, JsValue> {
+    let key = invitation(link, origin)?;
+    let info = room_info(metadata)?;
     serde_json::to_string(&hitslop_sharing_protocol::http::ConnectionPlan {
-        document: key.document,
-        size: key.size,
-        url: format!("{}/v1/rooms/{}/seed", key.origin, key.room),
+        document: info.document,
+        size: info.seed_size.expect("validated size"),
+        url: format!("{origin}/v1/rooms/{}/seed", key.room),
         headers: [("Authorization".into(), format!("Bearer {}", key.capability))].into_iter().collect(),
-        socket: format!("{}/v1/rooms/{}/sync", key.origin.replacen("https://", "wss://", 1), key.room),
+        socket: format!("{}/v1/rooms/{}/sync", origin.replacen("https://", "wss://", 1), key.room),
         protocols: vec![hitslop_sharing_protocol::SOCKET_PROTOCOL.into(), format!("cap.{}", key.capability)],
     })
     .map_err(error)

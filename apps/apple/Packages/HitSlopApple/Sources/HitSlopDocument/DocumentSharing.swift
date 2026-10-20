@@ -5,7 +5,7 @@ import HitSlopCore
 import HitSlopCoreBinding
 import SwiftUI
 
-private func sharingMessage(_ error: Error) -> String {
+func sharingMessage(_ error: Error) -> String {
   if case SharingError.Failed(let message) = error { return message }
   return error.localizedDescription
 }
@@ -63,22 +63,25 @@ private actor SharingDriver {
     return status()
   }
   func status() -> SharingStatus? {
+    if accountPhase == .ended {
+      return SharingStatus(phase: .ended, detail: "Sharing ended", link: nil, creator: true)
+    }
     if accountPhase == .preparing {
       return SharingStatus(
-        phase: .preparing, detail: "Finish creating this link on the device that started it.", link: nil, creator: true)
+        phase: .preparing, detail: "Sharing upload is incomplete. Retry creating the edit link.", link: nil,
+        creator: true)
     }
     if let client { return client.status() }
     guard let phase = accountPhase else { return nil }
     return SharingStatus(
       phase: phase,
-      detail: phase == .ended ? "Sharing ended" : "Finish creating this link on the device that started it.", link: nil,
+      detail: phase == .ended ? "Sharing ended" : "Sharing upload is incomplete. Retry creating the edit link.",
+      link: nil,
       creator: true)
   }
   func start(token: String) throws -> SharingStatus? {
-    let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("hitSlop/Sharing/Seeds", isDirectory: true)
     client?.pause()
-    let published = try sharingCreate(owner: owner, root: root.path, token: token)
+    let published = try sharingCreate(owner: owner, token: token)
     try SharingCredentials.write(published, document: document)
     return try refresh(token: token, reconnect: true)
   }
@@ -175,7 +178,7 @@ private actor SharingDriver {
   /// never imports a duplicate or requires an iCloud library.
   public static func join(_ link: String, candidates: [URL] = []) async throws -> URL {
     guard SharingPreview.enabled else { throw SlopFailure("Live sharing preview is disabled.") }
-    let document = try sharingDocument(link: link)
+    let document = try await SlopPreparation.run { try sharingDocument(link: link) }
     let live = DocumentSession.sharedSession(document: document)
     let nativeOwner = live?.owner.native
     let paths = candidates + SlopLibrary.shared.entries.map { URL(fileURLWithPath: $0.path) }

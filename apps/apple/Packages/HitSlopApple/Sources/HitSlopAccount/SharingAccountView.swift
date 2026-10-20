@@ -91,12 +91,10 @@ import SwiftUI
   }
   private func verify() async throws {
     guard let user = auth?.currentUser else { throw SlopFailure("Sign in required") }
-    let expected = user.uid
     let token = try await user.getIDToken(forcingRefresh: true)
-    let verified = try await Task.detached(priority: .utility) {
+    try await Task.detached(priority: .utility) {
       try sharingVerifyAccount(token: token)
     }.value
-    guard verified.uid == expected else { throw SlopFailure("Identity mismatch") }
     message = "Sharing service verified. Compare the account code on your other device."
     updateIdentity()
   }

@@ -22,7 +22,7 @@ pub(crate) fn merge_seed(owner: &Owner, source: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn upload_app(key: &Credential, store: &Store, path: &Path, token: &str) -> Result<()> {
+pub(crate) fn upload_app(key: &RoomKey, store: &Store, path: &Path, token: &str) -> Result<()> {
     let reader = store.resource_reader().map_err(fail)?;
     let mut resources = vec![];
     for asset in hitslop_core::file::inspect(path).map_err(fail)?.assets {
@@ -78,13 +78,13 @@ fn local_blobs(owner: &Owner) -> Result<Vec<Resource>> {
         .map(|item| Resource { key: item.id.clone(), hash: item.id, size: item.bytes, media_type: item.media_type })
         .collect())
 }
-pub(crate) fn remote_blobs(key: &Credential) -> Result<Vec<Resource>> {
+pub(crate) fn remote_blobs(key: &RoomKey) -> Result<Vec<Resource>> {
     let list = transport::http(key, "GET", "blobs", Some(&key.capability), &[], &[])?;
     let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
     resource_types::validate(&items, true).map_err(fail)?;
     Ok(items)
 }
-pub(crate) fn upload_blobs(owner: &Owner, key: &Credential, uploaded: &mut Vec<Resource>) -> Result<()> {
+pub(crate) fn upload_blobs(owner: &Owner, key: &RoomKey, uploaded: &mut Vec<Resource>) -> Result<()> {
     for item in resource_types::missing_attachments(&local_blobs(owner)?, uploaded).map_err(fail)? {
         let Reply::Bytes { bytes: Some(bytes) } = request(owner, Request::ReadAttachment { id: item.hash.clone() })?
         else {
@@ -102,7 +102,7 @@ pub(crate) fn upload_blobs(owner: &Owner, key: &Credential, uploaded: &mut Vec<R
     }
     Ok(())
 }
-pub(crate) fn download_blobs(owner: &Owner, key: &Credential, uploaded: &mut Vec<Resource>) -> Result<()> {
+pub(crate) fn download_blobs(owner: &Owner, key: &RoomKey, uploaded: &mut Vec<Resource>) -> Result<()> {
     let remote = remote_blobs(key)?;
     for item in resource_types::missing_attachments(&remote, &local_blobs(owner)?).map_err(fail)? {
         let bytes = transport::http(key, "GET", &format!("blob/{}", item.hash), Some(&key.capability), &[], &[])?;
@@ -118,5 +118,21 @@ pub(crate) fn download_blobs(owner: &Owner, key: &Credential, uploaded: &mut Vec
         }
     }
     *uploaded = remote;
+    Ok(())
+}
+
+/// Upload the exact attachment inventory contained in this attempt's seed.
+pub(crate) fn upload_initial_blobs(key: &RoomKey, store: &Store, token: &str) -> Result<()> {
+    for item in store.attachments().map_err(fail)? {
+        let bytes = store.attachment(&item.id).map_err(fail)?;
+        transport::http(
+            key,
+            "PUT",
+            &format!("blob/{}", item.id),
+            Some(token),
+            &bytes,
+            &[("Content-Type", &item.media_type)],
+        )?;
+    }
     Ok(())
 }

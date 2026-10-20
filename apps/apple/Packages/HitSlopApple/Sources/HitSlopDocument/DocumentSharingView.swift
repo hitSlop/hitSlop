@@ -38,7 +38,7 @@ public struct DocumentSharingView: View {
           ShareLink("Share Edit Link", item: link)
           if status.creator { Button("Stop Sharing", role: .destructive) { model.stop() } }
         } else if status.phase == .preparing {
-          Button("Finish Creating Edit Link") { model.create() }
+          Button("Retry Creating Edit Link") { model.create() }
           Button("Stop Sharing", role: .destructive) { model.stop() }
         } else if status.phase == .ended {
           Button("Create New Edit Link") { model.create() }
@@ -97,7 +97,7 @@ public struct SharingJoinView: View {
             do {
               try await join(link.trimmingCharacters(in: .whitespacesAndNewlines))
               dismiss()
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = sharingMessage(error) }
           }
         }.disabled(link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }

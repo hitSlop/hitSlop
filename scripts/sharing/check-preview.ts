@@ -51,14 +51,14 @@ async function restrict(page:Page,context:BrowserContext){
 let contexts:BrowserContext[]=[];
 let stopped=false;
 try {
-  const probe="https://share.hitslop.com/v1/auth/probe";
+  const lookup="https://share.hitslop.com/v1/account/rooms/00000000-0000-4000-8000-000000000000";
   const unknownKey=[{alg:"RS256",kid:"hitslop-deliberately-unknown-test-key"},{sub:"test-user"}].map(part=>Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")+"."+Buffer.alloc(256).toString("base64url");
   for(const token of [undefined,"malformed",unknownKey]) {
-    const response=await fetch(probe,{headers:token?{Authorization:"Bearer "+token}:{}});
-    assert.equal(response.status,401,"Auth probe must refuse absent or untrusted identities");
+    const response=await fetch(lookup,{headers:token?{Authorization:"Bearer "+token}:{}});
+    assert.equal(response.status,401,"Account lookup must refuse absent or untrusted identities");
     assert.equal((await response.json() as {code:string}).code,"sign_in_required");
   }
-  note("The gated auth probe refuses anonymous, malformed and unknown-key identities; valid native identity remains a separate qualification");
+  note("The account lookup refuses anonymous, malformed and unknown-key identities; valid native identity remains a separate qualification");
   const ready=await next();assert(ready.ready,"Native client failed to publish");
   note(invitationFile ? "A signed-out native guest joins the disposable owner-app invitation without a Firebase session" : "A verified account creates and publishes the disposable native fixture");
   const invitation=(await readFile(join(root,"invitation.txt"),"utf8")).trim();
@@ -169,7 +169,7 @@ try {
   await writeFile(report,JSON.stringify({passed:true,checks,document:ready.document,copy,chrome:restored.browser()?.version()},null,2));
   console.log("Preview checks passed; report: "+report);
 } catch(error) {
-  const message=String(error).replace(/https:\/\/share\.hitslop\.com\/join#[A-Za-z0-9_-]+/g,"[private invitation]");
+  const message=String(error).replace(/https:\/\/share\.hitslop\.com\/join#[a-f0-9]+\.[a-f0-9]+/g,"[private invitation]");
   await writeFile(report,JSON.stringify({passed:false,checks,error:message},null,2));
   console.error(message);process.exitCode=1;
 } finally {

@@ -16,11 +16,11 @@ export async function buildSharing() {
     const browser = join(stage, "browser");
     await mkdir(browser, { recursive: true });
     const result = await Bun.build({
-      entrypoints: ["host", "worker", "frame"].map(name => join(source, `${name}.ts`)),
-      outdir: browser, target: "browser", minify: true,
+      entrypoints: [join(repository, "packages/hitslop/src/browser/host.ts"), join(source, "worker.ts"), join(repository, "packages/hitslop/src/browser/frame.ts")],
+      outdir: browser, naming: "[name].[ext]", target: "browser", minify: true,
     });
     if (!result.success) throw new Error(result.logs.join("\n"));
-    await cp(join(source, "index.html"), join(stage, "index.html"));
+    await cp(join(repository, "packages/hitslop/src/browser/index.html"), join(stage, "index.html"));
     await cp(join(repository, "generated/browser/core"), join(browser, "core"), { recursive: true });
     await cp(join(repository, "apps/sharing/openapi.json"), join(stage, "openapi.json"));
     await Bun.write(join(stage, "frame.html"), '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}#app{width:100%;height:100%}</style></head><body><div id="app"></div><script type="module" src="/frame.js"></script></body></html>');

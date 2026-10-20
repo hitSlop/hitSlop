@@ -60,9 +60,9 @@
         ]
       }
     },
-    "/v1/account/access/{document}": {
+    "/v1/account/rooms/{document}": {
       "get": {
-        "summary": "Recover the signed-in creator's room, or null when absent",
+        "summary": "Look up the signed-in owner's current room, or null",
         "parameters": [
           {
             "name": "document",
@@ -85,7 +85,7 @@
                       "type": "null"
                     },
                     {
-                      "$ref": "#/components/schemas/RoomReservation"
+                      "$ref": "#/components/schemas/AccountRoom"
                     }
                   ]
                 }
@@ -118,15 +118,15 @@
         ]
       }
     },
-    "/v1/account/publish": {
+    "/v1/rooms": {
       "post": {
-        "summary": "Finalize publication after all immutable files exist",
+        "summary": "Create or recover the document's current room",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RoomIdentity"
+                "$ref": "#/components/schemas/CreateRoom"
               }
             }
           },
@@ -138,7 +138,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoomReservation"
+                  "$ref": "#/components/schemas/CreatedRoom"
                 }
               }
             }
@@ -169,122 +169,72 @@
         ]
       }
     },
-    "/v1/account/reserve": {
-      "post": {
-        "summary": "Reserve one room per document generation",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReserveRoom"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Accepted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoomReservation"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          }
-        ]
-      }
-    },
-    "/v1/account/stop": {
-      "post": {
-        "summary": "Tombstone the room and clear its recoverable capability",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RoomIdentity"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Accepted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoomReservation"
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          }
-        ]
-      }
-    },
-    "/v1/auth/probe": {
+    "/v1/rooms/{room}": {
       "get": {
-        "summary": "Verify Firebase identity (developer auth spike)",
-        "parameters": [],
+        "summary": "Read room metadata; only its owner receives the capability",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Accepted",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/VerifiedAccount"
+                  "$ref": "#/components/schemas/RoomInfo"
                 }
               }
             }
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "End the room and purge retained files",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
           },
           "401": {
             "$ref": "#/components/responses/Refused"
@@ -458,6 +408,9 @@
         },
         "security": [
           {
+            "firebaseIdentity": []
+          },
+          {
             "capability": []
           }
         ]
@@ -514,9 +467,9 @@
         ]
       }
     },
-    "/v1/rooms/{room}/init": {
+    "/v1/rooms/{room}/open": {
       "post": {
-        "summary": "Initialize a reserved room (verified owner identity required)",
+        "summary": "Open a room after its seed and app resources are uploaded",
         "parameters": [
           {
             "name": "room",
@@ -528,19 +481,16 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AccountRoomInit"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
-            "description": "Accepted"
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomInfo"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Refused"
@@ -616,7 +566,7 @@
         ]
       },
       "post": {
-        "summary": "Publish immutable app inventory (creator only)",
+        "summary": "Replace app inventory while Uploading (owner only)",
         "parameters": [
           {
             "name": "room",
@@ -709,7 +659,7 @@
         ]
       },
       "put": {
-        "summary": "Publish the immutable SQLite seed (creator only)",
+        "summary": "Replace the SQLite seed while Uploading (owner only)",
         "parameters": [
           {
             "name": "room",
@@ -719,49 +669,29 @@
               "type": "string",
               "pattern": "^[0-9a-f]{32}$"
             }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
           {
-            "firebaseIdentity": []
-          }
-        ]
-      }
-    },
-    "/v1/rooms/{room}/stop": {
-      "delete": {
-        "summary": "Tombstone the room and remove retained files (creator only)",
-        "parameters": [
-          {
-            "name": "room",
-            "in": "path",
+            "name": "X-Sharing-SHA256",
+            "in": "header",
             "required": true,
             "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Sharing-App",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Sharing-Version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -798,18 +728,14 @@
   },
   "components": {
     "schemas": {
-      "AccountRoomInit": {
+      "AccountRoom": {
         "type": "object",
         "required": [
-          "identity",
-          "init"
+          "room"
         ],
         "properties": {
-          "identity": {
-            "$ref": "#/components/schemas/RoomIdentity"
-          },
-          "init": {
-            "$ref": "#/components/schemas/RoomInit"
+          "room": {
+            "type": "string"
           }
         }
       },
@@ -828,37 +754,33 @@
           }
         }
       },
-      "Invitation": {
+      "CreateRoom": {
         "type": "object",
-        "description": "Sensitive host-owned data. Never forwarded to an authored page or printed in errors.",
         "required": [
-          "document",
+          "document"
+        ],
+        "properties": {
+          "document": {
+            "type": "string"
+          }
+        }
+      },
+      "CreatedRoom": {
+        "type": "object",
+        "required": [
           "room",
-          "origin",
           "capability",
-          "seed_hash",
-          "size"
+          "phase"
         ],
         "properties": {
           "capability": {
             "type": "string"
           },
-          "document": {
-            "type": "string"
-          },
-          "origin": {
-            "type": "string"
+          "phase": {
+            "$ref": "#/components/schemas/RoomPhase"
           },
           "room": {
             "type": "string"
-          },
-          "seed_hash": {
-            "type": "string"
-          },
-          "size": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
           }
         }
       },
@@ -880,23 +802,6 @@
           }
         },
         "additionalProperties": false
-      },
-      "ReserveRoom": {
-        "type": "object",
-        "required": [
-          "document",
-          "generation"
-        ],
-        "properties": {
-          "document": {
-            "type": "string"
-          },
-          "generation": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
       },
       "Resource": {
         "type": "object",
@@ -935,79 +840,19 @@
           }
         }
       },
-      "RoomIdentity": {
+      "RoomInfo": {
         "type": "object",
         "required": [
           "document",
-          "generation",
-          "room"
-        ],
-        "properties": {
-          "document": {
-            "type": "string"
-          },
-          "generation": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "room": {
-            "type": "string"
-          }
-        }
-      },
-      "RoomInit": {
-        "type": "object",
-        "required": [
-          "app",
-          "seed",
-          "seed_hash"
-        ],
-        "properties": {
-          "app": {
-            "type": "string"
-          },
-          "seed": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": false,
-              "prefixItems": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer",
-                  "format": "int32",
-                  "minimum": 0
-                }
-              ]
-            }
-          },
-          "seed_hash": {
-            "type": "string"
-          }
-        }
-      },
-      "RoomPhase": {
-        "type": "string",
-        "enum": [
-          "pending",
-          "published",
-          "stopping",
-          "ended"
-        ]
-      },
-      "RoomReservation": {
-        "type": "object",
-        "description": "Private account response. Contains a recoverable bearer secret; never log it.",
-        "required": [
-          "document",
-          "generation",
-          "room",
           "phase"
         ],
         "properties": {
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "capability": {
             "type": [
               "string",
@@ -1017,52 +862,32 @@
           "document": {
             "type": "string"
           },
-          "generation": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          },
-          "invitation": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Invitation"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "phase": {
             "$ref": "#/components/schemas/RoomPhase"
           },
-          "previous_room": {
+          "seedHash": {
             "type": [
               "string",
               "null"
             ]
           },
-          "room": {
-            "type": "string"
+          "seedSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
           }
         }
       },
-      "VerifiedAccount": {
-        "type": "object",
-        "description": "Auth spike response. Never returns a bearer token or any sharing capability.",
-        "required": [
-          "uid",
-          "auth_time"
-        ],
-        "properties": {
-          "auth_time": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "uid": {
-            "type": "string"
-          }
-        }
+      "RoomPhase": {
+        "type": "string",
+        "enum": [
+          "uploading",
+          "live",
+          "ended"
+        ]
       }
     },
     "responses": {

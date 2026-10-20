@@ -1373,7 +1373,6 @@ dependencies = [
 name = "hitslop-sharing-protocol"
 version = "0.0.0"
 dependencies = [
- "data-encoding",
  "postcard",
  "serde",
  "serde_bytes",

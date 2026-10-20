@@ -56,3 +56,8 @@ pub fn page_policy() -> String {
         "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https: blob:; media-src 'self' https: blob:; frame-src https:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; worker-src 'self'; base-uri 'none'; frame-ancestors {TRUSTED_ORIGIN}"
     )
 }
+
+/// Canonical random room identifier, independent of a document UUID.
+pub fn valid_room(room: &str) -> bool {
+    room.len() == 32 && room.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}

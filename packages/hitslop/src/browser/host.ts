@@ -1,3 +1,6 @@
+import { config } from "../sharing/config";
+import { resourceDelivery } from "./resource-delivery";
+import type { SharingEvent, SharingControl } from "../wire/sharing.generated";
 import { BrowserHost } from "../schema/constants";
 import type { BrowserRequest } from "../wire/browser.generated";
 import type { Capability, WindowDefinition } from "../wire/app.generated";
@@ -24,9 +27,18 @@ const download = document.querySelector<HTMLButtonElement>("#download")!;
 const retry = document.querySelector<HTMLButtonElement>("#retry")!;
 const fullscreen = document.querySelector<HTMLButtonElement>("#fullscreen")!;
 const awake = document.querySelector<HTMLButtonElement>("#awake")!;
+const hosted = resourceDelivery.kind === "network";
 const params = new URLSearchParams(location.search);
-const id = params.get("copy");
-const source = new URLSearchParams(location.hash.slice(1)).get("import");
+let id = params.get("copy");
+let source = hosted
+  ? params.get("fresh") === "1"
+    ? "0".repeat(64)
+    : null
+  : new URLSearchParams(location.hash.slice(1)).get("import");
+let resourcesResolve: () => void = () => {};
+const resourcesReady = new Promise<void>((resolve) => {
+  resourcesResolve = resolve;
+});
 const fail = (error: unknown) => {
   status.textContent = String(error);
   status.setAttribute("role", "alert");
@@ -36,6 +48,10 @@ let page: MessagePort | undefined;
 let frame: HTMLIFrameElement | undefined;
 let surface: HTMLDivElement | undefined;
 let windowSpec: WindowDefinition | undefined;
+let joinedResolve: () => void = () => {};
+const firstCatchup = new Promise<void>((resolve) => {
+  joinedResolve = resolve;
+});
 /** Everything this tab waits on: the worker's replies and the page's answers to `host` messages.
  * Once it has failed, the worker is gone for good: nothing more is sent to it or believed. */
 const requests = new PendingRequests<WorkerEvent | HostReply>();
@@ -143,7 +159,7 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
   fullscreen.hidden = !spec.fullscreenable;
   frame = document.createElement("iframe");
   frame.title = title.textContent || "Slop";
-  const origin = `http://${id}.localhost:${BrowserHost.port}`;
+  const origin = resourceDelivery.frameOrigin(id!);
   frame.src = `${origin}/`;
   frame.setAttribute(
     "sandbox",
@@ -160,7 +176,7 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
       return;
     page?.close();
     const pages = new MessageChannel();
-    const assets = new MessageChannel();
+    const assets = hosted ? undefined : new MessageChannel();
     page = pages.port1;
     // The frame is the page's, so its messages are checked, not trusted.
     page.onmessage = ({ data }) => {
@@ -172,16 +188,21 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
         else requests.settle(data.id, data);
       }
     };
-    assets.port1.onmessage = ({ data }) => {
-      if (
-        !["resource", "resourcePlan"].includes(data.type) ||
-        !["app", "attachment"].includes(data.route) ||
-        typeof data.key !== "string"
-      )
-        return;
-      void relayResource(assets.port1, data);
-    };
-    frame!.contentWindow!.postMessage({ type: "connect" }, origin, [pages.port2, assets.port2]);
+    if (assets)
+      assets.port1.onmessage = ({ data }) => {
+        if (
+          !["resource", "resourcePlan"].includes(data.type) ||
+          !["app", "attachment"].includes(data.route) ||
+          typeof data.key !== "string"
+        )
+          return;
+        void relayResource(assets!.port1, data);
+      };
+    frame!.contentWindow!.postMessage(
+      { type: "connect" },
+      origin,
+      assets ? [pages.port2, assets.port2] : [pages.port2],
+    );
     // A frame that connects after the worker failed learns it at once.
     tellFrame();
   };
@@ -241,13 +262,15 @@ async function own() {
     const existing = entries.find((entry) => entry.id === id);
     if (source) {
       if (existing) throw new Error("This import already exists. Open it from Browser copies.");
-      const estimate = await navigator.storage.estimate();
-      const head = await fetch(`/__import/${encodeURIComponent(source)}`, { method: "HEAD" });
-      if (!head.ok) throw new Error("Import expired. Run slop open --browser again.");
-      const bytes = Number(head.headers.get("Content-Length"));
-      if (estimate.quota !== undefined && estimate.quota - (estimate.usage ?? 0) < bytes * 2)
-        throw new Error("There is not enough browser storage for this copy");
-      await putCopy({ id, title: "Importing…", created: Date.now(), state: "importing" });
+      if (!hosted) {
+        const estimate = await navigator.storage.estimate();
+        const head = await fetch(`/__import/${encodeURIComponent(source)}`, { method: "HEAD" });
+        if (!head.ok) throw new Error("Import expired. Run slop open --browser again.");
+        const bytes = Number(head.headers.get("Content-Length"));
+        if (estimate.quota !== undefined && estimate.quota - (estimate.usage ?? 0) < bytes * 2)
+          throw new Error("There is not enough browser storage for this copy");
+      }
+      await putCopy({ id: id!, title: "Importing…", created: Date.now(), state: "importing" });
     } else if (!existing || existing.state !== "ready")
       throw new Error("This browser copy is missing. Open the original file again.");
     // Keep the Web Lock until the worker dies and this tab releases its handles.
@@ -266,14 +289,27 @@ async function own() {
               "The document worker sent a message this tab could not read. Reload to recover its last confirmed save.",
             ),
           );
-        worker.onmessage = async ({ data }: MessageEvent<WorkerEvent>) => {
+        worker.onmessage = async ({ data }: MessageEvent<WorkerEvent | SharingEvent>) => {
           if (requests.failure) return;
+          if (data.type === "resourcesReady") {
+            resourcesResolve();
+            return;
+          }
+          if (data.type === "files") {
+            document.querySelector("#files")!.textContent = data.status;
+            return;
+          }
+          if (data.type === "sync") {
+            document.querySelector("#sync")!.textContent = data.status;
+            if (data.status === "Synced") joinedResolve();
+            return;
+          }
           if (data.type === "ready") {
             opened = true;
             title.textContent = data.title;
             try {
               await putCopy({
-                id,
+                id: id!,
                 title: data.title,
                 created: existing?.created ?? Date.now(),
                 state: "ready",
@@ -286,6 +322,10 @@ async function own() {
             // The worker may have failed while the catalog was written.
             if (requests.failure) return;
             history.replaceState(null, "", `/?copy=${id}`);
+            download.disabled = false;
+            if (hosted) await resourcesReady;
+            if (hosted && source) await firstCatchup; // Initial join catches up before authored startup effects run.
+            if (requests.failure) return;
             mount(data.window, data.capabilities);
             download.disabled = false;
           } else if (data.type === "save") {
@@ -314,7 +354,12 @@ async function own() {
               toFrame({ type: "error", id: data.id, error: data.error });
           }
         };
-        send({ type: "open", copy: id, source });
+        if (hosted)
+          worker!.postMessage({
+            type: "joinCredential",
+            credential: localStorage.getItem("sharing.invitation." + id) ?? "",
+          } satisfies SharingControl);
+        send({ type: "open", copy: id!, source });
       };
       launch(0);
     });
@@ -353,7 +398,7 @@ download.onclick = async () => {
         { description: "hitSlop document", accept: { "application/octet-stream": [".slop"] } },
       ],
     });
-    await drain();
+    if (page) await drain();
     const result = await request({ type: "export" });
     const root = await navigator.storage.getDirectory();
     const exports = await root.getDirectoryHandle("exports");
@@ -455,16 +500,56 @@ addEventListener("pagehide", () => {
 });
 
 async function main() {
-  if (!navigator.storage?.getDirectory || !navigator.locks || !navigator.serviceWorker)
-    throw new Error(
-      "Browser editing needs OPFS, Web Locks and Service Workers. Use desktop Chrome.",
-    );
+  if (!navigator.storage?.getDirectory || !navigator.locks || (!hosted && !navigator.serviceWorker))
+    throw new Error("Browser editing needs local file storage and Web Locks. Use desktop Chrome.");
   await cleanup();
+  const fragment = location.hash;
+  if (hosted && location.pathname === "/join") {
+    if (!/^#[0-9a-f]{32}\.[0-9a-f]{64}$/.test(fragment))
+      throw new Error("Sharing link is no longer valid");
+    const invitation = config.host + "/join" + fragment;
+    const existing = (await listCopies()).find(
+      (copy) =>
+        copy.state === "ready" &&
+        localStorage.getItem("sharing.invitation." + copy.id) === invitation,
+    );
+    id = existing?.id ?? crypto.randomUUID();
+    source = existing ? null : "0".repeat(64);
+    localStorage.setItem("sharing.invitation." + id, invitation);
+    history.replaceState(null, "", `/?copy=${id}${source ? "&fresh=1" : ""}`);
+  }
   if (id) return own();
   document.querySelector("#actions")!.remove();
   stage.classList.add("copies");
   title.textContent = "Browser copies";
-  status.textContent = "Open a file with slop open --browser file.slop";
+  status.textContent = hosted
+    ? "Sharing preview · copies save in this browser"
+    : "Open a file with slop open --browser file.slop";
+  const form = document.createElement("form");
+  const input = document.createElement("input");
+  input.type = "url";
+  input.required = true;
+  input.placeholder = "Paste a sharing link";
+  input.setAttribute("aria-label", "Sharing link");
+  const join = document.createElement("button");
+  join.type = "submit";
+  join.textContent = "Open shared slop";
+  form.append(input, join);
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    try {
+      const link = new URL(input.value);
+      if (
+        link.href !== `${config.host}/join${link.hash}` ||
+        !/^#[0-9a-f]{32}\.[0-9a-f]{64}$/.test(link.hash)
+      )
+        throw new Error("Paste a hitSlop sharing link");
+      location.assign(link.href);
+    } catch (error) {
+      fail(error);
+    }
+  };
+  if (hosted) stage.append(form);
   for (const entry of await listCopies()) {
     const row = document.createElement("div");
     const link = document.createElement("a");
@@ -474,7 +559,10 @@ async function main() {
     remove.textContent = "Delete";
     remove.onclick = () => {
       void removeCopy(entry.id)
-        .then(() => row.remove())
+        .then(() => {
+          localStorage.removeItem("sharing.invitation." + entry.id);
+          row.remove();
+        })
         .catch(fail);
     };
     const details = document.createElement("small");
