@@ -192,7 +192,7 @@ private struct UpdateSettingsView: View {
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.slop]
     panel.allowsMultipleSelection = true
-    panel.startOnDesktop()
+    try? panel.startInLocalDocuments()
     guard panel.runModal() == .OK else { return }
     panel.urls.forEach(openDocument)
   }
