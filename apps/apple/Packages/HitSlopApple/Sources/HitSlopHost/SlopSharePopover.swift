@@ -1,5 +1,6 @@
 import AppKit
 import HitSlopCore
+import HitSlopDocument
 import SwiftUI
 
 /// A real AppKit button gives both share surfaces a stable anchor in the hover panel.
@@ -33,6 +34,8 @@ struct SlopShareButton: NSViewRepresentable {
 }
 
 @MainActor final class SlopSharePopover: NSObject, ObservableObject, NSPopoverDelegate {
+  let sharing: DocumentSharing?
+  private var collaborationInteracting = false
   let canExport: Bool
   @Published var commandsEnabled = true
   @Published private(set) var preparing: String?
@@ -46,9 +49,10 @@ struct SlopShareButton: NSViewRepresentable {
   var window: NSWindow? { popover.contentViewController?.view.window }
 
   init(
-    filename: String, canExport: Bool, holdToolbar: @escaping (Bool) -> Void,
+    filename: String, canExport: Bool, sharing: DocumentSharing? = nil, holdToolbar: @escaping (Bool) -> Void,
     select: @escaping (SlopDocumentCommand) -> Void
   ) {
+    self.sharing = sharing
     self.filename = filename
     self.canExport = canExport
     self.holdToolbar = holdToolbar
@@ -66,6 +70,7 @@ struct SlopShareButton: NSViewRepresentable {
       dismiss()
       return
     }
+    sharing?.refresh()
     popover.contentViewController = NSHostingController(rootView: SlopShareView(model: self, filename: filename))
     holdToolbar(true)
     popover.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
@@ -76,7 +81,7 @@ struct SlopShareButton: NSViewRepresentable {
   }
 
   func choose(_ command: SlopDocumentCommand) {
-    guard commandsEnabled, preparing == nil, isShown else { return }
+    guard commandsEnabled, canDismiss, isShown else { return }
     select(command)
   }
 
@@ -96,13 +101,17 @@ struct SlopShareButton: NSViewRepresentable {
   }
 
   func dismiss() {
+    guard canDismiss else { return }
     popover.close()
     preparing = nil
     if !picking { holdToolbar(false) }
   }
 
-  func popoverShouldClose(_ popover: NSPopover) -> Bool { preparing == nil }
+  var canDismiss: Bool { preparing == nil && sharing?.acting != true && !collaborationInteracting }
+  func setCollaborationInteracting(_ value: Bool) { collaborationInteracting = value }
+  func popoverShouldClose(_ popover: NSPopover) -> Bool { canDismiss }
   func popoverDidClose(_ notification: Notification) {
+    collaborationInteracting = false
     if !picking { holdToolbar(false) }
     // Break the hosting view's observation of this window-owned presentation.
     popover.contentViewController = nil
@@ -139,7 +148,9 @@ private struct SlopShareView: View {
           }
         }
         option("Share Slop File", detail: "An editable copy for hitSlop.", symbol: "doc", command: .shareSlop)
-        option("Share URL", detail: "Coming soon", symbol: "link", command: nil)
+        if model.sharing == nil {
+          option("Share URL", detail: "Coming soon", symbol: "link", command: nil)
+        }
       }.disabled(!model.commandsEnabled || model.preparing != nil)
       if let preparing = model.preparing {
         HStack(spacing: 8) {
@@ -148,18 +159,22 @@ private struct SlopShareView: View {
         }.accessibilityElement(children: .combine)
       }
       Divider()
-      Toggle(isOn: .constant(false)) {
-        VStack(alignment: .leading, spacing: 5) {
-          Text("Live collaboration").font(.subheadline.weight(.medium))
-          Text("Coming soon").font(.caption)
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(.quaternary, in: Capsule())
-        }
-      }.toggleStyle(.switch).controlSize(.small).disabled(true)
-        .accessibilityLabel("Live collaboration, coming soon")
+      if let sharing = model.sharing {
+        LiveCollaborationSection(model: sharing, interactionChanged: model.setCollaborationInteracting)
+      } else {
+        Toggle(isOn: .constant(false)) {
+          VStack(alignment: .leading, spacing: 5) {
+            Text("Live collaboration").font(.subheadline.weight(.medium))
+            Text("Coming soon").font(.caption)
+              .padding(.horizontal, 7).padding(.vertical, 3)
+              .background(.quaternary, in: Capsule())
+          }
+        }.toggleStyle(.switch).controlSize(.small).disabled(true)
+          .accessibilityLabel("Live collaboration, coming soon")
+      }
     }
     .padding(18).frame(width: 320)
-    .onExitCommand { if model.preparing == nil { model.dismiss() } }
+    .onExitCommand { if model.canDismiss { model.dismiss() } }
   }
 
   private func formatOption(_ title: String, hint: String, symbol: String, command: SlopDocumentCommand) -> some View {

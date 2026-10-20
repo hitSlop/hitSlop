@@ -158,3 +158,6 @@ fn integer(value: &Value) -> Option<i64> {
 /// Identifies the core build (a hash of its sources and the lockfile), so a release can
 /// prove the app and the engine embed the same core.
 pub const BUILD_ID: &str = env!("HITSLOP_CORE_BUILD_ID");
+
+/// Share-row endpoint that retains document history for the personal library.
+pub const LIBRARY_SHARE_ENDPOINT: &str = "cloudkit://library";

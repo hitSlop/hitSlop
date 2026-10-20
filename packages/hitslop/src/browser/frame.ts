@@ -1,22 +1,26 @@
 import { boot } from "../shell/boot";
 import { installBrowserBridge } from "../shell/bridge";
-import { BrowserHost } from "../schema/constants";
+import { resourceDelivery } from "./resource-delivery";
 import { PendingRequests, copyDeadline, type FrameMessage, type HostReply } from "./requests";
 
-const host = `http://127.0.0.1:${BrowserHost.port}`;
-await navigator.serviceWorker.register("/service-worker.js", { scope: "/", type: "module" });
-await navigator.serviceWorker.ready;
-if (!navigator.serviceWorker.controller)
-  await new Promise<void>((resolve) => {
-    navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
-  });
+const hosted =
+  resourceDelivery.kind === "network" && new URL(location.href).searchParams.get("local") !== "1";
+const host = resourceDelivery.host;
+if (!hosted) {
+  await navigator.serviceWorker.register("/service-worker.js", { scope: "/", type: "module" });
+  await navigator.serviceWorker.ready;
+  if (!navigator.serviceWorker.controller)
+    await new Promise<void>((resolve) => {
+      navigator.serviceWorker.addEventListener("controllerchange", () => resolve(), { once: true });
+    });
+}
 const ports = await new Promise<MessagePort[]>((resolve) => {
   const receive = (event: MessageEvent) => {
     if (
       event.source !== parent ||
       event.origin !== host ||
       event.data?.type !== "connect" ||
-      event.ports.length !== 2
+      event.ports.length !== (hosted ? 1 : 2)
     )
       return;
     removeEventListener("message", receive);
@@ -63,33 +67,35 @@ page.onmessage = async ({ data }: MessageEvent<FrameMessage>) => {
 };
 // Keep the host channel in the frame: an idle Service Worker can be terminated
 // without disconnecting this copy. Every fetch carries its own reply channel.
-const resources = ports[1]!;
-const resourceReplies = new Map<
-  string,
-  { port: MessagePort; timeout: ReturnType<typeof setTimeout> }
->();
-navigator.serviceWorker.addEventListener("message", (event) => {
-  if (
-    event.source !== navigator.serviceWorker.controller ||
-    !["resource", "resourcePlan"].includes(event.data?.type) ||
-    !event.ports[0]
-  )
-    return;
-  const { id } = event.data;
-  const port = event.ports[0];
-  const timeout = setTimeout(() => {
-    resourceReplies.delete(id);
-    port.close();
-  }, 30_000);
-  resourceReplies.set(id, { port, timeout });
-  resources.postMessage(event.data);
-});
-resources.onmessage = ({ data }) => {
-  const reply = resourceReplies.get(data.id);
-  if (!reply) return;
-  resourceReplies.delete(data.id);
-  clearTimeout(reply.timeout);
-  reply.port.postMessage(data, data.bytes ? [data.bytes.buffer] : []);
-  reply.port.close();
-};
+if (!hosted) {
+  const resources = ports[1]!;
+  const resourceReplies = new Map<
+    string,
+    { port: MessagePort; timeout: ReturnType<typeof setTimeout> }
+  >();
+  navigator.serviceWorker.addEventListener("message", (event) => {
+    if (
+      event.source !== navigator.serviceWorker.controller ||
+      !["resource", "resourcePlan"].includes(event.data?.type) ||
+      !event.ports[0]
+    )
+      return;
+    const { id } = event.data;
+    const port = event.ports[0];
+    const timeout = setTimeout(() => {
+      resourceReplies.delete(id);
+      port.close();
+    }, 30_000);
+    resourceReplies.set(id, { port, timeout });
+    resources.postMessage(event.data);
+  });
+  resources.onmessage = ({ data }) => {
+    const reply = resourceReplies.get(data.id);
+    if (!reply) return;
+    resourceReplies.delete(data.id);
+    clearTimeout(reply.timeout);
+    reply.port.postMessage(data, data.bytes ? [data.bytes.buffer] : []);
+    reply.port.close();
+  };
+}
 await boot();

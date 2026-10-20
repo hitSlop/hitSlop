@@ -5,6 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { BrowserHost, BrowserResourcePolicy, BrowserHostPolicy } from "../schema/constants";
 import { cliRoot } from "./paths";
 import { execute } from "./engine";
+import { frameDocument } from "./frame-document";
 import { run } from "./process";
 
 const origin = `http://127.0.0.1:${BrowserHost.port}`;
@@ -71,11 +72,10 @@ export async function startBrowserHost(runtimeRoot = join(cliRoot, "browser")) {
         if (frame) {
           if (request.method !== "GET") return response(null, 405);
           if (url.pathname === "/")
-            return response(
-              '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Slop</title></head><body><script type="module" src="/frame.js"></script></body></html>',
-              200,
-              { "Content-Type": "text/html", "Content-Security-Policy": pagePolicy },
-            );
+            return response(frameDocument, 200, {
+              "Content-Type": "text/html",
+              "Content-Security-Policy": pagePolicy,
+            });
           if (["/frame.js", "/service-worker.js"].includes(url.pathname))
             return response(Bun.file(join(runtimeRoot, url.pathname.slice(1))), 200, {
               "Content-Type": "text/javascript",

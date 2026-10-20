@@ -1,179 +1,115 @@
 # Live sharing developer preview
 
-This is a deployable Cloudflare application. Reusable contracts live in
-`crates/hitslop-sharing-protocol`; the native transport lives in
-`crates/hitslop-sharing-client`. The Worker has no dependency on Loro or the document
-engine. It stores opaque updates in one SQLite Durable Object per room and immutable
-seed/app/attachment bytes in a private R2 bucket.
+The Rust Worker is a Loro-free byte relay with private R2 resources. Contracts and limits
+live in `crates/hitslop-sharing-protocol`; native transport lives in
+`crates/hitslop-sharing-client`. Rust generates TypeScript and `openapi.json` through
+`bun run schema:generate`. The released `.slop` format and binary sync protocol are unchanged.
 
-`share.hitslop.com` hosts trusted storage and connection workers. Each browser copy runs
-authored UI on its own `<copy UUID>.dotslop.com`. The trusted worker holds the invitation;
-the authored page receives the existing SDK bridge and host-bound, short-lived HttpOnly
-resource cookies. No embedded Service Worker is needed. Browser SQLite uses OPFS sync
-access handles; IndexedDB stores the copy catalog. Opening needs a connection. An open
-copy remains editable offline; connected reload/reopen is qualified.
+Each Room owns one phase: **Uploading → Live → Ended**. Its SQLite meta stores the owner
+UID, document UUID, plaintext capability, app digest and seed hash/size; other tables hold
+opaque update records and resource inventory. Only the verified owner can recover its
+capability. The Account object stores only the current room per document and non-Ended
+room membership for the ten-room quota. It holds no credentials or lifecycle phases.
 
-The native UI is disabled by default. Debug builds require `--live-sharing-preview` or
-`HITSLOP_LIVE_SHARING_PREVIEW=1`. Release builds additionally require the explicit
-`HITSLOP_SHARING_PREVIEW` Swift compilation condition. Native creators sign in with
-Apple through the separate Firebase account target. Guests need only an edit link;
-neither side needs an iCloud library. Invitations are stored in device-local Keychain
-items. CloudKit distributes the document, never its room credentials. A guest opens
-the link again on each device; an owner recovers it from their verified account.
-Signing out preserves existing capability-based sync and cached Copy Link, while
-creation, recovery and Stop require sign-in.
+## Lifecycle
 
-One SQLite Account Durable Object per verified UID reserves/indexes rooms. It keeps
-a recoverable plaintext edit capability privately until Stop; never log its responses.
-The room stores only the capability hash plus an immutable verified owner UID and
-room generation. It independently verifies Firebase identity on administration.
-Reservation → immutable local SQLite seed → room init/uploads → room publication →
-account finalization is retryable. The seed file itself is the local creation journal;
-there is no JSON creation-state credential or staging marker. Competing devices can
-reserve the same room, but cannot replace its first accepted seed. A failed upload
-can be finished on the device holding that seed, or cancelled with Stop.
+All HTTP routes use `/v1/`:
 
-Share preserves UUID, path, owner and full history. Join reuses an open or known
-matching file, or installs a missing canonical file in Application Support. Conflicting
-active membership is refused. Stop tombstones before cleanup and forgets the registry's
-plaintext capability; in-flight uploads check the tombstone and remove late writes.
-Re-share explicitly increments the generation and creates a new room. Stale requests
-cannot stop the replacement. Each UID may have 10 active/pending/stopping rooms;
-each room admits 32 connections. `CREATION_ENABLED` disables new reservations;
-operator rate limits start at 5 creates/minute/UID and 20 requests/minute/IP.
+- `POST /rooms` with Firebase identity and `{document}` returns `{room, capability, phase}`.
+  Retrying returns the existing Uploading/Live room. New rooms require `CREATION_ENABLED`,
+  per-UID rate limits and available quota.
+- During Uploading, the owner uploads `PUT /rooms/{room}/seed` with
+  `X-Sharing-SHA256`, `X-Sharing-App` and `X-Sharing-Version` headers; the server checks
+  the hash and stores seed metadata. Seed and `POST /rooms/{room}/resources` manifest
+  can be replaced. App bytes use `PUT /rooms/{room}/asset/{hash}`; attachments use
+  `PUT /rooms/{room}/blob/{hash}`.
+- `POST /rooms/{room}/open` verifies the seed, manifest and all app assets in R2 and
+  makes the room Live. Seed and app resources then become immutable.
+- `GET /rooms/{room}` returns document, phase, seed hash/size and app digest. Firebase
+  owner authentication also returns the capability. Guests use a capability bearer.
+  `GET /account/rooms/{document}` returns `{room}` or null for owner recovery.
+- `DELETE /rooms/{room}` by the owner ends sharing, closes sockets, purges R2 and tables,
+  and releases the account quota slot. Uploads crossing Stop delete late writes.
+  Uploading rooms expire through a 24-hour alarm. Re-share creates a fresh random room;
+  stale rooms return 410.
 
-The preview remains disabled by default. Account deletion, full-history recovery,
-remaining abuse controls and physical-device qualification still gate a public beta.
-Old unversioned preview endpoints and credentials are unsupported; their remote
-resources still need operator retirement. Local documents are retained.
+Guest seed/resource/blob reads, blob writes and `/sync` require Live plus the capability.
+WebSockets use the capability subprotocol; hosted app resources use a short-lived,
+host-scoped partitioned HttpOnly cookie. An edit link is
+`https://share.hitslop.com/join#<room>.<capability>`; Join reads seed metadata from the room.
 
-## Build and deploy
+Native creation backs up the current owner to a temporary file and retries uploads;
+there is no stable seed journal or original-device requirement. Share preserves UUID,
+path, owner and full history. Join reuses a matching file or installs a canonical copy.
+Credentials contain only `{link, ended}` and stay device-local, outside documents and
+CloudKit. Sign-out preserves existing capability sync and cached links; creation,
+owner recovery and Stop require Firebase identity. The account panel verifies its session
+through account lookup and displays a short UID hash.
 
-Use the workspace Rust/wasm-bindgen tools, LLVM and Binaryen described in the normal
-build setup. The sharing build installs `worker-build 0.8.7` into `generated/core-tools` when missing. You can also supply
-`HITSLOP_WORKER_BUILD` pointing to that version.
+`share.hitslop.com` hosts trusted workers and storage. Authored UI runs on separate
+`<copy UUID>.dotslop.com` origins. One browser host serves local resources through Service
+Worker channels and hosted resources through network requests and cookies. Authored code
+never receives the link. OPFS holds SQLite and IndexedDB holds the copy catalog.
+Connected opening is required; open copies remain editable offline and after Stop.
+
+The native preview requires `--live-sharing-preview` or `HITSLOP_LIVE_SHARING_PREVIEW=1`
+in Debug; Release also requires the `HITSLOP_SHARING_PREVIEW` compilation condition.
+Normal releases omit the feature. Old preview rooms and credentials are unsupported.
+
+## Build and qualification
+
+Use the normal workspace Rust, wasm-bindgen, LLVM and Binaryen setup. The sharing build
+installs `worker-build 0.8.7` into `generated/core-tools` when missing, or set
+`HITSLOP_WORKER_BUILD` to that version:
 
 ```sh
-cargo install worker-build --version 0.8.7 --locked --root generated/core-tools
 bun scripts/build/sharing.ts
 wrangler deploy --dry-run --config apps/sharing/wrangler.jsonc
 wrangler deploy --dry-run --config apps/sharing/host.wrangler.jsonc
+bun run verify sharing
+bun run verify
+bun run verify --native
 ```
 
-Create the private `hitslop-sharing-preview` R2 bucket once. The `dotslop.com` zone
-needs a proxied wildcard DNS record (`AAAA * → 100::`); the host config installs its
-wildcard Worker route and the `share.hitslop.com` custom domain. Existing exact spike
-custom domains are retained. The landing site's apex Worker is separate.
+`verify sharing` runs the real Rust WASM relay with SQLite Durable Objects and R2 in
+pinned Miniflare. Only the local runtime's certificate fetch uses a generated test key;
+production has no identity bypass. It covers idempotent creation, seed replacement,
+open, guest access, second-session owner recovery, authorization, Stop/upload cleanup,
+re-share and stale-room refusal.
 
-Deploy the relay first (the v2 migration adds the account namespace), then the host.
-No developer creation secret is shipped or accepted. The deployed fixture driver now
-requires a freshly refreshed Firebase ID token in an owner-readable file supplied by
-`HITSLOP_SHARING_TOKEN_FILE`; never put its contents in arguments or logs.
+The private R2 bucket is `hitslop-sharing-preview`. The `dotslop.com` zone needs a
+proxied wildcard DNS record (`AAAA * → 100::`); the host config declares its wildcard
+route and `share.hitslop.com` custom domain. Deployment is a separate operator action.
 
-Alternatively, create a disposable `tests/apps/sharing` document in the signed Mac
-app, share it there, and save Copy Edit Link to an owner-readable local file. Run the
-campaign with `HITSLOP_SHARING_INVITATION_FILE` pointing to that file. The Rust driver
-then joins as a signed-out native guest; browser profiles are also signed out. This
-avoids exporting the Mac Firebase session. When the campaign prints `Ready for Stop`,
-stop the disposable room in its signed-in owner app (the check waits up to five minutes).
-The campaign checks native pause/edit/reconnect, open-browser offline editing,
-connected refresh, download/native reopen and revocation. Keep invitation files and
-campaign directories private; neither credentials nor full UIDs belong in reports.
+The optional deployed campaign uses disposable infrastructure fixtures:
 
 ```sh
-wrangler deploy --config apps/sharing/wrangler.jsonc
-wrangler deploy --config apps/sharing/host.wrangler.jsonc
 cargo build --locked -p hitslop-sharing-client --example preview
-HITSLOP_SHARING_TOKEN_FILE=/private/path/to/token bun scripts/sharing/check-preview.ts
-bun run verify sharing
+HITSLOP_SHARING_INVITATION_FILE=/private/path/to/link bun scripts/sharing/check-preview.ts
 ```
 
-`verify sharing` is an explicit qualification tier. It builds the real Rust WASM relay
-and runs it with SQLite DOs and private R2 in pinned Miniflare. Only that local
-runtime's Google certificate fetch is replaced by a local public test key. Production
-has no test identity path. It exercises two creators, concurrent/idempotent reservations,
-immutable init, partial publication, guest-admin refusal, cold owner recovery,
-Stop during upload with empty retained R2 afterward, re-share and delayed init.
-The normal `verify`/`--native` tiers remain the required portable/native checks.
+Create the fixture with the signed owner app and save its edit link in a private file.
+The driver joins as a signed-out native guest and opens signed-out browser profiles.
+When prompted, Stop in the owner app. Alternatively supply `HITSLOP_SHARING_TOKEN_FILE`
+with a refreshed Firebase token in an owner-readable file. Never put secrets in arguments
+or reports. The campaign checks edits, offline/reconnect, private resources, attachment
+barriers, download/native reopen and revocation. Ignored reports stay under
+`.hitslop/sharing-preview/check-*`.
 
-The explicit deployed check creates and stops disposable fixture rooms. It qualifies
-real native/browser edits, restricted-cookie private assets, late join, interrupted
-file reception, process reopen, `.slop` download/native reopening and revocation.
-Reports and credentials stay under ignored `.hitslop/sharing-preview/check-*`; secrets
-are never included in the report. The preview example is a test driver, not a shipped
-CLI sharing command. Ordinary CI uses `bun run verify` (including Worker WASM clippy);
-use `bun run verify --native` when native/FFI work is complete.
+## Limits and follow-ups
 
-## Native identity
+Seeds and retained updates each have a 16 MiB limit; rooms admit 32 connections. App and
+attachment limits use core acceptance. Automatic CloudKit checkpoints for relay documents
+run at most once a minute per process; manual/background saves bypass the interval.
+Public rollout needs Save Unshared Copy, account deletion/Apple revocation, privacy,
+remaining abuse controls, broader device qualification and frozen protocol fixtures.
+Reliable offline web reopening and room compaction remain deferred.
 
-The developer-gated native **Sharing Account** panel signs in with Apple through a
-separate, named Firebase app. It refreshes a Firebase ID token and passes that transient
-token through UniFFI to the Rust client. `GET /v1/auth/probe` verifies it in the Rust
-Worker against Google's signing certificates and the configured Firebase project.
-The panel compares the returned UID with Firebase's UID and displays a short hash for
-cross-device comparison. Tokens and full UIDs are not logged or put in documents.
-`AUTH_PROBE_ENABLED` controls this route; `AUTH_LIMIT` throttles it by IP.
-Firebase manages its own local login persistence. The signed Mac proof completed
-Apple sign-in and deployed verification successfully. The subsequent physical
-Mac/iPhone pass confirms matching identity and second-device owner recovery; see
-the [phone evidence](../../docs/evidence/live-sharing-phone-2026-10-19.md).
+`HITSLOP_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,
+capabilities, room IDs or payloads. `HITSLOP_LIBRARY_TRACE=1` and an isolated
+`HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE` support CloudKit diagnosis without deleting cursors.
 
-The account registry and native lifecycle now use this identity. The old creator
-admin capability, preview creation key, synchronizable credentials and credential
-polling have been removed. Transport callbacks drive status; owner recovery runs on
-open, foreground, account change and opening the sharing controls. The signed-out guest,
-offline and refreshed account-backed browser happy paths now pass; see the
-[tester evidence](../../docs/evidence/authoring-environment-2026-10-19.md).
-
-The current build IDs remain `com.hitslop.app` (direct-download Mac) and
-`com.hitslop.iospreview` (development iOS). Both are grouped under the primary Apple
-sign-in ID `com.hitslop`, and both have Firebase registrations in `hitslopapp`.
-Production iOS and a future Mac build distributed through its same App Store record
-must use that record's `com.hitslop` bundle ID. Changing these development IDs is not
-needed to prove shared sign-in identity.
-
-For CloudKit diagnosis, a Debug build can opt into `HITSLOP_LIBRARY_TRACE=1` and a
-fresh `HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE` (1–64 ASCII letters, digits or hyphens).
-Use the same namespace on both test devices. It isolates the local library metadata
-and CloudKit zone from the ordinary library. Traces describe engine lifecycle,
-cursor persistence and event counts, with hashed cursor/version fingerprints and no
-document payloads or record IDs. Do not delete cursors as a recovery step. This
-instrumentation does not yet establish the cause of the earlier discovery misses.
-
-`HITSLOP_SHARING_TRACE=1` independently enables native Rust transport timing. It logs
-fixed event names and wall-clock milliseconds for bootstrap, socket lifecycle,
-inventory, push/ack and record/file receipt. It logs no tokens, capabilities, room
-IDs or payloads. Use same-device send/ack pairs for round trips; timestamps across
-uncalibrated devices do not measure one-way or visible latency.
-
-Rust owns HTTP DTOs, the invitation, resource policy, binary envelope and shared limits.
-`bun run schema:generate` generates TS and `openapi.json`. HTTP callers use those types;
-OpenAPI describes metadata/file routes, while WebSocket updates use the separately
-versioned binary protocol. There is no oRPC or second Swift HTTP client.
-
-## Preview limits and remaining qualification
-
-- Initial seed: 16 MiB; retained relay updates: 16 MiB. No room compaction yet.
-- Immutable app and attachment limits are the core's existing acceptance limits.
-- Automatic CloudKit checkpoints for relay documents are at most once a minute per
-  process. Manual/background saves bypass the interval; ordinary documents are unchanged.
-- Account-backed ownership is implemented behind the developer flag. Public beta
-  still needs account deletion, full-history rescue and remaining abuse controls.
-  Person-level permissions, read-only invitations, public catalog, universal links
-  and reliable offline web reopening remain deferred.
-- The account-backed physical Mac/iPhone pass confirms same UID, initial CloudKit
-  discovery, owner recovery without a link, bidirectional live edits, background
-  catch-up and Stop from the second device. Cold opening exposed a library registration
-  race; a native regression protects the fix, and the physical repeat passes post-Stop
-  CloudKit delivery, re-share, native Mac Join reuse and phone background/kill/relaunch.
-  The updated deployed campaign passes signed-out native/browser joining, deliberate
-  offline/reconnect, connected refresh/process reopen, attachment barriers,
-  download/native reopen and Stop. Broader phone/resource qualification remains open.
-- Four physical native acknowledgement samples were 83–152 ms; initial bootstrap and
-  inventory were slower. One-way and paint latency are unknown. See the qualifications
-  and limitations in the [phone evidence](../../docs/evidence/live-sharing-phone-2026-10-19.md).
-
-See the [architecture](../../docs/architecture.md#sync),
-[roadmap](../../docs/roadmap.md#later) and
-[account lifecycle evidence](../../docs/evidence/live-sharing-accounts-2026-10-19.md)
-and [earlier preview evidence](../../docs/evidence/live-sharing-preview-2026-10-19.md).
+See the [architecture](../../docs/architecture.md#relay), [roadmap](../../docs/roadmap.md#later),
+and historical [account](../../docs/evidence/live-sharing-accounts-2026-10-19.md),
+[device](../../docs/evidence/live-sharing-phone-2026-10-19.md) and
+[native/browser](../../docs/evidence/authoring-environment-2026-10-19.md) evidence.

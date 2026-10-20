@@ -1,8 +1,8 @@
-//! One SQLite Durable Object per room; immutable payloads in private R2.
+//! Room lifecycle and opaque relay records; private payloads in R2.
 use crate::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
 use hitslop_sharing_protocol::{
     CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL,
-    http::{AccountRoomInit, Invitation, RoomIdentity, RoomPhase, RoomReservation},
+    http::{CreatedRoom, RoomInfo, RoomInit, RoomPhase},
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -91,7 +91,10 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         let mut response = Response::empty()?.with_status(204);
         response.headers_mut().set("Access-Control-Allow-Origin", origin.as_deref().unwrap())?;
         response.headers_mut().set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE")?;
-        response.headers_mut().set("Access-Control-Allow-Headers", "Authorization, Content-Type")?;
+        response.headers_mut().set(
+            "Access-Control-Allow-Headers",
+            "Authorization, Content-Type, X-Sharing-SHA256, X-Sharing-App, X-Sharing-Version",
+        )?;
         response.headers_mut().set("Vary", "Origin")?;
         return Ok(response);
     }
@@ -120,51 +123,22 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         return Response::error("Protocol refused", 403);
     }
     let path = req.path();
-    if path == "/v1/auth/probe" && env.var("AUTH_PROBE_ENABLED").ok().is_some_and(|v| v.to_string() == "1") {
-        if req.method() != Method::Get {
-            return Response::error("Method refused", 405);
-        }
-        let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "local".into());
-        if !env.rate_limiter("AUTH_LIMIT")?.limit(ip).await?.success {
-            return Response::error("Rate limited", 429);
-        }
-        let mut response = match crate::auth::identity(&req, &env).await {
-            Ok(claims) => Response::from_json(&hitslop_sharing_protocol::http::VerifiedAccount {
-                uid: claims.sub,
-                auth_time: claims.auth_time,
-            })?,
-            Err(crate::auth::IdentityError::Denied) => Response::error("Sign in required", 401)?,
-            Err(crate::auth::IdentityError::Unavailable) => Response::error("Identity service unavailable", 503)?,
-        };
-        response.headers_mut().set("Cache-Control", "no-store")?;
-        if let Some(origin) = origin {
-            response.headers_mut().set("Access-Control-Allow-Origin", &origin)?;
-            response.headers_mut().set("Vary", "Origin")?;
-        }
-        return Ok(response);
-    }
     if path == "/health" {
         return Response::ok("hitslop-sharing-preview");
     }
-    let mut response = if path.starts_with("/v1/account/") {
+    let mut response = if path == "/v1/rooms" || path.starts_with("/v1/account/rooms/") {
         let claims = match crate::auth::identity(&req, &env).await {
             Ok(c) => c,
             Err(e) => return identity_response(e),
         };
-        if path == "/v1/account/reserve" {
-            let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "local".into());
-            if !env.rate_limiter("CREATE_LIMIT")?.limit(ip).await?.success {
-                return Response::error("Limited", 429);
-            }
-        }
         env.durable_object("ACCOUNTS")?.get_by_name(&hash(&claims.sub))?.fetch_with_request(req).await?
     } else {
         let parts: Vec<_> = path.split('/').collect();
-        if !(parts.len() == 5 || parts.len() == 6)
+        if !(4..=6).contains(&parts.len())
             || parts[1] != "v1"
             || parts[2] != "rooms"
             || parts[3].len() != 32
-            || !parts[3].bytes().all(|c| c.is_ascii_hexdigit())
+            || !parts[3].bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
         {
             return Response::error("Not found", 404);
         }
@@ -219,6 +193,7 @@ pub struct SlopRoom {
     state: State,
     env: Env,
     sql: SqlStorage,
+    uploads: futures_util::lock::Mutex<()>,
 }
 
 impl SlopRoom {
@@ -252,6 +227,22 @@ impl SlopRoom {
         raw.transaction_sync(callback.as_ref().unchecked_ref()).map_err(worker::Error::from)?;
         Ok(())
     }
+    fn phase(&self) -> Result<Option<RoomPhase>> {
+        self.text("phase")?.map(|v| serde_json::from_str(&v).map_err(Into::into)).transpose()
+    }
+    fn set_phase(&self, phase: RoomPhase) -> Result<()> {
+        self.put("phase", &serde_json::to_string(&phase)?)
+    }
+    fn info(&self, owner: bool) -> Result<RoomInfo> {
+        Ok(RoomInfo {
+            document: self.text("document")?.ok_or_else(|| fail("Missing document"))?,
+            phase: self.phase()?.ok_or_else(|| fail("Missing phase"))?,
+            seed_hash: self.text("seed_hash")?,
+            seed_size: self.text("seed_size")?.map(|s| s.parse().map_err(|_| fail("Invalid seed size"))).transpose()?,
+            app: self.text("app")?,
+            capability: if owner { self.text("capability")? } else { None },
+        })
+    }
     async fn authorized(&self, req: &Request, admin: bool) -> Result<bool> {
         if admin {
             let claims = match crate::auth::identity(req, &self.env).await {
@@ -262,32 +253,13 @@ impl SlopRoom {
         }
         let key = req.headers().get("Authorization")?.unwrap_or_default();
         let Some(key) = key.strip_prefix("Bearer ") else { return Ok(false) };
-        Ok(self.text("write")?.as_ref() == Some(&hash(key)))
-    }
-    async fn reservation(&self, req: &Request, document: &str) -> Result<Option<RoomReservation>> {
-        let headers = Headers::new();
-        headers.set("Authorization", &req.headers().get("Authorization")?.unwrap_or_default())?;
-        let mut init = RequestInit::new();
-        init.with_headers(headers);
-        let request = Request::new_with_init(&format!("https://account.internal/v1/account/access/{document}"), &init)?;
-        let claims = match crate::auth::identity(req, &self.env).await {
-            Ok(c) => c,
-            Err(_) => return Ok(None),
-        };
-        let mut response =
-            self.env.durable_object("ACCOUNTS")?.get_by_name(&hash(&claims.sub))?.fetch_with_request(request).await?;
-        if response.status_code() != 200 {
-            return Ok(None);
-        }
-        let bytes = response.bytes().await?;
-        if bytes.len() > CONTROL_BYTES {
-            return Err(fail("Account reply exceeds limit"));
-        }
-        Ok(serde_json::from_slice(&bytes)?)
+        // Compare fixed-length digests so response timing does not reveal a matching prefix.
+        Ok(self.text("capability")?.is_some_and(|stored| hash(&stored) == hash(key)))
     }
     async fn stop_room(&self, room: &str) -> Result<Response> {
-        self.put("ended", "1")?;
-        self.state.storage().sync().await?;
+        self.set_phase(RoomPhase::Ended)?;
+        // A retry alarm finishes cleanup and quota release after a transient failure.
+        self.state.storage().set_alarm(std::time::Duration::from_secs(60)).await?;
         for ws in self.state.get_websockets() {
             let _ = self.send(&ws, Frame::Error { code: 1, message: "Sharing ended".into() });
             let _ = ws.close(Some(1008), Some("Sharing ended"));
@@ -303,8 +275,21 @@ impl SlopRoom {
                 bucket.delete(item.key()).await?;
             }
         }
-        self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs", None)?;
-        self.sql.exec("DELETE FROM records; DELETE FROM chunks", None)?;
+        self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key NOT IN ('phase','owner_uid','document','room')", None)?;
+        self.state.storage().sync().await?;
+        let uid = self.text("owner_uid")?.ok_or_else(|| fail("Missing owner"))?;
+        let mut init = RequestInit::new();
+        init.with_method(Method::Post).with_body(Some(room.into()));
+        let response = self
+            .env
+            .durable_object("ACCOUNTS")?
+            .get_by_name(&hash(&uid))?
+            .fetch_with_request(Request::new_with_init("https://room.internal/internal/release", &init)?)
+            .await?;
+        if response.status_code() != 200 {
+            return Err(fail("Account release failed"));
+        }
+        self.state.storage().delete_alarm().await?;
         Response::ok("ended")
     }
     fn bytes(&self, seq: i64, size: usize) -> Result<Vec<u8>> {
@@ -404,7 +389,7 @@ impl SlopRoom {
             Ok(())
         })?;
         self.state.storage().sync().await?;
-        if self.text("ended")?.is_some() {
+        if self.phase()? == Some(RoomPhase::Ended) {
             return Err(fail("Sharing ended"));
         }
         self.send(ws, Frame::Ack { id, status: Ack::Stored })?;
@@ -419,7 +404,7 @@ impl SlopRoom {
         Ok(())
     }
     async fn message(&self, ws: &WebSocket, msg: WebSocketIncomingMessage) -> Result<()> {
-        if self.text("ended")?.is_some() || self.text("owner_uid")?.is_none() {
+        if self.phase()? != Some(RoomPhase::Live) {
             return Err(fail("Sharing ended"));
         }
         let WebSocketIncomingMessage::Binary(bytes) = msg else {
@@ -451,7 +436,7 @@ impl DurableObject for SlopRoom {
         );
         let sql = state.storage().sql();
         sql.exec("CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
-        Self { state, env, sql }
+        Self { state, env, sql, uploads: futures_util::lock::Mutex::new(()) }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
         if req.path().starts_with("/assets/")
@@ -462,220 +447,192 @@ impl DurableObject for SlopRoom {
         }
         let path = req.path();
         let parts: Vec<_> = path.split('/').collect();
-        if parts.len() < 5 {
+        if path.starts_with("/internal/rooms/")
+            && parts.len() == 5
+            && parts[4] == "init"
+            && req.method() == Method::Post
+        {
+            let room = parts[3];
+            let body = bounded_body(&mut req, CONTROL_BYTES).await?;
+            let input: RoomInit = serde_json::from_slice(&body)?;
+            if !hitslop_sharing_protocol::valid_copy(&input.document) || input.owner_uid.is_empty() {
+                return Response::error("Invalid metadata", 400);
+            }
+            if self.phase()? == Some(RoomPhase::Ended) {
+                return Response::error("Sharing ended", 410);
+            }
+            if self.phase()?.is_none() {
+                self.put("owner_uid", &input.owner_uid)?;
+                self.put("document", &input.document)?;
+                self.put("room", room)?;
+                self.put("capability", &random_hex(32)?)?;
+                self.set_phase(RoomPhase::Uploading)?;
+            }
+            // A retry also repairs a failed alarm write; no accepted Uploading room
+            // is left without its abandonment cleanup.
+            if self.phase()? == Some(RoomPhase::Uploading) {
+                self.state.storage().set_alarm(std::time::Duration::from_secs(24 * 60 * 60)).await?;
+            }
+            if self.phase()? == Some(RoomPhase::Ended) {
+                return Response::error("Sharing ended", 410);
+            }
+            if self.text("owner_uid")?.as_ref() != Some(&input.owner_uid)
+                || self.text("document")?.as_ref() != Some(&input.document)
+            {
+                return Response::error("Denied", 403);
+            }
+            return Response::from_json(&CreatedRoom {
+                room: room.into(),
+                capability: self.text("capability")?.ok_or_else(|| fail("Missing capability"))?,
+                phase: self.phase()?.ok_or_else(|| fail("Missing phase"))?,
+            });
+        }
+        if !(4..=6).contains(&parts.len()) {
             return Response::error("Not found", 404);
         }
         let room = parts[3];
-        let route = parts[4];
-        // Pre-account preview rooms have no server-verifiable owner. They have no
-        // legacy admin fallback, including through the new versioned URLs.
-        if self.text("app")?.is_some() && self.text("owner_uid")?.is_none() {
-            return Response::error("Preview sharing ended", 410);
-        }
-        if route == "init" && req.method() == Method::Post {
-            let claims = match crate::auth::identity(&req, &self.env).await {
-                Ok(c) => c,
-                Err(e) => return identity_response(e),
-            };
-            let body = bounded_body(&mut req, CONTROL_BYTES).await?;
-            let input: AccountRoomInit = match serde_json::from_slice(&body) {
-                Ok(v) => v,
-                Err(_) => return Response::error("Invalid metadata", 400),
-            };
-            let id = input.identity;
-            if id.room != room {
-                return Response::error("Different room", 409);
-            }
-            let Some(reservation) = self.reservation(&req, &id.document).await? else {
-                return Response::error("Reservation required", 403);
-            };
-            if reservation.room != room
-                || reservation.generation != id.generation
-                || !matches!(reservation.phase, RoomPhase::Pending | RoomPhase::Published)
-            {
-                return Response::error("Stale reservation", 409);
-            }
-            let Some(write) = reservation.capability else {
-                return Response::error("Sharing ended", 410);
-            };
-            if self.text("ended")?.is_some() {
-                return Response::error("Sharing ended", 410);
-            }
-            let init = input.init;
-            let heads = version(&init.seed)?;
-            let encoded = serde_json::to_string(&init)?;
-            if let Some(existing) = self.text("init")? {
-                return if existing == encoded
-                    && self.text("owner_uid")?.as_deref() == Some(&claims.sub)
-                    && self.text("identity")?.as_deref() == Some(&serde_json::to_string(&id)?)
-                {
-                    Response::ok("existing")
-                } else {
-                    Response::error("Immutable seed conflict; finish on the original device", 409)
-                };
-            }
-            if !crate::resource_types::hash_id(&init.app)
-                || !crate::resource_types::hash_id(&init.seed_hash)
-                || heads.len() != init.seed.len()
-            {
-                return Response::error("Invalid metadata", 400);
-            }
-            let sql = self.sql.clone();
-            self.transaction(move || {
-                for (key, value) in [
-                    ("init", encoded.clone()),
-                    ("app", init.app.clone()),
-                    ("seed_hash", init.seed_hash.clone()),
-                    ("heads", serde_json::to_string(&wire_version(&heads))?),
-                    ("owner_uid", claims.sub.clone()),
-                    ("identity", serde_json::to_string(&id)?),
-                    ("write", hash(&write)),
-                ] {
-                    sql.exec("INSERT INTO meta VALUES(?,?)", vec![key.into(), value.into()])?;
-                }
-                Ok(())
-            })?;
-            self.state.storage().sync().await?;
-            if self.text("ended")?.is_some() {
-                return Response::error("Sharing ended", 410);
-            }
-            return Response::ok("created");
-        }
-        // Stop must also tombstone a reservation that never reached init. A late
-        // init then cannot resurrect it after the account has released its quota.
-        if route == "stop" && req.method() == Method::Delete {
-            let claims = match crate::auth::identity(&req, &self.env).await {
-                Ok(c) => c,
-                Err(e) => return identity_response(e),
-            };
-            if self.text("owner_uid")?.is_some_and(|uid| uid != claims.sub) {
+        let route = parts.get(4).copied().unwrap_or("");
+        let Some(phase) = self.phase()? else {
+            return Response::error("Unknown room", 404);
+        };
+        if route.is_empty() && req.method() == Method::Delete {
+            if !self.authorized(&req, true).await? {
                 return Response::error("Denied", 403);
             }
-            let document = req.headers().get("X-Sharing-Document")?.or(self
-                .text("identity")?
-                .and_then(|s| serde_json::from_str::<RoomIdentity>(&s).ok())
-                .map(|id| id.document));
-            let Some(document) = document else {
-                return Response::error("Document required", 400);
-            };
-            let Some(reservation) = self.reservation(&req, &document).await? else {
-                return Response::error("Denied", 403);
-            };
-            if reservation.room != room || !matches!(reservation.phase, RoomPhase::Stopping | RoomPhase::Ended) {
-                return Response::error("Stale stop", 409);
-            }
-            self.put("owner_uid", &claims.sub)?;
             return self.stop_room(room).await;
         }
-        if self.text("app")?.is_none() {
-            return Response::error("Unknown room", 404);
-        }
-        let admin = route == "publish"
-            || (route == "seed" && req.method() == Method::Put)
-            || (route == "resources" && req.method() == Method::Post)
-            || (route == "asset" && req.method() == Method::Put);
-        if !self.authorized(&req, admin).await? {
-            return Response::error("Denied", 403);
-        }
-        if self.text("ended")?.is_some() && route != "stop" {
+        if phase == RoomPhase::Ended {
             return Response::error("Sharing ended", 410);
         }
-        if route == "publish" && req.method() == Method::Post {
-            if self.text("ready")?.is_none() {
+        if route.is_empty() && req.method() == Method::Get {
+            let guest = self.authorized(&req, false).await?;
+            let owner = !guest && self.authorized(&req, true).await?;
+            if !guest && !owner {
+                return Response::error("Denied", 403);
+            }
+            if self.phase()? == Some(RoomPhase::Ended) {
+                return Response::error("Sharing ended", 410);
+            }
+            if guest && self.phase()? != Some(RoomPhase::Live) {
+                return Response::error("Publication pending", 409);
+            }
+            return Response::from_json(&self.info(owner)?);
+        }
+        let owner_write = matches!(
+            (route, req.method()),
+            ("open", Method::Post) | ("seed", Method::Put) | ("resources", Method::Post) | ("asset", Method::Put)
+        );
+        let blob_upload = route == "blob" && req.method() == Method::Put;
+        let owner = if owner_write || (blob_upload && phase == RoomPhase::Uploading) {
+            if !self.authorized(&req, true).await? {
+                return Response::error("Denied", 403);
+            }
+            true
+        } else {
+            if !self.authorized(&req, false).await? {
+                return Response::error("Denied", 403);
+            }
+            false
+        };
+        // Serializing preparation and open prevents a late seed/manifest/asset write
+        // from changing a Live room. Stop stays independent and can cancel an upload.
+        let _upload = if owner { Some(self.uploads.lock().await) } else { None };
+        let phase = self.phase()?.ok_or_else(|| fail("Missing phase"))?;
+        if phase == RoomPhase::Ended {
+            return Response::error("Sharing ended", 410);
+        }
+        if route == "open" && req.method() == Method::Post {
+            if phase == RoomPhase::Live {
+                return Response::from_json(&self.info(true)?);
+            }
+            if self.text("seed_hash")?.is_none() {
                 return Response::error("Seed not ready", 409);
             }
             let Some(manifest) = self.text("resources")? else {
                 return Response::error("App not ready", 409);
             };
             let manifest: crate::resource_types::Manifest = serde_json::from_str(&manifest)?;
+            if self.text("app")?.as_ref() != Some(&manifest.app) {
+                return Response::error("Different app", 409);
+            }
             let bucket = self.env.bucket("SEEDS")?;
+            let seed_size: u64 =
+                self.text("seed_size")?.unwrap_or_default().parse().map_err(|_| fail("Invalid seed size"))?;
+            if bucket.head(format!("{room}/seed")).await?.is_none_or(|o| o.size() != seed_size) {
+                return Response::error("Seed not ready", 409);
+            }
             for item in manifest.resources {
                 if bucket.head(format!("{room}/assets/{}", item.hash)).await?.is_none_or(|o| o.size() != item.size) {
                     return Response::error("App not ready", 409);
                 }
             }
-            if self.text("ended")?.is_some() {
+            if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
-            self.put("published", "1")?;
-            self.state.storage().sync().await?;
-            let id: RoomIdentity =
-                serde_json::from_str(&self.text("identity")?.ok_or_else(|| fail("Missing identity"))?)?;
-            let Some(reservation) = self.reservation(&req, &id.document).await? else {
-                return Response::error("Denied", 403);
-            };
-            if self.text("ended")?.is_some()
-                || reservation.room != room
-                || reservation.generation != id.generation
-                || !matches!(reservation.phase, RoomPhase::Pending | RoomPhase::Published)
-            {
-                return Response::error("Sharing ended", 410);
-            }
-            return Response::from_json(&Invitation {
-                document: id.document,
-                room: room.into(),
-                origin: hitslop_sharing_protocol::TRUSTED_ORIGIN.into(),
-                capability: reservation.capability.ok_or_else(|| fail("Missing capability"))?,
-                seed_hash: self.text("seed_hash")?.ok_or_else(|| fail("Missing seed"))?,
-                size: self
-                    .text("seed_size")?
-                    .ok_or_else(|| fail("Missing seed size"))?
-                    .parse()
-                    .map_err(|_| fail("Invalid seed size"))?,
-            });
+            self.set_phase(RoomPhase::Live)?;
+            return Response::from_json(&self.info(true)?);
+        }
+        if owner_write && phase != RoomPhase::Uploading {
+            return Response::error("Room is live", 409);
+        }
+        if !owner && phase != RoomPhase::Live {
+            return Response::error("Publication pending", 409);
         }
         if matches!(route, "resources" | "asset" | "blobs" | "blob") {
             return self.resource_api(&mut req, room, route).await;
         }
         if route == "seed" {
-            if !matches!(req.method(), Method::Get | Method::Put) {
-                return Response::error("Method refused", 405);
-            }
             let bucket = self.env.bucket("SEEDS")?;
             let key = format!("{room}/seed");
             if req.method() == Method::Put {
-                let size =
-                    req.headers().get("Content-Length")?.and_then(|s| s.parse::<usize>().ok()).unwrap_or(usize::MAX);
-                if size > SEED_BYTES {
-                    return Response::error("Seed too large", 413);
+                let digest = req
+                    .headers()
+                    .get("X-Sharing-SHA256")?
+                    .or_else(|| req.url().ok()?.query_pairs().find(|(k, _)| k == "sha256").map(|(_, v)| v.into_owned()))
+                    .unwrap_or_default();
+                let app = req.headers().get("X-Sharing-App")?.unwrap_or_default();
+                let seed: Vec<(String, u32)> =
+                    match req.headers().get("X-Sharing-Version")?.and_then(|v| serde_json::from_str(&v).ok()) {
+                        Some(v) => v,
+                        None => return Response::error("Seed version required", 400),
+                    };
+                let heads = version(&seed)?;
+                if !crate::resource_types::hash_id(&digest)
+                    || !crate::resource_types::hash_id(&app)
+                    || heads.len() != seed.len()
+                {
+                    return Response::error("Invalid seed metadata", 400);
                 }
-                if self.text("ready")?.is_some() {
-                    return Response::ok("existing");
-                }
-                let digest = decode_hex(&self.text("seed_hash")?.ok_or_else(|| fail("Seed hash absent"))?)?;
                 let body = bounded_body(&mut req, SEED_BYTES).await?;
-                if body.len() != size {
-                    return Response::error("Seed length mismatch", 422);
+                if body.len() < 100 || hex(&Sha256::digest(&body)) != digest {
+                    return Response::error("Seed checksum mismatch", 422);
                 }
-                bucket.put(key, body).sha256(digest).execute().await?;
-                if self.text("ended")?.is_some() {
-                    bucket.delete(format!("{room}/seed")).await?;
+                if self.phase()? == Some(RoomPhase::Ended) {
                     return Response::error("Sharing ended", 410);
                 }
+                let size = body.len();
+                bucket.put(key.clone(), body).sha256(decode_hex(&digest)?).execute().await?;
+                if self.phase()? == Some(RoomPhase::Ended) {
+                    bucket.delete(key).await?;
+                    return Response::error("Sharing ended", 410);
+                }
+                self.put("seed_hash", &digest)?;
                 self.put("seed_size", &size.to_string())?;
-                self.put("ready", "1")?;
-                self.state.storage().sync().await?;
+                self.put("app", &app)?;
+                self.put("heads", &serde_json::to_string(&wire_version(&heads))?)?;
                 return Response::ok("ready");
             }
-            if self.text("published")?.is_none() {
-                return Response::error("Publication pending", 409);
+            if req.method() == Method::Get {
+                if let Some(object) = bucket.get(key).execute().await? {
+                    return Response::from_body(
+                        object.body().ok_or_else(|| fail("Seed has no body"))?.response_body()?,
+                    );
+                }
+                return Response::error("Seed missing", 404);
             }
-            if let Some(object) = bucket.get(key).execute().await? {
-                return Response::from_body(object.body().ok_or_else(|| fail("Seed has no body"))?.response_body()?);
-            }
-            return Response::error("Seed missing", 404);
-        }
-        if route == "stats" {
-            let n = self.sql.exec("SELECT count(*) AS n FROM records", None)?.one::<NumberRow>()?.n;
-            let bytes = self.sql.exec("SELECT coalesce(sum(size),0) AS n FROM records", None)?.one::<NumberRow>()?.n;
-            return Response::from_json(
-                &serde_json::json!({"records":n,"bytes":bytes,"heads":wire_version(&self.heads()?),"sockets":self.state.get_websockets().len()}),
-            );
+            return Response::error("Method refused", 405);
         }
         if route == "sync" && req.headers().get("Upgrade")?.as_deref() == Some("websocket") {
-            if self.text("published")?.is_none() {
-                return Response::error("Publication pending", 409);
-            }
             if self.state.get_websockets().len() >= hitslop_sharing_protocol::limits::ROOM_CONNECTIONS {
                 return Response::error("Room connection limit", 429);
             }
@@ -685,6 +642,13 @@ impl DurableObject for SlopRoom {
             return Response::from_websocket(pair.client);
         }
         Response::error("Not found", 404)
+    }
+    async fn alarm(&self) -> Result<Response> {
+        if matches!(self.phase()?, Some(RoomPhase::Uploading | RoomPhase::Ended)) {
+            let room = self.text("room")?.ok_or_else(|| fail("Missing room"))?;
+            return self.stop_room(&room).await;
+        }
+        Response::ok("live")
     }
     async fn websocket_message(&self, ws: WebSocket, message: WebSocketIncomingMessage) -> Result<()> {
         if let Err(error) = self.message(&ws, message).await {

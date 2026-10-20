@@ -12,17 +12,14 @@ import SwiftUI
 @MainActor public final class SharingAccount: ObservableObject {
   public static let shared = SharingAccount()
   private init() {}
-  public var signedIn: Bool {
-    configure()
-    return auth?.currentUser != nil
-  }
+  @Published public private(set) var signedIn = false
   public func token() async throws -> String {
     configure()
-    guard let user = auth?.currentUser else { throw SlopFailure("Sign in to your sharing account first.") }
+    guard let user = auth?.currentUser else { throw SlopFailure("Sign in with Apple first.") }
     return try await user.getIDToken()
   }
   @Published var fingerprint: String?
-  @Published var message = "Sign in to create and manage shared slops. Joining a link does not require an account."
+  @Published public private(set) var message = ""
   @Published var busy = false
   private var auth: Auth?
   private var nonce: String?
@@ -33,7 +30,7 @@ import SwiftUI
       guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
         let options = FirebaseOptions(contentsOfFile: path)
       else {
-        message = "The signed app is missing its Firebase configuration."
+        message = "Sign-in is unavailable in this app."
         return
       }
       FirebaseApp.configure(name: name, options: options)
@@ -43,11 +40,12 @@ import SwiftUI
     updateIdentity()
   }
   private func updateIdentity() {
+    signedIn = auth?.currentUser != nil
     fingerprint = auth?.currentUser.map { user in
       SHA256.hash(data: Data(user.uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
   }
-  func prepare(_ request: ASAuthorizationAppleIDRequest) {
+  public func prepare(_ request: ASAuthorizationAppleIDRequest) {
     var bytes = [UInt8](repeating: 0, count: 32)
     guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
       message = "Could not prepare sign-in. Try again."
@@ -58,8 +56,8 @@ import SwiftUI
     request.nonce = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
     request.requestedScopes = []
   }
-  func complete(_ result: Result<ASAuthorization, Error>) async {
-    guard !busy else { return }
+  public func complete(_ result: Result<ASAuthorization, Error>) async -> Bool {
+    guard !busy else { return false }
     busy = true
     defer {
       busy = false
@@ -76,36 +74,28 @@ import SwiftUI
       updateIdentity()
       NotificationCenter.default.post(name: .hitSlopSharingAccountChanged, object: nil)
       try await verify()
+      return true
     } catch {
       // Auth errors can carry provider response data. Keep the UI/logs generic.
-      message = "Sign-in or service verification failed. Check Apple/Firebase configuration and try again."
-    }
-  }
-  func checkService() async {
-    guard !busy else { return }
-    busy = true
-    defer { busy = false }
-    do { try await verify() } catch {
-      message = "The sharing service could not verify this session. Try signing in again."
+      message = "Could not finish signing in. Try again."
+      return false
     }
   }
   private func verify() async throws {
     guard let user = auth?.currentUser else { throw SlopFailure("Sign in required") }
-    let expected = user.uid
     let token = try await user.getIDToken(forcingRefresh: true)
-    let verified = try await Task.detached(priority: .utility) {
+    try await Task.detached(priority: .utility) {
       try sharingVerifyAccount(token: token)
     }.value
-    guard verified.uid == expected else { throw SlopFailure("Identity mismatch") }
-    message = "Sharing service verified. Compare the account code on your other device."
+    message = ""
     updateIdentity()
   }
-  func signOut() {
+  public func signOut() {
     do {
       try auth?.signOut()
       updateIdentity()
       NotificationCenter.default.post(name: .hitSlopSharingAccountChanged, object: nil)
-      message = "Signed out. Documents already joined on this device can continue syncing."
+      message = ""
     } catch { message = "Could not sign out. Try again." }
   }
 }
@@ -115,21 +105,25 @@ public struct SharingAccountView: View {
   public init() {}
   public var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text("Sharing Account").font(.title2.bold())
+      Text("Account").font(.title2.bold())
       if SharingPreview.enabled {
         if let fingerprint = account.fingerprint {
-          Text("Account code: \(fingerprint)").font(.system(.body, design: .monospaced)).textSelection(.enabled)
-          Button("Verify Sharing Service") { Task { await account.checkService() } }
+          Text("Signed in with Apple")
+          Text("Account code: \(fingerprint.prefix(8))").font(.footnote).textSelection(.enabled)
           Button("Sign Out") { account.signOut() }
         } else {
           SignInWithAppleButton(.signIn, onRequest: account.prepare) { result in
-            Task { await account.complete(result) }
+            Task { _ = await account.complete(result) }
           }.frame(height: 44)
+          Text("Sign in to start live links. Opening a shared link doesn't need an account.")
+            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
-        Text(account.message).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        if !account.message.isEmpty {
+          Text(account.message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+        }
         if account.busy { ProgressView() }
       } else {
-        Text("Sharing accounts are available in the developer preview.")
+        Text("Live collaboration is unavailable in this app.")
       }
     }
     .padding(24)

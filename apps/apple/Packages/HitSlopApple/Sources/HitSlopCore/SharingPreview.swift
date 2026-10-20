@@ -30,7 +30,7 @@ public enum SyncedLibraryPreview {
   }()
 }
 
-/// Opaque Rust invitations, local to this device. Owner recovery uses the account service.
+/// Rust link credentials stay on this device. Verified owners recover through the account index.
 public enum SharingCredentials {
   private static func query(_ document: String) throws -> [String: Any] {
     guard let group = Bundle.main.object(forInfoDictionaryKey: "SharingKeychainGroup") as? String,

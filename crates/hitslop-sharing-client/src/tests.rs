@@ -15,19 +15,9 @@ fn fixture() -> (tempfile::TempDir, Arc<Owner>) {
     (dir, owner)
 }
 #[test]
-fn immutable_local_seed_survives_retry_after_edits_without_persisting_admin_or_identity_tokens() {
-    let (dir, owner) = fixture();
-    let reservation = RoomReservation {
-        document: owner.app().document_uuid.clone().unwrap(),
-        room: "a".repeat(32),
-        generation: 1,
-        capability: Some("b".repeat(64)),
-        previous_room: None,
-        phase: RoomPhase::Pending,
-        invitation: None,
-    };
-    let (path, init, invitation) = stage(&owner, &dir.path().join("seeds"), &reservation).unwrap();
-    let bytes = std::fs::read(&path).unwrap();
+fn creation_retries_back_up_current_bytes_and_credentials_only_keep_link_and_ended() {
+    let (_dir, owner) = fixture();
+    let SeedBackup { path, hash: first_hash, .. } = stage(&owner).unwrap();
     request(
         &owner,
         Request::Apply {
@@ -37,32 +27,21 @@ fn immutable_local_seed_survives_retry_after_edits_without_persisting_admin_or_i
         },
     )
     .unwrap();
-    let (_, retry, same) = stage(&owner, &dir.path().join("seeds"), &reservation).unwrap();
-    assert_eq!(init.seed_hash, retry.seed_hash);
-    assert_eq!(invitation.seed_hash, same.seed_hash);
-    assert_eq!(std::fs::read(&path).unwrap(), bytes);
-    let key = Credential { invitation, ended: false }.encode().unwrap();
+    let SeedBackup { path: retry, hash: next_hash, .. } = stage(&owner).unwrap();
+    assert_ne!(path, retry);
+    assert_ne!(first_hash, next_hash);
+    let link = Invitation { room: "a".repeat(32), capability: "b".repeat(64) }.link().unwrap();
+    let key = joined_credential(&link).unwrap();
     let json: serde_json::Value = serde_json::from_str(&key).unwrap();
     assert_eq!(json.as_object().unwrap().len(), 2);
-    assert_eq!(accept_invitation(Some(&key), &same.link().unwrap()).unwrap(), key);
+    assert_eq!(json["link"], link);
+    assert_eq!(accept_invitation(Some(&key), &link).unwrap(), key);
     assert!(Client::restore(owner.clone(), &key).unwrap().status().link.is_some());
-    let mut other = reservation.clone();
-    other.room = "c".repeat(32);
-    assert!(validate_reservation_membership(owner.share().unwrap(), &other).is_err());
-    assert!(stage(&owner, &dir.path().join("seeds"), &other).is_err());
-    other.previous_room = Some(reservation.room);
-    assert!(
-        validate_reservation_membership(owner.share().unwrap(), &other).is_ok(),
-        "An owner on the ended predecessor can cancel its pending replacement"
-    );
-    assert!(
-        validate_reservation_membership(
-            Some(Share { room: other.room.clone(), endpoint: "https://attacker.example".into() }),
-            &other
-        )
-        .is_err()
-    );
-    assert!(stage(&owner, &dir.path().join("seeds"), &other).is_ok());
+    assert!(Credential::decode(r#"{"invitation":{},"ended":false}"#).is_err());
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_dir(path.parent().unwrap());
+    let _ = std::fs::remove_file(&retry);
+    let _ = std::fs::remove_dir(retry.parent().unwrap());
     request(&owner, Request::Close { preview: None, icon: None }).unwrap();
 }
 #[test]
@@ -113,6 +92,15 @@ fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry()
     let flags = (online.clone(), attempted.clone(), running.clone());
     let size = seed.len() as u32;
     let seed_hash = hex(&Sha256::digest(&seed));
+    let metadata = serde_json::to_vec(&RoomInfo {
+        document: owner.app().document_uuid.clone().unwrap(),
+        phase: RoomPhase::Live,
+        seed_hash: Some(seed_hash),
+        seed_size: Some(size),
+        app: Some(hex(&Store::open(owner.path(), Mode::Snapshot).unwrap().app_digest().unwrap())),
+        capability: None,
+    })
+    .unwrap();
     let serving = thread::spawn(move || {
         while flags.2.load(Ordering::Relaxed) {
             let Ok((mut stream, _)) = server.accept() else {
@@ -129,7 +117,13 @@ fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry()
                 request.push(byte[0]);
             }
             flags.1.store(true, Ordering::Relaxed);
-            let body = if flags.0.load(Ordering::Relaxed) { seed.as_slice() } else { &[] };
+            let is_seed =
+                String::from_utf8_lossy(&request).starts_with(&format!("GET /v1/rooms/{}/seed ", "a".repeat(32)));
+            let body = if flags.0.load(Ordering::Relaxed) {
+                if is_seed { seed.as_slice() } else { metadata.as_slice() }
+            } else {
+                &[]
+            };
             let status = if body.is_empty() { 503 } else { 200 };
             let _ = write!(
                 stream,
@@ -139,17 +133,7 @@ fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry()
             let _ = stream.write_all(body);
         }
     });
-    let key = Credential {
-        invitation: Invitation {
-            document: owner.app().document_uuid.clone().unwrap(),
-            room: "a".repeat(32),
-            origin: format!("http://{address}"),
-            capability: "b".repeat(64),
-            seed_hash,
-            size,
-        },
-        ended: false,
-    };
+    let key = RoomKey { room: "a".repeat(32), origin: format!("http://{address}"), capability: "b".repeat(64) };
     let connection = transport::Connection::start(owner.clone(), key, Arc::new(Mutex::new(None)));
     let result = || {
         let until = Instant::now() + Duration::from_secs(5);
@@ -169,7 +153,7 @@ fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry()
         while value() != 7 && Instant::now() < until {
             thread::sleep(Duration::from_millis(10));
         }
-        assert_eq!(value(), 7, "The accepted owner state must catch up without a UI action: {}", connection.status());
+        assert_eq!(value(), 7, "The accepted owner state must catch up without a UI action: {:?}", connection.status());
     };
     // Keep transport/server cleanup deterministic even when the assertion fails.
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(result));

@@ -85,10 +85,10 @@ pub(super) async fn entry(mut req: Request, env: Env) -> Result<Response> {
 
 impl SlopRoom {
     pub(super) async fn resource_fetch(&self, mut req: Request) -> Result<Response> {
-        if self.text("ended")?.is_some() || self.text("owner_uid")?.is_none() {
+        if self.phase()? == Some(RoomPhase::Ended) {
             return Response::error("Sharing ended", 410);
         }
-        if self.text("published")?.is_none() {
+        if self.phase()? != Some(RoomPhase::Live) {
             return Response::error("Publication pending", 409);
         }
         let host = req.url()?.origin().ascii_serialization();
@@ -98,7 +98,7 @@ impl SlopRoom {
             }
             let bytes = bounded_body(&mut req, CONTROL_BYTES).await?;
             let input: hitslop_sharing_protocol::http::ResourceGrant = serde_json::from_slice(&bytes)?;
-            if self.text("ended")?.is_some() {
+            if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
             let app = self.text("app")?.ok_or_else(|| fail("Missing app"))?;
@@ -118,7 +118,7 @@ impl SlopRoom {
                 vec![hash(&token).into(), host.into(), app.into(), expires.into()],
             )?;
             self.state.storage().sync().await?;
-            if self.text("ended")?.is_some() {
+            if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
             let room = req.path().trim_start_matches("/_resources/").to_string();
@@ -207,21 +207,16 @@ impl SlopRoom {
             }
             let body = bounded_body(req, CONTROL_BYTES).await?;
             let input: Manifest = serde_json::from_slice(&body)?;
-            if self.text("ended")?.is_some() {
+            if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
-            if resource_types::validate(&input.resources, false).is_err() {
+            if resource_types::validate(&input.resources, false).is_err() || !resource_types::hash_id(&input.app) {
                 return Response::error("Invalid app inventory", 400);
             }
             if self.text("app")?.as_deref() != Some(&input.app) {
                 return denied();
             }
             let text = serde_json::to_string(&input)?;
-            if let Some(old) = self.text("resources")?
-                && old != text
-            {
-                return Response::error("Immutable manifest conflict", 409);
-            }
             self.put("resources", &text)?;
             self.state.storage().sync().await?;
             return Response::ok("ready");
@@ -277,8 +272,13 @@ impl SlopRoom {
             if body.len() as u64 != item.size || hex(&Sha256::digest(&body)) != id {
                 return Response::error("Resource checksum or length mismatch", 422);
             }
+            // Reading the body yielded to Stop. Refuse before beginning a new write;
+            // if Stop races the R2 write itself, remove that late object afterwards.
+            if self.phase()? == Some(RoomPhase::Ended) {
+                return Response::error("Sharing ended", 410);
+            }
             bucket.put(key, body).sha256(decode_hex(id)?).execute().await?;
-            if self.text("ended")?.is_some() {
+            if self.phase()? == Some(RoomPhase::Ended) {
                 bucket.delete(format!("{room}/{}/{id}", if blob { "blobs" } else { "assets" })).await?;
                 return Response::error("Sharing ended", 410);
             }

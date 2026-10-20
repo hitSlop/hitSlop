@@ -650,89 +650,52 @@ checkpoint delivery does not change an existing owner's room membership.
 
 ### Relay
 
-A shared document syncs through a relay, one Cloudflare Durable Object per room. Every
-copy is a local owner under its own session peer and runs its own commands. An edit is
-saved locally and sent to the relay independently, so neither waits for the other and
-editing works offline; offline edits merge when the copy reconnects. The relay stores the
-Loro updates copies push, indexed by the operation spans they hold, and backfills a copy
-by its version vector. It never reads Loro, validates state or runs commands. The core side
-is implemented and tested in this repository. A local Durable Object experiment also
-qualified the protocol on Cloudflare's runtime
-([evidence](evidence/sync-spikes-2026-10.md)). A later Rust Worker passed a disposable
-hosted probe, and real SQLite owners passed local full-file seed and simulated CloudKit
-coexistence checks ([evidence](evidence/live-sharing-spikes-2026-10-18.md)). Signed isolated
-Mac/iPhone probes also passed shared Keychain delivery, native Rust TLS relay convergence,
-actual CloudKit checkpoint throttling and phone background/kill/relaunch
-([device evidence](evidence/live-sharing-native-spike-2026-10-18.md)). CloudKit discovery
-and a later checkpoint required diagnostic cursor resets and remain an investigation; the candidate
-throttle is process-local. A later public fixture passed hosted Chrome origins/storage,
-native/browser convergence and echo round-trip timing on real hitslop.com/dotslop.com
-hostnames ([web evidence](evidence/live-sharing-web-spike-2026-10-18.md)). Embedded Service
-Workers were denied under cookie restriction; the passing hosted experiment used direct
-immutable fixture UI files. A follow-up private-resource experiment passed Chrome
-partitioned HttpOnly grants, private app/media loading, seed/new attachment delivery,
-offline import/reconnect and native/browser inventory convergence
-([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). Its conservative
-HTTP inventory checks add latency; connected opening is required.
+The developer-gated sharing preview uses one Rust owner per local copy and a Loro-free
+Cloudflare Durable Object per room. Local saves and relay sends are independent;
+offline edits merge on reconnect. The relay stores opaque updates and their operation
+spans, backfills by version vector, and never runs authored code or validates document
+state. Rust owns the HTTP DTOs, generated TypeScript/OpenAPI, binary protocol and native
+transport; Swift calls through UniFFI.
 
-The integrated developer preview now lives in `apps/sharing` (deployable Rust Worker
-and static host), `crates/hitslop-sharing-protocol` (Loro-free DTOs, byte envelope,
-limits and resource policy) and `crates/hitslop-sharing-client` (native Rust transport).
-Rust generates TypeScript and OpenAPI; native UI uses UniFFI. Debug builds require an
-explicit launch flag; normal releases omit the feature. The new Share/Copy Link/Join/Stop
-controls use the current owner, device-local invitations and Apple/Firebase creator identity.
+A Room owns `Uploading → Live → Ended`. It stores its verified owner UID, document UUID,
+plaintext edit capability, app digest, seed hash/size and update records. Only the verified
+owner can recover the capability. An Account object holds a document-to-current-room
+index and a count of non-Ended rooms for the ten-room quota; it stores no credentials or
+phases. Account creation calls Room; Room releases its account slot when it ends.
 
-The trusted browser host/storage is `share.hitslop.com`; authored apps run on separate
-UUID subdomains of `dotslop.com`. SQLite uses OPFS in the trusted dedicated worker;
-IndexedDB stores the copy catalog. Host-scoped partitioned HttpOnly resource cookies
-renew independently; authored pages never receive the invitation. No embedded Service
-Worker is required. Incoming files are verified and installed through the owner before
-Records are applied. A failed transfer cancels its connection generation, including
-queued CaughtUp. Owner admission counts bytes before enqueue and rejects stale sockets.
+`POST /v1/rooms` with Firebase identity returns the existing Uploading/Live room or
+creates one. During Uploading, the owner can replace the seed and manifest and upload
+app assets and attachments. `POST /v1/rooms/{room}/open` checks the seed, manifest and
+assets in private R2 before making the room Live. Failed creation retries from a fresh
+temporary backup, including on another owner device. No local seed journal is needed.
+Uploading rooms expire after 24 hours. `DELETE /v1/rooms/{room}` ends sharing, closes
+sockets, purges resources and update tables, and releases quota. Uploads crossing Stop
+remove late writes. Re-share creates a fresh room; the old room returns 410.
 
-A per-UID account Durable Object reserves/indexes rooms and privately retains their
-recoverable edit capability until Stop. A room independently verifies the immutable
-owner UID and generation on administration; it stores only the edit capability hash.
-Guests need no account and reopen links per device. Sign-out keeps existing local sync
-and cached links usable; creation, owner recovery and Stop require sign-in.
+An edit link is `https://share.hitslop.com/join#<room>.<capability>`.
+Join fetches document and seed metadata from the room. Owner recovery looks up
+`GET /v1/account/rooms/{document}`, then reads the room with Firebase identity. Guests
+use the capability and need no account. Device-local credentials contain only the link
+and an ended flag; CloudKit never distributes them. Signing out preserves existing
+capability sync, while creation, recovery and Stop require sign-in.
 
-Reservation precedes staging. An immutable local SQLite seed, named by reserved room,
-is the retry journal; there is no staging marker or JSON creation-state credential.
-Init accepts one seed identity, uploads remain immutable, and account publication waits
-for the seed and all app files. Stop clears the recoverable bearer secret before remote
-cleanup; late publication cannot resurrect it, and late uploads delete their writes.
-Re-share explicitly advances the generation, preserving UUID and local state. HTTP
-routes are under `/v1/`; transport callbacks replace credential polling. Recovery runs
-on open, foreground, account change and opening Share. Joining reuses an open or known
-matching file, or installs a missing canonical copy without requiring CloudKit. Stop
-revokes remote access; local copies remain editable. Automatic CloudKit snapshots of relay documents are process-local
-checkpoints at most once a minute; manual/background saves bypass that interval.
+The trusted browser host/storage is `share.hitslop.com`; authored apps run on isolated
+UUID subdomains of `dotslop.com`. One browser host uses Service Worker channels for local
+resources and network delivery with host-scoped, partitioned HttpOnly cookies for hosted
+resources. SQLite uses OPFS in the trusted worker; IndexedDB stores the copy catalog.
+Authored pages receive the SDK bridge, never the invitation. Incoming files are verified
+and installed before Records apply; failed transfers fence queued CaughtUp messages.
+Connected web opening is required. Open copies remain editable offline and after Stop.
+Automatic CloudKit checkpoints of relay documents run at most once a minute per process;
+manual/background saves bypass the interval.
 
-A deployed native/browser fixture campaign passed private resources under cookie
-restriction, concurrent edits, late join, interrupted receive ordering, connected
-process reopen, SQLite download/native reopen and revocation
-([integrated evidence](evidence/live-sharing-preview-2026-10-19.md)). The signed Mac app
-also passed creation, Copy Edit Link, credential restoration, native/browser edits and
-Stop under the earlier preview. A subsequent physical Mac/iPhone pass confirmed the
-same Firebase identity, CloudKit discovery, account-based owner recovery, live edits
-in both directions, background catch-up and Stop from the second device
-([phone evidence](evidence/live-sharing-phone-2026-10-19.md)). It exposed a cold-launch
-owner registration race; the native registry now registers already-open writers when
-the asynchronous library connects. Rust continues to own those writers and merges.
-The account lifecycle is implemented behind that same developer gate. The real WASM
-relay passes local SQLite DO/R2 qualification with two signed test identities,
-concurrent reservations, partial publication, guest-admin refusal, cold owner recovery,
-Stop/upload cleanup and re-share. This is separate from the earlier deployed preview
-campaign; see [account evidence](evidence/live-sharing-accounts-2026-10-19.md).
-Old unversioned preview ownership is unsupported and awaits operator retirement.
-The physical repeat also passed replacement-generation recovery, native Join reusing
-an open Mac owner, background/kill/relaunch, and post-Stop CloudKit delivery without
-cursor resets. The iPhone editor uses native navigation and a full-display page under
-system glass controls. Its initial loading view blocks editing until page readiness;
-subsequent synchronization keeps valid saved copies editable.
-Public rollout still requires signed-out guest/offline and deployed browser qualification,
-account deletion, remaining abuse controls and full-history recovery below. Offline
-web reopening and compaction remain deferred ([roadmap](roadmap.md#later)).
+The preview requires the native developer flag. Production rollout, Save Unshared Copy,
+account deletion, further abuse controls, reliable offline web reopening and compaction
+remain [later work](roadmap.md#later). Historical qualifications are recorded in the
+[account](evidence/live-sharing-accounts-2026-10-19.md),
+[device](evidence/live-sharing-phone-2026-10-19.md) and
+[native/browser](evidence/authoring-environment-2026-10-19.md) evidence.
+
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
   credential the host keeps, never in the file or in authored code. Sharing uploads a
   backup of the document (same UUID and history) as the room's seed, and joining
@@ -740,7 +703,7 @@ web reopening and compaction remain deferred ([roadmap](roadmap.md#later)).
   history and every attachment, because another copy's edits can depend on any of it, and
   it refuses discard, because other copies may already hold its edits. Relay compaction
   may only ever keep full history. A clean copy is unshared.
-- **Hooks** (`owner/actor/sync.rs`, Rust only until a client exists). The host opens a socket
+- **Hooks** (`owner/actor/sync.rs`). The host opens a socket
   and attaches the owner with a sink (`sync_attach`), hands it each frame in order
   (`sync_frame`), sends each frame the sink receives and detaches when the socket closes
   (`sync_detach`). The sink also hears the status: offline; syncing (catching up, or

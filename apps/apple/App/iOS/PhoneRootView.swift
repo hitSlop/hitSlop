@@ -79,8 +79,8 @@ struct PhoneRootView: View {
           }
           Section {
             if SharingPreview.enabled {
-              Button("Join Shared Slop", systemImage: "person.2") { showJoin = true }
-              Button("Sharing Account", systemImage: "person.crop.circle") { showSharingAccount = true }
+              Button("Open Shared Link…", systemImage: "person.2") { showJoin = true }
+              Button("Account", systemImage: "person.crop.circle") { showSharingAccount = true }
             }
             Button("Import from Files", systemImage: "square.and.arrow.down") {
               importAfterSettings = true

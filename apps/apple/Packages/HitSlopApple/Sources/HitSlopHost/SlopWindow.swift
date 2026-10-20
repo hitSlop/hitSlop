@@ -152,11 +152,11 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var themeEditor: SlopThemeEditorModel?
   lazy var sharePopover = SlopSharePopover(
     filename: SlopLibrary.shared.entry(at: url)?.title ?? url.lastPathComponent, canExport: canExport,
+    sharing: session.sharing,
     holdToolbar: { [weak self] in self?.toolbar.holdForSharing($0) },
     select: { [weak self] in self?.request($0) })
   let fullscreen = FullscreenController()
   var commandsEnabled = true
-  var liveSharingPanel: NSPanel?
   /// Undo for this window's document; see `DocumentUndoManager`.
   lazy var documentUndo = DocumentUndoManager(session: session)
   var presentation: WindowPresentation
@@ -345,7 +345,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     guard let candidate else { return false }
     return candidate === window || candidate === toolbar.panel || candidate === themePanel
       || candidate === sharePopover.window
-      || candidate === presentation.progress?.panel || candidate === liveSharingPanel
+      || candidate === presentation.progress?.panel
   }
   /// Whether the coordinator accepts commands now; the toolbar follows it.
   public func setCommandsEnabled(_ enabled: Bool) {

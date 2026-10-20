@@ -5,7 +5,7 @@ import HitSlopCore
 import HitSlopCoreBinding
 import SwiftUI
 
-private func sharingMessage(_ error: Error) -> String {
+func sharingMessage(_ error: Error) -> String {
   if case SharingError.Failed(let message) = error { return message }
   return error.localizedDescription
 }
@@ -63,22 +63,25 @@ private actor SharingDriver {
     return status()
   }
   func status() -> SharingStatus? {
+    if accountPhase == .ended {
+      return SharingStatus(phase: .ended, detail: "Sharing ended", link: nil, creator: true)
+    }
     if accountPhase == .preparing {
       return SharingStatus(
-        phase: .preparing, detail: "Finish creating this link on the device that started it.", link: nil, creator: true)
+        phase: .preparing, detail: "Sharing upload is incomplete. Retry creating the edit link.", link: nil,
+        creator: true)
     }
     if let client { return client.status() }
     guard let phase = accountPhase else { return nil }
     return SharingStatus(
       phase: phase,
-      detail: phase == .ended ? "Sharing ended" : "Finish creating this link on the device that started it.", link: nil,
+      detail: phase == .ended ? "Sharing ended" : "Sharing upload is incomplete. Retry creating the edit link.",
+      link: nil,
       creator: true)
   }
   func start(token: String) throws -> SharingStatus? {
-    let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("hitSlop/Sharing/Seeds", isDirectory: true)
     client?.pause()
-    let published = try sharingCreate(owner: owner, root: root.path, token: token)
+    let published = try sharingCreate(owner: owner, token: token)
     try SharingCredentials.write(published, document: document)
     return try refresh(token: token, reconnect: true)
   }
@@ -104,6 +107,7 @@ private actor SharingDriver {
   @Published public private(set) var status: SharingStatus?
   @Published public private(set) var error: String?
   @Published public private(set) var busy = false
+  @Published public private(set) var acting = false
   private let driver: SharingDriver
   private var active = true
   private var triggers: AnyCancellable?
@@ -126,7 +130,7 @@ private actor SharingDriver {
     refresh()
   }
   public func refresh() {
-    run {
+    run(acting: false) {
       let token = try? await SharingAccount.shared.token()
       return try await self.driver.refresh(token: token)
     }
@@ -135,7 +139,8 @@ private actor SharingDriver {
     active = false
     await driver.pause()
   }
-  public func create() {
+  /// Returns false when another sharing operation is still running.
+  @discardableResult public func create() -> Bool {
     run {
       let token = try await SharingAccount.shared.token()
       return try await self.driver.start(token: token)
@@ -153,12 +158,17 @@ private actor SharingDriver {
       return try await self.driver.stop(token: token)
     }
   }
-  private func run(_ operation: @escaping @MainActor () async throws -> SharingStatus?) {
-    guard active, !busy else { return }
+  @discardableResult
+  private func run(acting: Bool = true, _ operation: @escaping @MainActor () async throws -> SharingStatus?) -> Bool {
+    guard active, !busy else { return false }
     busy = true
+    self.acting = acting
     error = nil
     Task {
-      defer { busy = false }
+      defer {
+        busy = false
+        self.acting = false
+      }
       do {
         let next = try await operation()
         if active { status = next }
@@ -169,13 +179,14 @@ private actor SharingDriver {
         }
       }
     }
+    return true
   }
 
   /// Resolve the canonical local file, including an already-open document. Joining
   /// never imports a duplicate or requires an iCloud library.
   public static func join(_ link: String, candidates: [URL] = []) async throws -> URL {
     guard SharingPreview.enabled else { throw SlopFailure("Live sharing preview is disabled.") }
-    let document = try sharingDocument(link: link)
+    let document = try await SlopPreparation.run { try sharingDocument(link: link) }
     let live = DocumentSession.sharedSession(document: document)
     let nativeOwner = live?.owner.native
     let paths = candidates + SlopLibrary.shared.entries.map { URL(fileURLWithPath: $0.path) }

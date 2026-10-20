@@ -8,7 +8,7 @@ export default {
     const trusted = url.origin === SharingHost.origin;
     const authored = url.protocol === "https:" && url.hostname.endsWith(`.${SharingHost.domain}`);
     if (!trusted && !authored) return new Response("Unknown origin", { status: 403 });
-    if ((trusted && (url.pathname.startsWith("/rooms/") || url.pathname.startsWith("/v1/") || url.pathname === "/health")) ||
+    if ((trusted && (url.pathname.startsWith("/v1/") || url.pathname === "/health")) ||
         (authored && /^\/(assets|attachments|_resources)\//.test(url.pathname)))
       return env.RELAY.fetch(request);
     if (request.method !== "GET" && request.method !== "HEAD")
@@ -17,6 +17,7 @@ export default {
     if (authored) {
       if (path === "/") path = "/frame.html";
       else if (path === "/frame.js") path = "/browser/frame.js";
+      else if (path === "/service-worker.js") path = "/browser/service-worker.js";
       else return new Response("Not found", { status: 404 });
     } else if (path === "/" || path === "/join") path = "/index.html";
     else if (!/^\/browser\/(host|worker)\.js$/.test(path) &&

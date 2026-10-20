@@ -10,11 +10,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     hitslop_core::preview::PreviewRequest::export_all(&config)?;
     hitslop_core::browser_wire::BrowserRequest::export_all(&config)?;
     hitslop_core::browser_wire::BrowserEvent::export_all(&config)?;
-    hitslop_sharing_protocol::http::RoomInit::export_all(&config)?;
-    hitslop_sharing_protocol::http::AccountRoomInit::export_all(&config)?;
-    hitslop_sharing_protocol::http::ReserveRoom::export_all(&config)?;
-    hitslop_sharing_protocol::http::RoomReservation::export_all(&config)?;
-    hitslop_sharing_protocol::http::VerifiedAccount::export_all(&config)?;
+    hitslop_sharing_protocol::http::CreateRoom::export_all(&config)?;
+    hitslop_sharing_protocol::http::CreatedRoom::export_all(&config)?;
+    hitslop_sharing_protocol::http::AccountRoom::export_all(&config)?;
+    hitslop_sharing_protocol::http::RoomInfo::export_all(&config)?;
     hitslop_sharing_protocol::http::ResourceGrant::export_all(&config)?;
     hitslop_sharing_protocol::http::ApiFailure::export_all(&config)?;
     hitslop_sharing_protocol::http::ConnectionPlan::export_all(&config)?;

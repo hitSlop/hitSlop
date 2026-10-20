@@ -16,6 +16,8 @@ self.addEventListener("fetch", (event) => {
           return new Response(null, { status: 405 });
         const client = await self.clients.get(event.clientId);
         if (!client) return new Response("The browser copy is no longer open", { status: 503 });
+        if (url.protocol === "https:" && new URL(client.url).searchParams.get("local") !== "1")
+          return fetch(event.request);
         const route = match[1] === "assets" ? "app" : "attachment";
         const key = decodeURIComponent(match[2]!);
         const request = (fields: Record<string, unknown>) =>

@@ -208,7 +208,6 @@ private struct UpdateSettingsView: View {
   @objc private func toggleFullscreen() { coordinator.activeController?.toggleFullscreen() }
   @objc private func togglePin() { coordinator.activeController?.togglePin() }
   @objc private func toggleTheme() { coordinator.activeController?.toggleTheme() }
-  @objc private func showLiveSharing() { coordinator.activeController?.showLiveSharing() }
   @objc private func joinSharedSlop() {
     showCatalog()
     DispatchQueue.main.async { NotificationCenter.default.post(name: .hitSlopJoinSharedSlop, object: nil) }
@@ -235,7 +234,7 @@ private struct UpdateSettingsView: View {
     if sharingAccountWindow == nil {
       let content = SharingAccountView().frame(minWidth: 440, minHeight: 260)
       let window = NSWindow(contentViewController: NSHostingController(rootView: content))
-      window.title = "Sharing Account"
+      window.title = "Account"
       window.styleMask = [.titled, .closable]
       window.isReleasedWhenClosed = false
       window.center()
@@ -275,7 +274,7 @@ private struct UpdateSettingsView: View {
     updates.target = updaterController
     app.addItem(.separator())
     item(app, "Settings…", #selector(showSettings), ",")
-    if SharingPreview.enabled { item(app, "Sharing Account…", #selector(showSharingAccount), "") }
+    if SharingPreview.enabled { item(app, "Account…", #selector(showSharingAccount), "") }
     app.addItem(.separator())
     let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
     let servicesMenu = NSMenu(title: "Services")
@@ -298,7 +297,7 @@ private struct UpdateSettingsView: View {
     if SyncedLibraryPreview.enabled {
       item(file, "New Synced Checklist…", #selector(newSyncedChecklist), "")
     }
-    if SharingPreview.enabled { item(file, "Join Shared Slop…", #selector(joinSharedSlop), "") }
+    if SharingPreview.enabled { item(file, "Open Shared Link…", #selector(joinSharedSlop), "") }
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
     let recent = NSMenu(title: "Open Recent")
@@ -309,7 +308,6 @@ private struct UpdateSettingsView: View {
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
     item(file, "Share…", .share)
-    if SharingPreview.enabled { item(file, "Live Sharing…", #selector(showLiveSharing), "") }
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
     export.submenu = exportMenu
@@ -404,7 +402,6 @@ private struct UpdateSettingsView: View {
     case #selector(toggleTheme):
       menuItem.state = controller?.isThemeShown == true ? .on : .off
       return controller?.canToggleTheme ?? false
-    case #selector(showLiveSharing): return controller?.canShowLiveSharing ?? false
     case #selector(newSyncedChecklist): return SlopLibrary.shared.isReady
     default: return true
     }
