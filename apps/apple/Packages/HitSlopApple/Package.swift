@@ -24,7 +24,7 @@ let package = Package(
       name: "HitSlopCoreBinding", dependencies: ["HitSlopCoreFFI"], path: "Generated/HitSlopCoreBinding",
       swiftSettings: [.swiftLanguageMode(.v5)], linkerSettings: [.linkedLibrary("sqlite3")]),
     .target(
-      name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopAccount"],
+      name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopAccount", "HitSlopWidgets"],
       resources: [.copy("Resources/shell")], linkerSettings: [.linkedFramework("WebKit")]),
     .target(
       name: "HitSlopTestSupport", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument"],

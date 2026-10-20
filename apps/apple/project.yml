@@ -26,8 +26,9 @@ targets:
     platform: iOS
     sources:
       - path: App/iOS
-        excludes: [Info.plist, hitSlop.entitlements, GoogleService-Info.plist]
-      - path: App/iOS/GoogleService-Info.plist
+        excludes: [Info.plist, hitSlop.entitlements]
+      - path: App/Shared/WidgetIntent.swift
+      - path: App/macOS/GoogleService-Info.plist
         buildPhase: resources
       - path: App/Shared/Assets.xcassets
       - path: ../../generated/ios/StarterTemplates
@@ -40,10 +41,13 @@ targets:
         product: HitSlopDocument
       - package: HitSlopApple
         product: HitSlopAccount
+      - package: HitSlopApple
+        product: HitSlopWidgets
+      - target: hitSlop-iOS-Widgets
       - target: hitSlop-iOS-Thumbnail
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.iospreview
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app
         PRODUCT_NAME: hitSlopPhone
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: App/iOS/Info.plist
@@ -51,6 +55,30 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         SKIP_INSTALL: NO
+  hitSlop-iOS-Widgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - App/Widgets/SlopImageWidget.swift
+      - App/Shared/WidgetIntent.swift
+    dependencies:
+      - package: HitSlopApple
+        product: HitSlopWidgets
+      - sdk: WidgetKit.framework
+    info:
+      path: App/iOSWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: hitSlop
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.widgets
+        CODE_SIGN_ENTITLEMENTS: App/iOSWidgets/Widgets.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: YES
   hitSlop-iOS-Thumbnail:
     type: app-extension
     platform: iOS
@@ -75,7 +103,7 @@ targets:
             QLThumbnailMinimumDimension: 0
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.iospreview.thumbnail
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.quicklook-thumbnail
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
   hitSlop-iOS-Tests:
@@ -94,7 +122,7 @@ targets:
         product: HitSlopDocument
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.iospreview.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.tests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/hitSlopPhone.app/hitSlopPhone
@@ -107,7 +135,7 @@ targets:
       - target: hitSlop-iOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.iospreview.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.uitests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
         TEST_TARGET_NAME: hitSlop-iOS

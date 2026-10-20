@@ -1,6 +1,7 @@
 import HitSlopAccount
 import HitSlopCore
 import HitSlopDocument
+import HitSlopWidgets
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -131,13 +132,24 @@ struct PhoneRootView: View {
       }
     }
     .onChange(of: library.entries) { _, _ in model.libraryChanged() }
+    .onChange(of: library.hasLoaded) { _, _ in model.libraryChanged() }
     .onChange(of: scenePhase) { _, phase in
       library.activated(phase == .active)
-      if phase == .active { model.session?.sharing?.resume() }
+      if phase == .active {
+        model.session?.sharing?.resume()
+        model.widgets.foreground()
+      }
       if phase == .inactive { model.saveOnInactive() }
       if phase == .background { model.saveInBackground() }
     }
-    .onOpenURL { model.importDocument($0) }
+    .onOpenURL { url in
+      if let id = WidgetCache.selectionID(from: url) {
+        path = path.filter(\.isDocument)
+        model.open(libraryID: id)
+      } else {
+        model.importDocument(url)
+      }
+    }
   }
 
   private var navigationPath: Binding<[PhoneRoute]> {

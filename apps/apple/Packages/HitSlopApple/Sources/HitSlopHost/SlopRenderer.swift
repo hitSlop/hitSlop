@@ -153,10 +153,7 @@ import HitSlopWidgets
   public static func widgetImages(url: URL) async throws -> [WidgetImage] {
     try await widgetCapture(url: url).images
   }
-  struct WidgetCapture {
-    let sourceVersion: String
-    let images: [WidgetImage]
-  }
+  typealias WidgetCapture = DocumentWidgetCapture
   static func widgetSourceVersion(url: URL) async throws -> String {
     let runtime = try nativeRuntime.get()
     return try await SlopPreparation.run(on: captureQueue) {
@@ -170,14 +167,7 @@ import HitSlopWidgets
     try nativeWidgets(try await captureNative(url: url, outputs: [.widgets])[0].result)
   }
   private static func nativeWidgets(_ result: RenderedOutput) throws -> WidgetCapture {
-    switch result {
-    case .widgets(let capture):
-      return WidgetCapture(
-        sourceVersion: capture.sourceVersion,
-        images: capture.images.map { WidgetImage(family: WidgetImageFamily($0.family), png: Data($0.png)) })
-    case .failed(let failure): throw CoreError.Failure(failure: failure)
-    case .image: throw SlopFailure("Unexpected capture result")
-    }
+    try DocumentWidgetCapture(result)
   }
 }
 

@@ -55,6 +55,8 @@ final class LibraryOwners: Sendable {
       try library.publishArtwork(owner: owner, sourceVersion: sourceVersion, preview: preview, icon: icon)
     }.value
   }
+  @Published public private(set) var hasLoaded = false
+  @Published public private(set) var accountIdentity = ""
   @Published public private(set) var entries: [SyncedSlop] = []
   @Published public private(set) var issues: [String: String] = [:]
   @Published public private(set) var status = "Connecting to iCloud…"
@@ -95,21 +97,24 @@ final class LibraryOwners: Sendable {
   private func connect() async {
     guard !connecting else { return }
     connecting = true
-    defer { connecting = false }
+    defer {
+      connecting = false
+      hasLoaded = true
+    }
     do {
       // Unsigned tools and the package test host never initialize CloudKit.
-      guard
-        Bundle.main.bundleIdentifier == "com.hitslop.app" || Bundle.main.bundleIdentifier == "com.hitslop.iospreview"
-      else {
+      guard Bundle.main.bundleIdentifier == "com.hitslop.app" else {
         status = "iCloud sync is available in the signed hitSlop app."
         return
       }
       let container = self.container ?? CKContainer(identifier: "iCloud.com.hitslop.syncspike")
       self.container = container
-      guard try await container.accountStatus() == .available else {
+      let accountStatus = try await container.accountStatus()
+      guard accountStatus == .available else {
         await transport?.stop()
         isReady = false
         try Self.active.activate(nil)
+        if accountStatus == .noAccount || accountStatus == .restricted { accountIdentity = "unavailable" }
         status = "Sign in to iCloud to sync your slops."
         return
       }
@@ -119,6 +124,7 @@ final class LibraryOwners: Sendable {
         await transport?.stop()
         isReady = false
         try Self.active.activate(nil)
+        accountIdentity = "unavailable"
         status = "Not syncing. Your previous account’s local slops are kept on this device."
         return
       }
@@ -128,6 +134,7 @@ final class LibraryOwners: Sendable {
           try await transport.start()
           isReady = true
         }
+        await refresh()
         try await transport.sync(explicit: false)
         await refresh()
         return
@@ -160,17 +167,25 @@ final class LibraryOwners: Sendable {
       try await transport.start()
       isReady = true
       status = "iCloud connected"
+      await refresh()
       try await transport.sync(explicit: false)
       await refresh()
     } catch { status = libraryMessage(error) }
   }
   public func refresh() async {
     guard let transport else { return }
+    if !(await transport.accountIsCurrent) { accountIdentity = "unavailable" }
     do {
       let (entries, issues) = try await transport.snapshot()
       if entries != self.entries { self.entries = entries }
       self.issues = issues
+      hasLoaded = true
       let stats = await transport.stats()
+      if !(await transport.accountIsCurrent) {
+        accountIdentity = "unavailable"
+      } else if stats.failure.isEmpty {
+        accountIdentity = account
+      }
       if !stats.failure.isEmpty {
         isReady = false
         status = "Not syncing. \(stats.failure)"

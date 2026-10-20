@@ -533,7 +533,11 @@ that queue and do not rewrite document artwork when only widget images are missi
 intervals after sleep. Open documents use the owner save/copy barrier; closed ones use
 the read-only snapshot path. Quitting stops captures and file watchers and leaves cached images. WidgetKit
 controls visible reload timing. The `slop dev` composition selector previews all three families with HMR. iOS
-background capture remains follow-up work. See the [platform spike evidence](evidence/widget-images-2026-10-11.md).
+Home Screen widgets use the shared image cache and canvases, keyed by library document id. The phone
+publishes an atomic library index with stored icons for the picker and renders only placed ids,
+on saves, close, library version changes and foreground freshness checks. Taps open the library
+document by id. Account changes clear the phone cache; Mac bookmarks and file identity stay local
+to macOS. iOS background capture remains follow-up work. See the [platform spike evidence](evidence/widget-images-2026-10-11.md).
 
 ## CLI
 
