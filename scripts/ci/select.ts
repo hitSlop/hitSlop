@@ -1,16 +1,17 @@
 /** Event policy only; file ownership remains in verification-inputs.ts. */
 import { run } from "../../packages/hitslop/src/cli/process";
 import { repository } from "../lib/artifacts";
-import { nativeGateInputs, sharedInputs, touchesCompatibility, type TierName } from "../lib/verification-inputs";
+import { affectedTiers, nativeGateInputs, sharedInputs, touchesCompatibility, type TierName } from "../lib/verification-inputs";
 import { changedPaths } from "../lib/verification";
 
 /** Required jobs exercise shipping boundaries. Browser/sync qualification never blocks a PR.
  * `nativeGate` is false for a pull request into master that changes nothing in
  * `nativeGateInputs`: its Swift/native tiers are deferred to the master push. */
-export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate = true) {
+export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate = true, appBuild = false) {
   const pick = (names: TierName[]) => tiers.filter(name => names.includes(name)).join(",");
   return {
     fast: pick(["compat", "tooling", "contracts", "types", "bun", "cli", "render", "packed", "landing"]),
+    app: appBuild || event === "schedule" || event === "workflow_dispatch" ? "app" : "",
     native: nativeGate ? pick(["swift", "native"]) : "",
     nativeRust: pick(["rust"]),
     rust: pick(["rust"]),
@@ -46,13 +47,15 @@ export function verificationArgs(env: Record<string, string | undefined>): strin
 }
 
 if (import.meta.main) {
-  const selection = JSON.parse(await run([process.execPath, "scripts/verify.ts", ...verificationArgs(process.env)], { cwd: repository }));
+  const args = verificationArgs(process.env);
+  const selection = JSON.parse(await run([process.execPath, "scripts/verify.ts", ...args], { cwd: repository }));
   const base = process.env.GITHUB_BASE_REF;
   const ref = process.env.GITHUB_EVENT_NAME === "pull_request" ? `origin/${base}` : process.env.CHANGE_BASE;
   const paths = ref && ref !== "0".repeat(40) ? (await changedPaths(repository, ref)).paths : undefined;
   const gate = process.env.GITHUB_EVENT_NAME !== "pull_request" || !base || base.startsWith("hotfix/")
     || touchesNativeGate(paths ?? []);
   console.log(JSON.stringify({ ...selection, jobs: {
-    ...ciJobs(selection.tiers.map((tier: { name: TierName }) => tier.name), process.env.GITHUB_EVENT_NAME, gate),
+    ...ciJobs(selection.tiers.map((tier: { name: TierName }) => tier.name), process.env.GITHUB_EVENT_NAME, gate,
+      args.includes("--all") || affectedTiers(paths ?? [], ["app"]).length > 0),
   } }));
 }

@@ -39,6 +39,7 @@ test("CI selection works before dependencies are installed", async () => {
     expect(result.tiers).toEqual(JSON.parse(listing.stdout).tiers);
     expect(result.jobs.native).toBe("swift,native");
     expect(result.jobs.nativeRust).toBe("rust");
+    expect(result.jobs.app).toBe("app");
     expect(await readdir(root)).not.toContain("node_modules");
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -99,17 +100,26 @@ test("nightly, manual and release branches select the full suite; ordinary chang
 });
 
 test("required CI keeps document compatibility and packaging, without browser qualification or duplicated portable checks", () => {
-  const jobs = (paths: string[], event = "pull_request") => ciJobs(affected(...paths), event);
+  const jobs = (paths: string[], event = "pull_request") => ciJobs(affected(...paths), event, true, affectedTiers(paths, ["app"]).length > 0);
   const core = jobs(["crates/hitslop-core/src/store.rs"]);
   expect(core.native).toBe("swift,native");
   expect(core.nativeRust).toBe("rust");
   expect(core.rust).toBe("rust");
   expect(core.fast.split(",")).toEqual(expect.arrayContaining(["contracts", "bun", "cli", "packed"]));
   expect(core.qualification).toBe("");
+  expect(core.app).toBe("app");
+  for (const path of ["apps/apple/App/macOS/hitSlopApp.swift", "apps/apple/App/iOS/hitSlopPhoneApp.swift",
+    "Cargo.lock", "packages/hitslop/src/shell/boot.js", "scripts/build/apple.ts", "scripts/build/core.ts",
+    "scripts/templates/embed.ts", "scripts/release/app-commands.ts", "slops/bundled.json",
+    "slops/quick-checklist/slop.ts", ".github/actions/native-cache/action.yml", ".github/workflows/ci.yml"])
+    expect(jobs([path]).app, path).toBe("app");
+  for (const event of ["schedule", "workflow_dispatch"])
+    expect(ciJobs([], event).app).toBe("app");
+  expect(ciJobs([], "pull_request", false, true).app).toBe("app");
   const corpus = jobs(["scripts/compat/required-history.json"]);
   expect(corpus.fast.split(",")).toContain("compat");
   expect(corpus.native).toBe("swift,native");
-  const none = { native: "", nativeRust: "", rust: "", deferred: "", qualification: "" };
+  const none = { app: "", native: "", nativeRust: "", rust: "", deferred: "", qualification: "" };
   expect(jobs(["docs/testing.md"])).toEqual({ fast: "", ...none });
   for (const path of ["tests/native/render.native.test.ts", "tests/native/landing.native.test.ts", "packages/hitslop/tests/cli/build.native.test.ts"])
     expect(jobs([path])).toEqual({ fast: "types,render", ...none });

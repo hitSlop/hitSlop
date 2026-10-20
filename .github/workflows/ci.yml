@@ -35,6 +35,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       fast: ${{ steps.select.outputs.fast }}
+      app: ${{ steps.select.outputs.app }}
       native: ${{ steps.select.outputs.native }}
       native-rust: ${{ steps.select.outputs.nativeRust }}
       rust: ${{ steps.select.outputs.rust }}
@@ -52,7 +53,7 @@ jobs:
         run: |
           bun scripts/ci/select.ts > selection.json
           jq -r '.jobs | to_entries[] | "\(.key): \(.value)"' selection.json >> "$GITHUB_STEP_SUMMARY"
-          for job in fast native nativeRust rust deferred qualification; do
+          for job in fast app native nativeRust rust deferred qualification; do
             echo "$job=$(jq -r --arg job "$job" '.jobs[$job]' selection.json)" >> "$GITHUB_OUTPUT"
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -130,6 +131,34 @@ jobs:
           name: native-evidence
           path: .hitslop/evidence
           include-hidden-files: true
+  app:
+    needs: select
+    if: needs.select.outputs.app != ''
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/prepare-checks
+        with:
+          nextest: "false"
+          bindings: native
+      - uses: ./.github/actions/native-cache
+        with:
+          templates: release
+      - run: brew install xcodegen
+      - name: Build macOS app
+        env:
+          HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+        run: |
+          bun scripts/build/build.ts --prepare native,shell
+          # XcodeGen validates iOS resource paths even for the macOS scheme.
+          mkdir -p generated/ios/StarterTemplates generated/ios/Fixtures
+          bun run apple:build --compile-only
+      - name: Prune Rust build before caching
+        if: github.event_name != 'pull_request'
+        run: bash scripts/ci/prune-cargo-target.sh
   # Rust on macOS (platform SQLite, Darwin sandbox, the released macOS writers), in parallel
   # with the Swift/native job. WASM lints run once, on Linux.
   native-rust:

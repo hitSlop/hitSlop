@@ -31,6 +31,8 @@ await run([
   "CODE_SIGNING_ALLOWED=NO",
   "build",
 ]);
+// CI compiles the app targets only; release qualification runs the app itself.
+if (process.argv.includes("--compile-only")) process.exit(0);
 // Validate Xcode Run's product before it is copied for the artifact check.
 await verifyAppCommands(resolve(derived, "Build/Products/Debug/hitSlop.app"));
 await mkdir("generated/app", { recursive: true });
