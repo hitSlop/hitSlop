@@ -46,7 +46,7 @@ struct PhoneEditorView: View {
           Button("Theme", systemImage: "paintpalette") { model.showTheme = true }
           Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { Task { await library.syncNow() } }
           if session.sharing != nil {
-            Button("Live Sharing", systemImage: "person.2") { showSharing = true }
+            Button("Collaborate", systemImage: "person.2") { showSharing = true }
           }
           Button("Back Up File", systemImage: "square.and.arrow.up") { model.export() }
             .accessibilityIdentifier("export-file")
@@ -60,7 +60,17 @@ struct PhoneEditorView: View {
       }
     }
     .sheet(isPresented: $showSharing) {
-      if let sharing = session.sharing { DocumentSharingView(model: sharing) }
+      if let sharing = session.sharing {
+        NavigationStack {
+          Form { LiveCollaborationSection(model: sharing) }
+            .navigationTitle("Share")
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { showSharing = false }
+              }
+            }
+        }.onAppear { sharing.refresh() }
+      }
     }
   }
 }
