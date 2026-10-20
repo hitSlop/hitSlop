@@ -32,7 +32,10 @@ import WidgetKit
     let marker = cache.root.appendingPathComponent("account")
     do {
       let previous = try? String(contentsOf: marker, encoding: .utf8)
-      if previous != account { try cache.clear() }
+      if previous != account {
+        try cache.clear()
+        WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind)
+      }
       try FileManager.default.createDirectory(at: cache.root, withIntermediateDirectories: true)
       try Data(account.utf8).write(to: marker, options: .atomic)
       if account != "unavailable" {
@@ -51,9 +54,14 @@ import WidgetKit
     let started = lifetime
     let visible = next.filter { !$0.deleted }
     let ids = Set(visible.map(\.id))
+    var removed = false
     do {
-      for record in cache.records() where !ids.contains(record.id) { try cache.remove(libraryID: record.id) }
+      for record in cache.records() where !ids.contains(record.id) {
+        try cache.remove(libraryID: record.id)
+        removed = true
+      }
     } catch { report(error) }
+    if removed { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
     Task {
       do {
         let index = try await DocumentArtworkRenderer.libraryIndex(entries: visible)

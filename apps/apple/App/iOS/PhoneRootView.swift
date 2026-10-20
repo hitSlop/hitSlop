@@ -146,7 +146,7 @@ struct PhoneRootView: View {
       if let id = WidgetCache.selectionID(from: url) {
         path = path.filter(\.isDocument)
         model.open(libraryID: id)
-      } else {
+      } else if url.isFileURL {
         model.importDocument(url)
       }
     }
