@@ -13,6 +13,9 @@
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>UILaunchScreen</key><dict/>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
+  <key>NSCameraUsageDescription</key><string>A slop you open can use the camera when it declares it, for example to take a photo you keep in the document.</string>
+  <key>NSMicrophoneUsageDescription</key><string>A slop you open can use the microphone when it declares it, for example to record a voice note you keep in the document.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>A slop you open can turn a recording in the document into text when it declares speech. Recognition runs on this iPhone; recordings are never sent to Apple.</string>
   <key>UIUserInterfaceStyle</key><string>Light</string>
   <key>UIApplicationSupportsIndirectInputEvents</key><true/>
   <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>

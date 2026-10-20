@@ -171,19 +171,14 @@ import WebKit
       SlopLibrary.shared.start()
       return
     }
-    let showSelection: @MainActor () -> Void = { [self] in
-      guard let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else {
-        message = "This document is no longer in your library."
-        return
-      }
-      open(URL(fileURLWithPath: entry.path))
-    }
-    if let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }),
-      session?.file.url == URL(fileURLWithPath: entry.path)
-    {
+    // Resolve before closing, so a stale widget never costs the open document.
+    guard let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else {
+      message = "This document is no longer in your library."
       return
     }
-    close { closed in if closed { showSelection() } }
+    let url = URL(fileURLWithPath: entry.path)
+    guard session?.file.url != url else { return }
+    close { [self] closed in if closed { open(url) } }
   }
   func join(_ link: String) async throws {
     guard session == nil else { throw SlopFailure("Close your current document before joining another.") }
