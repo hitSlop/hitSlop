@@ -8,10 +8,13 @@ extension Notification.Name {
   public static let hitSlopNewSyncedChecklist = Notification.Name("hitSlop.newSyncedChecklist")
 }
 
-/// This preview requires an explicit developer launch flag; it is absent from ordinary releases.
+/// Preview builds (the `HITSLOP_SHARING_PREVIEW` compilation condition, e.g. TestFlight) enable it;
+/// Debug needs a launch flag; ordinary releases never include it.
 public enum SharingPreview {
   public static let enabled: Bool = {
-    #if DEBUG || HITSLOP_SHARING_PREVIEW
+    #if HITSLOP_SHARING_PREVIEW
+      true
+    #elseif DEBUG
       ProcessInfo.processInfo.arguments.contains("--live-sharing-preview")
         || ProcessInfo.processInfo.environment["HITSLOP_LIVE_SHARING_PREVIEW"] == "1"
     #else

@@ -53,8 +53,8 @@ never receives the link. OPFS holds SQLite and IndexedDB holds the copy catalog.
 Connected opening is required; open copies remain editable offline and after Stop.
 
 The native preview requires `--live-sharing-preview` or `HITSLOP_LIVE_SHARING_PREVIEW=1`
-in Debug; Release also requires the `HITSLOP_SHARING_PREVIEW` compilation condition.
-Normal releases omit the feature. Old preview rooms and credentials are unsupported.
+in Debug. A build compiled with the `HITSLOP_SHARING_PREVIEW` condition (TestFlight preview
+builds) enables it without a flag. Normal releases omit the feature. Old preview rooms and credentials are unsupported.
 
 ## Build and qualification
 
