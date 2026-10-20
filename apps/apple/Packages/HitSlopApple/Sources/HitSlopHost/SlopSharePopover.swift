@@ -107,7 +107,7 @@ struct SlopShareButton: NSViewRepresentable {
     if !picking { holdToolbar(false) }
   }
 
-  var canDismiss: Bool { preparing == nil && sharing?.busy != true && !collaborationInteracting }
+  var canDismiss: Bool { preparing == nil && sharing?.acting != true && !collaborationInteracting }
   func setCollaborationInteracting(_ value: Bool) { collaborationInteracting = value }
   func popoverShouldClose(_ popover: NSPopover) -> Bool { canDismiss }
   func popoverDidClose(_ notification: Notification) {

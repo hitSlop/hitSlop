@@ -301,7 +301,11 @@ async function own() {
             return;
           }
           if (data.type === "sync") {
-            if (data.status === "Sharing ended") sharingEnded = true;
+            if (data.status === "Sharing ended") {
+              sharingEnded = true;
+              resourcesResolve();
+              joinedResolve();
+            }
             document.querySelector("#sync")!.textContent = data.status;
             if (data.status === "Synced") joinedResolve();
             return;

@@ -107,6 +107,7 @@ private actor SharingDriver {
   @Published public private(set) var status: SharingStatus?
   @Published public private(set) var error: String?
   @Published public private(set) var busy = false
+  @Published public private(set) var acting = false
   private let driver: SharingDriver
   private var active = true
   private var triggers: AnyCancellable?
@@ -129,7 +130,7 @@ private actor SharingDriver {
     refresh()
   }
   public func refresh() {
-    run {
+    run(acting: false) {
       let token = try? await SharingAccount.shared.token()
       return try await self.driver.refresh(token: token)
     }
@@ -156,12 +157,16 @@ private actor SharingDriver {
       return try await self.driver.stop(token: token)
     }
   }
-  private func run(_ operation: @escaping @MainActor () async throws -> SharingStatus?) {
+  private func run(acting: Bool = true, _ operation: @escaping @MainActor () async throws -> SharingStatus?) {
     guard active, !busy else { return }
     busy = true
+    self.acting = acting
     error = nil
     Task {
-      defer { busy = false }
+      defer {
+        busy = false
+        self.acting = false
+      }
       do {
         let next = try await operation()
         if active { status = next }

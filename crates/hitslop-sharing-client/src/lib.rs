@@ -454,15 +454,15 @@ pub fn install(destination: &Path, link: &str) -> Result<()> {
     let stage = destination.with_extension(format!("{}.stage", random()?));
     let result = (|| {
         private_file(&stage, &bytes)?;
-        snapshot::install(&stage, destination, &info.document)?;
         // A re-share seed may still contain its predecessor's membership. Bind the
         // new replica through its owner before callers restore the new credential.
-        let owner = Owner::open(destination, Mode::Document, Arc::new(|_| {})).map_err(fail)?;
+        let owner = Owner::open(&stage, Mode::Document, Arc::new(|_| {})).map_err(fail)?;
         let binding =
             request(&owner, Request::Share { share: Share { room: key.room.clone(), endpoint: key.origin.clone() } });
         let closed = request(&owner, Request::Close { preview: None, icon: None });
         binding?;
         closed?;
+        snapshot::install(&stage, destination, &info.document)?;
         Ok(())
     })();
     let _ = std::fs::remove_file(stage);

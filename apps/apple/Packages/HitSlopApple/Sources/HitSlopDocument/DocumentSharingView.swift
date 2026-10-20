@@ -31,7 +31,7 @@ public struct LiveCollaborationSection: View {
 
   private var live: Bool { model.status.map { $0.phase != .ended } ?? false }
   private var joined: Bool { live && model.status?.creator == false }
-  private var holdingOpen: Bool { model.busy || signingIn || confirmingStop }
+  private var holdingOpen: Bool { model.acting || signingIn || pendingStart || confirmingStop }
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -56,7 +56,7 @@ public struct LiveCollaborationSection: View {
       .toggleStyle(.switch)
       .disabled(model.busy || signingIn || joined)
 
-      if starting && model.busy {
+      if starting && model.acting {
         HStack(spacing: 8) {
           ProgressView().controlSize(.small)
           Text("Starting live link…").font(.caption)
