@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { frameDocument } from "../../packages/hitslop/src/cli/frame-document";
 import { exec } from "../../packages/hitslop/src/cli/process";
 import { repository, publishFolder } from "../lib/artifacts";
 import { buildBrowserWasm } from "./core";
@@ -23,7 +24,7 @@ export async function buildSharing() {
     await cp(join(repository, "packages/hitslop/src/browser/index.html"), join(stage, "index.html"));
     await cp(join(repository, "generated/browser/core"), join(browser, "core"), { recursive: true });
     await cp(join(repository, "apps/sharing/openapi.json"), join(stage, "openapi.json"));
-    await Bun.write(join(stage, "frame.html"), '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}#app{width:100%;height:100%}</style></head><body><div id="app"></div><script type="module" src="/frame.js"></script></body></html>');
+    await Bun.write(join(stage, "frame.html"), frameDocument);
   });
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-relay-build-"));
   try {
