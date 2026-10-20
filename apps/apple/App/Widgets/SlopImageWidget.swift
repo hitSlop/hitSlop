@@ -1,14 +1,21 @@
 import AppIntents
-import AppKit
 import HitSlopWidgets
 import SwiftUI
 import WidgetKit
+
+#if os(macOS)
+  import AppKit
+  private typealias PlatformImage = NSImage
+#else
+  import UIKit
+  private typealias PlatformImage = UIImage
+#endif
 
 private struct Entry: TimelineEntry {
   let date: Date
   let id: String?
   let title: String
-  let image: NSImage?
+  let image: PlatformImage?
   var generation: String? = nil
 }
 
@@ -26,10 +33,15 @@ private struct Provider: AppIntentTimelineProvider {
     guard let cache = try? WidgetCache.shared(), let record = cache.record(id: selection.id) else {
       return Entry(date: Date(), id: selection.id, title: selection.title, image: nil)
     }
+    #if os(iOS)
+      let title = cache.libraryIndex().first(where: { $0.id == record.id })?.title ?? record.title
+    #else
+      let title = record.title
+    #endif
     let data = cache.imageData(
       record, context.family == .systemSmall ? .small : context.family == .systemMedium ? .medium : .large)
     return Entry(
-      date: Date(), id: record.id, title: record.title, image: data.flatMap { NSImage(data: $0) },
+      date: Date(), id: record.id, title: title, image: data.flatMap { PlatformImage(data: $0) },
       generation: record.generation)
   }
 }
@@ -39,25 +51,41 @@ private struct ImageView: View {
   var body: some View {
     Group {
       if let image = entry.image {
-        Image(nsImage: image).renderingMode(.original).resizable()
+        platformImage(image).renderingMode(.original).resizable()
           .widgetAccentedRenderingMode(.fullColor).scaledToFit()
           .accessibilityLabel("Open \(entry.title)")
           .id(entry.generation)
       } else {
         VStack(spacing: 8) {
           Text(entry.title).font(.headline)
-          Text(
-            entry.id == nil
-              ? "Right-click, then choose Edit Widget → Document."
-              : "Open this document in hitSlop to refresh its widget."
-          )
-          .font(.caption).multilineTextAlignment(.center)
+          #if os(macOS)
+            Text(
+              entry.id == nil
+                ? "Right-click, then choose Edit Widget → Document."
+                : "Open this document in hitSlop to refresh its widget."
+            )
+            .font(.caption).multilineTextAlignment(.center)
+          #else
+            Text(
+              entry.id == nil
+                ? "Touch and hold, then choose Edit Widget."
+                : "Open hitSlop to update this widget."
+            )
+            .font(.caption).multilineTextAlignment(.center)
+          #endif
         }.padding()
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .containerBackground(for: .widget) { Color.clear }
     .widgetURL(entry.id.map { WidgetCache.openURL(id: $0) } ?? URL(string: "hitslop://widgets"))
+  }
+  private func platformImage(_ image: PlatformImage) -> Image {
+    #if os(macOS)
+      Image(nsImage: image)
+    #else
+      Image(uiImage: image)
+    #endif
   }
 }
 
@@ -67,7 +95,11 @@ private struct ImageView: View {
       ImageView(entry: $0)
     }
     .configurationDisplayName("Document")
-    .description("Keep a slop on your desktop. Click to open it.")
+    #if os(macOS)
+      .description("Keep a slop on your desktop. Click to open it.")
+    #else
+      .description("Keep a slop on your Home Screen. Tap to open it.")
+    #endif
     .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     .contentMarginsDisabled()
     .containerBackgroundRemovable(false)

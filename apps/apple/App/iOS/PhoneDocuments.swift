@@ -23,12 +23,15 @@ import WebKit
   @Published var showImporter = false
   @Published var showTheme = false
   @Published var exported: URL?
+  private var pendingLibraryID: String?
+  private(set) lazy var widgets = PhoneWidgetPublisher { [weak self] in self?.session }
   private var backgroundID: UIBackgroundTaskIdentifier = .invalid
   private var backgroundSave: Task<Void, Never>?
   private let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("Documents", isDirectory: true)
 
   init() {
+    _ = widgets
     SlopRegistry.sweep()
     do {
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -72,6 +75,10 @@ import WebKit
     }
   }
   func libraryChanged() {
+    if SlopLibrary.shared.hasLoaded, let id = pendingLibraryID {
+      pendingLibraryID = nil
+      open(libraryID: id)
+    }
     guard let session, SlopLibrary.shared.entry(at: session.file.url)?.deleted == true, !busy else { return }
     perform {
       let drafts = try await session.prepareClose()
@@ -121,14 +128,16 @@ import WebKit
     }
     busy = true
     Task {
-      defer { busy = false }
+      let succeeded: Bool
       do {
         try await operation()
-        completion(true)
+        succeeded = true
       } catch {
         message = error.localizedDescription
-        completion(false)
+        succeeded = false
       }
+      busy = false
+      completion(succeeded)
     }
   }
   func importDocument(_ source: URL) {
@@ -156,6 +165,26 @@ import WebKit
     }
   }
   func open(_ url: URL) { perform { try await self.show(url) } }
+  func open(libraryID: String) {
+    guard SlopLibrary.shared.hasLoaded else {
+      pendingLibraryID = libraryID
+      SlopLibrary.shared.start()
+      return
+    }
+    let showSelection: @MainActor () -> Void = { [self] in
+      guard let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else {
+        message = "This document is no longer in your library."
+        return
+      }
+      open(URL(fileURLWithPath: entry.path))
+    }
+    if let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }),
+      session?.file.url == URL(fileURLWithPath: entry.path)
+    {
+      return
+    }
+    close { closed in if closed { showSelection() } }
+  }
   func join(_ link: String) async throws {
     guard session == nil else { throw SlopFailure("Close your current document before joining another.") }
     let url = try await DocumentSharing.join(link, candidates: documents)
@@ -186,6 +215,7 @@ import WebKit
         await session.cancelClose()
         throw SlopFailure("Some text could not be saved. Keep this document open and copy that text before closing.")
       }
+      await self.widgets.closing(session)
       do { _ = try await DocumentArtworkRenderer.refresh(session: session) } catch {
         NSLog("hitSlop artwork refresh failed: %@", error.localizedDescription)
       }
@@ -258,6 +288,7 @@ import WebKit
   func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     self.saveStatus = saveStatus
     if case .failed(let failure) = saveStatus { message = failure.localizedDescription }
+    if case .saved = saveStatus { widgets.saved(session) }
   }
   func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext) {
     message = "Document storage needs attention."

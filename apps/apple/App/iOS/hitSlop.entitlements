@@ -7,4 +7,5 @@
 <key>com.apple.developer.icloud-container-environment</key><string>Development</string>
 <key>aps-environment</key><string>development</string>
 <key>keychain-access-groups</key><array><string>$(AppIdentifierPrefix)com.hitslop.sharing</string></array>
+<key>com.apple.security.application-groups</key><array><string>group.com.hitslop</string></array>
 </dict></plist>

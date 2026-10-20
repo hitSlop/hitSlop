@@ -107,6 +107,57 @@ extension HostTests {
     #expect(cache.records().isEmpty)
   }
 
+  @Test @MainActor func widgetCachePublishesLibraryIDsAndAtomicIndex() throws {
+    let folder = try Fixtures.folder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let cache = WidgetCache(root: folder.appendingPathComponent("cache"))
+    let id = UUID().uuidString
+    let png = try Fixtures.png(width: 32, height: 32) {
+      NSColor.red.setFill()
+      $0.fill()
+    }
+    let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
+    let time = Date()
+    let first = try cache.publish(libraryID: id, title: "Library", images: images, capturedAt: time, sourceVersion: "1")
+    #expect(first.id == id && first.fileIdentity == nil)
+    #expect(!FileManager.default.fileExists(atPath: cache.root.appendingPathComponent(id + "/document.bookmark").path))
+    #expect(cache.imageData(first, .large) == png)
+    #expect(throws: (any Error).self) {
+      try cache.publish(
+        libraryID: id, title: "Partial", images: Array(images.prefix(2)), capturedAt: time, sourceVersion: "2")
+    }
+    #expect(cache.record(id: id)?.generation == first.generation)
+    let second = try cache.publish(
+      libraryID: id, title: "Second", images: images, capturedAt: time.addingTimeInterval(1), sourceVersion: "2")
+    let stale = try cache.publish(
+      libraryID: id, title: "Stale", images: images, capturedAt: time, sourceVersion: "1")
+    #expect(stale.generation == second.generation)
+    _ = try cache.publish(
+      libraryID: id, title: "Third", images: images, capturedAt: time.addingTimeInterval(2), sourceVersion: "3")
+    #expect(!FileManager.default.fileExists(atPath: cache.imageURL(first, .small).path))
+    #expect(FileManager.default.fileExists(atPath: cache.imageURL(second, .small).path))
+    #expect(cache.imageData(first, .small) == png)
+    let uncaptured = UUID().uuidString
+    try cache.writeLibraryIndex([
+      WidgetLibraryEntry(id: id, title: "Third", icon: png),
+      WidgetLibraryEntry(id: uncaptured, title: "Uncaptured", icon: nil),
+    ])
+    #expect(cache.libraryIndex().map(\.id) == [id, uncaptured])
+    #expect(cache.libraryIndex().first?.icon == png)
+    #expect(cache.record(id: uncaptured) == nil)
+    #expect(throws: (any Error).self) {
+      try cache.writeLibraryIndex([WidgetLibraryEntry(id: "../invalid", title: "Invalid", icon: nil)])
+    }
+    #expect(cache.libraryIndex().count == 2)
+    try cache.writeLibraryIndex([WidgetLibraryEntry(id: uncaptured, title: "Renamed", icon: png)])
+    try cache.remove(libraryID: id)
+    #expect(cache.record(id: id) == nil)
+    #expect(cache.libraryIndex().first?.title == "Renamed")
+    #expect(cache.libraryIndex().first?.icon == png)
+    try cache.clear()
+    #expect(cache.records().isEmpty && cache.libraryIndex().isEmpty)
+  }
+
   @Test(arguments: [false, true]) @MainActor func copyKeepsTheStateUsedForItsArtwork(closeDuringRender: Bool)
     async throws
   {

@@ -20,6 +20,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
   let zone: CKRecordZone.ID
   let account: String
   private var engine: CKSyncEngine?
+  private(set) var accountIsCurrent = true
   private var failure: String?
   private var issues: [String: String] = [:]
   private var uploads: [CKRecord.ID: String] = [:]
@@ -60,6 +61,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
   }
   func start(automatic: Bool = true) async throws {
     failure = nil
+    accountIsCurrent = true
     _ = try await database.save(CKRecordZone(zoneID: zone))
     let savedBytes = try library.engineState()
     let saved = try savedBytes.map {
@@ -321,8 +323,12 @@ actor LibraryTransport: CKSyncEngineDelegate {
       case .accountChange(let change):
         if case .signIn(let user) = change.changeType {
           let fingerprint = SHA256.hash(data: Data(user.recordName.utf8)).map { String(format: "%02x", $0) }.joined()
-          guard fingerprint == account else { throw CloudFailure("Different iCloud account; local files retained") }
+          guard fingerprint == account else {
+            accountIsCurrent = false
+            throw CloudFailure("Different iCloud account; local files retained")
+          }
         } else {
+          accountIsCurrent = false
           throw CloudFailure("iCloud account changed; this account's local files are retained")
         }
       case .didFetchRecordZoneChanges(let result):

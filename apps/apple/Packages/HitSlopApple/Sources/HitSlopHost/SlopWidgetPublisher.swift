@@ -192,7 +192,9 @@ import WidgetKit
     for id in ids {
       guard enabled, lifetime == started else { break }
       await serialized { [self] in
-        guard enabled, lifetime == started, let cache, let record = cache.record(id: id) else { return }
+        guard enabled, lifetime == started, let cache, let record = cache.record(id: id),
+          let identity = record.fileIdentity
+        else { return }
         let url = try cache.resolve(record)
         // Location is independent of rendered content, and must catch up even when the
         // source token is unchanged or a subsequent capture fails.
@@ -216,7 +218,7 @@ import WidgetKit
         guard current.sourceVersion != version || due else { return }
         let capturedAt = Date()
         let capture: SlopRenderer.WidgetCapture
-        if let session = openSession(record.fileIdentity) {
+        if let session = openSession(identity) {
           guard session.isReady else { return }
           capture = try await SlopRenderer.widgetCapture(session: session)
         } else {
@@ -224,7 +226,7 @@ import WidgetKit
         }
         guard lifetime == started else { return }
         try publish(
-          url: url, identity: record.fileIdentity, capture: capture, capturedAt: capturedAt,
+          url: url, identity: identity, capture: capture, capturedAt: capturedAt,
           refreshMinutes: current.refreshMinutes)
       }
     }

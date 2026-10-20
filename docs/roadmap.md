@@ -7,7 +7,8 @@ documents from bundled or installed templates, edit them in the window or throug
 An unshipped Mac/iPhone library preview adds account-scoped CloudKit whole-file sync,
 named creation, shared catalog branding, and phone-generated icon/preview artwork on
 close. It starts with Quick Checklist on iOS 26; the Mac minimum stays 15.2. Production
-qualification, broader templates, rename, widgets, and compaction are follow-ups.
+qualification, broader templates, rename, and compaction are follow-ups. Home Screen widgets
+show placed library documents and open them by id; the foreground app refreshes their images.
 
 ## Where we're heading
 
@@ -243,7 +244,8 @@ Finish signed product testing of all sizes, appearance modes, refresh budgets an
 sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrower evidence.
 The [October 13 widget review](evidence/widget-review-2026-10-13.md) records the location
 metadata fixes and removal of stale development registrations.
-The `slop dev` composition selector previews all three widget families with HMR. Broader desktop qualification, cache management UI and iOS hosting are pending.
+The `slop dev` composition selector previews all three widget families with HMR. iPhone Home Screen widgets use the same canvases and render placed library documents locally.
+Broader desktop qualification, cache management UI and iOS background refresh are pending.
 
 **Menu-bar presentation.** Explore [menu-bar slops](ideas.md#menu-bar-slops) for timers,
 players and quick capture, alongside the implemented widgets. Consider creating the
