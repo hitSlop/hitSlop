@@ -394,11 +394,11 @@ replicas independently creating the same absent field, record key or row ID crea
 different containers, and the parent map chooses one complete container by last-writer-wins.
 Undo may restore a row in new containers, so remote edits to its previous containers need
 not follow it. The local owner serializes page, window and CLI writes; these creation and
-restoration races are limits of the deferred collaboration feature.
+restoration races are limits of the live sharing preview.
 
-Production sharing must qualify these conflicts. A future room may start fresh history
-from the local document's current app, values, row IDs, theme and attachments; it need
-not reuse local v1 history. The relay, session and owner hooks remain its foundation.
+Public rollout must qualify these conflicts. The preview seeds a room from a backup
+that preserves the document UUID and history; see the
+[relay architecture](../architecture.md#relay) for seed and retention rules.
 
 A row list's application order is `order` read once per row at its first place, then
 rows `order` misses, by `$id`. Merging valid edits from several devices can leave `order`

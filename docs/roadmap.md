@@ -4,11 +4,17 @@ Today hitSlop is a signed Mac app and one matching npm package. People create lo
 documents from bundled or installed templates, edit them in the window or through the CLI
 (their coding agent included), and export PNG and PDF.
 
-An unshipped Mac/iPhone library preview adds account-scoped CloudKit whole-file sync,
-named creation, shared catalog branding, and phone-generated icon/preview artwork on
-close. It starts with Quick Checklist on iOS 26; the Mac minimum stays 15.2. Production
-qualification, broader templates, rename, and compaction are follow-ups. Home Screen widgets
-show placed library documents and open them by id; the foreground app refreshes their images.
+The iPhone app (iOS 26+) is in TestFlight preview. It opens, edits and creates slops,
+starts with Quick Checklist, and imports from Files. The Mac/iPhone Synced Library
+keeps managed slops in sync through the person's iCloud account. iPhone Home Screen
+widgets render library slops with a widget view locally and open them on tap.
+[Architecture](architecture.md#apple-library-preview) owns the library design.
+
+Live sharing is a developer/TestFlight preview, outside ordinary Mac releases. The
+Share popover's **Live collaboration** action creates a link anyone can use to edit
+in the Mac/iPhone app or Chrome at share.hitslop.com. The owner signs in with Apple;
+Stop ends the link and everyone keeps their copy. See the
+[relay architecture](architecture.md#relay) and [sharing operations](../apps/sharing/README.md).
 
 ## Where we're heading
 
@@ -34,14 +40,25 @@ In order, with the reasoning in [ideas](ideas.md):
 4. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
    Both change the engineering contract and need a decision before work starts.
 
-Beyond those steps, the longer-term direction is native hosts for iOS/iPadOS, Android,
-Windows and Linux; realtime collaboration; offline-capable sync between your own
-devices; an app-store-style catalog for discovering, publishing and installing community
-slops; and deeper native integrations. These are directions without release dates or a
-platform delivery order. The [README roadmap](../README.md#roadmap) gives the short version;
-the work and prerequisites are below and in [ideas](ideas.md).
+Beyond those steps, the longer-term direction includes native hosts for iPadOS, Android,
+Windows and Linux; sync beyond Apple devices; an app-store-style catalog for discovering,
+publishing and installing community slops; and deeper native integrations. These are
+directions without release dates or a platform delivery order. The
+[README roadmap](../README.md#roadmap) gives the short version; proposals live in [ideas](ideas.md).
 
 ## Open now
+
+- **Apple releases.** Release the iPhone app on the App Store and the Mac app with
+  Synced Library on CloudKit Production. The iPhone app, Files import, library sync
+  and Home Screen widgets are implemented previews, not future host work.
+- **Sharing polish.** Finish account deletion/Apple revocation, rejoin after re-share,
+  resource/frame rate limits and metrics, frozen HTTP/binary protocol fixtures, and
+  Save Unshared Copy from accepted in-memory state when source history cannot save.
+  Complete privacy disclosures and broader device/resource qualification before rollout.
+  [Architecture](architecture.md#relay) and the [sharing README](../apps/sharing/README.md)
+  own the technical description and operating limits.
+- **Apple follow-ups.** Universal links, App Clip exploration and widget background
+  refresh remain open. Qualify the library on Production and expand starter coverage.
 
 - An additive authoring environment API exposes native platform/device identity and
   reactive compact/regular viewport layout to Svelte and editor CSS. Browser identity
@@ -52,8 +69,8 @@ the work and prerequisites are below and in [ideas](ideas.md).
   The same Rust owner/store powers independent OPFS copies, bounded resource reads,
   command workers and Save As downloads back to native. Identity, export barriers,
   failed writes and recovery are covered at their owning boundaries. Browser launch
-  polish, sustained-edit/near-limit performance qualification, Safari/mobile and hosted
-  delivery remain deferred. `slop dev` keeps its native owner.
+  polish, sustained-edit/near-limit performance qualification and Safari/mobile browser
+  support remain deferred. Hosted links use the separate sharing preview described above. `slop dev` keeps its native owner.
   [Hardening evidence](evidence/browser-host-hardening-2026-10-08.md) records the scope
   and verification limits.
 - A text draft whose control is destroyed after an unknown-outcome send is retained in
@@ -130,8 +147,9 @@ the work and prerequisites are below and in [ideas](ideas.md).
   the writer lock is currently bounded only by per-child watchdogs. Consider a cap on
   concurrent restricted children after measurement. Unresolved detached-text recovery remains open above.
 - **Platform drivers and feature discovery.** Define a driver seam for the registry,
-  socket, exclusive rename and evaluator, including an in-process evaluator story for
-  iOS. Add a feature list to CLI `hello` and a host/feature handshake to page config;
+  socket, exclusive rename and evaluator for additional platforms. iPhone already
+  uses in-process Rust capture; authored commands there remain unavailable. Add a feature
+  list to CLI `hello` and a host/feature handshake to page config;
   reply readers already allow these additive members. [Feature discovery](ideas.md#runtime-feature-discovery)
   should describe actual host support separately from an app's declarations and the
   person's permissions, so apps can offer useful fallbacks on native and browser hosts.
@@ -201,17 +219,14 @@ the work and prerequisites are below and in [ideas](ideas.md).
 - Beta commands are agent-only and accept flat scalar arguments. They run in the owner's restricted evaluator; pages use document handles
   and the page bundle carries no command bodies.
 - Theme overrides share Loro storage, sequence, publications, undo and saving with data.
-- Sync's core and its proof: one Loro peer per session, three-way text merges without
-  `base`, Loro's `UndoManager`, a merge-closed layout, the `history`/`share` storage tables,
-  and the sync session with its owner hooks ([architecture](architecture.md#sync)). The
-  core protocol was also qualified against a local Durable Object byte relay on
-  Cloudflare's runtime ([evidence](evidence/sync-spikes-2026-10.md)). The experiment's
-  relay source is outside this repository. The production relay and clients are
-  [later](#later).
+- The Synced Library, iPhone app and iPhone widgets are implemented in preview,
+  alongside the Mac desktop widgets. The sharing preview connects native and browser
+  copies through the existing owners. [Sync](architecture.md#sync) owns both designs;
+  release and polish work is [open now](#open-now).
 - `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
   `App.svelte` the editor, required `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte`, `Widget.svelte`
-  and `commands.ts` the other roles. All production captures use saved-state Svelte SSR
-  and Takumi in the restricted Rust child, including selectable vector PDF; there is no
+  and `commands.ts` the other roles. Captures use saved-state Svelte SSR and Takumi,
+  with restricted children on Mac/Linux and in-process capture on iPhone; there is no
   WebKit capture, automatic fallback or public per-slop override.
   `slop dev` runs the native owner on a disposable copy per preview page.
 
@@ -220,15 +235,10 @@ the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10
 
 ## Later
 
-**Catalog capture fidelity.** The [76-slop visual review](evidence/slop-capture-review-2026-10-12.md)
-initially found blank icons, lost SVG styling and collapsed exports. The Takumi-only
-pass repairs those cases and provides synchronous capture compositions for all 76
-bundled slops. Rich browser views use static compositions; Pixel Art preserves its
-saved cells, and image-based exports resolve saved attachments in the render child.
-Seven additions from that review now have widget compositions: Water Tracker,
-Grocery List, Reading Tracker, Habit Heatmap, Daily Planner, Assignment Tracker
-and Countdown Milestones, alongside Quick Checklist. Ivy Lee Method was not
-selected. Broader theme and populated-state coverage remains product qualification;
+**Catalog capture fidelity.** The [visual review](evidence/slop-capture-review-2026-10-12.md)
+finds blank icons, lost SVG styling and collapsed exports in its historical build. The
+current Takumi capture compositions cover the bundled slops, including saved cells and
+attachments. Broader theme and populated-state coverage remains product qualification;
 successful rendering does not imply support for every browser CSS feature.
 
 **Widget qualification.** The macOS image-widget integration includes dedicated saved-state
@@ -244,8 +254,9 @@ Finish signed product testing of all sizes, appearance modes, refresh budgets an
 sleep/wake; the [platform spike](evidence/widget-images-2026-10-11.md) is narrower evidence.
 The [October 13 widget review](evidence/widget-review-2026-10-13.md) records the location
 metadata fixes and removal of stale development registrations.
-The `slop dev` composition selector previews all three widget families with HMR. iPhone Home Screen widgets use the same canvases and render placed library documents locally.
-Broader desktop qualification, cache management UI and iOS background refresh are pending.
+Broader desktop qualification and cache management UI remain pending. iPhone background
+refresh is tracked [above](#open-now); implemented widget behavior lives in the
+[architecture](architecture.md#macos-image-widgets).
 
 **Menu-bar presentation.** Explore [menu-bar slops](ideas.md#menu-bar-slops) for timers,
 players and quick capture, alongside the implemented widgets. Consider creating the
@@ -272,45 +283,21 @@ and checksums, immutable release identity and abuse controls are prerequisites. 
 worker kept in a local `deferred/` archive is unsupported scaffolding. The local app
 needs no document server.
 
-**Collaboration**, separate from hosted discovery, is a developer-gated preview.
-Each device edits its own `.slop` through the Rust owner and exchanges opaque updates
-through a Loro-free Durable Object relay. The Room owns Uploading, Live and Ended;
-the Account indexes current rooms and enforces the ten-room quota. Creation retries can
-replace Uploading seeds, abandoned uploads expire after 24 hours, and Stop purges remote
-resources and frees quota. Re-share creates a new room. Short capability links fetch seed
-metadata from the room; verified owners recover links through the account index.
-
-Native Apple/Firebase identity authorizes creation, recovery and Stop. Guests need only
-the link. Device-local credentials stay outside documents and CloudKit. One browser host
-supports local Service Worker resources and hosted cookie-based resources on isolated
-`dotslop.com` origins. Connected web opening is required; open copies keep editing offline.
-Rust owns HTTP DTOs/OpenAPI, the binary protocol and transport; native UI uses UniFFI.
-See the [architecture](architecture.md#relay), [sharing README](../apps/sharing/README.md)
-and historical [device](evidence/live-sharing-phone-2026-10-19.md) and
-[native/browser evidence](evidence/authoring-environment-2026-10-19.md).
-
-Before broader sharing, prioritize Save Unshared Copy from accepted in-memory state
-when source history cannot save, account deletion/Apple revocation, privacy disclosures,
-remaining resource/frame throttles and metrics, frozen HTTP/binary contracts, and broader
-phone/resource qualification. Guests replacing ended memberships, person-level permissions,
-read-only links, browser creator accounts, CLI share/join, reliable offline web reopening
-and room compaction remain deferred. Initial seeds and retained relay updates each have
-a 16 MiB preview limit. Qualify
+**Further collaboration design.** Beyond the [preview polish](#open-now), person-level
+permissions, read-only links, browser creator accounts, CLI share/join, reliable offline
+web reopening and room compaction remain later work. Qualify
 [container-creation and undo conflicts](reference/document-types.md#storage-layout)
-before shipping sharing.
-Do not restore JSON room seeds, a second command validator, guest snapshot reconciliation,
-JavaScriptCore, data.json, or a second semantic validator. Convergence tests around
-internal import/export do not constitute a shipped collaboration product.
+before public rollout. Keep the existing Rust owner and relay boundaries described in
+[architecture](architecture.md#relay).
 
-**Sync between your own devices.** On Apple devices this is the CloudKit Synced Library
-above: whole-file checkpoints merged by the Rust owner, no account or server. Relay-based
-replication of a person's own documents is a later option for platforms without CloudKit
-([proposal](ideas.md#sync-between-your-own-devices)).
+**Sync beyond Apple devices.** The implemented CloudKit Synced Library uses a person's
+iCloud account. Relay-based replication of a person's own documents remains an option
+for platforms without CloudKit ([proposal](ideas.md#sync-between-your-own-devices)).
 
 ## Deferred
 
 App Check, a document history UI, schema evolution,
-iCloud and other synced folders (the Synced Library covers a person's own devices), and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
+direct editing of loose files in iCloud Drive and other synced folders (the Synced Library covers a person's own devices), and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
 Pre-launch documents are not migrated.

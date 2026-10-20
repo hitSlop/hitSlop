@@ -179,7 +179,10 @@ changes an unchanged app's digest.
   sizes after a failure; it advances the saved version only on confirmed success.
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
 - Flush unsent text and pending writes before close or export. Captures render saved
-  state through synchronous Svelte SSR and Takumi in the restricted Rust child; required root `Preview.svelte` supplies preview artwork; optional `Export.svelte` supplies PNG/PDF output.
+  state through synchronous Svelte SSR and Takumi: restricted children on Mac/Linux,
+  in-process capture on iPhone ([capture architecture](architecture.md#close-export-and-capture)).
+  Required root `Preview.svelte` supplies preview artwork; optional `Export.svelte`
+  supplies PNG/PDF output.
   Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`: the export is definition data. Editors acquire
   their document with `getDocument(schema)` during component initialization; static views

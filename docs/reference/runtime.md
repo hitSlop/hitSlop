@@ -55,7 +55,7 @@ import styles from their components. During component initialization, `getDocume
 
 An edit promise resolves after native acceptance and the corresponding local snapshot update, before durability or framework rendering. `flush()` and successful CLI mutations acknowledge local persistence. Native host-to-page calls must finish within the page-call deadline; a page that does not answer counts as a dead renderer ([recovery](../architecture.md#layers)). Renderer death retains accepted native edits; text not yet sent from a field can be lost. There is no network acknowledgement or second document engine.
 
-The catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. See the [roadmap](../roadmap.md#later) for deferred catalog and sharing work.
+The Mac catalog combines immutable bundled starters, `~/.hitslop/templates`, and Recents. Users place `<slug>.slop` templates in that folder. Create makes a separate writable document. Bundled and installed templates have source-specific identities; categories come from each template's app metadata. See the [roadmap](../roadmap.md#later) for remaining catalog and sharing work.
 
 ## File layout
 
@@ -145,7 +145,7 @@ cross-bundle `unavailable`, `cancelled` and `failed` errors, with unavailability
 `notDeclared`, `host`, `system`, `locale`, `permission` and `format`. Ogg/WebM storage does not imply
 native transcription support. `SpeechAnalyzer` and browser speech remain deferred.
 
-Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before sharing or a hosted catalog ships.
+Embedded frames are third-party web content inside the document's window. They cannot reach the bridge (main frame only), the file picker or downloads, and the web data store is non-persistent, so no cookies or logins reach them. Frames still expose the user to whatever page an author embeds, including hidden or phishing-styled frames. Revisit this policy (an allowlist, or frame origins the author declares and the host shows on open) before public sharing rollout or a hosted catalog ships.
 
 A slop's page, `slop://app`, has no HTTP(S) referrer, and some providers refuse to embed without one (YouTube reports error 153; a `127.0.0.1` origin gets error 150). The SDK embeds YouTube through a static relay page, `https://hitslop.com/embed/youtube.html`, served from `apps/landing/public/embed/`. `hitslop/youtube` builds the relay and thumbnail URLs as plain strings, and a static view may import it; `hitslop/embed` adds reading a pasted link, the title lookup and the player, which need `URL`, the network or the page, none of which a capture has, so a static view may not import it. The relay takes the video from the URL fragment, so the server never sees it, and relays only the player's allowlisted `postMessage` commands. YouTube playback therefore needs that page to be reachable; each additional referrer-gated provider needs its own relay and helper.
 
@@ -202,7 +202,9 @@ after 2 seconds. Captures must remain faithful and usable; renderer fixes may
 change pixels. Pixel equality is evidence for a renderer refactor, not the ABI
 guarantee.
 
-Every host capture uses synchronous Svelte SSR and Takumi in the restricted Rust child. An open document first drains its
+Every host capture uses synchronous Svelte SSR and Takumi. Mac and Linux use the
+restricted Rust child; iPhone uses the same capture pipeline in process, as described
+in [capture architecture](../architecture.md#close-export-and-capture). An open document first drains its
 page writes within the page-call deadline; a page that does not answer counts as a dead
 renderer. It saves and backs up SQLite to a temporary `.slop`; the editor capture barrier
 ends after the backup. Rendering then uses that independent copy, including its app,
@@ -271,7 +273,7 @@ closed export takes no writer lock and can render while another process holds th
 
 ## Telemetry
 
-Release enables Firebase Analytics and Crashlytics after configuration; Debug/tests do not initialize Firebase. Collection defaults off in the app plist. Auth exists only for the developer-gated sharing preview (Sign in with Apple through a separately named Firebase app; Analytics and Crashlytics initialization is unchanged); App Check remains deferred. Existing Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
+Release enables Firebase Analytics and Crashlytics after configuration; Debug/tests do not initialize Firebase. Collection defaults off in the app plist. The developer/TestFlight sharing preview uses Sign in with Apple through a separately named Firebase app (Analytics and Crashlytics initialization is unchanged); App Check remains deferred. Existing Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
 
 Non-fatals carry a fixed operation, classification (platform/authored/rejection), and reason. Native storage and WebKit callbacks supply diagnostic categories before error text is flattened. Fixed category-specific domains and stable numeric codes distinguish issue groups; per-event keys can include export format. No document IDs, paths, titles, contents, guest codes, authored error strings, or raw error userInfo enter reports. Document context never uses global Crashlytics keys.
 
