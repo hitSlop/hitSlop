@@ -178,7 +178,11 @@ import WebKit
     }
     let url = URL(fileURLWithPath: entry.path)
     guard session?.file.url != url else { return }
-    close { [self] closed in if closed { open(url) } }
+    close { [self] closed in
+      // Sync may have removed it while the current document closed.
+      guard closed, let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else { return }
+      open(URL(fileURLWithPath: entry.path))
+    }
   }
   func join(_ link: String) async throws {
     guard session == nil else { throw SlopFailure("Close your current document before joining another.") }

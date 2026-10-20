@@ -346,6 +346,8 @@ impl Library {
         } else {
             let path = self.root.join("uploads").join(format!("{}-{}.slop", id, crate::random_hex(12)));
             self.with_owner(&mut inner, id, |owner| {
+                // A retry replaces whatever an interrupted attempt left behind.
+                let _ = std::fs::remove_file(&path);
                 snapshot::request(owner, Request::Backup { destination: path.clone() }).map_err(failed)?;
                 Ok(())
             })?;

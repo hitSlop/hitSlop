@@ -19,9 +19,9 @@ import UniformTypeIdentifiers
 
   public static func libraryIndex(entries: [SyncedSlop]) async throws -> [WidgetLibraryEntry] {
     try await SlopPreparation.run(on: queue) {
-      // Only documents that declare a widget view can render one.
+      // Only documents that declare a widget view can render one; an unreadable (busy) file stays listed.
       entries.filter {
-        !$0.deleted && (try? SlopFile(url: URL(fileURLWithPath: $0.path)))?.views.widget != nil
+        !$0.deleted && ((try? SlopFile(url: URL(fileURLWithPath: $0.path))).map { $0.views.widget != nil } ?? true)
       }.map { entry in
         var icon: Data?
         if let png = SlopArtwork.png(URL(fileURLWithPath: entry.path), .icon),
