@@ -360,7 +360,8 @@ Windows.
 
 ### Sync between your own devices
 
-A Mac and an iPhone editing one document can use the same room model as people
+Apple devices use the CloudKit Synced Library ([architecture](architecture.md#apple-library-preview)).
+For platforms without CloudKit, a person's own devices could use the same room model as people
 collaborating. Each keeps a `.slop` replica and its local writer lease, edits offline and
 merges through the relay when it reconnects. Replicate Loro updates, not SQL rows or a
 second JSON document. Attachments

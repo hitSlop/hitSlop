@@ -9,11 +9,6 @@ named creation, shared catalog branding, and phone-generated icon/preview artwor
 close. It starts with Quick Checklist on iOS 26; the Mac minimum stays 15.2. Production
 qualification, broader templates, rename, widgets, and compaction are follow-ups.
 
-The file preview also supports iCloud Drive and synced Desktop/Documents on the Mac by
-keeping live SQLite work private and publishing complete files on flush/close. A real
-one-Mac iCloud happy path passed; two-Mac behavior and provider edge cases remain
-unqualified. This is separate from the CloudKit Synced Library.
-
 ## Where we're heading
 
 AI made writing a small tool cheap. What's still missing is a place where those tools live,
@@ -344,10 +339,7 @@ attachment barriers, download/native reopen, zero redundant attachment PUTs and 
 require remote retirement.
 
 This slice targets a gated tester preview. Its deployed guest/offline/browser campaign
-passes; broader device/resource qualification remains open. An independent
-review of #46 and the #47 → #48 → #49 stack found no P0/P1 blocker in the inspected
-authorization, lifecycle, CloudKit and relocation paths; it was not stress qualification.
-It identified one additional follow-up: native guests cannot yet replace an ended room
+passes; broader device/resource qualification remains open. One follow-up: native guests cannot yet replace an ended room
 membership when opening a new generation after Stop/re-share.
 
 Before broader sharing, prioritize Save Unshared Copy from accepted in-memory state
@@ -370,16 +362,15 @@ Do not restore JSON room seeds, a second command validator, guest snapshot recon
 JavaScriptCore, data.json, or a second semantic validator. Convergence tests around
 internal import/export do not constitute a shipped collaboration product.
 
-**Sync between your own devices.** A Mac and a phone can use the same relay model as
-collaborators: each owns a local document, edits offline and merges on reconnection.
-This depends on the production sync service, attachment sync and the corresponding
-platform hosts. See [the proposal](ideas.md#sync-between-your-own-devices). This is
-document replication, separate from iCloud or other synced-folder support.
+**Sync between your own devices.** On Apple devices this is the CloudKit Synced Library
+above: whole-file checkpoints merged by the Rust owner, no account or server. Relay-based
+replication of a person's own documents is a later option for platforms without CloudKit
+([proposal](ideas.md#sync-between-your-own-devices)).
 
 ## Deferred
 
 App Check, a document history UI, schema evolution,
-production qualification of iCloud file publication, other synced folders, and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
+iCloud and other synced folders (the Synced Library covers a person's own devices), and [other native platforms](ideas.md#other-platforms). [Ideas](ideas.md) proposes
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
 Pre-launch documents are not migrated.

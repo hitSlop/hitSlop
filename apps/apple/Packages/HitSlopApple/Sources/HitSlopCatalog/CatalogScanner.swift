@@ -92,10 +92,7 @@ actor CatalogScanner {
   func recent(_ url: URL) async throws -> CatalogEntry? {
     try await SlopPreparation.run(on: SlopPreparation.catalog) {
       guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-      // Listing never materializes an evicted document. Only an explicit open downloads.
-      let cloud = try? url.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
-      let waiting = cloud?.isUbiquitousItem == true && cloud?.ubiquitousItemDownloadingStatus == .notDownloaded
-      guard !waiting, let file = try? SlopSummary(url: url) else {
+      guard let file = try? SlopSummary(url: url) else {
         var entry = CatalogEntry(
           id: "recent:\(url.path)", source: .recent(url), title: url.deletingPathExtension().lastPathComponent)
         Self.dates(url, &entry)

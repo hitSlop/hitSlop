@@ -30,17 +30,6 @@ fn folder() -> Result<PathBuf> {
     let home = home().ok_or_else(|| failed("Cannot find this account's home folder"))?;
     Ok(home.join(".hitslop/live"))
 }
-/// Durable private working stores. Tests and debug hosts follow their isolated registry.
-pub(crate) fn sessions_folder() -> Result<PathBuf> {
-    if let Some(folder) = FOLDER.get() {
-        return Ok(folder.join("sessions"));
-    }
-    let home = home().ok_or_else(|| failed("Cannot find this account's home folder"))?;
-    #[cfg(target_os = "macos")]
-    return Ok(home.join("Library/Application Support/hitSlop/sessions"));
-    #[cfg(not(target_os = "macos"))]
-    Ok(home.join(".hitslop/sessions"))
-}
 /// This account's home folder, not `$HOME`, so every process of the account agrees.
 pub(crate) fn home() -> Option<&'static Path> {
     static HOME: OnceLock<Option<PathBuf>> = OnceLock::new();
@@ -148,15 +137,6 @@ impl Lease {
             (dev, ino, 1) if (dev, ino) == (self.dev, self.ino) => Ok(()),
             _ => Err(Error::Moved),
         }
-    }
-    /// Safe-save transfers this already-held inode lease to its new pathname.
-    pub(crate) fn retarget(&mut self, path: &Path) -> Result<()> {
-        let previous = std::mem::replace(&mut self.path, path.to_owned());
-        if let Err(error) = self.check() {
-            self.path = previous;
-            return Err(error);
-        }
-        Ok(())
     }
     /// Names the live owner's socket for clients, atomically.
     pub fn publish(&self, json: &str) -> Result<()> {

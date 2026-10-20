@@ -83,7 +83,6 @@ pub(super) fn fence(request: &Request) -> bool {
     matches!(
         request,
         Request::Flush
-            | Request::FlushLocal
             | Request::Copy { .. }
             | Request::CaptureSource { .. }
             | Request::Backup { .. }

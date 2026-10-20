@@ -3,7 +3,7 @@ import type { HostEnvironment } from "../wire/page.generated";
 
 /** Install before app mount. Static development views have the same neutral attributes
  * as real captures, even when their viewport changes or a preset changes behind them. */
-export function installEnvironment(identity: HostEnvironment) {
+export function installEnvironment(identity?: HostEnvironment) {
   const state = createEnvironment(identity);
   const root = document.documentElement;
   const attributes = () => {

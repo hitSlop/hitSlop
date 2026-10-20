@@ -418,17 +418,8 @@ impl Actor {
                 Reply::Applied { sequence: result.sequence, ids: result.ids, text: None }
             }
             Request::Theme => Reply::Theme { state: self.core.theme_state()?, sequence: self.core.sequence() },
-            Request::FlushLocal => {
-                self.wait(callback, AfterSave::Reply(Reply::Unit))?;
-                return Ok(None);
-            }
             Request::Flush => {
-                let next = if self.store.publishes_file() {
-                    AfterSave::Storage(StorageAction::Publish)
-                } else {
-                    AfterSave::Reply(Reply::Unit)
-                };
-                self.wait(callback, next)?;
+                self.wait(callback, AfterSave::Reply(Reply::Unit))?;
                 return Ok(None);
             }
             Request::ExportTheme => {

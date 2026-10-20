@@ -37,7 +37,6 @@ fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) ->
     expect(dead_code, reason = "native path payloads reach the persistence queue but are refused in the browser")
 )]
 pub(super) enum StorageAction {
-    Publish,
     Copy {
         path: PathBuf,
         preview: Option<Vec<u8>>,
@@ -82,10 +81,6 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
         Work::Store { generation, action, callback } => {
             let result = contained(|| {
                 Ok(match action {
-                    StorageAction::Publish => {
-                        store.publish()?;
-                        Reply::Unit
-                    }
                     #[cfg(not(target_arch = "wasm32"))]
                     StorageAction::Copy { path, preview, icon } => {
                         store.copy_clean(&path, &named_artwork(&preview, &icon))?;

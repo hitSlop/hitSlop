@@ -106,12 +106,10 @@ export async function boot() {
   );
   app.catch(() => {});
   const opened = openDocument(native);
-  const hostEnvironment = call({ method: "host.environment" });
-  // Observe a failure immediately, even while document opening is still in progress.
-  void hostEnvironment.catch(() => {});
+  const hostEnvironment = call({ method: "host.environment" }).catch(() => undefined);
   const { config, doc, attachments } = await opened;
   const environment = installEnvironment(
-    preview.host?.environment?.current ?? (await hostEnvironment).environment,
+    preview.host?.environment?.current ?? (await hostEnvironment)?.environment,
   );
   preview.host?.environment?.subscribe(() => {
     environment.setHost(preview.host!.environment!.current);

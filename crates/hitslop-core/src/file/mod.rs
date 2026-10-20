@@ -4,8 +4,6 @@
 //! creating and copying documents (`copy`), where documents may live (`places`), which
 //! templates hosts list (`catalog`), and serving the app's assets (`assets`). `store` saves a document; `registry` holds its writer lock.
 
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) mod access;
 mod artwork;
 mod assets;
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,8 +19,8 @@ mod open;
 mod pack;
 #[cfg(not(target_arch = "wasm32"))]
 mod places;
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) mod publication;
+#[cfg(target_os = "macos")]
+mod relocate;
 pub(crate) mod rows;
 
 pub use artwork::Artwork;
@@ -45,9 +43,9 @@ pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use places::document_destination;
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) use places::is_icloud;
-#[cfg(not(target_arch = "wasm32"))]
 pub use places::{TemplateSource, template_roots};
+#[cfg(target_os = "macos")]
+pub use relocate::{RelocatedDocument, relocate_document};
 
 /// Refuses a document opened for writing where documents may not live.
 #[cfg(not(target_arch = "wasm32"))]

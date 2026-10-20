@@ -168,7 +168,7 @@ fn page_validated(
             }),
         ),
         PageRequest::Flush {} => {
-            (Request::FlushLocal, Box::new(|reply| matches!(reply, Reply::Unit).then_some(Success::Flush { ok: True })))
+            (Request::Flush, Box::new(|reply| matches!(reply, Reply::Unit).then_some(Success::Flush { ok: True })))
         }
         PageRequest::Undo {} => (
             Request::Undo { redo: false },

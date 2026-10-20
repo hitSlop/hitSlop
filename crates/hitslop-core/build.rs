@@ -8,12 +8,6 @@ fn visit(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
 }
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
-        && std::env::var_os("CARGO_FEATURE_STORAGE").is_some()
-    {
-        cc::Build::new().file("src/file/access.m").flag("-fobjc-arc").flag("-fblocks").compile("hitslop_file_access");
-        println!("cargo:rustc-link-lib=framework=Foundation");
-    }
     let mut files = vec![root.join("Cargo.toml"), root.join("build.rs"), root.join("../../Cargo.lock")];
     visit(&root.join("src"), &mut files);
     files.sort();
@@ -27,4 +21,10 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rustc-env=HITSLOP_CORE_BUILD_ID={hash:016x}");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+        && std::env::var_os("CARGO_FEATURE_STORAGE").is_some()
+    {
+        cc::Build::new().file("src/file/relocate.m").flag("-fobjc-arc").compile("hitslop_relocation");
+        println!("cargo:rustc-link-lib=framework=Foundation");
+    }
 }

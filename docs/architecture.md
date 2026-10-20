@@ -363,13 +363,12 @@ describe origins; they are neither unique request IDs nor a durable audit log.
 A template holds an app; a document holds an app and its saved state. Creating a
 document copies a template and adds its identity and initial Loro checkpoint in one
 transaction; nothing is ever unpacked. The core decides where a document may live, for
-the app and the engine alike: opening one for writing needs a `.slop` name in a supported
-location, and creating or copying one also refuses installed and bundled templates
+the app and the engine alike: opening one for writing needs a `.slop` name outside iCloud
+Drive, and creating or copying one also refuses the installed and bundled templates
 (`file::document_location`, `file::document_destination`). The regular-file, no-link-leaf
 rule has one owner in the core (`file::existing` / `registry::regular`), used by every
-document request, `open` included. Rust classifies iCloud Drive and ubiquitous
-Desktop/Documents folders through a thin Foundation adapter; other CloudStorage providers
-remain refused. Reads do not inherit a write-location refusal. The writer
+document request, `open` included. Swift adds only what
+Foundation alone can tell, a folder iCloud syncs such as Desktop and Documents. The writer
 lock is an `flock` on a registry file outside the document (`~/.hitslop/live`, named by
 the file's device and inode), never on the database: closing any second descriptor on a
 SQLite file drops SQLite's own locks. The lock holder publishes discovery beside it and
@@ -377,28 +376,13 @@ removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its
 after the path, and Apple's SQLite never writes again through a connection whose file
 was renamed. When the file is back where it was opened, the store reconnects and saves.
 
-On macOS, iCloud documents use a private working store under Application Support. The
-existing Rust Store and owner edit that SQLite file, so rollback journals stay local.
-The public file keeps its ordinary inode lease and socket discovery. Explicit native/CLI flush and successful close publish a complete clone through coordinated
-Foundation safe-save, acquire the candidate's lease before replacement, and transfer
-ownership and discovery to the new public inode. Creating/copying into iCloud similarly
-finishes SQLite work privately before publishing a complete file. Local documents retain
-the direct store and resource-reader path; they have no presenter or coordination per
-operation. Location is classified at open; changing Desktop/Documents sync while a local
-writer is already open is outside this preview's qualified path. Close documents before
-changing that setting and reopen them afterwards.
-
-The private session record is durable before replacement and retains a candidate receipt
-until the replacement and directory sync are confirmed. Reopening the same cloud path
-recovers its private edits under the session lock and public lease. A cheap identity/size/
-mtime fence detects external changes; only changed stats or uncertain recovery require
-hashing, against an immutable last-published clone. There are no empty SQLite reservations
-on public inodes: the supported ownership boundary is the hitSlop lease plus coordinated
-safe-save, not arbitrary simultaneous raw SQLite writers. Page flush barriers guarantee local durability without waiting for publication. A
-conflict retains ownership and the private edits; Duplicate and Share a Copy still read the private store. Cloud
-moves, automatic launch recovery, bounded provider waits and two-Mac provider qualification
-remain follow-ups. Recents uses metadata placeholders for evicted files rather than
-downloading them. This is preview storage support, not a real-provider qualification claim.
+Native save panels default to the last usable local folder, else Desktop when it is
+local, else `~/hitSlop`. Opening a document that lives in iCloud offers "Move to ~/hitSlop
+and Open": the core copies it through coordinated access into a fresh name with the same
+identity and retained history, validates the copy, and only then moves the original to the
+Trash. If cleanup fails, both files are kept and the app says where the local one is.
+Devices share a person's own documents through the [Apple library](#apple-library-preview),
+not through synced folders.
 
 The native Share popover offers PDF, PNG image and editable slop-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
@@ -641,8 +625,7 @@ the fixed `Library` zone. Rust owns library metadata, retained history, writer a
 staging, merging through the existing owner, and receipts. Swift carries file paths and
 opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
 
-Creation asks for a catalog name, independent of fields inside the authored app. Rename
-is deferred. Both catalogs share the app icon and bundled Baloo 2 headings; controls and
+Creation asks for a catalog name, independent of fields inside the authored app. Both catalogs share the app icon and bundled Baloo 2 headings; controls and
 body copy use native fonts. The iPhone editor extends only its page-colored background
 under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
 
@@ -653,22 +636,17 @@ keeps the previous artwork and cannot prevent a save. Derived images never edit 
 Rust library metadata records the artwork's source version. A content-derived asset
 revision detects artwork-only uploads and invalidates catalog caches. Receipts confirm
 the revision actually staged; downloads adopt artwork only when its source matches the
-merged document state. Library merges
-require the same document identity and app slug, equivalent parsed data descriptors and
+merged document state. Library merges require the same document identity and app slug, equivalent parsed data descriptors and
 the same theme token names and defaults. UI/code and description changes do not block
 state sync; each existing replica retains its own embedded app. Schema evolution
 still requires a migration, and the owner validates every merged state against its local
-contract. Supported file/runtime marker checks remain in force. Stale fallback images do not participate in asset revisions, so
-different fallback pictures cannot create a replication loop.
+contract. Supported file/runtime marker checks remain in force. Stale fallback images do
+not participate in asset revisions, so different fallback pictures cannot create a
+replication loop.
 
 A CloudKit download preserves any existing local relay binding. The library supplies its
 history-retention placeholder only when the installed document has no share row;
 checkpoint delivery does not change an existing owner's room membership.
-
-This is a Development-container preview. Production schema/container qualification,
-broader mobile templates, existing-file moves, widgets, and history compaction remain
-follow-up work. Ordinary iCloud files use the separate private-publication path above;
-they do not become CloudKit library documents.
 
 ### Relay
 

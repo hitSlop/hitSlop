@@ -56,10 +56,7 @@ pub enum Request {
         args_json: String,
         origin: Origin,
     },
-    /// Explicit native/CLI flush also publishes an iCloud file.
     Flush,
-    /// Page/capture barrier: local durability remains available after publication fails.
-    FlushLocal,
     Discard,
     Close {
         preview: Option<Vec<u8>>,

@@ -13,10 +13,12 @@ extension SlopFile {
     return try resolvedRoot(destination)
   }
 
-  /// Where a new document goes: `url` with the `.slop` extension. Rust checks the
-  /// destination and publishes a complete file in iCloud locations.
+  /// Where a new document goes: `url` with the `.slop` extension in a local folder.
   public static func newDocumentURL(_ url: URL) throws -> URL {
     let url = url.pathExtension == "slop" ? url : url.appendingPathExtension("slop")
+    #if os(macOS)
+      try SlopLocalDocument.requireLocal(url)
+    #endif
     return url
   }
 

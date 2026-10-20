@@ -47,7 +47,7 @@ extension SlopDocumentWindowController {
       panel.allowedContentTypes = [.slop]
       panel.nameFieldStringValue =
         url.deletingPathExtension().lastPathComponent + " copy.slop"
-      panel.startOnDesktop()
+      try panel.startInLocalDocuments()
       return try await duplicateDocument(to: await SlopPanels.select(panel, in: window))
     case .share:
       toolbar.willHide = { [weak self] in self?.sharePopover.dismiss() }
@@ -93,6 +93,7 @@ extension SlopDocumentWindowController {
     telemetry.send(.breadcrumb(.duplicate, .started))
     do {
       let copied = try await copyDocument(to: try SlopFile.newDocumentURL(target))
+      SlopSaveLocation.remember(copied)
       telemetry.send(.breadcrumb(.duplicate, .completed))
       return copied
     } catch {
