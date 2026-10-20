@@ -59,6 +59,7 @@ fn relay_checkpoints_throttle_automatic_staging_but_manual_saves_and_ordinary_do
     drop(library);
     let reopened = Library::open(&dir.path().join("library"), "account").unwrap();
     assert!(reopened.stage_allowed(&entry.id, false).unwrap());
+    assert_eq!(std::fs::read_dir(dir.path().join("library/uploads")).unwrap().count(), 0);
 }
 
 #[test]

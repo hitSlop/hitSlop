@@ -134,7 +134,7 @@ fn whole_file_snapshot_merges_through_owner_preserving_identity_theme_and_blobs(
     assert_eq!(snapshot::inspect(&path).unwrap().id, id);
     assert_eq!(snapshot::inspect(&path).unwrap().fingerprint, union.fingerprint);
     let (_other_dir, unrelated) = fixture();
-    assert!(snapshot::merge(&left, &unrelated).unwrap_err().contains("another document"));
+    assert!(snapshot::merge(&left, &unrelated).unwrap_err().contains("different document identity"));
     close(&left);
 }
 

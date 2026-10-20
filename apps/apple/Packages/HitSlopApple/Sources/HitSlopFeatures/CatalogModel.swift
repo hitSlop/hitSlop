@@ -172,7 +172,7 @@ public struct CatalogClient {
 
   public init(client: CatalogClient) { self.client = client }
 
-  public var synced: [CatalogEntry] = []
+  public var synced: [CatalogEntry] = [] { didSet { synchronizeSelection() } }
 
   public var categories: [SlopCategory] {
     let present = Set(local.flatMap(\.categories))

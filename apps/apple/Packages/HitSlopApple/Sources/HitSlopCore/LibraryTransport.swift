@@ -297,6 +297,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
           sent += 1
         }
         for item in changes.failedRecordSaves where item.record.recordID.zoneID == zone {
+          if let path = uploads.removeValue(forKey: item.record.recordID) { try? library.releaseUpload(path: path) }
           switch item.error.code {
           case .serverRecordChanged:
             // Preserve the server change tag, merge its asset, then retry the union.
@@ -351,6 +352,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
         let id = CKRecord.ID(recordName: entry.id, zoneID: zone)
         let change = CKSyncEngine.PendingRecordZoneChange.saveRecord(id)
         guard context.options.scope.contains(change) else { continue }
+        if let path = uploads.removeValue(forKey: id) { try? library.releaseUpload(path: path) }
         let upload: LibraryUpload
         do {
           guard let staged = try library.stageSync(id: entry.id, explicit: explicitCheckpoint) else {
@@ -365,6 +367,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
           syncEngine.state.remove(pendingRecordZoneChanges: [.saveRecord(id)])
           continue
         }
+        if let path = upload.assetPath { uploads[id] = path }
         let record: CKRecord
         if let fields = upload.fields {
           let decoder = try NSKeyedUnarchiver(forReadingFrom: fields)
@@ -377,7 +380,6 @@ actor LibraryTransport: CKSyncEngineDelegate {
         }
         record["payload"] = upload.assetPath.map { CKAsset(fileURL: URL(fileURLWithPath: $0)) }
         record["deleted"] = upload.entry.deleted ? 1 : 0
-        if let path = upload.assetPath { uploads[id] = path }
         record["title"] = upload.entry.title
         record["template"] = upload.entry.template
         record["snapshotVersion"] = upload.entry.version

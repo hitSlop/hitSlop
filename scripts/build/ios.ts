@@ -36,6 +36,11 @@ export async function buildCoreIOS() {
 }
 
 export async function prepareIOSFixtures() {
+  const corpus = process.env.HITSLOP_COMPAT_ROOT || join(repository, ".hitslop/compat/current");
+  const corpusEntries = await readdir(corpus, { withFileTypes: true }).catch(error => {
+    if (error.code !== "ENOENT") throw error;
+    throw new Error(`Compatibility corpus not found at ${corpus}. Run bun run compat:resolve to fetch the published corpora, or set HITSLOP_COMPAT_ROOT to the resolved corpus directory.`);
+  });
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-ios-fixture-"));
   try {
     const source = join(repository, "tests/fixtures/checklist/document");
@@ -52,8 +57,7 @@ export async function prepareIOSFixtures() {
       const request = { method: "pack", stage: temporary, file: join(stage, "host-probe.slop"), app, renderViews: true };
       const packed = await exec([cargoOutput("slop-engine"), "--client-protocol", String(version)], { cwd: repository, env, stdin: JSON.stringify(request) });
       if (packed.code || !(JSON.parse(packed.stdout) as {ok?: boolean}).ok) throw new Error(`Cannot pack iOS fixture: ${packed.stdout} ${packed.stderr}`);
-      const corpus = process.env.HITSLOP_COMPAT_ROOT || join(repository, ".hitslop/compat/current");
-      for (const entry of await readdir(corpus, { withFileTypes: true })) {
+      for (const entry of corpusEntries) {
         if (!(await stat(join(corpus, entry.name))).isDirectory()) continue;
         const version = entry.name;
         const documents = join(corpus, version, "documents");

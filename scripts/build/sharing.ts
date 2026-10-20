@@ -1,4 +1,5 @@
 /** Developer preview artifacts: the trusted host, isolated authored frame and Rust relay. */
+import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,6 +28,14 @@ export async function buildSharing() {
   const temporary = await mkdtemp(join(tmpdir(), "hitslop-relay-build-"));
   try {
     const tool = process.env.HITSLOP_WORKER_BUILD ?? join(repository, "generated/core-tools/bin/worker-build");
+    if (!process.env.HITSLOP_WORKER_BUILD && !existsSync(tool)) {
+      const installed = await exec(["cargo", "install", "worker-build", "--version", "0.8.7", "--locked", "--force", "--root", join(repository, "generated/core-tools")], {
+        cwd: repository, inherit: ["stdout", "stderr"],
+      });
+      if (installed.code) throw new Error("Cannot install worker-build 0.8.7");
+    }
+    const version = await exec([tool, "--version"]);
+    if (version.code || version.stdout.trim() !== "0.8.7") throw new Error("Sharing requires worker-build 0.8.7; set HITSLOP_WORKER_BUILD to that version.");
     const result = await exec([tool, "--release", "--no-opt", "--out-dir", temporary, "--", "--locked"], {
       cwd: join(repository, "apps/sharing"), inherit: ["stdout", "stderr"],
     });

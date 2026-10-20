@@ -66,13 +66,13 @@ public struct CatalogView: View {
     }
     .onAppear {
       model.start()
-      library.start()
+      if SyncedLibraryPreview.enabled { library.start() }
     }
     .onReceive(NotificationCenter.default.publisher(for: .hitSlopJoinSharedSlop)) { _ in
       if SharingPreview.enabled { showJoin = true }
     }
     .onReceive(NotificationCenter.default.publisher(for: .hitSlopNewSyncedChecklist)) { _ in
-      guard library.isReady, !creatingLibrary else { return }
+      guard SyncedLibraryPreview.enabled, library.isReady, !creatingLibrary else { return }
       libraryName = "Quick Checklist"
       showLibraryName = true
     }

@@ -66,19 +66,21 @@ private struct UpdateSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
-    NSApp.registerForRemoteNotifications()
-    SlopLibrary.shared.start()
-    libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
-      [weak self] _ in
-      SlopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
-    }
-    libraryChanges = SlopLibrary.shared.$entries.sink { [weak self] entries in
-      guard let self else { return }
-      SlopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
-      for entry in entries where entry.deleted {
-        for controller in self.coordinator.documentControllers
-        where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
-          controller.close()
+    if SyncedLibraryPreview.enabled {
+      NSApp.registerForRemoteNotifications()
+      SlopLibrary.shared.start()
+      libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
+        [weak self] _ in
+        SlopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
+      }
+      libraryChanges = SlopLibrary.shared.$entries.sink { [weak self] entries in
+        guard let self else { return }
+        SlopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
+        for entry in entries where entry.deleted {
+          for controller in self.coordinator.documentControllers
+          where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
+            controller.close()
+          }
         }
       }
     }
@@ -109,11 +111,13 @@ private struct UpdateSettingsView: View {
   }
   func applicationDidBecomeActive(_ notification: Notification) {
     NotificationCenter.default.post(name: .hitSlopSharingForeground, object: nil)
-    SlopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
-    SlopLibrary.shared.activated(true)
+    if SyncedLibraryPreview.enabled {
+      SlopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
+      SlopLibrary.shared.activated(true)
+    }
   }
   func applicationDidResignActive(_ notification: Notification) {
-    SlopLibrary.shared.activated(false)
+    if SyncedLibraryPreview.enabled { SlopLibrary.shared.activated(false) }
   }
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {
@@ -291,7 +295,9 @@ private struct UpdateSettingsView: View {
     fileItem.submenu = file
     file.delegate = self
     item(file, "New from Template…", #selector(showCatalog), "n")
-    item(file, "New Synced Checklist…", #selector(newSyncedChecklist), "")
+    if SyncedLibraryPreview.enabled {
+      item(file, "New Synced Checklist…", #selector(newSyncedChecklist), "")
+    }
     if SharingPreview.enabled { item(file, "Join Shared Slop…", #selector(joinSharedSlop), "") }
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")

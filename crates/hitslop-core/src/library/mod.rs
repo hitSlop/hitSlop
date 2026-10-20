@@ -89,7 +89,7 @@ struct Inner {
     live: HashMap<String, Weak<Owner>>,
     // Failed temporary owners keep their writer lease and unsaved state for retry.
     retained: HashMap<String, Arc<Owner>>,
-    artwork_cache: RefCell<HashMap<String, (u64, std::time::SystemTime, String)>>,
+    artwork_cache: RefCell<HashMap<String, (u64, std::time::SystemTime, String, String)>>,
     relay_checkpoint: HashMap<String, std::time::Instant>,
 }
 pub struct Library {
@@ -128,6 +128,12 @@ impl Library {
             });
         }
         db.execute("INSERT OR IGNORE INTO meta VALUES('account', ?1)", [account])?;
+        for entry in std::fs::read_dir(root.join("uploads"))? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                std::fs::remove_file(entry.path())?;
+            }
+        }
         Ok(Arc::new(Self {
             root,
             inner: Mutex::new(Inner {
@@ -180,17 +186,17 @@ impl Library {
             (String::new(), String::new())
         } else {
             let path = self.path(id);
-            let store = Store::open(&path, Mode::Snapshot)?;
-            let version = store.document()?.reading()?.version;
             let stat = std::fs::metadata(&path)?;
             let stamp = (stat.len(), stat.modified()?);
             let mut cache = inner.artwork_cache.borrow_mut();
-            let digest = match cache.get(id) {
-                Some((size, time, digest)) if (*size, *time) == stamp => digest.clone(),
+            let (version, digest) = match cache.get(id) {
+                Some((size, time, version, digest)) if (*size, *time) == stamp => (version.clone(), digest.clone()),
                 _ => {
+                    let store = Store::open(&path, Mode::Snapshot)?;
+                    let version = store.document()?.reading()?.version;
                     let digest = snapshot::artwork_digest(&store).map_err(failed)?;
-                    cache.insert(id.into(), (stamp.0, stamp.1, digest.clone()));
-                    digest
+                    cache.insert(id.into(), (stamp.0, stamp.1, version.clone(), digest.clone()));
+                    (version, digest)
                 }
             };
             let revision = snapshot::asset_revision(&version, &source_version, &digest);

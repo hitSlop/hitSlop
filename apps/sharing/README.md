@@ -50,7 +50,7 @@ resources still need operator retirement. Local documents are retained.
 ## Build and deploy
 
 Use the workspace Rust/wasm-bindgen tools, LLVM and Binaryen described in the normal
-build setup. Install `worker-build 0.8.7` into `generated/core-tools`, or supply
+build setup. The sharing build installs `worker-build 0.8.7` into `generated/core-tools` when missing. You can also supply
 `HITSLOP_WORKER_BUILD` pointing to that version.
 
 ```sh

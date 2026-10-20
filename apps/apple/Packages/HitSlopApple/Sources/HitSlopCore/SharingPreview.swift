@@ -20,6 +20,16 @@ public enum SharingPreview {
   }()
 }
 
+public enum SyncedLibraryPreview {
+  public static let enabled: Bool = {
+    #if DEBUG || HITSLOP_SYNCED_LIBRARY
+      true
+    #else
+      false
+    #endif
+  }()
+}
+
 /// Opaque Rust invitations, local to this device. Owner recovery uses the account service.
 public enum SharingCredentials {
   private static func query(_ document: String) throws -> [String: Any] {

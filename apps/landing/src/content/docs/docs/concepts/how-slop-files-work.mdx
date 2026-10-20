@@ -46,6 +46,8 @@ Registered templates and built-in starters remain immutable. **Create** makes a 
 
 Close before moving or renaming a document. Keep active documents on a local filesystem outside iCloud and other synced folders. The Mac app checks for iCloud-synced Desktop and Documents folders and uses `~/hitSlop` as its initial save location when Desktop is synced. It remembers your last usable local save folder.
 
+The iCloud check, remembered save folder, and **Move to ~/hitSlop and Open** arrive in the next hitSlop release.
+
 Opening a document stored in iCloud offers **Move to ~/hitSlop and Open**. hitSlop saves and verifies a local copy before moving the original to Trash. If the original cannot be removed, both files are kept and the app explains where the local document was saved. Templates stay unchanged and create editable copies.
 
 Every file is checked when it opens: a damaged or oversized one is refused, never repaired. Migrations, schema evolution, and multiple writers on one document are not supported.
