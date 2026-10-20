@@ -88,7 +88,7 @@ struct CatalogDetail: View {
       IconTile(artwork: entry.icons, size: 64, radius: 14)
       VStack(alignment: .leading, spacing: 3) {
         Text(entry.displayTitle)
-          .font(.title.weight(.semibold))
+          .font(SlopBrand.heading(28, relativeTo: .title))
           .lineLimit(nil)
           .fixedSize(horizontal: false, vertical: true)
         if let identity = entry.documentIdentity {

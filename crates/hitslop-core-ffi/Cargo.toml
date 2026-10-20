@@ -12,10 +12,18 @@ crate-type = ["cdylib", "staticlib"]
 doctest = false
 
 [dependencies]
-hitslop-core = { path = "../hitslop-core", features = ["storage"] }
+hitslop-sharing-client = { path = "../hitslop-sharing-client" }
+hitslop-sharing-protocol = { path = "../hitslop-sharing-protocol" }
+hitslop-core = { path = "../hitslop-core", default-features = false, features = ["storage"] }
 # Without its default `cargo-metadata`, which only the bindings generator uses: every host
 # build then shares one dependency graph. The generator is installed on its own
 # (crates/README.md).
 uniffi = { version = "=0.32.2", default-features = false }
 thiserror.workspace = true
 
+[features]
+default = ["desktop"]
+desktop = ["hitslop-core/desktop"]
+
+
+mobile-capture = ["hitslop-core/mobile-capture"]

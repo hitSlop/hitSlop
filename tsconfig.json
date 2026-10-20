@@ -20,6 +20,7 @@
     "allowImportingTsExtensions": true
   },
   "include": [
+    "apps/sharing/http.ts",
     "packages/hitslop/src/**/*.ts",
     "packages/hitslop/tests/**/*.ts",
     "scripts/**/*.ts",

@@ -3,6 +3,50 @@ use super::engine::True;
 use crate::{Code, Result, app::Capability, err};
 use serde::{Deserialize, Serialize};
 
+/// Responsive editor layout, in CSS pixels of the actual document viewport.
+pub const COMPACT_LAYOUT_WIDTH: u32 = 640;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum HostPlatform {
+    Macos,
+    Ios,
+    Android,
+    Windows,
+    Linux,
+    Unknown,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum HostDevice {
+    Phone,
+    Tablet,
+    Desktop,
+    Unknown,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum HostLayout {
+    Compact,
+    Regular,
+}
+/// Presentation hints, never document state or a capability/permission grant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub struct HostEnvironment {
+    pub platform: HostPlatform,
+    pub device: HostDevice,
+}
+impl HostEnvironment {
+    /// Browsers and development owners cannot infer the page's device from their process.
+    pub fn unknown() -> Self {
+        Self { platform: HostPlatform::Unknown, device: HostDevice::Unknown }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields, rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
@@ -15,6 +59,8 @@ pub enum PageRequest {
     Undo {},
     Redo {},
     Config {},
+    #[serde(rename = "host.environment")]
+    HostEnvironment {},
     #[serde(rename = "attachments.put")]
     AttachmentsPut {
         bytes: String,
@@ -61,6 +107,7 @@ impl PageRequest {
             | Self::Undo {}
             | Self::Redo {}
             | Self::Config {}
+            | Self::HostEnvironment {}
             | Self::AttachmentsPut { .. }
             | Self::WindowResize { .. }
             | Self::Ready {}
@@ -98,6 +145,7 @@ impl PageRequest {
             | Self::Undo {}
             | Self::Redo {}
             | Self::Config {}
+            | Self::HostEnvironment {}
             | Self::Ready {}
             | Self::PageRecovered {} => true,
         };
@@ -108,6 +156,7 @@ impl PageRequest {
 /// Host-only operations. These cross UniFFI; document payloads do not.
 #[derive(Debug)]
 pub enum HostAction {
+    Environment,
     WindowResize {
         width: u32,
         height: u32,
@@ -165,6 +214,11 @@ pub enum PageSuccess {
         window: crate::app::WindowDefinition,
         #[cfg_attr(feature = "ts", ts(type = "object"))]
         descriptor: Box<serde_json::value::RawValue>,
+    },
+    #[serde(rename = "host.environment")]
+    HostEnvironment {
+        ok: True,
+        environment: HostEnvironment,
     },
     #[serde(rename = "attachments.put")]
     AttachmentsPut {
@@ -269,6 +323,7 @@ impl SpeechOutcome {
 }
 /// Native results use the same serializer as owner results.
 pub enum HostReply {
+    Environment { environment: HostEnvironment },
     WindowResize { width: f64, height: f64 },
     SpeechTranscribe { outcome: SpeechOutcome },
     Ready,
@@ -280,6 +335,7 @@ impl HostReply {
     pub fn to_json(self) -> String {
         let ok = True;
         crate::encode(&match self {
+            Self::Environment { environment } => PageSuccess::HostEnvironment { ok, environment },
             Self::WindowResize { width, height } if width.is_finite() && height.is_finite() => {
                 PageSuccess::WindowResize { ok, width, height }
             }

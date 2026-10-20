@@ -1,6 +1,6 @@
 /** Input ownership shared by local verification and CI scheduling. */
 const rustBuildInputs = [/^Cargo\.(toml|lock)$/, /^\.cargo\//, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
-const rustInputs = [/^crates\//, ...rustBuildInputs];
+const rustInputs = [/^crates\//, /^apps\/sharing\/src\//, /^apps\/sharing\/Cargo.toml$/, ...rustBuildInputs];
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
@@ -20,6 +20,7 @@ export const tierInputs = {
     /^packages\/hitslop\/src\/cli\/process\.ts$/,
   ],
   contracts: [
+    /^apps\/sharing\/openapi.json$/,
     ...rustInputs,
     /^packages\/hitslop\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
     /^scripts\/build\/(generate|rust-bindings)\.ts$/,
@@ -33,6 +34,7 @@ export const tierInputs = {
   render: [...rustInputs, /^packages\/hitslop\/(src|shell)\//, /^packages\/hitslop\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^slops\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
   browser: [...rustInputs, /^packages\/hitslop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
   rust: [/^scripts\/compat\//, ...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
+  sharing: [...rustInputs, /^apps\/sharing\//, /^scripts\/sharing\//, /^scripts\/build\/sharing\.ts$/],
   landing: [/^apps\/landing\//],
   packed: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,

@@ -13,7 +13,7 @@ export async function rustBindings(check: boolean) {
     if (await child.exited) throw new Error("Rust contract export failed");
     const destination = join(repository, "packages/hitslop/src/wire");
     const generated = (await readdir(stage)).sort();
-    if (generated.some(name => !name.endsWith(".generated.ts")))
+    if (generated.some(name => !name.endsWith(".generated.ts") && name !== "sharing.openapi.json"))
       throw new Error("Rust contracts must export to a .generated.ts module");
     const current = (await readdir(destination).catch(() => [] as string[])).filter(name => name.endsWith(".generated.ts"));
     for (const name of current) {
@@ -24,7 +24,7 @@ export async function rustBindings(check: boolean) {
     for (const name of generated) {
       // ts-rs leaves a space before line breaks around field documentation.
       const value = (await readFile(join(stage, name), "utf8")).replace(/[\t ]+$/gm, "");
-      const path = join(destination, name);
+      const path = name === "sharing.openapi.json" ? join(repository, "apps/sharing/openapi.json") : join(destination, name);
       if (check) {
         if (await readFile(path, "utf8").catch(() => undefined) !== value) throw new Error(`Generated drift: ${name}`);
       } else await writeIfChanged(path, value);

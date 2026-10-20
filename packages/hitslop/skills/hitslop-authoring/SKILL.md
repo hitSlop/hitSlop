@@ -88,6 +88,22 @@ remains available.
 
 ## Devices and speech
 
+For editor presentation, call `const environment = getEnvironment()` from `hitslop/svelte`
+during component initialization. Read `environment.current.platform` (`macos`, `ios`,
+`android`, `windows`, `linux`, `unknown`), `.device` (`phone`, `tablet`, `desktop`,
+`unknown`) and `.layout` (`compact` below 640 CSS px of the document viewport, otherwise
+`regular`). Native hosts report identity; browsers and older hosts use `unknown`.
+A narrow Mac window remains desktop/macOS. Use layout for available space and ordinary
+pointer/hover queries for input differences; identity does not grant capabilities.
+Keep reads reactive rather than destructuring `current` once. Editor CSS can select
+`html[data-slop-platform="macos"]`, `html[data-slop-device="phone"]` and
+`html[data-slop-layout="compact"]` (`:global(html[...])` in Svelte component CSS).
+Keep usable base styles for older hosts without those attributes. Use CSS
+`env(safe-area-inset-top, 0px)` and the other edges for system-area padding on full-screen
+pages. `slop dev` has Browser/iPhone/iPad/Mac presentation presets that retain edits;
+they do not simulate native services. Static views use their capture props, never this
+editor helper or its CSS attributes.
+
 Declare only the capabilities the app uses in `slop.ts`: `capabilities: ["camera", "microphone", "speech"]`.
 Camera and microphone use `navigator.mediaDevices.getUserMedia`, `MediaRecorder` and canvas;
 start from a button, show capture state, handle denied permission, and stop tracks on stop,

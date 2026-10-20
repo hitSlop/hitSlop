@@ -28,6 +28,13 @@ pub struct CaptureResult {
     pub result: RenderedOutput,
 }
 
+#[derive(uniffi::Record)]
+pub struct CapturedArtwork {
+    pub source_version: String,
+    pub preview: Option<Vec<u8>>,
+    pub icon: Option<Vec<u8>>,
+}
+
 /// Shared executable configuration, not a shared interpreter. Each output runs in a
 /// fresh restricted child and widget freshness still checks the installed binary.
 #[derive(uniffi::Object)]
@@ -49,6 +56,10 @@ impl CaptureRuntime {
         path: String,
         outputs: Vec<CaptureOutput>,
     ) -> Result<Vec<CaptureResult>, crate::CoreError> {
+        #[cfg(target_os = "ios")]
+        if outputs.iter().any(|output| matches!(output, CaptureOutput::Export { .. })) {
+            return Err(hitslop_core::store::Error::Failed("Export is unavailable on this host".into()).into());
+        }
         Ok(hitslop_core::capture::render_batch(std::path::Path::new(&path), &self.evaluator, &outputs)?
             .into_iter()
             .map(|capture| CaptureResult {
@@ -60,6 +71,27 @@ impl CaptureRuntime {
                 },
             })
             .collect())
+    }
+
+    /// A complete pair from one immutable source; a partial failure preserves old artwork.
+    pub fn render_artwork(&self, path: String) -> Result<CapturedArtwork, crate::CoreError> {
+        let path = std::path::Path::new(&path);
+        let store = hitslop_core::store::Store::open(path, hitslop_core::store::Mode::Snapshot)?;
+        let source_version = store.document()?.reading()?.version;
+        drop(store);
+        let mut result = CapturedArtwork { source_version, preview: None, icon: None };
+        for capture in
+            hitslop_core::capture::render_batch(path, &self.evaluator, &[CaptureOutput::Preview, CaptureOutput::Icon])?
+        {
+            if let CaptureValue::Image { bytes } = capture.result? {
+                match capture.output {
+                    CaptureOutput::Preview => result.preview = bytes,
+                    CaptureOutput::Icon => result.icon = bytes,
+                    _ => unreachable!(),
+                }
+            }
+        }
+        Ok(result)
     }
 
     pub fn saved_widget_version(&self, path: String) -> Result<String, crate::CoreError> {

@@ -3,6 +3,7 @@ import type { Capability, WindowDefinition } from "../wire/app.generated";
 import { silhouetteClip } from "../schema/presentation";
 import { capabilityFeatures } from "../schema/policy";
 import { WidgetViewports, WindowBounds } from "../schema/constants";
+import { environmentPresets } from "./environment-presets";
 
 const template = readFileSync(new URL("preview.html", import.meta.url), "utf8");
 
@@ -52,6 +53,7 @@ export function previewFrame(app: {
   const features = capabilityFeatures(app.capabilities);
   const values: Record<string, string> = {
     title: escape(app.title),
+    environments: escape(JSON.stringify(environmentPresets)),
     surface: surface.join(";"),
     shadow: shadow ? '.stage[data-view="editor"]{filter:drop-shadow(0 18px 25px #0004)}' : "",
     widgets: app.widget ? "" : "hidden disabled",

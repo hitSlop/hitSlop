@@ -154,6 +154,55 @@ Command descriptors live in `definition_json`; `commands.js` is private and immu
 JSON Schema is computed only for `describe`, never stored or accepted as input.
 Installing hitSlop does not replace a document's embedded app.
 
+## Platform, device and responsive layout
+
+Call `getEnvironment()` from `hitslop/svelte` during editor component initialization,
+just like `getDocument(schema)`. Its read-only `current` snapshot is reactive:
+
+```svelte
+<script lang="ts">
+  import { getEnvironment } from "hitslop/svelte";
+  const environment = getEnvironment();
+</script>
+
+{#if environment.current.platform === "macos"}
+  <p>Mac-specific controls go here.</p>
+{/if}
+{#if environment.current.layout === "compact"}
+  <p>A composition for a narrow window.</p>
+{/if}
+```
+
+`platform` is `macos`, `ios`, `android`, `windows`, `linux` or `unknown`.
+`device` is `phone`, `tablet`, `desktop` or `unknown`. Native hosts supply identity;
+browser hosts and older hosts report `unknown`. Android and Windows hosts are future
+work. A device category is a presentation hint, not a permission or capability check.
+
+`layout` is `compact` below 640 CSS pixels of the actual document viewport and
+`regular` otherwise. A narrow Mac window remains a desktop device. Layout updates on
+resize and rotation without editing saved state. Read `environment.current` inside
+reactive expressions; destructuring it once keeps that old snapshot.
+
+CSS receives the same editor information on `<html>`:
+
+```css
+:global(html[data-slop-layout="compact"]) .controls { flex-direction: column; }
+:global(html[data-slop-platform="macos"]) .mac-controls { display: flex; }
+```
+
+Use plain `html[...]` selectors in standalone CSS. Keep base styles usable without
+these attributes for older hosts; ordinary media and container queries also work.
+Choose responsive layout for available space and pointer/hover media queries for input
+differences. Full-screen content can use `env(safe-area-inset-top, 0px)` and the other
+safe-area insets for padding around system areas; the page background can still fill
+the display. These insets do not describe floating host controls.
+
+`slop dev` offers Browser, iPhone, iPad and Mac device presets. Phone/tablet presets
+change the viewport; Browser and Mac restore the authored size. Changes preserve
+accepted edits and simulate presentation only. Preview, Export, Icon and Widget remain
+static views of their capture props and never read `getEnvironment()` or receive these
+editor attributes.
+
 ## Entry and media
 
 `slop.ts` exports metadata through `defineSlop({ slug, title, description, author,

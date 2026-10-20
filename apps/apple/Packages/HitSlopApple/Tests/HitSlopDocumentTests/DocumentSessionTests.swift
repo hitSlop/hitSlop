@@ -9,6 +9,45 @@ import WebKit
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentSessionTests {
+  @Test @MainActor func environmentIsAvailableBeforeMountAndTracksTheWebViewWidth() async throws {
+    let stage = try Fixtures.stage()
+    try Fixtures.writeApp(
+      """
+      export default { mount(ctx) {
+        globalThis.environmentAtMount = ctx.environment.current;
+        globalThis.attributesAtMount = {...document.documentElement.dataset};
+        globalThis.environmentNow = ctx.environment.current;
+        const unsubscribe = ctx.environment.subscribe(() => { globalThis.environmentNow = ctx.environment.current; });
+        return { unmount: unsubscribe };
+      }};
+      """, to: stage)
+    let root = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    do {
+      try await session.waitUntilReady()
+      let initial = try await session.webView.callAsyncJavaScript(
+        "return environmentAtMount.platform === 'macos' && environmentAtMount.device === 'desktop' && attributesAtMount.slopPlatform === 'macos' && attributesAtMount.slopDevice === 'desktop' && attributesAtMount.slopLayout === environmentAtMount.layout",
+        arguments: [:], in: nil, contentWorld: .page)
+      #expect(initial as? Bool == true)
+      for width in [639, 640] {
+        session.webView.setFrameSize(NSSize(width: width, height: 700))
+        let layout = width < 640 ? "compact" : "regular"
+        #expect(
+          await eventually(timeout: .seconds(5)) {
+            (try? await session.webView.callAsyncJavaScript(
+              "return environmentNow.platform === 'macos' && environmentNow.device === 'desktop' && environmentNow.layout === layout && document.documentElement.dataset.slopLayout === layout",
+              arguments: ["layout": layout], in: nil, contentWorld: .page)) as? Bool == true
+          })
+      }
+      try await session.close()
+    } catch {
+      try? await session.close()
+      throw error
+    }
+  }
+
   @Test @MainActor func shellImportFailureReachesNativeSession() async throws {
     let root = try Fixtures.document()
     defer { try? FileManager.default.removeItem(at: root) }

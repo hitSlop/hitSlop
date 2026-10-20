@@ -67,7 +67,7 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/HitSlopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
-  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "packed", "swift", "native"]);
+  expect(affected("crates/hitslop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "sharing", "packed", "swift", "native"]);
   for (const path of ["packages/hitslop/src/sdk/context.ts", "packages/hitslop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])

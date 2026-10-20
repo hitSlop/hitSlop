@@ -3,13 +3,45 @@
 // so it imports nothing at run time. No authored code or native bridge runs here.
 import type { WindowBounds } from "../schema/constants";
 import type { PreviewSurface, PreviewView } from "./preview-views.svelte";
+import type { environmentPresets, EnvironmentPreset } from "./environment-presets";
 
 const stage = document.querySelector<HTMLElement>(".stage")!;
+// This trusted entry is transpiled, not bundled; keep its runtime graph empty under
+// the outer host's narrow script-src. The server supplies the shared preset table.
+const presets: typeof environmentPresets = JSON.parse(stage.dataset.environments!);
+const isPreset = (value: string): value is EnvironmentPreset => Object.hasOwn(presets, value);
 const frame = document.querySelector("iframe")!;
-const select = document.querySelector("select")!;
+const select = document.querySelector<HTMLSelectElement>(
+  'select[aria-label="Preview composition"]',
+)!;
+const environment = document.querySelector<HTMLSelectElement>(
+  'select[aria-label="Device preset"]',
+)!;
 const widgets = select.querySelector("optgroup")!;
 const status = document.querySelector("output")!;
 const handle = document.querySelector<HTMLButtonElement>(".resize-preview");
+const authoredSize = {
+  width: stage.style.getPropertyValue("--editor-width"),
+  height: stage.style.getPropertyValue("--editor-height"),
+};
+const sendEnvironment = () =>
+  frame.contentWindow?.postMessage(
+    { type: "slop:environment", preset: environment.value },
+    location.origin,
+  );
+environment.addEventListener("change", () => {
+  if (!isPreset(environment.value)) return;
+  const preset = presets[environment.value];
+  stage.style.setProperty(
+    "--editor-width",
+    "width" in preset ? `${preset.width}px` : authoredSize.width,
+  );
+  stage.style.setProperty(
+    "--editor-height",
+    "height" in preset ? `${preset.height}px` : authoredSize.height,
+  );
+  sendEnvironment();
+});
 
 const choose = () =>
   frame.contentWindow?.postMessage(
@@ -21,7 +53,10 @@ select.addEventListener("change", choose);
 // needs. A reload keeps the selection: it is sent again.
 addEventListener("message", ({ source, origin, data }) => {
   if (origin !== location.origin || source !== frame.contentWindow) return;
-  if (data?.type === "slop:preview-ready") {
+  if (data?.type === "slop:environment-ready") {
+    sendEnvironment();
+  } else if (data?.type === "slop:preview-ready") {
+    sendEnvironment();
     widgets.hidden = widgets.disabled = !data.widget;
     if (!data.widget && select.selectedOptions[0]?.parentElement === widgets)
       select.value = "editor";
@@ -29,6 +64,7 @@ addEventListener("message", ({ source, origin, data }) => {
   } else if (data?.type === "slop:surface") {
     const { width, height, clipped } = data as PreviewSurface;
     stage.dataset.view = width === undefined ? "editor" : "static";
+    environment.disabled = width !== undefined;
     if (width !== undefined) {
       stage.style.setProperty("--view-width", `${width}px`);
       stage.style.setProperty("--view-height", `${height}px`);
@@ -36,6 +72,8 @@ addEventListener("message", ({ source, origin, data }) => {
     status.textContent = clipped ? "Content extends beyond this canvas and will be clipped." : "";
   }
 });
+// Whichever trusted script starts last completes the handshake.
+sendEnvironment();
 
 if (handle) {
   const bounds: typeof WindowBounds = JSON.parse(handle.dataset.bounds!);

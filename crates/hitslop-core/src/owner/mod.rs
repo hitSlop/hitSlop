@@ -8,7 +8,7 @@ use crate::{Origin, store, theme};
 #[cfg(target_arch = "wasm32")]
 pub use actor::BrowserDriver;
 use actor::Message;
-pub use actor::{SyncEvent, SyncSink};
+pub use actor::{SyncConnection, SyncEvent, SyncSink};
 pub use failure::{Failure, FailureKind};
 #[cfg(not(target_arch = "wasm32"))]
 pub use hitslop_runner::Evaluator;
@@ -40,6 +40,10 @@ pub fn theme_request(change: ThemeChange) -> Request {
 pub enum Request {
     /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
+    #[cfg(not(target_arch = "wasm32"))]
+    MergeSnapshot {
+        bytes: Vec<u8>,
+    },
     Apply {
         batch: crate::Batch,
         origin: Origin,
@@ -76,6 +80,13 @@ pub enum Request {
     },
     Artwork {
         name: Artwork,
+    },
+    /// Derived images are admitted only for the saved state they were rendered from.
+    #[cfg(not(target_arch = "wasm32"))]
+    SetArtwork {
+        source_version: String,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
     },
     Attachments,
     ReadAttachment {
@@ -180,6 +191,7 @@ fn take(callback: &mut Option<Completion>) -> Completion {
 /// A queue handle, independent of any page lifetime. Its store retains the writer lock
 /// until a successful close; a failed save never releases it.
 pub struct Owner {
+    sync_admission: Arc<std::sync::Mutex<actor::Admission>>,
     sender: mpsc::Sender<Message>,
     store: Arc<store::Store>,
     path: PathBuf,
@@ -200,6 +212,16 @@ impl Owner {
     ) -> Result<Self> {
         let path = file::resolve(path)?;
         let store = Arc::new(store::Store::open(&path, mode)?);
+        Self::from_store(path, store, mode, listener, evaluator)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn from_store(
+        path: PathBuf,
+        store: Arc<store::Store>,
+        mode: store::Mode,
+        listener: Listener,
+        evaluator: Option<Evaluator>,
+    ) -> Result<Self> {
         let (sender, epoch) = match actor::spawn(store.clone(), mode, listener, evaluator) {
             Ok(started) => started,
             Err(failure) => {
@@ -209,7 +231,7 @@ impl Owner {
                 return Err(failure);
             }
         };
-        Ok(Self { sender, store, path, epoch })
+        Ok(Self { sender, store, path, epoch, sync_admission: Arc::default() })
     }
     /// Serial admission for host actions, including immutable page configuration.
     /// The host still fences the WebView when the asynchronous result arrives.

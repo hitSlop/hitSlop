@@ -4,9 +4,11 @@ import type { SlopApp, SlopContext } from "../abi";
 import type { Definition, LiveDocument, ObjectNode, Value } from "../schema";
 import { activate, deactivate, current } from "./context";
 import { documentContext } from "./document";
+import { environmentContext } from "./environment.svelte";
 import Root from "./Root.svelte";
 export type { WidgetProps } from "../abi";
 export { getDocument } from "./document";
+export { getEnvironment, type EnvironmentSnapshot } from "./environment.svelte";
 export type { CaptureMode, CaptureProps } from "./capture-props";
 export { attachments, type AttachmentInfo, type AttachmentRef } from "./attachments";
 export {
@@ -33,16 +35,21 @@ export function svelteApp(App: Component, options: { schema: Definition<ObjectNo
     descriptor: options.schema.descriptor,
     mount(ctx, target) {
       const adapter = createAdapter(ctx.document);
+      const environment = environmentContext(ctx.environment);
       activate(ctx);
       const release = () => {
         adapter.dispose();
+        environment.dispose();
         deactivate(ctx);
       };
       try {
         const app = mount(Root, {
           target,
           props: { App },
-          context: documentContext(options.schema, adapter.document),
+          context: new Map<symbol, unknown>([
+            ...documentContext(options.schema, adapter.document),
+            ...environment.context,
+          ]),
         });
         return {
           rendered: tick,

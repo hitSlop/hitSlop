@@ -21,6 +21,8 @@ mod identity;
 #[cfg(feature = "storage")]
 pub mod images;
 mod layout;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+pub mod library;
 #[cfg(feature = "storage")]
 pub mod media;
 #[cfg(feature = "storage")]
@@ -31,7 +33,12 @@ mod publication;
 pub mod registry;
 mod replace;
 pub mod shape;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "snapshot-spike", not(target_arch = "wasm32")))]
+pub use library::snapshot as snapshot_spike;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32"), feature = "desktop"))]
+pub mod socket;
+#[cfg(all(feature = "storage", not(target_arch = "wasm32"), not(feature = "desktop")))]
+#[path = "socket_unavailable.rs"]
 pub mod socket;
 #[cfg(feature = "storage")]
 pub mod store;

@@ -187,6 +187,10 @@ const tiers: Tier[] = [
       if (!args.length) await prepare("Rust compilation and lints", async () => {
         await quiet(["cargo", "fmt", "--all", "--", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
+        // Compile the mobile host graph independently: workspace feature unification
+        // otherwise hides accidental desktop dependencies and unavailable-service code.
+        await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--", "-D", "warnings"]);
+        await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-sharing-worker", "--target", "wasm32-unknown-unknown", "--", "-D", "warnings"]);
         // The WASM adapter's lints do not depend on the host: Linux and release runs check
         // them, so macOS runs skip two builds and Homebrew's clang.
         if (process.platform === "linux" || release) {
@@ -225,6 +229,10 @@ const tiers: Tier[] = [
     run: async () => {
       await sh([process.execPath, "run", "check"], { cwd: join(repository, "apps/landing") });
     },
+  },
+  {
+    name: "sharing", nightly: true, needs: ["sharing"], inputs: tierInputs.sharing,
+    run: async () => { await sh([process.execPath, "scripts/sharing/check-accounts.ts"]); },
   },
   {
     name: "packed",

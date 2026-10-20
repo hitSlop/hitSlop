@@ -103,9 +103,8 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Deferred
 
-Collaboration (the core and its relay protocol are proven: local owners exchanging Loro
-updates through a Durable Object byte relay; the production relay and clients are deferred,
-see the [roadmap](docs/roadmap.md)), a document history UI, schema evolution,
+Production collaboration rollout (a developer-flagged native/web preview now connects the
+existing Rust owners through a Durable Object byte relay; see the [roadmap](docs/roadmap.md)), a document history UI, schema evolution,
 synced folders, hosted catalog/publishing, accounts/auth and sharing. `archive/`,
 `spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
 local and are not active contracts. Shared decisions belong in the architecture, roadmap

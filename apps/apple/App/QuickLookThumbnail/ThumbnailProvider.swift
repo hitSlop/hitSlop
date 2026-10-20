@@ -1,8 +1,14 @@
-import AppKit
 import HitSlopCore
+import ImageIO
 import QuickLookThumbnailing
 
-/// Finder and the share sheet's icon for a `.slop`: the document's icon artwork, or its
+#if os(macOS)
+  import AppKit
+#else
+  import UIKit
+#endif
+
+/// Files, Finder and the share sheet's icon for a `.slop`: its icon artwork, or its
 /// preview when it has no icon. A file without artwork, or one mid-recovery, gets the
 /// `.slop` document icon.
 final class ThumbnailProvider: QLThumbnailProvider {
@@ -28,12 +34,20 @@ final class ThumbnailProvider: QLThumbnailProvider {
     // AppKit's current context is in points, scaled to the display. The `CGContext` that
     // `QLThumbnailReply(contextSize:drawing:)` hands over is in unscaled pixels, so a
     // drawing in points filled only its bottom-left quarter.
-    let thumbnail = NSImage(cgImage: image, size: size)
+    #if os(macOS)
+      let thumbnail = NSImage(cgImage: image, size: size)
+    #else
+      let thumbnail = UIImage(cgImage: image)
+    #endif
     handler(
       QLThumbnailReply(
         contextSize: size,
         currentContextDrawing: {
-          NSGraphicsContext.current?.imageInterpolation = .high
+          #if os(macOS)
+            NSGraphicsContext.current?.imageInterpolation = .high
+          #else
+            UIGraphicsGetCurrentContext()?.interpolationQuality = .high
+          #endif
           thumbnail.draw(in: CGRect(origin: .zero, size: size))
           return true
         }), nil)

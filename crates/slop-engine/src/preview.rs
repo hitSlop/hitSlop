@@ -98,6 +98,9 @@ pub fn serve(path: &Path) -> ExitCode {
                             let reply = match result {
                                 PageDispatch::Reply { json, .. } => json,
                                 PageDispatch::Host { action } => match action {
+                                    HostAction::Environment => HostReply::Environment {
+                                        environment: hitslop_core::page_wire::HostEnvironment::unknown(),
+                                    },
                                     HostAction::WindowResize { width, height } => {
                                         HostReply::WindowResize { width: width.into(), height: height.into() }
                                     }

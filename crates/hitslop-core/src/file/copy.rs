@@ -48,7 +48,7 @@ impl Staged {
     /// folder entry is synced too.
     pub(crate) fn publish_new(mut self, dest: &Path, durable: bool) -> Result<Publication> {
         let (from, to) = (cstring(&self.path)?, cstring(&resolve(dest)?)?);
-        #[cfg(target_os = "macos")]
+        #[cfg(target_vendor = "apple")]
         // SAFETY: valid C strings.
         let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
         #[cfg(target_os = "linux")]

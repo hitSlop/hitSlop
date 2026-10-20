@@ -8,6 +8,29 @@ import Testing
 @testable import HitSlopCore
 @testable import HitSlopDocument
 
+@Test func localSaveFoldersRememberUsableLocationsAndRejectCloudPaths() throws {
+  let home = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: home) }
+  let suite = "local-save-\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let local = try SlopSaveLocation.folder(home: home, defaults: defaults)
+  #expect(local == home.appendingPathComponent("hitSlop", isDirectory: true))
+  let desktop = home.appendingPathComponent("Desktop", isDirectory: true)
+  try FileManager.default.createDirectory(at: desktop, withIntermediateDirectories: true)
+  #expect(try SlopSaveLocation.folder(home: home, defaults: defaults) == desktop)
+  SlopSaveLocation.remember(local.appendingPathComponent("document.slop"), defaults: defaults)
+  #expect(try SlopSaveLocation.folder(home: home, defaults: defaults) == local)
+  let cloud = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents")
+  #expect(throws: SlopFailure.self) {
+    try SlopLocalDocument.requireLocal(cloud.appendingPathComponent("missing/document.slop"))
+  }
+  SlopSaveLocation.remember(cloud.appendingPathComponent("document.slop"), defaults: defaults)
+  #expect(try SlopSaveLocation.folder(home: home, defaults: defaults) == local)
+  try FileManager.default.removeItem(at: local)
+  #expect(try SlopSaveLocation.folder(home: home, defaults: defaults) == desktop)
+}
+
 // The core owns the file's rules (crates/hitslop-core/tests/file.rs and manifest.rs).
 // These prove Swift reads what the core checked: the manifest, the window, the theme's
 // order and the file's kind, and that it maps the core's refusals.

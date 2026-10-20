@@ -149,7 +149,7 @@ echo "Signing nested tools and app…"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/hitslop-evaluator"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Frameworks/Sparkle.framework"
 /usr/bin/codesign --force --timestamp --options runtime \
-  --entitlements "$project_dir/App/macOS/hitSlop.entitlements" \
+  --entitlements "$project_dir/App/macOS/hitSlop.Release.entitlements" \
   --sign "$identity" "$app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 

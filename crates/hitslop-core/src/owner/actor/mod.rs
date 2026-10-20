@@ -18,8 +18,9 @@ use persistence::perform;
 #[cfg(not(target_arch = "wasm32"))]
 use persistence::persistence;
 use persistence::{StorageAction, Work};
+pub(super) use sync::Admission;
 use sync::{Link, SyncMessage};
-pub use sync::{SyncEvent, SyncSink};
+pub use sync::{SyncConnection, SyncEvent, SyncSink};
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn spawn(
@@ -393,6 +394,17 @@ impl Actor {
                 return Ok(None);
             }
             Request::State => Reply::State { reading: self.core.reading()?, sequence: self.core.sequence() },
+            #[cfg(not(target_arch = "wasm32"))]
+            Request::MergeSnapshot { bytes } => {
+                self.mutation()?;
+                if !self.store.is_shared() {
+                    return Err(Failure::rejected(Code::InvalidRequest, "Snapshot sync requires retained history"));
+                }
+                if let Some(result) = self.edited(|core| core.import_remote(&[&bytes]))? {
+                    self.accepted(result.sequence, result.publication, result.theme_changed);
+                }
+                Reply::Unit
+            }
             Request::Apply { batch, origin } => {
                 self.mutation()?;
                 let result = self.edited(|core| core.apply_batch(batch, origin))?;
@@ -425,6 +437,15 @@ impl Actor {
             }
             Request::Backup { destination } => {
                 self.wait(callback, AfterSave::Storage(StorageAction::Backup(destination)))?;
+                return Ok(None);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            Request::SetArtwork { source_version, preview, icon } => {
+                self.mutation()?;
+                if self.core.reading()?.version != source_version {
+                    return Err(Failure::new(FailureKind::Replaced, "Artwork source changed"));
+                }
+                self.wait(callback, AfterSave::Storage(StorageAction::SetArtwork { source_version, preview, icon }))?;
                 return Ok(None);
             }
             Request::Close { preview, icon } => {

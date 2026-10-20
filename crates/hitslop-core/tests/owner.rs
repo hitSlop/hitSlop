@@ -89,6 +89,55 @@ fn theme(color: &str, origin: Origin) -> Request {
     }
 }
 
+#[cfg(feature = "snapshot-spike")]
+#[test]
+fn whole_file_snapshot_merges_through_owner_preserving_identity_theme_and_blobs() {
+    use hitslop_core::{snapshot_spike as snapshot, store::Share};
+    let (dir, path) = fixture();
+    let (left, _) = open(&path, Mode::Document);
+    call(
+        &left,
+        Request::Share { share: Share { room: "snapshot-room".into(), endpoint: "https://relay.example".into() } },
+    )
+    .unwrap();
+    let seed = dir.path().join("seed.slop");
+    call(&left, Request::Backup { destination: seed.clone() }).unwrap();
+    let id = snapshot::inspect(&seed).unwrap().id;
+    let replica = dir.path().join("replica.slop");
+    snapshot::install(&seed, &replica, &id).unwrap();
+    assert!(snapshot::install(&seed, &replica, &id).is_err(), "install never overwrites a replica");
+    let (right, _) = open(&replica, Mode::Document);
+    call(&left, set("Offline title")).unwrap();
+    call(&right, theme("#123456", Origin::Window)).unwrap();
+    let Reply::Attachment { item } = call(&right, Request::PutAttachment { bytes: b"snapshot blob".to_vec() }).unwrap()
+    else {
+        panic!("blob")
+    };
+    let incoming = dir.path().join("incoming.slop");
+    call(&right, Request::Backup { destination: incoming.clone() }).unwrap();
+    snapshot::merge(&left, &incoming).unwrap();
+    let union = snapshot::inspect(&path).unwrap();
+    snapshot::merge(&left, &incoming).unwrap();
+    assert_eq!(snapshot::inspect(&path).unwrap().version, union.version, "repeated delivery is idempotent");
+    assert_eq!(state(&left)["value"]["title"], "Offline title");
+    assert_eq!(state(&left)["theme"]["accent"], "#123456");
+    assert!(
+        matches!(call(&left, Request::ReadAttachment { id: item.id }).unwrap(), Reply::Bytes { bytes: Some(bytes) } if bytes == b"snapshot blob")
+    );
+    let merged = dir.path().join("merged.slop");
+    call(&left, Request::Backup { destination: merged.clone() }).unwrap();
+    snapshot::merge(&right, &merged).unwrap();
+    assert_eq!(snapshot::inspect(&replica).unwrap().fingerprint, union.fingerprint);
+    close(&left);
+    close(&right);
+    let (left, _) = open(&path, Mode::Document);
+    assert_eq!(snapshot::inspect(&path).unwrap().id, id);
+    assert_eq!(snapshot::inspect(&path).unwrap().fingerprint, union.fingerprint);
+    let (_other_dir, unrelated) = fixture();
+    assert!(snapshot::merge(&left, &unrelated).unwrap_err().contains("different document identity"));
+    close(&left);
+}
+
 #[test]
 fn ordered_publications_flush_and_reopen_include_theme() {
     let (_dir, path) = fixture();
@@ -515,6 +564,75 @@ fn sync_sink() -> (hitslop_core::owner::SyncSink, mpsc::Receiver<hitslop_core::o
     )
 }
 
+#[test]
+fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement() {
+    use hitslop_core::{
+        owner::SyncEvent,
+        store::Share,
+        sync::{Frame, Permission, Status},
+    };
+    for frame in [vec![0; hitslop_core::sync::MAX_FRAME], Vec::new()] {
+        let (_dir, path) = fixture();
+        let (owner, _) = open(&path, Mode::Document);
+        call(
+            &owner,
+            Request::Share { share: Share { room: "bounded-room".into(), endpoint: "https://relay.example".into() } },
+        )
+        .unwrap();
+        let (sink, events) = sync_sink();
+        let old = owner.sync_connection(sink);
+        call(&owner, Request::State).unwrap();
+        while events.try_recv().is_ok() {}
+        let (blocked, wait) = mpsc::channel();
+        let (release, gate) = mpsc::channel();
+        owner.submit(
+            Request::State,
+            None,
+            Box::new(move |_| {
+                blocked.send(()).unwrap();
+                gate.recv().unwrap();
+            }),
+        );
+        wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        let count = if frame.is_empty() { hitslop_sharing_protocol::QUEUED_FRAMES } else { 2 };
+        for _ in 0..count {
+            assert!(old.frame(frame.clone()));
+        }
+        let refused = !old.frame(vec![0]);
+        release.send(()).unwrap();
+        assert!(refused, "Owner admission must bound both queued bytes and frame count");
+        loop {
+            if matches!(events.recv_timeout(Duration::from_secs(5)).unwrap(), SyncEvent::Reconnect) {
+                break;
+            }
+        }
+        call(&owner, set("Local editing survives overflow")).unwrap();
+        let (sink, next) = sync_sink();
+        let replacement = owner.sync_connection(sink);
+        let version = loop {
+            if let SyncEvent::Send { bytes } = next.recv_timeout(Duration::from_secs(5)).unwrap()
+                && let Frame::Hello { version, .. } = Frame::decode(&bytes).unwrap()
+            {
+                break version;
+            }
+        };
+        old.detach();
+        assert!(!old.frame(Frame::CaughtUp.encode()));
+        assert!(replacement.frame(Frame::Welcome { permission: Permission::Write, version }.encode()));
+        assert!(replacement.frame(Frame::CaughtUp.encode()));
+        loop {
+            if matches!(
+                next.recv_timeout(Duration::from_secs(5)).unwrap(),
+                SyncEvent::Status { status: Status::Synced }
+            ) {
+                break;
+            }
+        }
+        assert_eq!(state(&owner)["value"]["title"], "Local editing survives overflow");
+        close(&owner);
+    }
+}
+
 /// Drains both connections: each frame an owner sends goes to the relay, whose replies go
 /// back to it and whose stored records go to the other joined owner. Returns once `done`
 /// holds of the owners' latest sync statuses (and whatever else it reads).
@@ -543,6 +661,7 @@ fn pump(
                         }
                     }
                     SyncEvent::Status { status: s } => status[i] = Some(s),
+                    SyncEvent::Reconnect => panic!("Unexpected overflow in the bounded relay fixture"),
                 }
             }
         }

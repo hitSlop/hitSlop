@@ -11,6 +11,7 @@ struct CatalogRail: View {
   var searchFocused: FocusState<Bool>.Binding
   let localIssues: [String]
   let onRefresh: () -> Void
+  var onDelete: (CatalogEntry) -> Void = { _ in }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -18,7 +19,7 @@ struct CatalogRail: View {
         .padding(.horizontal, 14).padding(.top, 14)
 
       HStack(alignment: .center) {
-        Text(title).font(.title3.weight(.semibold))
+        Text(title).font(SlopBrand.heading(20, relativeTo: .title3))
         Spacer()
         QuietIconButton(systemName: "arrow.clockwise", help: "Refresh", action: onRefresh)
           .accessibilityLabel("Refresh catalog")
@@ -52,6 +53,15 @@ struct CatalogRail: View {
               ForEach(entries) { entry in
                 CatalogRow(entry: entry, selected: entry.id == selectedID) { selectedID = entry.id }
                   .id(entry.id)
+                  .contextMenu {
+                    if entry.isSynced,
+                      SlopLibrary.shared.visibleEntries.contains(where: { "library:" + $0.id == entry.id })
+                    {
+                      Button("Delete Slop", role: .destructive) {
+                        onDelete(entry)
+                      }
+                    }
+                  }
               }
             }
             .padding(.horizontal, 8).padding(.vertical, 8)
@@ -149,7 +159,7 @@ private struct CatalogRow: View {
     HStack(spacing: 11) {
       IconTile(artwork: entry.icons, size: 40, radius: 9)
       VStack(alignment: .leading, spacing: 2) {
-        Text(entry.displayTitle).font(.body.weight(.medium)).lineLimit(1)
+        Text(entry.displayTitle).font(SlopBrand.heading(15, relativeTo: .body)).lineLimit(1)
           .truncationMode(entry.isRecent ? .middle : .tail)
         Text(subtitle)
           .font(.callout).foregroundStyle(.secondary).lineLimit(1)

@@ -15,6 +15,7 @@ export async function prepareOutput(name: Build) {
     case "native": return buildCoreNative();
     case "sdk": return buildCoreWasm();
     case "browser": return buildBrowser();
+    case "sharing": return (await import("./sharing")).buildSharing();
     case "templates": return (await import("../templates/build")).buildTemplates();
     case "packages": return (await import("./packages")).packPackages(true);
     case "app": await import("./apple"); return;

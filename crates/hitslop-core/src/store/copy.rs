@@ -2,6 +2,27 @@
 use super::*;
 
 impl Store {
+    /// Files import reads one accepted snapshot without owning or modifying the source.
+    /// The destination gets an independent identity, retaining the imported file's
+    /// history and saved artwork. Import is not the sanitized Share a Copy operation.
+    pub fn import_copy(source: &Path, dest: &Path) -> Result<()> {
+        file::document_destination(dest)?;
+        if let Some(folder) = dest.parent().filter(|folder| !folder.as_os_str().is_empty()) {
+            std::fs::create_dir_all(folder).map_err(failed)?;
+        }
+        let conn = file::reader(source)?;
+        let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
+        let accepted = file::opened(&read, source, true)?;
+        super::validate_saved(&read, accepted.app.spec())?;
+        let create = accepted.kind == file::Kind::Template;
+        let imported = |staged: &Connection| {
+            let tx = file::begin_write(staged, "import document")?;
+            rows::renew_document(&tx)?;
+            tx.commit()
+        };
+        file::copy(&read, dest, create, true, if create { None } else { Some(&imported) })
+    }
+
     /// Writes the document's artwork through the writer's connection: a
     /// window renders it from the open document as it closes. Checked as `pack` checks it,
     /// and optimized at oxipng's fastest level, before the connection is taken: a close

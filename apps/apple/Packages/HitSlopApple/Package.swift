@@ -3,10 +3,11 @@ import PackageDescription
 
 let package = Package(
   name: "HitSlopApple",
-  platforms: [.macOS(.v15)],
+  platforms: [.macOS(.v15), .iOS("26.0")],
   products: [
     .library(name: "HitSlopCore", targets: ["HitSlopCore"]),
     .library(name: "HitSlopFirebase", targets: ["HitSlopFirebase"]),
+    .library(name: "HitSlopAccount", targets: ["HitSlopAccount"]),
     .library(name: "HitSlopDocument", targets: ["HitSlopDocument"]),
     .library(name: "HitSlopHost", targets: ["HitSlopHost"]),
     .library(name: "HitSlopCatalog", targets: ["HitSlopCatalog"]),
@@ -23,7 +24,7 @@ let package = Package(
       name: "HitSlopCoreBinding", dependencies: ["HitSlopCoreFFI"], path: "Generated/HitSlopCoreBinding",
       swiftSettings: [.swiftLanguageMode(.v5)], linkerSettings: [.linkedLibrary("sqlite3")]),
     .target(
-      name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding"],
+      name: "HitSlopDocument", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopAccount"],
       resources: [.copy("Resources/shell")], linkerSettings: [.linkedFramework("WebKit")]),
     .target(
       name: "HitSlopTestSupport", dependencies: ["HitSlopCore", "HitSlopCoreBinding", "HitSlopDocument"],
@@ -34,7 +35,16 @@ let package = Package(
       name: "HitSlopCore",
       // The core parses window silhouettes, so manifest geometry has one parser.
       dependencies: ["HitSlopCoreBinding"],
-      linkerSettings: [.linkedFramework("ImageIO")]
+      resources: [.process("Resources")],
+      linkerSettings: [.linkedFramework("ImageIO"), .linkedFramework("CloudKit")]
+    ),
+    .target(
+      name: "HitSlopAccount",
+      dependencies: [
+        "HitSlopCore", "HitSlopCoreBinding",
+        .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
+        .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+      ]
     ),
     .target(
       name: "HitSlopFirebase",

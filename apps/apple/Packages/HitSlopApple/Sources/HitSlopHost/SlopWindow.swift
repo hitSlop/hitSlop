@@ -151,11 +151,12 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var themePanel: NSPanel?
   var themeEditor: SlopThemeEditorModel?
   lazy var sharePopover = SlopSharePopover(
-    filename: url.lastPathComponent, canExport: canExport,
+    filename: SlopLibrary.shared.entry(at: url)?.title ?? url.lastPathComponent, canExport: canExport,
     holdToolbar: { [weak self] in self?.toolbar.holdForSharing($0) },
     select: { [weak self] in self?.request($0) })
   let fullscreen = FullscreenController()
   var commandsEnabled = true
+  var liveSharingPanel: NSPanel?
   /// Undo for this window's document; see `DocumentUndoManager`.
   lazy var documentUndo = DocumentUndoManager(session: session)
   var presentation: WindowPresentation
@@ -220,7 +221,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
       contentRect: NSRect(origin: .zero, size: size),
       styleMask: slopDocumentWindowStyleMask(resizable: session.file.isResizable),
       backing: .buffered, defer: false)
-    window.title = SlopDocumentIdentity(url: self.url).filename
+    window.title = SlopLibrary.shared.entry(at: self.url)?.title ?? SlopDocumentIdentity(url: self.url).filename
     window.minSize = NSSize(width: WindowBounds.minWidth, height: WindowBounds.minHeight)
     window.isOpaque = false
     window.backgroundColor = .clear
@@ -344,7 +345,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     guard let candidate else { return false }
     return candidate === window || candidate === toolbar.panel || candidate === themePanel
       || candidate === sharePopover.window
-      || candidate === presentation.progress?.panel
+      || candidate === presentation.progress?.panel || candidate === liveSharingPanel
   }
   /// Whether the coordinator accepts commands now; the toolbar follows it.
   public func setCommandsEnabled(_ enabled: Bool) {
@@ -385,16 +386,23 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     closeState = .closing
     window?.orderOut(nil)
     if operation == .close, preparation == .saved { routing.closeHidden() }
+    refreshedLibraryArtwork = false
     let artwork = await closingArtwork()
     do {
       try await session.close(artwork: artwork, trace: trace)
-      if artwork != nil {
+      if artwork != nil || refreshedLibraryArtwork {
         let interval = trace?.begin("Artwork announcement")
         SlopPreviewWriter.announce(url)
         trace?.end("Artwork announcement", interval)
       }
       closeState = .closed
       window?.close()
+      if refreshedLibraryArtwork {
+        Task {
+          await SlopLibrary.shared.refresh()
+          await SlopLibrary.shared.saveToCloud()
+        }
+      }
       telemetry.send(.breadcrumb(operation, .completed))
     } catch {
       closeState = .open
@@ -406,15 +414,27 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   }
   /// The page's preview and icon, when this session changed the document or it has no
   /// preview yet. Rendering uses an independent snapshot, never the window.
+  private var refreshedLibraryArtwork = false
   private func closingArtwork() async -> SlopRenderedArtwork? {
     guard isContentReady, session.isReady else { return nil }
     let edited = session.edited
     let preview = edited ? nil : await session.artwork(.preview)
-    let needsArtwork = edited || preview == nil
+    let managed = SlopLibrary.shared.entry(at: url)
+    let needsArtwork = edited || preview == nil || managed.map { $0.artworkVersion != $0.version } == true
     let needsWidget =
       session.file.views.widget != nil
       && SlopWidgetPublisher.shared.needsCapture(url: url, edited: edited)
     guard needsArtwork || needsWidget else { return nil }
+    if managed != nil {
+      do { refreshedLibraryArtwork = try await DocumentArtworkRenderer.refresh(session: session) } catch {
+        NSLog("hitSlop artwork refresh failed: %@", error.localizedDescription)
+      }
+      if needsWidget {
+        _ = await SlopRenderer.artwork(
+          session: session, telemetry: telemetry, trace: closeTrace, widgetURL: url, renderArtwork: false)
+      }
+      return nil
+    }
     let artwork = await SlopRenderer.artwork(
       session: session, telemetry: telemetry, trace: closeTrace,
       widgetURL: needsWidget ? url : nil, renderArtwork: needsArtwork)

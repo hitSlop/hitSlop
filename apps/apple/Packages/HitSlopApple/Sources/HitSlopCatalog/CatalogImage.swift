@@ -80,10 +80,16 @@ struct CatalogImageView: View {
 }()
 
 private func catalogImageKey(_ artwork: CatalogArtwork, maxPixelSize: Int) -> NSString? {
-  guard artwork.file.isFileURL, let modified = artwork.modifiedAt, let bytes = artwork.byteCount else { return nil }
-  return
-    "\(artwork.file.absoluteString)|\(artwork.name.rawValue)|\(modified.timeIntervalSinceReferenceDate)|\(bytes)|\(maxPixelSize)"
-    as NSString
+  guard artwork.file.isFileURL else { return nil }
+  let stamp: String
+  if let revision = artwork.revision {
+    stamp = revision
+  } else if let modified = artwork.modifiedAt, let bytes = artwork.byteCount {
+    stamp = "\(modified.timeIntervalSinceReferenceDate)|\(bytes)"
+  } else {
+    return nil
+  }
+  return "\(artwork.file.absoluteString)|\(artwork.name.rawValue)|\(stamp)|\(maxPixelSize)" as NSString
 }
 
 @MainActor private func cachedCatalogImage(_ artwork: [CatalogArtwork], maxPixelSize: Int) -> NSImage? {

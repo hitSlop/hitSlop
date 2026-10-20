@@ -1,7 +1,32 @@
 //! Page transport stays opaque in Swift; only native actions cross as typed values.
 use hitslop_core::command::PageDispatch;
 use hitslop_core::owner::Failure;
-use hitslop_core::page_wire::{HostAction, HostReply, HostRequest, PageErrorKind, SpeechOutcome, SpeechUnavailable};
+use hitslop_core::page_wire::{
+    HostAction, HostDevice, HostEnvironment, HostPlatform, HostReply, HostRequest, PageErrorKind, SpeechOutcome,
+    SpeechUnavailable,
+};
+
+#[uniffi::remote(Enum)]
+pub enum HostPlatform {
+    Macos,
+    Ios,
+    Android,
+    Windows,
+    Linux,
+    Unknown,
+}
+#[uniffi::remote(Enum)]
+pub enum HostDevice {
+    Phone,
+    Tablet,
+    Desktop,
+    Unknown,
+}
+#[uniffi::remote(Record)]
+pub struct HostEnvironment {
+    pub platform: HostPlatform,
+    pub device: HostDevice,
+}
 
 #[uniffi::remote(Enum)]
 pub enum PageErrorKind {
@@ -10,6 +35,7 @@ pub enum PageErrorKind {
 }
 #[uniffi::remote(Enum)]
 pub enum HostAction {
+    Environment,
     WindowResize { width: u32, height: u32 },
     SpeechTranscribe { attachment: String, locale: Option<String> },
     Ready,
@@ -24,6 +50,7 @@ pub enum PageDispatch {
 }
 #[uniffi::remote(Enum)]
 pub enum HostReply {
+    Environment { environment: HostEnvironment },
     WindowResize { width: f64, height: f64 },
     SpeechTranscribe { outcome: SpeechOutcome },
     Ready,

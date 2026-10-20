@@ -7,6 +7,57 @@ import { WidgetViewports } from "../../src/schema/constants";
 import { createFixture } from "./dev-fixture";
 import { overrideSlop, overrideSchema } from "./source-fixture";
 
+test("device presets and viewport changes update Svelte and CSS without replacing accepted state", async () => {
+  const root = await mkdtemp(join(process.cwd(), ".dev-test-"));
+  const browser = await webkit.launch();
+  let dev: Awaited<ReturnType<typeof startDev>> | undefined;
+  try {
+    const source = join(root, "source"); await createFixture(process.cwd(), source);
+    dev = await startDev(source);
+    const page = await browser.newPage(); await page.goto(dev.url);
+    const ui = page.frameLocator("iframe");
+    const env = ui.locator("[data-environment]");
+    await env.filter({ hasText: "unknown/unknown/compact" }).waitFor();
+    await ui.getByRole("button", { name: "Add row", exact: true }).click();
+    await ui.locator("[data-count]").filter({ hasText: "4" }).waitFor();
+    const ids = await ui.locator("[data-row-ids]").textContent();
+    const preset = page.getByRole("combobox", { name: "Device preset" });
+    await preset.selectOption("iphone");
+    await env.filter({ hasText: "ios/phone/compact" }).waitFor();
+    await preset.selectOption("ipad");
+    await env.filter({ hasText: "ios/tablet/regular" }).waitFor();
+    await preset.selectOption("mac");
+    await env.filter({ hasText: "macos/desktop/compact" }).waitFor();
+    expect(await env.evaluate(element => getComputedStyle(element).color)).toBe("rgb(11, 22, 33)");
+    for (const width of [640, 639]) {
+      await page.locator(".stage").evaluate((element, width) => (element as HTMLElement).style.setProperty("--editor-width", `${width}px`), width);
+      await env.filter({ hasText: `macos/desktop/${width < 640 ? "compact" : "regular"}` }).waitFor();
+    }
+    expect(await ui.locator("[data-row-ids]").textContent()).toBe(ids);
+    const app = page.frames().find(frame => frame.url().includes("/app.html"))!;
+    // Wrong origin and wrong source cannot simulate a device.
+    for (const [origin, source] of [["https://example.com", true], [new URL(dev.url).origin, false]] as const) {
+      await app.evaluate(([origin, fromParent]) => dispatchEvent(new MessageEvent("message", {
+        origin, source: fromParent ? parent : window, data: { type: "slop:environment", preset: "iphone" },
+      })), [origin, source] as const);
+    }
+    expect(await env.textContent()).toBe("macos/desktop/compact");
+    const composition = page.getByRole("combobox", { name: "Preview composition" });
+    await composition.selectOption("icon");
+    await ui.locator('svg[aria-label="Fixture icon"]').waitFor();
+    expect(await ui.locator("html").getAttribute("data-slop-platform")).toBeNull();
+    expect(await ui.locator("html").getAttribute("data-slop-device")).toBeNull();
+    expect(await ui.locator("html").getAttribute("data-slop-layout")).toBeNull();
+    await composition.selectOption("editor");
+    await env.filter({ hasText: "macos/desktop/compact" }).waitFor();
+    expect(await ui.locator("[data-count]").textContent()).toBe("4");
+    expect(await ui.locator("[data-row-ids]").textContent()).toBe(ids);
+    // A frame reload receives the selected simulated identity before editor mount.
+    await app.goto(app.url());
+    await env.filter({ hasText: "macos/desktop/compact" }).waitFor();
+  } finally { await browser.close(); await dev?.close(); await rm(root, { recursive: true, force: true }); }
+}, 60000);
+
 /** A schema dependency supplies three tasks under `title`. */
 const seed = (title: string) =>
   `export default ${JSON.stringify({ title, tasks: ["One", "Two", "Three"].map((text) => ({ text, done: false })) })};\n`;

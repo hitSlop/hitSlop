@@ -14,6 +14,7 @@ export function createContext(
     speech: ReturnType<typeof ownerSpeech>;
     resize(size: { width: number; height: number }): Promise<void>;
     reportError(error: unknown): void;
+    environment: NonNullable<SlopContext["environment"]>;
   },
 ): SlopContext {
   const { attachments } = options;
@@ -33,6 +34,7 @@ export function createContext(
   });
   return Object.freeze({
     document,
+    environment: options.environment,
     bind: Object.freeze({ text: doc.bindText.bind(doc) }),
     attachments: Object.freeze(attachments),
     speech: Object.freeze(options.speech),

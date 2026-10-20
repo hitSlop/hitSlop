@@ -9,14 +9,14 @@ import HitSlopHost
   let templatesURL: URL?
   private let telemetry: SlopTelemetry
   private let bundledRoot: URL?
-  private let chooseDestination: (String) async -> URL?
+  private let chooseDestination: (String) async throws -> URL?
   private let scanner = CatalogScanner()
   private weak var localStore: LocalTemplateStore?
   init(
     templatesURL: URL?,
     bundledRoot: URL? = SlopTemplateLocation.bundledRoot,
     telemetry: SlopTelemetry = .disabled,
-    chooseDestination: @escaping (String) async -> URL? = CatalogServices.chooseDestination
+    chooseDestination: @escaping (String) async throws -> URL? = CatalogServices.chooseDestination
   ) {
     self.templatesURL = templatesURL
     self.bundledRoot = bundledRoot
@@ -93,7 +93,7 @@ import HitSlopHost
   }
 
   private func destination(for entry: CatalogEntry) async throws -> URL? {
-    let destination = await chooseDestination(entry.slug)
+    let destination = try await chooseDestination(entry.slug)
     if destination == nil { telemetry.send(.breadcrumb(.create, .cancelled)) }
     return destination
   }
@@ -101,16 +101,17 @@ import HitSlopHost
   private func create(_ entry: CatalogEntry, at url: URL) async throws -> URL {
     guard case .local(let source) = entry.source else { throw CocoaError(.fileNoSuchFile) }
     let created = try await SlopPreparation.run { try SlopFile.create(from: source, to: url) }
+    SlopSaveLocation.remember(created)
     telemetry.send(.breadcrumb(.create, .completed))
     telemetry.send(.created(entry.isBundled ? .bundled : .installed))
     return created
   }
 
-  private static func chooseDestination(_ slug: String) async -> URL? {
+  private static func chooseDestination(_ slug: String) async throws -> URL? {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.slop]
     panel.canCreateDirectories = true
-    panel.startOnDesktop()
+    try panel.startInLocalDocuments()
     panel.nameFieldStringValue = "\(slug).slop"
     return await SlopPanels.select(panel)
   }

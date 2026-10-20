@@ -200,6 +200,7 @@ test("captures refuse editor-only bindings however they are imported, not names 
     for (const [script, reason] of [
       ['import { notify as tell } from "hitslop/svelte"; tell("Saved");', "Export.svelte: notify"],
       ['import { attachments } from "hitslop/svelte"; console.log(attachments);', "Export.svelte: attachments"],
+      ['import { getEnvironment as host } from "hitslop/svelte"; host();', "Export.svelte: getEnvironment"],
       ['import * as runtime from "hitslop/svelte"; runtime.draft;', "Export.svelte: * from hitslop/svelte"],
       ['import { tell } from "./lib"; tell("Saved");', "Export.svelte: tell"],
       ['import { motion } from "./lib"; console.log(motion);', "Export.svelte: motion"],

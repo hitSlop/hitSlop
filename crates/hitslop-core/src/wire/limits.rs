@@ -50,15 +50,15 @@ pub(crate) const PNG_DECODER_BYTES: usize = 8 << 20;
 pub(crate) const ICON_SIDE: u32 = 512;
 #[cfg(feature = "storage")]
 pub(crate) const ASSET_PATH_BYTES: usize = 240;
-pub const ASSET_FILE_BYTES: usize = 26214400;
-pub const ASSET_COUNT: usize = 256;
-pub const ASSET_BYTES: usize = 52428800;
+pub use hitslop_sharing_protocol::limits::ASSET_BYTES;
+pub use hitslop_sharing_protocol::limits::ASSET_COUNT;
+pub use hitslop_sharing_protocol::limits::ASSET_FILE_BYTES;
 pub const IMAGE_SIDE: usize = 16384;
 pub const IMAGE_PIXELS: usize = 24000000;
+pub use hitslop_sharing_protocol::limits::ATTACHMENT_BYTES;
+pub use hitslop_sharing_protocol::limits::ATTACHMENT_COUNT;
 /// A document's attachments: one file's bytes, their total bytes and their count.
-pub const ATTACHMENT_FILE_BYTES: usize = 10485760;
-pub const ATTACHMENT_BYTES: usize = 104857600;
-pub const ATTACHMENT_COUNT: usize = 256;
+pub use hitslop_sharing_protocol::limits::ATTACHMENT_FILE_BYTES;
 /// An attachment display name, in UTF-8 bytes.
 pub const ATTACHMENT_NAME_BYTES: usize = 255;
 /// A file downloaded by an authored page, independent of document attachment storage.

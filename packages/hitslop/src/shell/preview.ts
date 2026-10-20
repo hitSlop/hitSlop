@@ -3,8 +3,13 @@
  * install one to redirect its own bridge. Native pages never have it. */
 import "./globals";
 import type { PagePush } from "../wire/page";
+import type { HostEnvironment } from "../wire/page.generated";
 export type PreviewHost = {
   uiURL: string;
+  environment?: {
+    readonly current: HostEnvironment;
+    subscribe(receiver: () => void): () => void;
+  };
   ready?(): void;
   attachmentURL(id: string): string;
   request(request: unknown): Promise<unknown>;

@@ -44,4 +44,10 @@ Theme overrides live in Loro's root `theme` map, outside the authored data tree.
 
 Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the app or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Captures render saved state independently: all icon/preview/widget/PNG views and selectable vector PDFs use the restricted Rust renderer. For an open document, the owner first saves and copies it; no second writer renders the original file. See [capture views and widget refresh](/docs/guides/icons-and-exports/).
 
-Close before moving or renaming a document. Keep it on a local filesystem outside iCloud and other synced folders. Every file is checked when it opens: a damaged or oversized one is refused, never repaired. Migrations, schema evolution, and multiple writers on one document are not supported.
+Close before moving or renaming a document. Keep active documents on a local filesystem outside iCloud and other synced folders. The Mac app checks for iCloud-synced Desktop and Documents folders and uses `~/hitSlop` as its initial save location when Desktop is synced. It remembers your last usable local save folder.
+
+The iCloud check, remembered save folder, and **Move to ~/hitSlop and Open** arrive in the next hitSlop release.
+
+Opening a document stored in iCloud offers **Move to ~/hitSlop and Open**. hitSlop saves and verifies a local copy before moving the original to Trash. If the original cannot be removed, both files are kept and the app explains where the local document was saved. Templates stay unchanged and create editable copies.
+
+Every file is checked when it opens: a damaged or oversized one is refused, never repaired. Migrations, schema evolution, and multiple writers on one document are not supported.

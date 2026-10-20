@@ -1,4 +1,6 @@
 import AppKit
+import Combine
+import HitSlopAccount
 import HitSlopCatalog
 import HitSlopCore
 import HitSlopDocument
@@ -47,9 +49,12 @@ private struct UpdateSettingsView: View {
     coordinator.checkForUpdates = { [updaterController] in updaterController.checkForUpdates(nil) }
     return coordinator
   }()
+  private var libraryChanges: AnyCancellable?
+  private var libraryWindows: AnyCancellable?
   private var recentMenu: NSMenu?
   private var exportMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
+  private var sharingAccountWindow: NSWindow?
   private let updaterController = SPUStandardUpdaterController(
     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
   var updater: SPUUpdater { updaterController.updater }
@@ -61,6 +66,24 @@ private struct UpdateSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
+    if SyncedLibraryPreview.enabled {
+      NSApp.registerForRemoteNotifications()
+      SlopLibrary.shared.start()
+      libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
+        [weak self] _ in
+        SlopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
+      }
+      libraryChanges = SlopLibrary.shared.$entries.sink { [weak self] entries in
+        guard let self else { return }
+        SlopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
+        for entry in entries where entry.deleted {
+          for controller in self.coordinator.documentControllers
+          where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
+            controller.close()
+          }
+        }
+      }
+    }
     SlopWidgetPublisher.shared.start(
       activeSelections: {
         let configurations: [WidgetInfo] = await withCheckedContinuation { continuation in
@@ -85,6 +108,16 @@ private struct UpdateSettingsView: View {
     } else {
       urls.forEach(openDocument)
     }
+  }
+  func applicationDidBecomeActive(_ notification: Notification) {
+    NotificationCenter.default.post(name: .hitSlopSharingForeground, object: nil)
+    if SyncedLibraryPreview.enabled {
+      SlopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
+      SlopLibrary.shared.activated(true)
+    }
+  }
+  func applicationDidResignActive(_ notification: Notification) {
+    if SyncedLibraryPreview.enabled { SlopLibrary.shared.activated(false) }
   }
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {
@@ -163,7 +196,7 @@ private struct UpdateSettingsView: View {
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.slop]
     panel.allowsMultipleSelection = true
-    panel.startOnDesktop()
+    try? panel.startInLocalDocuments()
     guard panel.runModal() == .OK else { return }
     panel.urls.forEach(openDocument)
   }
@@ -175,6 +208,15 @@ private struct UpdateSettingsView: View {
   @objc private func toggleFullscreen() { coordinator.activeController?.toggleFullscreen() }
   @objc private func togglePin() { coordinator.activeController?.togglePin() }
   @objc private func toggleTheme() { coordinator.activeController?.toggleTheme() }
+  @objc private func showLiveSharing() { coordinator.activeController?.showLiveSharing() }
+  @objc private func joinSharedSlop() {
+    showCatalog()
+    DispatchQueue.main.async { NotificationCenter.default.post(name: .hitSlopJoinSharedSlop, object: nil) }
+  }
+  @objc private func newSyncedChecklist() {
+    showCatalog()
+    DispatchQueue.main.async { NotificationCenter.default.post(name: .hitSlopNewSyncedChecklist, object: nil) }
+  }
   @objc private func showSettings() {
     if settingsWindow == nil {
       let content = UpdateSettingsView(updater: updater).frame(width: 480, height: 340)
@@ -186,6 +228,20 @@ private struct UpdateSettingsView: View {
       settingsWindow = window
     }
     settingsWindow?.makeKeyAndOrderFront(nil)
+    NSApp.activate()
+  }
+  @objc private func showSharingAccount() {
+    guard SharingPreview.enabled else { return }
+    if sharingAccountWindow == nil {
+      let content = SharingAccountView().frame(minWidth: 440, minHeight: 260)
+      let window = NSWindow(contentViewController: NSHostingController(rootView: content))
+      window.title = "Sharing Account"
+      window.styleMask = [.titled, .closable]
+      window.isReleasedWhenClosed = false
+      window.center()
+      sharingAccountWindow = window
+    }
+    sharingAccountWindow?.makeKeyAndOrderFront(nil)
     NSApp.activate()
   }
   @objc private func openWebsite() { NSWorkspace.shared.open(URL(string: "https://hitslop.com")!) }
@@ -219,6 +275,7 @@ private struct UpdateSettingsView: View {
     updates.target = updaterController
     app.addItem(.separator())
     item(app, "Settings…", #selector(showSettings), ",")
+    if SharingPreview.enabled { item(app, "Sharing Account…", #selector(showSharingAccount), "") }
     app.addItem(.separator())
     let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
     let servicesMenu = NSMenu(title: "Services")
@@ -238,6 +295,10 @@ private struct UpdateSettingsView: View {
     fileItem.submenu = file
     file.delegate = self
     item(file, "New from Template…", #selector(showCatalog), "n")
+    if SyncedLibraryPreview.enabled {
+      item(file, "New Synced Checklist…", #selector(newSyncedChecklist), "")
+    }
+    if SharingPreview.enabled { item(file, "Join Shared Slop…", #selector(joinSharedSlop), "") }
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
     let recent = NSMenu(title: "Open Recent")
@@ -248,6 +309,7 @@ private struct UpdateSettingsView: View {
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
     item(file, "Share…", .share)
+    if SharingPreview.enabled { item(file, "Live Sharing…", #selector(showLiveSharing), "") }
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
     export.submenu = exportMenu
@@ -342,6 +404,8 @@ private struct UpdateSettingsView: View {
     case #selector(toggleTheme):
       menuItem.state = controller?.isThemeShown == true ? .on : .off
       return controller?.canToggleTheme ?? false
+    case #selector(showLiveSharing): return controller?.canShowLiveSharing ?? false
+    case #selector(newSyncedChecklist): return SlopLibrary.shared.isReady
     default: return true
     }
   }

@@ -93,23 +93,47 @@ import SwiftUI
 
   public func openDocument(_ url: URL) {
     guard model.quitPhase == .running else { return }
-    let canonical: URL
-    do { canonical = try SlopFile.resolvedRoot(url) } catch {
-      present(.failure(error.localizedDescription), for: nil)
-      return
-    }
     // A template opens by creating a document from it, wherever it lives. Its header
     // decides, so a document is checked once, by its owner's open. Anything else,
     // including a file that fails its checks, goes to the document path, which reports.
     Task {
-      let template = try? await SlopPreparation.run { () throws -> CatalogEntry? in
-        guard try SlopFile.kind(of: canonical) == .template else { return nil }
-        return CatalogScanner.entry(template: try SlopSummary(url: canonical))
+      do {
+        let (canonical, template) = try await SlopPreparation.run { () throws -> (URL, CatalogEntry?) in
+          let canonical = try SlopFile.resolvedRoot(url)
+          let template =
+            try SlopFile.kind(of: canonical) == .template
+            ? CatalogScanner.entry(template: try SlopSummary(url: canonical)) : nil
+          return (canonical, template)
+        }
+        guard model.quitPhase == .running else { return }
+        if let template {
+          showCatalog()
+          model.catalog.primaryAction(template)
+          return
+        }
+        let local = try await SlopPreparation.run { (try? SlopLocalDocument.requireLocal(canonical)) != nil }
+        if local { return model.open(canonical) }
+        guard presentsWindows else {
+          return present(.failure("Move this document to ~/hitSlop to edit it locally."), for: nil)
+        }
+        let alert = NSAlert()
+        alert.messageText = "Move this document to local storage?"
+        alert.informativeText =
+          "hitSlop keeps active documents outside iCloud. A verified local copy will be saved in ~/hitSlop, then the original will be moved to Trash."
+        alert.addButton(withTitle: "Move to ~/hitSlop and Open")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn, model.quitPhase == .running else { return }
+        let moved = try await SlopPreparation.run { try SlopFile.moveToLocalFolder(canonical) }
+        if let warning = moved.warning {
+          present(
+            .failure("The local document was saved at \(moved.url.path). The original was retained: \(warning)"),
+            for: nil)
+        }
+        guard model.quitPhase == .running else { return }
+        model.open(moved.url)
+      } catch {
+        present(.failure(error.localizedDescription), for: nil)
       }
-      guard model.quitPhase == .running else { return }
-      guard let template else { return model.open(canonical) }
-      showCatalog()
-      model.catalog.primaryAction(template)
     }
   }
   public func revealDocuments() {

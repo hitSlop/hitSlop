@@ -3,12 +3,33 @@ use hitslop_core::{
     owner, page_wire,
 };
 use rsqlite_vfs::transfer::{DbImport, DbTransfer};
+use sha2::{Digest, Sha256};
 use sqlite_wasm_vfs::sahpool::{OpfsSAHImportTarget, OpfsSAHPoolCfgBuilder, OpfsSAHPoolUtil, install};
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
+use hitslop_sharing_protocol::{envelope, http::Invitation};
+fn invitation(link: &str, origin: &str) -> Result<Invitation, JsValue> {
+    if origin != hitslop_sharing_protocol::TRUSTED_ORIGIN {
+        return Err(error("Untrusted sharing host"));
+    }
+    Invitation::parse(link).map_err(error)
+}
+#[derive(Default)]
+struct SyncQueue {
+    frames: VecDeque<Vec<u8>>,
+    bytes: usize,
+    overflow: bool,
+    status: String,
+}
+type SyncEvents = Arc<Mutex<SyncQueue>>;
+
 fn error(value: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&value.to_string())
+}
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 type Events = Arc<Mutex<Vec<Event>>>;
 fn push(events: &Events, event: Event) {
@@ -39,6 +60,10 @@ pub struct BrowserCopy {
     expected: u64,
     driver: Option<owner::BrowserDriver>,
     events: Events,
+    digest: Sha256,
+    imported_hash: Option<String>,
+    sync_events: SyncEvents,
+    sync_link: Option<owner::SyncConnection>,
 }
 
 #[wasm_bindgen(js_name = installCopy)]
@@ -57,6 +82,10 @@ pub async fn install_copy(copy: &str) -> Result<BrowserCopy, JsValue> {
         expected: 0,
         driver: None,
         events: Arc::default(),
+        digest: Sha256::new(),
+        imported_hash: None,
+        sync_events: Arc::default(),
+        sync_link: None,
     })
 }
 
@@ -74,6 +103,7 @@ impl BrowserCopy {
         self.importing = Some(self.pool.begin_import_unchecked("document.slop", size as u64).map_err(error)?);
         self.imported = 0;
         self.expected = size as u64;
+        self.digest = Sha256::new();
         Ok(())
     }
     #[wasm_bindgen(js_name = importWrite)]
@@ -91,6 +121,7 @@ impl BrowserCopy {
             ));
         }
         self.importing.as_mut().ok_or_else(|| error("No import is active"))?.write(bytes).map_err(error)?;
+        self.digest.update(bytes);
         self.imported += bytes.len() as u64;
         Ok(())
     }
@@ -101,6 +132,7 @@ impl BrowserCopy {
         }
         self.importing.take().ok_or_else(|| error("No import is active"))?.finish().map_err(error)?;
         self.fresh = true;
+        self.imported_hash = Some(hex(&self.digest.clone().finalize()));
         Ok(())
     }
     pub fn open(&mut self) -> Result<(), JsValue> {
@@ -195,6 +227,9 @@ impl BrowserCopy {
             let json = match dispatch {
                 hitslop_core::command::PageDispatch::Reply { json, .. } => json,
                 hitslop_core::command::PageDispatch::Host { action } => match action {
+                    page_wire::HostAction::Environment => {
+                        page_wire::HostReply::Environment { environment: page_wire::HostEnvironment::unknown() }
+                    }
                     page_wire::HostAction::WindowResize { width, height } => {
                         page_wire::HostReply::WindowResize { width: width as f64, height: height as f64 }
                     }
@@ -269,6 +304,113 @@ impl BrowserCopy {
             .map_err(error)
     }
 }
+
+#[wasm_bindgen]
+impl BrowserCopy {
+    #[wasm_bindgen(js_name = openJoined)]
+    pub fn open_joined(&mut self, json: &str, origin: &str) -> Result<(), JsValue> {
+        let key = invitation(json, origin)?;
+        if self.fresh && self.imported_hash.as_deref() != Some(key.seed_hash.as_str()) {
+            return Err(error("Seed checksum mismatch"));
+        }
+        // An ordinary local import still calls open(), renewing identity. Joining is
+        // a separate operation preserving the canonical full seed and its share row.
+        self.fresh = false;
+        self.open()?;
+        let driver = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?;
+        let share = driver.owner().share().map_err(error)?.ok_or_else(|| error("Seed is not shared"))?;
+        if driver.owner().app().document_uuid.as_deref() != Some(key.document.as_str())
+            || share.room != key.room
+            || share.endpoint != key.origin
+        {
+            self.driver = None;
+            self.events.lock().unwrap().clear();
+            return Err(error("Seed identity or membership mismatch"));
+        }
+        Ok(())
+    }
+    #[wasm_bindgen(js_name = syncAttach)]
+    pub fn sync_attach(&mut self) -> Result<(), JsValue> {
+        let driver = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?;
+        *self.sync_events.lock().unwrap() = SyncQueue::default();
+        let events = self.sync_events.clone();
+        self.sync_link = Some(driver.owner().sync_connection(Arc::new(move |e| {
+            let mut q = events.lock().unwrap();
+            match e {
+                owner::SyncEvent::Reconnect => q.overflow = true,
+                owner::SyncEvent::Status { status } => q.status = format!("{status:?}"),
+                owner::SyncEvent::Send { bytes } => {
+                    if q.overflow {
+                        return;
+                    }
+                    if q.frames.len() >= hitslop_sharing_protocol::QUEUED_FRAMES
+                        || q.bytes.saturating_add(bytes.len()) > hitslop_sharing_protocol::QUEUED_BYTES
+                    {
+                        q.frames.clear();
+                        q.bytes = 0;
+                        q.overflow = true;
+                        return;
+                    }
+                    q.bytes += bytes.len();
+                    q.frames.push_back(bytes);
+                }
+            }
+        })));
+        Ok(())
+    }
+    #[wasm_bindgen(js_name = syncDetach)]
+    pub fn sync_detach(&self) {
+        if let Some(link) = &self.sync_link {
+            link.detach();
+        }
+    }
+    #[wasm_bindgen(js_name = syncFrame)]
+    pub fn sync_frame(&self, bytes: &[u8]) -> Result<(), JsValue> {
+        let frame = envelope::decode(bytes).map_err(error)?;
+        if !self.sync_link.as_ref().ok_or_else(|| error("Connection missing"))?.frame(frame.encode()) {
+            return Err(error("Sync queue refused this connection"));
+        }
+        Ok(())
+    }
+    #[wasm_bindgen(js_name = nextSyncFrame)]
+    pub fn next_sync_frame(&self) -> Result<Option<Vec<u8>>, JsValue> {
+        let mut q = self.sync_events.lock().unwrap();
+        if q.overflow {
+            return Err(error("Socket queue budget exceeded"));
+        }
+        q.frames
+            .pop_front()
+            .map(|bytes| {
+                q.bytes -= bytes.len();
+                envelope::encode(hitslop_core::sync::Frame::decode(&bytes).map_err(error)?).map_err(error)
+            })
+            .transpose()
+    }
+    #[wasm_bindgen(js_name = syncStatus)]
+    pub fn sync_status(&self) -> String {
+        self.sync_events.lock().unwrap().status.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = invitationRequest)]
+pub fn invitation_request(json: &str, origin: &str) -> Result<String, JsValue> {
+    let key = invitation(json, origin)?;
+    serde_json::to_string(&hitslop_sharing_protocol::http::ConnectionPlan {
+        document: key.document,
+        size: key.size,
+        url: format!("{}/v1/rooms/{}/seed", key.origin, key.room),
+        headers: [("Authorization".into(), format!("Bearer {}", key.capability))].into_iter().collect(),
+        socket: format!("{}/v1/rooms/{}/sync", key.origin.replacen("https://", "wss://", 1), key.room),
+        protocols: vec![hitslop_sharing_protocol::SOCKET_PROTOCOL.into(), format!("cap.{}", key.capability)],
+    })
+    .map_err(error)
+}
+
+#[wasm_bindgen(js_name = socketBudget)]
+pub fn socket_budget() -> u32 {
+    hitslop_sharing_protocol::QUEUED_BYTES as u32
+}
+
 fn route_to_file(attachment: bool) -> hitslop_core::file::ResourceRoute {
     if attachment { hitslop_core::file::ResourceRoute::Attachment } else { hitslop_core::file::ResourceRoute::App }
 }
@@ -278,3 +420,6 @@ fn route_to_file(attachment: bool) -> hitslop_core::file::ResourceRoute {
 pub fn decode_browser_request(json: &str) -> Result<String, JsValue> {
     serde_json::to_string(&BrowserRequest::decode(json).map_err(error)?).map_err(error)
 }
+
+#[path = "resources.rs"]
+mod resources;

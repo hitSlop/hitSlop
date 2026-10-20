@@ -37,11 +37,13 @@
     "core:test:extended": "HITSLOP_MODEL_SEEDS=64 HITSLOP_MODEL_STEPS=500 HITSLOP_MERGE_SEEDS=400 HITSLOP_COMPAT_SEEDS=16 HITSLOP_COMPAT_STEPS=40 cargo nextest run --locked --release --ignore-default-filter --profile extended -p hitslop-core -E 'test(/^model::/) | test(/^merge::/) | test(/^compat_writers::/)'"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "4.20251106.1",
     "@lucide/svelte": "1.52.0",
     "@types/bun": "1.4.2",
     "@types/pngjs": "6.0.5",
     "bits-ui": "^2.19.5",
     "hitslop": "workspace:*",
+    "miniflare": "4.20251105.0",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2004",
     "playwright": "1.64.0",

@@ -4,15 +4,23 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 mod protocol;
 pub use protocol::{Batch, Font, Frame, Job, JobKind, JobLimits, RasterRequest, RenderReply};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "process"))]
 mod native;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "process"))]
 pub use native::Evaluator;
-#[cfg(feature = "child")]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "process"), feature = "capture-in-process"))]
+mod in_process;
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "process"), feature = "capture-in-process"))]
+pub use in_process::Evaluator;
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "process"), not(feature = "capture-in-process")))]
+mod unavailable;
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "process"), not(feature = "capture-in-process")))]
+pub use unavailable::Evaluator;
+#[cfg(feature = "evaluation")]
 mod evaluation;
-#[cfg(feature = "child")]
+#[cfg(feature = "evaluation")]
 mod realm;
-#[cfg(feature = "child")]
+#[cfg(feature = "evaluation")]
 pub use evaluation::evaluate;
 #[cfg(all(feature = "child", not(target_arch = "wasm32")))]
 mod child;

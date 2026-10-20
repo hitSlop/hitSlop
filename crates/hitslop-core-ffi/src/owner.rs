@@ -66,8 +66,17 @@ pub enum Request {
     CaptureSource {
         destination: PathBuf,
     },
+    /// The complete saved file, durably exported with identity, history and artwork.
+    Backup {
+        destination: PathBuf,
+    },
     Artwork {
         name: Artwork,
+    },
+    SetArtwork {
+        source_version: String,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
     },
     /// The palette; changes are batch intents from the window.
     Theme,
@@ -88,7 +97,9 @@ impl Request {
             Self::Close { preview, icon } => R::Close { preview, icon },
             Self::Copy { destination, preview, icon } => R::Copy { destination, preview, icon },
             Self::CaptureSource { destination } => R::CaptureSource { destination },
+            Self::Backup { destination } => R::Backup { destination },
             Self::Artwork { name } => R::Artwork { name },
+            Self::SetArtwork { source_version, preview, icon } => R::SetArtwork { source_version, preview, icon },
             Self::Theme => R::Theme,
             Self::ExportTheme => R::ExportTheme,
             Self::ChangeTheme { change } => core::theme_request(change),

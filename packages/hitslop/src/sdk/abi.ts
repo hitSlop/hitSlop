@@ -1,4 +1,5 @@
 import type { LiveDocument } from "./schema";
+import type { Environment } from "./environment";
 /**
  * The interface between a built slop and the page shell. A package's `assets/ui.js`
  * default-exports a `SlopApp`; the shell opens the document, then calls
@@ -34,7 +35,9 @@ import type { LiveDocument } from "./schema";
  *   `[data-slop-capture-target]` (the wrapper of a static view's markup, child of
  *   `<body>`), `[data-slop-export="hide"]` (hidden in captures), and the attributes the
  *   host sets on `<html>`: `data-slop-presentation`, `data-slop-capture`,
- *   `data-slop-resizable`, `data-slop-controls`. The Svelte root renders
+ *   `data-slop-resizable`, `data-slop-controls`, `data-slop-platform`,
+ *   `data-slop-device`, `data-slop-layout` (the latter three only in editors).
+ *   The Svelte root renders
  *   `[data-slop-notice]`, a status region holding the current notice as a `<p>`.
  * - CSS variables: `--slop-<token>` for each theme color and `--slop-window-radius`,
  *   `--slop-window-width` and `--slop-window-height`.
@@ -93,6 +96,8 @@ export interface SlopView {
 }
 
 export interface SlopContext {
+  /** Optional on older hosts: the SDK falls back to unknown identity and live layout. */
+  readonly environment?: Environment;
   readonly document: SlopDocument<ObjectNode>;
   readonly bind: {
     /** Two-way text binding with IME composition and remote-edit transforms. */

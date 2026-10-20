@@ -11,7 +11,7 @@ imports the app's `assets/ui.js` and calls `default.mount(ctx, target)`
 ([abi.ts](../../packages/hitslop/src/sdk/abi.ts)). The private page shell supplies the runtime. The single `hitslop` npm package ships
 the CLI, author SDK, contracts, templates, skills and locally served runtime. `ctx` is the only thing an app may rely
 on at run time: the document (snapshot, handles, `change`, `flush`, `subscribe`),
-`bind.text`, attachments, `speech.transcribe`, `window.resize` and
+`bind.text`, attachments, `speech.transcribe`, `window.resize`, optional `environment` and
 `reportError`; apps read the theme only as `--slop-*` CSS variables. The returned view may supply `rendered()` (wait for
 pending UI updates) and `unmount()`. Reload replaces only the view; flush, close,
 native readiness, themes and attachments stay in the page shell.
@@ -21,6 +21,17 @@ framework dependency hook: replacing it installs the new adapter, and disposing 
 adapter cannot detach the replacement. Text composition, caret transforms and merges
 stay in the host binding. Draft submission, motion and notice presentation are SDK
 helpers compiled into the app, without separate host APIs.
+
+`ctx.environment` supplies an immutable `current` snapshot (`platform`, `device`,
+`layout`) and `subscribe(listener)` with idempotent disposal. `getEnvironment()` adapts
+it to each Svelte editor mount. Native identity comes from the typed `host.environment`
+host action, not the Rust owner's process or a user agent. Browser identity is unknown;
+the shell computes layout from the document viewport using Rust's 640 CSS-pixel
+breakpoint. The optional member has a real SDK fallback on older hosts: unknown identity
+and live viewport layout. It adds no runtime ABI requirement or document fields.
+New shells install `data-slop-platform`, `data-slop-device` and `data-slop-layout` on
+`<html>` before editor mount. They are absent from static captures and static dev views.
+Older shells lack these attributes, so authored CSS keeps a usable base layout.
 
 The complete ABI inventory lives in `sdk/abi.ts`: `data-slop-root`, capture and
 controls attributes, the notice region, `--slop-*` variables, `__slopCommands`,
@@ -90,7 +101,7 @@ Checkpoint maintenance runs at 256 saved updates or 4 MiB. Native limits are 4,0
 
 Generic mutations are not replayed; a named command may reevaluate once after a definite pre-admission conflict, and after an uncertain result you run `get` before another edit. A live `get` returns owner-accepted state; text still in an open window's field is not included. Every request names its command protocol, which the owner checks before reading anything else, so an engine of another build is refused with which side to update. A reply carries its state whole, as large as the document; the CLI validates each reply's method and required result fields (`SocketReply`). A live and a closed `get` of one saved state print the same value.
 
-The [close and capture flow](../architecture.md#close-export-and-capture) defines ownership release, retry and quit ordering. Close before moving or renaming documents. iCloud and other synced folders are unsupported.
+The [close and capture flow](../architecture.md#close-export-and-capture) defines ownership release, retry and quit ordering. Close before moving or renaming documents. iCloud and other synced folders are unsupported; the Mac offers to move an iCloud document to `~/hitSlop`, and the [Apple library](../architecture.md#apple-library-preview) carries a person's own devices.
 
 Opaque imported attachments live in the file's `attachments` table by SHA-256, outside Loro. `attachments.import(file, (tx, ref) => …)` stores the bytes, then submits the collector's reference edits; the close and capture barriers wait for both. An agent's `batch` carries its files (`slop apply --attach`), stored before its operations in the same request, so no close falls between a blob and its reference. A collector that throws, or an edit the core refuses, leaves the stored blob unreferenced until the document closes: after the final save, the owner deletes every blob whose ID appears in no string, text or map key of the saved state (`Store::reclaim_attachments`). Undo covers the open session only, so retained history is not a reason to keep a blob. The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments) (10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. Duplicate and Share Slop File carry only the attachments their state references, with no history and artwork rendered for the copy (`Store::copy_clean`); templates contain none.
 
@@ -260,7 +271,7 @@ closed export takes no writer lock and can render while another process holds th
 
 ## Telemetry
 
-Release enables Firebase Analytics and Crashlytics after configuration; Debug/tests do not initialize Firebase. Collection defaults off in the app plist. Auth/App Check remain deferred. Existing Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
+Release enables Firebase Analytics and Crashlytics after configuration; Debug/tests do not initialize Firebase. Collection defaults off in the app plist. Auth exists only for the developer-gated sharing preview (Sign in with Apple through a separately named Firebase app; Analytics and Crashlytics initialization is unchanged); App Check remains deferred. Existing Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
 
 Non-fatals carry a fixed operation, classification (platform/authored/rejection), and reason. Native storage and WebKit callbacks supply diagnostic categories before error text is flattened. Fixed category-specific domains and stable numeric codes distinguish issue groups; per-event keys can include export format. No document IDs, paths, titles, contents, guest codes, authored error strings, or raw error userInfo enter reports. Document context never uses global Crashlytics keys.
 

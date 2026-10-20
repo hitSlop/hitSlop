@@ -35,7 +35,8 @@ and a Service Worker resource channel bound to that frame client. Each successfu
 pending text, pass a Rust save barrier, and stream the current database through Chrome’s Save As dialog, including theme and attachments. Unique temporary exports are deleted
 when writing finishes or abandoned-copy cleanup acquires the lock. Resource delivery
 uses bounded chunks, incremental attachment verification and a bounded decoded cache. Browser storage is local to the profile and is not a backup.
-Safari, mobile and hosted sharing are deferred.
+Safari and mobile browser support are deferred. Hosted sharing has a separate,
+disabled-by-default developer preview described under [Sync](#sync).
 
 `slop dev` uses a temporary `.slop`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
@@ -375,10 +376,19 @@ removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its
 after the path, and Apple's SQLite never writes again through a connection whose file
 was renamed. When the file is back where it was opened, the store reconnects and saves.
 
+Native save panels default to the last usable local folder, else Desktop when it is
+local, else `~/hitSlop`. Opening a document that lives in iCloud offers "Move to ~/hitSlop
+and Open": the core copies it through coordinated access into a fresh name with the same
+identity and retained history, validates the copy, and only then moves the original to the
+Trash. If cleanup fails, both files are kept and the app says where the local one is.
+Devices share a person's own documents through the [Apple library](#apple-library-preview),
+not through synced folders.
+
 The native Share popover offers PDF, PNG image and editable slop-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
 format runs through the document command queue. PDF and PNG use the saved-state export
-renderer. Share URL and live collaboration are disabled coming-soon controls.
+renderer. Live collaboration is available only in the explicitly enabled developer
+preview described under [Sync](#sync).
 
 Duplicate and Share Slop File flush what the page accepted and acquire a temporary saved
 source through the owner. Both artwork and the new document come from that source, so
@@ -421,6 +431,10 @@ for its requested outputs, reporting each result independently. One failed outpu
 discard the others. Close requests artwork and eligible widgets in the same batch.
 Each output starts two restricted children: Markup evaluates synchronous QuickJS SSR;
 Raster receives frames, fonts and selected images and never executes JavaScript.
+The iOS preview uses the same Rust capture pipeline in-process on a serial background
+queue for icon and preview PNGs. QuickJS retains its heap/stack limits and cooperative
+deadline; native raster work has no child-process crash isolation. Authored commands
+remain unavailable on iOS. The Mac renderer continues to use restricted children.
 A typed job envelope supplies separate markup, widget, PNG and PDF budgets.
 Parent and child share render replies and typed failure serialization; the parent
 validates reply combinations. Authored requests carry serialized JSON with image IDs
@@ -603,6 +617,39 @@ history keeps nothing alive.
 
 ## Sync
 
+### Apple library preview
+
+The development Mac/iPhone preview keeps managed documents in account-scoped Application
+Support. One Swift `CKSyncEngine` transports a complete `.slop` CKAsset per document in
+the fixed `Library` zone. Rust owns library metadata, retained history, writer admission,
+staging, merging through the existing owner, and receipts. Swift carries file paths and
+opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
+
+Creation asks for a catalog name, independent of fields inside the authored app. Both catalogs share the app icon and bundled Baloo 2 headings; controls and
+body copy use native fonts. The iPhone editor extends only its page-colored background
+under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
+
+Leaving an edited iPhone document refreshes its icon and preview from an immutable saved
+source. Managed Mac documents use the same version-checked artwork publication path;
+ordinary Mac documents keep their existing close behavior. A stale or failed capture
+keeps the previous artwork and cannot prevent a save. Derived images never edit Loro.
+Rust library metadata records the artwork's source version. A content-derived asset
+revision detects artwork-only uploads and invalidates catalog caches. Receipts confirm
+the revision actually staged; downloads adopt artwork only when its source matches the
+merged document state. Library merges require the same document identity and app slug, equivalent parsed data descriptors and
+the same theme token names and defaults. UI/code and description changes do not block
+state sync; each existing replica retains its own embedded app. Schema evolution
+still requires a migration, and the owner validates every merged state against its local
+contract. Supported file/runtime marker checks remain in force. Stale fallback images do
+not participate in asset revisions, so different fallback pictures cannot create a
+replication loop.
+
+A CloudKit download preserves any existing local relay binding. The library supplies its
+history-retention placeholder only when the installed document has no share row;
+checkpoint delivery does not change an existing owner's room membership.
+
+### Relay
+
 A shared document syncs through a relay, one Cloudflare Durable Object per room. Every
 copy is a local owner under its own session peer and runs its own commands. An edit is
 saved locally and sent to the relay independently, so neither waits for the other and
@@ -611,9 +658,81 @@ Loro updates copies push, indexed by the operation spans they hold, and backfill
 by its version vector. It never reads Loro, validates state or runs commands. The core side
 is implemented and tested in this repository. A local Durable Object experiment also
 qualified the protocol on Cloudflare's runtime
-([evidence](evidence/sync-spikes-2026-10.md)); that relay source is not in this repository.
-The production relay and the Mac app's connection are deferred ([roadmap](roadmap.md#later)).
+([evidence](evidence/sync-spikes-2026-10.md)). A later Rust Worker passed a disposable
+hosted probe, and real SQLite owners passed local full-file seed and simulated CloudKit
+coexistence checks ([evidence](evidence/live-sharing-spikes-2026-10-18.md)). Signed isolated
+Mac/iPhone probes also passed shared Keychain delivery, native Rust TLS relay convergence,
+actual CloudKit checkpoint throttling and phone background/kill/relaunch
+([device evidence](evidence/live-sharing-native-spike-2026-10-18.md)). CloudKit discovery
+and a later checkpoint required diagnostic cursor resets and remain an investigation; the candidate
+throttle is process-local. A later public fixture passed hosted Chrome origins/storage,
+native/browser convergence and echo round-trip timing on real hitslop.com/dotslop.com
+hostnames ([web evidence](evidence/live-sharing-web-spike-2026-10-18.md)). Embedded Service
+Workers were denied under cookie restriction; the passing hosted experiment used direct
+immutable fixture UI files. A follow-up private-resource experiment passed Chrome
+partitioned HttpOnly grants, private app/media loading, seed/new attachment delivery,
+offline import/reconnect and native/browser inventory convergence
+([resource evidence](evidence/live-sharing-resources-spike-2026-10-18.md)). Its conservative
+HTTP inventory checks add latency; connected opening is required.
 
+The integrated developer preview now lives in `apps/sharing` (deployable Rust Worker
+and static host), `crates/hitslop-sharing-protocol` (Loro-free DTOs, byte envelope,
+limits and resource policy) and `crates/hitslop-sharing-client` (native Rust transport).
+Rust generates TypeScript and OpenAPI; native UI uses UniFFI. Debug builds require an
+explicit launch flag; normal releases omit the feature. The new Share/Copy Link/Join/Stop
+controls use the current owner, device-local invitations and Apple/Firebase creator identity.
+
+The trusted browser host/storage is `share.hitslop.com`; authored apps run on separate
+UUID subdomains of `dotslop.com`. SQLite uses OPFS in the trusted dedicated worker;
+IndexedDB stores the copy catalog. Host-scoped partitioned HttpOnly resource cookies
+renew independently; authored pages never receive the invitation. No embedded Service
+Worker is required. Incoming files are verified and installed through the owner before
+Records are applied. A failed transfer cancels its connection generation, including
+queued CaughtUp. Owner admission counts bytes before enqueue and rejects stale sockets.
+
+A per-UID account Durable Object reserves/indexes rooms and privately retains their
+recoverable edit capability until Stop. A room independently verifies the immutable
+owner UID and generation on administration; it stores only the edit capability hash.
+Guests need no account and reopen links per device. Sign-out keeps existing local sync
+and cached links usable; creation, owner recovery and Stop require sign-in.
+
+Reservation precedes staging. An immutable local SQLite seed, named by reserved room,
+is the retry journal; there is no staging marker or JSON creation-state credential.
+Init accepts one seed identity, uploads remain immutable, and account publication waits
+for the seed and all app files. Stop clears the recoverable bearer secret before remote
+cleanup; late publication cannot resurrect it, and late uploads delete their writes.
+Re-share explicitly advances the generation, preserving UUID and local state. HTTP
+routes are under `/v1/`; transport callbacks replace credential polling. Recovery runs
+on open, foreground, account change and opening Share. Joining reuses an open or known
+matching file, or installs a missing canonical copy without requiring CloudKit. Stop
+revokes remote access; local copies remain editable. Automatic CloudKit snapshots of relay documents are process-local
+checkpoints at most once a minute; manual/background saves bypass that interval.
+
+A deployed native/browser fixture campaign passed private resources under cookie
+restriction, concurrent edits, late join, interrupted receive ordering, connected
+process reopen, SQLite download/native reopen and revocation
+([integrated evidence](evidence/live-sharing-preview-2026-10-19.md)). The signed Mac app
+also passed creation, Copy Edit Link, credential restoration, native/browser edits and
+Stop under the earlier preview. A subsequent physical Mac/iPhone pass confirmed the
+same Firebase identity, CloudKit discovery, account-based owner recovery, live edits
+in both directions, background catch-up and Stop from the second device
+([phone evidence](evidence/live-sharing-phone-2026-10-19.md)). It exposed a cold-launch
+owner registration race; the native registry now registers already-open writers when
+the asynchronous library connects. Rust continues to own those writers and merges.
+The account lifecycle is implemented behind that same developer gate. The real WASM
+relay passes local SQLite DO/R2 qualification with two signed test identities,
+concurrent reservations, partial publication, guest-admin refusal, cold owner recovery,
+Stop/upload cleanup and re-share. This is separate from the earlier deployed preview
+campaign; see [account evidence](evidence/live-sharing-accounts-2026-10-19.md).
+Old unversioned preview ownership is unsupported and awaits operator retirement.
+The physical repeat also passed replacement-generation recovery, native Join reusing
+an open Mac owner, background/kill/relaunch, and post-Stop CloudKit delivery without
+cursor resets. The iPhone editor uses native navigation and a full-display page under
+system glass controls. Its initial loading view blocks editing until page readiness;
+subsequent synchronization keeps valid saved copies editable.
+Public rollout still requires signed-out guest/offline and deployed browser qualification,
+account deletion, remaining abuse controls and full-history recovery below. Offline
+web reopening and compaction remain deferred ([roadmap](roadmap.md#later)).
 - **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
   credential the host keeps, never in the file or in authored code. Sharing uploads a
   backup of the document (same UUID and history) as the room's seed, and joining

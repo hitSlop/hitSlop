@@ -1,0 +1,23 @@
+[package]
+name = "hitslop-sharing-worker"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+hitslop-sharing-protocol = { path = "../../crates/hitslop-sharing-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "=0.11.0"
+jsonwebtoken = { version = "=11.1.0", features = ["rust_crypto"] }
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "=0.8.7"
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "=0.2.129"
+js-sys = "=0.3.106"
+serde_bytes = "=0.11.19"
+futures-util = "=0.3.34"
+[dev-dependencies]
+rsa = "0.9"
+rand = "0.8"

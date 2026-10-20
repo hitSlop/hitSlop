@@ -5,6 +5,8 @@
 import { PushLimits } from "../schema/constants";
 import type { PreviewHost } from "../shell/preview";
 import type { PagePush } from "../wire/page";
+import { environmentPresets, isEnvironmentPreset } from "./environment-presets";
+import type { HostEnvironment } from "../wire/page.generated";
 
 const hot = import.meta.hot!;
 const query = new URL(import.meta.url).searchParams;
@@ -18,6 +20,25 @@ const pending = new Map<
   }
 >();
 const ready = Promise.withResolvers<void>();
+const environmentReady = Promise.withResolvers<void>();
+let environment: HostEnvironment = environmentPresets.browser;
+const environmentListeners = new Set<() => void>();
+addEventListener("message", ({ source, origin, data }) => {
+  const preset: unknown = data?.preset;
+  if (
+    source !== parent ||
+    origin !== location.origin ||
+    data?.type !== "slop:environment" ||
+    !isEnvironmentPreset(preset)
+  )
+    return;
+  const { platform, device } = environmentPresets[preset];
+  environment = Object.freeze({ platform, device });
+  environmentReady.resolve();
+  for (const listener of environmentListeners) listener();
+});
+if (parent === window) environmentReady.resolve();
+else parent.postMessage({ type: "slop:environment-ready" }, location.origin);
 let next = 0;
 let resourceToken: string | undefined;
 let failed: Error | undefined;
@@ -28,6 +49,7 @@ function fatal(error: string) {
   clearTimeout(opening);
   failed = new Error(error);
   ready.reject(failed);
+  environmentReady.reject(failed);
   for (const { reject, timer } of pending.values()) {
     clearTimeout(timer);
     reject(failed);
@@ -72,6 +94,17 @@ hot.on("slop:push", (batch: PagePush[]) => {
 
 const host: PreviewHost = {
   uiURL: "/__app__/assets/views.js",
+  environment: {
+    get current() {
+      return environment;
+    },
+    subscribe(receiver) {
+      environmentListeners.add(receiver);
+      return () => {
+        environmentListeners.delete(receiver);
+      };
+    },
+  },
   // The page around this frame re-sends its selected view on each of these.
   ready() {
     parent.postMessage(
@@ -106,7 +139,7 @@ hot.send("slop:open", { token });
 // The shell is served beside the app, not through Vite. A preview that cannot open shows
 // its notice instead.
 const shell = "/__shell__/boot.js";
-await ready.promise.then(
+await Promise.all([ready.promise, environmentReady.promise]).then(
   () => import(/* @vite-ignore */ shell),
   () => {},
 );

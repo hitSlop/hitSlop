@@ -24,6 +24,7 @@ openable, so its frozen entries never change.
 | Rust owner and commands | `crates/hitslop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | Chrome durable copies and WebKit native-owner preview, without building Swift |
+| Sharing service | `scripts/sharing/check-accounts.ts`, `verify sharing` (explicit qualification) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, reservations, publication, owner recovery and Stop/upload races; local certificate substitution only |
 | Engine renders | `tests/native/{render,landing}.native.test.ts`, `packages/hitslop/tests/cli/build.native.test.ts`, `bun run verify render` | Engine artwork and PNG/PDF exports on macOS and Linux, without Swift |
 | Native tools | Remaining `tests/native`, `bun run verify native` | Engine or host killed mid-edit and corpus replay on macOS |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
@@ -66,6 +67,7 @@ bun run verify                 # the tiers this change touches
 bun run verify --native        # the same, with the native (macOS) tiers
 bun run verify --all           # all ordinary tiers (add --native for macOS tiers)
 bun run verify browser         # optional browser qualification (macOS)
+bun run verify sharing         # optional Cloudflare account/room qualification; worker-build required
 bun run verify rust store::    # one tier, with its own arguments (here a nextest filter)
 bun run verify --list          # what would run, and why
 bun run verify --list --json --native --base origin/master # CI selection; no builds/tools
@@ -85,6 +87,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `swift` | Swift formatting, native bindings, shell and fixtures, then one serial `swift test` invocation after compilation, with an isolated temporary directory and registry. Requires at least one executed test. Filtered runs (`verify swift --filter X`) pass Swift’s filters through, including `name\(` patterns |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
 | `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `HITSLOP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
+| `sharing` | Builds the browser and Rust Worker, then runs the account/room boundary in pinned Miniflare with SQLite DOs and R2. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run; automatic CI qualification is not configured yet |
 | `native` | Remaining native tests with engine/evaluator and shell; no Swift preparation |
 
 Oxlint (`.oxlintrc.json`, `bun run lint`) adds type-aware promise rules to its correctness
