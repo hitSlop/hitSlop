@@ -3,7 +3,8 @@ import { installBrowserBridge } from "../shell/bridge";
 import { resourceDelivery } from "./resource-delivery";
 import { PendingRequests, copyDeadline, type FrameMessage, type HostReply } from "./requests";
 
-const hosted = resourceDelivery.kind === "network";
+const hosted =
+  resourceDelivery.kind === "network" && new URL(location.href).searchParams.get("local") !== "1";
 const host = resourceDelivery.host;
 if (!hosted) {
   await navigator.serviceWorker.register("/service-worker.js", { scope: "/", type: "module" });

@@ -323,6 +323,23 @@ impl BrowserCopy {
 
 #[wasm_bindgen]
 impl BrowserCopy {
+    /// Reopen an installed copy after remote access has ended, without rebinding it.
+    #[wasm_bindgen(js_name = openSavedJoined)]
+    pub fn open_saved_joined(&mut self, link: &str, origin: &str) -> Result<(), JsValue> {
+        let key = invitation(link, origin)?;
+        if self.fresh {
+            return Err(error("An ended room cannot be joined"));
+        }
+        self.open()?;
+        let driver = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?;
+        let share = driver.owner().share().map_err(error)?;
+        if !share.is_some_and(|share| share.endpoint == origin && share.room == key.room) {
+            self.driver = None;
+            self.events.lock().unwrap().clear();
+            return Err(error("Saved membership mismatch"));
+        }
+        Ok(())
+    }
     #[wasm_bindgen(js_name = openJoined)]
     pub fn open_joined(&mut self, link: &str, origin: &str, metadata: &str) -> Result<(), JsValue> {
         let key = invitation(link, origin)?;

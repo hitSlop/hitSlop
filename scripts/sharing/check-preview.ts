@@ -162,10 +162,34 @@ try {
   stopped=true;
   await until(async()=>(await reopened.locator("#sync").textContent())==="Sharing ended","Room stop did not reach the browser");
   assert.equal((await fetch(frame.url()+"assets/ui.js",{headers:{Cookie:`${resourceCookie.name}=${resourceCookie.value}`}})).status,410);
+  let stoppedSessions=0,stoppedSockets=0;
+  reopened.on("request",request=>{if(new URL(request.url()).pathname.startsWith("/_resources/"))stoppedSessions++;});
+  reopened.on("websocket",()=>{stoppedSockets++;});
+  await reopened.reload();
+  await reopened.frameLocator("iframe").getByText(resumed,{exact:true}).waitFor({timeout:45_000});
+  assert.equal(await reopened.locator("#sync").textContent(),"Sharing ended");
   await reopened.frameLocator("iframe").getByRole("textbox",{name:"New row",exact:true}).fill("Local after stop");
   await reopened.frameLocator("iframe").getByRole("button",{name:"Add row",exact:true}).click();
   await reopened.frameLocator("iframe").getByText("Local after stop",{exact:true}).waitFor();
-  note("Stopping revokes private reads and sync while the open local copy remains editable");
+  await reopened.evaluate(async()=>{
+    const storage=await navigator.storage.getDirectory();const file=await storage.getFileHandle("ended-download.slop",{create:true});
+    (window as any).__download=file;(window as any).showSaveFilePicker=async()=>file;
+  });
+  await reopened.getByRole("button",{name:"Download .slop",exact:true}).click();
+  await until(async()=>reopened.getByRole("button",{name:"Download .slop",exact:true}).isEnabled(),"Ended copy download did not finish");
+  const endedBytes=await reopened.evaluate(async()=>Array.from(new Uint8Array(await (await (window as any).__download.getFile()).arrayBuffer())));
+  const endedDownload=join(root,"ended-download.slop");await writeFile(endedDownload,Buffer.from(endedBytes));
+  const endedCopy=await execute({method:"get",documentPath:endedDownload});assert(endedCopy.ok);
+  assert((endedCopy.state.value as {rows:{text:string}[]}).rows.some(row=>row.text==="Local after stop"));
+  assert.equal(stoppedSessions,0);assert.equal(stoppedSockets,0);
+  note("Stopping revokes private reads and sync; a reloaded local copy stays editable and downloadable without remote sessions");
+  const refusedContext=await openProfile("chrome-ended");contexts.push(refusedContext);
+  const refused=await refusedContext.newPage();await refused.goto(invitation);
+  await refused.locator('#status[role="alert"]').waitFor();
+  assert((await refused.locator("#status").textContent())?.includes("410"));
+  assert(await refused.getByRole("button",{name:"Download .slop",exact:true}).isDisabled());
+  assert.equal(await refused.locator("iframe").count(),0);
+  note("A fresh browser still refuses an ended invitation");
   await writeFile(report,JSON.stringify({passed:true,checks,document:ready.document,copy,chrome:restored.browser()?.version()},null,2));
   console.log("Preview checks passed; report: "+report);
 } catch(error) {

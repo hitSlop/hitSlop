@@ -16,7 +16,7 @@ export async function buildSharing() {
     const browser = join(stage, "browser");
     await mkdir(browser, { recursive: true });
     const result = await Bun.build({
-      entrypoints: [join(repository, "packages/hitslop/src/browser/host.ts"), join(source, "worker.ts"), join(repository, "packages/hitslop/src/browser/frame.ts")],
+      entrypoints: [join(repository, "packages/hitslop/src/browser/host.ts"), join(source, "worker.ts"), join(repository, "packages/hitslop/src/browser/frame.ts"), join(repository, "packages/hitslop/src/browser/service-worker.ts")],
       outdir: browser, naming: "[name].[ext]", target: "browser", minify: true,
     });
     if (!result.success) throw new Error(result.logs.join("\n"));

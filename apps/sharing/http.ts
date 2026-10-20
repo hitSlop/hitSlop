@@ -17,6 +17,7 @@ export default {
     if (authored) {
       if (path === "/") path = "/frame.html";
       else if (path === "/frame.js") path = "/browser/frame.js";
+      else if (path === "/service-worker.js") path = "/browser/service-worker.js";
       else return new Response("Not found", { status: 404 });
     } else if (path === "/" || path === "/join") path = "/index.html";
     else if (!/^\/browser\/(host|worker)\.js$/.test(path) &&

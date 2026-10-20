@@ -16,6 +16,7 @@ import { SharingHost } from "../wire/constants.generated";
 
 interface BrowserCopy extends LocalCopy {
   openJoined(invitation: string, origin: string, info: string): void;
+  openSavedJoined(invitation: string, origin: string): void;
   syncAttach(): void;
   syncDetach(): void;
   syncFrame(bytes: Uint8Array): void;
@@ -331,10 +332,17 @@ const owner = new WorkerOwner<BrowserCopy>({
       throw new Error("Sharing link is no longer valid");
     invitation = candidate;
     const [room, capability] = candidate.split("#")[1]!.split(".");
-    const response = await checkedFetch(`${config.relay}/v1/rooms/${room}`, {
-      headers: { Authorization: `Bearer ${capability}` },
-      credentials: "omit",
-    });
+    let response: Response;
+    try {
+      response = await checkedFetch(`${config.relay}/v1/rooms/${room}`, {
+        headers: { Authorization: `Bearer ${capability}` },
+        credentials: "omit",
+      });
+    } catch (error) {
+      if (!(error instanceof TransportError) || error.status !== 410) throw error;
+      ended = true;
+      return true;
+    }
     roomInfo = await metadata(response, generation);
     const runtime = (await owner.initialized) as BrowserRuntime;
     connection = JSON.parse(runtime.invitationRequest(invitation, config.relay, roomInfo));
@@ -342,6 +350,7 @@ const owner = new WorkerOwner<BrowserCopy>({
   },
   async importCopy(installed, request) {
     if (request.source) {
+      if (ended) throw new TransportError(410);
       const response = await checkedFetch(connection.url, {
         headers: connection.headers,
         credentials: "omit",
@@ -371,9 +380,18 @@ const owner = new WorkerOwner<BrowserCopy>({
       installed.importFinish();
     }
   },
-  openCopy: (installed) => installed.openJoined(invitation, config.relay, roomInfo),
+  openCopy(installed) {
+    if (ended) {
+      installed.openSavedJoined(invitation, config.relay);
+      reportSync("Sharing ended");
+    } else installed.openJoined(invitation, config.relay, roomInfo);
+  },
   afterPoll: flushSocket,
   afterOpen() {
+    if (ended) {
+      sharingEvent({ type: "resourcesReady" });
+      return;
+    }
     setInterval(() => {
       const epoch = generation;
       if (!ended) void resourceSession(epoch).catch((error) => resourceFailure(error, epoch));
