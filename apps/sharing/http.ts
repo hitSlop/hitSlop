@@ -1,5 +1,13 @@
 import { SharingHost } from "../../packages/hitslop/src/wire/constants.generated";
 
+const appleAppSiteAssociation = JSON.stringify({
+  applinks: { details: [{
+    appIDs: ["78UAXU8QG8.com.hitslop.app"],
+    components: [{ "/": "/join", comment: "Live sharing links" }],
+  }] },
+  appclips: { apps: ["78UAXU8QG8.com.hitslop.app.Clip"] },
+});
+
 type Binding = { fetch(request: Request): Promise<Response> };
 /** HTTP/static glue only; Rust authorizes resources and owns the protocol. */
 export default {
@@ -13,6 +21,15 @@ export default {
       return env.RELAY.fetch(request);
     if (request.method !== "GET" && request.method !== "HEAD")
       return new Response(null, { status: 405 });
+    if (trusted && url.pathname === "/.well-known/apple-app-site-association") {
+      return new Response(request.method === "HEAD" ? null : appleAppSiteAssociation, {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, max-age=3600",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     let path = url.pathname;
     if (authored) {
       if (path === "/") path = "/frame.html";

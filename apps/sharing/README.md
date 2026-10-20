@@ -61,6 +61,13 @@ The native preview requires `--live-sharing-preview` or `HITSLOP_LIVE_SHARING_PR
 in Debug. A build compiled with the `HITSLOP_SHARING_PREVIEW` condition (TestFlight preview
 builds) enables it without a flag. Normal releases omit the feature. The v1 wire contract is frozen for shipped TestFlight clients.
 
+The host serves a static, cacheable Apple App Site Association response at
+`https://share.hitslop.com/.well-known/apple-app-site-association` without a redirect.
+It associates `/join` with team `78UAXU8QG8`'s `com.hitslop.app` and reserves the
+`com.hitslop.app.Clip` App Clip ID. iOS and Debug macOS entitlements include
+`applinks:share.hitslop.com`; preview-enabled apps pass the complete URL (including
+its fragment) to the existing join flow. Ordinary Mac Release entitlements are unchanged.
+
 ## Protocol compatibility
 
 The fixtures in `crates/hitslop-sharing-protocol/tests/fixtures/v1` are immutable once
@@ -102,7 +109,7 @@ Later deployment is an operator action, after qualification:
    secret or Firebase credential is required; the existing Account DO adds its retry
    fence table lazily.
 3. Deploy the host with `wrangler deploy --config apps/sharing/host.wrangler.jsonc`
-   to refresh its generated OpenAPI asset. Existing DO bindings and R2 bucket stay.
+   to refresh the AASA route and generated OpenAPI asset. Existing DO bindings and R2 bucket stay.
 
 ## Build and qualification
 

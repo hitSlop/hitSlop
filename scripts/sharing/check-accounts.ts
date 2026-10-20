@@ -3,6 +3,7 @@
  * has no test key, token bypass, configurable certificate URL or asserted UID path.
  * Run through `bun run verify sharing` after installing worker-build (README). */
 import assert from "node:assert/strict";
+import host from "../../apps/sharing/http";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -67,6 +68,27 @@ const seedHeaders = (bytes: Uint8Array) => ({
   "X-Sharing-SHA256": hash(bytes), "X-Sharing-App": app, "X-Sharing-Version": "[]",
 });
 try {
+  const unused = { async fetch(): Promise<Response> { throw new Error("AASA must not use assets or relay"); } };
+  const associationURL = "https://share.hitslop.com/.well-known/apple-app-site-association";
+  const association = await host.fetch(new Request(associationURL), { ASSETS: unused, RELAY: unused });
+  assert.equal(association.status, 200);
+  assert.equal(association.headers.get("Content-Type"), "application/json");
+  assert.equal(association.headers.get("Location"), null);
+  assert.equal(association.headers.get("Cache-Control"), "public, max-age=3600");
+  assert.deepEqual(await association.json(), {
+    applinks: { details: [{ appIDs: ["78UAXU8QG8.com.hitslop.app"], components: [{ "/": "/join", comment: "Live sharing links" }] }] },
+    appclips: { apps: ["78UAXU8QG8.com.hitslop.app.Clip"] },
+  });
+  const head = await host.fetch(new Request(associationURL, { method: "HEAD" }), { ASSETS: unused, RELAY: unused });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+  assert.equal((await host.fetch(new Request(associationURL, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
+  assert.equal((await host.fetch(new Request(associationURL.replace("share.hitslop.com", "copy.dotslop.com")), { ASSETS: unused, RELAY: unused })).status, 404);
+  const join = await host.fetch(new Request("https://share.hitslop.com/join"), {
+    ASSETS: { async fetch(request: Request) { assert.equal(new URL(request.url).pathname, "/index.html"); return new Response("join"); } }, RELAY: unused,
+  });
+  assert.equal(await join.text(), "join");
+  assert.equal(join.headers.get("Content-Security-Policy"), SharingHost.hostPolicy);
   assert.equal((await call("account", undefined, "DELETE")).status, 401);
   assert.equal((await call("account", "not-an-identity", "DELETE")).status, 401);
   assert.equal((await call("rooms", undefined, "POST", { document })).status, 401);

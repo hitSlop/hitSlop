@@ -1,4 +1,5 @@
 import Foundation
+import HitSlopCoreBinding
 import Security
 
 extension Notification.Name {
@@ -11,6 +12,18 @@ extension Notification.Name {
 /// Preview builds (the `HITSLOP_SHARING_PREVIEW` compilation condition, e.g. TestFlight) enable it;
 /// Debug needs a launch flag; ordinary releases never include it.
 public enum SharingPreview {
+  /// Preserve the full URL, including its capability fragment, through the Rust parser.
+  /// A non-sharing URL is left to the caller's existing routing.
+  public static func incomingLink(_ url: URL) throws -> String? {
+    guard url.scheme == "https", url.host == "share.hitslop.com", url.path == "/join" else { return nil }
+    guard let fragment = url.fragment, !fragment.isEmpty else {
+      throw SlopFailure("Open the link in hitSlop again")
+    }
+    let link = url.absoluteString
+    _ = try sharingJoinCredential(link: link)
+    return link
+  }
+
   public static let enabled: Bool = {
     #if HITSLOP_SHARING_PREVIEW
       true

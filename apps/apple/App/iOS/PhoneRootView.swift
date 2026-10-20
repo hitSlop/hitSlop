@@ -142,7 +142,11 @@ struct PhoneRootView: View {
       if phase == .inactive { model.saveOnInactive() }
       if phase == .background { model.saveInBackground() }
     }
+    .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+      if let url = activity.webpageURL { openSharingLink(url) }
+    }
     .onOpenURL { url in
+      if openSharingLink(url) { return }
       if let id = WidgetCache.selectionID(from: url) {
         path = path.filter(\.isDocument)
         model.open(libraryID: id)
@@ -150,6 +154,20 @@ struct PhoneRootView: View {
         model.importDocument(url)
       }
     }
+  }
+
+  @discardableResult private func openSharingLink(_ url: URL) -> Bool {
+    guard SharingPreview.enabled else { return false }
+    do {
+      guard let link = try SharingPreview.incomingLink(url) else { return false }
+      Task {
+        do {
+          try await model.join(link)
+          showSettings = false
+        } catch { model.message = sharingMessage(error) }
+      }
+    } catch { model.message = sharingMessage(error) }
+    return true
   }
 
   private var navigationPath: Binding<[PhoneRoute]> {

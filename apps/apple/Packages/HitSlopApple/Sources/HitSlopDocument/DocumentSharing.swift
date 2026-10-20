@@ -5,7 +5,7 @@ import HitSlopCore
 import HitSlopCoreBinding
 import SwiftUI
 
-func sharingMessage(_ error: Error) -> String {
+public func sharingMessage(_ error: Error) -> String {
   if case SharingError.Failed(let message) = error { return message }
   return error.localizedDescription
 }
