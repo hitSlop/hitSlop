@@ -180,9 +180,8 @@ public struct LiveCollaborationSection: View {
 
   private func start() {
     failedAction = .start
-    starting = true
     wantsLink = true
-    model.create()
+    starting = model.create()
   }
 
   private func startWhenReady() {

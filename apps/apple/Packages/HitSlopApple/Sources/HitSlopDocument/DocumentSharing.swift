@@ -139,7 +139,8 @@ private actor SharingDriver {
     active = false
     await driver.pause()
   }
-  public func create() {
+  /// Returns false when another sharing operation is still running.
+  @discardableResult public func create() -> Bool {
     run {
       let token = try await SharingAccount.shared.token()
       return try await self.driver.start(token: token)
@@ -157,8 +158,9 @@ private actor SharingDriver {
       return try await self.driver.stop(token: token)
     }
   }
-  private func run(acting: Bool = true, _ operation: @escaping @MainActor () async throws -> SharingStatus?) {
-    guard active, !busy else { return }
+  @discardableResult
+  private func run(acting: Bool = true, _ operation: @escaping @MainActor () async throws -> SharingStatus?) -> Bool {
+    guard active, !busy else { return false }
     busy = true
     self.acting = acting
     error = nil
@@ -177,6 +179,7 @@ private actor SharingDriver {
         }
       }
     }
+    return true
   }
 
   /// Resolve the canonical local file, including an already-open document. Joining
