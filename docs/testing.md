@@ -407,7 +407,7 @@ without changing file bytes. See [releasing](guides/releasing.md).
 | `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
 | `fast` (Ubuntu 24.04) | Affected compatibility integrity, tooling, generated-contract, type, Bun, CLI, engine-render, installed-package and landing checks |
 | `native` (macOS 15 ARM64) | Affected `swift,native` tiers: native page edits, the CLI, and the app-level old-file replay |
-| `app` (macOS 15 ARM64) | Compiles the unsigned Debug macOS app, its extensions and embedded starter templates (`bun run apple:build --compile-only`); selected by app build inputs and always on nightly/manual/hotfix runs |
+| `app` (macOS 15 ARM64) | Compiles the unsigned Debug macOS app, its extensions and embedded starter templates (`bun run apple:build --compile-only`); selected by app build inputs and always on nightly/manual/hotfix runs; required, and a skipped run satisfies the requirement |
 | `native-rust` (macOS 15 ARM64) | The affected `rust` tier, in parallel with `native`: platform SQLite, Darwin sandbox and deterministic historical-file replay. WASM lints run on Linux only |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
