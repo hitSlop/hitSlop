@@ -60,6 +60,47 @@
         ]
       }
     },
+    "/v1/account": {
+      "delete": {
+        "summary": "End every indexed room and remove the signed-in relay account; retryable and idempotent",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          }
+        ]
+      }
+    },
     "/v1/account/rooms/{document}": {
       "get": {
         "summary": "Look up the signed-in owner's current room, or null",
@@ -800,8 +841,7 @@
               "$ref": "#/components/schemas/Resource"
             }
           }
-        },
-        "additionalProperties": false
+        }
       },
       "Resource": {
         "type": "object",
@@ -826,8 +866,7 @@
             "format": "int64",
             "minimum": 0
           }
-        },
-        "additionalProperties": false
+        }
       },
       "ResourceGrant": {
         "type": "object",

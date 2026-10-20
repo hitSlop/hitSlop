@@ -7,7 +7,12 @@
   "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "SlopRoom" }, { "name": "ACCOUNTS", "class_name": "SharingAccount" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SlopRoom"] }, { "tag": "v2", "new_sqlite_classes": ["SharingAccount"] }],
   "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "hitslop-sharing-preview" }],
+  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "hitslop_sharing" }],
   "ratelimits": [
-    { "name": "ACCOUNT_CREATE_LIMIT", "namespace_id": "27924743", "simple": { "limit": 5, "period": 60 } }
+    { "name": "ACCOUNT_CREATE_LIMIT", "namespace_id": "27924743", "simple": { "limit": 5, "period": 60 } },
+    { "name": "GUEST_METADATA_LIMIT", "namespace_id": "27924744", "simple": { "limit": 120, "period": 60 } },
+    { "name": "GUEST_SEED_LIMIT", "namespace_id": "27924745", "simple": { "limit": 30, "period": 60 } },
+    { "name": "GUEST_CONNECT_LIMIT", "namespace_id": "27924746", "simple": { "limit": 60, "period": 60 } },
+    { "name": "GUEST_BLOB_LIMIT", "namespace_id": "27924747", "simple": { "limit": 120, "period": 60 } }
   ]
 }

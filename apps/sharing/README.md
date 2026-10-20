@@ -28,6 +28,11 @@ All HTTP routes use `/v1/`:
 - `GET /rooms/{room}` returns document, phase, seed hash/size and app digest. Firebase
   owner authentication also returns the capability. Guests use a capability bearer.
   `GET /account/rooms/{document}` returns `{room}` or null for owner recovery.
+- `DELETE /account` with Firebase identity ends every indexed room through Stop,
+  closes guest sockets, purges R2, then clears the account index and quota. It returns
+  JSON `null`; retries (including after partial cleanup) succeed idempotently. A later
+  sign-in can create rooms again. This removes relay data; Firebase/Apple identity
+  revocation remains a separate native account flow.
 - `DELETE /rooms/{room}` by the owner ends sharing, closes sockets, purges R2 and tables,
   and releases the account quota slot. Uploads crossing Stop delete late writes.
   Uploading rooms expire through a 24-hour alarm. Re-share creates a fresh random room;
@@ -54,7 +59,50 @@ Connected opening is required; open copies remain editable offline and after Sto
 
 The native preview requires `--live-sharing-preview` or `HITSLOP_LIVE_SHARING_PREVIEW=1`
 in Debug. A build compiled with the `HITSLOP_SHARING_PREVIEW` condition (TestFlight preview
-builds) enables it without a flag. Normal releases omit the feature. Old preview rooms and credentials are unsupported.
+builds) enables it without a flag. Normal releases omit the feature. The v1 wire contract is frozen for shipped TestFlight clients.
+
+## Protocol compatibility
+
+The fixtures in `crates/hitslop-sharing-protocol/tests/fixtures/v1` are immutable once
+committed. Add examples; never replace or regenerate existing ones. The protocol grows
+only through optional fields and new routes. Optional fields must remain readable by
+shipped clients: older strict resource readers still need the original inventory shape,
+so publish new resource metadata through a new route. A breaking change requires a new path
+version (`/v2`); `/v1` must keep serving old clients, including its socket subprotocol
+and binary codecs. Do not reorder postcard variants or change existing frame layouts.
+JSON reply readers ignore unknown fields. Unknown phase/control/event enum values and
+binary frame/permission/ack variants fail closed; API failure codes are opaque strings,
+and binary Error codes are opaque bytes. There is no fallback phase or implicit success.
+The fixture README describes canonical JSON and both binary representations.
+
+## Abuse controls and metrics
+
+Guest entry points have independent per-client-IP (`CF-Connecting-IP`) Workers budgets
+across rooms: metadata GET 120/minute, seed GET 30/minute, sync GET 60/minute and blob
+PUT 120/minute. These entry point limits also apply to owner requests on those routes;
+missing IPs share a fallback budget. Creation retains its existing per-account 5/minute
+limit. All 429 replies use `ApiFailure` code `limited`. Workers limits are local to each
+Cloudflare location and approximate, not global quotas ([Workers rate limits](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/)).
+
+workers-rs 0.8.7 writes directly to Analytics Engine binding `METRICS`, dataset
+`hitslop_sharing`. `blob1` contains only `room_created`, `room_opened`, `room_ended_stop`,
+`room_ended_alarm`, `account_deleted`, `guest_join` (accepted socket) or `limited`;
+`double1` is 1. No identifiers, IPs, hashes, capabilities or tokens are emitted. Lifecycle
+retries do not emit another transition; metrics are best effort, not an audit ledger.
+
+Later deployment is an operator action, after qualification:
+
+1. Enable Workers Analytics Engine on the target Cloudflare account. The configured
+   dataset is created on first write ([Analytics Engine setup](https://developers.cloudflare.com/analytics/analytics-engine/get-started/)).
+2. Deploy the relay with `wrangler deploy --config apps/sharing/wrangler.jsonc`.
+   This adds `METRICS` and the four rate-limit namespaces: `GUEST_METADATA_LIMIT`
+   `27924744`, `GUEST_SEED_LIMIT` `27924745`, `GUEST_CONNECT_LIMIT` `27924746`,
+   `GUEST_BLOB_LIMIT` `27924747`. Keep `ACCOUNT_CREATE_LIMIT` `27924743`. These numeric
+   rate-limit namespaces need no separate provisioning. No new DO migration, R2 bucket,
+   secret or Firebase credential is required; the existing Account DO adds its retry
+   fence table lazily.
+3. Deploy the host with `wrangler deploy --config apps/sharing/host.wrangler.jsonc`
+   to refresh its generated OpenAPI asset. Existing DO bindings and R2 bucket stay.
 
 ## Build and qualification
 
@@ -75,7 +123,8 @@ bun run verify --native
 pinned Miniflare. Only the local runtime's certificate fetch uses a generated test key;
 production has no identity bypass. It covers idempotent creation, seed replacement,
 open, guest access, second-session owner recovery, authorization, Stop/upload cleanup,
-re-share and stale-room refusal.
+re-share, stale-room refusal, account deletion of Live/Uploading rooms, socket revocation,
+cold re-sign-in with restored quota and bursts against all four guest budgets.
 
 The private R2 bucket is `hitslop-sharing-preview`. The `dotslop.com` zone needs a
 proxied wildcard DNS record (`AAAA * → 100::`); the host config declares its wildcard
@@ -101,8 +150,8 @@ barriers, download/native reopen and revocation. Ignored reports stay under
 Seeds and retained updates each have a 16 MiB limit; rooms admit 32 connections. App and
 attachment limits use core acceptance. Automatic CloudKit checkpoints for relay documents
 run at most once a minute per process; manual/background saves bypass the interval.
-Public rollout needs Save Unshared Copy, account deletion/Apple revocation, privacy,
-remaining abuse controls, broader device qualification and frozen protocol fixtures.
+Public rollout needs Save Unshared Copy, native account deletion UI/Apple revocation,
+privacy, remaining abuse controls and broader device qualification.
 Reliable offline web reopening and room compaction remain deferred.
 
 `HITSLOP_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,

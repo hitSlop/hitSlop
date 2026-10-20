@@ -46,13 +46,29 @@ pub fn verify_account(token: &str) -> Result<()> {
         account_request("GET", "account/rooms/00000000-0000-4000-8000-000000000000", token, &[])?;
     Ok(())
 }
+/// End all indexed shares and remove the relay account. Tokens are never persisted.
+pub fn delete_account(token: &str) -> Result<()> {
+    delete_account_at(hitslop_sharing_protocol::TRUSTED_ORIGIN, token)
+}
+fn delete_account_at(origin: &str, token: &str) -> Result<()> {
+    account_request_at::<()>(origin, "DELETE", "account", token, &[])
+}
 fn account_request<T: serde::de::DeserializeOwned>(method: &str, route: &str, token: &str, body: &[u8]) -> Result<T> {
+    account_request_at(hitslop_sharing_protocol::TRUSTED_ORIGIN, method, route, token, body)
+}
+fn account_request_at<T: serde::de::DeserializeOwned>(
+    origin: &str,
+    method: &str,
+    route: &str,
+    token: &str,
+    body: &[u8],
+) -> Result<T> {
     if token.is_empty() || token.len() > hitslop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES {
         return Err("Sign in to your sharing account first".into());
     }
     let bytes = transport::http_request(
         method,
-        &format!("{}/v1/{route}", hitslop_sharing_protocol::TRUSTED_ORIGIN),
+        &format!("{origin}/v1/{route}"),
         Some(token),
         body,
         &[("Content-Type", "application/json")],

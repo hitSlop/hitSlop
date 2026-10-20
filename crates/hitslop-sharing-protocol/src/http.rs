@@ -100,6 +100,23 @@ pub struct ApiFailure {
     pub message: String,
 }
 
+impl ApiFailure {
+    /// Public v1 refusal codes are stable; clients may also receive unfamiliar strings.
+    pub fn refused(status: u16) -> Self {
+        let code = match status {
+            401 => "sign_in_required",
+            400 | 413 | 422 => "invalid_request",
+            403 => "denied",
+            404 => "not_found",
+            409 => "conflict",
+            410 => "sharing_ended",
+            429 => "limited",
+            _ => "unavailable",
+        };
+        Self { code: code.into(), message: "The sharing service refused this request".into() }
+    }
+}
+
 /// A bearer capability stays in the fragment of a pinned-origin link.
 #[derive(Clone)]
 pub struct Invitation {
@@ -193,6 +210,15 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             vec![("post", Some("CreateRoom"), Some("CreatedRoom"), "Create or recover the document's current room")],
         ),
         (
+            "/v1/account",
+            vec![(
+                "delete",
+                None,
+                None,
+                "End every indexed room and remove the signed-in relay account; retryable and idempotent",
+            )],
+        ),
+        (
             "/v1/account/rooms/{document}",
             vec![("get", None, Some("AccountRoom"), "Look up the signed-in owner's current room, or null")],
         ),
@@ -274,6 +300,10 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             }
             if (method == "get" && path == "/v1/rooms/{room}") || (method == "put" && path.contains("/blob/")) {
                 operation["security"] = serde_json::json!([{"firebaseIdentity":[]},{"capability":[]}]);
+            }
+            if path == "/v1/account" {
+                operation["responses"]["200"]["content"] =
+                    serde_json::json!({"application/json":{"schema":{"type":"null"}}});
             }
             if let Some(name) = input {
                 operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{name}")}}}});

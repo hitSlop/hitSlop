@@ -165,3 +165,38 @@ fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry()
         std::panic::resume_unwind(error);
     }
 }
+
+#[test]
+fn account_deletion_authenticates_and_accepts_idempotent_success() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    assert!(delete_account("").is_err());
+    assert!(delete_account(&"x".repeat(hitslop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES + 1)).is_err());
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", server.local_addr().unwrap());
+    let thread = std::thread::spawn(move || {
+        for status in [200, 200, 401, 500] {
+            let (mut stream, _) = server.accept().unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+                if request.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let text = String::from_utf8(request).unwrap().to_lowercase();
+            assert!(text.starts_with("delete /v1/account http/1.1\r\n"));
+            assert!(text.contains("authorization: bearer local-fixture\r\n"));
+            write!(stream, "HTTP/1.1 {status} Reply\r\nContent-Length: 4\r\nConnection: close\r\n\r\nnull").unwrap();
+        }
+    });
+    assert!(delete_account_at(&origin, "local-fixture").is_ok());
+    assert!(delete_account_at(&origin, "local-fixture").is_ok());
+    assert!(delete_account_at(&origin, "local-fixture").unwrap_err().contains("Sign in"));
+    assert!(delete_account_at(&origin, "local-fixture").unwrap_err().contains("500"));
+    thread.join().unwrap();
+}

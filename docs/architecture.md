@@ -737,8 +737,9 @@ are saved in that browser and downloadable as `.slop` files.
   once the relay has caught the copy up. Frames wait while a command evaluates.
 - **Wire.** Binary frames (`sync::Frame`). The golden frames in
   `crates/hitslop-core/tests/sync-frames.json` are the contract with the relay's codec.
-  No released build speaks it yet, so it may change freely until a relay ships; the
-  document layout and storage it carries are the released formats.
+  The shipped TestFlight v1 relay contract is grow-only; immutable HTTP, link and both
+  binary codec fixtures live in `crates/hitslop-sharing-protocol/tests/fixtures/v1`.
+  Breaking changes require `/v2` while `/v1` keeps serving old clients.
 
 Accepted limits, chosen for mini apps over heavier machinery:
 

@@ -17,6 +17,11 @@ pub fn sharing_verify_account(token: String) -> Result<(), SharingError> {
     hitslop_sharing_client::verify_account(&token).map_err(failure)
 }
 
+#[uniffi::export]
+pub fn sharing_delete_account(token: String) -> Result<(), SharingError> {
+    hitslop_sharing_client::delete_account(&token).map_err(failure)
+}
+
 #[uniffi::remote(Enum)]
 pub enum Phase {
     Preparing,
