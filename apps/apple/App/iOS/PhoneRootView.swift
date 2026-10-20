@@ -16,7 +16,7 @@ enum PhoneRoute: Hashable {
 }
 
 struct PhoneRootView: View {
-  @StateObject private var model = PhoneDocuments()
+  @ObservedObject var model: PhoneDocuments
   @ObservedObject private var library = SlopLibrary.shared
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -119,6 +119,7 @@ struct PhoneRootView: View {
       Text(model.message ?? "")
     }
     .task {
+      library.activated(scenePhase == .active)
       library.start()
       await model.loadTemplates()
     }
@@ -140,7 +141,10 @@ struct PhoneRootView: View {
         model.widgets.foreground()
       }
       if phase == .inactive { model.saveOnInactive() }
-      if phase == .background { model.saveInBackground() }
+      if phase == .background {
+        PhoneAppDelegate.scheduleRefresh()
+        model.saveInBackground()
+      }
     }
     .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
       if let url = activity.webpageURL { openSharingLink(url) }

@@ -104,7 +104,18 @@ actor LibraryTransport: CKSyncEngineDelegate {
     }
     engine.state.add(pendingRecordZoneChanges: dirty)
   }
-  func sync(explicit: Bool = true) async throws {
+  func fetchInBackground() async throws {
+    while syncing { try await Task.sleep(for: .milliseconds(100)) }
+    try Task.checkCancellation()
+    guard let engine else { throw CloudFailure("Not syncing") }
+    try await withTaskCancellationHandler {
+      try await sync(explicit: false, sendChanges: false)
+    } onCancel: {
+      Task { await engine.cancelOperations() }
+    }
+  }
+
+  func sync(explicit: Bool = true, sendChanges: Bool = true) async throws {
     guard !syncing else { return }
     guard let engine else { throw CloudFailure("Not syncing") }
     syncing = true
@@ -116,14 +127,17 @@ actor LibraryTransport: CKSyncEngineDelegate {
       }
     }
     trace("fetch_database_begin")
+    try Task.checkCancellation()
     try await engine.fetchChanges()
     trace("fetch_database_end")
     // Discover zones first, then force a refresh of this zone even when no
     // notification has marked it dirty in the engine's saved state.
     trace("fetch_zone_begin")
+    try Task.checkCancellation()
     try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
     trace("fetch_zone_end")
-    try await sendOnly(explicit: explicit)
+    try Task.checkCancellation()
+    if sendChanges { try await sendOnly(explicit: explicit) }
   }
   private func hasEligibleChanges() throws -> Bool {
     for entry in try library.entries() where entry.dirty && issues[entry.id] == nil {

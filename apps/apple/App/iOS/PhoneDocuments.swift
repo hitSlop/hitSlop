@@ -286,13 +286,18 @@ import WebKit
       }
     }
     backgroundSave = Task {
+      widgets.beginBackgroundRefresh()
       defer {
+        widgets.endBackgroundRefresh()
         backgroundSave = nil
         endBackground()
       }
       do {
         try await session.pauseForBackground()
+        try Task.checkCancellation()
         await SlopLibrary.shared.saveToCloud()
+        try Task.checkCancellation()
+        await widgets.refreshPlaced()
       } catch {
         if !Task.isCancelled {
           message = "Your document is still open. Saving needs attention: \(error.localizedDescription)"

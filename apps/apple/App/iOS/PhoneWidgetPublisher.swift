@@ -3,6 +3,7 @@ import Foundation
 import HitSlopCore
 import HitSlopDocument
 import HitSlopWidgets
+import UIKit
 import WidgetKit
 
 @MainActor final class PhoneWidgetPublisher {
@@ -11,6 +12,12 @@ import WidgetKit
   private var entries: [SyncedSlop] = []
   private var pending: [String: Task<Void, Never>] = [:]
   private var tail: Task<Void, Never>?
+  private var captures: [UUID: Task<Void, Never>] = [:]
+  private var backgroundRefreshes = 0
+  private var captureLifetime = UUID()
+  private var captureAllowed: Bool {
+    UIApplication.shared.applicationState == .active || backgroundRefreshes > 0
+  }
   private var lifetime = UUID()
   private var indexRevision = UUID()
   private var account = ""
@@ -70,12 +77,32 @@ import WidgetKit
       } catch { report(error) }
     }
     let changed = Set(visible.filter { previous[$0.id] != $0.version }.map(\.id))
-    Task { await refresh(ids: changed) }
+    if UIApplication.shared.applicationState == .active && backgroundRefreshes == 0 {
+      Task { await refresh(ids: changed) }
+    }
   }
 
-  func foreground() { Task { await refresh(ids: nil) } }
+  func foreground() {
+    guard UIApplication.shared.applicationState == .active, backgroundRefreshes == 0 else { return }
+    Task { await refresh(ids: nil) }
+  }
+
+  func beginBackgroundRefresh() { backgroundRefreshes += 1 }
+
+  func endBackgroundRefresh() { backgroundRefreshes -= 1 }
+
+  func refreshPlaced() async { await refresh(ids: nil) }
+
+  private func cancelCaptures() {
+    captureLifetime = UUID()
+    for task in captures.values { task.cancel() }
+    for task in pending.values { task.cancel() }
+    pending.removeAll()
+    tail?.cancel()
+  }
 
   func saved(_ session: DocumentSession) {
+    guard UIApplication.shared.applicationState == .active, backgroundRefreshes == 0 else { return }
     guard let entry = SlopLibrary.shared.entry(at: session.file.url), !entry.deleted else { return }
     pending[entry.id]?.cancel()
     pending[entry.id] = Task { [weak self] in
@@ -108,21 +135,26 @@ import WidgetKit
   }
 
   private func refresh(ids: Set<String>?) async {
+    guard !Task.isCancelled, captureAllowed else { return }
     let started = lifetime
+    let captureStarted = captureLifetime
     let placed = await placedIDs()
-    guard lifetime == started else { return }
+    guard !Task.isCancelled, captureAllowed, captureLifetime == captureStarted, lifetime == started else { return }
     let requested = ids.map { placed.intersection($0) } ?? placed
     guard !requested.isEmpty else { return }
     let previous = tail
     let task = Task { [self] in
       await previous?.value
       for id in requested {
+        guard !Task.isCancelled, captureAllowed, captureLifetime == captureStarted else { return }
         guard lifetime == started, account != "unavailable", !account.isEmpty, let cache,
           let entry = entries.first(where: { $0.id == id && !$0.deleted })
         else { continue }
         do {
           let url = URL(fileURLWithPath: entry.path)
           let version = try await DocumentArtworkRenderer.widgetSourceVersion(url: url)
+          try Task.checkCancellation()
+          guard captureAllowed, captureLifetime == captureStarted else { return }
           guard lifetime == started, cache.record(id: id)?.sourceVersion != version else { continue }
           let capturedAt = Date()
           let capture: DocumentWidgetCapture
@@ -132,6 +164,8 @@ import WidgetKit
           } else {
             capture = try await DocumentArtworkRenderer.widgetCapture(url: url)
           }
+          try Task.checkCancellation()
+          guard captureAllowed, captureLifetime == captureStarted else { return }
           guard lifetime == started, let current = entries.first(where: { $0.id == id && !$0.deleted }) else {
             continue
           }
@@ -140,11 +174,22 @@ import WidgetKit
             libraryID: id, title: current.title, images: capture.images, capturedAt: capturedAt,
             sourceVersion: capture.sourceVersion)
           if record.generation != previousGeneration { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
-        } catch { report(error) }
+        } catch {
+          if Task.isCancelled { return }
+          report(error)
+        }
       }
     }
     tail = task
-    await task.value
+    let token = UUID()
+    captures[token] = task
+    defer { captures[token] = nil }
+    await withTaskCancellationHandler {
+      await task.value
+    } onCancel: {
+      task.cancel()
+      Task { @MainActor [weak self] in self?.cancelCaptures() }
+    }
   }
 
   private func report(_ error: Error) {

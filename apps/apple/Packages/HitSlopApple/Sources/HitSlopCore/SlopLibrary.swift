@@ -76,7 +76,7 @@ final class LibraryOwners: Sendable {
   public func start() {
     guard task == nil else { return }
     task = Task {
-      await connect()
+      if foreground { await connect() }
       var seconds = 0
       while !Task.isCancelled {
         if let transport, foreground {
@@ -94,7 +94,7 @@ final class LibraryOwners: Sendable {
       }
     }
   }
-  private func connect() async {
+  private func connect(background: Bool = false) async {
     guard !connecting else { return }
     connecting = true
     defer {
@@ -110,6 +110,7 @@ final class LibraryOwners: Sendable {
       let container = self.container ?? CKContainer(identifier: "iCloud.com.hitslop.app")
       self.container = container
       let accountStatus = try await container.accountStatus()
+      try Task.checkCancellation()
       guard accountStatus == .available else {
         await transport?.stop()
         isReady = false
@@ -119,6 +120,7 @@ final class LibraryOwners: Sendable {
         return
       }
       let user = try await container.userRecordID().recordName
+      try Task.checkCancellation()
       let fingerprint = SHA256.hash(data: Data(user.utf8)).map { String(format: "%02x", $0) }.joined()
       if !account.isEmpty && account != fingerprint {
         await transport?.stop()
@@ -135,7 +137,7 @@ final class LibraryOwners: Sendable {
           isReady = true
         }
         await refresh()
-        try await transport.sync(explicit: false)
+        if !background { try await transport.sync(explicit: false) }
         await refresh()
         return
       }
@@ -158,6 +160,7 @@ final class LibraryOwners: Sendable {
       let native = try await Task.detached(priority: .utility) {
         try NativeLibrary.open(root: libraryRoot.path, account: fingerprint)
       }.value
+      try Task.checkCancellation()
       self.native = native
       try Self.active.activate(native)
       let transport = LibraryTransport(
@@ -168,7 +171,7 @@ final class LibraryOwners: Sendable {
       isReady = true
       status = "iCloud connected"
       await refresh()
-      try await transport.sync(explicit: false)
+      if !background { try await transport.sync(explicit: false) }
       await refresh()
     } catch { status = libraryMessage(error) }
   }
@@ -193,6 +196,27 @@ final class LibraryOwners: Sendable {
       }
     } catch { status = libraryMessage(error) }
   }
+  /// Explicit background fetch does not depend on the foreground polling loop.
+  public func fetchInBackground() async throws {
+    while connecting || isSyncing {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    try Task.checkCancellation()
+    if transport == nil || !isReady { await connect(background: true) }
+    try Task.checkCancellation()
+    guard let transport, isReady else { throw SlopFailure(status) }
+    isSyncing = true
+    defer { isSyncing = false }
+    do {
+      try await transport.fetchInBackground()
+      try Task.checkCancellation()
+      await refresh()
+    } catch {
+      await refresh()
+      throw error
+    }
+  }
+
   public func syncNow() async {
     guard !isSyncing else { return }
     isSyncing = true
