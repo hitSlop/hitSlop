@@ -30,6 +30,8 @@ targets:
       - path: App/Shared/WidgetIntent.swift
       - path: App/macOS/GoogleService-Info.plist
         buildPhase: resources
+      - path: App/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
       - path: App/Shared/Assets.xcassets
       - path: ../../generated/ios/StarterTemplates
         type: folder
@@ -61,6 +63,8 @@ targets:
     sources:
       - App/Widgets/SlopImageWidget.swift
       - App/Shared/WidgetIntent.swift
+      - path: App/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - package: HitSlopApple
         product: HitSlopWidgets
@@ -85,6 +89,8 @@ targets:
     sources:
       - path: App/QuickLookThumbnail
         excludes: [Info.plist, QuickLookThumbnail.entitlements]
+      - path: App/Shared/PrivacyInfo.xcprivacy
+        buildPhase: resources
     dependencies:
       - package: HitSlopApple
         product: HitSlopCore

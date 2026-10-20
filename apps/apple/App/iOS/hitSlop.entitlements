@@ -3,8 +3,7 @@
 <plist version="1.0"><dict>
 <key>com.apple.developer.applesignin</key><array><string>Default</string></array>
 <key>com.apple.developer.icloud-services</key><array><string>CloudKit</string></array>
-<key>com.apple.developer.icloud-container-identifiers</key><array><string>iCloud.com.hitslop.syncspike</string></array>
-<key>com.apple.developer.icloud-container-environment</key><string>Development</string>
+<key>com.apple.developer.icloud-container-identifiers</key><array><string>iCloud.com.hitslop.app</string></array>
 <key>aps-environment</key><string>development</string>
 <key>keychain-access-groups</key><array><string>$(AppIdentifierPrefix)com.hitslop.sharing</string></array>
 <key>com.apple.security.application-groups</key><array><string>group.com.hitslop</string></array>
