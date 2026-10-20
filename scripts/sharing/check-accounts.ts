@@ -135,6 +135,28 @@ try {
   const next = await json<CreatedRoom>("rooms", a, "POST", { document });
   assert.notEqual(next.room, r.room, "Re-share creates a fresh random room");
   assert.equal((await json<AccountRoom>("account/rooms/" + document, a)).room, next.room);
+  const rejoinedRoom = await json<CreatedRoom>("rooms", b, "POST", { document: "00000000-0000-4000-8000-000000000002" });
+  const rejoinedBase = "rooms/" + rejoinedRoom.room;
+  assert.equal((await call(rejoinedBase + "/seed", b, "PUT", seed, seedHeaders(seed))).status, 200);
+  assert.equal((await call(rejoinedBase + "/resources", b, "POST", { app, resources: [] })).status, 200);
+  assert.equal((await call(rejoinedBase + "/open", b, "POST")).status, 200);
+  await call(rejoinedBase, b, "DELETE");
+  const replacementRoom = await json<CreatedRoom>("rooms", b, "POST", { document: "00000000-0000-4000-8000-000000000002" });
+  const replacementBase = "rooms/" + replacementRoom.room;
+  assert.notEqual(replacementRoom.room, rejoinedRoom.room);
+  assert.equal((await call(rejoinedBase, rejoinedRoom.capability)).status, 410);
+  assert.equal((await call(replacementBase + "/seed", b, "PUT", seed, seedHeaders(seed))).status, 200);
+  assert.equal((await call(replacementBase + "/resources", b, "POST", { app, resources: [] })).status, 200);
+  assert.equal((await call(replacementBase + "/open", b, "POST")).status, 200);
+  assert.equal((await json<RoomInfo>(replacementBase, replacementRoom.capability)).document,
+    "00000000-0000-4000-8000-000000000002");
+  const rejoined = await worker.dispatchFetch("https://share.hitslop.com/v1/" + replacementBase + "/sync", {
+    headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol, Authorization: "Bearer " + replacementRoom.capability },
+  });
+  assert.equal(rejoined.status, 101, "A guest can reconnect with the new room for the same document");
+  rejoined.webSocket!.accept();
+  rejoined.webSocket!.close();
+  await call(replacementBase, b, "DELETE");
   // Hold an Uploading seed body across Stop, then complete its delayed write.
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });

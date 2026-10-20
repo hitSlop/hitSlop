@@ -200,3 +200,101 @@ fn account_deletion_authenticates_and_accepts_idempotent_success() {
     assert!(delete_account_at(&origin, "local-fixture").unwrap_err().contains("500"));
     thread.join().unwrap();
 }
+
+#[test]
+fn rejoin_reuses_local_identity_only_after_the_previous_room_ended() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::atomic::{AtomicBool, AtomicU16, Ordering},
+        time::Duration,
+    };
+    let (dir, owner) = fixture();
+    let old = Invitation { room: "a".repeat(32), capability: "b".repeat(64) }.link().unwrap();
+    let next = Invitation { room: "c".repeat(32), capability: "d".repeat(64) }.link().unwrap();
+    let saved = joined_credential(&old).unwrap();
+    let old_share = Share { room: "a".repeat(32), endpoint: hitslop_sharing_protocol::TRUSTED_ORIGIN.into() };
+    request(&owner, Request::Share { share: old_share.clone() }).unwrap();
+    request(
+        &owner,
+        Request::Apply {
+            batch: serde_json::from_value(serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":3}]}))
+                .unwrap(),
+            origin: hitslop_core::Origin::Window,
+        },
+    )
+    .unwrap();
+    let document = owner.app().document_uuid.clone().unwrap();
+    let info = RoomInfo {
+        document: document.clone(),
+        phase: RoomPhase::Live,
+        seed_hash: None,
+        seed_size: None,
+        app: None,
+        capability: None,
+    };
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    server.set_nonblocking(true).unwrap();
+    let origin = format!("http://{}", server.local_addr().unwrap());
+    let unrelated = RoomInfo { document: "00000000-0000-4000-8000-000000000099".into(), ..info.clone() };
+    let metadata = serde_json::to_vec(&info).unwrap();
+    let wrong = serde_json::to_vec(&unrelated).unwrap();
+    let old_status = Arc::new(AtomicU16::new(200));
+    let wrong_document = Arc::new(AtomicBool::new(false));
+    let running = Arc::new(AtomicBool::new(true));
+    let flags = (old_status.clone(), wrong_document.clone(), running.clone());
+    let thread = std::thread::spawn(move || {
+        while flags.2.load(Ordering::Relaxed) {
+            let Ok((mut stream, _)) = server.accept() else {
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            };
+            stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+            let mut request = vec![];
+            while !request.ends_with(b"\r\n\r\n") && request.len() < 4096 {
+                let mut byte = [0];
+                if stream.read_exact(&mut byte).is_err() {
+                    break;
+                }
+                request.push(byte[0]);
+            }
+            let previous = String::from_utf8_lossy(&request).starts_with(&format!("GET /v1/rooms/{} ", "a".repeat(32)));
+            let status = if previous { flags.0.load(Ordering::Relaxed) } else { 200 };
+            let body = if !previous && flags.1.load(Ordering::Relaxed) { &wrong } else { &metadata };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status} Reply\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(body);
+        }
+    });
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        assert!(join_at(&owner, Some(&saved), &next, &origin).unwrap_err().contains("another live link"));
+        old_status.store(503, Ordering::Relaxed);
+        assert!(join_at(&owner, Some(&saved), &next, &origin).is_err());
+        old_status.store(410, Ordering::Relaxed);
+        wrong_document.store(true, Ordering::Relaxed);
+        assert!(join_at(&owner, Some(&saved), &next, &origin).is_err());
+        assert_eq!(owner.share().unwrap(), Some(old_share.clone()));
+        wrong_document.store(false, Ordering::Relaxed);
+        let accepted = join_at(&owner, Some(&saved), &next, &origin).unwrap();
+        assert_eq!(owner.share().unwrap().unwrap().room, "c".repeat(32));
+        assert_eq!(owner.app().document_uuid.as_deref(), Some(document.as_str()));
+        assert!(Client::restore(owner.clone(), &accepted).is_ok());
+        // A replica restored on another device may have membership but no local key.
+        request(&owner, Request::Share { share: old_share }).unwrap();
+        assert!(join_at(&owner, None, &next, &origin).is_ok());
+        assert!(join_at(&owner, None, &next, &origin).is_ok());
+    }));
+    running.store(false, Ordering::Relaxed);
+    thread.join().unwrap();
+    request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    if let Err(error) = outcome {
+        std::panic::resume_unwind(error);
+    }
+    let reopened = Store::open(&dir.path().join("document.slop"), Mode::Snapshot).unwrap();
+    assert_eq!(reopened.app().document_uuid.as_deref(), Some(document.as_str()));
+    assert_eq!(reopened.document().unwrap().reading().unwrap().value["hits"], 3);
+    assert_eq!(reopened.share().unwrap().unwrap().room, "c".repeat(32));
+}

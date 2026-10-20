@@ -58,6 +58,34 @@ public enum SharingCredentials {
     else { throw SlopFailure("Sharing details are unavailable in Keychain. Unlock this device and retry.") }
     return value
   }
+  /// Enumerate this app's local link credentials; no tokens are stored here.
+  public static func all() throws -> [String: String] {
+    var query = try query("")
+    query.removeValue(forKey: kSecAttrAccount as String)
+    query[kSecReturnAttributes as String] = true
+    query[kSecReturnData as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitAll
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return [:] }
+    guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+      throw SlopFailure("Could not read sharing details. Unlock this device and retry.")
+    }
+    return Dictionary(
+      uniqueKeysWithValues: items.compactMap { item in
+        guard let document = item[kSecAttrAccount as String] as? String,
+          let data = item[kSecValueData as String] as? Data,
+          let value = String(data: data, encoding: .utf8)
+        else { return nil }
+        return (document, value)
+      })
+  }
+  public static func remove(_ document: String) throws {
+    let status = SecItemDelete(try query(document) as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw SlopFailure("Could not clear sharing details. Unlock this device and retry.")
+    }
+  }
   public static func write(_ value: String, document: String) throws {
     let query = try query(document)
     let values: [String: Any] = [kSecValueData as String: Data(value.utf8)]

@@ -43,6 +43,7 @@ extension SlopDocumentWindowController {
     case .importTheme: try await importTheme()
     case .exportTheme: try await exportTheme()
     case .duplicate:
+      sharePopover.dismiss()
       let panel = NSSavePanel()
       panel.allowedContentTypes = [.slop]
       panel.nameFieldStringValue =

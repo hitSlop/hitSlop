@@ -76,6 +76,11 @@ fn account_request_at<T: serde::de::DeserializeOwned>(
     )?;
     serde_json::from_slice(&bytes).map_err(|_| "Invalid account reply".into())
 }
+/// Identify locally saved credentials belonging to this account before deletion.
+pub fn account_owns(document: &str, credential: &str, token: &str) -> Result<bool> {
+    let saved = Credential::decode(credential)?.runtime()?;
+    Ok(access(document, token)?.is_some_and(|room| room.room == saved.room))
+}
 fn access(document: &str, token: &str) -> Result<Option<AccountRoom>> {
     if !hitslop_sharing_protocol::valid_copy(document) {
         return Err("Invalid document identity".into());
@@ -432,18 +437,70 @@ fn validate_membership(share: Option<Share>, key: &RoomKey) -> Result<()> {
     }
     Ok(())
 }
-/// An incoming link cannot silently replace saved membership.
+/// Replace credentials only after the relay confirms the predecessor ended.
 pub fn accept_invitation(existing: Option<&str>, link: &str) -> Result<String> {
+    accept_with(existing, link, |key| room_info(key, None))
+}
+fn accept_with(
+    existing: Option<&str>,
+    link: &str,
+    lookup: impl Fn(&RoomKey) -> std::result::Result<RoomInfo, transport::HttpFailure>,
+) -> Result<String> {
     let incoming = joined_credential(link)?;
     if let Some(value) = existing {
         let saved = Credential::decode(value)?;
         let next = Credential::decode(&incoming)?;
-        if saved.link != next.link || saved.ended {
-            return Err("This document already has different sharing details".into());
+        if saved.link == next.link && !saved.ended {
+            return Ok(value.to_owned());
         }
-        return Ok(value.to_owned());
+        match lookup(&saved.runtime()?) {
+            Err(transport::HttpFailure::Ended) => {}
+            Err(error) => return Err(error.into()),
+            Ok(_) => return Err("This document is still shared with another live link. Stop that share first.".into()),
+        }
     }
     Ok(incoming)
+}
+fn bind_invitation(
+    owner: &Owner,
+    key: &RoomKey,
+    info: &RoomInfo,
+    lookup: impl Fn(&RoomKey) -> std::result::Result<RoomInfo, transport::HttpFailure>,
+) -> Result<()> {
+    if info.phase != RoomPhase::Live {
+        return Err("Sharing is not live".into());
+    }
+    if owner.app().document_uuid.as_deref() != Some(&info.document) {
+        return Err("Different sharing document".into());
+    }
+    if let Some(old) = owner.share().map_err(fail)?
+        && old.endpoint != hitslop_core::LIBRARY_SHARE_ENDPOINT
+        && (old.room != key.room || old.endpoint != key.origin)
+    {
+        if old.endpoint != hitslop_sharing_protocol::TRUSTED_ORIGIN {
+            return Err("This document already uses another sharing service".into());
+        }
+        // Ended rooms return 410 before capability authorization. This also
+        // works for a local replica whose device has no saved credential.
+        let old = RoomKey { room: old.room, origin: old.endpoint, capability: key.capability.clone() };
+        match lookup(&old) {
+            Err(transport::HttpFailure::Ended) => {}
+            _ => return Err("Could not confirm the previous link has ended. Try again.".into()),
+        }
+    }
+    bind_owner(owner, key, &info.document)
+}
+/// Rebind through the serial owner, preserving all current edits and the local identity.
+pub fn join(owner: &Owner, existing: Option<&str>, link: &str) -> Result<String> {
+    join_at(owner, existing, link, hitslop_sharing_protocol::TRUSTED_ORIGIN)
+}
+fn join_at(owner: &Owner, existing: Option<&str>, link: &str, origin: &str) -> Result<String> {
+    let lookup = |key: &RoomKey| room_info(&RoomKey { origin: origin.into(), ..key.clone() }, None);
+    let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
+    let info = lookup(&key)?;
+    let saved = accept_with(existing, link, lookup)?;
+    bind_invitation(owner, &key, &info, lookup)?;
+    Ok(saved)
 }
 /// Install only a missing canonical file. Matching existing files merge after opening.
 pub fn install(destination: &Path, link: &str) -> Result<()> {
