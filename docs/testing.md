@@ -407,6 +407,7 @@ without changing file bytes. See [releasing](guides/releasing.md).
 | `select` (Ubuntu 24.04) | Selects affected tiers without installing dependencies or compiling; records the selection |
 | `fast` (Ubuntu 24.04) | Affected compatibility integrity, tooling, generated-contract, type, Bun, CLI, engine-render, installed-package and landing checks |
 | `native` (macOS 15 ARM64) | Affected `swift,native` tiers: native page edits, the CLI, and the app-level old-file replay |
+| `app` (macOS 15 ARM64) | Compiles the unsigned Debug macOS app, its extensions and embedded starter templates (`bun run apple:build --compile-only`); selected by app build inputs and always on nightly/manual/hotfix runs |
 | `native-rust` (macOS 15 ARM64) | The affected `rust` tier, in parallel with `native`: platform SQLite, Darwin sandbox and deterministic historical-file replay. WASM lints run on Linux only |
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
@@ -424,7 +425,7 @@ nightly/manual qualification. Rust runs on both operating systems because SQLite
 locking, sandboxing and the historical macOS writers have platform-specific behavior.
 The full release gate, including the app bundle and browser acceptance, remains separate.
 
-`native`, `native-rust` and `linux-smoke` skip at job level when none of their tiers
+`app`, `native`, `native-rust` and `linux-smoke` skip at job level when none of their tiers
 are affected, so an unrelated change allocates no Mac runner. On a pull request into
 `master`, `native` also waits for a change that can affect opening an existing document
 (`nativeGateInputs` in `scripts/lib/verification-inputs.ts`: the Rust crates, the Mac app,
@@ -436,7 +437,7 @@ Changes to the native tests and their support scripts run their consumers on the
 Selection includes both paths of a rename and deleted files. The main CI workflow, shared preparation action,
 selector, verifier implementation and shared toolchain/dependency inputs select all tiers.
 Policy workflows and verification tests select tooling; they do not invalidate the product.
-Native-cache changes select the render/Swift/native tiers. Example source changes select authoring/type checks, not infrastructure suites;
+Native-cache changes select the render/Swift/native tiers and app build. Example source changes select authoring/type checks and app packaging;
 example Markdown changes select no product tiers. Test fixture changes select their
 consumers, and packaged starter changes still select CLI/browser/packed acceptance.
 Other product and build dependencies remain conservatively selected. For example, PR #5's attribution policy changes select
@@ -444,7 +445,7 @@ only tooling and types, allocating no macOS runner. Documentation and repository
 edits select no product tiers. The compatibility integrity tier runs when corpus files,
 its scripts or the core’s acceptance/storage modules change. The selector routes affected
 tiers to required jobs and records optional qualification separately in `selection.json`.
-Jobs execute exactly their assigned tier names, without consulting the local pass cache.
+Tier jobs execute exactly their assigned tier names, without consulting the local pass cache.
 `fast` always reports
 and fails if selection failed or was cancelled; a skipped selector cannot make a PR green.
 A successful empty selection reports success without checking out or installing tools in

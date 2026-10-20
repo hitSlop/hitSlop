@@ -10,6 +10,15 @@ const nativeInputs = [
   /^\.github\/actions\/native-cache\//,
 ];
 
+export const appBuildInputs = [
+  ...rustInputs,
+  /^apps\/apple\//,
+  /^packages\/hitslop\/(src\/(sdk|shell|schema|wire)|generated|acceptance|templates)\//,
+  /^scripts\/(build|lib|templates|release)\//,
+  /^slops\/(?!.*\.md$)/,
+  /^\.github\/actions\/native-cache\//,
+];
+
 export const tierInputs = {
   compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/hitslop-core\/src\/(app|file)\//],
   tooling: [
@@ -38,7 +47,7 @@ export const tierInputs = {
   landing: [/^apps\/landing\//],
   packed: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,
-  app: [],
+  app: appBuildInputs,
   native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/native\/(?!(render|landing)\.native\.test\.ts$)/, /^(?!packages\/hitslop\/tests\/cli\/build\.native\.test\.ts$|tests\/native\/(render|landing)\.native\.test\.ts$).*\.native\.test\.ts$/, /^scripts\/compat\//],
 };
 
