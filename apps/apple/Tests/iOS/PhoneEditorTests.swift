@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import HitSlopCore
+import HitSlopCoreBinding
 import QuickLookThumbnailing
 import UIKit
 import WebKit
@@ -9,6 +10,33 @@ import XCTest
 @testable import HitSlopDocument
 
 final class PhoneEditorTests: XCTestCase {
+  @MainActor func testHapticsReachOnlyAnEnabledVisibleEditor() async throws {
+    let file = try outputFolder().appendingPathComponent("haptics-\(UUID().uuidString).slop")
+    _ = try SlopFile.importCopy(from: input("host-probe"), to: file)
+    let prior = UserDefaults.standard.object(forKey: HapticPreferences.enabledKey)
+    defer { UserDefaults.standard.set(prior, forKey: HapticPreferences.enabledKey) }
+    let (session, window) = try await show(file)
+    defer { window.isHidden = true }
+    let feedback = RecordedHaptics()
+    session.hapticFeedback = feedback
+    UserDefaults.standard.set(true, forKey: HapticPreferences.enabledKey)
+    let result = try await session.webView.callAsyncJavaScript(
+      "return JSON.parse(await webkit.messageHandlers.hitslop.postMessage(JSON.stringify({method:'haptics.play',feedback:{kind:'selection'}}))).ok",
+      arguments: [:], in: nil, contentWorld: .page)
+    XCTAssertEqual(result as? Bool, true)
+    XCTAssertEqual(feedback.events.count, 1)
+    if case .selection? = feedback.events.first {} else { XCTFail("Expected selection feedback") }
+    UserDefaults.standard.set(false, forKey: HapticPreferences.enabledKey)
+    session.serveHost(.hapticsPlay(feedback: .notification(notification: .success))) { _, _ in }
+    XCTAssertEqual(feedback.events.count, 1)
+    UserDefaults.standard.set(true, forKey: HapticPreferences.enabledKey)
+    window.isHidden = true
+    session.serveHost(.hapticsPlay(feedback: .impact(style: .light))) { _, _ in }
+    XCTAssertEqual(feedback.events.count, 1)
+    try await session.close()
+    session.serveHost(.hapticsPlay(feedback: .selection)) { _, _ in }
+    XCTAssertEqual(feedback.events.count, 1)
+  }
   @MainActor func testSystemThumbnailUsesDocumentArtworkWithoutModifyingTheFile() async throws {
     let file = try outputFolder().appendingPathComponent("thumbnail-\(UUID().uuidString).slop")
     _ = try SlopFile.importCopy(from: input("host-probe"), to: file)
@@ -260,4 +288,9 @@ final class PhoneEditorTests: XCTestCase {
       reopenedWindow.isHidden = true
     }
   }
+}
+
+@MainActor private final class RecordedHaptics: HapticPlaying {
+  var events: [HapticFeedback] = []
+  func play(_ feedback: HapticFeedback, in view: UIView) { events.append(feedback) }
 }

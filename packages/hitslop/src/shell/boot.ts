@@ -3,6 +3,7 @@
 import { createContext as abi1 } from "./abi/1";
 import { ownerAttachments } from "./attachments";
 import { ownerSpeech } from "./speech";
+import { ownerHaptics } from "./haptics";
 import { call, hasBrowserBridge } from "./bridge";
 import { OwnerDocument as Document } from "./owner/document";
 import { nativeTransport } from "./owner/transport";
@@ -134,6 +135,7 @@ export async function boot() {
     attachments,
     environment: environment.environment,
     speech: ownerSpeech(),
+    haptics: ownerHaptics(),
     resize: async (size) => {
       if (native) await call({ method: "window.resize", ...size });
     },

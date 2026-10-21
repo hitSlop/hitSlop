@@ -730,3 +730,5 @@ html[data-slop-capture] .checklist-row {
     scroll-behavior: auto;
   }
 }
+
+.checklist-menu { transform-origin: var(--bits-dropdown-menu-content-transform-origin, top right); }

@@ -249,6 +249,7 @@ impl BrowserCopy {
                     page_wire::HostAction::WindowResize { width, height } => {
                         page_wire::HostReply::WindowResize { width: width as f64, height: height as f64 }
                     }
+                    page_wire::HostAction::HapticsPlay { .. } => page_wire::HostReply::HapticsPlay,
                     page_wire::HostAction::Ready => page_wire::HostReply::Ready,
                     page_wire::HostAction::PageRecovered => page_wire::HostReply::PageRecovered,
                     page_wire::HostAction::Failed { error: message } => {

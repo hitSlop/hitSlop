@@ -156,6 +156,49 @@ Installing hitSlop does not replace a document's embedded app.
 
 ## Platform, device and responsive layout
 
+### Haptic feedback
+
+`haptics` from `hitslop/svelte` plays short native feedback for deliberate editor
+actions. `haptics.selection()` accompanies a changed selection;
+`haptics.impact()` defaults to `"light"` and also accepts `"medium"`, `"heavy"`,
+`"soft"` and `"rigid"`. `haptics.notification("success" | "warning" | "error")`
+accompanies an explicit outcome, alongside visible feedback:
+
+```ts
+await doc.change(tx => addEntry(tx, input));
+haptics.notification("success");
+```
+
+These methods return `void`; never await them or make an edit depend on feedback.
+The framework-neutral host service is optional `ctx.haptics`. Older hosts, desktop,
+browser previews and unsupported hardware stay silent. No capability declaration
+or permission prompt is needed. The iPhone Settings toggle controls all documents;
+inactive, hidden and closing editors do not play feedback. Keep haptics out of
+document observers, typing, rendering, static views and background work.
+
+### Surface motion
+
+`surfaceTransition`, `overlayTransition` and `popoverTransition` from
+`hitslop/svelte` are Svelte transition functions with reduced-motion support. Use
+`transition:surfaceTransition={{ kind: "sheet" }}` for bottom sheets (the default
+kind is `"dialog"`), `transition:overlayTransition` for the dimming layer and
+`transition:popoverTransition` for menus/selects. They preserve existing transforms.
+
+Use Bits UI's `forceMount` and `child` snippet, rendering the supplied `props` on
+the transitioning DOM element inside `{#if open}`. Floating components also supply
+`wrapperProps`: put those on an outer wrapper and animate the content inside it.
+Keep menu item data through the outro, and use `onOpenChangeComplete` to open a
+dialog after its menu closes. For rapid reopening during an exit, keep a stable
+opener reference and restore it in `onCloseAutoFocus` with `preventScroll: true`;
+the previously focused element can otherwise belong to the retiring dialog.
+Keep focus management with Bits UI; opening a phone
+sheet should focus its container without bringing up the keyboard. Prefer one
+modal with internal screens for related forms, retaining draft values outside the
+screen block. Animate keyed list reordering with Svelte's `animate:flip` and honor
+`prefersReducedMotion.current` for any additional JavaScript motion.
+
+### Environment
+
 Call `getEnvironment()` from `hitslop/svelte` during editor component initialization,
 just like `getDocument(schema)`. Its read-only `current` snapshot is reactive:
 
@@ -209,7 +252,7 @@ The current iPhone app is portrait-only. Its editor fits below native navigation
 above the home indicator, and above the onscreen keyboard; the background fills the
 screen. Use `height: 100%` with `min-height: 0` and scrollable content panes rather
 than subtracting keyboard height or adding a second set of native safe-area insets.
-The native Done action dismisses the keyboard without submitting a form. Page zoom
+The native Done action dismisses the keyboard without submitting a form. The host suppresses tap highlights and defaults buttons, links and button-role controls to `touch-action: manipulation` on iOS, using overridable styles. Page zoom
 and input-focus zoom are disabled in the native iPhone editor; authored canvas or
 image gestures can still implement their own zoom.
 

@@ -748,6 +748,20 @@ body {
   background: var(--slop-surface);
   box-shadow: 0 20px 80px #342c4138;
 }
+.bj-sheet-navigation {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  align-items: center;
+  z-index: 3;
+}
+.bj-sheet-navigation > .bj-icon-button { margin-left: auto; }
+.bj-sheet-back { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; }
+.bj-sheet-back > svg { transform: rotate(180deg); }
+.bj-sheet .bj-dialog-heading { padding-right: 36px; }
+.bj-sheet.bj-has-back .bj-dialog-heading { padding-top: 36px; }
 .bj-dialog-heading {
   display: flex;
   align-items: center;
@@ -1485,4 +1499,13 @@ body {
   .bj-main {
     min-height: 540px;
   }
+}
+
+/* Floating content keeps its positioning wrapper separate from its animated surface. */
+.bj-options { transform-origin: var(--bits-select-content-transform-origin, var(--bits-dropdown-menu-content-transform-origin, top)); }
+@media (max-width: 639px) {
+  .bj-overlay { backdrop-filter: none; }
+  .bj-sheet-navigation { top: 14px; left: 16px; right: 16px; }
+  .bj-sheet-navigation button { min-height: 44px; }
+  .bj-sheet.bj-has-back .bj-dialog-heading { padding-top: 44px; }
 }

@@ -2,8 +2,8 @@
 use hitslop_core::command::PageDispatch;
 use hitslop_core::owner::Failure;
 use hitslop_core::page_wire::{
-    HostAction, HostDevice, HostEnvironment, HostPlatform, HostReply, HostRequest, PageErrorKind, SpeechOutcome,
-    SpeechUnavailable,
+    HapticFeedback, HapticImpactStyle, HapticNotification, HostAction, HostDevice, HostEnvironment, HostPlatform,
+    HostReply, HostRequest, PageErrorKind, SpeechOutcome, SpeechUnavailable,
 };
 
 #[uniffi::remote(Enum)]
@@ -29,6 +29,26 @@ pub struct HostEnvironment {
 }
 
 #[uniffi::remote(Enum)]
+pub enum HapticFeedback {
+    Selection {},
+    Impact { style: HapticImpactStyle },
+    Notification { notification: HapticNotification },
+}
+#[uniffi::remote(Enum)]
+pub enum HapticImpactStyle {
+    Light,
+    Medium,
+    Heavy,
+    Soft,
+    Rigid,
+}
+#[uniffi::remote(Enum)]
+pub enum HapticNotification {
+    Success,
+    Warning,
+    Error,
+}
+#[uniffi::remote(Enum)]
 pub enum PageErrorKind {
     Operation,
     Application,
@@ -36,6 +56,7 @@ pub enum PageErrorKind {
 #[uniffi::remote(Enum)]
 pub enum HostAction {
     Environment,
+    HapticsPlay { feedback: HapticFeedback },
     WindowResize { width: u32, height: u32 },
     SpeechTranscribe { attachment: String, locale: Option<String> },
     Ready,
@@ -51,6 +72,7 @@ pub enum PageDispatch {
 #[uniffi::remote(Enum)]
 pub enum HostReply {
     Environment { environment: HostEnvironment },
+    HapticsPlay,
     WindowResize { width: f64, height: f64 },
     SpeechTranscribe { outcome: SpeechOutcome },
     Ready,

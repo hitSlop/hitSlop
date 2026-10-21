@@ -166,6 +166,23 @@ app's DESIGN.md concise and grounded in what is actually shipped.
 
 ## Motion
 
+For dialogs, sheets and menus, use the SDK's `surfaceTransition`,
+`overlayTransition` and `popoverTransition` from `hitslop/svelte`. They preserve
+authored transforms and respect reduced motion. Bits UI `forceMount`/`child`
+snippets retain content through exits; floating controls need the provided outer
+`wrapperProps`. Keep item data until closing finishes and coordinate a menu-to-dialog
+handoff with `onOpenChangeComplete`. Keep a stable opener reference and explicitly
+restore it in `onCloseAutoFocus` for surfaces that can reopen during their exit.
+Related phone forms should share one modal and
+use internal navigation rather than stacking independent focus traps and overlays.
+
+Use `haptics` from `hitslop/svelte` sparingly: `selection()` for changed choices,
+`impact("light")` for a physical snap, and `notification("success" | "warning" |
+"error")` for an explicit outcome with visible feedback. Success follows an accepted
+write. Calls return immediately and unsupported hosts stay silent; iPhone Settings
+controls feedback globally. Never trigger feedback from renders, document observers,
+typing, initialization or static captures. See the authoring guide for the host API.
+
 Use motion to explain an interaction or reinforce the object's character: a
 pressed control, settling needle, or changing liquid level. Keep idle objects
 quiet unless ongoing motion communicates a real function.

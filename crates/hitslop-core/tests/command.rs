@@ -526,6 +526,16 @@ fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
         PageDispatch::Host { action: HostAction::Environment }
     ));
     assert_eq!(page_json(&page(&owner, "retired", r#"{"method":"host.environment"}"#))["code"], "owner_replaced");
+    assert!(matches!(
+        page(&owner, "page", r#"{"method":"haptics.play","feedback":{"kind":"selection"}}"#),
+        PageDispatch::Host {
+            action: HostAction::HapticsPlay { feedback: hitslop_core::page_wire::HapticFeedback::Selection {} }
+        }
+    ));
+    assert_eq!(
+        page_json(&page(&owner, "retired", r#"{"method":"haptics.play","feedback":{"kind":"selection"}}"#))["code"],
+        "owner_replaced"
+    );
     close(&owner);
 }
 // The page's document requests run through the core: replies the page reads, refusals it

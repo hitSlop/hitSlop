@@ -103,6 +103,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
   /// Recognizes recordings on this Mac; tests script their own.
   var speechRecognizer: any SpeechRecognizing = SystemSpeechRecognizer()
+  #if os(iOS)
+    var hapticFeedback: any HapticPlaying = DocumentHaptics()
+  #endif
   /// Transcriptions the attached page started (`serveSpeech`).
   var speechTasks: [UUID: Task<Void, Never>] = [:]
   /// The window that shows this session.
@@ -393,6 +396,16 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   func serveHost(_ request: HostAction, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
     guard !closed else { return reply(pageFailure(OwnerFailure.closed), nil) }
     switch request {
+    case .hapticsPlay(let feedback):
+      #if os(iOS)
+        if acceptsPageWork, !capturing, HapticPreferences.isEnabled,
+          let view = liveWebView, let window = view.window, !window.isHidden,
+          window.windowScene?.activationState == .foregroundActive
+        {
+          hapticFeedback.play(feedback, in: view)
+        }
+      #endif
+      reply(encodeHostReply(reply: .hapticsPlay), nil)
     case .environment:
       #if os(macOS)
         let environment = HostEnvironment(platform: .macos, device: .desktop)

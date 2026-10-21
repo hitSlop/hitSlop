@@ -201,6 +201,7 @@ fn page_validated(
         },
         request @ (PageRequest::Config {}
         | PageRequest::HostEnvironment {}
+        | PageRequest::HapticsPlay { .. }
         | PageRequest::WindowResize { .. }
         | PageRequest::Ready {}
         | PageRequest::PageRecovered {}
@@ -210,6 +211,9 @@ fn page_validated(
             let dispatch = match request {
                 PageRequest::Config {} => page_config(owner).map(page_success),
                 PageRequest::HostEnvironment {} => Ok(PageDispatch::Host { action: HostAction::Environment }),
+                PageRequest::HapticsPlay { feedback } => {
+                    Ok(PageDispatch::Host { action: HostAction::HapticsPlay { feedback } })
+                }
                 PageRequest::WindowResize { width, height } => {
                     Ok(PageDispatch::Host { action: HostAction::WindowResize { width, height } })
                 }

@@ -69,6 +69,14 @@ export type AttachmentRef = AttachmentInfo & { name: string; mimeType: string };
 export type { WidgetViewport as WidgetProps } from "../wire/page.generated";
 /** A recording stored with `attachments.import` (its reference), or its attachment ID. */
 export type SpeechClip = string | { readonly id: string };
+export type { HapticImpactStyle, HapticNotification } from "../wire/page.generated";
+import type { HapticImpactStyle, HapticNotification } from "../wire/page.generated";
+/** Discrete tactile feedback. Unsupported hosts and disabled feedback are silent. */
+export interface Haptics {
+  selection(): void;
+  impact(style?: HapticImpactStyle): void;
+  notification(notification: HapticNotification): void;
+}
 export interface SpeechOptions {
   /** A locale identifier such as `"en-US"`; the person's own locale when absent. */
   locale?: string;
@@ -98,6 +106,8 @@ export interface SlopView {
 export interface SlopContext {
   /** Optional on older hosts: the SDK falls back to unknown identity and live layout. */
   readonly environment?: Environment;
+  /** Optional on older hosts. Feedback is best effort and never blocks an edit. */
+  readonly haptics?: Haptics;
   readonly document: SlopDocument<ObjectNode>;
   readonly bind: {
     /** Two-way text binding with IME composition and remote-edit transforms. */
