@@ -360,6 +360,10 @@ actor LibraryTransport: CKSyncEngineDelegate {
   }
   private func transient(_ error: Error) -> Bool {
     guard let error = error as? CKError else { return false }
+    // A fetch reports per-record asset download failures inside a partial failure.
+    if error.code == .partialFailure, let failures = error.partialErrorsByItemID, !failures.isEmpty {
+      return failures.values.allSatisfy(transient)
+    }
     return [
       .networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited, .zoneBusy, .operationCancelled,
     ].contains(error.code)
