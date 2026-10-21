@@ -40,6 +40,9 @@ import Testing
   }
 }
 
+/// Counts finished callers across tasks.
+private final class FinishedCount: Sendable { let value = Mutex(0) }
+
 // A second request must await the queued run, including its failure, rather than
 // reporting success while the first CloudKit operation is still outstanding.
 @Test(.timeLimit(.minutes(1))) func overlappingLibrarySyncRequestsAwaitTheRerun() async throws {
@@ -50,25 +53,25 @@ import Testing
   let sync = LibrarySync(library: library, zone: CKRecordZone.ID(zoneName: "Library")) {
     operations.continuation.yield($0)
   }
-  let finished = Mutex(0)
-  let first = Task {
+  let finished = FinishedCount()
+  let first = Task { @Sendable [sync, finished] in
     let result = await sync.sync(.changes)
-    finished.withLock { $0 += 1 }
+    finished.value.withLock { $0 += 1 }
     return result
   }
   var iterator = operations.stream.makeAsyncIterator()
   let initial = try #require(await iterator.next() as? CKModifyRecordZonesOperation)
-  let second = Task {
+  let second = Task { @Sendable [sync, finished] in
     let result = await sync.sync(.full, explicit: true)
-    finished.withLock { $0 += 1 }
+    finished.value.withLock { $0 += 1 }
     return result
   }
   // Let the second caller enter the actor while CloudKit is held by the test.
   try await Task.sleep(for: .milliseconds(100))
-  #expect(finished.withLock { $0 } == 0)
+  #expect(finished.value.withLock { $0 } == 0)
   initial.modifyRecordZonesResultBlock?(.failure(CKError(.networkUnavailable)))
   let rerun = try #require(await iterator.next() as? CKModifyRecordZonesOperation)
-  #expect(finished.withLock { $0 } == 0)
+  #expect(finished.value.withLock { $0 } == 0)
   rerun.modifyRecordZonesResultBlock?(.failure(CKError(.networkFailure)))
   let a = await first.value
   let b = await second.value
@@ -76,7 +79,7 @@ import Testing
   #expect(a.lastError == b.lastError)
   #expect(a.lastError != nil)
   #expect(a.message == "Couldn't reach iCloud · will retry")
-  #expect(finished.withLock { $0 } == 2)
+  #expect(finished.value.withLock { $0 } == 2)
   await sync.stop()
 }
 
