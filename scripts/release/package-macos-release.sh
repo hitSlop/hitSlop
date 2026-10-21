@@ -130,6 +130,8 @@ if [ -n "${ASC_API_KEY_ID:-}" ] && [ -n "${ASC_API_ISSUER_ID:-}" ]; then
   fi
 fi
 
+# XcodeGen validates iOS resource paths even when archiving only the Mac scheme.
+mkdir -p "$repo_root/generated/ios/StarterTemplates" "$repo_root/generated/ios/Fixtures"
 echo "Generating Xcode project…"
 /usr/bin/env xcodegen generate --spec "$project_yml" --project "$project_dir"
 

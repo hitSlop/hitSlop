@@ -153,8 +153,6 @@ jobs:
           HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
         run: |
           bun scripts/build/build.ts --prepare native,shell
-          # XcodeGen validates iOS resource paths even for the macOS scheme.
-          mkdir -p generated/ios/StarterTemplates generated/ios/Fixtures
           bun run apple:build --compile-only
       - name: Prune Rust build before caching
         if: github.event_name != 'pull_request'

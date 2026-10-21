@@ -36,7 +36,7 @@ pub fn request_typed(owner: &Owner, request: Request) -> std::result::Result<Rep
 }
 fn bounded(path: &Path) -> Result<()> {
     if std::fs::metadata(path).map_err(|e| e.to_string())?.len() > MAX_FILE_BYTES {
-        return Err("This preview syncs documents up to 16 MiB; the local document is retained".into());
+        return Err("iCloud sync supports slops up to 16 MiB; the local document is retained".into());
     }
     Ok(())
 }

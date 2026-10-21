@@ -21,6 +21,8 @@ type Session = {
     /** Base64. */ bytes: string | null;
     error?: string;
   }>;
+  connect(client: WebSocketClient): void;
+  disconnect(client: WebSocketClient): void;
   send(frame: PreviewRequest): void;
   close(): Promise<void>;
 };
@@ -29,7 +31,9 @@ type Session = {
  * the native owner holds all state, attachments, validation and save scheduling. */
 export class PreviewOwners {
   readonly token = crypto.randomUUID();
-  private sessions = new Map<WebSocketClient, Promise<Session>>();
+  // A tab can replace its socket during UI reloads. Retain its owner until definition reset/close.
+  private sessions = new Map<string, Promise<Session>>();
+  private clients = new Map<WebSocketClient, string>();
   private generation = 0;
   private stopped = false;
   private available = true;
@@ -53,7 +57,13 @@ export class PreviewOwners {
       if (origins.includes(request.headers.origin ?? "")) admitted.add(socket);
     });
     server.ws.on("slop:open", (data, client) => {
-      if (!admitted.has(client.socket) || data?.token !== this.token || this.sessions.has(client))
+      if (
+        !admitted.has(client.socket) ||
+        data?.token !== this.token ||
+        this.clients.has(client) ||
+        typeof data?.session !== "string" ||
+        !/^[0-9a-f-]{36}$/.test(data.session)
+      )
         return;
       if (this.stopped || !this.available) {
         client.send("slop:fatal", {
@@ -64,12 +74,26 @@ export class PreviewOwners {
         return;
       }
       const generation = this.generation;
-      const opening = this.open(client, generation);
-      this.sessions.set(client, opening);
-      client.socket.once("close", () => this.remove(client));
+      const id = data.session as string;
+      this.clients.set(client, id);
+      let opening = this.sessions.get(id);
+      if (!opening) {
+        opening = this.open(id, generation);
+        this.sessions.set(id, opening);
+      }
+      void opening
+        .then((session) => {
+          if (this.clients.get(client) === id && generation === this.generation)
+            session.connect(client);
+        })
+        .catch(() => {});
+      client.socket.once("close", () => {
+        this.clients.delete(client);
+        void opening.then((session) => session.disconnect(client)).catch(() => {});
+      });
       opening.catch((error) => {
         if (generation === this.generation) client.send("slop:fatal", { error: String(error) });
-        this.remove(client);
+        this.remove(id);
       });
     });
     server.ws.on("slop:request", (data, client) => {
@@ -80,7 +104,9 @@ export class PreviewOwners {
         !this.available
       )
         return;
-      const session = this.sessions.get(client);
+      const id = this.clients.get(client);
+      if (!id) return;
+      const session = this.sessions.get(id);
       if (!session) return;
       const generation = this.generation;
       try {
@@ -89,24 +115,25 @@ export class PreviewOwners {
           throw new Error("Oversized preview frame");
         void session
           .then((session) => {
-            if (generation !== this.generation || !this.sessions.has(client)) return;
+            if (generation !== this.generation || !this.clients.has(client)) return;
             session.send(frame);
           })
           .catch((error) => {
             client.send("slop:fatal", { error: String(error) });
-            this.remove(client);
+            this.remove(id);
           });
       } catch (error) {
         client.send("slop:fatal", { error: String(error) });
-        this.remove(client);
+        this.remove(id);
       }
     });
   }
 
-  private remove(client: WebSocketClient) {
-    const session = this.sessions.get(client);
+  private remove(id: string) {
+    const session = this.sessions.get(id);
     if (!session) return;
-    this.sessions.delete(client);
+    this.sessions.delete(id);
+    for (const [client, key] of this.clients) if (key === id) this.clients.delete(client);
     // Only a rebuild or the server's close waits for this, and a rejection nobody observes ends
     // the CLI. A close that fails (its directory could not be removed) is reported where it starts.
     const closing = session
@@ -127,10 +154,9 @@ export class PreviewOwners {
   async invalidate() {
     this.available = false;
     this.generation++;
-    for (const client of this.sessions.keys()) {
+    for (const client of this.clients.keys())
       client.send("slop:fatal", { error: "Preview definition changed; rebuilding" });
-      this.remove(client);
-    }
+    for (const id of this.sessions.keys()) this.remove(id);
     await Promise.all(this.closing);
   }
   activate() {
@@ -157,7 +183,7 @@ export class PreviewOwners {
     throw new Error("Preview resource session was replaced");
   }
 
-  private async open(client: WebSocketClient, generation: number): Promise<Session> {
+  private async open(id: string, generation: number): Promise<Session> {
     const directory = await mkdtemp(join(this.root, "session-"));
     const path = join(directory, "preview.slop");
     let disposed = false;
@@ -193,7 +219,10 @@ export class PreviewOwners {
         () => ready.reject(new Error("Preview owner startup timed out")),
         15000,
       );
-      const active = () => !ended && generation === this.generation && this.sessions.has(client);
+      let client: WebSocketClient | undefined;
+      // A failed save stays fatal for this session; a reload shows it again instead of resuming.
+      let saveFailure: string | undefined;
+      const active = () => !ended && generation === this.generation && client !== undefined;
       const read = (async () => {
         const reader = child.stdout.getReader();
         const decoder = new TextDecoder();
@@ -210,7 +239,7 @@ export class PreviewOwners {
               text = text.slice(end + 1);
               if (frame.type === "ready") {
                 ready.resolve();
-                if (active()) client.send("slop:ready", { resourceToken });
+                if (active()) client?.send("slop:ready", { resourceToken });
               } else if (frame.type === "resource") {
                 const read = reads.get(frame.id);
                 if (read) {
@@ -220,17 +249,15 @@ export class PreviewOwners {
                 }
               } else if (frame.type === "reply") {
                 pending.delete(frame.id);
-                if (active()) client.send("slop:reply", frame);
+                if (active()) client?.send("slop:reply", frame);
               } else if (frame.type === "push") {
-                if (active()) client.send("slop:push", frame.pushes);
+                if (active()) client?.send("slop:push", frame.pushes);
               } else if (frame.type === "fatal") {
                 throw new Error(frame.error?.error ?? "Preview owner failed");
               } else if (frame.type === "save" && frame.error) {
                 // Keep ownership until an explicit reset/close discards this preview.
-                if (active())
-                  client.send("slop:fatal", {
-                    error: `Preview save failed: ${frame.error}. Reload to reset the disposable preview.`,
-                  });
+                saveFailure = `Preview save failed: ${frame.error}. Restart the preview to reset its disposable document.`;
+                if (active()) client?.send("slop:fatal", { error: saveFailure });
               }
             }
           }
@@ -238,16 +265,16 @@ export class PreviewOwners {
             throw new Error("Preview owner disconnected; outcome unknown. Reload before editing.");
         } catch (error) {
           ready.reject(error);
-          if (active()) client.send("slop:fatal", { error: String(error) });
-          this.remove(client);
+          if (active()) client?.send("slop:fatal", { error: String(error) });
+          this.remove(id);
         } finally {
           reader.releaseLock();
         }
       })();
       const stderr = new Response(child.stderr).text();
       const disconnected = (error: unknown) => {
-        if (active()) client.send("slop:fatal", { error: String(error) });
-        this.remove(client);
+        if (active()) client?.send("slop:fatal", { error: String(error) });
+        this.remove(id);
       };
       /** One request line for the owner. A write it cannot take rejects after it started (a
        * broken pipe), so each caller says where that failure goes. */
@@ -256,6 +283,14 @@ export class PreviewOwners {
         void Promise.resolve(child.stdin.flush()).catch(failed);
       };
       const session: Session = {
+        connect(next) {
+          client = next;
+          if (saveFailure) client.send("slop:fatal", { error: saveFailure });
+          else client.send("slop:ready", { resourceToken });
+        },
+        disconnect(previous) {
+          if (client === previous) client = undefined;
+        },
         pid: child.pid,
         path,
         token: resourceToken,

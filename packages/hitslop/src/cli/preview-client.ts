@@ -11,6 +11,10 @@ import type { HostEnvironment } from "../wire/page.generated";
 const hot = import.meta.hot!;
 const query = new URL(import.meta.url).searchParams;
 const token = query.get("token");
+// A page reload replaces the socket, not its disposable document. Each tab has its own key.
+const sessionKey = `hitslop-preview:${token}`;
+const session = sessionStorage.getItem(sessionKey) ?? crypto.randomUUID();
+sessionStorage.setItem(sessionKey, session);
 const pending = new Map<
   number,
   {
@@ -39,7 +43,7 @@ addEventListener("message", ({ source, origin, data }) => {
 });
 if (parent === window) environmentReady.resolve();
 else parent.postMessage({ type: "slop:environment-ready" }, location.origin);
-let next = 0;
+let next = Number(sessionStorage.getItem(sessionKey + ":request") ?? 0);
 let resourceToken: string | undefined;
 let failed: Error | undefined;
 let receiver: ((pushes: PagePush[]) => void) | undefined;
@@ -118,6 +122,7 @@ const host: PreviewHost = {
     if (failed) throw failed;
     if (pending.size >= 64) throw new Error("Preview request queue full");
     const id = ++next;
+    sessionStorage.setItem(sessionKey + ":request", String(next));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => fatal("Preview request timed out; outcome unknown. Reload before editing."),
@@ -135,7 +140,7 @@ const host: PreviewHost = {
 };
 globalThis.__slopPreview = host;
 hot.on("vite:afterUpdate", () => setTimeout(() => host.ready!(), 0));
-hot.send("slop:open", { token });
+hot.send("slop:open", { token, session });
 // The shell is served beside the app, not through Vite. A preview that cannot open shows
 // its notice instead.
 const shell = "/__shell__/boot.js";

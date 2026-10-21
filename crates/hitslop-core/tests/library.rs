@@ -509,6 +509,30 @@ fn adopt_preserves_identity_work_and_source_and_schedules_upload() {
 }
 
 #[test]
+fn adopt_metadata_failure_rolls_back_the_copy_and_allows_retry() {
+    let (dir, template) = fixture();
+    let source = dir.path().join("local.slop");
+    file::create_document(&template, &source).unwrap();
+    let before = std::fs::read(&source).unwrap();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let db = rusqlite::Connection::open(root.join("library.sqlite")).unwrap();
+    // Fail after the row is inserted, at the real metadata write boundary.
+    db.execute_batch(
+        "CREATE TRIGGER refuse_artwork BEFORE UPDATE OF artwork_version ON documents
+        BEGIN SELECT RAISE(ABORT, 'metadata unavailable'); END;",
+    )
+    .unwrap();
+    assert!(library.adopt(&source, "Retry me").is_err());
+    assert!(library.entries().unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(root.join("documents")).unwrap().count(), 0);
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+    db.execute_batch("DROP TRIGGER refuse_artwork").unwrap();
+    let entry = library.adopt(&source, "Retry me").unwrap();
+    assert_eq!(library.entries().unwrap()[0].id, entry.id);
+}
+
+#[test]
 fn adopt_refuses_busy_shared_invalid_and_template_files_without_writing() {
     let (dir, template) = fixture();
     let library = Library::open(&dir.path().join("library"), "account").unwrap();

@@ -57,7 +57,7 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
       dependencies = new Set(
         built.dependencies.definition.filter((path) => !/\.(?:svelte|css)$/.test(path)),
       );
-      server?.watcher.add([...dependencies]);
+      server?.watcher.add([...dependencies].filter((file) => !file.startsWith(source + "/")));
       failed = false;
       hosts.activate();
       if (old) await rm(old, { recursive: true, force: true });
@@ -111,7 +111,9 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
       name: "hitslop-preview-host",
       configureServer(current) {
         hosts.attach(current);
-        current.watcher.add([source, ...dependencies]);
+        // Vite already watches its root. Re-adding it alongside individual files races
+        // Chokidar's initial FSEvents scan and can leave UI/CSS files unwatched.
+        current.watcher.add([...dependencies].filter((file) => !file.startsWith(source + "/")));
         current.watcher.on("all", (event, file) => {
           const rootRole = dirname(file) === source && roleName(file);
           const inventoryChanged = !!rootRole && event !== "change";
@@ -226,6 +228,9 @@ export async function startDev(source: string, port = 0, signal?: AbortSignal) {
           .digest("hex"),
       ),
       server: {
+        // Bun's native watcher can omit files/events during root/dependency scans.
+        // Poll the authored graph so every change reaches Vite's invalidation path.
+        watch: { usePolling: true },
         host: "127.0.0.1",
         port,
         strictPort: port !== 0,
