@@ -41,6 +41,7 @@ export default defineConfig({
             { label: "Manifest and windows", slug: "docs/guides/manifest-and-windows" },
             { label: "Style an app", slug: "docs/guides/styling" },
             { label: "Where your slop runs", slug: "docs/guides/where-your-slop-runs" },
+            { label: "Make it work on iPhone", slug: "docs/guides/mobile" },
             { label: "PNG window skins", slug: "docs/guides/png-window-skins" },
             { label: "Icons, widgets, and exports", slug: "docs/guides/icons-and-exports" },
             { label: "Build and share", slug: "docs/guides/build-and-share" },

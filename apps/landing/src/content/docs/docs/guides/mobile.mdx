@@ -1,0 +1,196 @@
+---
+title: Make it work on iPhone
+description: Design a slop for a phone-sized window, the keyboard, touch and haptics.
+---
+
+The iPhone app opens the same slops as the Mac. It is in TestFlight preview on iOS 26+
+(see [availability](/docs/availability/)), so a slop you build for the Mac already opens
+on a phone. This guide makes it comfortable there.
+
+An existing document keeps the app it was made with. Layout changes reach new documents
+and updated templates; they never rewrite the copies people already use.
+
+## What the iPhone host gives you
+
+- The app is portrait-only. Plan for widths of about 320 to 430 CSS pixels.
+- Your editor sits below the native navigation bar, above the home indicator and above
+  the onscreen keyboard. Your page background still fills the whole screen.
+- A native **Done** button appears while the keyboard is up and dismisses it without
+  submitting a form.
+- Page zoom and zoom-on-focus are off. Buttons, links and `role="button"` elements use
+  `touch-action: manipulation`, and tap highlights are hidden.
+- When a focused field ends up under the keyboard, the host scrolls it into view. It
+  never resizes your page or moves a field you are typing in.
+
+You still design the layout, the touch targets and the haptics.
+
+## Know when you are on a phone
+
+Call `getEnvironment()` while a component initializes, the same way you call
+`getDocument`. Read `current` inside reactive code:
+
+```svelte
+<script lang="ts">
+  import { getEnvironment } from "hitslop/svelte";
+  const environment = getEnvironment();
+  const compact = $derived(environment.current.layout === "compact");
+</script>
+
+{#if compact}
+  <p>A composition for a narrow window.</p>
+{/if}
+```
+
+`layout` is `"compact"` when the editor is under 640 CSS pixels wide and `"regular"`
+otherwise. It follows the real window, so a narrow Mac window is compact too. `platform`
+(`"ios"`, `"macos"`, `"unknown"`, ...) and `device` (`"phone"`, `"tablet"`, `"desktop"`,
+`"unknown"`) describe the host. Browser copies and older hosts report `"unknown"`. Treat
+them as presentation hints, not as permission checks.
+
+The same values reach CSS as attributes on `<html>`:
+
+```css
+html[data-slop-layout="compact"] .controls {
+  flex-direction: column;
+}
+html[data-slop-platform="ios"] .tip {
+  display: none;
+}
+```
+
+`data-slop-platform`, `data-slop-device` and `data-slop-layout` exist in the live
+editor only. Preview, icon, export and widget views never receive them and cannot call
+`getEnvironment()`. Write base styles that work without the attributes; ordinary media
+and container queries work too.
+
+## Lay it out for a thumb
+
+- **Fluid widths.** Use grid, flex and `minmax(0, 1fr)` rather than fixed desktop
+  sizes. Let text wrap. Check 320, 390 and 430 pixels.
+- **Fill the editor, scroll inside it.** The host already accounts for the safe areas
+  and the keyboard. Use `height: 100%` with `min-height: 0` and give long content its
+  own scrolling pane, rather than subtracting keyboard height or adding a second set of
+  insets. For full-screen art that reaches under system areas, use
+  `env(safe-area-inset-top, 0px)` and the other edges.
+- **Keep the main action reachable.** Put submit and cancel in a footer that sticks to
+  the bottom of its scroller, so they stay visible above the keyboard.
+- **Bound your sheets.** Cap a dialog with `max-height: calc(100dvh - 24px)` and let
+  its content scroll.
+- **Make targets 44px.** The icon can be smaller than the hit area. Prefer visible
+  buttons to hover-only controls.
+- **Use 16px text in inputs.** Set `inputmode`, `enterkeyhint`, `autocapitalize` and
+  `autocomplete` to match each field.
+- **Keep focus visible.** After a layout change, make sure the focused control is
+  still on screen. Repeated-entry tools can keep focus after Add; a destructive or
+  unrelated action should not raise the keyboard.
+- **Leave touch alone.** Do not cancel touch events or text selection globally.
+
+A sticky footer inside a scrolling sheet, from Little Days:
+
+```css
+@media (max-width: 639px) {
+  .bj-dialog input:not([type="file"]),
+  .bj-dialog textarea {
+    font-size: 16px;
+  }
+  .bj-form-footer {
+    position: sticky;
+    bottom: -16px;
+    background: var(--slop-surface);
+    padding-block: 12px 16px;
+    z-index: 2;
+  }
+}
+```
+
+### Sheets and menus
+
+`surfaceTransition`, `overlayTransition` and `popoverTransition` from `hitslop/svelte`
+are Svelte transitions that honor reduced motion. Use `surfaceTransition` with
+`kind: "sheet"` for a bottom sheet (the default kind is `"dialog"`),
+`overlayTransition` for the dimming layer and `popoverTransition` for menus:
+
+```svelte
+<Dialog.Overlay forceMount>
+  {#snippet child({ props, open })}
+    {#if open}<div {...props} class="overlay" transition:overlayTransition></div>{/if}
+  {/snippet}
+</Dialog.Overlay>
+<Dialog.Content forceMount>
+  {#snippet child({ props, open })}
+    {#if open}
+      <div {...props} class="sheet" transition:surfaceTransition={{ kind: compact ? "sheet" : "dialog" }}>
+        ...
+      </div>
+    {/if}
+  {/snippet}
+</Dialog.Content>
+```
+
+Use [Bits UI](https://bits-ui.com) dialogs and let them manage focus. When keyboard
+entry is optional, focus the sheet itself rather than a text field, so opening it does
+not raise the keyboard.
+
+## Haptics
+
+`haptics` plays a short native tap for a deliberate action:
+
+```svelte
+<script lang="ts">
+  import { haptics } from "hitslop/svelte";
+
+  async function save() {
+    try {
+      await doc.change(tx => addEntry(tx, input));
+      haptics.notification("success");
+    } catch {
+      haptics.notification("error");
+    }
+  }
+</script>
+```
+
+| Call | Use it for |
+| --- | --- |
+| `haptics.selection()` | A changed choice: a tab, a segment, a menu pick. |
+| `haptics.impact(style)` | A physical-feeling tap. `style` is `"light"` (the default), `"medium"`, `"heavy"`, `"soft"` or `"rigid"`. |
+| `haptics.notification(kind)` | An outcome: `"success"`, `"warning"` or `"error"`. |
+
+Play feedback after an accepted write or a deliberate action, next to something visible.
+Never call it from a document observer, while typing or while rendering, or from a view
+that is not on screen. The calls return `void`: do not await them, and never make an
+edit depend on one.
+
+On Mac, in browsers and on older hosts the calls do nothing, and no capability or
+permission is involved. People can turn **Haptic Feedback** off in the iPhone app's Settings. A
+framework-neutral app can reach the same service as optional `ctx.haptics`.
+
+## Test it
+
+Run `slop dev` and choose **iPhone** in the Device menu. That sets a 390 by 844
+viewport and reports `ios` and `phone`, so you can check your compact layout. Check the
+320 and 430 pixel edges with your browser's responsive design tools. The preview simulates layout and identity only. It has no
+native keyboard, navigation bar or haptics, so check text entry, sheets and the Done
+button in the TestFlight app. Preview, icon, export and widget views render saved state
+and ignore the device menu, so review them separately.
+
+Because a document keeps its own app, test the change on a new document. Updated
+templates reach new copies only.
+
+## Worked examples
+
+Quick Checklist keeps its scroll budget for tasks. Below 640px it tightens padding,
+gives the composer a 44px add button, sets inputs to 16px, gives menu items 44px rows and
+caps menus at `100dvh`. It plays `haptics.selection()` for tab and checkbox changes and
+`haptics.notification("success")` after filing finished tasks. After removing a task it
+keeps focus off the keyboard on a phone by returning it to a tab instead of the input.
+
+Little Days uses `layout === "compact"` to put a two-column set of care actions above
+the timeline. Its forms become bounded sheets with scrolling content and a sticky
+footer, with one modal holding the overview, entry, profile and caregiver screens. The
+sheet takes focus without raising the keyboard. Haptics confirm a saved entry, flag a
+refused one and accompany choices.
+
+See [style an app](/docs/guides/styling/) for themes and CSS,
+[where your slop runs](/docs/guides/where-your-slop-runs/) for the hosts, and
+[capabilities and permissions](/docs/guides/capabilities/) for what the phone refuses.

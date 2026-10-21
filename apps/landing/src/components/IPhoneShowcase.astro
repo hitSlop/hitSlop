@@ -1,0 +1,28 @@
+---
+---
+
+<figure class="phone-scene">
+  <div class="phones">
+    <div class="phone">
+      <img src="/iphone/little-days.webp" width="560" height="1212" sizes="(max-width: 480px) 40vw, 260px" alt="The Little Days baby journal on iPhone, with Feeding, Diaper, Sleep and Note buttons above today's timeline." loading="lazy" decoding="async" />
+    </div>
+    <div class="phone">
+      <img src="/iphone/templates.webp" width="560" height="1212" sizes="(max-width: 480px) 40vw, 260px" alt="The Templates tab in hitSlop on iPhone, listing Popular slops such as Invoice, Weekly Planner and Quick Checklist." loading="lazy" decoding="async" />
+    </div>
+  </div>
+  <figcaption>Little Days and the Templates tab on iPhone.</figcaption>
+</figure>
+
+<style>
+  .phone-scene { margin: 0; min-width: 0; padding: clamp(18px, 3vw, 32px); border: 1px solid #fff; border-radius: 30px; background: radial-gradient(ellipse at 0 100%, #f4ccba 0, transparent 65%), radial-gradient(ellipse at 100% 0, #d3c7f0, transparent 70%), #e5e9f2; box-shadow: inset 0 1px 0 #fff8, 0 24px 60px #3b24551a; }
+  .phones { display: flex; justify-content: center; align-items: flex-start; gap: clamp(14px, 3vw, 28px); }
+  .phone { flex: 0 1 260px; min-width: 0; }
+  .phone:nth-child(2) { margin-top: clamp(20px, 5vw, 48px); }
+  .phone img { display: block; width: 100%; height: auto; border: 4px solid #1b1630; border-radius: clamp(22px, 4vw, 34px); background: #fff; box-shadow: 0 14px 34px #3b245540, 0 2px 4px #3b24551f; }
+  figcaption { margin-top: 24px; color: #463955; font-size: .88rem; text-align: center; }
+  @media (max-width: 480px) {
+    .phone-scene { border-radius: 22px; }
+    .phone img { border-width: 3px; }
+    figcaption { margin-top: 18px; font-size: .8rem; }
+  }
+</style>

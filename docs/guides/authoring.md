@@ -156,6 +156,10 @@ Installing hitSlop does not replace a document's embedded app.
 
 ## Platform, device and responsive layout
 
+The public guide [Make it work on iPhone](../../apps/landing/src/content/docs/docs/guides/mobile.mdx)
+is the author-facing walkthrough of this section: compact layouts, safe areas, touch
+targets, haptics and testing. Keep it and this section in step.
+
 ### Haptic feedback
 
 `haptics` from `hitslop/svelte` plays short native feedback for deliberate editor
