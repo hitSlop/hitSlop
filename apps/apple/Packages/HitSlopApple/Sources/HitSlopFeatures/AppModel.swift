@@ -96,7 +96,7 @@ public struct AppClient {
   /// The saved document's window has left the screen. Keep its owner and command until
   /// close completes, but let the person use the catalog while artwork renders.
   public func documentHiddenForClose(_ id: UUID) {
-    guard let index = index(id), documents[index].queue.running == .close else { return }
+    guard let index = index(id), [.close, .moveToCloud].contains(documents[index].queue.running) else { return }
     documents[index].isHiddenForClose = true
     presentCatalogIfNeeded()
   }
@@ -138,7 +138,7 @@ public struct AppClient {
   /// Quit waits for a document added here.
   private func insert(_ url: URL) {
     if let index = documents.firstIndex(where: { $0.url == url }) {
-      if documents[index].queue.running == .close || documents[index].queue.closeRequested {
+      if [.close, .moveToCloud].contains(documents[index].queue.running) || documents[index].queue.closeRequested {
         documents[index].reopenRequested = true
       } else {
         client.focus(documents[index].id)
@@ -196,6 +196,11 @@ public struct AppClient {
     guard let index = index(id) else { return nil }
     switch result {
     case .success(let url):
+      if command == .moveToCloud, let url {
+        documents.remove(at: index)
+        insert(url)
+        return nil
+      }
       if command == .close {
         let reopen = documents[index].reopenRequested && quitPhase == .running
         let url = documents[index].url

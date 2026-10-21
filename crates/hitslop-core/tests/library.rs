@@ -474,3 +474,84 @@ fn incompatible_schemas_theme_tokens_and_newer_markers_preserve_local_edits() {
         assert_eq!(std::fs::read(&entry.path).unwrap(), before, "{kind} must not write the local file");
     }
 }
+
+#[test]
+fn adopt_preserves_identity_work_and_source_and_schedules_upload() {
+    let (dir, template) = fixture();
+    let source = dir.path().join("local.slop");
+    file::create_document(&template, &source).unwrap();
+    let owner = Owner::open(&source, Mode::Document, Arc::new(|_| {})).unwrap();
+    edit(
+        &owner,
+        json!([{"type":"set","path":["title"],"value":"My saved work"}, {"type":"setTheme","values":{"accent":"#123456"}}]),
+    );
+    close(&owner);
+    let before = std::fs::read(&source).unwrap();
+    let info = snapshot::inspect(&source).unwrap();
+    let library = Library::open(&dir.path().join("library"), "account").unwrap();
+    let entry = library.adopt(&source, "  My slop  ").unwrap();
+    assert_eq!(entry.id, info.id);
+    assert_eq!(entry.title, "My slop");
+    assert!(entry.dirty);
+    assert_eq!(library.entries().unwrap()[0].id, info.id);
+    assert_eq!(snapshot::inspect(std::path::Path::new(&entry.path)).unwrap().fingerprint, info.fingerprint);
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+    let adopted = Owner::open(std::path::Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap();
+    let share = adopted.share().unwrap().unwrap();
+    assert_eq!(share.room, info.id);
+    assert_eq!(share.endpoint, hitslop_core::LIBRARY_SHARE_ENDPOINT);
+    close(&adopted);
+    assert!(library.stage(&entry.id).unwrap().asset_path.is_some());
+    assert!(library.adopt(&source, "Again").is_err());
+    assert_eq!(library.entries().unwrap().len(), 1);
+}
+
+#[test]
+fn adopt_refuses_busy_shared_invalid_and_template_files_without_writing() {
+    let (dir, template) = fixture();
+    let library = Library::open(&dir.path().join("library"), "account").unwrap();
+    let source = dir.path().join("local.slop");
+    file::create_document(&template, &source).unwrap();
+    let owner = Owner::open(&source, Mode::Document, Arc::new(|_| {})).unwrap();
+    assert_eq!(library.adopt(&source, "Busy").unwrap_err().issue, Issue::Busy);
+    snapshot::request(
+        &owner,
+        Request::Share {
+            share: hitslop_core::store::Share {
+                room: "relay-room".into(),
+                endpoint: "https://relay.example.test".into(),
+            },
+        },
+    )
+    .unwrap();
+    close(&owner);
+    let before = std::fs::read(&source).unwrap();
+    assert!(library.adopt(&source, "Shared").is_err());
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+    assert!(library.adopt(&template, "Template").is_err());
+    let invalid = dir.path().join("invalid.slop");
+    std::fs::write(&invalid, b"invalid").unwrap();
+    assert!(library.adopt(&invalid, "Invalid").is_err());
+    assert!(library.adopt(&source, " ").is_err());
+    assert!(library.entries().unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(dir.path().join("library/documents")).unwrap().count(), 0);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn adopt_cleanup_keeps_a_busy_or_changed_original() {
+    let (dir, template) = fixture();
+    let source = dir.path().join("local.slop");
+    file::create_document(&template, &source).unwrap();
+    let library = Library::open(&dir.path().join("library"), "account").unwrap();
+    let entry = library.adopt(&source, "Keep both if changed").unwrap();
+    let saved = snapshot::inspect(std::path::Path::new(&entry.path)).unwrap();
+    let owner = Owner::open(&source, Mode::Document, Arc::new(|_| {})).unwrap();
+    assert_eq!(library.trash_adopted(&source, &entry.id).unwrap_err().issue, Issue::Busy);
+    edit(&owner, json!([{"type":"set","path":["title"],"value":"Later local work"}]));
+    close(&owner);
+    assert!(library.trash_adopted(&source, &entry.id).is_err());
+    assert!(source.exists());
+    assert_ne!(snapshot::inspect(&source).unwrap().fingerprint, saved.fingerprint);
+    assert_eq!(snapshot::inspect(std::path::Path::new(&entry.path)).unwrap().fingerprint, saved.fingerprint);
+}

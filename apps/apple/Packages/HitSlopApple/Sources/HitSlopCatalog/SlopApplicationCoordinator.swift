@@ -179,6 +179,7 @@ import SwiftUI
   /// Each document still opening's progress panel, which focus brings forward.
   private var openings: [UUID: SlopOpeningProgress] = [:]
   private var quitCopies = QuitDraftCopies()
+  private var adoptedSources: [URL: (URL, String)] = [:]
   var client: AppClient {
     AppClient(
       open: { [self] id, url in
@@ -236,6 +237,14 @@ import SwiftUI
     let controller = try await SlopDocumentWindowController.open(
       url: url, routing: routing, progress: progress, telemetry: telemetry)
     controllers[id] = controller
+    if let (source, documentID) = adoptedSources.removeValue(forKey: url) {
+      do { try await SlopLibrary.shared.trashAdopted(source: source, id: documentID) } catch {
+        coordinator?.present(
+          .failure(
+            "Your iCloud slop is at \(url.path). The original is still at \(source.path). \(error.localizedDescription)"
+          ), for: id)
+      }
+    }
     if presentsWindows {
       NSDocumentController.shared.noteNewRecentDocumentURL(url)
       NSApp.activate()
@@ -265,6 +274,24 @@ import SwiftUI
   }
   private func perform(_ id: UUID, command: SlopDocumentCommand) async throws -> URL? {
     let controller = try controller(id)
+    if command == .moveToCloud {
+      guard controller.isAvailable(command) else { throw SlopFailure("This slop cannot be moved right now.") }
+      let source = controller.session.file.url
+      // The normal close path flushes text, saves artwork and releases the writer lock.
+      _ = try await controller.perform(.close)
+      controllers.removeValue(forKey: id)
+      do {
+        let entry = try await SlopLibrary.shared.adopt(
+          source: source, title: source.deletingPathExtension().lastPathComponent)
+        let destination = URL(fileURLWithPath: entry.path)
+        adoptedSources[destination] = (source, entry.id)
+        return destination
+      } catch {
+        coordinator?.present(
+          .failure("The original is still at \(source.path). \(error.localizedDescription)"), for: nil)
+        return source
+      }
+    }
     let result = try await controller.perform(command)
     if command == .duplicate, result != nil { telemetry.send(.duplicated) }
     if command == .close { controllers.removeValue(forKey: id) }

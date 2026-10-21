@@ -178,6 +178,9 @@ actor LibraryTransport: CKSyncEngineDelegate {
   func create(template: String, title: String) throws -> LibraryEntry {
     try library.create(template: template, title: title)
   }
+  func adopt(source: String, title: String) throws -> LibraryEntry {
+    try library.adopt(source: source, title: title)
+  }
   func delete(id: String) throws { try library.delete(id: id) }
   func tick() async throws {
     let entries = try library.entries()

@@ -45,6 +45,8 @@ pub(crate) use places::document_destination;
 #[cfg(not(target_arch = "wasm32"))]
 pub use places::{TemplateSource, template_roots};
 #[cfg(target_os = "macos")]
+pub(crate) use relocate::trash_verified;
+#[cfg(target_os = "macos")]
 pub use relocate::{RelocatedDocument, relocate_document};
 
 /// Refuses a document opened for writing where documents may not live.

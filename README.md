@@ -23,7 +23,7 @@ You and your agent work on the same document. Check something off and your agent
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It opens, edits and creates slops, includes a Quick Checklist starter, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and the live sharing preview. The next Mac release includes Synced Library on CloudKit Production, matching TestFlight/App Store iPhones. Ordinary Mac releases do not include live collaboration.
+iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and the live sharing preview. The next Mac release includes Synced Library on CloudKit Production, matching TestFlight/App Store iPhones. Ordinary Mac releases do not include live collaboration.
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -87,7 +87,7 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Local documents need no account or server. The preview's Synced Library keeps slops in sync between Mac and iPhone through your iCloud account.
+- Local documents need no account or server. Choose iCloud when creating a slop to keep it in sync with your iPhone, or choose On this Mac and pick a folder. Move an existing local slop with **File ▸ Move to iCloud…**. The iPhone preview includes the Popular templates and Little Days.
 - A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder.
 - Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.

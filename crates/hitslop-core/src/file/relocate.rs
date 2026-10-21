@@ -77,6 +77,21 @@ fn relocate(source: &Path, folder: &Path, access: &dyn Access) -> Result<Relocat
     Ok(RelocatedDocument { path: destination, cleanup_error: cleanup.err().map(|error| error.to_string()) })
 }
 
+/// Coordinate deletion and hold the source writer lease through verification and Trash.
+pub(crate) fn trash_verified(source: &Path, destination: &Path, verify: impl Fn(&Path) -> Result<()>) -> Result<()> {
+    Foundation.run(source, true, &mut |resolved| {
+        let lease = Lease::acquire(resolved)?;
+        let before = stamp(resolved)?;
+        let saved = stamp(destination)?;
+        verify(resolved)?;
+        lease.check()?;
+        if stamp(resolved)? != before || stamp(destination)? != saved {
+            return Err(Error::Moved);
+        }
+        Foundation.trash(resolved)
+    })
+}
+
 struct Foundation;
 unsafe extern "C" {
     fn hitslop_relocation_access(

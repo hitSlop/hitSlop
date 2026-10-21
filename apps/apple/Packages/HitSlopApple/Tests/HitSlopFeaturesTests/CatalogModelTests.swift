@@ -184,3 +184,36 @@ import Testing
   model.select(.all)
   #expect(model.visibleEntries == [checklist, expenses])
 }
+
+@Test @MainActor func libraryCreationWaitsForStorageChoiceAndUsesTheSelectedTemplate() async {
+  let catalog = Catalog()
+  let gate = Gate()
+  let model = CatalogModel(client: catalog.client)
+  let template = entry("chosen")
+  var ended: [URL?] = []
+  model.onCreationEnded = { ended.append($0) }
+  model.chooseStorage = { selected in
+    #expect(selected == template)
+    await gate.wait()
+    return .created(documentURL)
+  }
+  model.primaryAction(template)
+  #expect(model.creating == template)
+  model.primaryAction(entry("other"))
+  gate.open()
+  await model.work.settled()
+  #expect(ended == [documentURL])
+  #expect(model.creating == nil && !model.isCopying)
+  #expect(!catalog.calls.contains(.choose("chosen")))
+  #expect(!catalog.calls.contains(.create("chosen")))
+}
+
+@Test @MainActor func cancelledStorageChoiceCreatesNothing() async {
+  let catalog = Catalog()
+  let model = CatalogModel(client: catalog.client)
+  model.chooseStorage = { _ in .cancelled }
+  model.primaryAction(entry("a"))
+  await model.work.settled()
+  #expect(model.creating == nil && model.creationError == nil)
+  #expect(!catalog.calls.contains(.choose("a")) && !catalog.calls.contains(.create("a")))
+}

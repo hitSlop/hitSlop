@@ -233,10 +233,6 @@ private struct UpdateSettingsView: View {
     showCatalog()
     DispatchQueue.main.async { NotificationCenter.default.post(name: .hitSlopJoinSharedSlop, object: nil) }
   }
-  @objc private func newSyncedChecklist() {
-    showCatalog()
-    DispatchQueue.main.async { NotificationCenter.default.post(name: .hitSlopNewSyncedChecklist, object: nil) }
-  }
   @objc private func showSettings() {
     if settingsWindow == nil {
       let content = UpdateSettingsView(updater: updater).frame(width: 480, height: 340)
@@ -315,9 +311,6 @@ private struct UpdateSettingsView: View {
     fileItem.submenu = file
     file.delegate = self
     item(file, "New from Template…", #selector(showCatalog), "n")
-    if SyncedLibraryPreview.enabled {
-      item(file, "New Synced Checklist…", #selector(newSyncedChecklist), "")
-    }
     if SharingPreview.enabled { item(file, "Open Shared Link…", #selector(joinSharedSlop), "") }
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
@@ -328,6 +321,7 @@ private struct UpdateSettingsView: View {
     file.addItem(recentItem)
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
+    if SyncedLibraryPreview.enabled { item(file, "Move to iCloud…", .moveToCloud) }
     item(file, "Share…", .share)
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
@@ -423,7 +417,6 @@ private struct UpdateSettingsView: View {
     case #selector(toggleTheme):
       menuItem.state = controller?.isThemeShown == true ? .on : .off
       return controller?.canToggleTheme ?? false
-    case #selector(newSyncedChecklist): return SlopLibrary.shared.isReady
     default: return true
     }
   }

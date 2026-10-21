@@ -626,7 +626,7 @@ history keeps nothing alive.
 The Synced Library keeps managed documents in sync between Mac and iPhone through the
 person's iCloud account. The iPhone app supports iOS 26+ in TestFlight preview; its App
 Store release and the Mac release with the library on Production remain open. The phone
-opens, edits and creates slops, includes the Quick Checklist starter, and imports from Files.
+opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files.
 
 Managed documents live in account-scoped Application Support. One Swift `CKSyncEngine`
 transports a complete `.slop` CKAsset per document in the fixed `Library` zone of the
@@ -635,7 +635,18 @@ writer admission,
 staging, merging through the existing owner, and receipts. Swift carries file paths and
 opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
 
-Creation asks for a catalog name, independent of fields inside the authored app. Both catalogs share the app icon and bundled Baloo 2 headings; controls and
+On Mac, creation asks where to keep a slop when the library is ready: iCloud asks for
+its catalog name, independent of fields inside the authored app; On this Mac opens the
+existing folder picker. Without iCloud, creation uses the local picker.
+**Move to iCloud** flushes and closes a local document through its normal close path.
+Rust adopts an accepted copy under the source writer lock, preserving its identity,
+refuses shared or already managed documents, and records library membership for upload.
+After the library copy opens, coordinated cleanup takes the source lock, verifies both
+saved copies and checks the source has not changed before moving it to Trash. Failed
+cleanup keeps both files and reports their locations. No document format changes.
+The iPhone starter build reads Popular membership from repository metadata, adds
+`baby-journal`, and excludes camera, microphone or speech capabilities.
+ Both catalogs share the app icon and bundled Baloo 2 headings; controls and
 body copy use native fonts. The iPhone editor extends only its page-colored background
 under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
 

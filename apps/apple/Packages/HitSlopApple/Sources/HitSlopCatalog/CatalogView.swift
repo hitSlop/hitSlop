@@ -11,9 +11,12 @@ public struct CatalogView: View {
   @State private var libraryError: String?
   @State private var sharingError: String?
   @State private var showLibraryName = false
-  @State private var libraryName = "Quick Checklist"
+  @State private var libraryName = ""
   @State private var creatingLibrary = false
   @State private var showJoin = false
+  @State private var showStorageChoice = false
+  @State private var libraryTemplate: CatalogEntry?
+  @State private var storageReply: CheckedContinuation<CatalogStorageChoice, Error>?
   @FocusState private var searchFocused: Bool
   @Environment(\.scenePhase) private var scenePhase
 
@@ -45,7 +48,7 @@ public struct CatalogView: View {
     } detail: {
       CatalogDetail(
         section: model.filter.title, entry: model.selectedEntry,
-        isCreating: model.creating != nil, isCopying: model.isCopying, isQuitting: model.isQuitting
+        isCreating: model.creating != nil || creatingLibrary, isCopying: model.isCopying, isQuitting: model.isQuitting
       ) { entry in
         if entry.isSynced, let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) {
           if let problem = document.problem, !FileManager.default.fileExists(atPath: document.path) {
@@ -54,6 +57,12 @@ public struct CatalogView: View {
           }
         }
         model.primaryAction(entry)
+      }
+      .safeAreaInset(edge: .bottom) {
+        if !library.isReady {
+          Text("Sign in to iCloud to keep slops in sync with your iPhone.")
+            .font(.footnote).foregroundStyle(.secondary).padding()
+        }
       }
       .frame(minWidth: 460)
       .ignoresSafeArea(.container, edges: .top)
@@ -66,6 +75,7 @@ public struct CatalogView: View {
         .frame(width: 1, height: 1).opacity(0)
     }
     .onAppear {
+      model.chooseStorage = chooseStorage
       model.start()
       if SyncedLibraryPreview.enabled { library.start() }
     }
@@ -78,11 +88,6 @@ public struct CatalogView: View {
       } else {
         showJoin = true
       }
-    }
-    .onReceive(NotificationCenter.default.publisher(for: .hitSlopNewSyncedChecklist)) { _ in
-      guard SyncedLibraryPreview.enabled, library.isReady, !creatingLibrary else { return }
-      libraryName = "Quick Checklist"
-      showLibraryName = true
     }
     .onReceive(library.$entries) { entries in
       model.synced = entries.filter { !$0.deleted }.map { entry in
@@ -129,8 +134,15 @@ public struct CatalogView: View {
     }
     .alert("Name your slop", isPresented: $showLibraryName) {
       TextField("Name", text: $libraryName)
-      Button("Cancel", role: .cancel) {}
+      Button("Cancel", role: .cancel) { finishStorage(.cancelled) }
       Button("Create") { createSynced() }.disabled(libraryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    .confirmationDialog(
+      "Where do you want to keep this slop?", isPresented: $showStorageChoice, titleVisibility: .visible
+    ) {
+      Button("iCloud — syncs with your iPhone") { showLibraryName = true }
+      Button("On this Mac…") { finishStorage(.local) }
+      Button("Cancel", role: .cancel) { finishStorage(.cancelled) }
     }
     .preferredColorScheme(.light)
     .sheet(isPresented: $showJoin) {
@@ -146,25 +158,40 @@ public struct CatalogView: View {
     model.primaryAction(CatalogEntry(id: url.path, source: .recent(url), title: "Shared Slop"))
   }
 
+  private func chooseStorage(_ entry: CatalogEntry) async throws -> CatalogStorageChoice {
+    guard SyncedLibraryPreview.enabled, library.isReady else { return .local }
+    libraryTemplate = entry
+    libraryName = entry.title
+    return try await withCheckedThrowingContinuation { reply in
+      storageReply = reply
+      showStorageChoice = true
+    }
+  }
+
+  private func finishStorage(_ choice: CatalogStorageChoice) {
+    let reply = storageReply
+    storageReply = nil
+    libraryTemplate = nil
+    reply?.resume(returning: choice)
+  }
+
   private func createSynced() {
-    guard !creatingLibrary else { return }
+    guard !creatingLibrary, let template = libraryTemplate, case .local(let source) = template.source else { return }
     let name = libraryName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !name.isEmpty else { return }
     creatingLibrary = true
     Task {
       defer { creatingLibrary = false }
       do {
-        guard let root = SlopTemplateLocation.bundledRoot else {
-          throw SlopFailure("The bundled checklist is unavailable.")
-        }
-        let entry = try await library.create(
-          template: root.appendingPathComponent("quick-checklist.slop"), title: name)
+        let entry = try await library.create(template: source, title: name)
         model.select(.synced)
-        var item = CatalogEntry(
-          id: "library:" + entry.id, source: .recent(URL(fileURLWithPath: entry.path)), title: entry.title)
-        item.isSynced = true
-        model.primaryAction(item)
-      } catch { libraryError = error.localizedDescription }
+        finishStorage(.created(URL(fileURLWithPath: entry.path)))
+      } catch {
+        let reply = storageReply
+        storageReply = nil
+        libraryTemplate = nil
+        reply?.resume(throwing: error)
+      }
     }
   }
 }

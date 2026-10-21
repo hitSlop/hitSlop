@@ -285,6 +285,69 @@ impl Library {
         inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
         self.entry(&inner, id)
     }
+    /// Adopt a closed local document without changing its identity or the source file.
+    pub fn adopt(&self, source: &Path, title: &str) -> Result<Entry> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(failed("Enter a name for this slop"));
+        }
+        file::document_location(source)?;
+        let lease = crate::registry::Lease::acquire(source)?;
+        let opened = file::open(source, true)?;
+        let store = Store::open(source, Mode::Snapshot)?;
+        let id = opened.document_uuid.as_ref().ok_or_else(|| failed("Not a document"))?.clone();
+        Self::valid_id(&id)?;
+        if store.share()?.is_some() {
+            return Err(failed("This slop is already shared or belongs to a library"));
+        }
+        let template = store.app().app.metadata().slug.clone();
+        let mut inner = self.inner.lock().unwrap();
+        let exists: bool =
+            inner.db.query_row("SELECT EXISTS(SELECT 1 FROM documents WHERE id=?1)", [&id], |r| r.get(0))?;
+        if exists || self.path(&id).exists() {
+            return Err(failed("This slop is already in iCloud"));
+        }
+        snapshot::install(source, &self.path(&id), &id).map_err(failed)?;
+        lease.check()?;
+        self.with_owner(&mut inner, &id, |owner| {
+            snapshot::request(
+                owner,
+                Request::Share { share: Share { room: id.clone(), endpoint: crate::LIBRARY_SHARE_ENDPOINT.into() } },
+            )
+            .map_err(failed)?;
+            Ok(())
+        })?;
+        inner.db.execute("INSERT INTO documents(id,title,template) VALUES(?1,?2,?3)", params![id, title, template])?;
+        let entry = self.entry(&inner, &id)?;
+        inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
+        self.entry(&inner, &id)
+    }
+    /// Cleanup is separate so the native app can open the adopted copy first. A changed
+    /// or busy source is retained; both accepted copies must still contain the same work.
+    #[cfg(target_os = "macos")]
+    pub fn trash_adopted(&self, source: &Path, id: &str) -> Result<()> {
+        Self::valid_id(id)?;
+        let inner = self.inner.lock().unwrap();
+        let entry = self.entry(&inner, id)?;
+        if entry.deleted || entry.problem.is_some() || entry.local_only {
+            return Err(failed("The iCloud copy is unavailable"));
+        }
+        crate::file::trash_verified(source, &self.path(id), |resolved| {
+            let original = snapshot::inspect(resolved).map_err(crate::error::failed)?;
+            let saved = snapshot::inspect(&self.path(id)).map_err(crate::error::failed)?;
+            if original.id != id
+                || original.fingerprint != saved.fingerprint
+                || original.version != saved.version
+                || original.app_digest != saved.app_digest
+                || original.artwork_digest != saved.artwork_digest
+                || Store::open(resolved, Mode::Snapshot)?.share()?.is_some()
+            {
+                return Err(crate::error::failed("The original or iCloud copy changed; both copies were kept"));
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
     /// The same owner handles live edits and derived images. Local files are not library entries.
     pub fn publish_artwork(
         &self,

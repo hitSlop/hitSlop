@@ -237,9 +237,25 @@ final class LibraryOwners: Sendable {
   }
   public func create(template: URL, title: String) async throws -> SyncedSlop {
     guard let transport, isReady else { throw SlopFailure("Sign in to iCloud before creating a synced slop.") }
-    let entry = try await transport.create(template: template.path, title: title)
-    await refresh()
-    return entry
+    do {
+      let entry = try await transport.create(template: template.path, title: title)
+      await refresh()
+      return entry
+    } catch { throw SlopFailure(libraryMessage(error)) }
+  }
+  public func adopt(source: URL, title: String) async throws -> SyncedSlop {
+    guard let transport, isReady else { throw SlopFailure("Sign in to iCloud before moving this slop.") }
+    do {
+      let entry = try await transport.adopt(source: source.path, title: title)
+      await refresh()
+      return entry
+    } catch { throw SlopFailure(libraryMessage(error)) }
+  }
+  public func trashAdopted(source: URL, id: String) async throws {
+    guard let native, isReady else { throw SlopFailure("iCloud is unavailable. Both copies were kept.") }
+    do {
+      try await Task.detached(priority: .utility) { try native.trashAdopted(source: source.path, id: id) }.value
+    } catch { throw SlopFailure(libraryMessage(error)) }
   }
   public func delete(_ entry: SyncedSlop) async throws {
     guard let transport else { throw SlopFailure("iCloud is unavailable. Your slop is kept locally.") }

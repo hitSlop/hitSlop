@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { buildEngine, buildCoreNative, cargoOutput, cargoProfile, releaseRustflags } from "./core";
 import { publishFolder, repository } from "../lib/artifacts";
 import { buildTemplates } from "../templates/build";
+import { discoverTemplates } from "../templates/discover";
+import type { AppDeclaration } from "../../packages/hitslop/src/sdk/slop";
 import { exec } from "../../packages/hitslop/src/cli/process";
 
 const env = {
@@ -67,11 +69,29 @@ export async function prepareIOSFixtures() {
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
 
+/** Repository-owned starter metadata; ordinary template discovery stays non-executing. */
+export async function iphoneStarterSlugs(): Promise<string[]> {
+  const starters: string[] = [];
+  for (const template of await discoverTemplates()) {
+    const metadata = (await import(join(template.source, "slop.ts"))).default as AppDeclaration;
+    if (template.slug !== "baby-journal" && !metadata.categories.includes("popular")) continue;
+    const unsupported = metadata.capabilities?.filter(capability =>
+      ["camera", "microphone", "speech"].includes(capability));
+    if (unsupported?.length) {
+      console.log(`iPhone starter excluded: ${template.slug} (requires ${unsupported.join(", ")})`);
+      continue;
+    }
+    starters.push(template.slug);
+  }
+  console.log(`iPhone starters: ${starters.join(", ")}`);
+  return starters;
+}
+
 if (import.meta.main) {
   const icons = join(repository, "apps/apple/App/Shared/Assets.xcassets/AppIcon.appiconset");
   await run(["swift", join(repository, "scripts/build/ios-icon.swift"), join(icons, "appicon-1024.png"), join(icons, "appicon-ios-1024.png")]);
   await buildCoreIOS();
   await prepareIOSFixtures();
-  await buildTemplates(join(repository,"generated/ios/StarterTemplates"),["quick-checklist"]);
+  await buildTemplates(join(repository,"generated/ios/StarterTemplates"),await iphoneStarterSlugs());
   await run(["xcodegen", "generate", "--spec", "apps/apple/project.yml"]);
 }

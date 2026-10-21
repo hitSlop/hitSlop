@@ -141,6 +141,12 @@ public struct CatalogClient {
   }
 }
 
+/// The catalog's storage question can create a library copy or continue to the local picker.
+public enum CatalogStorageChoice: Sendable {
+  case local, cancelled
+  case created(URL)
+}
+
 /// The catalog window's state: templates and recent documents, the search, filter and
 /// selection over them, and creating a document from a template.
 @MainActor @Observable public final class CatalogModel {
@@ -158,6 +164,9 @@ public struct CatalogClient {
   public internal(set) var isQuitting = false
   /// Why the last creation failed, until the person acknowledges it.
   public var creationError: String?
+  @ObservationIgnored public var chooseStorage: @MainActor (CatalogEntry) async throws -> CatalogStorageChoice = { _ in
+    .local
+  }
 
   @ObservationIgnored private let client: CatalogClient
   @ObservationIgnored private var hasSelectedFilter = false
@@ -248,9 +257,14 @@ public struct CatalogClient {
   private func create(_ entry: CatalogEntry) async {
     var created: URL?
     do {
-      if let destination = try await client.chooseDestination(entry) {
-        isCopying = true
-        created = try await client.create(entry, destination)
+      switch try await chooseStorage(entry) {
+      case .created(let url): created = url
+      case .cancelled: break
+      case .local:
+        if let destination = try await client.chooseDestination(entry) {
+          isCopying = true
+          created = try await client.create(entry, destination)
+        }
       }
       refreshRecents()
     } catch {

@@ -58,6 +58,20 @@ impl NativeLibrary {
     pub fn create(&self, template: String, title: String) -> Result<core::Entry, LibraryError> {
         Ok(self.0.create(Path::new(&template), &title)?)
     }
+    pub fn adopt(&self, source: String, title: String) -> Result<core::Entry, LibraryError> {
+        Ok(self.0.adopt(Path::new(&source), &title)?)
+    }
+    pub fn trash_adopted(&self, source: String, id: String) -> Result<(), LibraryError> {
+        #[cfg(target_os = "macos")]
+        {
+            Ok(self.0.trash_adopted(Path::new(&source), &id)?)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (source, id);
+            Err(LibraryError::Failed { issue: Issue::Failed, message: "Move to iCloud is available on Mac".into() })
+        }
+    }
     pub fn publish_artwork(
         &self,
         owner: Arc<crate::owner::NativeOwner>,

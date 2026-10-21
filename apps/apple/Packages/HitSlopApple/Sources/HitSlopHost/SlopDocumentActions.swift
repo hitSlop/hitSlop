@@ -14,6 +14,9 @@ extension SlopDocumentWindowController {
   /// importing a palette needs a page that accepts work.
   public func isAvailable(_ command: SlopDocumentCommand) -> Bool {
     switch command {
+    case .moveToCloud:
+      commandsEnabled && isContentReady && SyncedLibraryPreview.enabled && SlopLibrary.shared.isReady
+        && SlopLibrary.shared.entry(at: session.file.url) == nil
     case .close, .retry, .retrySave, .discardUnsaved: true
     case .sharePNG, .sharePDF, .exportPNG, .exportPDF: commandsEnabled && isContentReady && canExport
     case .importTheme: commandsEnabled && isContentReady && session.acceptsPageWork
@@ -77,6 +80,7 @@ extension SlopDocumentWindowController {
         reportLifecycleFailure(.recovery, error: error)
         throw error
       }
+    case .moveToCloud: throw SlopFailure("Move to iCloud must run through the app.")
     case .close: try await closeDocument()
     case .retrySave: try await session.retrySave()
     case .discardUnsaved:
