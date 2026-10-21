@@ -20,6 +20,9 @@ import WebKit
     case .failed: "Save failed"
     }
   }
+  @Published var successFeedback = 0
+  @Published var deletionFeedback = 0
+  private var manualSync = false
   @Published var message: String?
   @Published var showImporter = false
   @Published var showTheme = false
@@ -58,6 +61,7 @@ import WebKit
     perform {
       let entry = try await SlopLibrary.shared.create(template: template.url, title: name)
       try await self.show(URL(fileURLWithPath: entry.path))
+      self.successFeedback += 1
     }
   }
   func delete(_ entry: SyncedSlop) {
@@ -73,6 +77,21 @@ import WebKit
         self.opening = false
       }
       try await SlopLibrary.shared.delete(entry)
+      self.deletionFeedback += 1
+    }
+  }
+  /// Only explicit sync requests produce feedback; polling and background sync do not.
+  func syncNow() async {
+    guard !manualSync else { return }
+    manualSync = true
+    defer { manualSync = false }
+    let library = SlopLibrary.shared
+    let previousSuccess = library.lastSuccess
+    await library.syncNow()
+    if !library.isReady || library.lastError != nil || !library.issues.isEmpty {
+      message = library.status
+    } else if let lastSuccess = library.lastSuccess, lastSuccess != previousSuccess, library.pending == 0 {
+      successFeedback += 1
     }
   }
   func libraryChanged() {
@@ -196,6 +215,7 @@ import WebKit
     let url = try await DocumentSharing.join(link, candidates: documents)
     refresh()
     if session?.file.url != url { try await show(url) }
+    successFeedback += 1
   }
   private func show(_ url: URL) async throws {
     opening = true
@@ -271,9 +291,11 @@ import WebKit
         let target = directory.appendingPathComponent("\(name) copy \(UUID().uuidString.prefix(8)).slop")
         copied = try await session.copy(to: target)
         self.refresh()
+        self.successFeedback += 1
       })
   }
-  func finishExport() {
+  func finishExport(completed: Bool = false) {
+    if completed { successFeedback += 1 }
     if let exported { try? FileManager.default.removeItem(at: exported.deletingLastPathComponent()) }
     exported = nil
   }

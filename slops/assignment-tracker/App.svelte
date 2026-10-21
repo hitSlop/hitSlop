@@ -2,7 +2,7 @@
   import "hitslop/base.css";
   import "./styles.css";
   import { isRefused, type Value } from "hitslop";
-  import { bindText, getDocument } from "hitslop/svelte";
+  import { bindText, getDocument, haptics } from "hitslop/svelte";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
   import { Tabs, Checkbox, Dialog, Select } from "bits-ui";
@@ -93,14 +93,17 @@
       if (fresh) await doc.change((tx) => addAssignment(tx, input));
       else await doc.change((tx) => updateAssignment(tx, doc.current, draft.$id, input));
       open = false;
+      haptics.notification("success");
     } catch (cause) {
       if (!isRefused(cause)) throw cause;
       error = cause.message;
+      haptics.notification("error");
     }
   }
   async function remove() {
     const id = draft.$id;
     await doc.change((tx) => removeAssignment(tx, id));
+    haptics.impact("medium");
     open = false;
   }
   function restore(event: Event) {
@@ -145,7 +148,7 @@
       </div>
     </header>
     <div class={"asg-toolbar"}>
-      <Tabs.Root bind:value={filter}
+      <Tabs.Root value={filter} onValueChange={value => { if (value && value !== filter) { filter = value; haptics.selection(); } }}
         ><Tabs.List class={"asg-tabs"} aria-label="Assignment lists"
           ><Tabs.Trigger class={"asg-tab"} value="todo"
             >To do <span>{active.length}</span></Tabs.Trigger
@@ -184,7 +187,11 @@
                 <Checkbox.Root
                   class={"asg-checkbox"}
                   checked={item.completed}
-                  onCheckedChange={(checked) => doc.change((tx) => setCompleted(tx, item.$id, checked === true))}
+                  onCheckedChange={async (checked) => {
+                    await doc.change((tx) => setCompleted(tx, item.$id, checked === true));
+                    if (checked) haptics.notification("success");
+                    else haptics.selection();
+                  }}
                   aria-label="Mark {item.title || 'assignment'} {item.completed
                     ? 'incomplete'
                     : 'complete'}"
@@ -218,7 +225,11 @@
                     value={item.dueDate}
                     label={due.label}
                     urgency={item.completed ? "done" : due.urgency}
-                    onSelect={(iso) => doc.change((tx) => setDueDate(tx, doc.current, item.$id, iso))}
+                    onSelect={async (iso) => {
+                      if (iso === item.dueDate) return;
+                      await doc.change((tx) => setDueDate(tx, doc.current, item.$id, iso));
+                      haptics.selection();
+                    }}
                   /><button
                     class={"asg-editArrow"}
                     onclick={(e) => edit(item, e)}

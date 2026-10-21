@@ -7,7 +7,7 @@
   import MapPin from "@lucide/svelte/icons/map-pin";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import { bindText, getDocument } from "hitslop/svelte";
+  import { bindText, getDocument, haptics } from "hitslop/svelte";
   import schema from "./schema";
   import { addEducation, addExperience, addSkill, removeEducation, removeExperience, removeSkill, resumeView } from "./entries";
   const doc = getDocument(schema);
@@ -27,22 +27,22 @@
         </section>
 
         <section class="skillsBlock" aria-labelledby="skills-heading">
-          <div class="sectionHeading"><h2 id="skills-heading" class="heading">Skills</h2><Button.Root class="addCompact" data-slop-export="hide" aria-label="Add skill" onclick={() => doc.change(tx => addSkill(tx))}><Plus size={11} strokeWidth={1.8} /></Button.Root></div>
+          <div class="sectionHeading"><h2 id="skills-heading" class="heading">Skills</h2><Button.Root class="addCompact" data-slop-export="hide" aria-label="Add skill" onclick={async () => { await doc.change(tx => addSkill(tx)); haptics.impact(); }}><Plus size={11} strokeWidth={1.8} /></Button.Root></div>
           <div class="skills">
             {#each skills as skill, index (skill.$id)}
-              <span class="skill"><input aria-label="Skill {index + 1}" use:bindText={doc.at(skill).label} /><button class="skillRemove" data-slop-export="hide" aria-label="Remove {skill.label || "skill"}" onclick={() => doc.change(tx => removeSkill(tx, skill.$id))}>×</button></span>
+              <span class="skill"><input aria-label="Skill {index + 1}" use:bindText={doc.at(skill).label} /><button class="skillRemove" data-slop-export="hide" aria-label="Remove {skill.label || "skill"}" onclick={async () => { await doc.change(tx => removeSkill(tx, skill.$id)); haptics.impact("medium"); }}>×</button></span>
             {/each}
           </div>
         </section>
 
         <section class="educationBlock" aria-labelledby="education-heading">
-          <div class="sectionHeading"><h2 id="education-heading" class="heading">Education</h2><Button.Root class="addCompact" data-slop-export="hide" aria-label="Add education" onclick={() => doc.change(tx => addEducation(tx))}><Plus size={11} strokeWidth={1.8} /></Button.Root></div>
+          <div class="sectionHeading"><h2 id="education-heading" class="heading">Education</h2><Button.Root class="addCompact" data-slop-export="hide" aria-label="Add education" onclick={async () => { await doc.change(tx => addEducation(tx)); haptics.impact(); }}><Plus size={11} strokeWidth={1.8} /></Button.Root></div>
           <div class="educationList">
             {#each education as item, index (item.$id)}
               <div class="educationItem">
                 <input class="educationSchool" aria-label="School {index + 1}" use:bindText={doc.at(item).school} />
                 <input class="field" aria-label="Degree or program {index + 1}" use:bindText={doc.at(item).program} />
-                <div class="educationYear"><input class="field" aria-label="Graduation year {index + 1}" bind:value={() => doc.at(item).year.value, (next) => { doc.at(item).year.value = next; }} /><button class="removeCompact" data-slop-export="hide" aria-label="Remove {item.school || "education"}" onclick={() => doc.change(tx => removeEducation(tx, item.$id))}><Trash2 size={11} strokeWidth={1.65} /></button></div>
+                <div class="educationYear"><input class="field" aria-label="Graduation year {index + 1}" bind:value={() => doc.at(item).year.value, (next) => { doc.at(item).year.value = next; }} /><button class="removeCompact" data-slop-export="hide" aria-label="Remove {item.school || "education"}" onclick={async () => { await doc.change(tx => removeEducation(tx, item.$id)); haptics.impact("medium"); }}><Trash2 size={11} strokeWidth={1.65} /></button></div>
               </div>
             {/each}
           </div>
@@ -58,11 +58,11 @@
         </header>
 
         <section class="experience" aria-labelledby="experience-heading">
-          <div class="experienceHeading"><h2 id="experience-heading">Experience</h2><Button.Root class="addExperience" data-slop-export="hide" onclick={() => doc.change(tx => addExperience(tx))}><Plus size={12} strokeWidth={1.8} /> Add role</Button.Root></div>
+          <div class="experienceHeading"><h2 id="experience-heading">Experience</h2><Button.Root class="addExperience" data-slop-export="hide" onclick={async () => { await doc.change(tx => addExperience(tx)); haptics.impact(); }}><Plus size={12} strokeWidth={1.8} /> Add role</Button.Root></div>
           <div class="experienceList">
             {#each experience as item, index (item.$id)}
               <article class="experienceItem">
-                <div class="experienceMeta"><input class="period" aria-label="Employment period {index + 1}" use:bindText={doc.at(item).period} /><button class="removeExperience" data-slop-export="hide" aria-label="Remove {item.role || "experience"}" onclick={() => doc.change(tx => removeExperience(tx, item.$id))}><Trash2 size={12} strokeWidth={1.65} /></button></div>
+                <div class="experienceMeta"><input class="period" aria-label="Employment period {index + 1}" use:bindText={doc.at(item).period} /><button class="removeExperience" data-slop-export="hide" aria-label="Remove {item.role || "experience"}" onclick={async () => { await doc.change(tx => removeExperience(tx, item.$id)); haptics.impact("medium"); }}><Trash2 size={12} strokeWidth={1.65} /></button></div>
                 <div>
                   <div class="roleLine"><input class="jobRole" aria-label="Job title {index + 1}" use:bindText={doc.at(item).role} /><span>·</span><input class="company" aria-label="Company {index + 1}" use:bindText={doc.at(item).company} /></div>
                   <textarea class="experienceCopy" aria-label="Summary for {item.role || "experience"}" use:bindText={doc.at(item).summary}></textarea>

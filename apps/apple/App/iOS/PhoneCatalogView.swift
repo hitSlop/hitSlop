@@ -1,4 +1,5 @@
 import HitSlopCore
+import HitSlopDocument
 import SwiftUI
 
 struct PhoneCatalogView: View {
@@ -14,6 +15,8 @@ struct PhoneCatalogView: View {
       libraryList.tabItem { Label("Recents", systemImage: "clock") }.tag(PhoneTab.recents)
       templateList.tabItem { Label("Templates", systemImage: "square.grid.2x2.fill") }.tag(PhoneTab.templates)
     }
+    .appHaptic(.selection, trigger: tab) { _, _ in model.session == nil }
+    .appHaptic(.selection, trigger: category)
     .navigationTitle(tab == .templates ? "Templates" : "Recents")
   }
   private var header: some View {
@@ -37,7 +40,7 @@ struct PhoneCatalogView: View {
         Text("Recents").font(SlopBrand.heading(20, relativeTo: .title2))
         Spacer()
         Button {
-          Task { await library.syncNow() }
+          Task { await model.syncNow() }
         } label: {
           if library.isSyncing { ProgressView() } else { Image(systemName: "arrow.triangle.2.circlepath") }
         }.accessibilityLabel("Sync Now").disabled(library.isSyncing)
@@ -80,7 +83,7 @@ struct PhoneCatalogView: View {
             Button("Explore templates") { tab = .templates }.buttonStyle(.borderedProminent).tint(PhoneStyle.accent)
           }.padding(.horizontal, 30).padding(.top, 66)
         }
-      }.refreshable { await library.syncNow() }
+      }.refreshable { await model.syncNow() }
       Text(library.status).font(.caption2).foregroundStyle(.secondary).padding(.vertical, 6)
     }.background(Color(.systemBackground))
   }

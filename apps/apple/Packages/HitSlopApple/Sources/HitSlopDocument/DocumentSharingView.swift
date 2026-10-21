@@ -19,6 +19,7 @@ public struct LiveCollaborationSection: View {
   @State private var starting = false
   @State private var confirmingStop = false
   @State private var copied = false
+  @State private var copyFeedback = 0
   @State private var failedAction: Action = .refresh
   private let interactionChanged: (Bool) -> Void
   private let saveUnsharedCopy: (() -> Void)?
@@ -156,6 +157,12 @@ public struct LiveCollaborationSection: View {
       }
     }
     .fixedSize(horizontal: false, vertical: true)
+    .appHaptic(.success, trigger: copyFeedback)
+    .appHaptic(.success, trigger: model.acting) { wasActing, acting in
+      wasActing && !acting && model.error == nil
+    }
+    .appHaptic(.error, trigger: model.error) { _, error in error != nil }
+    .appHaptic(.error, trigger: signInError) { _, error in error != nil }
     .task { account.configure() }
     .onChange(of: holdingOpen) { _, value in interactionChanged(value) }
     .onChange(of: model.busy) { _, busy in
@@ -205,6 +212,7 @@ public struct LiveCollaborationSection: View {
     #else
       UIPasteboard.general.string = link
     #endif
+    copyFeedback += 1
     copied = true
     Task {
       try? await Task.sleep(for: .seconds(2))
@@ -243,5 +251,6 @@ public struct SharingJoinView: View {
         }.disabled(link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }
     }.padding(24).frame(idealWidth: 440).disabled(busy)
+      .appHaptic(.error, trigger: error) { _, error in error != nil }
   }
 }
