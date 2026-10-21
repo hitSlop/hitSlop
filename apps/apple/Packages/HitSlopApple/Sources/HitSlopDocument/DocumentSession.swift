@@ -103,6 +103,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
   /// Recognizes recordings on this Mac; tests script their own.
   var speechRecognizer: any SpeechRecognizing = SystemSpeechRecognizer()
+  #if os(iOS)
+    var hapticFeedback: any HapticPlaying = DocumentHaptics()
+  #endif
   /// Transcriptions the attached page started (`serveSpeech`).
   var speechTasks: [UUID: Task<Void, Never>] = [:]
   /// The window that shows this session.
@@ -301,6 +304,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+    #if os(iOS)
+      configuration.ignoresViewportScaleLimits = false
+    #endif
     configuration.setURLSchemeHandler(
       SchemeHandler(assets: owner.assets, shell: webViewResources), forURLScheme: "slop")
     // One handler: document requests go to the owner, everything else to the host bridge.
@@ -325,6 +331,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     let view = WKWebView(
       frame: CGRect(x: 0, y: 0, width: spec.width, height: spec.height),
       configuration: configuration)
+    #if os(iOS)
+      view.accessibilityIdentifier = "document-page"
+      // Native keyboard avoidance sizes the page; authored panes keep their own scrolling.
+      view.scrollView.keyboardDismissMode = .interactive
+      view.scrollView.bounces = false
+      view.scrollView.pinchGestureRecognizer?.isEnabled = false
+    #endif
     WebViewBackground.set(file.backdrop == .window, on: view)
     view.navigationDelegate = self
     view.uiDelegate = self
@@ -383,6 +396,16 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   func serveHost(_ request: HostAction, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
     guard !closed else { return reply(pageFailure(OwnerFailure.closed), nil) }
     switch request {
+    case .hapticsPlay(let feedback):
+      #if os(iOS)
+        if acceptsPageWork, !capturing, HapticPreferences.isEnabled,
+          let view = liveWebView, let window = view.window, !window.isHidden,
+          window.windowScene?.activationState == .foregroundActive
+        {
+          hapticFeedback.play(feedback, in: view)
+        }
+      #endif
+      reply(encodeHostReply(reply: .hapticsPlay), nil)
     case .environment:
       #if os(macOS)
         let environment = HostEnvironment(platform: .macos, device: .desktop)

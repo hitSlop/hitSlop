@@ -24,6 +24,8 @@ export { default as EditableText } from "./EditableText.svelte";
 export { notify } from "./notice.svelte";
 export { draft } from "./draft.svelte";
 export { motion } from "./motion.svelte";
+export { haptics, type HapticImpactStyle, type HapticNotification } from "./haptics";
+export { surfaceTransition, overlayTransition, popoverTransition } from "./transitions";
 export { bindText } from "./bind-text";
 
 /**

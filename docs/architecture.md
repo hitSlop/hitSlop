@@ -630,31 +630,50 @@ history keeps nothing alive.
 The Synced Library keeps managed documents in sync between Mac and iPhone through the
 person's iCloud account. The iPhone app supports iOS 26+ in TestFlight preview; its App
 Store release and the Mac release with the library on Production remain open. The phone
-opens, edits and creates slops, includes the Quick Checklist starter, and imports from Files.
+opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files.
 
-Managed documents live in account-scoped Application Support. One Swift `CKSyncEngine`
-transports a complete `.slop` CKAsset per document in the fixed `Library` zone of the
-private CloudKit database in container `iCloud.com.hitslop.app`. Debug uses Development;
-TestFlight and App Store distribution use Production ([Apple's distribution rule](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitQuickStart/TestingYourApp/TestingYourApp.html)).
-These environments do not share records. `SyncedLibraryPreview` enables the Mac library
-in Debug or with `HITSLOP_SYNCED_LIBRARY`; ordinary Mac Release keeps it off pending
-Production rollout. Rust owns library metadata, retained history,
-writer admission,
-staging, merging through the existing owner, and receipts. Swift carries file paths and
-opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
-Library sync requires iCloud sign-in, separately from the sharing account. Loss of iCloud
-availability stops the transport. A different account fences the active library and
-retains the previous account's local files without uploading them to the new account.
-Rust checks the library's stored account identity before opening it. Active loose files
-in iCloud Drive or detected synced folders remain refused; the Mac open flow offers
-**Move to ~/hitSlop and Open**, saving a verified local copy before trashing the original.
-If removing the original fails, the local copy opens and the original is retained with a warning.
+Managed documents live in account-scoped Application Support. One Swift `LibrarySync`
+actor uses direct CloudKit zone-change, record-fetch and conflict-checked modify operations
+on complete `.slop` assets in the fixed `Library` zone of the private database in
+`iCloud.com.hitslop.app`. Debug uses Development; TestFlight, App Store and the Developer ID
+Mac release use Production ([Apple's distribution rule](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitQuickStart/TestingYourApp/TestingYourApp.html)).
+These environments do not share records, and Debug keeps its library state in a separate
+`Development` folder. All callers await one coalesced run, with one queued rerun and full
+reconciliation taking precedence. Foreground, Sync Now, push and background refresh
+enumerate from a nil token: metadata first, then assets whose confirmed revisions differ.
+Debounced edits and editor polling fetch changes from the saved token. The token advances
+only after every record is accepted or its issue and retry are durable in `library.sqlite`.
+A conflict merges the server record and restages, with at most three save rounds.
+Per-record failures never stop other documents.
+Rust owns library metadata, retained history, writer admission, staging, merging through
+the existing owner, and receipts; a receipt requires the incoming history to be present.
+Swift carries file paths and opaque version tokens, never Loro bytes. Both catalogs show
+sync progress, errors and last success; a clean row says synced only after a successful
+check since foregrounding. Unified logs use subsystem `com.hitslop.library` without content.
+Ordinary Mac files retain their existing path.
+Library sync requires iCloud sign-in, separately from the sharing account. A different
+account fences the active library and retains the previous account's local files without
+uploading them to the new account. Rust checks the library's stored account identity before
+opening it. Active loose files in iCloud Drive or detected synced folders remain refused;
+the Mac open flow offers **Move to ~/hitSlop and Open**, saving a verified local copy before
+trashing the original. If removing the original fails, the local copy opens and the original
+is retained with a warning.
 
-Creation asks for a catalog name, independent of fields inside the authored app. Both catalogs share the app icon and bundled Baloo 2 headings; controls and
-body copy use native fonts. The iPhone editor extends the WebView and its page-colored
-background under system areas. The phone WebView disables automatic scroll-view content insets;
-authored controls need safe-area padding where appropriate. SwiftUI keyboard avoidance
-remains enabled.
+On Mac, creation asks where to keep a slop when the library is ready: iCloud asks for
+its catalog name, independent of fields inside the authored app; On this Mac opens the
+existing folder picker. Without iCloud, creation uses the local picker.
+**Move to iCloud** flushes and closes a local document through its normal close path.
+Rust adopts an accepted copy under the source writer lock, preserving its identity,
+refuses shared or already managed documents, and records library membership for upload.
+After the library copy opens, coordinated cleanup takes the source lock, verifies both
+saved copies and checks the source has not changed before moving it to Trash. Failed
+cleanup keeps both files and reports their locations. No document format changes.
+The iPhone starter build reads Popular membership from repository metadata, adds
+`baby-journal`, and leaves out templates that declare camera, microphone or speech
+capabilities, which the iPhone host refuses.
+Both catalogs share the app icon and bundled Baloo 2 headings; controls and
+body copy use native fonts. The iPhone editor extends only its page-colored background
+under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
 
 Leaving an edited iPhone document refreshes its icon and preview from an immutable saved
 source. Managed Mac documents use the same version-checked artwork publication path;

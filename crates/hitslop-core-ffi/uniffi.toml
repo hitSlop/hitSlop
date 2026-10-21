@@ -28,6 +28,7 @@ Summary = "FileSummary"
 
 Entry = "LibraryEntry"
 Upload = "LibraryUpload"
+Retry = "LibraryRetry"
 Issue = "LibraryIssue"
 
 Phase = "SharingPhase"

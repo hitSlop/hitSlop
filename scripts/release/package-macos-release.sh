@@ -2,11 +2,13 @@
 set -eu
 
 # Archive, Developer ID-sign, notarize, and wrap an Apple-silicon hitSlop DMG.
+# Required env: MACOS_PROVISIONING_PROFILE (base64) or MACOS_PROVISIONING_PROFILE_FILE (path)
 # Optional env:
 #   HITSLOP_CODESIGN_IDENTITY   Developer ID identity (name or hash)
 #   ASC_API_KEY_P8 / ASC_API_KEY_P8_FILE, ASC_API_KEY_ID, ASC_API_ISSUER_ID
 #   SPARKLE_PRIVATE_KEY / SPARKLE_PRIVATE_KEY_FILE
 #   SKIP_NOTARIZE=1             skip notarytool (still signs)
+#   HITSLOP_SKIP_SYMBOL_UPLOAD=1 skip Crashlytics symbol upload for local hand tests
 #   HITSLOP_SKIP_ACCEPTANCE=1   skip host-crash acceptance of the signed app
 #   HITSLOP_OUTPUT_DIR          default: dist/macos
 
@@ -53,6 +55,53 @@ if [ -z "$feed_prefix" ]; then
 fi
 feed_prefix="${feed_prefix%/}/"
 
+stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hitslop-package.XXXXXX")
+stage_dir=$(CDPATH= cd -- "$stage_dir" && pwd -P)
+lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+# Builds register with Launch Services as they appear; only an installed app should claim
+# .slop, so the exported copy and Xcode's archive copies are unregistered on the way out.
+cleanup() {
+  "$lsregister" -dump 2>/dev/null \
+    | /usr/bin/sed -n 's/^path: *\(.*hitSlop\.app\) (0x[0-9a-f]*)$/\1/p' \
+    | /usr/bin/grep -E "^${stage_dir}/|/ArchiveIntermediates/" \
+    | while IFS= read -r app; do "$lsregister" -u "$app" >/dev/null 2>&1 || true; done
+  if [ -n "${installed_profile:-}" ]; then /bin/rm -f "$installed_profile"; fi
+  /bin/chmod -R u+w "$stage_dir" 2>/dev/null || true
+  /bin/rm -rf "$stage_dir"
+}
+trap cleanup EXIT HUP INT TERM
+
+# Validate before looking for identities or building. Keep decoded secrets in the private stage.
+. "$script_dir/macos-profile.sh"
+profile="$stage_dir/release.provisionprofile"
+if [ -n "${MACOS_PROVISIONING_PROFILE_FILE:-}" ]; then
+  [ -f "$MACOS_PROVISIONING_PROFILE_FILE" ] || { profile_error "file does not exist: $MACOS_PROVISIONING_PROFILE_FILE"; exit 65; }
+  /bin/cp "$MACOS_PROVISIONING_PROFILE_FILE" "$profile"
+elif [ -n "${MACOS_PROVISIONING_PROFILE:-}" ]; then
+  printf '%s' "$MACOS_PROVISIONING_PROFILE" | /usr/bin/base64 -D > "$profile" 2>/dev/null \
+    || { profile_error "MACOS_PROVISIONING_PROFILE is not valid base64"; exit 65; }
+else
+  profile_error "set MACOS_PROVISIONING_PROFILE (base64) or MACOS_PROVISIONING_PROFILE_FILE (path)"
+  exit 65
+fi
+validate_macos_profile "$profile" "$project_dir/App/macOS/hitSlop.Release.entitlements" "$stage_dir"
+HITSLOP_PROVISIONING_PROFILE_UUID=$(/usr/bin/plutil -extract UUID raw -o - "$stage_dir/profile.plist")
+export HITSLOP_PROVISIONING_PROFILE_UUID
+case "$HITSLOP_PROVISIONING_PROFILE_UUID" in
+  ""|*[!A-Za-z0-9-]*) profile_error "invalid UUID"; exit 65 ;;
+esac
+# Xcode archive/export must be able to resolve the profile too. Preserve existing installations.
+profile_dir="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+/bin/mkdir -p "$profile_dir"
+profile_install="$profile_dir/$HITSLOP_PROVISIONING_PROFILE_UUID.provisionprofile"
+if [ -e "$profile_install" ]; then
+  /usr/bin/cmp -s "$profile" "$profile_install" \
+    || { profile_error "a different profile with this UUID is already installed"; exit 65; }
+else
+  installed_profile=$profile_install
+  /bin/cp "$profile" "$installed_profile"
+fi
+
 # Resolve to a fingerprint: certificates may share a name, but only identities
 # reported here have a usable private key. Xcode must select that exact identity.
 signing_identities=$(/usr/bin/security find-identity -v -p codesigning)
@@ -69,20 +118,6 @@ if [ -z "$resolved" ]; then
 fi
 identity=$resolved
 
-stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hitslop-package.XXXXXX")
-stage_dir=$(CDPATH= cd -- "$stage_dir" && pwd -P)
-lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-# Builds register with Launch Services as they appear; only an installed app should claim
-# .slop, so the exported copy and Xcode's archive copies are unregistered on the way out.
-cleanup() {
-  "$lsregister" -dump 2>/dev/null \
-    | /usr/bin/sed -n 's/^path: *\(.*hitSlop\.app\) (0x[0-9a-f]*)$/\1/p' \
-    | /usr/bin/grep -E "^${stage_dir}/|/ArchiveIntermediates/" \
-    | while IFS= read -r app; do "$lsregister" -u "$app" >/dev/null 2>&1 || true; done
-  /bin/rm -rf "$stage_dir"
-}
-trap cleanup EXIT HUP INT TERM
-
 # App Store Connect credentials are only for notarization. Archive/export use the
 # installed Developer ID identity and must never provision development certificates.
 key_path=
@@ -98,6 +133,10 @@ fi
 echo "Generating Xcode project…"
 /usr/bin/env xcodegen generate --spec "$project_yml" --project "$project_dir"
 
+# Export must use the same validated profile as the main archive target.
+/bin/cp "$export_options" "$stage_dir/ExportOptions.plist"
+/usr/bin/plutil -insert provisioningProfiles -json "{\"com.hitslop.app\":\"$HITSLOP_PROVISIONING_PROFILE_UUID\"}" "$stage_dir/ExportOptions.plist"
+export_options="$stage_dir/ExportOptions.plist"
 archive_path="$stage_dir/hitSlop.xcarchive"
 export_dir="$stage_dir/export"
 /bin/mkdir -p "$export_dir"
@@ -111,8 +150,11 @@ echo "Archiving Apple-silicon Release…"
   -configuration Release \
   -destination "generic/platform=macOS" \
   -archivePath "$archive_path" \
+  -derivedDataPath "$stage_dir/derived" \
   ARCHS="arm64" \
   ONLY_ACTIVE_ARCH=YES \
+  HITSLOP_SKIP_SYMBOL_UPLOAD="${HITSLOP_SKIP_SYMBOL_UPLOAD:-0}" \
+  HITSLOP_PROVISIONING_PROFILE_UUID="$HITSLOP_PROVISIONING_PROFILE_UUID" \
   DEVELOPMENT_TEAM="$team_id" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="$identity" \
@@ -145,6 +187,8 @@ assert_arm64_only() {
 assert_arm64_only "$app/Contents/MacOS/hitSlop"
 assert_arm64_only "$app/Contents/Helpers/hitslop-evaluator"
 
+/bin/cp "$profile" "$app/Contents/embedded.provisionprofile"
+
 echo "Signing nested tools and app…"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/hitslop-evaluator"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Frameworks/Sparkle.framework"
@@ -152,6 +196,21 @@ echo "Signing nested tools and app…"
   --entitlements "$project_dir/App/macOS/hitSlop.Release.entitlements" \
   --sign "$identity" "$app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
+/usr/bin/codesign -d --entitlements - --xml "$app" > "$stage_dir/signed-entitlements.plist"
+validate_macos_profile "$app/Contents/embedded.provisionprofile" "$stage_dir/signed-entitlements.plist" "$stage_dir"
+# Assert every requested entitlement survived final signing, including Production CloudKit.
+/usr/bin/plutil -convert json -o "$stage_dir/expected-entitlements.json" "$project_dir/App/macOS/hitSlop.Release.entitlements"
+bun --eval '
+  const [work] = process.argv.slice(1);
+  const actual = await Bun.file(`${work}/required-entitlements.json`).json();
+  const expected = await Bun.file(`${work}/expected-entitlements.json`).json();
+  for (const [key, value] of Object.entries(expected)) {
+    if (JSON.stringify(actual[key]) !== JSON.stringify(value)) {
+      console.error(`Signed app is missing or has incorrect ${key}`);
+      process.exit(65);
+    }
+  }
+' "$stage_dir"
 
 # Notarize only the candidate that passed installed-app and host-crash acceptance.
 # Requires the engine from `bun run build` for storage probes.

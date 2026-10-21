@@ -122,6 +122,24 @@ and PDF behavior.
 - Make each slop purpose-specific. Shared SDK patterns must not make unrelated
   objects look like one reskinned dashboard.
 
+## Mobile editors
+
+Use `getEnvironment()` and the editor's platform/device/layout CSS attributes for
+presentation differences; use media/container queries for the space available.
+Compact layouts must prioritize the slop's main job, not stack a desktop sidebar
+above it. Preserve all functions through secondary Bits UI controls when needed.
+
+The current native iPhone host is portrait-only and fits the editor within native
+navigation, home-indicator, and keyboard safe areas. Fill that viewport with 100%
+height and scroll inside panes; do not subtract keyboard height again. Keep input
+text at least 16px and touch targets at least 44px. Use task-appropriate keyboard
+hints. Keep focus for repeated entry and avoid focusing text after unrelated actions.
+Mobile sheets need bounded, scrollable content and reachable close/submit controls.
+Opening a sheet need not open its keyboard: focus the dialog while preserving Bits
+UI's focus trap and restoration. Validate with an actual iPhone keyboard as well as
+the `slop dev` iPhone preset. Page zoom is disabled by the native host; retain text
+selection, copying, VoiceOver, and purposeful authored gestures.
+
 ## Review efficiently
 
 Use `bun run dev` for disposable browser preview. Review at the `window` size
@@ -147,6 +165,23 @@ nonvisual changes do not justify another full visual review. Keep PRODUCT.md and
 app's DESIGN.md concise and grounded in what is actually shipped.
 
 ## Motion
+
+For dialogs, sheets and menus, use the SDK's `surfaceTransition`,
+`overlayTransition` and `popoverTransition` from `hitslop/svelte`. They preserve
+authored transforms and respect reduced motion. Bits UI `forceMount`/`child`
+snippets retain content through exits; floating controls need the provided outer
+`wrapperProps`. Keep item data until closing finishes and coordinate a menu-to-dialog
+handoff with `onOpenChangeComplete`. Keep a stable opener reference and explicitly
+restore it in `onCloseAutoFocus` for surfaces that can reopen during their exit.
+Related phone forms should share one modal and
+use internal navigation rather than stacking independent focus traps and overlays.
+
+Use `haptics` from `hitslop/svelte` sparingly: `selection()` for changed choices,
+`impact("light")` for a physical snap, and `notification("success" | "warning" |
+"error")` for an explicit outcome with visible feedback. Success follows an accepted
+write. Calls return immediately and unsupported hosts stay silent; iPhone Settings
+controls feedback globally. Never trigger feedback from renders, document observers,
+typing, initialization or static captures. See the authoring guide for the host API.
 
 Use motion to explain an interaction or reinforce the object's character: a
 pressed control, settling needle, or changing liquid level. Keep idle objects

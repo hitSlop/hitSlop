@@ -409,3 +409,38 @@ import Testing
       .prepare(documentID), .prepare(otherID), .cancel(documentID), .cancel(otherID), .reply(false),
     ])
 }
+
+@Test @MainActor func movingToCloudReplacesTheClosedDocumentAndQuitWaitsForTheNewOwner() async {
+  let native = Native()
+  let model = await app(native, open: [documentID], ids: [otherID])
+  let gate = Gate()
+  let destination = URL(fileURLWithPath: "/tmp/library/adopted.slop")
+  native.perform = { _, command in
+    #expect(command == .moveToCloud)
+    await gate.wait()
+    return destination
+  }
+  native.open = { id, url in
+    #expect(id == otherID && url == destination)
+  }
+  native.prepareToQuit = { id in #expect(id == otherID) }
+  native.finishQuit = { id in #expect(id == otherID) }
+  model.send(.moveToCloud, to: documentID)
+  model.requestQuit()
+  #expect(native.replies.isEmpty)
+  gate.open()
+  await model.settled()
+  #expect(model.documents.isEmpty)
+  #expect(native.replies == [true])
+}
+
+@Test @MainActor func failedMoveCloseKeepsTheOriginalOpen() async {
+  let native = Native()
+  let model = await app(native, open: [documentID])
+  native.perform = { _, _ in throw SlopDocumentFailure.save }
+  model.send(.moveToCloud, to: documentID)
+  await model.settled()
+  #expect(model.documents.map(\.url) == [documentURL])
+  #expect(model.acceptsCommands(documentID))
+  #expect(native.alerts.isEmpty)
+}

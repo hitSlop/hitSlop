@@ -56,10 +56,10 @@ import UIKit
       completionHandler(.noData)
       return
     }
-    Task { completionHandler(await refreshWidgets()) }
+    Task { completionHandler(await refreshWidgets(background: false)) }
   }
 
-  private func refreshWidgets() async -> UIBackgroundFetchResult {
+  private func refreshWidgets(background: Bool = true) async -> UIBackgroundFetchResult {
     let lease = PhoneRefreshLease()
     // UIKit calls this on the main thread; end the task before returning or the app is killed.
     lease.identifier = UIApplication.shared.beginBackgroundTask(withName: "Refresh library widgets") {
@@ -73,7 +73,12 @@ import UIKit
       let before = SlopLibrary.shared.entries
       do {
         try Task.checkCancellation()
-        try await SlopLibrary.shared.fetchInBackground()
+        if background {
+          try await SlopLibrary.shared.fetchInBackground()
+        } else {
+          await SlopLibrary.shared.receivedPush()
+        }
+        if SlopLibrary.shared.lastError != nil || !SlopLibrary.shared.isReady { return UIBackgroundFetchResult.failed }
         try Task.checkCancellation()
         await model.widgets.refreshPlaced()
         try Task.checkCancellation()

@@ -1,6 +1,8 @@
+@preconcurrency import CloudKit
 import Foundation
 import HitSlopCoreBinding
 import HitSlopTestSupport
+import Synchronization
 import Testing
 
 @testable import HitSlopCore
@@ -36,4 +38,79 @@ import Testing
     try? await owner.close()
     throw error
   }
+}
+
+/// Counts finished callers across tasks.
+private final class FinishedCount: Sendable { let value = Mutex(0) }
+
+// A second request must await the queued run, including its failure, rather than
+// reporting success while the first CloudKit operation is still outstanding.
+@Test(.timeLimit(.minutes(1))) func overlappingLibrarySyncRequestsAwaitTheRerun() async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let operations = AsyncStream<CKDatabaseOperation>.makeStream()
+  let sync = LibrarySync(library: library, zone: CKRecordZone.ID(zoneName: "Library")) {
+    operations.continuation.yield($0)
+  }
+  let finished = FinishedCount()
+  let first = Task { @Sendable [sync, finished] in
+    let result = await sync.sync(.changes)
+    finished.value.withLock { $0 += 1 }
+    return result
+  }
+  var iterator = operations.stream.makeAsyncIterator()
+  let initial = try #require(await iterator.next() as? CKModifyRecordZonesOperation)
+  let second = Task { @Sendable [sync, finished] in
+    let result = await sync.sync(.full, explicit: true)
+    finished.value.withLock { $0 += 1 }
+    return result
+  }
+  // Release CloudKit only once the second caller is queued behind the first run.
+  while await !sync.hasQueuedRequest { await Task.yield() }
+  #expect(finished.value.withLock { $0 } == 0)
+  initial.modifyRecordZonesResultBlock?(.failure(CKError(.networkUnavailable)))
+  let rerun = try #require(await iterator.next() as? CKModifyRecordZonesOperation)
+  #expect(finished.value.withLock { $0 } == 0)
+  rerun.modifyRecordZonesResultBlock?(.failure(CKError(.networkFailure)))
+  let a = await first.value
+  let b = await second.value
+  #expect(a.lastSuccess == nil)
+  #expect(a.lastError == b.lastError)
+  #expect(a.lastError != nil)
+  #expect(a.message == "Couldn't reach iCloud · will retry")
+  #expect(finished.value.withLock { $0 } == 2)
+  await sync.stop()
+}
+
+@Test func aFailedCloudRecordKeepsTheTokenAndItsRetryAcrossRelaunch() async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let previous = Data([1, 2, 3])
+  try library.saveChangeToken(bytes: previous)
+  let zone = CKRecordZone.ID(zoneName: "Library")
+  let id = CKRecord.ID(recordName: UUID().uuidString.lowercased(), zoneID: zone)
+  let sync = LibrarySync(library: library, zone: zone) { operation in
+    if let operation = operation as? CKModifyRecordZonesOperation {
+      operation.modifyRecordZonesResultBlock?(.success(()))
+    } else if let operation = operation as? CKModifySubscriptionsOperation {
+      operation.modifySubscriptionsResultBlock?(.success(()))
+    } else if let operation = operation as? CKFetchRecordZoneChangesOperation {
+      operation.recordWasChangedBlock?(id, .failure(CKError(.assetFileNotFound)))
+      operation.fetchRecordZoneChangesResultBlock?(.failure(CKError(.networkUnavailable)))
+    }
+  }
+  let result = await sync.sync(.full)
+  #expect(result.lastSuccess == nil)
+  #expect(result.lastError != nil)
+  #expect(result.issues[id.recordName] != nil)
+  #expect(try library.changeToken() == previous)
+  await sync.stop()
+  let reopened = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let retry = try #require(reopened.retries().first)
+  #expect(retry.id == id.recordName)
+  #expect(retry.incoming)
+  #expect(retry.retryAt > Date().timeIntervalSince1970)
+  #expect(try reopened.changeToken() == previous)
 }

@@ -2,7 +2,7 @@ import { defineDocument, defineSlop, s, type LiveDocument, type Value } from "..
 import type { Component } from "svelte";
 import { attachments } from "../../src/sdk/app/attachments";
 import {
-  getDocument, isSpeechError, speech, svelteApp,
+  getDocument, isSpeechError, speech, svelteApp, haptics,
   type CaptureMode, type CaptureProps, type SpeechTranscript, type WidgetProps,
 } from "../../src/sdk/app/store.svelte";
 
@@ -43,6 +43,19 @@ function declarations(view: Component) {
   defineDocument({ done: s.boolean({default:undefined}) });
 }
 void declarations;
+
+function tactileFeedback() {
+  const immediate: void = haptics.selection();
+  haptics.impact();
+  haptics.impact("soft");
+  haptics.notification("warning");
+  // @ts-expect-error Feedback styles come from Rust.
+  haptics.impact("buzz");
+  // @ts-expect-error Notifications express a standard outcome.
+  haptics.notification("tap");
+  return immediate;
+}
+void tactileFeedback;
 
 async function collectors(file: File) {
   const schema = defineDocument({ title: s.string(), photo: s.optional(s.string()) }, { initial: {title:""} });

@@ -42,6 +42,8 @@ function presentationStageCSS(stage: PresentationStage): string {
     `:where(${page},${page} body){margin:0;padding:0}` +
     `:where(${root},${root} body){width:100%;height:100%}` +
     `:where(${root} body){-webkit-user-select:none;user-select:none}` +
+    `:where(${root}[data-slop-platform="ios"] body){-webkit-tap-highlight-color:transparent}` +
+    `:where(${root}[data-slop-platform="ios"] button,${root}[data-slop-platform="ios"] a,${root}[data-slop-platform="ios"] [role="button"]){touch-action:manipulation}` +
     `:where(${root} input,${root} textarea,${root} [contenteditable=""],${root} [contenteditable="true"],${root} [contenteditable="plaintext-only"]){-webkit-user-select:text;user-select:text}` +
     `:where(${root} [data-slop-root],${root} body *:has([data-slop-root])){height:100%;min-height:0}` +
     (stage.mode === "transparent" || stage.mode === "skin"

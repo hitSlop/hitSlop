@@ -34,6 +34,7 @@ fn each_page_request_classifies_its_required_capability() {
         (PageRequest::Redo {}, None),
         (PageRequest::Config {}, None),
         (PageRequest::HostEnvironment {}, None),
+        (PageRequest::HapticsPlay { feedback: hitslop_core::page_wire::HapticFeedback::Selection {} }, None),
         (PageRequest::AttachmentsPut { bytes: String::new() }, None),
         (PageRequest::WindowResize { width: 320, height: 240 }, None),
         (PageRequest::SpeechTranscribe { attachment: "a".repeat(64), locale: None }, Some(Capability::Speech)),
@@ -53,6 +54,9 @@ fn page_requests_and_nested_batches_are_strict() {
         json!({"method":"open"}),
         json!({"method":"config"}),
         json!({"method":"host.environment"}),
+        json!({"method":"haptics.play","feedback":{"kind":"selection"}}),
+        json!({"method":"haptics.play","feedback":{"kind":"impact","style":"soft"}}),
+        json!({"method":"haptics.play","feedback":{"kind":"notification","notification":"success"}}),
         json!({"method":"flush"}),
         json!({"method":"apply", "batch":{"intents":[]}}),
         json!({"method":"window.resize", "width":240, "height":180}),
@@ -66,6 +70,9 @@ fn page_requests_and_nested_batches_are_strict() {
         json!({"method":"open", "extra":true}),
         json!({"method":"config", "extra":true}),
         json!({"method":"host.environment", "platform":"macos"}),
+        json!({"method":"haptics.play","feedback":{"kind":"impact","style":"unknown"}}),
+        json!({"method":"haptics.play","feedback":{"kind":"selection","intensity":1}}),
+        json!({"method":"haptics.play","feedback":{"kind":"notification"}}),
         json!({"method":"attachments.list"}),
         json!({"method":"apply", "batch":{}}),
         json!({"method":"apply", "batch":""}),
@@ -125,6 +132,10 @@ fn native_actions_and_host_requests_use_the_same_serializer() {
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&HostRequest::Publish { payload: "{}".into() }.to_json()).unwrap(),
         json!({"method":"publish","payload":"{}"})
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&HostReply::HapticsPlay.to_json()).unwrap(),
+        json!({"ok":true,"method":"haptics.play"})
     );
     let refused: serde_json::Value =
         serde_json::from_str(&HostReply::WindowResize { width: f64::NAN, height: 3.0 }.to_json()).unwrap();

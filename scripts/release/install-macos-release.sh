@@ -26,6 +26,12 @@ case "$build_arch" in
   *) echo "Unsupported macOS architecture: $build_arch" >&2; exit 69 ;;
 esac
 
+# This local installer uses automatic development provisioning, not Developer ID.
+# Keep library-only permissions but select the development CloudKit/APNs environments.
+/bin/cp "$repo_root/apps/apple/App/macOS/hitSlop.Release.entitlements" "$stage_dir/development.entitlements"
+/usr/bin/plutil -replace 'com\.apple\.developer\.icloud-container-environment' -string Development "$stage_dir/development.entitlements"
+/usr/bin/plutil -replace 'com\.apple\.developer\.aps-environment' -string development "$stage_dir/development.entitlements"
+
 echo "Building development-signed hitSlop Release for ${build_arch}…"
 /usr/bin/env xcodegen generate --spec "$repo_root/apps/apple/project.yml" --quiet
 /usr/bin/xcodebuild \
@@ -36,6 +42,7 @@ echo "Building development-signed hitSlop Release for ${build_arch}…"
   -scheme hitSlop-macOS \
   -configuration Release \
   -derivedDataPath "$stage_dir/derived" \
+  HITSLOP_RELEASE_ENTITLEMENTS="$stage_dir/development.entitlements" \
   DEVELOPMENT_TEAM="$team_id" \
   CODE_SIGN_STYLE=Automatic \
   CODE_SIGN_IDENTITY="$signing_identity" \

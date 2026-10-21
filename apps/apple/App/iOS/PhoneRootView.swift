@@ -25,6 +25,7 @@ struct PhoneRootView: View {
   @State private var query = ""
   @State private var category = "Popular"
   @State private var showSettings = false
+  @AppStorage(HapticPreferences.enabledKey) private var hapticsEnabled = true
   @State private var importAfterSettings = false
   @State private var showJoin = false
   @State private var showSharingAccount = false
@@ -73,6 +74,9 @@ struct PhoneRootView: View {
     ) {
       NavigationStack {
         Form {
+          Section("Interaction") {
+            Toggle("Haptic Feedback", isOn: $hapticsEnabled)
+          }
           Section("iCloud") {
             Text(library.status)
             Button("Sync Now") { Task { await library.syncNow() } }.disabled(library.isSyncing)

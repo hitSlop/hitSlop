@@ -28,6 +28,32 @@ async function preview(run: (page: Page) => Promise<void>) {
 const app = (page: Page) => page.frames().find(frame => frame.url().includes("/app.html"))!;
 const focused = (page: Page) => app(page).evaluate(() => document.activeElement?.getAttribute("aria-label"));
 
+test("a transitioning surface reverses without duplicate content and restores focus after closing", () =>
+  preview(async page => {
+    const frame = page.frameLocator("iframe");
+    const opener = frame.getByRole("button", { name: "Open surface", exact: true });
+    await opener.click();
+    await frame.getByRole("textbox", { name: "Surface draft" }).fill("Keep this draft");
+    // Reopen during the exit: the app may retarget while its DOM is still present.
+    await app(page).evaluate(async () => {
+      (document.querySelector('[data-dialog-close]') as HTMLElement).click();
+      await new Promise(requestAnimationFrame);
+      (document.querySelector('[data-dialog-trigger]') as HTMLElement).click();
+    });
+    await app(page).waitForFunction(() => document.querySelectorAll('[data-dialog-content]').length === 1);
+    expect(await frame.getByRole("textbox", { name: "Surface draft" }).inputValue()).toBe("Keep this draft");
+    await frame.getByRole("button", { name: "Close surface", exact: true }).click();
+    await app(page).waitForFunction(() => !document.querySelector('[data-dialog-content]'));
+    await app(page).waitForFunction(() => document.activeElement?.matches("[data-dialog-trigger]"));
+    expect(await opener.evaluate(element => document.activeElement === element)).toBe(true);
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await opener.click();
+    expect(await frame.getByRole("textbox", { name: "Surface draft" }).inputValue()).toBe("Keep this draft");
+    await app(page).waitForFunction(() => document.querySelector('[data-dialog-content]')!.getAnimations().every(animation => animation.playState === "finished"));
+    await page.keyboard.press("Escape");
+    await app(page).waitForFunction(() => !document.querySelector('[data-dialog-content]'));
+  }), 60000);
+
 // An IME's Enter commits the composition; only Enter after it finishes editing the field.
 test("Enter while composing keeps the text editor; Enter after composing moves to Focus destination", () =>
   preview(async (page) => {

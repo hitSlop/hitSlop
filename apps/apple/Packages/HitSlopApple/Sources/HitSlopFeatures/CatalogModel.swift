@@ -66,6 +66,8 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
   public var slug = ""
   public var isBundled = false
   public var isSynced = false
+  /// A synced entry kept in iCloud, not one kept only on this device.
+  public var inCloud = false
   public var description = ""
   public var categories: [SlopCategory] = []
   public var authorName: String?
@@ -141,6 +143,12 @@ public struct CatalogClient {
   }
 }
 
+/// The catalog's storage question can create a library copy or continue to the local picker.
+public enum CatalogStorageChoice: Sendable {
+  case local, cancelled
+  case created(URL)
+}
+
 /// The catalog window's state: templates and recent documents, the search, filter and
 /// selection over them, and creating a document from a template.
 @MainActor @Observable public final class CatalogModel {
@@ -148,7 +156,29 @@ public struct CatalogClient {
   public private(set) var filter: CatalogFilter = .category(.popular)
   public var selectedID: String?
   public private(set) var local: [CatalogEntry] = []
-  public private(set) var recents: [CatalogEntry] = []
+  private var recentFiles: [CatalogEntry] = []
+  /// The managed library's folder. Files inside it appear in Recents only as their synced
+  /// entries; anything else there (another account's or an earlier preview's library) is left out.
+  public var managedFolder: String?
+  /// Recent documents, newest first; a library document shows as its synced entry.
+  public var recents: [CatalogEntry] {
+    let synced = Dictionary(
+      self.synced.compactMap { entry -> (String, CatalogEntry)? in
+        guard case .recent(let url) = entry.source else { return nil }
+        return (url.standardizedFileURL.path, entry)
+      }, uniquingKeysWith: { first, _ in first })
+    return recentFiles.compactMap { recent in
+      guard case .recent(let url) = recent.source else { return recent }
+      let path = url.standardizedFileURL.path
+      if var entry = synced[path] {
+        entry.createdAt = recent.createdAt
+        entry.updatedAt = recent.updatedAt
+        return entry
+      }
+      if let managedFolder, path.hasPrefix(managedFolder) { return nil }
+      return recent
+    }
+  }
   public private(set) var localIssues: [String] = []
   /// The template being created, from choosing its destination until its copy finishes.
   public private(set) var creating: CatalogEntry?
@@ -158,6 +188,9 @@ public struct CatalogClient {
   public internal(set) var isQuitting = false
   /// Why the last creation failed, until the person acknowledges it.
   public var creationError: String?
+  @ObservationIgnored public var chooseStorage: @MainActor (CatalogEntry) async throws -> CatalogStorageChoice = { _ in
+    .local
+  }
 
   @ObservationIgnored private let client: CatalogClient
   @ObservationIgnored private var hasSelectedFilter = false
@@ -211,7 +244,7 @@ public struct CatalogClient {
     recentsTask = work.run {
       let entries = await self.client.recents()
       guard !Task.isCancelled else { return }
-      self.recents = entries
+      self.recentFiles = entries
       self.synchronizeSelection()
     }
   }
@@ -219,11 +252,11 @@ public struct CatalogClient {
   /// A document's artwork changed: only its entry is read again.
   public func artworkChanged(_ url: URL) {
     guard localTask != nil else { return }
-    guard recents.contains(where: { $0.source == .recent(url) }) else { return refreshRecents() }
+    guard recentFiles.contains(where: { $0.source == .recent(url) }) else { return refreshRecents() }
     work.run {
       let entry = await self.client.recent(url)
-      guard let index = self.recents.firstIndex(where: { $0.source == .recent(url) }) else { return }
-      if let entry { self.recents[index] = entry } else { self.recents.remove(at: index) }
+      guard let index = self.recentFiles.firstIndex(where: { $0.source == .recent(url) }) else { return }
+      if let entry { self.recentFiles[index] = entry } else { self.recentFiles.remove(at: index) }
       self.synchronizeSelection()
     }
   }
@@ -248,9 +281,14 @@ public struct CatalogClient {
   private func create(_ entry: CatalogEntry) async {
     var created: URL?
     do {
-      if let destination = try await client.chooseDestination(entry) {
-        isCopying = true
-        created = try await client.create(entry, destination)
+      switch try await chooseStorage(entry) {
+      case .created(let url): created = url
+      case .cancelled: break
+      case .local:
+        if let destination = try await client.chooseDestination(entry) {
+          isCopying = true
+          created = try await client.create(entry, destination)
+        }
       }
       refreshRecents()
     } catch {

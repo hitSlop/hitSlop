@@ -2,8 +2,8 @@
 
 hitSlop ships a macOS app and a matching Bun authoring CLI and SDK. The iPhone app
 (iOS 26+) is in TestFlight preview, with opening, editing, creation, Files import and
-Home Screen widgets that refresh in the background when iOS allows. The ordinary Mac
-release keeps Synced Library off until its Production rollout.
+Home Screen widgets that refresh in the background when iOS allows. The next Mac
+release includes the Synced Library.
 The [Synced Library and live sharing previews](architecture.md#sync) extend local
 documents across Apple devices and between people; [direction](roadmap.md) tracks rollout.
 The Mac catalog combines bundled templates, installed templates and Recents.

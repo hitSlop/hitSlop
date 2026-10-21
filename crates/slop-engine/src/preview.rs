@@ -104,6 +104,7 @@ pub fn serve(path: &Path) -> ExitCode {
                                     HostAction::WindowResize { width, height } => {
                                         HostReply::WindowResize { width: width.into(), height: height.into() }
                                     }
+                                    HostAction::HapticsPlay { .. } => HostReply::HapticsPlay,
                                     HostAction::Ready => HostReply::Ready,
                                     HostAction::PageRecovered => HostReply::PageRecovered,
                                     HostAction::Failed { .. } => HostReply::Failed,

@@ -6,7 +6,6 @@ extension Notification.Name {
   public static let hitSlopSharingAccountChanged = Notification.Name("hitSlop.sharingAccountChanged")
   public static let hitSlopSharingForeground = Notification.Name("hitSlop.sharingForeground")
   public static let hitSlopJoinSharedSlop = Notification.Name("hitSlop.joinSharedSlop")
-  public static let hitSlopNewSyncedChecklist = Notification.Name("hitSlop.newSyncedChecklist")
 }
 
 /// Preview builds (the `HITSLOP_SHARING_PREVIEW` compilation condition, e.g. TestFlight) enable it;
@@ -38,7 +37,7 @@ public enum SharingPreview {
 
 public enum SyncedLibraryPreview {
   public static let enabled: Bool = {
-    #if DEBUG || HITSLOP_SYNCED_LIBRARY
+    #if os(macOS) || DEBUG || HITSLOP_SYNCED_LIBRARY
       true
     #else
       false

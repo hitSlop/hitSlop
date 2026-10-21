@@ -12,6 +12,7 @@ export function createContext(
   options: {
     attachments: ReturnType<typeof ownerAttachments>;
     speech: ReturnType<typeof ownerSpeech>;
+    haptics: NonNullable<SlopContext["haptics"]>;
     resize(size: { width: number; height: number }): Promise<void>;
     reportError(error: unknown): void;
     environment: NonNullable<SlopContext["environment"]>;
@@ -38,6 +39,7 @@ export function createContext(
     bind: Object.freeze({ text: doc.bindText.bind(doc) }),
     attachments: Object.freeze(attachments),
     speech: Object.freeze(options.speech),
+    haptics: Object.freeze(options.haptics),
     window: Object.freeze({ resize: options.resize }),
     reportError: options.reportError,
   });

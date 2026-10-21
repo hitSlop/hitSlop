@@ -7,6 +7,11 @@ import HitSlopDocument
 /// the file's location only change the window, so the window does them at once.
 extension SlopDocumentWindowController {
   public var canExport: Bool { session.file.views.export }
+  /// A local slop can move into the library while iCloud is connected. The app checks this
+  /// again when the move runs, after the queue has stopped accepting other commands.
+  public var canMoveToCloud: Bool {
+    SyncedLibraryPreview.enabled && SlopLibrary.shared.isReady && SlopLibrary.shared.entry(at: session.file.url) == nil
+  }
 
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
   /// follow. Closing, retrying and the save-failure sheet's choices always can; anything
@@ -14,6 +19,7 @@ extension SlopDocumentWindowController {
   /// importing a palette needs a page that accepts work.
   public func isAvailable(_ command: SlopDocumentCommand) -> Bool {
     switch command {
+    case .moveToCloud: commandsEnabled && isContentReady && canMoveToCloud
     case .close, .retry, .retrySave, .discardUnsaved: true
     case .sharePNG, .sharePDF, .exportPNG, .exportPDF: commandsEnabled && isContentReady && canExport
     case .importTheme: commandsEnabled && isContentReady && session.acceptsPageWork
@@ -77,6 +83,7 @@ extension SlopDocumentWindowController {
         reportLifecycleFailure(.recovery, error: error)
         throw error
       }
+    case .moveToCloud: throw SlopFailure("Move to iCloud must run through the app.")
     case .close: try await closeDocument()
     case .retrySave: try await session.retrySave()
     case .discardUnsaved:

@@ -1,5 +1,6 @@
 import { createEnvironment } from "../sdk/environment";
 import type { HostEnvironment } from "../wire/page.generated";
+import { installMobileEditing } from "./mobile-editing";
 
 /** Install before app mount. Static development views have the same neutral attributes
  * as real captures, even when their viewport changes or a preset changes behind them. */
@@ -22,9 +23,11 @@ export function installEnvironment(identity?: HostEnvironment) {
   const observer = new MutationObserver(attributes);
   observer.observe(root, { attributes: true, attributeFilter: ["data-slop-capture"] });
   attributes();
+  const stopEditing = installMobileEditing(state.environment);
   return {
     ...state,
     dispose() {
+      stopEditing();
       observer.disconnect();
       unsubscribe();
       state.dispose();

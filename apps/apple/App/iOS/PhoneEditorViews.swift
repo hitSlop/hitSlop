@@ -11,17 +11,30 @@ struct PhoneEditorView: View {
   @ObservedObject var library: SlopLibrary
   @State private var pageBackground = UIColor.systemBackground
   @State private var showSharing = false
+  @State private var keyboardVisible = false
 
   var body: some View {
     Group {
       if let webView = session.currentWebView {
         PhoneWebView(webView: webView)
           .id(ObjectIdentifier(webView))
-          .ignoresSafeArea(.container)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
           .background(Color(uiColor: pageBackground).ignoresSafeArea(.container))
           .onReceive(webView.publisher(for: \.underPageBackgroundColor)) { color in
             pageBackground = color ?? .systemBackground
           }
+          .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) {
+            note in
+            guard let window = webView.window,
+              let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
+            else { return }
+            let keyboard = window.convert(frame, from: window.screen.coordinateSpace)
+            keyboardVisible = keyboard.height > 0 && window.bounds.intersects(keyboard)
+          }
+          .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardVisible = false
+          }
+          .onDisappear { keyboardVisible = false }
       }
     }
     .allowsHitTesting(!model.opening)
@@ -39,6 +52,13 @@ struct PhoneEditorView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbarRole(.editor)
     .toolbar {
+      if keyboardVisible {
+        ToolbarItem(placement: .topBarTrailing) {
+          Button("Done") { session.currentWebView?.endEditing(true) }
+            .accessibilityLabel("Dismiss keyboard")
+            .accessibilityIdentifier("dismiss-keyboard")
+        }
+      }
       ToolbarItem(placement: .topBarTrailing) {
         Menu {
           Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }

@@ -17,13 +17,13 @@ Make little apps for your Mac with Svelte & your AI coding agent: a planner that
 
 **Install hitSlop once. Make and share little apps as files.** Each `.slop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with hitSlop, without packaging and signing a separate Mac app.
 
-You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone TestFlight preview brings slops to your phone, with a Synced Library through your iCloud account. The ordinary Mac release keeps the library off until its Production rollout.
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone TestFlight preview brings slops to your phone, with a Synced Library through your iCloud account. The next Mac release includes the Synced Library.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It opens, edits and creates slops, includes a Quick Checklist starter, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and the live sharing preview; ordinary Mac releases do not include live collaboration.
+iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and the live sharing preview. The next Mac release includes Synced Library on CloudKit Production, matching TestFlight/App Store iPhones. Ordinary Mac releases do not include live collaboration.
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -87,7 +87,7 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Local documents need no account or server. The preview's Synced Library uses your private iCloud storage; the ordinary Mac release keeps it off until its Production rollout. Keep active files outside iCloud Drive and other synced folders.
+- Local documents need no account or server. Choose iCloud when creating a slop to keep it in sync with your iPhone through your private iCloud storage, or choose On this Mac and pick a folder. Move an existing local slop with **File ▸ Move to iCloud…**. The iPhone preview includes the Popular templates and Little Days. Keep active files outside iCloud Drive and other synced folders.
 - A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder.
 - Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
@@ -157,7 +157,7 @@ Here’s where we’re heading:
 - [x] **iPhone preview.** Open, edit and create slops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
 - [x] **Synced Library preview.** Keep slops in sync between Mac and iPhone through iCloud.
 - [x] **Live collaboration preview.** Edit together through a link on Mac, iPhone or Chrome.
-- [ ] **Release the previews.** Bring iPhone to the App Store and Synced Library to the Mac release, and polish sharing.
+- [ ] **Release the previews.** Bring iPhone to the App Store and polish sharing. The next Mac release includes Synced Library on CloudKit Production.
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
 - [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.

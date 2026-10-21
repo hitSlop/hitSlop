@@ -2,6 +2,38 @@ import XCTest
 
 /// Run after PhoneEditorTests, which prepares a minimal document in the app container.
 final class PhoneLifecycleTests: XCTestCase {
+  @MainActor func testKeyboardCanBeDismissedWithoutLeavingTheDocument() throws {
+    let app = XCUIApplication()
+    app.launch()
+    let document = app.buttons["Editor fixture with icon"]
+    XCTAssertTrue(document.waitForExistence(timeout: 30), "Run PhoneEditorTests to prepare the fixture")
+    document.tap()
+    let input = app.textViews.firstMatch
+    XCTAssertTrue(input.waitForExistence(timeout: 30))
+    let originalWidth = input.frame.width
+    input.tap()
+    let edit = " mobile-keyboard-" + UUID().uuidString.prefix(8)
+    input.typeText(edit)
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+    XCTAssertEqual(input.frame.width, originalWidth, accuracy: 1, "Focusing a small input must not zoom the page")
+    let dismiss = app.buttons["dismiss-keyboard"]
+    XCTAssertTrue(dismiss.waitForExistence(timeout: 5), "Every document needs a native keyboard dismissal action")
+    dismiss.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))
+    XCTAssertTrue((input.value as? String)?.contains(edit) == true)
+    let page = app.descendants(matching: .any)["document-page"].firstMatch
+    XCTAssertTrue(page.exists)
+    page.pinch(withScale: 2, velocity: 1)
+    XCTAssertEqual(input.frame.width, originalWidth, accuracy: 1, "Pinching must not scale the editor")
+    XCUIDevice.shared.orientation = .landscapeLeft
+    XCTAssertLessThan(app.frame.width, app.frame.height, "The iPhone app stays in portrait")
+    XCUIDevice.shared.orientation = .portrait
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "Portrait editor after typing and dismissing keyboard"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+  }
+
   @MainActor func testKeyboardRotationBackgroundRestartAndFilesRoundTrip() throws {
     continueAfterFailure = false
     let app = XCUIApplication()
@@ -9,7 +41,7 @@ final class PhoneLifecycleTests: XCTestCase {
     let document = app.buttons["Editor fixture with icon"]
     XCTAssertTrue(document.waitForExistence(timeout: 30), "Run the unit-test proof before the UI proof")
     document.tap()
-    let input = app.webViews.textViews.firstMatch
+    let input = app.textViews.firstMatch
     XCTAssertTrue(input.waitForExistence(timeout: 30))
     let edit = " phone-ui-" + UUID().uuidString.prefix(8)
     input.tap()
@@ -17,6 +49,7 @@ final class PhoneLifecycleTests: XCTestCase {
     XCTAssertTrue(app.keyboards.firstMatch.exists)
     XCUIDevice.shared.orientation = .landscapeLeft
     XCTAssertTrue(input.waitForExistence(timeout: 10))
+    XCTAssertLessThan(app.frame.width, app.frame.height, "The iPhone app stays in portrait")
     XCUIDevice.shared.orientation = .portrait
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "iPhone editor with keyboard"

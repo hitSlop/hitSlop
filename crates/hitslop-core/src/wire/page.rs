@@ -47,6 +47,34 @@ impl HostEnvironment {
     }
 }
 
+/// Discrete, best-effort feedback; never document state or a permission grant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", deny_unknown_fields, rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum HapticFeedback {
+    Selection {},
+    Impact { style: HapticImpactStyle },
+    Notification { notification: HapticNotification },
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum HapticImpactStyle {
+    Light,
+    Medium,
+    Heavy,
+    Soft,
+    Rigid,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+pub enum HapticNotification {
+    Success,
+    Warning,
+    Error,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields, rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
@@ -61,6 +89,10 @@ pub enum PageRequest {
     Config {},
     #[serde(rename = "host.environment")]
     HostEnvironment {},
+    #[serde(rename = "haptics.play")]
+    HapticsPlay {
+        feedback: HapticFeedback,
+    },
     #[serde(rename = "attachments.put")]
     AttachmentsPut {
         bytes: String,
@@ -108,6 +140,7 @@ impl PageRequest {
             | Self::Redo {}
             | Self::Config {}
             | Self::HostEnvironment {}
+            | Self::HapticsPlay { .. }
             | Self::AttachmentsPut { .. }
             | Self::WindowResize { .. }
             | Self::Ready {}
@@ -146,6 +179,7 @@ impl PageRequest {
             | Self::Redo {}
             | Self::Config {}
             | Self::HostEnvironment {}
+            | Self::HapticsPlay { .. }
             | Self::Ready {}
             | Self::PageRecovered {} => true,
         };
@@ -157,6 +191,9 @@ impl PageRequest {
 #[derive(Debug)]
 pub enum HostAction {
     Environment,
+    HapticsPlay {
+        feedback: HapticFeedback,
+    },
     WindowResize {
         width: u32,
         height: u32,
@@ -219,6 +256,10 @@ pub enum PageSuccess {
     HostEnvironment {
         ok: True,
         environment: HostEnvironment,
+    },
+    #[serde(rename = "haptics.play")]
+    HapticsPlay {
+        ok: True,
     },
     #[serde(rename = "attachments.put")]
     AttachmentsPut {
@@ -324,6 +365,7 @@ impl SpeechOutcome {
 /// Native results use the same serializer as owner results.
 pub enum HostReply {
     Environment { environment: HostEnvironment },
+    HapticsPlay,
     WindowResize { width: f64, height: f64 },
     SpeechTranscribe { outcome: SpeechOutcome },
     Ready,
@@ -336,6 +378,7 @@ impl HostReply {
         let ok = True;
         crate::encode(&match self {
             Self::Environment { environment } => PageSuccess::HostEnvironment { ok, environment },
+            Self::HapticsPlay => PageSuccess::HapticsPlay { ok },
             Self::WindowResize { width, height } if width.is_finite() && height.is_finite() => {
                 PageSuccess::WindowResize { ok, width, height }
             }

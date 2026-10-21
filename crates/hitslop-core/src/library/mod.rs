@@ -79,6 +79,15 @@ pub struct Entry {
     pub local_only: bool,
     pub problem: Option<String>,
 }
+#[derive(Clone, Debug)]
+pub struct Retry {
+    pub id: String,
+    pub title: String,
+    pub template: String,
+    pub message: String,
+    pub retry_at: f64,
+    pub incoming: bool,
+}
 pub struct Upload {
     pub entry: Entry,
     pub asset_path: Option<String>,
@@ -108,7 +117,9 @@ impl Library {
           CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, template TEXT NOT NULL,
             confirmed TEXT NOT NULL DEFAULT '', fields BLOB, deleted INTEGER NOT NULL DEFAULT 0,
             confirmed_deleted INTEGER NOT NULL DEFAULT 0, remote_delete INTEGER NOT NULL DEFAULT 0,
-            local_only INTEGER NOT NULL DEFAULT 0, problem TEXT);",
+            local_only INTEGER NOT NULL DEFAULT 0, problem TEXT);
+          CREATE TABLE IF NOT EXISTS retries(id TEXT PRIMARY KEY, title TEXT NOT NULL, template TEXT NOT NULL,
+            message TEXT NOT NULL, retry_at REAL NOT NULL, incoming INTEGER NOT NULL);",
         )?;
         let columns = db
             .prepare("PRAGMA table_info(documents)")?
@@ -285,6 +296,85 @@ impl Library {
         inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
         self.entry(&inner, id)
     }
+    /// Adopt a closed local document without changing its identity or the source file.
+    pub fn adopt(&self, source: &Path, title: &str) -> Result<Entry> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(failed("Enter a name for this slop"));
+        }
+        file::document_location(source)?;
+        // Refuse before moving anything: the library could never upload it.
+        if std::fs::metadata(source)?.len() > snapshot::MAX_FILE_BYTES {
+            return Err(Error {
+                issue: Issue::TooLarge,
+                message: "This preview syncs slops up to 16 MiB. This one stays where it is.".into(),
+            });
+        }
+        let lease = crate::registry::Lease::acquire(source)?;
+        let opened = file::open(source, true)?;
+        let store = Store::open(source, Mode::Snapshot)?;
+        let id = opened.document_uuid.as_ref().ok_or_else(|| failed("Not a document"))?.clone();
+        Self::valid_id(&id)?;
+        if store.share()?.is_some() {
+            return Err(failed("This slop is already shared or belongs to a library"));
+        }
+        let template = store.app().app.metadata().slug.clone();
+        let mut inner = self.inner.lock().unwrap();
+        let exists: bool =
+            inner.db.query_row("SELECT EXISTS(SELECT 1 FROM documents WHERE id=?1)", [&id], |r| r.get(0))?;
+        if exists || self.path(&id).exists() {
+            return Err(failed("This slop is already in iCloud"));
+        }
+        snapshot::install(source, &self.path(&id), &id).map_err(failed)?;
+        let bound = lease.check().map_err(Error::from).and_then(|()| {
+            self.with_owner(&mut inner, &id, |owner| {
+                snapshot::request(
+                    owner,
+                    Request::Share {
+                        share: Share { room: id.clone(), endpoint: crate::LIBRARY_SHARE_ENDPOINT.into() },
+                    },
+                )
+                .map_err(failed)?;
+                Ok(())
+            })
+        });
+        if let Err(error) = bound {
+            // Without a row the copy would never sync and would block every retry.
+            inner.retained.remove(&id);
+            let _ = std::fs::remove_file(self.path(&id));
+            return Err(error);
+        }
+        inner.db.execute("INSERT INTO documents(id,title,template) VALUES(?1,?2,?3)", params![id, title, template])?;
+        let entry = self.entry(&inner, &id)?;
+        inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
+        self.entry(&inner, &id)
+    }
+    /// Cleanup is separate so the native app can open the adopted copy first. A changed
+    /// or busy source is retained; both accepted copies must still contain the same work.
+    #[cfg(target_os = "macos")]
+    pub fn trash_adopted(&self, source: &Path, id: &str) -> Result<()> {
+        Self::valid_id(id)?;
+        let inner = self.inner.lock().unwrap();
+        let entry = self.entry(&inner, id)?;
+        if entry.deleted || entry.problem.is_some() || entry.local_only {
+            return Err(failed("The iCloud copy is unavailable"));
+        }
+        crate::file::trash_verified(source, &self.path(id), |resolved| {
+            let original = snapshot::inspect(resolved).map_err(crate::error::failed)?;
+            let saved = snapshot::inspect(&self.path(id)).map_err(crate::error::failed)?;
+            if original.id != id
+                || original.fingerprint != saved.fingerprint
+                || original.version != saved.version
+                || original.app_digest != saved.app_digest
+                || original.artwork_digest != saved.artwork_digest
+                || Store::open(resolved, Mode::Snapshot)?.share()?.is_some()
+            {
+                return Err(crate::error::failed("The original or iCloud copy changed; both copies were kept"));
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
     /// The same owner handles live edits and derived images. Local files are not library entries.
     pub fn publish_artwork(
         &self,
@@ -318,10 +408,10 @@ impl Library {
         if entry.deleted {
             return Ok(true);
         }
-        let share = if let Some(owner) = inner.live.get(id).and_then(Weak::upgrade) {
-            owner.share().map_err(failed)?
-        } else {
-            Store::open(Path::new(&entry.path), Mode::Snapshot).map_err(failed)?.share().map_err(failed)?
+        // An editor that already closed has saved its membership to the file.
+        let share = match inner.live.get(id).and_then(Weak::upgrade).and_then(|owner| owner.share().ok()) {
+            Some(share) => share,
+            None => Store::open(Path::new(&entry.path), Mode::Snapshot).map_err(failed)?.share().map_err(failed)?,
         };
         Ok(share.is_none_or(|s| s.endpoint == crate::LIBRARY_SHARE_ENDPOINT))
     }
@@ -436,8 +526,9 @@ impl Library {
                         message: "Sync paused: these copies use different data schemas or theme palettes. Your local edits are saved.".into(),
                     });
                 }
-                self.with_owner(&mut inner, id, |owner| {
+                let merged = self.with_owner(&mut inner, id, |owner| {
                     snapshot::merge(owner, source).map_err(failed)?;
+                    snapshot::require_history(owner, source).map_err(failed)?;
                     if source_version == version {
                         let store = Store::open(source, Mode::Snapshot)?;
                         let result = snapshot::request_typed(
@@ -455,7 +546,11 @@ impl Library {
                         }
                     }
                     Ok(())
-                })?;
+                });
+                if let Err(error) = merged {
+                    inner.db.execute("UPDATE documents SET problem=?2 WHERE id=?1", params![id, error.message])?;
+                    return Err(error);
+                }
             } else {
                 snapshot::install(source, &self.path(id), id).map_err(failed)?;
                 adopted_artwork = Some(source_version.into());
@@ -573,12 +668,59 @@ impl Library {
         }
         Ok(())
     }
-    pub fn engine_state(&self) -> Result<Option<Vec<u8>>> {
-        Ok(self.inner.lock().unwrap().db.query_row("SELECT value FROM meta WHERE key='engine'", [], |r| r.get(0)).ok())
+    pub fn confirmed_revision(&self, id: &str) -> Result<Option<(String, String)>> {
+        use rusqlite::OptionalExtension;
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .db
+            .query_row("SELECT confirmed,confirmed_asset FROM documents WHERE id=?1 AND problem IS NULL", [id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?)
     }
-    pub fn save_engine_state(&self, bytes: &[u8]) -> Result<()> {
+    pub fn retries(&self) -> Result<Vec<Retry>> {
+        let inner = self.inner.lock().unwrap();
+        Ok(inner
+            .db
+            .prepare("SELECT id,title,template,message,retry_at,incoming FROM retries")?
+            .query_map([], |r| {
+                Ok(Retry {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    template: r.get(2)?,
+                    message: r.get(3)?,
+                    retry_at: r.get(4)?,
+                    incoming: r.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+    pub fn retry(&self, retry: &Retry) -> Result<()> {
         self.inner.lock().unwrap().db.execute(
-            "INSERT INTO meta VALUES('engine',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            "INSERT INTO retries VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET
+            title=excluded.title,template=excluded.template,message=excluded.message,retry_at=excluded.retry_at,incoming=excluded.incoming",
+            params![retry.id, retry.title, retry.template, retry.message, retry.retry_at, retry.incoming],
+        )?;
+        Ok(())
+    }
+    pub fn clear_retry(&self, id: &str) -> Result<()> {
+        self.inner.lock().unwrap().db.execute("DELETE FROM retries WHERE id=?1", [id])?;
+        Ok(())
+    }
+    pub fn change_token(&self) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .db
+            .query_row("SELECT value FROM meta WHERE key='change_token'", [], |r| r.get(0))
+            .ok())
+    }
+    pub fn save_change_token(&self, bytes: &[u8]) -> Result<()> {
+        self.inner.lock().unwrap().db.execute(
+            "INSERT INTO meta VALUES('change_token',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             [bytes],
         )?;
         Ok(())

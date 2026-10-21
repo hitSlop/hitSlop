@@ -8,5 +8,17 @@
 	<true/>
 	<key>com.apple.security.device.camera</key>
 	<true/>
+    <key>com.apple.application-identifier</key>
+    <string>78UAXU8QG8.com.hitslop.app</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>78UAXU8QG8</string>
+    <key>com.apple.developer.icloud-services</key>
+    <array><string>CloudKit</string></array>
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array><string>iCloud.com.hitslop.app</string></array>
+    <key>com.apple.developer.icloud-container-environment</key>
+    <string>Production</string>
+    <key>com.apple.developer.aps-environment</key>
+    <string>production</string>
 </dict>
 </plist>

@@ -5,11 +5,13 @@ documents from bundled or installed templates, edit them in the window or throug
 (their coding agent included), and export PNG and PDF.
 
 The iPhone app (iOS 26+) is in TestFlight preview. It opens, edits and creates slops,
-starts with Quick Checklist, and imports from Files. The Mac/iPhone Synced Library
-keeps managed slops in sync through the person's iCloud account. iPhone Home Screen
+bundles the Popular templates plus Little Days, and imports from Files. The current
+iPhone host is portrait-only; per-slop orientation declarations remain future work. The Mac/iPhone Synced Library
+keeps managed slops in sync through the person's iCloud account. The next Mac release
+includes the Synced Library on CloudKit Production, matching TestFlight/App Store
+iPhones; the currently published Mac release does not include it. iPhone Home Screen
 widgets render library slops with a widget view locally, open them on tap, and refresh
-in the background when iOS allows. The ordinary Mac release keeps Synced Library off
-until its Production rollout.
+in the background when iOS allows.
 [Architecture](architecture.md#apple-library-preview) owns the library design.
 
 Live sharing is a developer/TestFlight preview, outside ordinary Mac releases. The

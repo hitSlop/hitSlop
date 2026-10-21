@@ -58,6 +58,7 @@ jobs:
           fetch-depth: 0
       - name: Validate release secrets
         env:
+          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
@@ -67,7 +68,7 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          for name in MACOS_CERTIFICATE MACOS_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_API_KEY_P8 SPARKLE_PRIVATE_KEY; do
+          for name in MACOS_PROVISIONING_PROFILE MACOS_CERTIFICATE MACOS_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD ASC_API_KEY_ID ASC_API_ISSUER_ID ASC_API_KEY_P8 SPARKLE_PRIVATE_KEY; do
             if [ -z "${!name}" ]; then
               echo "::error::Missing release secret: $name"
               exit 1
@@ -156,6 +157,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
       - name: Package notarized DMG
         env:
+          MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
           ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}

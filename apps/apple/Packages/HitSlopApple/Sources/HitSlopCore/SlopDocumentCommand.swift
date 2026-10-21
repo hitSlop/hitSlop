@@ -5,7 +5,7 @@ import HitSlopCoreBinding
 /// close, an export or a save recovery. What only changes the window (pin, the theme panel,
 /// Reveal) is the window's own.
 public enum SlopDocumentCommand: Equatable, Sendable {
-  case exportPNG, exportPDF, duplicate, retry, close
+  case exportPNG, exportPDF, duplicate, retry, close, moveToCloud
   /// Opens the share chooser. Preparing a selected format is a separate operation.
   case share
   case sharePDF, sharePNG, shareSlop

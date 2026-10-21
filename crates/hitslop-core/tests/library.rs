@@ -56,6 +56,8 @@ fn relay_checkpoints_throttle_automatic_staging_but_manual_saves_and_ordinary_do
     assert!(library.stage_sync(&entry.id, true).unwrap().is_some());
     assert!(!library.stage_allowed(&entry.id, false).unwrap());
     close(&owner);
+    // The closed editor can outlive its close; its saved file still answers.
+    assert!(!library.stage_allowed(&entry.id, false).unwrap());
     drop(library);
     let reopened = Library::open(&dir.path().join("library"), "account").unwrap();
     assert!(reopened.stage_allowed(&entry.id, false).unwrap());
@@ -473,4 +475,171 @@ fn incompatible_schemas_theme_tokens_and_newer_markers_preserve_local_edits() {
         }
         assert_eq!(std::fs::read(&entry.path).unwrap(), before, "{kind} must not write the local file");
     }
+}
+
+#[test]
+fn adopt_preserves_identity_work_and_source_and_schedules_upload() {
+    let (dir, template) = fixture();
+    let source = dir.path().join("local.slop");
+    file::create_document(&template, &source).unwrap();
+    let owner = Owner::open(&source, Mode::Document, Arc::new(|_| {})).unwrap();
+    edit(
+        &owner,
+        json!([{"type":"set","path":["title"],"value":"My saved work"}, {"type":"setTheme","values":{"accent":"#123456"}}]),
+    );
+    close(&owner);
+    let before = std::fs::read(&source).unwrap();
+    let info = snapshot::inspect(&source).unwrap();
+    let library = Library::open(&dir.path().join("library"), "account").unwrap();
+    let entry = library.adopt(&source, "  My slop  ").unwrap();
+    assert_eq!(entry.id, info.id);
+    assert_eq!(entry.title, "My slop");
+    assert!(entry.dirty);
+    assert_eq!(library.entries().unwrap()[0].id, info.id);
+    assert_eq!(snapshot::inspect(std::path::Path::new(&entry.path)).unwrap().fingerprint, info.fingerprint);
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+    let adopted = Owner::open(std::path::Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap();
+    let share = adopted.share().unwrap().unwrap();
+    assert_eq!(share.room, info.id);
+    assert_eq!(share.endpoint, hitslop_core::LIBRARY_SHARE_ENDPOINT);
+    close(&adopted);
+    assert!(library.stage(&entry.id).unwrap().asset_path.is_some());
+    assert!(library.adopt(&source, "Again").is_err());
+    assert_eq!(library.entries().unwrap().len(), 1);
+}
+
+#[test]
+fn adopt_refuses_busy_shared_invalid_and_template_files_without_writing() {
+    let (dir, template) = fixture();
+    let library = Library::open(&dir.path().join("library"), "account").unwrap();
+    let source = dir.path().join("local.slop");
+    file::create_document(&template, &source).unwrap();
+    let owner = Owner::open(&source, Mode::Document, Arc::new(|_| {})).unwrap();
+    assert_eq!(library.adopt(&source, "Busy").unwrap_err().issue, Issue::Busy);
+    snapshot::request(
+        &owner,
+        Request::Share {
+            share: hitslop_core::store::Share {
+                room: "relay-room".into(),
+                endpoint: "https://relay.example.test".into(),
+            },
+        },
+    )
+    .unwrap();
+    close(&owner);
+    let before = std::fs::read(&source).unwrap();
+    assert!(library.adopt(&source, "Shared").is_err());
+    assert_eq!(std::fs::read(&source).unwrap(), before);
+    assert!(library.adopt(&template, "Template").is_err());
+    let invalid = dir.path().join("invalid.slop");
+    std::fs::write(&invalid, b"invalid").unwrap();
+    assert!(library.adopt(&invalid, "Invalid").is_err());
+    assert!(library.adopt(&source, " ").is_err());
+    let oversize = dir.path().join("oversize.slop");
+    std::fs::File::create(&oversize).unwrap().set_len(snapshot::MAX_FILE_BYTES + 1).unwrap();
+    assert_eq!(library.adopt(&oversize, "Oversize").unwrap_err().issue, Issue::TooLarge);
+    assert!(library.entries().unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(dir.path().join("library/documents")).unwrap().count(), 0);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn adopt_cleanup_keeps_a_busy_or_changed_original() {
+    let (dir, template) = fixture();
+    let source = dir.path().join("local.slop");
+    file::create_document(&template, &source).unwrap();
+    let library = Library::open(&dir.path().join("library"), "account").unwrap();
+    let entry = library.adopt(&source, "Keep both if changed").unwrap();
+    let saved = snapshot::inspect(std::path::Path::new(&entry.path)).unwrap();
+    let owner = Owner::open(&source, Mode::Document, Arc::new(|_| {})).unwrap();
+    assert_eq!(library.trash_adopted(&source, &entry.id).unwrap_err().issue, Issue::Busy);
+    edit(&owner, json!([{"type":"set","path":["title"],"value":"Later local work"}]));
+    close(&owner);
+    assert!(library.trash_adopted(&source, &entry.id).is_err());
+    assert!(source.exists());
+    assert_ne!(snapshot::inspect(&source).unwrap().fingerprint, saved.fingerprint);
+    assert_eq!(snapshot::inspect(std::path::Path::new(&entry.path)).unwrap().fingerprint, saved.fingerprint);
+}
+
+#[test]
+fn complete_snapshots_include_incoming_history_even_when_import_is_a_noop() {
+    let (dir, template) = fixture();
+    let left = Library::open(&dir.path().join("left"), "account").unwrap();
+    let right = Library::open(&dir.path().join("right"), "account").unwrap();
+    let entry = left.create(&template, "History").unwrap();
+    let seed = left.stage(&entry.id).unwrap();
+    deliver(&right, &seed);
+    let path = PathBuf::from(&right.entries().unwrap()[0].path);
+    let owner = Arc::new(Owner::open(&path, Mode::Document, Arc::new(|_| {})).unwrap());
+    right.register(&owner).unwrap();
+    edit(&owner, json!([{"type":"set","path":["title"],"value":"Incoming edits"}]));
+    let incoming = right.stage(&entry.id).unwrap();
+    for _ in 0..2 {
+        deliver(&left, &incoming);
+        let saved = hitslop_core::store::Store::open(std::path::Path::new(&entry.path), Mode::Snapshot).unwrap();
+        let remote = hitslop_core::store::Store::open(
+            std::path::Path::new(incoming.asset_path.as_ref().unwrap()),
+            Mode::Snapshot,
+        )
+        .unwrap();
+        let local_doc = loro::LoroDoc::new();
+        local_doc.import(&saved.document().unwrap().checkpoint().unwrap()).unwrap();
+        let remote_doc = loro::LoroDoc::new();
+        remote_doc.import(&remote.document().unwrap().checkpoint().unwrap()).unwrap();
+        let local_vv = local_doc.oplog_vv();
+        assert!(remote_doc.state_frontiers().iter().all(|id| local_vv.includes_id(id)));
+    }
+    close(&owner);
+}
+
+#[test]
+fn history_guard_refuses_a_receipt_until_incoming_operations_are_present() {
+    let (dir, template) = fixture();
+    let left = Library::open(&dir.path().join("left"), "account").unwrap();
+    let right = Library::open(&dir.path().join("right"), "account").unwrap();
+    let entry = left.create(&template, "History guard").unwrap();
+    let seed = left.stage(&entry.id).unwrap();
+    deliver(&right, &seed);
+    let path = PathBuf::from(&right.entries().unwrap()[0].path);
+    let remote = Arc::new(Owner::open(&path, Mode::Document, Arc::new(|_| {})).unwrap());
+    right.register(&remote).unwrap();
+    edit(&remote, json!([{"type":"set","path":["title"],"value":"Missing here"}]));
+    let incoming = right.stage(&entry.id).unwrap();
+    let source = std::path::Path::new(incoming.asset_path.as_ref().unwrap());
+    let local = Arc::new(Owner::open(std::path::Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap());
+    left.register(&local).unwrap();
+    assert_eq!(
+        snapshot::require_history(&local, source).unwrap_err(),
+        "Incoming document history is incomplete; will retry"
+    );
+    deliver(&left, &incoming);
+    snapshot::require_history(&local, source).unwrap();
+    close(&local);
+    close(&remote);
+}
+
+#[test]
+fn retries_and_change_tokens_survive_reopening_without_confirming_work() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let entry = library.create(&template, "Retry").unwrap();
+    library
+        .retry(&hitslop_core::library::Retry {
+            id: entry.id.clone(),
+            title: entry.title.clone(),
+            template: entry.template.clone(),
+            message: "Offline".into(),
+            retry_at: 123.0,
+            incoming: true,
+        })
+        .unwrap();
+    library.save_change_token(&[1, 2]).unwrap();
+    drop(library);
+    let library = Library::open(&root, "account").unwrap();
+    assert_eq!(library.retries().unwrap()[0].retry_at, 123.0);
+    assert_eq!(library.change_token().unwrap(), Some(vec![1, 2]));
+    assert!(library.entries().unwrap()[0].dirty);
+    library.clear_retry(&entry.id).unwrap();
+    assert!(library.retries().unwrap().is_empty());
 }

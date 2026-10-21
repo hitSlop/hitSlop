@@ -3,6 +3,7 @@
 import { createContext as abi1 } from "./abi/1";
 import { ownerAttachments } from "./attachments";
 import { ownerSpeech } from "./speech";
+import { ownerHaptics } from "./haptics";
 import { call, hasBrowserBridge } from "./bridge";
 import { OwnerDocument as Document } from "./owner/document";
 import { nativeTransport } from "./owner/transport";
@@ -111,7 +112,7 @@ export async function boot() {
   const environment = installEnvironment(
     preview.host?.environment?.current ?? (await hostEnvironment)?.environment,
   );
-  preview.host?.environment?.subscribe(() => {
+  const stopPreviewEnvironment = preview.host?.environment?.subscribe(() => {
     environment.setHost(preview.host!.environment!.current);
   });
   if (native && config.style) {
@@ -134,6 +135,7 @@ export async function boot() {
     attachments,
     environment: environment.environment,
     speech: ownerSpeech(),
+    haptics: ownerHaptics(),
     resize: async (size) => {
       if (native) await call({ method: "window.resize", ...size });
     },
@@ -151,7 +153,16 @@ export async function boot() {
     target,
     recovered: native ? () => call({ method: "pageRecovered" }) : undefined,
   });
-  Object.assign(globalThis.__slop!, lifecycle);
+  Object.assign(globalThis.__slop!, lifecycle, {
+    close: async () => {
+      try {
+        await lifecycle.close();
+      } finally {
+        stopPreviewEnvironment?.();
+        environment.dispose();
+      }
+    },
+  });
   if (native) await call({ method: "ready" });
   preview.host?.ready?.();
 }

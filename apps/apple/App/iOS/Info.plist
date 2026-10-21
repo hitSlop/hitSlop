@@ -34,8 +34,6 @@
   </dict></array>
   <key>UISupportedInterfaceOrientations</key><array>
     <string>UIInterfaceOrientationPortrait</string>
-    <string>UIInterfaceOrientationLandscapeLeft</string>
-    <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
   <key>UTExportedTypeDeclarations</key><array><dict>
     <key>UTTypeIdentifier</key><string>com.hitslop.slop</string>
