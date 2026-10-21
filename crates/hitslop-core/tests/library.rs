@@ -535,6 +535,9 @@ fn adopt_refuses_busy_shared_invalid_and_template_files_without_writing() {
     std::fs::write(&invalid, b"invalid").unwrap();
     assert!(library.adopt(&invalid, "Invalid").is_err());
     assert!(library.adopt(&source, " ").is_err());
+    let oversize = dir.path().join("oversize.slop");
+    std::fs::File::create(&oversize).unwrap().set_len(snapshot::MAX_FILE_BYTES + 1).unwrap();
+    assert_eq!(library.adopt(&oversize, "Oversize").unwrap_err().issue, Issue::TooLarge);
     assert!(library.entries().unwrap().is_empty());
     assert_eq!(std::fs::read_dir(dir.path().join("library/documents")).unwrap().count(), 0);
 }

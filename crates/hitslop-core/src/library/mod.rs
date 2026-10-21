@@ -292,6 +292,13 @@ impl Library {
             return Err(failed("Enter a name for this slop"));
         }
         file::document_location(source)?;
+        // Refuse before moving anything: the library could never upload it.
+        if std::fs::metadata(source)?.len() > snapshot::MAX_FILE_BYTES {
+            return Err(Error {
+                issue: Issue::TooLarge,
+                message: "This preview syncs slops up to 16 MiB. This one stays where it is.".into(),
+            });
+        }
         let lease = crate::registry::Lease::acquire(source)?;
         let opened = file::open(source, true)?;
         let store = Store::open(source, Mode::Snapshot)?;
@@ -308,15 +315,24 @@ impl Library {
             return Err(failed("This slop is already in iCloud"));
         }
         snapshot::install(source, &self.path(&id), &id).map_err(failed)?;
-        lease.check()?;
-        self.with_owner(&mut inner, &id, |owner| {
-            snapshot::request(
-                owner,
-                Request::Share { share: Share { room: id.clone(), endpoint: crate::LIBRARY_SHARE_ENDPOINT.into() } },
-            )
-            .map_err(failed)?;
-            Ok(())
-        })?;
+        let bound = lease.check().map_err(Error::from).and_then(|()| {
+            self.with_owner(&mut inner, &id, |owner| {
+                snapshot::request(
+                    owner,
+                    Request::Share {
+                        share: Share { room: id.clone(), endpoint: crate::LIBRARY_SHARE_ENDPOINT.into() },
+                    },
+                )
+                .map_err(failed)?;
+                Ok(())
+            })
+        });
+        if let Err(error) = bound {
+            // Without a row the copy would never sync and would block every retry.
+            inner.retained.remove(&id);
+            let _ = std::fs::remove_file(self.path(&id));
+            return Err(error);
+        }
         inner.db.execute("INSERT INTO documents(id,title,template) VALUES(?1,?2,?3)", params![id, title, template])?;
         let entry = self.entry(&inner, &id)?;
         inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
