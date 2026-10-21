@@ -6,7 +6,7 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import { bindText, getDocument } from "hitslop/svelte";
+  import { bindText, getDocument, haptics } from "hitslop/svelte";
   import schema, { currencies, statuses } from "./schema";
   import { addItem, invoiceView, removeItem, setCurrency, setStatus } from "./items";
   const doc = getDocument(schema);
@@ -18,16 +18,22 @@
     return new Intl.NumberFormat(undefined, { style: "currency", currency: doc.current.currency }).format(value);
   }
 
-  function chooseStatus(value: string | undefined) {
-    if (statuses.some((status) => status === value)) doc.change(tx => setStatus(tx, value as (typeof statuses)[number]));
+  async function chooseStatus(value: string | undefined) {
+    if (value === doc.current.status || !statuses.some((status) => status === value)) return;
+    await doc.change(tx => setStatus(tx, value as (typeof statuses)[number]));
+    if (value === "paid") haptics.notification("success");
+    else haptics.selection();
   }
 
-  function chooseCurrency(value: string | undefined) {
-    if (currencies.some((currency) => currency === value)) doc.change(tx => setCurrency(tx, value as (typeof currencies)[number]));
+  async function chooseCurrency(value: string | undefined) {
+    if (value === doc.current.currency || !currencies.some((currency) => currency === value)) return;
+    await doc.change(tx => setCurrency(tx, value as (typeof currencies)[number]));
+    haptics.selection();
   }
 
-  function addLine() {
-    doc.change(tx => addItem(tx));
+  async function addLine() {
+    await doc.change(tx => addItem(tx));
+    haptics.impact();
   }
 </script>
 
@@ -107,7 +113,7 @@
             <label><span class="invoice-mobile-label">Qty</span><input aria-label="Quantity for line {index + 1}" type="number" min="0" step="0.01" bind:value={() => doc.at(item).quantity.value, (next) => { doc.at(item).quantity.value = next; }} /></label>
             <label><span class="invoice-mobile-label">Rate</span><input aria-label="Rate for line {index + 1}" type="number" min="0" step="0.01" bind:value={() => doc.at(item).rate.value, (next) => { doc.at(item).rate.value = next; }} /></label>
             <output class="invoice-amount"><span class="invoice-mobile-label">Amount</span>{money(item.quantity * item.rate)}</output>
-            <button class="invoice-remove" data-slop-export="hide" aria-label="Remove line {index + 1}" onclick={() => doc.change(tx => removeItem(tx, item.$id))}><Trash2 size={15} strokeWidth={1.7} /></button>
+            <button class="invoice-remove" data-slop-export="hide" aria-label="Remove line {index + 1}" onclick={async () => { await doc.change(tx => removeItem(tx, item.$id)); haptics.impact("medium"); }}><Trash2 size={15} strokeWidth={1.7} /></button>
           </div>
         {/each}
         <Button.Root class="invoice-add" data-slop-export="hide" onclick={addLine}><Plus size={14} strokeWidth={1.8} /> Add line item</Button.Root>

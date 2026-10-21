@@ -2,7 +2,7 @@
   import "hitslop/base.css";
   import "./styles.css";
   import type { Value } from "hitslop";
-  import { attachments, bindText, getDocument, motion } from "hitslop/svelte";
+  import { attachments, bindText, getDocument, motion, haptics } from "hitslop/svelte";
   import { onDestroy } from "svelte";
   import { Progress, Select, Checkbox, Dialog } from "bits-ui";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
@@ -72,18 +72,22 @@
   function formatTime(seconds: number): string {
     return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
   }
-  function addNewIngredient(): void {
-    doc.change((tx) => addIngredient(tx, "New ingredient"));
+  async function addNewIngredient(): Promise<void> {
+    await doc.change((tx) => addIngredient(tx, "New ingredient"));
+    haptics.impact();
   }
-  function moveRowBy(kind: RowKind, id: string, direction: "up" | "down"): void {
-    doc.change((tx) => moveRow(tx, doc.current, kind, id, direction));
+  async function moveRowBy(kind: RowKind, id: string, direction: "up" | "down"): Promise<void> {
+    await doc.change((tx) => moveRow(tx, doc.current, kind, id, direction));
+    haptics.selection();
   }
-  function addNewStep(): void {
+  async function addNewStep(): Promise<void> {
     const number = doc.current.steps.length + 1;
-    doc.change((tx) => addStep(tx, { title: `Step ${number}`, text: "Describe the next step." }));
+    await doc.change((tx) => addStep(tx, { title: `Step ${number}`, text: "Describe the next step." }));
+    haptics.impact();
   }
-  function removeStep(id: string): void {
-    doc.change((tx) => removeRow(tx, "step", id));
+  async function removeStep(id: string): Promise<void> {
+    await doc.change((tx) => removeRow(tx, "step", id));
+    haptics.impact("medium");
     delete remainingByStep[id];
     remainingByStep = { ...remainingByStep };
     completedStepIDs = completedStepIDs.filter((stepID) => stepID !== id);
@@ -129,10 +133,12 @@
   function goToStep(index: number): void {
     if (!doc.current.steps.length) return;
     pauseTimer();
+    const previousIndex = currentStepIndex;
     currentStepIndex = Math.max(0, Math.min(index, doc.current.steps.length - 1));
     const step = doc.current.steps[currentStepIndex];
     if (!step) return;
     announcement = `${stepTitle(step, currentStepIndex)}, step ${currentStepIndex + 1} of ${doc.current.steps.length}.`;
+    if (currentStepIndex !== previousIndex) haptics.selection();
   }
   function nextStep(): void {
     const step = activeStep;
@@ -142,6 +148,7 @@
     if (currentStepIndex === doc.current.steps.length - 1) {
       finished = true;
       announcement = `${doc.current.title} is ready.`;
+      haptics.notification("success");
       return;
     }
     goToStep(currentStepIndex + 1);
@@ -164,6 +171,7 @@
     if (!file) return;
     if (file.type && !file.type.startsWith("image/")) {
       photoError = "That photo couldn’t be added. Try another image.";
+      haptics.notification("error");
       return;
     }
     photoError = null;
@@ -172,7 +180,9 @@
       await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
         tx.fields.photo.$set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
       });
+      haptics.notification("success");
     } catch {
+      haptics.notification("error");
       photoError = "That photo couldn’t be added. Try another image.";
     }
   }
@@ -231,7 +241,7 @@
             <button type="button" aria-label="Replace meal photo" onclick={() => picker?.click()}>
               <Camera size={13} />Replace
             </button>
-            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={() => doc.fields.photo.$clear()}><X size={13} /></button>
+            <button type="button" class="photoRemove" aria-label="Remove meal photo" onclick={async () => { await doc.fields.photo.$clear(); haptics.impact("medium"); }}><X size={13} /></button>
           </div>{/if}
           <input bind:this={picker} class="srOnly" data-slop-export="hide" type="file" accept="image/*" tabindex="-1" onchange={onPhoto} />
         </figure>
@@ -319,7 +329,7 @@
               <li class="ingredientRow" data-checked={item.checked}>
                 <Checkbox.Root
                   checked={item.checked}
-                  onCheckedChange={(checked) => doc.change((tx) => setChecked(tx, item.$id, checked === true))}
+                  onCheckedChange={async (checked) => { await doc.change((tx) => setChecked(tx, item.$id, checked === true)); haptics.selection(); }}
                   aria-label="Mark {item.text || 'untitled ingredient'} {item.checked ? 'still needed' : 'complete'}"
                 >
                   {#snippet children({ checked })}{#if checked}<Check size={10} strokeWidth={3} />{/if}{/snippet}
@@ -328,7 +338,7 @@
                 <div class="rowActions" data-slop-export="hide">
                   <button aria-label="Move ingredient up" disabled={index === 0} onclick={() => moveRowBy("ingredient", item.$id, "up")}><ArrowUp size={10} /></button>
                   <button aria-label="Move ingredient down" disabled={index === doc.current.ingredients.length - 1} onclick={() => moveRowBy("ingredient", item.$id, "down")}><ArrowDown size={10} /></button>
-                  <button aria-label="Remove ingredient" onclick={() => doc.change((tx) => removeRow(tx, "ingredient", item.$id))}><Trash2 size={10} /></button>
+                  <button aria-label="Remove ingredient" onclick={async () => { await doc.change((tx) => removeRow(tx, "ingredient", item.$id)); haptics.impact("medium"); }}><Trash2 size={10} /></button>
                 </div>
               </li>
             {:else}

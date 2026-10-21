@@ -10,7 +10,7 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
-  import { bindText, getDocument } from "hitslop/svelte";
+  import { bindText, getDocument, haptics } from "hitslop/svelte";
   import schema from "./schema";
 
   const doc = getDocument(schema);
@@ -73,10 +73,12 @@
   async function addCategory() {
     const { id } = await doc.change(tx => insertCategory(tx, newCategory.name, newCategory.allocated));
     selectedCategoryId = id;
+    haptics.impact();
   }
   async function removeCategory(id: string) {
     const next = doc.current.categories.find((cat) => cat.$id !== id);
     await doc.change(tx => dropCategory(tx, id));
+    haptics.impact("medium");
     categoryMotion.delete(id);
     if (selectedCategory?.$id === id) selectedCategoryId = next?.$id;
   }
@@ -152,6 +154,7 @@
     if (!row || Number.isNaN(amount) || amount <= 0) return;
     const name = await doc.change(tx => logExpense(tx, doc.current, row.$id, amount));
     calcHistory = `Logged +${formatCurrency(amount)} to ${name}`;
+    haptics.notification("success");
   }
   function handleKeydown(event: KeyboardEvent) {
     const tag = (event.target as HTMLElement)?.tagName?.toLowerCase();
@@ -213,7 +216,7 @@
               {@const isOver = money(cat.spent) > money(cat.allocated)}
               <li class="catRow" data-selected={selectedCategory?.$id === cat.$id}>
                 <div class="catMeta">
-                  <button type="button" class="catSelect" data-active={selectedCategory?.$id === cat.$id} aria-label="Select {cat.name} for calculator" aria-pressed={selectedCategory?.$id === cat.$id} onclick={() => (selectedCategoryId = cat.$id)}>
+                  <button type="button" class="catSelect" data-active={selectedCategory?.$id === cat.$id} aria-label="Select {cat.name} for calculator" aria-pressed={selectedCategory?.$id === cat.$id} onclick={() => { if (selectedCategory?.$id !== cat.$id) { selectedCategoryId = cat.$id; haptics.selection(); } }}>
                     <span class="catDot"></span>
                   </button>
                   <input class="catName" aria-label="Category name" use:bindText={doc.at(cat).name} onfocus={() => (selectedCategoryId = cat.$id)} />

@@ -1,7 +1,7 @@
 <script lang="ts">
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, draft, getDocument } from "hitslop/svelte";
+  import { bindText, draft, getDocument, haptics } from "hitslop/svelte";
   import type { Value } from "hitslop";
   import { prefersReducedMotion } from "svelte/motion";
   import { flip } from "svelte/animate";
@@ -30,12 +30,16 @@
   }
 
   async function addNewItem(event: SubmitEvent) {
-    if (await newItem.submit(event)) composer?.focus();
+    if (await newItem.submit(event)) {
+      haptics.impact();
+      composer?.focus();
+    }
   }
 
-  function clearDone() {
+  async function clearDone() {
     if (!doneCount) return;
-    doc.change((tx) => clearCheckedItems(tx, doc.current));
+    await doc.change((tx) => clearCheckedItems(tx, doc.current));
+    haptics.notification("success");
   }
 </script>
 
@@ -46,7 +50,7 @@
         {#if editable}
           <Checkbox.Root
             checked={item.done}
-            onCheckedChange={(checked) => doc.change((tx) => setDone(tx, item.$id, checked === true))}
+            onCheckedChange={async (checked) => { await doc.change((tx) => setDone(tx, item.$id, checked === true)); haptics.selection(); }}
             aria-label={`Mark ${item.text || "untitled item"} ${item.done ? "still needed" : "in the cart"}`}
           >
             {#snippet children({ checked })}{#if checked}<Check size={12} strokeWidth={3} />{/if}{/snippet}
@@ -59,7 +63,7 @@
         <span class="badge">{item.category}</span>
         {#if editable}
           <Tooltip.Root>
-            <Tooltip.Trigger class="remove" data-slop-export="hide" aria-label={`Delete ${item.text || "untitled item"}`} onclick={() => doc.change((tx) => removeItem(tx, item.$id))}>
+            <Tooltip.Trigger class="remove" data-slop-export="hide" aria-label={`Delete ${item.text || "untitled item"}`} onclick={async () => { await doc.change((tx) => removeItem(tx, item.$id)); haptics.impact("medium"); }}>
               <Trash2 size={13} />
             </Tooltip.Trigger>
             <Tooltip.Portal>
@@ -89,7 +93,7 @@
           <span class="count">{doneCount}/{totalCount} done</span>
         </div>
 
-        <Tabs.Root value={filter} onValueChange={(value) => { if (value === "All" || isCategory(value)) filter = value; }}>
+        <Tabs.Root value={filter} onValueChange={(value) => { if ((value === "All" || isCategory(value)) && value !== filter) { filter = value; haptics.selection(); } }}>
           <Tabs.List class="tabs" aria-label="Aisle filters" data-slop-export="hide">
             <Tabs.Trigger value="All" class="tab">All</Tabs.Trigger>
             {#each categories as category}
@@ -100,7 +104,7 @@
 
         <form class="composer" data-slop-export="hide" onsubmit={addNewItem}>
           <input bind:this={composer} bind:value={newItem.value} aria-label="New grocery item" placeholder="Add milk, bread…" />
-          <Select.Root type="single" value={aisle} items={categoryItems} onValueChange={(value) => { if (isCategory(value)) aisle = value; }}>
+          <Select.Root type="single" value={aisle} items={categoryItems} onValueChange={(value) => { if (isCategory(value) && value !== aisle) { aisle = value; haptics.selection(); } }}>
             <Select.Trigger class="select-trigger" aria-label="Aisle for new item">
               <Select.Value placeholder="Aisle" />
               <ChevronDown size={12} strokeWidth={2.2} />

@@ -64,7 +64,7 @@ struct PhoneEditorView: View {
           Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
           Button("Redo", systemImage: "arrow.uturn.forward") { model.undo(redo: true) }
           Button("Theme", systemImage: "paintpalette") { model.showTheme = true }
-          Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { Task { await library.syncNow() } }
+          Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { Task { await model.syncNow() } }
           if session.sharing != nil {
             Button("Collaborate", systemImage: "person.2") { showSharing = true }
           }
@@ -113,7 +113,7 @@ private struct PhoneWebView: UIViewRepresentable {
 
 struct PhoneExportView: UIViewControllerRepresentable {
   let url: URL
-  let finished: () -> Void
+  let finished: (Bool) -> Void
   func makeCoordinator() -> Coordinator { Coordinator(finished) }
   func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
     let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
@@ -123,10 +123,10 @@ struct PhoneExportView: UIViewControllerRepresentable {
   }
   func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
   final class Coordinator: NSObject, UIDocumentPickerDelegate {
-    let finished: () -> Void
-    init(_ finished: @escaping () -> Void) { self.finished = finished }
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { finished() }
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { finished() }
+    let finished: (Bool) -> Void
+    init(_ finished: @escaping (Bool) -> Void) { self.finished = finished }
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { finished(true) }
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { finished(false) }
   }
 }
 

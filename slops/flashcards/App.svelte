@@ -14,7 +14,7 @@
   import Shuffle from "@lucide/svelte/icons/shuffle";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import X from "@lucide/svelte/icons/x";
-  import { getDocument } from "hitslop/svelte";
+  import { getDocument, haptics } from "hitslop/svelte";
   import schema from "./schema";
   import { BOXES, addCard, addDeck, editCard, gradeCard, newDeckKey, nextBox, removeCard, shuffleDeck, studyView } from "./study";
 
@@ -45,6 +45,7 @@
   const dialogOpen = $derived(addingDeck || editing);
 
   function selectDeck(deckKey: string): void {
+    if (deckKey !== activeDeck?.deckKey) haptics.selection();
     selectedDeck = deckKey;
     selectedBox = 0;
     cardPos = 0;
@@ -53,6 +54,7 @@
   }
 
   function selectBox(box: number): void {
+    if (box !== selectedBox) haptics.selection();
     selectedBox = box;
     cardPos = 0;
     flipped = false;
@@ -61,9 +63,10 @@
   function flipCard(): void {
     if (!currentCard || dialogOpen) return;
     flipped = !flipped;
+    haptics.selection();
   }
 
-  function grade(good: boolean): void {
+  async function grade(good: boolean): Promise<void> {
     const deck = activeDeck;
     const graded = currentCard;
     if (!deck || !graded || dialogOpen || !flipped) return;
@@ -79,13 +82,15 @@
     const nextIndex = nextId !== gradedId ? remaining.findIndex((card) => card.$id === nextId) : -1;
     cardPos = nextIndex >= 0 ? nextIndex : Math.min(previousIndex, Math.max(0, remaining.length - 1));
     flipped = false;
-    doc.change((tx) => gradeCard(tx, doc.current, deck.$id, gradedId, good, Date.now()));
+    await doc.change((tx) => gradeCard(tx, doc.current, deck.$id, gradedId, good, Date.now()));
+    haptics.notification(good ? "success" : "error");
   }
 
-  function shuffle(): void {
+  async function shuffle(): Promise<void> {
     const deck = activeDeck;
     if (!deck) return;
-    doc.change((tx) => shuffleDeck(tx, doc.current, deck.$id, Math.random));
+    await doc.change((tx) => shuffleDeck(tx, doc.current, deck.$id, Math.random));
+    haptics.impact();
     cardPos = 0;
     flipped = false;
   }
@@ -120,15 +125,17 @@
       flipped = false;
     }
     editing = false;
+    haptics.impact();
   }
 
-  function removeCurrent(): void {
+  async function removeCurrent(): Promise<void> {
     const deck = activeDeck;
     const card = currentCard;
     if (!deck || !card) return;
     cardPos = Math.min(cardPos, Math.max(0, deck.cards.length - 2));
     flipped = false;
-    doc.change((tx) => removeCard(tx, doc.current, deck.$id, card.$id));
+    await doc.change((tx) => removeCard(tx, doc.current, deck.$id, card.$id));
+    haptics.impact("medium");
   }
 
   async function createDeck(): Promise<void> {
@@ -140,6 +147,7 @@
     flipped = false;
     draftDeck = "";
     addingDeck = false;
+    haptics.impact();
   }
 
   function handleKeyDown(event: KeyboardEvent): void {

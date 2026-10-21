@@ -12,7 +12,7 @@
   import EyeOff from "@lucide/svelte/icons/eye-off";
   import "hitslop/base.css";
   import "./styles.css";
-  import { getDocument } from "hitslop/svelte";
+  import { getDocument, haptics } from "hitslop/svelte";
   import schema, { DAYS, COLORS } from "./schema";
   import {
     DAY_NAMES,
@@ -141,44 +141,46 @@
   }
   const destination = $derived(getClass(entry.day, entry.periodKey));
   const willSwap = $derived(destination && destination.$id !== entry.$id);
-  function save(event: SubmitEvent) {
+  async function save(event: SubmitEvent) {
     event.preventDefault();
     error = "";
     if (modal === "class") {
       error = classError(doc.current, entry, fresh ? undefined : entry.$id);
       if (error) return;
-      doc.change((tx) => saveClass(tx, doc.current, entry, fresh ? undefined : entry.$id));
+      await doc.change((tx) => saveClass(tx, doc.current, entry, fresh ? undefined : entry.$id));
     } else if (modal === "period") {
       error = periodError(period, doc.current.periods);
       if (error) return;
-      doc.change((tx) => savePeriod(tx, doc.current, period, fresh ? undefined : period.$id));
+      await doc.change((tx) => savePeriod(tx, doc.current, period, fresh ? undefined : period.$id));
     } else if (modal === "activity") {
       error = activityError(activity);
       if (error) return;
-      doc.change((tx) => saveActivity(tx, doc.current, activity, fresh ? undefined : activity.$id));
+      await doc.change((tx) => saveActivity(tx, doc.current, activity, fresh ? undefined : activity.$id));
     } else if (modal === "details") {
-      doc.change((tx) => saveDetails(tx, details));
+      await doc.change((tx) => saveDetails(tx, details));
     } else if (modal === "copy") {
       if (!isDay(copyFrom)) return;
       if (!confirmCopy && doc.current.classes.some((c) => c.day !== copyFrom)) {
         confirmCopy = true;
         return;
       }
-      doc.change((tx) => copyDay(tx, doc.current, copyFrom));
+      await doc.change((tx) => copyDay(tx, doc.current, copyFrom));
     }
     open = false;
+    haptics.notification("success");
   }
-  function remove() {
-    if (modal === "class") doc.change((tx) => removeClass(tx, doc.current, entry.$id));
-    else if (modal === "activity") doc.change((tx) => removeActivity(tx, doc.current, activity.$id));
+  async function remove() {
+    if (modal === "class") await doc.change((tx) => removeClass(tx, doc.current, entry.$id));
+    else if (modal === "activity") await doc.change((tx) => removeActivity(tx, doc.current, activity.$id));
     else if (modal === "period") {
       if (!confirmDelete && doc.current.classes.some((c) => c.periodKey === period.periodKey)) {
         confirmDelete = true;
         return;
       }
-      doc.change((tx) => removePeriod(tx, doc.current, period.$id));
+      await doc.change((tx) => removePeriod(tx, doc.current, period.$id));
     } else return;
     open = false;
+    haptics.impact("medium");
   }
   function restoreFocus(event: Event) {
     event.preventDefault();
@@ -236,7 +238,7 @@
     drag = null;
     target = null;
   }
-  function endDrag(event: PointerEvent) {
+  async function endDrag(event: PointerEvent) {
     if (!drag) return;
     const d = drag;
     const t = target;
@@ -247,7 +249,9 @@
     }
     if (!t) return;
     if (!doc.current.classes.some((c) => c.$id === d.id)) return;
-    doc.change((tx) => moveClass(tx, doc.current, d.id, t.day, t.periodKey));
+    if (d.day === t.day && d.periodKey === t.periodKey) return;
+    await doc.change((tx) => moveClass(tx, doc.current, d.id, t.day, t.periodKey));
+    haptics.impact();
   }
   onDestroy(() => cancelAnimationFrame(raf));
 </script>

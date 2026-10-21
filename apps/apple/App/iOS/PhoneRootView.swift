@@ -76,10 +76,11 @@ struct PhoneRootView: View {
         Form {
           Section("Interaction") {
             Toggle("Haptic Feedback", isOn: $hapticsEnabled)
+              .appHaptic(.selection, trigger: hapticsEnabled)
           }
           Section("iCloud") {
             Text(library.status)
-            Button("Sync Now") { Task { await library.syncNow() } }.disabled(library.isSyncing)
+            Button("Sync Now") { Task { await model.syncNow() } }.disabled(library.isSyncing)
             Text("Your edits save on this device first, then sync to your other devices.").foregroundStyle(.secondary)
           }
           Section {
@@ -110,7 +111,9 @@ struct PhoneRootView: View {
       }.tint(PhoneStyle.accent)
     }
     .sheet(isPresented: Binding(get: { model.exported != nil }, set: { if !$0 { model.finishExport() } })) {
-      if let exported = model.exported { PhoneExportView(url: exported, finished: model.finishExport) }
+      if let exported = model.exported {
+        PhoneExportView(url: exported) { model.finishExport(completed: $0) }
+      }
     }
     .alert("hitSlop", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
       if case .failed = model.saveStatus {
@@ -122,6 +125,9 @@ struct PhoneRootView: View {
     } message: {
       Text(model.message ?? "")
     }
+    .appHaptic(.success, trigger: model.successFeedback)
+    .appHaptic(.impact(weight: .medium), trigger: model.deletionFeedback)
+    .appHaptic(.error, trigger: model.message) { _, message in message != nil }
     .task {
       library.activated(scenePhase == .active)
       library.start()

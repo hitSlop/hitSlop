@@ -3,7 +3,7 @@
   import { Dialog, Select, Checkbox } from "bits-ui";
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, getDocument } from "hitslop/svelte";
+  import { bindText, getDocument, haptics } from "hitslop/svelte";
   import schema from "./schema";
   import {
     type Task,
@@ -122,16 +122,20 @@
       return;
     }
     const taskId = draft.taskId;
+    const wasDone = allTasks.find(task => task.$id === taskId)?.done ?? false;
     await doc.change((tx) =>
       taskId ? updateBlock(tx, doc.current, taskId, input) : addBlock(tx, doc.current, input),
     );
     dialogOpen = false;
+    if (input.done && !wasDone) haptics.notification("success");
+    else haptics.impact();
   }
 
   async function remove() {
     const taskId = editor?.taskId;
     if (!taskId) return;
     await doc.change((tx) => removeBlock(tx, doc.current, taskId));
+    haptics.impact("medium");
     dialogOpen = false;
   }
 
@@ -271,7 +275,9 @@
     if (!task) return;
     const time = g.nextStart === null ? "" : clock(g.nextStart);
     const durationMinutes = g.nextStart === null ? g.end - g.start : g.nextEnd - g.nextStart;
+    if (g.day === g.source && time === task.time && durationMinutes === duration(task)) return;
     await commitTask(task, g.day, time, durationMinutes);
+    haptics.impact();
     message = `Moved ${task.title} to ${doc.current.days[g.day]?.name}, ${time || "Anytime"}`;
   }
 
@@ -287,10 +293,12 @@
         board?.querySelector<HTMLButtonElement>(`[data-task-id="${CSS.escape(id)}"]`)?.focus(),
       );
       message = `${task.title}, ${target.name}`;
+      haptics.impact();
     } else if (event.key === "ArrowUp" || event.key === "ArrowDown") {
       if (minutes(task.time) === null) return;
       const start = await doc.change((tx) => nudgeBlock(tx, task, event.key === "ArrowUp" ? -15 : 15, edge));
       message = `${task.title}, ${clock(start)}`;
+      haptics.selection();
     }
   }
 
