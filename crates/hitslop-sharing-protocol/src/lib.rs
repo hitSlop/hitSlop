@@ -61,3 +61,6 @@ pub fn page_policy() -> String {
 pub fn valid_room(room: &str) -> bool {
     room.len() == 32 && room.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+
+#[cfg(test)]
+mod tests;

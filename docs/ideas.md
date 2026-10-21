@@ -271,8 +271,9 @@ background execution remain design work; this proposal sets no new API names or 
 
 ## On the desktop, and with other people
 
-- **Widgets.** macOS image widgets already use dedicated `Widget.svelte` captures of
-  saved state. Release-candidate qualification and broader platform support remain;
+- **Widgets.** Mac desktop widgets and iPhone Home Screen widgets in the TestFlight
+  preview use dedicated `Widget.svelte` captures of saved state. Background refresh
+  on iPhone and release-candidate qualification remain;
   see [widget qualification](roadmap.md#later).
 - **History scrubber.** A timeline of whatever history remains under the
   [current retention policy](architecture.md#saving). Saved history can be pruned while
@@ -302,9 +303,10 @@ background execution remain design work; this proposal sets no new API names or 
 
 ### Other platforms
 
-The Swift host stays the Mac host. Windows, iOS, Android and Linux each get a thin host
-around the same Rust core and page shell. A host never owns document semantics, so a new
-one is a window, a WebView, one bridge and a lifecycle, not a second engine. Nothing here is
+The Swift Mac and iPhone hosts use the same Rust core and page shell; the iPhone app
+is in TestFlight preview on iOS 26+. See the [Apple library architecture](architecture.md#apple-library-preview).
+Windows, Android and Linux remain proposed thin hosts around that core and shell. A host never owns document semantics, so a new
+one is a window, a WebView, one bridge and a lifecycle, not a second engine. No additional platform is
 scheduled; the [roadmap](roadmap.md#next) lists the prerequisites.
 
 **What every host owns, and nothing else.**
@@ -318,13 +320,13 @@ scheduled; the [roadmap](roadmap.md#next) lists the prerequisites.
   `prepareClose` and `cancelClose`.
 - Failure and save-failure screens, quit and close handoff, the catalog, updates and telemetry.
 
-When a second host exists, this list should move into the [engineering
-contract](engineering-contract.md) as the rule for hosts.
+The Mac and iPhone hosts share these responsibilities; the [engineering
+contract](engineering-contract.md) governs their document and bridge boundaries.
 
 | Platform | Host | Notes |
 |---|---|---|
-| iOS | Native Swift: SwiftUI and `WKWebView`, reusing the Apple packages through UniFFI | WidgetKit, Quick Look and share extensions are Swift on Apple platforms anyway. No child processes, so the restricted evaluator needs an in-process form. |
-| Android | Native Kotlin: Activity and Android WebView, the core through UniFFI's Kotlin bindings | The WebView message-listener API reports the sender's origin and whether it is the main frame, which would give native admission. Not yet verified here. Same in-process evaluator need as iOS. |
+| iPhone (TestFlight preview) | Native Swift: SwiftUI and `WKWebView`, reusing the Apple packages through UniFFI | In-process Rust capture and Home Screen widgets are implemented; authored commands remain unavailable. |
+| Android | Native Kotlin: Activity and Android WebView, the core through UniFFI's Kotlin bindings | The WebView message-listener API reports the sender's origin and whether it is the main frame, which would give native admission. Not yet verified here. Needs an in-process evaluator design. |
 | Windows and Linux | One Rust desktop host on `tao` and `wry`, with the bridge admission and window-shape code owned by per-OS adapter modules | One codebase for two systems is the only case where `wry` pays for itself. Windows may use `webview2-com` directly; a Windows spike decides. |
 
 `wry` is not a fit for mobile, where it still needs Swift or Kotlin glue. Tauri is the same
@@ -336,8 +338,7 @@ young Rust bindings.
 
 **Before any of them.** The core runs on Unix today: the owner socket, the writer registry,
 exclusive rename publication and the child-process evaluator. A Windows host first needs the
-platform-driver seam from the roadmap and a port of those drivers. iOS and Android need the
-evaluator to run in process.
+platform-driver seam from the roadmap and a port of those drivers. iPhone already uses in-process capture; Android still needs an in-process evaluator design.
 
 **What the [macOS `wry` spike](evidence/wry-host-spike-2026-10-16.md) found.**
 - Stock `wry` hands the page's IPC handler only the frame's URL, not `isMainFrame` or the
@@ -404,7 +405,8 @@ does not freeze their API or promise that every future addition is compatible.
 The manifesto also argues for cloud sandboxes, organization-wide governance and routing
 between model providers. Those serve an enterprise agent platform. hitSlop takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
-stays local, with no account.
+keeps local documents usable without an account. Optional Synced Library uses the
+person's iCloud account; live-link owners sign in with Apple in the sharing preview.
 
 ## Possible command extensions after launch
 

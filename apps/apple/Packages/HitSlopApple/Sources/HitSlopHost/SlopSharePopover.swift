@@ -160,7 +160,10 @@ private struct SlopShareView: View {
       }
       Divider()
       if let sharing = model.sharing {
-        LiveCollaborationSection(model: sharing, interactionChanged: model.setCollaborationInteracting)
+        LiveCollaborationSection(
+          model: sharing, interactionChanged: model.setCollaborationInteracting,
+          saveUnsharedCopy: { model.choose(.duplicate) }
+        ).disabled(!model.commandsEnabled || model.preparing != nil)
       } else {
         Toggle(isOn: .constant(false)) {
           VStack(alignment: .leading, spacing: 5) {

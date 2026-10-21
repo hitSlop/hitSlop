@@ -1,0 +1,869 @@
+[
+  {
+    "type": "CreateRoom",
+    "name": "create request",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001"
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "type": "RoomPhase",
+    "name": "uploading",
+    "input": "uploading",
+    "canonical": "uploading"
+  },
+  {
+    "type": "CreatedRoom",
+    "name": "created uploading",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "uploading"
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "uploading"
+    }
+  },
+  {
+    "type": "CreatedRoom",
+    "name": "created uploading with unknown field",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "uploading",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "uploading"
+    }
+  },
+  {
+    "type": "RoomPhase",
+    "name": "live",
+    "input": "live",
+    "canonical": "live"
+  },
+  {
+    "type": "CreatedRoom",
+    "name": "created live",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "live"
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "live"
+    }
+  },
+  {
+    "type": "CreatedRoom",
+    "name": "created live with unknown field",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "live",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "live"
+    }
+  },
+  {
+    "type": "RoomPhase",
+    "name": "ended",
+    "input": "ended",
+    "canonical": "ended"
+  },
+  {
+    "type": "CreatedRoom",
+    "name": "created ended",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "ended"
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "ended"
+    }
+  },
+  {
+    "type": "CreatedRoom",
+    "name": "created ended with unknown field",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "ended",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "phase": "ended"
+    }
+  },
+  {
+    "type": "AccountRoom",
+    "name": "account lookup",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "type": "AccountRoom",
+    "name": "account lookup with unknown field",
+    "input": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "type": "AccountRoom",
+    "name": "account lookup absent",
+    "input": null,
+    "canonical": null
+  },
+  {
+    "type": "RoomInit",
+    "name": "internal init",
+    "input": {
+      "ownerUid": "fixture-owner",
+      "document": "00000000-0000-4000-8000-000000000001"
+    },
+    "canonical": {
+      "ownerUid": "fixture-owner",
+      "document": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "type": "RoomInfo",
+    "name": "guest metadata",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
+    "type": "RoomInfo",
+    "name": "guest metadata with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
+    "type": "RoomInfo",
+    "name": "owner metadata",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "type": "RoomInfo",
+    "name": "owner metadata with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "type": "RoomInfo",
+    "name": "uploading metadata",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "uploading",
+      "seedHash": null,
+      "seedSize": null,
+      "app": null
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "uploading",
+      "seedHash": null,
+      "seedSize": null,
+      "app": null
+    }
+  },
+  {
+    "type": "RoomInfo",
+    "name": "uploading metadata with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "uploading",
+      "seedHash": null,
+      "seedSize": null,
+      "app": null,
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "uploading",
+      "seedHash": null,
+      "seedSize": null,
+      "app": null
+    }
+  },
+  {
+    "type": "ConnectionPlan",
+    "name": "native connection",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "size": 512,
+      "url": "https://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
+      "headers": {
+        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "socket": "wss://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
+      "protocols": [
+        "hitslop.sync.v1"
+      ]
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "size": 512,
+      "url": "https://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
+      "headers": {
+        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "socket": "wss://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
+      "protocols": [
+        "hitslop.sync.v1"
+      ]
+    }
+  },
+  {
+    "type": "ConnectionPlan",
+    "name": "native connection with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "size": 512,
+      "url": "https://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
+      "headers": {
+        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "socket": "wss://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
+      "protocols": [
+        "hitslop.sync.v1"
+      ],
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "size": 512,
+      "url": "https://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
+      "headers": {
+        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "socket": "wss://share.hitslop.com/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
+      "protocols": [
+        "hitslop.sync.v1"
+      ]
+    }
+  },
+  {
+    "type": "SharingControl",
+    "name": "join credential",
+    "input": {
+      "type": "joinCredential",
+      "credential": "fixture-credential"
+    },
+    "canonical": {
+      "type": "joinCredential",
+      "credential": "fixture-credential"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "resourcesReady",
+    "input": {
+      "type": "resourcesReady"
+    },
+    "canonical": {
+      "type": "resourcesReady"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "resourcesReady with unknown field",
+    "input": {
+      "type": "resourcesReady",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "type": "resourcesReady"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "files",
+    "input": {
+      "type": "files",
+      "status": "ready"
+    },
+    "canonical": {
+      "type": "files",
+      "status": "ready"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "files with unknown field",
+    "input": {
+      "type": "files",
+      "status": "ready",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "type": "files",
+      "status": "ready"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync",
+    "input": {
+      "type": "sync",
+      "status": "synced"
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "synced"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync with unknown field",
+    "input": {
+      "type": "sync",
+      "status": "synced",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "synced"
+    }
+  },
+  {
+    "type": "ResourceGrant",
+    "name": "resource grant",
+    "input": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "canonical": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
+    "type": "ResourceGrant",
+    "name": "resource grant with unknown field",
+    "input": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "sign_in_required",
+    "input": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      401
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "sign_in_required with unknown field",
+    "input": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      401
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "invalid_request",
+    "input": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      400,
+      413,
+      422
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "invalid_request with unknown field",
+    "input": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      400,
+      413,
+      422
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "denied",
+    "input": {
+      "code": "denied",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "denied",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      403
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "denied with unknown field",
+    "input": {
+      "code": "denied",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "denied",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      403
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "not_found",
+    "input": {
+      "code": "not_found",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "not_found",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      404
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "not_found with unknown field",
+    "input": {
+      "code": "not_found",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "not_found",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      404
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "conflict",
+    "input": {
+      "code": "conflict",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "conflict",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      409
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "conflict with unknown field",
+    "input": {
+      "code": "conflict",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "conflict",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      409
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "sharing_ended",
+    "input": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      410
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "sharing_ended with unknown field",
+    "input": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      410
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "limited",
+    "input": {
+      "code": "limited",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "limited",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      429
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "limited with unknown field",
+    "input": {
+      "code": "limited",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "limited",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      429
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "unavailable",
+    "input": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      500,
+      503
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "unavailable with unknown field",
+    "input": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      500,
+      503
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "future_code",
+    "input": {
+      "code": "future_code",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "future_code",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "future_code with unknown field",
+    "input": {
+      "code": "future_code",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "future_code",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "Resource",
+    "name": "resource",
+    "input": {
+      "key": "ui.js",
+      "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 18,
+      "media_type": "text/javascript"
+    },
+    "canonical": {
+      "key": "ui.js",
+      "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 18,
+      "media_type": "text/javascript"
+    }
+  },
+  {
+    "type": "Resource",
+    "name": "resource with unknown field",
+    "input": {
+      "key": "ui.js",
+      "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 18,
+      "media_type": "text/javascript",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "key": "ui.js",
+      "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 18,
+      "media_type": "text/javascript"
+    }
+  },
+  {
+    "type": "Manifest",
+    "name": "manifest",
+    "input": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "resources": [
+        {
+          "key": "ui.js",
+          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "size": 18,
+          "media_type": "text/javascript"
+        }
+      ]
+    },
+    "canonical": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "resources": [
+        {
+          "key": "ui.js",
+          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "size": 18,
+          "media_type": "text/javascript"
+        }
+      ]
+    }
+  },
+  {
+    "type": "Manifest",
+    "name": "manifest with unknown field",
+    "input": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "resources": [
+        {
+          "key": "ui.js",
+          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "size": 18,
+          "media_type": "text/javascript"
+        }
+      ],
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "resources": [
+        {
+          "key": "ui.js",
+          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "size": 18,
+          "media_type": "text/javascript"
+        }
+      ]
+    }
+  },
+  {
+    "type": "ResourceList",
+    "name": "blob inventory",
+    "input": [
+      {
+        "key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "size": 18,
+        "media_type": "application/octet-stream"
+      }
+    ],
+    "canonical": [
+      {
+        "key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "size": 18,
+        "media_type": "application/octet-stream"
+      }
+    ]
+  },
+  {
+    "type": "EmptyReply",
+    "name": "delete account success",
+    "input": null,
+    "canonical": null
+  }
+]

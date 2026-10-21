@@ -62,13 +62,20 @@ struct PhoneEditorView: View {
     .sheet(isPresented: $showSharing) {
       if let sharing = session.sharing {
         NavigationStack {
-          Form { LiveCollaborationSection(model: sharing) }
-            .navigationTitle("Share")
-            .toolbar {
-              ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { showSharing = false }
-              }
+          Form {
+            LiveCollaborationSection(
+              model: sharing,
+              saveUnsharedCopy: {
+                showSharing = false
+                model.saveUnsharedCopy()
+              })
+          }
+          .navigationTitle("Share")
+          .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+              Button("Done") { showSharing = false }
             }
+          }
         }.onAppear { sharing.refresh() }
       }
     }

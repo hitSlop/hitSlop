@@ -40,8 +40,8 @@ Chrome’s Save As dialog; choosing a destination does not change the original d
 The original file stays unchanged. Browser storage can be cleared or evicted: download
 copies you want to keep. Reload requires the local host to be running.
 
-The first version supports Chrome on desktop. Safari, private browsing, mobile and
-shareable hosted links are deferred. Fullscreen appears for apps declaring
+The first version supports Chrome on desktop. Safari, private browsing and mobile browsers remain unqualified. Hosted edit links use the separate
+[live sharing preview](../architecture.md#relay). Fullscreen appears for apps declaring
 `fullscreenable`; **Keep awake** is a separate, initially off toggle. It displays
 **paused** when requested but the browser has released the screen wake lock.
 

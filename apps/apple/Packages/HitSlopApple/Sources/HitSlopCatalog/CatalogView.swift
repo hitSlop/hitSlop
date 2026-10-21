@@ -9,6 +9,7 @@ public struct CatalogView: View {
   @Bindable var model: CatalogModel
   @ObservedObject private var library = SlopLibrary.shared
   @State private var libraryError: String?
+  @State private var sharingError: String?
   @State private var showLibraryName = false
   @State private var libraryName = "Quick Checklist"
   @State private var creatingLibrary = false
@@ -68,8 +69,15 @@ public struct CatalogView: View {
       model.start()
       if SyncedLibraryPreview.enabled { library.start() }
     }
-    .onReceive(NotificationCenter.default.publisher(for: .hitSlopJoinSharedSlop)) { _ in
-      if SharingPreview.enabled { showJoin = true }
+    .onReceive(NotificationCenter.default.publisher(for: .hitSlopJoinSharedSlop)) { notification in
+      guard SharingPreview.enabled else { return }
+      if let link = notification.object as? String {
+        Task {
+          do { try await joinSharedLink(link) } catch { sharingError = sharingMessage(error) }
+        }
+      } else {
+        showJoin = true
+      }
     }
     .onReceive(NotificationCenter.default.publisher(for: .hitSlopNewSyncedChecklist)) { _ in
       guard SyncedLibraryPreview.enabled, library.isReady, !creatingLibrary else { return }
@@ -106,6 +114,14 @@ public struct CatalogView: View {
     } message: {
       Text(model.creationError ?? "")
     }
+    .alert(
+      "Could not open shared slop",
+      isPresented: Binding(get: { sharingError != nil }, set: { if !$0 { sharingError = nil } })
+    ) {
+      Button("OK", role: .cancel) {}
+    } message: {
+      Text(sharingError ?? "")
+    }
     .alert("iCloud", isPresented: Binding(get: { libraryError != nil }, set: { if !$0 { libraryError = nil } })) {
       Button("OK", role: .cancel) {}
     } message: {
@@ -118,16 +134,18 @@ public struct CatalogView: View {
     }
     .preferredColorScheme(.light)
     .sheet(isPresented: $showJoin) {
-      SharingJoinView { link in
-        let candidates = model.recents.compactMap { entry -> URL? in
-          if case .recent(let url) = entry.source { return url }
-          return nil
-        }
-        let url = try await DocumentSharing.join(link, candidates: candidates)
-        model.primaryAction(CatalogEntry(id: url.path, source: .recent(url), title: "Shared Slop"))
-      }
+      SharingJoinView { link in try await joinSharedLink(link) }
     }
   }
+  private func joinSharedLink(_ link: String) async throws {
+    let candidates = model.recents.compactMap { entry -> URL? in
+      if case .recent(let url) = entry.source { return url }
+      return nil
+    }
+    let url = try await DocumentSharing.join(link, candidates: candidates)
+    model.primaryAction(CatalogEntry(id: url.path, source: .recent(url), title: "Shared Slop"))
+  }
+
   private func createSynced() {
     guard !creatingLibrary else { return }
     let name = libraryName.trimmingCharacters(in: .whitespacesAndNewlines)

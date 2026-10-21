@@ -2,7 +2,8 @@
 
 ## Set up the checkout
 
-Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGen on macOS. The shipped app supports Apple silicon on macOS 15.2 or newer.
+Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGen on macOS. The shipped Mac app supports Apple silicon on macOS 15.2 or newer. The iPhone app
+supports iOS 26+ in TestFlight preview; see [current availability](../../apps/landing/src/content/docs/docs/availability.mdx).
 
 ```sh
 bun install --frozen-lockfile
@@ -57,7 +58,7 @@ in a background session, and use filtered verification while iterating.
 
 | Area | Responsibility |
 | --- | --- |
-| `apps/apple` | macOS entry point, Quick Look extensions, project configuration, signing, and Sparkle |
+| `apps/apple` | Mac and iPhone entry points, widgets, Quick Look extensions, project configuration and signing; Sparkle on Mac |
 | `crates` | `hitslop-core` (Rust on Loro) document semantics and the `.slop` file, its UniFFI and WASM adapters, and the CLI's `slop-engine` |
 | `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Host, the app and catalog models (HitSlopFeatures), Catalog, and telemetry |
 | `packages/hitslop/src/sdk` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter (`getDocument` for editors, `CaptureProps` for static views) |

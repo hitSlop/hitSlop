@@ -148,6 +148,27 @@ private struct UpdateSettingsView: View {
       }
     }
   }
+  func application(
+    _ application: NSApplication, continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void
+  ) -> Bool {
+    guard SharingPreview.enabled, userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+      let url = userActivity.webpageURL
+    else { return false }
+    do {
+      guard let link = try SharingPreview.incomingLink(url) else { return false }
+      showCatalog()
+      DispatchQueue.main.async {
+        NotificationCenter.default.post(name: .hitSlopJoinSharedSlop, object: link)
+      }
+    } catch {
+      let alert = NSAlert()
+      alert.messageText = "Could not open shared slop"
+      alert.informativeText = sharingMessage(error)
+      alert.runModal()
+    }
+    return true
+  }
   func applicationWillTerminate(_ notification: Notification) { SlopWidgetPublisher.shared.stop() }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

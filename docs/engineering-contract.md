@@ -100,7 +100,8 @@ fields; handles without authored fields keep plain names; reserved field names n
 error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports an
 unrecognized outcome and tells the user to inspect state before retrying; the engine relay
 forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--slop-*`,
-`data-slop-root`, the embed relay, and capture program requests and replies. The npm package ships the document engine; the Mac app contains its linked core
+`data-slop-root`, the embed relay, and capture program requests and replies.
+The shipped sharing `/v1` HTTP/link/socket contract grows only additively; its [immutable fixtures](../crates/hitslop-sharing-protocol/tests/fixtures/v1/README.md) remain valid, and breaking changes require `/v2` while `/v1` continues serving old clients. The npm package ships the document engine; the Mac app contains its linked core
 and restricted evaluator. Release acceptance checks that the engine and the app contain
 the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
 
@@ -179,7 +180,10 @@ changes an unchanged app's digest.
   sizes after a failure; it advances the saved version only on confirmed success.
   Loro deduplicates overlapping updates, but mutation intents are never replayed.
 - Flush unsent text and pending writes before close or export. Captures render saved
-  state through synchronous Svelte SSR and Takumi in the restricted Rust child; required root `Preview.svelte` supplies preview artwork; optional `Export.svelte` supplies PNG/PDF output.
+  state through synchronous Svelte SSR and Takumi: restricted children on Mac/Linux,
+  in-process capture on iPhone ([capture architecture](architecture.md#close-export-and-capture)).
+  Required root `Preview.svelte` supplies preview artwork; optional `Export.svelte`
+  supplies PNG/PDF output.
   Successful close destroys WebViews.
 - Author schemas with `defineDocument`/`s`: the export is definition data. Editors acquire
   their document with `getDocument(schema)` during component initialization; static views

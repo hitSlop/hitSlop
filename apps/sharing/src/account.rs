@@ -1,6 +1,7 @@
 //! Per-UID index and quota. Room phases and capabilities belong only to the Room DO.
 #[cfg(target_arch = "wasm32")]
 mod runtime {
+    use crate::metrics::{Metric, record};
     use crate::room::{bounded_body, hash, identity_response, random_hex};
     use hitslop_sharing_protocol::http::{AccountRoom, CreateRoom, RoomInit};
     use serde::Deserialize;
@@ -19,6 +20,8 @@ mod runtime {
         state: State,
         env: Env,
         sql: SqlStorage,
+        // Internal Room release callbacks bypass this gate, avoiding a DO call cycle.
+        operations: futures_util::lock::Mutex<()>,
     }
     impl SharingAccount {
         fn current(&self, document: &str) -> Result<Option<String>> {
@@ -64,6 +67,45 @@ mod runtime {
             {
                 return Response::error("Denied", 403);
             }
+            let _operation = self.operations.lock().await;
+            if req.path() == "/v1/account" && req.method() == Method::Delete {
+                // Persist the fence before network IO. A failed deletion remains retryable
+                // across eviction, and cannot admit new rooms until cleanup finishes.
+                // Released rooms have already completed Stop. Only outstanding slots
+                // need IO, so retries make progress and deletion stays quota-bounded.
+                let rooms = self.sql.exec("SELECT room FROM live", None)?.to_array::<RoomRow>()?;
+                let had_index = self.sql.exec("SELECT count(*) AS n FROM rooms", None)?.one::<CountRow>()?.n > 0;
+                let pending = self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<CountRow>()?.n > 0;
+                self.sql.exec("INSERT OR IGNORE INTO deleting VALUES(1)", None)?;
+                self.state.storage().sync().await?;
+                for row in &rooms {
+                    let mut init = RequestInit::new();
+                    init.with_method(Method::Delete).with_headers(req.headers().clone());
+                    let response = self
+                        .env
+                        .durable_object("ROOMS")?
+                        .get_by_name(&row.room)?
+                        .fetch_with_request(Request::new_with_init(
+                            &format!("https://account.internal/v1/rooms/{}", row.room),
+                            &init,
+                        )?)
+                        .await?;
+                    // A reserved slot whose init never reached Room has no payloads
+                    // or invitation to revoke. It can be removed with the account.
+                    if !matches!(response.status_code(), 200 | 404) {
+                        return Ok(response);
+                    }
+                }
+                self.sql.exec("DELETE FROM rooms; DELETE FROM live; DELETE FROM deleting", None)?;
+                self.state.storage().sync().await?;
+                if had_index || pending {
+                    record(&self.env, Metric::AccountDeleted);
+                }
+                return Response::from_json(&());
+            }
+            if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<CountRow>()?.n > 0 {
+                return Response::error("Account deletion pending; retry deletion", 409);
+            }
             if let Some(document) = req.path().strip_prefix("/v1/account/rooms/") {
                 if req.method() != Method::Get || !hitslop_sharing_protocol::valid_copy(document) {
                     return Response::error("Invalid request", 400);
@@ -98,7 +140,7 @@ mod runtime {
             if !self.env.rate_limiter("ACCOUNT_CREATE_LIMIT")?.limit(hash(&claims.sub)).await?.success {
                 return Response::error("Limited", 429);
             }
-            // The limiter yielded: another create may now own this document's slot.
+            // Recheck membership after the limiter yields to internal release callbacks.
             let room = if let Some(room) = self.current(&input.document)?
                 && self.active(&room)?
             {
@@ -122,8 +164,8 @@ mod runtime {
     impl DurableObject for SharingAccount {
         fn new(state: State, env: Env) -> Self {
             let sql = state.storage().sql();
-            sql.exec("CREATE TABLE IF NOT EXISTS rooms(document TEXT PRIMARY KEY,room TEXT NOT NULL); CREATE TABLE IF NOT EXISTS live(room TEXT PRIMARY KEY)", None).expect("account index");
-            Self { state, env, sql }
+            sql.exec("CREATE TABLE IF NOT EXISTS rooms(document TEXT PRIMARY KEY,room TEXT NOT NULL); CREATE TABLE IF NOT EXISTS live(room TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS deleting(id INTEGER PRIMARY KEY)", None).expect("account index");
+            Self { state, env, sql, operations: futures_util::lock::Mutex::new(()) }
         }
         async fn fetch(&self, req: Request) -> Result<Response> {
             let mut response = self.serve(req).await?;

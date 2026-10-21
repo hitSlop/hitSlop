@@ -3,6 +3,7 @@
  * has no test key, token bypass, configurable certificate URL or asserted UID path.
  * Run through `bun run verify sharing` after installing worker-build (README). */
 import assert from "node:assert/strict";
+import host from "../../apps/sharing/http";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -26,16 +27,20 @@ const a = uid("creator-a"), secondSession = uid("creator-a"), b = uid("creator-b
 const document = "00000000-0000-4000-8000-000000000001";
 const seed = Buffer.alloc(512, 42), asset = Buffer.from("export default {};");
 const app = "a".repeat(64);
-function runtime() {
+const relayConfig = await Bun.file(join(repository, "apps/sharing/wrangler.jsonc")).json() as {
+  ratelimits: { name: string; simple: { limit: number; period: 60 } }[];
+};
+function runtime(roomsAvailable = true) {
   return new Miniflare({
     durableObjectsPersist: join(root, "objects"), r2Persist: join(root, "r2"),
     workers: [{
       name: "relay", modules: true, scriptPath: join(repository, "generated/sharing/relay/index.js"),
       compatibilityDate: "2025-11-05", modulesRules: [{ type: "CompiledWasm", include: ["**/*.wasm"], fallthrough: true }],
       bindings: { BROWSER_ORIGIN: "https://share.hitslop.com", FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
-      durableObjects: { ROOMS: { className: "SlopRoom", useSQLite: true }, ACCOUNTS: { className: "SharingAccount", useSQLite: true } },
+      durableObjects: { ...(roomsAvailable ? { ROOMS: { className: "SlopRoom", useSQLite: true } } : {}), ACCOUNTS: { className: "SharingAccount", useSQLite: true } },
       r2Buckets: ["SEEDS"],
-      ratelimits: Object.fromEntries(["ACCOUNT_CREATE_LIMIT"].map(name => [name, { simple: { limit: 1000, period: 60 } }])),
+      analyticsEngineDatasets: { METRICS: { dataset: "hitslop_sharing" } },
+      ratelimits: Object.fromEntries(relayConfig.ratelimits.map(({ name, simple }) => [name, { simple: name === "ACCOUNT_CREATE_LIMIT" ? { ...simple, limit: 1000 } : simple }])),
       outboundService: "certificates",
     }, {
       name: "certificates", modules: true,
@@ -63,6 +68,29 @@ const seedHeaders = (bytes: Uint8Array) => ({
   "X-Sharing-SHA256": hash(bytes), "X-Sharing-App": app, "X-Sharing-Version": "[]",
 });
 try {
+  const unused = { async fetch(): Promise<Response> { throw new Error("AASA must not use assets or relay"); } };
+  const associationURL = "https://share.hitslop.com/.well-known/apple-app-site-association";
+  const association = await host.fetch(new Request(associationURL), { ASSETS: unused, RELAY: unused });
+  assert.equal(association.status, 200);
+  assert.equal(association.headers.get("Content-Type"), "application/json");
+  assert.equal(association.headers.get("Location"), null);
+  assert.equal(association.headers.get("Cache-Control"), "public, max-age=3600");
+  assert.deepEqual(await association.json(), {
+    applinks: { details: [{ appIDs: ["78UAXU8QG8.com.hitslop.app"], components: [{ "/": "/join", comment: "Live sharing links" }] }] },
+    appclips: { apps: ["78UAXU8QG8.com.hitslop.app.Clip"] },
+  });
+  const head = await host.fetch(new Request(associationURL, { method: "HEAD" }), { ASSETS: unused, RELAY: unused });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+  assert.equal((await host.fetch(new Request(associationURL, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
+  assert.equal((await host.fetch(new Request(associationURL.replace("share.hitslop.com", "copy.dotslop.com")), { ASSETS: unused, RELAY: unused })).status, 404);
+  const join = await host.fetch(new Request("https://share.hitslop.com/join"), {
+    ASSETS: { async fetch(request: Request) { assert.equal(new URL(request.url).pathname, "/index.html"); return new Response("join"); } }, RELAY: unused,
+  });
+  assert.equal(await join.text(), "join");
+  assert.equal(join.headers.get("Content-Security-Policy"), SharingHost.hostPolicy);
+  assert.equal((await call("account", undefined, "DELETE")).status, 401);
+  assert.equal((await call("account", "not-an-identity", "DELETE")).status, 401);
   assert.equal((await call("rooms", undefined, "POST", { document })).status, 401);
   for (const token of ["malformed", uid("untrusted").slice(0, -8) + "invalid"]) {
     assert.equal((await call("account/rooms/" + document, token)).status, 401);
@@ -129,6 +157,28 @@ try {
   const next = await json<CreatedRoom>("rooms", a, "POST", { document });
   assert.notEqual(next.room, r.room, "Re-share creates a fresh random room");
   assert.equal((await json<AccountRoom>("account/rooms/" + document, a)).room, next.room);
+  const rejoinedRoom = await json<CreatedRoom>("rooms", b, "POST", { document: "00000000-0000-4000-8000-000000000002" });
+  const rejoinedBase = "rooms/" + rejoinedRoom.room;
+  assert.equal((await call(rejoinedBase + "/seed", b, "PUT", seed, seedHeaders(seed))).status, 200);
+  assert.equal((await call(rejoinedBase + "/resources", b, "POST", { app, resources: [] })).status, 200);
+  assert.equal((await call(rejoinedBase + "/open", b, "POST")).status, 200);
+  await call(rejoinedBase, b, "DELETE");
+  const replacementRoom = await json<CreatedRoom>("rooms", b, "POST", { document: "00000000-0000-4000-8000-000000000002" });
+  const replacementBase = "rooms/" + replacementRoom.room;
+  assert.notEqual(replacementRoom.room, rejoinedRoom.room);
+  assert.equal((await call(rejoinedBase, rejoinedRoom.capability)).status, 410);
+  assert.equal((await call(replacementBase + "/seed", b, "PUT", seed, seedHeaders(seed))).status, 200);
+  assert.equal((await call(replacementBase + "/resources", b, "POST", { app, resources: [] })).status, 200);
+  assert.equal((await call(replacementBase + "/open", b, "POST")).status, 200);
+  assert.equal((await json<RoomInfo>(replacementBase, replacementRoom.capability)).document,
+    "00000000-0000-4000-8000-000000000002");
+  const rejoined = await worker.dispatchFetch("https://share.hitslop.com/v1/" + replacementBase + "/sync", {
+    headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol, Authorization: "Bearer " + replacementRoom.capability },
+  });
+  assert.equal(rejoined.status, 101, "A guest can reconnect with the new room for the same document");
+  rejoined.webSocket!.accept();
+  rejoined.webSocket!.close();
+  await call(replacementBase, b, "DELETE");
   // Hold an Uploading seed body across Stop, then complete its delayed write.
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
@@ -168,7 +218,76 @@ try {
   assert.equal((await json<CreatedRoom>("rooms", secondSession, "POST", { document: "00000000-0000-4000-9000-000000000001" })).room, quota[0]!.room);
   await call("rooms/" + quota[0]!.room, a, "DELETE");
   const freed = await json<CreatedRoom>("rooms", a, "POST", { document });
-  await call("rooms/" + freed.room, a, "DELETE");
-  for (const room of quota.slice(1)) await call("rooms/" + room.room, a, "DELETE");
-  console.log("Passed: verified identities, create/idempotent retry, replaceable seed/manifest, open, guest join, second-session cold recovery, other-UID/guest-admin refusal, Stop/upload cleanup, quota release, re-share and stale-room 410.");
+  const liveBase = "rooms/" + freed.room;
+  assert.equal((await call(liveBase + "/seed", a, "PUT", seed, seedHeaders(seed))).status, 200);
+  assert.equal((await call(liveBase + "/resources", a, "POST", { app, resources: [] })).status, 200);
+  assert.equal((await call(liveBase + "/open", a, "POST")).status, 200);
+  // Uploading rooms can already hold private data and need the same purge as Live.
+  assert.equal((await call("rooms/" + quota[1]!.room + "/seed", a, "PUT", seed, seedHeaders(seed))).status, 200);
+  const unrelated = await json<CreatedRoom>("rooms", b, "POST", { document });
+  const socket = await worker.dispatchFetch("https://share.hitslop.com/v1/" + liveBase + "/sync", {
+    headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol, Authorization: "Bearer " + freed.capability },
+  });
+  assert.equal(socket.status, 101);
+  socket.webSocket!.accept();
+  const closed = new Promise<void>(resolve => socket.webSocket!.addEventListener("close", () => resolve()));
+  // Each endpoint has an independent per-IP budget; changing IP gets a fresh one.
+  for (const [route, method, body, headers] of [
+    [liveBase, "GET", undefined, {}],
+    [liveBase + "/seed", "GET", undefined, {}],
+    [liveBase + "/sync", "GET", undefined, { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol }],
+    [liveBase + "/blob/" + hash(seed), "PUT", seed, {}],
+  ] as const) {
+    let limited = false;
+    // A burst can straddle one fixed minute boundary in the local limiter.
+    const attempts = 2 * Math.max(...relayConfig.ratelimits.map(limit => limit.simple.limit)) + 1;
+    for (let n = 0; n < attempts; n++) {
+      // Refused socket credentials exercise the edge budget without filling the room.
+      const token = route.endsWith("/sync") ? "f".repeat(64) : freed.capability;
+      const response = await call(route, token, method, body, { ...headers, "CF-Connecting-IP": "192.0.2.10" });
+      if (response.status === 101) { response.webSocket!.accept(); response.webSocket!.close(); }
+      if (response.status === 429) {
+        assert.equal((await response.json() as { code: string }).code, "limited");
+        limited = true;
+        break;
+      }
+    }
+    assert(limited, route + " must enforce its guest budget");
+    const fresh = await call(route, route.endsWith("/sync") ? "f".repeat(64) : freed.capability, method, body, { ...headers, "CF-Connecting-IP": "192.0.2.11" });
+    assert.notEqual(fresh.status, 429, "Budgets are per client IP");
+    if (fresh.status === 101) { fresh.webSocket!.accept(); fresh.webSocket!.close(); }
+  }
+  assert.equal((await call("account", a, "DELETE")).status, 200);
+  await Promise.race([closed, new Promise((_, reject) => setTimeout(() => reject(new Error("Account deletion must close guest sockets")), 5000))]);
+  for (const room of [freed, ...quota.slice(1)]) {
+    assert.equal((await call("rooms/" + room.room, room.capability)).status, 410);
+    assert.equal((await call("rooms/" + room.room + "/seed", room.capability)).status, 410);
+    assert.equal((await bucket.list({ prefix: room.room + "/" })).objects.length, 0);
+  }
+  assert.equal((await json<RoomInfo>("rooms/" + unrelated.room, b)).phase, "uploading", "Deletion is scoped to the verified account");
+  await call("account", b, "DELETE");
+  assert.equal(await json("account/rooms/" + document, secondSession), null);
+  assert.equal((await call("account", secondSession, "DELETE")).status, 200, "Account deletion is idempotent");
+  // Persisted deletion survives a cold restart, and a new sign-in gets all quota back.
+  await worker.dispose();
+  worker = runtime();
+  const signedInAgain = uid("creator-a");
+  for (let n = 0; n < 10; n++) {
+    const created = await json<CreatedRoom>("rooms", signedInAgain, "POST", { document: `00000000-0000-4000-9000-${String(n).padStart(12, "0")}` });
+    assert(!quota.some(r => r.room === created.room));
+  }
+  assert.equal((await call("account", signedInAgain, "DELETE")).status, 200);
+  // A failed Room init may reserve an account slot without ever creating a Room.
+  // Remove the binding only in this disposable runtime to force that network failure.
+  await worker.dispose();
+  worker = runtime(false);
+  assert.equal((await call("rooms", a, "POST", { document })).status, 500);
+  const orphan = await json<AccountRoom>("account/rooms/" + document, a);
+  assert(orphan.room);
+  await worker.dispose();
+  worker = runtime();
+  assert.equal((await call("account", a, "DELETE")).status, 200, "Delete must clean slots left by failed Room initialization");
+  assert.equal(await json("account/rooms/" + document, a), null);
+  assert.equal((await call("account", a, "DELETE")).status, 200);
+  console.log("Passed: verified identities, create/idempotent retry, replaceable seed/manifest, open, guest join, second-session cold recovery, other-UID/guest-admin refusal, Stop/upload cleanup, quota release, re-share, stale-room 410, account deletion of Live/Uploading rooms, socket revocation, cold re-sign-in, failed-init cleanup and per-IP guest limits.");
 } finally { await worker.dispose(); await rm(root, { recursive: true, force: true }); }

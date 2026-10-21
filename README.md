@@ -10,18 +10,20 @@
 [![GitHub stars](https://img.shields.io/github/stars/hitSlop/hitSlop?style=flat&color=e6a23c)](https://github.com/hitSlop/hitSlop/stargazers)
 
 [![Local-first](https://img.shields.io/badge/Local--first-487B41?style=flat)](#keep-the-app-keep-the-work)
-[![No account required](https://img.shields.io/badge/No_account-required-487B41?style=flat)](#keep-the-app-keep-the-work)
+[![Local use needs no account](https://img.shields.io/badge/Local_use-no_account-487B41?style=flat)](#keep-the-app-keep-the-work)
 [![Tiny apps. Big personality.](https://img.shields.io/badge/Tiny_apps-Big_personality-7050ad?style=flat)](#small-enough-to-be-yours)
 
 Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
 **Install hitSlop once. Make and share little apps as files.** Each `.slop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with hitSlop, without packaging and signing a separate Mac app.
 
-You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay on your Mac, ready to keep, copy and share.
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone TestFlight preview brings slops to your phone, with Synced Library across Mac and iPhone through your iCloud account.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
-macOS 15.2+ · Apple silicon · No account required
+macOS 15.2+ · Apple silicon · Local documents need no account
+
+iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It opens, edits and creates slops, includes a Quick Checklist starter, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and the live sharing preview; ordinary Mac releases do not include live collaboration.
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -69,7 +71,7 @@ slop apply "My Wins.slop" --op '{"type":"increment","path":["wins"],"by":1}'
 slop theme set "My Wins.slop" --values '{"accent":"#7050ad"}'
 ```
 
-The [Tiny Wins tutorial below](#a-whole-slop-from-scratch) defines `countOne`. Each app exposes its own actions through `describe`; `apply` and `batch` also let agents edit individual fields directly. With the window open, each increment appears immediately and the theme command turns the accent purple. **Edit ▸ Undo** can undo agent edits too. Text edits supplied with the version the agent read merge with what you typed since. hitSlop doesn't upload your documents: the agent uses the same Rust document owner as the app, including for closed files.
+The [Tiny Wins tutorial below](#a-whole-slop-from-scratch) defines `countOne`. Each app exposes its own actions through `describe`; `apply` and `batch` also let agents edit individual fields directly. With the window open, each increment appears immediately and the theme command turns the accent purple. **Edit ▸ Undo** can undo agent edits too. Text edits supplied with the version the agent read merge with what you typed since. The agent edits your local document through the hitSlop CLI, including when the file is closed. Sync and live sharing are optional preview features.
 
 ## Small enough to be yours
 
@@ -85,11 +87,13 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Your documents live on your Mac. You don't need an account or a server.
+- Local documents need no account or server. The preview's Synced Library keeps slops in sync between Mac and iPhone through your iCloud account.
 - A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder.
 - Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
+- Add a widget for a slop with a widget view: on your Mac desktop, or for library slops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
+- In the developer/TestFlight preview, choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in hitSlop on Mac/iPhone or in Chrome at share.hitslop.com. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://hitslop.com/docs/guides/live-sharing/) explains the preview.
 - Pin a slop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
 - Finder icons can show what's inside, such as a counter's total.
 - Change a document's colors without touching its code, or edit the source to make a different tool.
@@ -150,15 +154,17 @@ Document creation and editing run on macOS and Linux. The CLI carries its own en
 
 Here’s where we’re heading:
 
-- [ ] **More platforms.** Bring slops to iOS, iPadOS, Android, Windows and Linux.
-- [ ] **Realtime collaboration.** Work on the same lists, plans and little tools with other people, live.
-- [ ] **Your documents across devices.** Start on your Mac, pick up on your phone, and keep working offline.
+- [x] **iPhone preview.** Open, edit and create slops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
+- [x] **Synced Library preview.** Keep slops in sync between Mac and iPhone through iCloud.
+- [x] **Live collaboration preview.** Edit together through a link on Mac, iPhone or Chrome.
+- [ ] **Release the previews.** Bring iPhone to the App Store and Synced Library to the Mac release, and polish sharing.
+- [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
 - [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.
 - [ ] **A store for tiny apps.** Discover, publish and install community slops through an app-store-style catalog.
 - [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to slop,” MIDI, and richer audio and transcription—with permissions for each slop.
 
-See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. These are future directions, with no release dates yet.
+See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. Preview features are labeled above; remaining directions have no release dates yet.
 
 **What would you like to see?** [Tell us on Discord](https://discord.gg/cqKRZjAWv3).
 
@@ -312,11 +318,11 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 - Required `Preview.svelte` supplies a compact overview for Quick Look and in-app previews.
 - Optional `Export.svelte` supplies complete PNG/PDF output. Use normal document flow so long content can expand. Without it, export actions are hidden.
 - Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
-- `Widget.svelte` supplies small, medium and large desktop images from saved data. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
+- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and, in the TestFlight preview, library slops on iPhone. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
 
 hitSlop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
 
-All capture views render with Takumi in the restricted Rust child, including selectable vector PDF. Capture components must be synchronous. Quick Look reads the saved artwork.
+Capture views use Takumi: restricted rendering on Mac and Linux, and in-process rendering on iPhone. Mac and Linux support selectable vector PDF. Capture components must be synchronous. Quick Look reads the saved artwork.
 
 See [icons, previews, and exports](apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) for capture details and size limits.
 
@@ -413,7 +419,7 @@ artwork      name (preview | icon), png                                 Quick Lo
 -- populated when you create and edit a document
 document     uuid                                                       the document's identity
 history      seq, bytes                                                 saved Loro state: a snapshot, then the edits saved since
-share        room, endpoint                                             empty unless the document is shared (coming soon)
+share        room, endpoint                                             room and endpoint for the live sharing preview; empty when unshared
 attachments  id (SHA-256), media_type, bytes                           files you import
 ```
 

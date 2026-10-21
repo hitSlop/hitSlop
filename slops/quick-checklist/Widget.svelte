@@ -10,7 +10,7 @@
   import { checklistView } from "./tasks";
   let { snapshot, family }: CaptureProps<typeof schema> & WidgetProps = $props();
   const { visible, finished, ratio } = $derived(checklistView(snapshot));
-  const rows = $derived(visible.slice(0, family === "small" ? 1 : family === "medium" ? 2 : 6));
+  const rows = $derived(visible.slice(0, family === "small" ? 1 : family === "medium" ? 4 : 6));
 </script>
 
 <main class="widget" data-family={family}>
@@ -52,7 +52,9 @@
   [data-family="medium"] { padding: 10px; }
   [data-family="medium"] .paper { padding: 10px 14px; }
   [data-family="medium"] h1 { font-size: 20px; -webkit-line-clamp: 1; line-clamp: 1; margin-bottom: 4px; }
-  [data-family="medium"] li { padding: 5px 0; }
+  [data-family="medium"] ol { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 14px; margin-top: 6px; }
+  [data-family="medium"] li { min-width: 0; padding: 8px 0; }
+  [data-family="medium"] .task { min-width: 0; }
   [data-family="small"] { padding: 8px; }
   [data-family="small"] .paper { padding: 10px; }
   [data-family="small"] h1 { font-size: 19px; }

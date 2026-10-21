@@ -21,12 +21,17 @@ public struct LiveCollaborationSection: View {
   @State private var copied = false
   @State private var failedAction: Action = .refresh
   private let interactionChanged: (Bool) -> Void
+  private let saveUnsharedCopy: (() -> Void)?
 
   private enum Action { case start, stop, refresh }
 
-  public init(model: DocumentSharing, interactionChanged: @escaping (Bool) -> Void = { _ in }) {
+  public init(
+    model: DocumentSharing, interactionChanged: @escaping (Bool) -> Void = { _ in },
+    saveUnsharedCopy: (() -> Void)? = nil
+  ) {
     self.model = model
     self.interactionChanged = interactionChanged
+    self.saveUnsharedCopy = saveUnsharedCopy
   }
 
   private var live: Bool { model.status.map { $0.phase != .ended } ?? false }
@@ -111,6 +116,9 @@ public struct LiveCollaborationSection: View {
             : "Edit together in real time. Anyone with the link can edit.")
       }
 
+      if live, let saveUnsharedCopy {
+        Button("Save Unshared Copy…", action: saveUnsharedCopy).disabled(model.busy)
+      }
       if confirmingStop {
         caption("Stop live collaboration? The link stops working. Everyone keeps their own copy.")
         HStack {

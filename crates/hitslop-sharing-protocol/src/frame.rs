@@ -14,7 +14,7 @@
 //! 0x07 Error    { code u8, message varString }                    then the relay closes
 //! ```
 //!
-//! `tests/sync-frames.json` holds golden frames the relay's own codec is tested against.
+//! `tests/fixtures/v1/frames.json` freezes both frame and socket envelope codecs.
 use crate::{Code, Result, err};
 use std::collections::BTreeMap;
 

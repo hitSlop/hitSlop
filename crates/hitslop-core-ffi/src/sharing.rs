@@ -17,6 +17,11 @@ pub fn sharing_verify_account(token: String) -> Result<(), SharingError> {
     hitslop_sharing_client::verify_account(&token).map_err(failure)
 }
 
+#[uniffi::export]
+pub fn sharing_delete_account(token: String) -> Result<(), SharingError> {
+    hitslop_sharing_client::delete_account(&token).map_err(failure)
+}
+
 #[uniffi::remote(Enum)]
 pub enum Phase {
     Preparing,
@@ -105,4 +110,14 @@ pub fn sharing_accept_invitation(existing: Option<String>, link: String) -> Resu
 #[uniffi::export]
 pub fn sharing_install(path: String, link: String) -> Result<(), SharingError> {
     hitslop_sharing_client::install(Path::new(&path), &link).map_err(failure)
+}
+
+#[uniffi::export]
+pub fn sharing_join(owner: Arc<NativeOwner>, existing: Option<String>, link: String) -> Result<String, SharingError> {
+    hitslop_sharing_client::join(&owner.0, existing.as_deref(), &link).map_err(failure)
+}
+
+#[uniffi::export]
+pub fn sharing_account_owns(document: String, credential: String, token: String) -> Result<bool, SharingError> {
+    hitslop_sharing_client::account_owns(&document, &credential, &token).map_err(failure)
 }

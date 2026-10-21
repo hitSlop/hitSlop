@@ -1,5 +1,6 @@
 //! Room lifecycle and opaque relay records; private payloads in R2.
 use crate::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
+use crate::metrics::{Metric, record};
 use hitslop_sharing_protocol::{
     CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL,
     http::{CreatedRoom, RoomInfo, RoomInit, RoomPhase},
@@ -41,7 +42,7 @@ fn wire_version(vv: &Version) -> Vec<(String, u32)> {
 
 #[event(fetch)]
 pub async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
-    let response = match serve(req, env).await {
+    let response = match serve(req, env.clone()).await {
         Ok(r) => r,
         Err(_) => Response::error("Request failed", 500)?,
     };
@@ -52,23 +53,13 @@ pub async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
         return Ok(response);
     }
     let status = response.status_code();
+    if status == 429 {
+        record(&env, Metric::Limited);
+    }
     let headers = response.headers().clone();
-    let code = match status {
-        401 => "sign_in_required",
-        400 | 413 | 422 => "invalid_request",
-        403 => "denied",
-        404 => "not_found",
-        409 => "conflict",
-        410 => "sharing_ended",
-        429 => "limited",
-        _ => "unavailable",
-    };
-    let mut response = Response::from_json(&hitslop_sharing_protocol::http::ApiFailure {
-        code: code.into(),
-        message: "The sharing service refused this request".into(),
-    })?
-    .with_status(status)
-    .with_headers(headers);
+    let mut response = Response::from_json(&hitslop_sharing_protocol::http::ApiFailure::refused(status))?
+        .with_status(status)
+        .with_headers(headers);
     response.headers_mut().set("Content-Type", "application/json")?;
     Ok(response)
 }
@@ -126,7 +117,19 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
     if path == "/health" {
         return Response::ok("hitslop-sharing-preview");
     }
-    let mut response = if path == "/v1/rooms" || path.starts_with("/v1/account/rooms/") {
+    if let Some(binding) = crate::abuse::guest_limit(req.method().as_ref(), &path) {
+        // Cloudflare sets this header. Missing IPs share a conservative fallback budget.
+        let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "unknown".into());
+        if !env.rate_limiter(binding)?.limit(ip).await?.success {
+            let mut response = Response::error("Limited", 429)?;
+            if let Some(origin) = origin {
+                response.headers_mut().set("Access-Control-Allow-Origin", &origin)?;
+                response.headers_mut().set("Vary", "Origin")?;
+            }
+            return Ok(response);
+        }
+    }
+    let mut response = if path == "/v1/rooms" || path == "/v1/account" || path.starts_with("/v1/account/rooms/") {
         let claims = match crate::auth::identity(&req, &env).await {
             Ok(c) => c,
             Err(e) => return identity_response(e),
@@ -256,8 +259,12 @@ impl SlopRoom {
         // Compare fixed-length digests so response timing does not reveal a matching prefix.
         Ok(self.text("capability")?.is_some_and(|stored| hash(&stored) == hash(key)))
     }
-    async fn stop_room(&self, room: &str) -> Result<Response> {
+    async fn stop_room(&self, room: &str, reason: Metric) -> Result<Response> {
+        let was_ended = self.phase()? == Some(RoomPhase::Ended);
         self.set_phase(RoomPhase::Ended)?;
+        if !was_ended {
+            record(&self.env, reason);
+        }
         // A retry alarm finishes cleanup and quota release after a transient failure.
         self.state.storage().set_alarm(std::time::Duration::from_secs(60)).await?;
         for ws in self.state.get_websockets() {
@@ -467,6 +474,7 @@ impl DurableObject for SlopRoom {
                 self.put("room", room)?;
                 self.put("capability", &random_hex(32)?)?;
                 self.set_phase(RoomPhase::Uploading)?;
+                record(&self.env, Metric::RoomCreated);
             }
             // A retry also repairs a failed alarm write; no accepted Uploading room
             // is left without its abandonment cleanup.
@@ -499,7 +507,7 @@ impl DurableObject for SlopRoom {
             if !self.authorized(&req, true).await? {
                 return Response::error("Denied", 403);
             }
-            return self.stop_room(room).await;
+            return self.stop_room(room, Metric::RoomEndedStop).await;
         }
         if phase == RoomPhase::Ended {
             return Response::error("Sharing ended", 410);
@@ -570,6 +578,7 @@ impl DurableObject for SlopRoom {
                 return Response::error("Sharing ended", 410);
             }
             self.set_phase(RoomPhase::Live)?;
+            record(&self.env, Metric::RoomOpened);
             return Response::from_json(&self.info(true)?);
         }
         if owner_write && phase != RoomPhase::Uploading {
@@ -639,6 +648,7 @@ impl DurableObject for SlopRoom {
             let pair = WebSocketPair::new()?;
             self.state.accept_web_socket(&pair.server);
             pair.server.serialize_attachment(SocketState { joined: false })?;
+            record(&self.env, Metric::GuestJoin);
             return Response::from_websocket(pair.client);
         }
         Response::error("Not found", 404)
@@ -646,7 +656,7 @@ impl DurableObject for SlopRoom {
     async fn alarm(&self) -> Result<Response> {
         if matches!(self.phase()?, Some(RoomPhase::Uploading | RoomPhase::Ended)) {
             let room = self.text("room")?.ok_or_else(|| fail("Missing room"))?;
-            return self.stop_room(&room).await;
+            return self.stop_room(&room, Metric::RoomEndedAlarm).await;
         }
         Response::ok("live")
     }

@@ -6,3 +6,8 @@ mod account;
 mod auth;
 #[cfg(target_arch = "wasm32")]
 mod room;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod abuse;
+#[cfg(target_arch = "wasm32")]
+mod metrics;

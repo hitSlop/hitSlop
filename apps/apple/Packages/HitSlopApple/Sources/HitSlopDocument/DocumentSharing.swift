@@ -5,7 +5,7 @@ import HitSlopCore
 import HitSlopCoreBinding
 import SwiftUI
 
-func sharingMessage(_ error: Error) -> String {
+public func sharingMessage(_ error: Error) -> String {
   if case SharingError.Failed(let message) = error { return message }
   return error.localizedDescription
 }
@@ -68,14 +68,14 @@ private actor SharingDriver {
     }
     if accountPhase == .preparing {
       return SharingStatus(
-        phase: .preparing, detail: "Sharing upload is incomplete. Retry creating the edit link.", link: nil,
+        phase: .preparing, detail: "Sharing upload is incomplete. Try starting the live link again.", link: nil,
         creator: true)
     }
     if let client { return client.status() }
     guard let phase = accountPhase else { return nil }
     return SharingStatus(
       phase: phase,
-      detail: phase == .ended ? "Sharing ended" : "Sharing upload is incomplete. Retry creating the edit link.",
+      detail: phase == .ended ? "Sharing ended" : "Sharing upload is incomplete. Try starting the live link again.",
       link: nil,
       creator: true)
   }
@@ -110,6 +110,7 @@ private actor SharingDriver {
   @Published public private(set) var acting = false
   private let driver: SharingDriver
   private var active = true
+  private var pendingRefresh = false
   private var triggers: AnyCancellable?
   init(owner: DocumentOwner) {
     driver = SharingDriver(owner: owner.native, document: owner.documentID ?? "")
@@ -130,6 +131,10 @@ private actor SharingDriver {
     refresh()
   }
   public func refresh() {
+    guard !busy else {
+      pendingRefresh = true
+      return
+    }
     run(acting: false) {
       let token = try? await SharingAccount.shared.token()
       return try await self.driver.refresh(token: token)
@@ -168,6 +173,10 @@ private actor SharingDriver {
       defer {
         busy = false
         self.acting = false
+        if pendingRefresh {
+          pendingRefresh = false
+          refresh()
+        }
       }
       do {
         let next = try await operation()
@@ -208,13 +217,38 @@ private actor SharingDriver {
         ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("hitSlop/SharedDocuments/\(document).slop")
     }
-    try await SlopPreparation.run {
-      let saved = try sharingAcceptInvitation(existing: SharingCredentials.read(document), link: link)
-      if let nativeOwner { _ = try NativeSharing.restore(owner: nativeOwner, credential: saved) }
-      try sharingInstall(path: target.path, link: link)
-      try SharingCredentials.write(saved, document: document)
+    // Stop the old transport before rebinding this same owner to a new room.
+    await live?.sharing?.pause()
+    do {
+      if nativeOwner == nil {
+        try await SlopPreparation.run {
+          if !FileManager.default.fileExists(atPath: target.path) {
+            try sharingInstall(path: target.path, link: link)
+          }
+        }
+      }
+      let opened: DocumentOwner?
+      if nativeOwner == nil {
+        opened = try await SlopPreparation.run { try DocumentOwner(url: target) }
+      } else {
+        opened = nil
+      }
+      do {
+        let bindingOwner = nativeOwner ?? opened!.native
+        try await SlopPreparation.run {
+          let saved = try sharingJoin(owner: bindingOwner, existing: SharingCredentials.read(document), link: link)
+          try SharingCredentials.write(saved, document: document)
+        }
+        try await opened?.close()
+      } catch {
+        try? await opened?.close()
+        throw error
+      }
+    } catch {
+      live?.sharing?.resume()
+      throw error
     }
-    live?.sharing?.retry()
+    live?.sharing?.resume()
     return target
   }
 }

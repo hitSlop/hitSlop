@@ -32,7 +32,8 @@ Creating a document copies a template into a new file. As it is edited, the same
   attachments  imported files, by content
 ```
 
-A `share` table stays empty until collaboration ships.
+A `share` table records the room and relay endpoint for documents using the
+[live sharing preview](/docs/guides/live-sharing/); it is empty for unshared documents.
 
 The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque Loro history; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
 
@@ -44,7 +45,7 @@ Theme overrides live in Loro's root `theme` map, outside the authored data tree.
 
 Registered templates and built-in starters remain immutable. **Create** makes a writable copy. Rebuilding or updating a template does not replace the app or schema in existing documents. An app update supplies a newer page shell and engine to those documents. Captures render saved state independently: all icon/preview/widget/PNG views and selectable vector PDFs use the restricted Rust renderer. For an open document, the owner first saves and copies it; no second writer renders the original file. See [capture views and widget refresh](/docs/guides/icons-and-exports/).
 
-Close before moving or renaming a document. Keep active documents on a local filesystem outside iCloud and other synced folders. The Mac app checks for iCloud-synced Desktop and Documents folders and uses `~/hitSlop` as its initial save location when Desktop is synced. It remembers your last usable local save folder.
+Close before moving or renaming a document. Keep active standalone documents on a local filesystem outside iCloud and other synced folders. The preview's [Synced Library](/docs/availability/) manages sync between your Mac and iPhone separately. The Mac app checks for iCloud-synced Desktop and Documents folders and uses `~/hitSlop` as its initial save location when Desktop is synced. It remembers your last usable local save folder.
 
 The iCloud check, remembered save folder, and **Move to ~/hitSlop and Open** arrive in the next hitSlop release.
 

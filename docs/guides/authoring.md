@@ -299,7 +299,13 @@ A failed refresh keeps the previous generation. Publishing replaces the complete
 reload; the OS decides when that reload is displayed. Optional `widget.refreshMinutes` in `slop.ts`
 requests approximate refresh while the app runs; authoring accepts 15–1440 minutes.
 
-Widget rendering uses synchronous Svelte SSR in an isolated Rust child. Read the `snapshot` prop;
+The iPhone TestFlight preview renders placed library slops locally with the same
+`Widget.svelte` views and canvases; taps open the slop. Foreground saves and library
+changes refresh images. Background refresh remains open; see the
+[widget architecture](../architecture.md#macos-image-widgets).
+
+Widget rendering uses synchronous Svelte SSR in an isolated Rust child on Mac and
+the in-process Rust capture pipeline on iPhone. Read the `snapshot` prop;
 document handles and writes are unavailable. Do not rely on `onMount`, DOM measurement,
 canvas, browser globals or async/await for widget content.
 Use font longhands, flexbox or numeric grid placement, and SVG attributes/currentColor.

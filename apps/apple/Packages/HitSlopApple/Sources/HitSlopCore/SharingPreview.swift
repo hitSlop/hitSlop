@@ -1,4 +1,5 @@
 import Foundation
+import HitSlopCoreBinding
 import Security
 
 extension Notification.Name {
@@ -8,10 +9,25 @@ extension Notification.Name {
   public static let hitSlopNewSyncedChecklist = Notification.Name("hitSlop.newSyncedChecklist")
 }
 
-/// This preview requires an explicit developer launch flag; it is absent from ordinary releases.
+/// Preview builds (the `HITSLOP_SHARING_PREVIEW` compilation condition, e.g. TestFlight) enable it;
+/// Debug needs a launch flag; ordinary releases never include it.
 public enum SharingPreview {
+  /// Preserve the full URL, including its capability fragment, through the Rust parser.
+  /// A non-sharing URL is left to the caller's existing routing.
+  public static func incomingLink(_ url: URL) throws -> String? {
+    guard url.scheme == "https", url.host == "share.hitslop.com", url.path == "/join" else { return nil }
+    guard let fragment = url.fragment, !fragment.isEmpty else {
+      throw SlopFailure("Open the link in hitSlop again")
+    }
+    let link = url.absoluteString
+    _ = try sharingJoinCredential(link: link)
+    return link
+  }
+
   public static let enabled: Bool = {
-    #if DEBUG || HITSLOP_SHARING_PREVIEW
+    #if HITSLOP_SHARING_PREVIEW
+      true
+    #elseif DEBUG
       ProcessInfo.processInfo.arguments.contains("--live-sharing-preview")
         || ProcessInfo.processInfo.environment["HITSLOP_LIVE_SHARING_PREVIEW"] == "1"
     #else
@@ -54,6 +70,34 @@ public enum SharingCredentials {
     guard status == errSecSuccess, let data = result as? Data, let value = String(data: data, encoding: .utf8)
     else { throw SlopFailure("Sharing details are unavailable in Keychain. Unlock this device and retry.") }
     return value
+  }
+  /// Enumerate this app's local link credentials; no tokens are stored here.
+  public static func all() throws -> [String: String] {
+    var query = try query("")
+    query.removeValue(forKey: kSecAttrAccount as String)
+    query[kSecReturnAttributes as String] = true
+    query[kSecReturnData as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitAll
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return [:] }
+    guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+      throw SlopFailure("Could not read sharing details. Unlock this device and retry.")
+    }
+    return Dictionary(
+      uniqueKeysWithValues: items.compactMap { item in
+        guard let document = item[kSecAttrAccount as String] as? String,
+          let data = item[kSecValueData as String] as? Data,
+          let value = String(data: data, encoding: .utf8)
+        else { return nil }
+        return (document, value)
+      })
+  }
+  public static func remove(_ document: String) throws {
+    let status = SecItemDelete(try query(document) as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw SlopFailure("Could not clear sharing details. Unlock this device and retry.")
+    }
   }
   public static func write(_ value: String, document: String) throws {
     let query = try query(document)

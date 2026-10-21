@@ -1,4 +1,5 @@
 import HitSlopCore
+import HitSlopCoreBinding
 import HitSlopDocument
 import SwiftUI
 import UIKit
@@ -99,7 +100,8 @@ import WebKit
   private func refresh() {
     let shared = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("hitSlop/SharedDocuments", isDirectory: true)
-    documents = [folder, shared].flatMap {
+    let local = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    documents = [folder, shared, local].flatMap {
       (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
     }
     .filter { $0.pathExtension == "slop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
@@ -185,10 +187,15 @@ import WebKit
     }
   }
   func join(_ link: String) async throws {
-    guard session == nil else { throw SlopFailure("Close your current document before joining another.") }
+    if let session {
+      let incoming = try await SlopPreparation.run { try sharingDocument(link: link) }
+      guard incoming == session.documentID else {
+        throw SlopFailure("Close your current document before joining another.")
+      }
+    }
     let url = try await DocumentSharing.join(link, candidates: documents)
     refresh()
-    try await show(url)
+    if session?.file.url != url { try await show(url) }
   }
   private func show(_ url: URL) async throws {
     opening = true
@@ -246,6 +253,26 @@ import WebKit
       }
     }
   }
+  /// Uses the same clean-copy owner path as Mac Duplicate, with accepted page edits.
+  func saveUnsharedCopy() {
+    guard let session else { return }
+    var copied: URL?
+    perform(
+      completion: { succeeded in
+        guard succeeded, let copied else { return }
+        // Use normal close so artwork, widgets, save recovery and library sync keep
+        // their usual behavior. A failed close leaves the source open and copy safe.
+        self.close { closed in if closed { self.open(copied) } }
+      },
+      {
+        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let name = session.file.url.deletingPathExtension().lastPathComponent
+        let target = directory.appendingPathComponent("\(name) copy \(UUID().uuidString.prefix(8)).slop")
+        copied = try await session.copy(to: target)
+        self.refresh()
+      })
+  }
   func finishExport() {
     if let exported { try? FileManager.default.removeItem(at: exported.deletingLastPathComponent()) }
     exported = nil
@@ -259,13 +286,18 @@ import WebKit
       }
     }
     backgroundSave = Task {
+      widgets.beginBackgroundRefresh()
       defer {
+        widgets.endBackgroundRefresh()
         backgroundSave = nil
         endBackground()
       }
       do {
         try await session.pauseForBackground()
+        try Task.checkCancellation()
         await SlopLibrary.shared.saveToCloud()
+        try Task.checkCancellation()
+        await widgets.refreshPlaced()
       } catch {
         if !Task.isCancelled {
           message = "Your document is still open. Saving needs attention: \(error.localizedDescription)"

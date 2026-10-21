@@ -35,8 +35,8 @@ and a Service Worker resource channel bound to that frame client. Each successfu
 pending text, pass a Rust save barrier, and stream the current database through Chrome’s Save As dialog, including theme and attachments. Unique temporary exports are deleted
 when writing finishes or abandoned-copy cleanup acquires the lock. Resource delivery
 uses bounded chunks, incremental attachment verification and a bounded decoded cache. Browser storage is local to the profile and is not a backup.
-Safari and mobile browser support are deferred. Hosted sharing has a separate,
-disabled-by-default developer preview described under [Sync](#sync).
+Safari and mobile browser support are deferred. Hosted sharing has a separate
+developer/TestFlight preview described under [Sync](#sync); ordinary Mac releases omit it.
 
 `slop dev` uses a temporary `.slop`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
@@ -309,7 +309,7 @@ The SQLite schema has seven tables:
 | `artwork` | Preview and icon PNGs | Pack; refreshed at close or supplied for a clean copy |
 | `document` | Identity singleton: UUID | Document creation and independent copies |
 | `history` | Loro snapshot, then updates: the saved state | Pack seeds it; saves, checkpoints and close-time trims update it; clean copies replace it with current state |
-| `share` | Singleton room and relay endpoint of a shared document | The sync path; empty until sharing ships, cleared on clean copies |
+| `share` | Singleton room and relay endpoint of a shared document | The sync path in the sharing preview; empty when unshared, cleared on clean copies |
 | `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unreferenced blobs are reclaimed |
 
 The schema check is exact. A new table or column requires a storage version bump and a
@@ -387,8 +387,8 @@ not through synced folders.
 The native Share popover offers PDF, PNG image and editable slop-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
 format runs through the document command queue. PDF and PNG use the saved-state export
-renderer. Live collaboration is available only in the explicitly enabled developer
-preview described under [Sync](#sync).
+renderer. **Live collaboration** in that popover creates an edit link in the developer/TestFlight
+preview described under [Sync](#sync); ordinary Mac releases omit it.
 
 Duplicate and Share Slop File flush what the page accepted and acquire a temporary saved
 source through the owner. Both artwork and the new document come from that source, so
@@ -432,7 +432,7 @@ discard the others. Close requests artwork and eligible widgets in the same batc
 Each output starts two restricted children: Markup evaluates synchronous QuickJS SSR;
 Raster receives frames, fonts and selected images and never executes JavaScript.
 The iOS preview uses the same Rust capture pipeline in-process on a serial background
-queue for icon and preview PNGs. QuickJS retains its heap/stack limits and cooperative
+queue for icon, preview and widget PNGs. QuickJS retains its heap/stack limits and cooperative
 deadline; native raster work has no child-process crash isolation. Authored commands
 remain unavailable on iOS. The Mac renderer continues to use restricted children.
 A typed job envelope supplies separate markup, widget, PNG and PDF budgets.
@@ -623,9 +623,15 @@ history keeps nothing alive.
 
 ### Apple library preview
 
-The development Mac/iPhone preview keeps managed documents in account-scoped Application
-Support. One Swift `CKSyncEngine` transports a complete `.slop` CKAsset per document in
-the fixed `Library` zone. Rust owns library metadata, retained history, writer admission,
+The Synced Library keeps managed documents in sync between Mac and iPhone through the
+person's iCloud account. The iPhone app supports iOS 26+ in TestFlight preview; its App
+Store release and the Mac release with the library on Production remain open. The phone
+opens, edits and creates slops, includes the Quick Checklist starter, and imports from Files.
+
+Managed documents live in account-scoped Application Support. One Swift `CKSyncEngine`
+transports a complete `.slop` CKAsset per document in the fixed `Library` zone of the
+private CloudKit database in container `iCloud.com.hitslop.app`. Rust owns library metadata, retained history,
+writer admission,
 staging, merging through the existing owner, and receipts. Swift carries file paths and
 opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
 
@@ -654,7 +660,7 @@ checkpoint delivery does not change an existing owner's room membership.
 
 ### Relay
 
-The developer-gated sharing preview uses one Rust owner per local copy and a Loro-free
+The developer/TestFlight sharing preview uses one Rust owner per local copy and a Loro-free
 Cloudflare Durable Object per room. Local saves and relay sends are independent;
 offline edits merge on reconnect. The relay stores opaque updates and their operation
 spans, backfills by version vector, and never runs authored code or validates document
@@ -693,9 +699,14 @@ Connected web opening is required. Open copies remain editable offline and after
 Automatic CloudKit checkpoints of relay documents run at most once a minute per process;
 manual/background saves bypass the interval.
 
-The preview requires the native developer flag. Production rollout, Save Unshared Copy,
-account deletion, further abuse controls, reliable offline web reopening and compaction
-remain [later work](roadmap.md#later). Historical qualifications are recorded in the
+Debug enables the preview with `--live-sharing-preview` or
+`HITSLOP_LIVE_SHARING_PREVIEW=1`; TestFlight builds compiled with
+`HITSLOP_SHARING_PREVIEW` enable it without a flag. Ordinary Mac releases omit it.
+The owner signs in with Apple; anyone holding the link can edit in the Mac/iPhone app
+or Chrome. Stop ends the link and every participant keeps a local copy. Browser copies
+are saved in that browser and downloadable as `.slop` files.
+[Sharing operations and qualification](../apps/sharing/README.md) describes the service;
+[the roadmap](roadmap.md#open-now) tracks release and polish work. Historical qualifications are recorded in the
 [account](evidence/live-sharing-accounts-2026-10-19.md),
 [device](evidence/live-sharing-phone-2026-10-19.md) and
 [native/browser](evidence/authoring-environment-2026-10-19.md) evidence.
@@ -724,10 +735,10 @@ remain [later work](roadmap.md#later). Historical qualifications are recorded in
   like an edit; undo keeps them. A change the app refuses pauses sync and leaves the
   document as it was. Changes whose history never arrives wait inside Loro, and pause sync
   once the relay has caught the copy up. Frames wait while a command evaluates.
-- **Wire.** Binary frames (`sync::Frame`). The golden frames in
-  `crates/hitslop-core/tests/sync-frames.json` are the contract with the relay's codec.
-  No released build speaks it yet, so it may change freely until a relay ships; the
-  document layout and storage it carries are the released formats.
+- **Wire.** Binary frames (`sync::Frame`). The shipped TestFlight v1 relay contract is
+  grow-only: immutable HTTP, link and both binary codec fixtures (frames and socket
+  envelopes in `frames.json`) live in `crates/hitslop-sharing-protocol/tests/fixtures/v1`.
+  Breaking changes require `/v2` while `/v1` keeps serving old clients.
 
 Accepted limits, chosen for mini apps over heavier machinery:
 
@@ -766,4 +777,4 @@ retains its mask and coordinate system inside an opaque black fullscreen surface
 The host restores desktop frame, constraints and level on exit. Fullscreen state is
 transient host state; captures keep their independent saved-state layout. Browser
 fullscreen follows the manifest flag. Supported browser scope is described above;
-future platform and sharing work is tracked in the [roadmap](roadmap.md#later).
+remaining platform and sharing work is tracked in the [roadmap](roadmap.md#open-now).
