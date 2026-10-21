@@ -38,7 +38,7 @@ public enum SharingPreview {
 
 public enum SyncedLibraryPreview {
   public static let enabled: Bool = {
-    #if DEBUG || HITSLOP_SYNCED_LIBRARY
+    #if os(macOS) || DEBUG || HITSLOP_SYNCED_LIBRARY
       true
     #else
       false

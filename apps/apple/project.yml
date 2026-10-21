@@ -201,7 +201,7 @@ targets:
             Release) ;;
             *) exit 0 ;;
           esac
-          if [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
+          if [ "${HITSLOP_SKIP_SYMBOL_UPLOAD:-0}" = "1" ] || [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
             exit 0
           fi
           "${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"
@@ -219,7 +219,9 @@ targets:
         Debug:
           CODE_SIGN_ENTITLEMENTS: App/macOS/hitSlop.entitlements
         Release:
-          CODE_SIGN_ENTITLEMENTS: App/macOS/hitSlop.Release.entitlements
+          HITSLOP_RELEASE_ENTITLEMENTS: App/macOS/hitSlop.Release.entitlements
+          CODE_SIGN_ENTITLEMENTS: $(HITSLOP_RELEASE_ENTITLEMENTS)
+          PROVISIONING_PROFILE_SPECIFIER: $(HITSLOP_PROVISIONING_PROFILE_UUID)
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
           ENABLE_DEBUG_DYLIB: NO
   hitSlop-Widgets:

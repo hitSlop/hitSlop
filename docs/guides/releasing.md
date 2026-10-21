@@ -122,6 +122,37 @@ candidate signing steps.
 Archive and export both use manual signing with the installed **Developer ID Application**
 certificate for direct DMG distribution. App Store Connect credentials are used only
 for notarization; packaging does not create development certificates or provisioning profiles.
+
+The next Mac release ships the Synced Library using **Production** CloudKit in
+`iCloud.com.hitslop.app`, matching TestFlight and App Store iPhones. Restricted
+CloudKit and push entitlements require a **Developer ID provisioning profile** for
+team `78UAXU8QG8`, App ID `78UAXU8QG8.com.hitslop.app`. Store its base64 bytes in the
+GitHub Actions secret `MACOS_PROVISIONING_PROFILE`. Regenerate the Developer ID
+profile after changing App ID capabilities (including iCloud containers or push),
+when renewing its signing certificate, or before expiration, then update the secret.
+Packaging validates the profile before building, selects it for archive/export,
+embeds it at `Contents/embedded.provisionprofile` before final signing, and checks
+the signed entitlements. Live collaboration stays gated out of ordinary Mac releases.
+See Apple's [provisioning profile requirements](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles).
+
+For a **local signed hand-test build without notarization or upload**, use an installed
+Developer ID identity, the regenerated profile and a local Sparkle key:
+
+```sh
+MACOS_PROVISIONING_PROFILE_FILE="/absolute/path/hitSlop-DeveloperID.provisionprofile" \
+SPARKLE_PRIVATE_KEY_FILE="/absolute/path/sparkle_eddsa_private.key" \
+SKIP_NOTARIZE=1 HITSLOP_SKIP_ACCEPTANCE=1 HITSLOP_SKIP_SYMBOL_UPLOAD=1 \
+HITSLOP_OUTPUT_DIR="$PWD/dist/macos-library-handtest" \
+scripts/release/package-macos-release.sh
+```
+
+This archives, signs and produces a local DMG/ZIP/appcast; it does not publish
+or upload Crashlytics symbols. Normal candidates retain the dSYM upload phase.
+It skips automated signed-host acceptance and notarization, so it cannot replace the
+notarized workflow candidate or its Gatekeeper qualification. Archive and derived
+data are temporary and removed on exit. The local development-signed installer uses
+the Development CloudKit environment; it does not prove Production sync.
+
 Stapling and ticket validation retry ticket-service error 68 up to three times, waiting
 10, 20 and 40 seconds. Other errors fail immediately; exhausting the retries also fails
 the candidate. These retries never resubmit the app for notarization.
@@ -313,6 +344,10 @@ Mac's Time Machine backup alongside the retained release assets.
   Check the page, edit, save, close and reopen; create one new document too. Until the
   first public release, use the prelaunch sanity set and record that limitation.
 - Check Recents, a basic PNG/PDF export, and quit/relaunch with saved edits intact.
+- Check Synced Library with the same iCloud account on the Mac candidate and a
+  TestFlight/App Store iPhone: create and edit from each device, quit/relaunch,
+  and confirm both directions sync through Production. Confirm live collaboration
+  remains unavailable in the ordinary Mac release.
 - Update from the previous supported signed release through Sparkle. Confirm publisher,
   resulting version and that its existing documents still work. For the first public
   release, record this as unavailable and exercise an isolated appcast instead.

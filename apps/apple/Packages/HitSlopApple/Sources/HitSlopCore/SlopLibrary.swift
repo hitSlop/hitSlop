@@ -146,6 +146,10 @@ final class LibraryOwners: Sendable {
         .appendingPathComponent("hitSlop/Library/\(fingerprint)", isDirectory: true)
       var zoneName = "Library"
       #if DEBUG
+        // Debug builds sync with CloudKit Development. The same account maps to the same
+        // folder in both environments, so keep Development's engine state and files apart
+        // from the Production state that TestFlight, App Store and Developer ID builds use.
+        root = root.appendingPathComponent("Development", isDirectory: true)
         if let namespace = ProcessInfo.processInfo.environment["HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE"] {
           guard !namespace.isEmpty, namespace.utf8.count <= 64,
             namespace.utf8.allSatisfy({

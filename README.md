@@ -23,7 +23,7 @@ You and your agent work on the same document. Check something off and your agent
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It opens, edits and creates slops, includes a Quick Checklist starter, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and the live sharing preview; ordinary Mac releases do not include live collaboration.
+iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It opens, edits and creates slops, includes a Quick Checklist starter, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and the live sharing preview. The next Mac release includes Synced Library on CloudKit Production, matching TestFlight/App Store iPhones. Ordinary Mac releases do not include live collaboration.
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -157,7 +157,7 @@ Here’s where we’re heading:
 - [x] **iPhone preview.** Open, edit and create slops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
 - [x] **Synced Library preview.** Keep slops in sync between Mac and iPhone through iCloud.
 - [x] **Live collaboration preview.** Edit together through a link on Mac, iPhone or Chrome.
-- [ ] **Release the previews.** Bring iPhone to the App Store and Synced Library to the Mac release, and polish sharing.
+- [ ] **Release the previews.** Bring iPhone to the App Store and polish sharing. The next Mac release includes Synced Library on CloudKit Production.
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
 - [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.
