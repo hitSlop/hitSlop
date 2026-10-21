@@ -50,6 +50,12 @@ actor LibrarySync {
   private var observed: [String: String] = [:]
   private var changedAt: Date?
   private var retryRunAt: Date?
+  /// Consecutive failures per record this session; retries back off from 5 s to 15 min.
+  private var failures: [String: Int] = [:]
+  /// Consecutive failed runs; the next automatic run backs off the same way.
+  private var runFailures = 0
+  /// Whether a caller is waiting for a rerun.
+  var hasQueuedRequest: Bool { queued != nil }
 
   init(library: NativeLibrary, database: CKDatabase, zone: CKRecordZone.ID) {
     self.library = library
@@ -155,6 +161,7 @@ actor LibrarySync {
       outcome.issues = state.issues
       if let issue = state.issues.values.sorted().first { outcome.lastError = outcome.lastError ?? issue }
       if outcome.lastError == nil { outcome.lastSuccess = Date() }
+      if retryRunAt == nil { runFailures = 0 }
     } catch {
       failed(error)
     }
@@ -162,7 +169,6 @@ actor LibrarySync {
       outcome.pending = state.pending
       outcome.issues = state.issues
     }
-    if outcome.lastError != nil && retryRunAt == nil { retryRunAt = Date().addingTimeInterval(5) }
     logger.info(
       "run end pending=\(self.outcome.pending) issues=\(self.outcome.issues.count) success=\(self.outcome.lastError == nil)"
     )
@@ -171,7 +177,9 @@ actor LibrarySync {
   private func failed(_ error: Error) {
     outcome.lastError = outcome.lastError.map { $0 + "\n" + String(describing: error) } ?? String(describing: error)
     outcome.message = outcome.message ?? message(error)
-    retryRunAt = Date().addingTimeInterval(max(5, (error as? CKError)?.retryAfterSeconds ?? 5))
+    if retryRunAt == nil { runFailures += 1 }
+    let backoff = min(5 * pow(2, Double(min(runFailures, 10) - 1)), 900)
+    retryRunAt = Date().addingTimeInterval(max(backoff, (error as? CKError)?.retryAfterSeconds ?? 0))
     let underlying = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
     logger.error(
       "run error code=\((error as NSError).code) timeout=\(underlying?.code == NSURLErrorTimedOut) retry scheduled")
@@ -182,9 +190,10 @@ actor LibrarySync {
     if stopped { throw CloudFailure("iCloud account changed; local files retained") }
   }
 
-  private func configure(_ operation: CKOperation, _ options: Options) {
+  /// Operations that carry a document file get time to move up to 16 MiB on a slow network.
+  private func configure(_ operation: CKOperation, _ options: Options, payload: Bool = false) {
     operation.configuration.timeoutIntervalForRequest = 30
-    operation.configuration.timeoutIntervalForResource = 60
+    operation.configuration.timeoutIntervalForResource = payload ? 600 : 60
     operation.qualityOfService = options.background ? .utility : .userInitiated
     self.operation = operation
     logger.debug("operation start timeout=30 background=\(options.background)")
@@ -228,7 +237,7 @@ actor LibrarySync {
     }
     let op = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zone], configurationsByRecordZoneID: [zone: config])
     op.fetchAllChanges = false
-    configure(op, options)
+    configure(op, options, payload: options.request == .changes)
     let result = Mutex(Page())
     return await withCheckedContinuation { reply in
       op.recordWasChangedBlock = { id, record in result.withLock { $0.records[id] = record } }
@@ -257,7 +266,7 @@ actor LibrarySync {
   private func fetchRecord(_ id: CKRecord.ID, _ options: Options) async throws -> CKRecord {
     try check()
     let op = CKFetchRecordsOperation(recordIDs: [id])
-    configure(op, options)
+    configure(op, options, payload: true)
     let result = Mutex<Result<CKRecord, Error>?>(nil)
     return try await withCheckedThrowingContinuation { reply in
       op.perRecordResultBlock = { _, record in result.withLock { $0 = record } }
@@ -354,7 +363,10 @@ actor LibrarySync {
     let message = message(error)
     outcome.message = outcome.message ?? message
     outcome.lastError = outcome.lastError ?? String(describing: error)
-    let delay = max(5, (error as? CKError)?.retryAfterSeconds ?? 5)
+    let attempt = (failures[id.recordName] ?? 0) + 1
+    failures[id.recordName] = attempt
+    let backoff = min(5 * pow(2, Double(min(attempt, 10) - 1)), 900)
+    let delay = max(backoff, (error as? CKError)?.retryAfterSeconds ?? 0)
     logger.error("record error id=\(id.recordName, privacy: .public) code=\((error as NSError).code) retry=\(delay)")
     do {
       try library.retry(
@@ -412,6 +424,7 @@ actor LibrarySync {
       asset: (record["payload"] as? CKAsset)?.fileURL?.path, version: version, fields: fields(record),
       deleted: (record["deleted"] as? Int) == 1,
       artworkVersion: record["artworkVersion"] as? String, assetRevision: record["assetRevision"] as? String)
+    failures[record.recordID.recordName] = nil
     let dirty = try library.entries().contains { $0.id == record.recordID.recordName && $0.dirty }
     if try library.retries().contains(where: { $0.id == record.recordID.recordName && ($0.incoming || !dirty) }) {
       try library.clearRetry(id: record.recordID.recordName)
@@ -423,7 +436,7 @@ actor LibrarySync {
     let op = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
     op.savePolicy = .ifServerRecordUnchanged
     op.isAtomic = false
-    configure(op, options)
+    configure(op, options, payload: true)
     let result = Mutex<Result<CKRecord, Error>?>(nil)
     return try await withCheckedThrowingContinuation { reply in
       op.perRecordSaveBlock = { _, saved in result.withLock { $0 = saved } }
@@ -486,6 +499,7 @@ actor LibrarySync {
             id: entry.id, version: version, assetRevision: saved["assetRevision"] as? String,
             fields: fields(saved), deleted: (saved["deleted"] as? Int) == 1)
           try library.clearRetry(id: entry.id)
+          failures[entry.id] = nil
           sent += 1
           break
         } catch let error as CKError where error.code == .serverRecordChanged {

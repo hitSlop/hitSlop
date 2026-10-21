@@ -14,7 +14,8 @@ sizes. Review covered task entry and menus, care logging, profile edits, caregiv
 creation, nested sheets, text containing Japanese/emoji, and Preview/Icon views.
 Quick Checklist’s small, medium and large widget compositions were also reviewed.
 The short sheet uses a simulated 340px editor height; it does not simulate a native
-keyboard. The focused textarea clears the sticky submit/cancel controls.
+keyboard. In that simulated height the sticky submit/cancel controls stay reachable
+below the focused textarea; this is not native-keyboard validation.
 
 ![Quick Checklist at 390px](assets/mobile-checklist-2026-10-21.png)
 

@@ -66,8 +66,8 @@ private final class FinishedCount: Sendable { let value = Mutex(0) }
     finished.value.withLock { $0 += 1 }
     return result
   }
-  // Let the second caller enter the actor while CloudKit is held by the test.
-  try await Task.sleep(for: .milliseconds(100))
+  // Release CloudKit only once the second caller is queued behind the first run.
+  while await !sync.hasQueuedRequest { await Task.yield() }
   #expect(finished.value.withLock { $0 } == 0)
   initial.modifyRecordZonesResultBlock?(.failure(CKError(.networkUnavailable)))
   let rerun = try #require(await iterator.next() as? CKModifyRecordZonesOperation)

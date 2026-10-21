@@ -669,7 +669,8 @@ After the library copy opens, coordinated cleanup takes the source lock, verifie
 saved copies and checks the source has not changed before moving it to Trash. Failed
 cleanup keeps both files and reports their locations. No document format changes.
 The iPhone starter build reads Popular membership from repository metadata, adds
-`baby-journal`, and excludes camera, microphone or speech capabilities.
+`baby-journal`, and leaves out templates that declare camera, microphone or speech
+capabilities, which the iPhone host refuses.
 Both catalogs share the app icon and bundled Baloo 2 headings; controls and
 body copy use native fonts. The iPhone editor extends only its page-colored background
 under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
