@@ -92,9 +92,14 @@ actor LibraryTransport: CKSyncEngineDelegate {
   func enqueue() throws {
     guard let engine else { return }
     let entries = try library.entries()
-    let eligible = try entries.filter { entry in
+    let eligible = entries.filter { entry in
       guard entry.dirty, issues[entry.id] == nil else { return false }
-      return try library.stageAllowed(id: entry.id, explicit: explicitCheckpoint)
+      do { return try library.stageAllowed(id: entry.id, explicit: explicitCheckpoint) } catch {
+        // One document's problem waits for a retry without pausing the library.
+        issues[entry.id] = libraryMessage(error)
+        retryAt[entry.id] = Date().addingTimeInterval(5)
+        return false
+      }
     }
     let excluded = Set(entries.map(\.id)).subtracting(eligible.map(\.id))
     engine.state.remove(
@@ -141,7 +146,7 @@ actor LibraryTransport: CKSyncEngineDelegate {
   }
   private func hasEligibleChanges() throws -> Bool {
     for entry in try library.entries() where entry.dirty && issues[entry.id] == nil {
-      if try library.stageAllowed(id: entry.id, explicit: explicitCheckpoint) { return true }
+      if (try? library.stageAllowed(id: entry.id, explicit: explicitCheckpoint)) == true { return true }
     }
     return false
   }

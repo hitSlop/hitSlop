@@ -56,6 +56,8 @@ fn relay_checkpoints_throttle_automatic_staging_but_manual_saves_and_ordinary_do
     assert!(library.stage_sync(&entry.id, true).unwrap().is_some());
     assert!(!library.stage_allowed(&entry.id, false).unwrap());
     close(&owner);
+    // The closed editor can outlive its close; its saved file still answers.
+    assert!(!library.stage_allowed(&entry.id, false).unwrap());
     drop(library);
     let reopened = Library::open(&dir.path().join("library"), "account").unwrap();
     assert!(reopened.stage_allowed(&entry.id, false).unwrap());

@@ -381,10 +381,10 @@ impl Library {
         if entry.deleted {
             return Ok(true);
         }
-        let share = if let Some(owner) = inner.live.get(id).and_then(Weak::upgrade) {
-            owner.share().map_err(failed)?
-        } else {
-            Store::open(Path::new(&entry.path), Mode::Snapshot).map_err(failed)?.share().map_err(failed)?
+        // An editor that already closed has saved its membership to the file.
+        let share = match inner.live.get(id).and_then(Weak::upgrade).and_then(|owner| owner.share().ok()) {
+            Some(share) => share,
+            None => Store::open(Path::new(&entry.path), Mode::Snapshot).map_err(failed)?.share().map_err(failed)?,
         };
         Ok(share.is_none_or(|s| s.endpoint == crate::LIBRARY_SHARE_ENDPOINT))
     }
