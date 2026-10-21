@@ -31,19 +31,25 @@ struct PhoneArtworkView: View {
 struct PhoneSlopRow: View {
   let url: URL, title: String, subtitle: String
   var revision = ""
+  /// A synced row shows a small iCloud mark instead of a status line.
+  var synced = false
   var body: some View {
-    HStack(spacing: 16) {
-      PhoneArtworkView(url: url, revision: revision).padding(5).frame(width: 62, height: 66)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-      VStack(alignment: .leading, spacing: 5) {
-        Text(title).font(SlopBrand.heading(18)).foregroundStyle(.primary)
-        Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+    HStack(spacing: 12) {
+      PhoneArtworkView(url: url, revision: revision).padding(3).frame(width: 44, height: 46)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title).font(SlopBrand.heading(16)).foregroundStyle(.primary).lineLimit(1)
+        if !synced { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
       }.frame(maxWidth: .infinity, alignment: .leading)
-      Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(.tertiary)
-    }.padding(.vertical, 10).padding(.horizontal, 10).contentShape(Rectangle())
+      if synced {
+        Image(systemName: "checkmark.icloud").font(.footnote).foregroundStyle(.tertiary)
+          .accessibilityLabel(subtitle)
+      }
+      Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+    }.padding(.vertical, 6).padding(.horizontal, 8).contentShape(Rectangle())
       .overlay(alignment: .bottom) {
-        Rectangle().fill(Color.primary.opacity(0.065)).frame(height: 0.5).padding(.leading, 88)
+        Rectangle().fill(Color.primary.opacity(0.065)).frame(height: 0.5).padding(.leading, 64)
       }
   }
 }

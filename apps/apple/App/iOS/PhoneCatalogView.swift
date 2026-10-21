@@ -18,8 +18,8 @@ struct PhoneCatalogView: View {
   }
   private var header: some View {
     HStack(spacing: 12) {
-      SlopBrandMark(size: 38)
-      Text("hitSlop").font(SlopBrand.heading(28, relativeTo: .title)).tracking(-0.8)
+      SlopBrandMark(size: 30)
+      Text("hitSlop").font(SlopBrand.heading(24, relativeTo: .title)).tracking(-0.6)
       Spacer()
       Button {
         showSettings = true
@@ -27,21 +27,21 @@ struct PhoneCatalogView: View {
         Image(systemName: "gearshape").font(.title3).foregroundStyle(.primary).frame(width: 44, height: 44)
       }
       .accessibilityLabel("Settings")
-    }.padding(.horizontal, 22).padding(.top, 10).padding(.bottom, 12)
+    }.padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 6)
   }
   private var libraryList: some View {
     VStack(spacing: 0) {
       header
       search
       HStack {
-        Text("Recents").font(SlopBrand.heading(24, relativeTo: .title2))
+        Text("Recents").font(SlopBrand.heading(20, relativeTo: .title2))
         Spacer()
         Button {
           Task { await library.syncNow() }
         } label: {
           if library.isSyncing { ProgressView() } else { Image(systemName: "arrow.triangle.2.circlepath") }
         }.accessibilityLabel("Sync Now").disabled(library.isSyncing)
-      }.padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 12)
+      }.padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 4)
       ScrollView {
         LazyVStack(spacing: 0) {
           ForEach(library.visibleEntries.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }) {
@@ -51,7 +51,7 @@ struct PhoneCatalogView: View {
             } label: {
               PhoneSlopRow(
                 url: URL(fileURLWithPath: entry.path), title: entry.title, subtitle: library.state(for: entry),
-                revision: entry.assetRevision)
+                revision: entry.assetRevision, synced: library.isSynced(entry))
             }
             .contextMenu { Button("Delete Slop", role: .destructive) { model.delete(entry) } }
             .buttonStyle(.plain).accessibilityLabel(entry.title).disabled(
@@ -81,15 +81,15 @@ struct PhoneCatalogView: View {
           }.padding(.horizontal, 30).padding(.top, 66)
         }
       }.refreshable { await library.syncNow() }
-      Text(library.status).font(.footnote).foregroundStyle(.secondary).padding(16)
+      Text(library.status).font(.caption2).foregroundStyle(.secondary).padding(.vertical, 6)
     }.background(Color(.systemBackground))
   }
   private var search: some View {
     HStack(spacing: 10) {
       Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
       TextField("Search slops", text: $query).autocorrectionDisabled()
-    }.padding(.horizontal, 15).padding(.vertical, 12).background(
-      Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 15)
+    }.padding(.horizontal, 13).padding(.vertical, 9).background(
+      Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12)
     )
     .padding(.horizontal, 22)
   }

@@ -89,7 +89,10 @@ public struct CatalogView: View {
         showJoin = true
       }
     }
-    .onChange(of: library.entries, initial: true) { _, _ in updateLibrary() }
+    .onChange(of: library.entries, initial: true) { _, _ in
+      model.managedFolder = SlopLibrary.managedFolder.standardizedFileURL.path
+      updateLibrary()
+    }
     .onChange(of: library.issues) { _, _ in updateLibrary() }
     .onChange(of: library.isReady) { _, _ in updateLibrary() }
     .onChange(of: library.lastSuccess) { _, _ in updateLibrary() }

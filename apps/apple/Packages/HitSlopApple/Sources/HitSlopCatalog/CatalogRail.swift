@@ -182,7 +182,7 @@ private struct CatalogRow: View {
 
   private var subtitle: String {
     if let identity = entry.documentIdentity {
-      let folder = folderName(identity.folderPath)
+      let folder = entry.isSynced ? "iCloud" : folderName(identity.folderPath)
       guard let date = entry.updatedAt else { return folder }
       return "\(folder) · \(relativeDate(date))"
     }

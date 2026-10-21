@@ -93,10 +93,13 @@ struct CatalogDetail: View {
           .fixedSize(horizontal: false, vertical: true)
         if let identity = entry.documentIdentity {
           Text(entry.title).font(.body).foregroundStyle(.secondary)
-          Label(folderName(identity.folderPath), systemImage: "folder")
-            .font(.callout).foregroundStyle(.secondary)
-            .labelStyle(.titleAndIcon)
-            .help(identity.path)
+          Label(
+            entry.isSynced ? "iCloud" : folderName(identity.folderPath),
+            systemImage: entry.isSynced ? "icloud" : "folder"
+          )
+          .font(.callout).foregroundStyle(.secondary)
+          .labelStyle(.titleAndIcon)
+          .help(identity.path)
         } else {
           Text(entry.isBundled ? "Included with hitSlop" : "Installed template")
             .font(.body).foregroundStyle(.secondary)
@@ -145,7 +148,9 @@ struct CatalogDetail: View {
     var result = [
       CatalogFact(
         title: "Source",
-        value: entry.isRecent ? "Local document" : entry.isBundled ? "Included with hitSlop" : "Installed locally")
+        value: entry.isSynced
+          ? "iCloud"
+          : entry.isRecent ? "Local document" : entry.isBundled ? "Included with hitSlop" : "Installed locally")
     ]
     if entry.isRecent, let date = entry.createdAt {
       result.append(CatalogFact(title: "Created", value: date.formatted(date: .abbreviated, time: .omitted)))

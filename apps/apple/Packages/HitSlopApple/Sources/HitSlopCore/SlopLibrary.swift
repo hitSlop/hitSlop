@@ -78,6 +78,11 @@ final class LibraryOwners: Sendable {
   private var native: NativeLibrary?
   private var container: CKContainer?
   private init() {}
+  /// Every account's library, and earlier preview libraries beside them, live under this folder.
+  public nonisolated static var managedFolder: URL {
+    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("hitSlop/Library", isDirectory: false)
+  }
 
   public func start() {
     guard task == nil else { return }
@@ -162,8 +167,7 @@ final class LibraryOwners: Sendable {
         return
       }
       account = fingerprint
-      var root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("hitSlop/Library/\(fingerprint)", isDirectory: true)
+      var root = Self.managedFolder.appendingPathComponent(fingerprint, isDirectory: true)
       var zoneName = "Library"
       #if DEBUG
         // Debug builds sync with CloudKit Development. The same account maps to the same
@@ -289,12 +293,17 @@ final class LibraryOwners: Sendable {
   private func clock(_ date: Date) -> String {
     date.formatted(date: .omitted, time: .shortened)
   }
+  /// Clean and confirmed by a successful check since the app came to the front.
+  public func isSynced(_ entry: SyncedSlop) -> Bool {
+    guard !entry.localOnly, entry.problem == nil, issues[entry.id] == nil, !entry.dirty, isReady, lastError == nil,
+      let lastSuccess
+    else { return false }
+    return lastSuccess >= foregroundAt
+  }
   public func state(for entry: SyncedSlop) -> String {
     if entry.localOnly { return "Saved on this device" }
     if let problem = entry.problem ?? issues[entry.id] { return problem }
-    if !entry.dirty, isReady, lastError == nil, let lastSuccess, lastSuccess >= foregroundAt {
-      return "Synced with iCloud"
-    }
+    if isSynced(entry) { return "Synced with iCloud" }
     if let lastSuccess { return "Saved on this device · last synced " + clock(lastSuccess) }
     return "Saved on this device · waiting to sync"
   }
