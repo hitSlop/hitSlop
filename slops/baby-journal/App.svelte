@@ -4,7 +4,7 @@
   import { onMount } from "svelte";
   import { Dialog, AlertDialog, DropdownMenu, RadioGroup } from "bits-ui";
   import { isRefused } from "hitslop";
-  import { attachments, bindText, getDocument } from "hitslop/svelte";
+  import { attachments, bindText, getDocument, getEnvironment } from "hitslop/svelte";
   import schema, { colors, kinds } from "./schema";
   import {
     addCaregiver, addEntry, babyAge, dateLabel, dayKey, duration, elapsed, entryTitle, journalView, localInput,
@@ -15,6 +15,18 @@
   import Choice from "./Choice.svelte";
 
   const doc = getDocument(schema);
+  const environment = getEnvironment();
+  let overviewOpen = $state(false);
+  let entrySheet = $state<HTMLElement | null>(null);
+  let profileSheet = $state<HTMLElement | null>(null);
+  let caregiversSheet = $state<HTMLElement | null>(null);
+  let overviewSheet = $state<HTMLElement | null>(null);
+  function sheetFocus(event: Event, content: HTMLElement | null) {
+    if (environment.current.layout !== "compact") return;
+    event.preventDefault();
+    // Focus the sheet, keeping its focus trap without opening a software keyboard.
+    content?.focus({ preventScroll: true });
+  }
   const labels: Record<Kind, string> = { feeding: "Feeding", diaper: "Diaper", sleep: "Sleep", note: "Note" };
   const prompts: Record<Kind, string> = { feeding: "Log a feed", diaper: "Log a change", sleep: "Log some sleep", note: "Keep a memory" };
   let now = $state(Date.now());
@@ -202,8 +214,7 @@
   </article>
 {/snippet}
 
-  <main class="bj-app" data-color={doc.current.color}>
-    <aside class="bj-sidebar">
+{#snippet overview()}
       <section class="bj-profile">
         <div class="bj-profile-picture">{@render portrait(true)}<span class="bj-profile-heart"><Mark kind="heart" size={30}/></span></div>
         <h2>{doc.current.name.trim() || "Hello, little one"}<span class="bj-tiny-heart" aria-hidden="true">♥</span></h2>
@@ -226,9 +237,14 @@
         {:else}<p>The tiny things you’ll want to remember.</p><button class="bj-text-button" onclick={() => startEntry("note")}><Mark kind="plus" size={18}/> Add a little note</button>{/if}
       </section>
       <button class="bj-caregivers-link" onclick={() => caregiversOpen = true}><Mark kind="people" size={21}/> Your circle of care <span>{journal.active.length}</span></button>
-    </aside>
+
+{/snippet}
+
+  <main class="bj-app" data-color={doc.current.color}>
+    <aside class="bj-sidebar">{@render overview()}</aside>
     <section class="bj-main">
       <header class="bj-header"><div><p class="bj-eyebrow">A little journal, a lot of love</p><h1>{title}<span aria-hidden="true">♥</span></h1><p class="bj-subtitle">The little things add up.</p></div><div class="bj-sun"><Mark kind="sun" size={82}/></div></header>
+      <div class="bj-mobile-tools"><button class="bj-pill" onclick={() => overviewOpen = true}><Mark kind="people" size={20}/> Care &amp; profile</button></div>
       <div class="bj-quick-actions">
         {#each kinds as kind}<button class="bj-quick" data-kind={kind} onclick={() => startEntry(kind)}><Mark {kind} size={43}/><span><strong>{labels[kind]}</strong><small>{prompts[kind]}</small></span></button>{/each}
       </div>
@@ -250,9 +266,17 @@ Start with one little moment.`}</p><button class="bj-pill" onclick={() => startE
     <span class="bj-sr-only" aria-live="polite">{announcement}</span>
   </main>
 
+  <Dialog.Root bind:open={overviewOpen}>
+    <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog bj-sheet bj-overview" data-color={doc.current.color} bind:ref={overviewSheet} onOpenAutoFocus={event => sheetFocus(event, overviewSheet)}>
+      <div class="bj-dialog-heading"><div><Dialog.Title class="bj-dialog-title">Your little circle</Dialog.Title><Dialog.Description class="bj-dialog-description">Recent care, little memories, and the people who help.</Dialog.Description></div><Dialog.Close class="bj-icon-button" aria-label="Close care overview"><Mark kind="close" size={23}/></Dialog.Close></div>
+      <div class="bj-dialog-body">{@render overview()}</div>
+    </Dialog.Content></Dialog.Portal>
+  </Dialog.Root>
+
   <Dialog.Root bind:open={entryOpen}>
-    <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog" onInteractOutside={event => event.preventDefault()}>
+    <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog bj-sheet" data-color={doc.current.color} bind:ref={entrySheet} onOpenAutoFocus={event => sheetFocus(event, entrySheet)} onInteractOutside={event => event.preventDefault()}>
       <div class="bj-dialog-heading"><span class="bj-dialog-mark" data-kind={formKind}><Mark kind={formKind} size={35}/></span><div><Dialog.Title class="bj-dialog-title">{editingId ? "Edit" : "Add"} {labels[formKind].toLowerCase()}</Dialog.Title><Dialog.Description class="bj-dialog-description">{formKind === "note" ? "A small moment worth keeping." : "The details of a little act of care."}</Dialog.Description></div><Dialog.Close class="bj-icon-button" aria-label="Close entry form"><Mark kind="close" size={23}/></Dialog.Close></div>
+      <div class="bj-dialog-body">
       <form class="bj-form" onsubmit={saveEntry}>
         {#if formKind === "feeding"}<RadioGroup.Root class="bj-segments" aria-label="Feeding type" bind:value={formFeeding}><RadioGroup.Item value="bottle">Bottle</RadioGroup.Item><RadioGroup.Item value="nursing">Nursing</RadioGroup.Item></RadioGroup.Root>
           {#if formFeeding === "bottle"}<div class="bj-form-pair"><label>Amount <small>(optional)</small><input type="number" step="any" min="0.01" inputmode="decimal" value={formAmount} oninput={event => formAmount = event.currentTarget.value} placeholder="e.g. 120"/></label><div class="bj-field"><span>Unit</span><Choice bind:value={formUnit} label="Bottle unit" options={[{ value: "mL", label: "mL" }, { value: "oz", label: "US fl oz" }]}/></div></div>
@@ -265,25 +289,27 @@ Start with one little moment.`}</p><button class="bj-pill" onclick={() => startE
         {#if entryError}<p class="bj-error" role="alert">{entryError}</p>{/if}
         <div class="bj-form-footer"><Dialog.Close class="bj-button bj-secondary" type="button">Cancel</Dialog.Close><button class="bj-button" type="submit">{editingId ? "Save changes" : `Add ${labels[formKind].toLowerCase()}`}</button></div>
       </form>
-    </Dialog.Content></Dialog.Portal>
+    </div></Dialog.Content></Dialog.Portal>
   </Dialog.Root>
 
   <Dialog.Root bind:open={profileOpen}>
-    <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog">
+    <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog bj-sheet" data-color={doc.current.color} bind:ref={profileSheet} onOpenAutoFocus={event => sheetFocus(event, profileSheet)}>
       <div class="bj-dialog-heading"><div><Dialog.Title class="bj-dialog-title">Your little one</Dialog.Title><Dialog.Description class="bj-dialog-description">Make this little journal theirs.</Dialog.Description></div><Dialog.Close class="bj-icon-button" aria-label="Close profile"><Mark kind="close" size={23}/></Dialog.Close></div>
+      <div class="bj-dialog-body">
       <div class="bj-profile-photo-edit">{@render portrait()}<div><input class="bj-sr-only" tabindex="-1" type="file" accept="image/jpeg,image/png,image/webp" bind:this={fileInput} onchange={importPhoto} aria-label="Baby photo"/><button class="bj-pill" disabled={importing} onclick={() => fileInput?.click()}><Mark kind="camera" size={20}/>{importing ? "Adding photo…" : photo ? "Change photo" : "Add a photo"}</button>{#if photo}<button class="bj-text-button" disabled={importing} onclick={() => { doc.fields.photo.$clear(); photoError = ""; }}>Remove photo</button>{/if}<p class="bj-help">JPEG, PNG, or WebP · up to 10 MB</p></div></div>
       {#if photoError}<p class="bj-error" role="alert">{photoError}</p>{/if}
-      <div class="bj-form"><label>Baby’s name<input placeholder="What’s their name?" use:bindText={doc.fields.name}/></label><label>Birthday <small>(optional)</small><input type="date" value={doc.current.birthday} max={today} onchange={setBirthday}/></label>{#if birthdayError}<p class="bj-error" role="alert">{birthdayError}</p>{/if}<div class="bj-field"><span>A favorite color</span><RadioGroup.Root class="bj-colors" aria-label="Favorite color" value={doc.current.color} onValueChange={value => { if (colors.includes(value as typeof colors[number])) doc.fields.color.set(value as typeof colors[number]); }}>{#each colors as color}<RadioGroup.Item value={color} aria-label={color} style={`--bj-swatch: var(--slop-${color})`}><span>{doc.current.color === color ? "✓" : ""}</span><small>{color}</small></RadioGroup.Item>{/each}</RadioGroup.Root></div><div class="bj-form-footer"><Dialog.Close class="bj-button">Done</Dialog.Close></div></div>
-    </Dialog.Content></Dialog.Portal>
+      <div class="bj-form"><label>Baby’s name<input placeholder="What’s their name?" autocomplete="given-name" enterkeyhint="done" use:bindText={doc.fields.name}/></label><label>Birthday <small>(optional)</small><input type="date" value={doc.current.birthday} max={today} onchange={setBirthday}/></label>{#if birthdayError}<p class="bj-error" role="alert">{birthdayError}</p>{/if}<div class="bj-field"><span>A favorite color</span><RadioGroup.Root class="bj-colors" aria-label="Favorite color" value={doc.current.color} onValueChange={value => { if (colors.includes(value as typeof colors[number])) doc.fields.color.set(value as typeof colors[number]); }}>{#each colors as color}<RadioGroup.Item value={color} aria-label={color} style={`--bj-swatch: var(--slop-${color})`}><span>{doc.current.color === color ? "✓" : ""}</span><small>{color}</small></RadioGroup.Item>{/each}</RadioGroup.Root></div><div class="bj-form-footer"><Dialog.Close class="bj-button">Done</Dialog.Close></div></div>
+    </div></Dialog.Content></Dialog.Portal>
   </Dialog.Root>
 
   <Dialog.Root bind:open={caregiversOpen}>
-    <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog">
+    <Dialog.Portal><Dialog.Overlay class="bj-overlay"/><Dialog.Content class="bj-dialog bj-sheet" data-color={doc.current.color} bind:ref={caregiversSheet} onOpenAutoFocus={event => sheetFocus(event, caregiversSheet)}>
       <div class="bj-dialog-heading"><div><Dialog.Title class="bj-dialog-title">Your circle of care</Dialog.Title><Dialog.Description class="bj-dialog-description">A name beside every little act of love.</Dialog.Description></div><Dialog.Close class="bj-icon-button" aria-label="Close caregivers"><Mark kind="close" size={23}/></Dialog.Close></div>
+      <div class="bj-dialog-body">
       <div class="bj-caregiver-list">{#each people as person (person.$id)}<div class="bj-caregiver-row" class:bj-archived={person.archived}><span class="bj-person-dot">{caregiverInitials(people, person.$id)}</span><input aria-label={`Caregiver name: ${person.name}`} use:bindText={doc.at(person).name}/><button class="bj-text-button" disabled={!person.archived && journal.active.length <= 1} onclick={() => doc.change(tx => setCaregiverArchived(tx, doc.current, person.$id, !person.archived))}>{person.archived ? "Restore" : "Archive"}</button></div>{/each}</div>
       <p class="bj-help">Archived caregivers stay on past entries. Keep at least one caregiver active.</p>
-      <form class="bj-caregiver-add" onsubmit={submitCaregiver}><input aria-label="New caregiver name" bind:value={caregiverName} placeholder="Amanda, Grandma, Grandpa…"/><button class="bj-button" disabled={!caregiverName.trim()}>Add</button></form>{#if caregiverError}<p class="bj-error" role="alert">{caregiverError}</p>{/if}<div class="bj-form-footer"><Dialog.Close class="bj-button bj-secondary">Done</Dialog.Close></div>
-    </Dialog.Content></Dialog.Portal>
+      <form class="bj-caregiver-add" onsubmit={submitCaregiver}><input aria-label="New caregiver name" bind:value={caregiverName} placeholder="Amanda, Grandma, Grandpa…" autocapitalize="words" enterkeyhint="done"/><button class="bj-button" disabled={!caregiverName.trim()}>Add</button></form>{#if caregiverError}<p class="bj-error" role="alert">{caregiverError}</p>{/if}<div class="bj-form-footer"><Dialog.Close class="bj-button bj-secondary">Done</Dialog.Close></div>
+    </div></Dialog.Content></Dialog.Portal>
   </Dialog.Root>
 
   <AlertDialog.Root open={deletingId !== null} onOpenChange={open => { if (!open) deletingId = null; }}><AlertDialog.Portal><AlertDialog.Overlay class="bj-overlay"/><AlertDialog.Content class="bj-dialog bj-confirm"><AlertDialog.Title class="bj-dialog-title">Delete this entry?</AlertDialog.Title><AlertDialog.Description class="bj-dialog-description">This removes the entry from the journal. It can’t be undone here.</AlertDialog.Description>{#if actionError}<p class="bj-error" role="alert">{actionError}</p>{/if}<div class="bj-form-footer"><AlertDialog.Cancel class="bj-button bj-secondary">Keep entry</AlertDialog.Cancel><button class="bj-button bj-destructive" onclick={deleteEntry}>Delete entry</button></div></AlertDialog.Content></AlertDialog.Portal></AlertDialog.Root>

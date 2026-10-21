@@ -301,6 +301,9 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+    #if os(iOS)
+      configuration.ignoresViewportScaleLimits = false
+    #endif
     configuration.setURLSchemeHandler(
       SchemeHandler(assets: owner.assets, shell: webViewResources), forURLScheme: "slop")
     // One handler: document requests go to the owner, everything else to the host bridge.
@@ -325,6 +328,13 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     let view = WKWebView(
       frame: CGRect(x: 0, y: 0, width: spec.width, height: spec.height),
       configuration: configuration)
+    #if os(iOS)
+      view.accessibilityIdentifier = "document-page"
+      // Native keyboard avoidance sizes the page; authored panes keep their own scrolling.
+      view.scrollView.keyboardDismissMode = .interactive
+      view.scrollView.bounces = false
+      view.scrollView.pinchGestureRecognizer?.isEnabled = false
+    #endif
     WebViewBackground.set(file.backdrop == .window, on: view)
     view.navigationDelegate = self
     view.uiDelegate = self

@@ -24,6 +24,31 @@ test("device presets and viewport changes update Svelte and CSS without replacin
     const preset = page.getByRole("combobox", { name: "Device preset" });
     await preset.selectOption("iphone");
     await env.filter({ hasText: "ios/phone/compact" }).waitFor();
+    const mobileFrame = page.frames().find(frame => frame.url().includes("/app.html"))!;
+    // Mobile reflow can move the focused field outside a nested scroller.
+    // Use a minimal nested scroller, independent of any shipped template.
+    await mobileFrame.evaluate(async () => {
+      const pane = document.createElement("section");
+      pane.id = "mobile-editing-probe";
+      pane.style.cssText = "position:fixed;inset:0;overflow:auto;overflow-anchor:none;background:white";
+      const space = document.createElement("div");
+      space.style.height = "20px";
+      const input = document.createElement("input");
+      input.setAttribute("aria-label", "Mobile focus probe");
+      pane.append(space, input);
+      document.body.append(pane);
+      input.focus({ preventScroll: true });
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      space.style.height = "1200px";
+      window.dispatchEvent(new Event("resize"));
+    });
+    await mobileFrame.waitForFunction(() => {
+      const input = document.querySelector<HTMLInputElement>('[aria-label="Mobile focus probe"]')!;
+      const rect = input.getBoundingClientRect();
+      return document.activeElement === input && rect.top >= 0 && rect.bottom <= innerHeight;
+    }, undefined, { timeout: 3000 });
+    await mobileFrame.evaluate(() => document.getElementById("mobile-editing-probe")!.remove());
     await preset.selectOption("ipad");
     await env.filter({ hasText: "ios/tablet/regular" }).waitFor();
     await preset.selectOption("mac");

@@ -203,6 +203,28 @@ accepted edits and simulate presentation only. Preview, Export, Icon and Widget 
 static views of their capture props and never read `getEnvironment()` or receive these
 editor attributes.
 
+### iPhone editing
+
+The current iPhone app is portrait-only. Its editor fits below native navigation,
+above the home indicator, and above the onscreen keyboard; the background fills the
+screen. Use `height: 100%` with `min-height: 0` and scrollable content panes rather
+than subtracting keyboard height or adding a second set of native safe-area insets.
+The native Done action dismisses the keyboard without submitting a form. Page zoom
+and input-focus zoom are disabled in the native iPhone editor; authored canvas or
+image gestures can still implement their own zoom.
+
+For compact editors, use at least 16px text in inputs and 44px touch targets (the
+visible icon may be smaller). Set `inputmode`, `enterkeyhint`, `autocapitalize`, and
+`autocomplete` to match the field. Keep multiline Return and IME composition intact.
+Repeated-entry tools should retain focus after Add; destructive or unrelated actions
+should not summon the keyboard. Do not globally cancel touch events or text selection.
+
+Use Bits UI dialogs for mobile sheets. Bound them to the available viewport, keep
+close and submit controls reachable, and scroll their content. On opening, focus the
+sheet rather than a text field when keyboard entry is optional; retain its focus trap
+and restoration. Test actual keyboard transitions on iPhone: device presets simulate
+layout and identity, not the native keyboard, navigation, or permissions.
+
 ## Entry and media
 
 `slop.ts` exports metadata through `defineSlop({ slug, title, description, author,

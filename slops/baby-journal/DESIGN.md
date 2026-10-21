@@ -12,7 +12,11 @@ support.
 
 At the default size the profile, recent care, memory, caregivers, entry actions,
 date controls, and note action remain in view. Only the timeline scrolls as the
-history grows. Narrow windows stack content and scroll naturally. Long notes
+history grows. Compact editors put a two-column set of care actions above the daily timeline.
+Care & profile opens a secondary sheet with the profile, recent care, memory, and
+caregivers. Entry, profile, and caregiver forms become bounded sheets with scrollable
+content and reachable actions. Opening a compact sheet focuses the sheet without
+raising the keyboard. Long notes
 wrap, while the memory preview is limited to two lines and opens the full entry.
 
 Each document starts blank with one editable caregiver named You. Caregivers are

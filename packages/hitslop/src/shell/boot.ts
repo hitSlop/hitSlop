@@ -111,7 +111,7 @@ export async function boot() {
   const environment = installEnvironment(
     preview.host?.environment?.current ?? (await hostEnvironment)?.environment,
   );
-  preview.host?.environment?.subscribe(() => {
+  const stopPreviewEnvironment = preview.host?.environment?.subscribe(() => {
     environment.setHost(preview.host!.environment!.current);
   });
   if (native && config.style) {
@@ -151,7 +151,16 @@ export async function boot() {
     target,
     recovered: native ? () => call({ method: "pageRecovered" }) : undefined,
   });
-  Object.assign(globalThis.__slop!, lifecycle);
+  Object.assign(globalThis.__slop!, lifecycle, {
+    close: async () => {
+      try {
+        await lifecycle.close();
+      } finally {
+        stopPreviewEnvironment?.();
+        environment.dispose();
+      }
+    },
+  });
   if (native) await call({ method: "ready" });
   preview.host?.ready?.();
 }

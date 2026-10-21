@@ -5,7 +5,7 @@
   import Progress from "./Progress.svelte";
   import schema from "./schema";
   import { addTask, checklistView, fileFinished as collectFinished, restoreTask } from "./tasks";
-  import { EditableText, draft, getDocument, motion, notify } from "hitslop/svelte";
+  import { EditableText, draft, getDocument, getEnvironment, motion, notify } from "hitslop/svelte";
   import { DropdownMenu, Tabs } from "bits-ui";
   import Check from "@lucide/svelte/icons/check";
   import Plus from "@lucide/svelte/icons/plus";
@@ -14,6 +14,7 @@
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
 
   const doc = getDocument(schema);
+  const environment = getEnvironment();
   let activeView = $state<"tasks" | "filed">("tasks");
   const { visible, filed, finished, ratio } = $derived(checklistView(doc.current));
   const fill = motion(() => ratio);
@@ -22,6 +23,7 @@
   let composer = $state<HTMLInputElement>();
   let openMenu = $state<string | null>(null);
   let menuAnchor = $state<HTMLElement | null>(null);
+  let tasksTab = $state<HTMLButtonElement | null>(null);
   const menuIndex = $derived(openMenu ? visible.findIndex(task => task.$id === openMenu) : -1);
   $effect(() => { if (openMenu && menuIndex < 0) openMenu = null; });
 
@@ -37,7 +39,8 @@
   async function remove(id: string) {
     await doc.fields.tasks.remove(id);
     notify("Task removed.");
-    composer?.focus();
+    if (environment.current.device !== "phone") composer?.focus();
+    else tasksTab?.focus();
   }
   async function fileFinished() {
     const count = await doc.change(tx => collectFinished(tx, doc.current));
@@ -73,8 +76,12 @@
         bind:value={newTask.value}
         aria-label="New task"
         placeholder="Add a little thing…"
+        enterkeyhint="enter"
+        autocapitalize="sentences"
+        autocomplete="off"
       />
-      <button type="submit" aria-label="Add task" disabled={!newTask.ready}><Plus size={20} /></button>
+      <button type="submit" aria-label="Add task" disabled={!newTask.ready}
+        onpointerdown={(event) => { if (document.activeElement === composer) event.preventDefault(); }}><Plus size={20} /></button>
     </form>
     <Tabs.Root
       value={activeView}
@@ -86,7 +93,7 @@
         class="checklist-tabs"
         aria-label="Checklist views"
       >
-        <Tabs.Trigger value="tasks" class="checklist-tab"
+        <Tabs.Trigger value="tasks" class="checklist-tab" bind:ref={tasksTab}
           >To do <span>{visible.length}</span></Tabs.Trigger
         >
         <Tabs.Trigger value="filed" class="checklist-tab"
@@ -133,7 +140,7 @@
               sideOffset={5}
               align="end"
               onInteractOutside={(event) => { if (menuAnchor?.contains(event.target as Node)) event.preventDefault(); }}
-              onCloseAutoFocus={(event) => { event.preventDefault(); menuAnchor?.focus(); }}
+              onCloseAutoFocus={(event) => { event.preventDefault(); if (menuAnchor?.isConnected) menuAnchor.focus(); else tasksTab?.focus(); }}
             >
               {#if openMenu}
                 {@const id = openMenu}
