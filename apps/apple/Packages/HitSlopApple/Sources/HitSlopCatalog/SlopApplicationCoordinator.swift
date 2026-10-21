@@ -275,7 +275,7 @@ import SwiftUI
   private func perform(_ id: UUID, command: SlopDocumentCommand) async throws -> URL? {
     let controller = try controller(id)
     if command == .moveToCloud {
-      guard controller.isAvailable(command) else { throw SlopFailure("This slop cannot be moved right now.") }
+      guard controller.canMoveToCloud else { throw SlopFailure("This slop cannot be moved right now.") }
       let source = controller.session.file.url
       // The normal close path flushes text, saves artwork and releases the writer lock.
       _ = try await controller.perform(.close)
