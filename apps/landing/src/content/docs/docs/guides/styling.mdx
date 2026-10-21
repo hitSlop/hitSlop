@@ -3,8 +3,10 @@ title: Style a slop
 description: Plain CSS, a theme palette people can change, responsive layouts, and shared themes.
 ---
 
-See [where your slop runs](/docs/guides/where-your-slop-runs/) for the browser baseline,
-iPhone layout and the distinction between the editor and saved-state rendering.
+See [where your slop runs](/docs/guides/where-your-slop-runs/) for the browser baseline
+and the distinction between the editor and saved-state rendering, and
+[make it work on iPhone](/docs/guides/mobile/) for compact layouts, safe areas, touch
+targets and haptics.
 
 Give the app one clear visual identity: paper for an invoice or note, an instrument for a timer or mixer, or a custom skin when the silhouette helps its job. Keep the primary action obvious at the initial window size. Build depth from a backing surface and purposeful controls rather than repeated generic cards.
 
@@ -63,7 +65,7 @@ body {
 }
 ```
 
-Use readable app-prefixed classes in markup. Group descendants and interaction states with their base component. Nesting is supported and lowered for the host's Safari target. Use flex/grid reflow, container queries, visible focus, and reduced-motion styles. Keep controls clear of transparent edges.
+Use readable app-prefixed classes in markup. Group descendants and interaction states with their base component. Nesting is supported and lowered for the host's Safari target. Use flex/grid reflow, container queries, visible focus, and reduced-motion styles. Keep controls clear of transparent edges. For phone-sized windows, see [make it work on iPhone](/docs/guides/mobile/).
 
 Bits UI menus can render in portals. Give the portal content its own class and target attributes directly, such as `.my-slop-menu [data-highlighted]`; a selector below the editor root cannot reach a portal outside that root. Svelte `<style>` blocks remain available for component-local rules, but plain CSS is the starter convention.
 

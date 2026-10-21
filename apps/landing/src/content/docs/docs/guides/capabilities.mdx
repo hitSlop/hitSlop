@@ -10,8 +10,9 @@ permission still decides whether it can proceed.
 
 The iPhone preview supports file selection and HTTPS embeds, but refuses camera and
 microphone capture and returns `unavailable` with `reason: "host"` for speech. See
-[where your slop runs](/docs/guides/where-your-slop-runs/) for hosts and phone layout,
-and [files and the web](/docs/guides/files-and-web/) for imports and embeds.
+[where your slop runs](/docs/guides/where-your-slop-runs/) for hosts,
+[make it work on iPhone](/docs/guides/mobile/) for phone layout, and
+[files and the web](/docs/guides/files-and-web/) for imports and embeds.
 
 ## Declare what your app uses
 
@@ -45,6 +46,8 @@ or an `<audio>` element needs neither. Start audio playback from a user gesture.
 These are the three supported declaration values. File selection, attachment storage,
 HTTPS data and media, and embedded HTTPS frames do not need an additional capability;
 see [files and the web](/docs/guides/files-and-web/). Browser policies and CORS still apply.
+Haptic feedback is not a capability either: `haptics` from `hitslop/svelte` needs no
+declaration or permission prompt (see [make it work on iPhone](/docs/guides/mobile/#haptics)).
 
 ## Where they work
 

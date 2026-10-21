@@ -30,6 +30,18 @@ iPhone (iOS 26+) is in TestFlight preview; App Store release coming soon. It ope
   <br><sub>▶ <a href="apps/landing/public/assets/desktop-hero.mp4">Watch the 30-second tour</a></sub>
 </p>
 
+## On your iPhone
+
+The iPhone app (iOS 26+, TestFlight preview) opens, edits and creates slops. Start from the Popular templates or Little Days, and keep your library in sync with your Mac through iCloud.
+
+<p align="center">
+  <img src="docs/assets/iphone-little-days.png" width="260" alt="Little Days, a baby journal slop on iPhone, with Feeding, Diaper, Sleep and Note buttons above today's timeline.">
+  &nbsp;&nbsp;
+  <img src="docs/assets/iphone-templates.png" width="260" alt="The Templates tab in hitSlop on iPhone, listing Popular slops such as Invoice, Weekly Planner and Quick Checklist.">
+</p>
+
+Slops can adapt to the phone with responsive layouts and play native haptics for deliberate actions. [Make yours work on iPhone](https://hitslop.com/docs/guides/mobile/).
+
 ## You and your agent, one document
 
 A slop is a live document with its own small interface. Your agent works on the same document through the hitSlop CLI. Here's a fresh Tiny Wins counter:
@@ -94,6 +106,7 @@ so the catalog uses their latest changes.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
 - Add a widget for a slop with a widget view: on your Mac desktop, or for library slops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
 - In the developer/TestFlight preview, choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in hitSlop on Mac/iPhone or in Chrome at share.hitslop.com. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://hitslop.com/docs/guides/live-sharing/) explains the preview.
+- Design for the phone as well as the desktop: slops can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac and in browsers. [Make it work on iPhone](https://hitslop.com/docs/guides/mobile/).
 - Pin a slop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
 - Finder icons can show what's inside, such as a counter's total.
 - Change a document's colors without touching its code, or edit the source to make a different tool.
