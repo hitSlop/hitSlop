@@ -114,3 +114,29 @@ private final class FinishedCount: Sendable { let value = Mutex(0) }
   #expect(retry.retryAt > Date().timeIntervalSince1970)
   #expect(try reopened.changeToken() == previous)
 }
+
+@Test func automaticLibrarySyncWaitsForTheGlobalRetryWhileSyncNowOverridesIt() async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let submitted = FinishedCount()
+  let sync = LibrarySync(library: library, zone: CKRecordZone.ID(zoneName: "Library")) { operation in
+    submitted.value.withLock { $0 += 1 }
+    (operation as? CKModifyRecordZonesOperation)?.modifyRecordZonesResultBlock?(
+      .failure(CKError(.requestRateLimited, userInfo: [CKErrorRetryAfterKey: 60.0])))
+  }
+  _ = await sync.sync(.changes)
+  #expect(submitted.value.withLock { $0 } == 1)
+  // Even a due record retry cannot bypass the run's global rate limit.
+  try library.retry(
+    retry: LibraryRetry(
+      id: UUID().uuidString.lowercased(), title: "Retry", template: "fixture", message: "Offline",
+      retryAt: 0, incoming: true))
+  #expect(try await !sync.changesDue())
+  _ = await sync.sync(.changes)
+  _ = await sync.sync(.full, background: true)
+  #expect(submitted.value.withLock { $0 } == 1)
+  _ = await sync.sync(.full, explicit: true)
+  #expect(submitted.value.withLock { $0 } == 2)
+  await sync.stop()
+}

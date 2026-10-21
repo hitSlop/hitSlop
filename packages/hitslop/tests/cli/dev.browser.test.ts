@@ -108,6 +108,7 @@ test("HMR keeps one owner, accepted edits and row identity; definition resets an
     await frame.getByRole("button", { name: "Add row", exact: true }).click();
     await frame.locator("[data-count]").filter({ hasText: "4" }).waitFor();
     const rows = await frame.locator("[data-row-ids]").textContent();
+    const owners = await dev.diagnostics();
     await frame.getByRole("textbox", { name: "Document title" }).fill("Accepted title");
     await frame.locator("[data-title]").filter({ hasText: "Accepted title" }).waitFor();
     const app = await readFile(join(source, "App.svelte"), "utf8");
@@ -116,6 +117,13 @@ test("HMR keeps one owner, accepted edits and row identity; definition resets an
     expect(await frame.locator("[data-row-ids]").textContent()).toBe(rows);
     expect(await frame.locator("[data-title]").textContent()).toBe("Accepted title");
     expect(await frame.locator("[data-probe]").count()).toBe(1);
+    expect(await dev.diagnostics()).toEqual(owners);
+    // A UI reload reconnects to the same owner and document, including accepted row IDs.
+    await page.reload();
+    await frame.getByRole("heading", { name: "Hot revision" }).waitFor();
+    expect(await frame.locator("[data-row-ids]").textContent()).toBe(rows);
+    expect(await frame.locator("[data-title]").textContent()).toBe("Accepted title");
+    expect(await dev.diagnostics()).toEqual(owners);
     await writeFile(
       join(source, "App.svelte"),
       app.replace("rgb(20, 40, 60)", "rgb(80, 100, 120)"),

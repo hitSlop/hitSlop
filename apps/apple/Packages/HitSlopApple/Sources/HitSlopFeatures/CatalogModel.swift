@@ -175,7 +175,11 @@ public enum CatalogStorageChoice: Sendable {
         entry.updatedAt = recent.updatedAt
         return entry
       }
-      if let managedFolder, path.hasPrefix(managedFolder) { return nil }
+      if let managedFolder {
+        let folder = URL(fileURLWithPath: managedFolder).standardizedFileURL.path
+        // Earlier previews left sibling Library-development-… folders. Other siblings are local files.
+        if path.hasPrefix(folder + "/") || path.hasPrefix(folder + "-development-") { return nil }
+      }
       return recent
     }
   }

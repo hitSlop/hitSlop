@@ -11,6 +11,9 @@ async function run(cmd: string[]) {
   if (await child.exited) throw new Error(`Failed: ${cmd[0]}`);
 }
 const derived = process.env.HITSLOP_DERIVED_DATA ?? resolve(".hitslop/apple-build");
+// XcodeGen validates every target, including iOS resources unused by the Mac scheme.
+for (const name of ["StarterTemplates", "Fixtures"])
+  await mkdir(`generated/ios/${name}`, { recursive: true });
 await run(["xcodegen", "generate", "--spec", "apps/apple/project.yml"]);
 await run([
   "xcodebuild",

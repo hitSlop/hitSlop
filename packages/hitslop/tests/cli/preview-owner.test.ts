@@ -57,7 +57,7 @@ if (process.argv.includes("--preview-owner")) {
     },
   } as unknown as WebSocketClient;
   handlers.get("connection")!(socket, { headers: { origin } });
-  handlers.get("slop:open")!({ token: owners.token }, client);
+  handlers.get("slop:open")!({ token: owners.token, session: crypto.randomUUID() }, client);
   const resourceToken = await ready.promise;
   const { pid } = (await owners.diagnostics())[0]!;
   return {

@@ -2,6 +2,7 @@ import CloudKit
 import CryptoKit
 import Foundation
 import HitSlopCoreBinding
+import Security
 import SwiftUI
 import Synchronization
 
@@ -78,6 +79,18 @@ final class LibraryOwners: Sendable {
   private var native: NativeLibrary?
   private var container: CKContainer?
   private init() {}
+  /// CloudKit traps in a process without the iCloud entitlement, such as the unsigned
+  /// app that release checks launch. iOS apps are always signed with it.
+  private static var hasCloudEntitlement: Bool {
+    #if os(macOS)
+      guard let task = SecTaskCreateFromSelf(nil) else { return false }
+      let value = SecTaskCopyValueForEntitlement(
+        task, "com.apple.developer.icloud-container-identifiers" as CFString, nil)
+      return (value as? [String])?.contains("iCloud.com.hitslop.app") == true
+    #else
+      true
+    #endif
+  }
   /// Every account's library, and earlier preview libraries beside them, live under this folder.
   public nonisolated static var managedFolder: URL {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -131,7 +144,7 @@ final class LibraryOwners: Sendable {
     defer { hasLoaded = true }
     do {
       // Unsigned tools and the package test host never initialize CloudKit.
-      guard Bundle.main.bundleIdentifier == "com.hitslop.app" else {
+      guard Bundle.main.bundleIdentifier == "com.hitslop.app", Self.hasCloudEntitlement else {
         status = "iCloud sync is available in the signed hitSlop app."
         return
       }

@@ -69,6 +69,7 @@ actor LibrarySync {
   }
 
   func sync(_ request: Request, explicit: Bool = false, background: Bool = false) async -> Outcome {
+    guard explicit || retryRunAt.map({ $0 <= Date() }) != false else { return outcome }
     let options = Options(request: request, explicit: explicit, background: background)
     if let running {
       if queued == nil { queued = options } else { queued?.include(options) }
@@ -82,7 +83,9 @@ actor LibrarySync {
   private func drain(_ first: Options) async -> Outcome {
     var options = first
     repeat {
-      await run(options)
+      if options.explicit || retryRunAt.map({ $0 <= Date() }) != false {
+        await run(options)
+      }
       guard let next = queued, !stopped else { break }
       queued = nil
       options = next
@@ -128,7 +131,7 @@ actor LibrarySync {
       changedAt = Date()
     }
     guard running == nil, !stopped else { return false }
-    if let retryRunAt, retryRunAt <= Date() { return true }
+    if let retryRunAt { return retryRunAt <= Date() }
     if try library.retries().contains(where: { $0.retryAt <= Date().timeIntervalSince1970 }) { return true }
     let blocked = Set(
       try library.retries().filter { $0.incoming || $0.retryAt > Date().timeIntervalSince1970 }.map(\.id))

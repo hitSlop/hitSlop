@@ -307,7 +307,7 @@ impl Library {
         if std::fs::metadata(source)?.len() > snapshot::MAX_FILE_BYTES {
             return Err(Error {
                 issue: Issue::TooLarge,
-                message: "This preview syncs slops up to 16 MiB. This one stays where it is.".into(),
+                message: "iCloud sync supports slops up to 16 MiB. This one stays where it is.".into(),
             });
         }
         let lease = crate::registry::Lease::acquire(source)?;
@@ -326,7 +326,8 @@ impl Library {
             return Err(failed("This slop is already in iCloud"));
         }
         snapshot::install(source, &self.path(&id), &id).map_err(failed)?;
-        let bound = lease.check().map_err(Error::from).and_then(|()| {
+        let adopted = (|| {
+            lease.check()?;
             self.with_owner(&mut inner, &id, |owner| {
                 snapshot::request(
                     owner,
@@ -336,18 +337,23 @@ impl Library {
                 )
                 .map_err(failed)?;
                 Ok(())
-            })
-        });
-        if let Err(error) = bound {
-            // Without a row the copy would never sync and would block every retry.
-            inner.retained.remove(&id);
+            })?;
+            // All metadata, including the final read, must succeed before the copy is listed.
+            let tx = inner.db.unchecked_transaction()?;
+            tx.execute("INSERT INTO documents(id,title,template) VALUES(?1,?2,?3)", params![id, title, template])?;
+            let entry = self.entry(&inner, &id)?;
+            tx.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
+            let entry = self.entry(&inner, &id)?;
+            tx.commit()?;
+            Ok(entry)
+        })();
+        if adopted.is_err() {
+            // A failed save can retain a writer. Release it before removing its disposable copy.
+            drop(inner.retained.remove(&id));
+            inner.artwork_cache.borrow_mut().remove(&id);
             let _ = std::fs::remove_file(self.path(&id));
-            return Err(error);
         }
-        inner.db.execute("INSERT INTO documents(id,title,template) VALUES(?1,?2,?3)", params![id, title, template])?;
-        let entry = self.entry(&inner, &id)?;
-        inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
-        self.entry(&inner, &id)
+        adopted
     }
     /// Cleanup is separate so the native app can open the adopted copy first. A changed
     /// or busy source is retained; both accepted copies must still contain the same work.
@@ -462,7 +468,7 @@ impl Library {
         if std::fs::metadata(path)?.len() > snapshot::MAX_FILE_BYTES {
             return Err(Error {
                 issue: Issue::TooLarge,
-                message: "Saved locally. This preview syncs slops up to 16 MiB.".into(),
+                message: "Saved locally. iCloud sync supports slops up to 16 MiB.".into(),
             });
         }
         // Preserve the existing typed compatibility refusal before inspecting history.

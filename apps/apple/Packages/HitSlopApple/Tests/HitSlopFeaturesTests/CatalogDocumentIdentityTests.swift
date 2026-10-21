@@ -54,8 +54,10 @@ import Testing
   opened.updatedAt = Date(timeIntervalSince1970: 1)
   let stale = CatalogEntry(
     id: "stale", source: .recent(URL(fileURLWithPath: library + "-development-backup/documents/b.slop")), title: "Old")
+  let sibling = CatalogEntry(
+    id: "sibling", source: .recent(URL(fileURLWithPath: library + "-backup/Plans.slop")), title: "Backup")
   let catalog = Catalog()
-  catalog.recents = { [opened, stale, local] }
+  catalog.recents = { [opened, stale, sibling, local] }
   let model = CatalogModel(client: catalog.client)
   model.managedFolder = library
   var synced = CatalogEntry(id: "library:a", source: opened.source, title: "Weeknight Recipe")
@@ -63,7 +65,7 @@ import Testing
   model.synced = [synced]
   model.refreshRecents()
   await model.work.settled()
-  #expect(model.recents.map(\.id) == ["library:a", "local"])
+  #expect(model.recents.map(\.id) == ["library:a", "sibling", "local"])
   #expect(model.recents.first?.displayTitle == "Weeknight Recipe")
   #expect(model.recents.first?.updatedAt == opened.updatedAt)
 }
