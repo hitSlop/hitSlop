@@ -10,7 +10,8 @@ iPhone host is portrait-only; per-slop orientation declarations remain future wo
 keeps managed slops in sync through the person's iCloud account. The next Mac release
 includes the Synced Library on CloudKit Production, matching TestFlight/App Store
 iPhones; the currently published Mac release does not include it. iPhone Home Screen
-widgets render library slops with a widget view locally and open them on tap.
+widgets render library slops with a widget view locally, open them on tap, and refresh
+in the background when iOS allows.
 [Architecture](architecture.md#apple-library-preview) owns the library design.
 
 Live sharing is a developer/TestFlight preview, outside ordinary Mac releases. The
@@ -54,14 +55,14 @@ directions without release dates or a platform delivery order. The
 - **Apple releases.** Release the iPhone app on the App Store and the Mac app with
   Synced Library on CloudKit Production. The iPhone app, Files import, library sync
   and Home Screen widgets are implemented previews, not future host work.
-- **Sharing polish.** Finish account deletion/Apple revocation, rejoin after re-share,
-  resource/frame rate limits and metrics, frozen HTTP/binary protocol fixtures, and
-  Save Unshared Copy from accepted in-memory state when source history cannot save.
-  Complete privacy disclosures and broader device/resource qualification before rollout.
+- **Sharing rollout.** Account deletion/Apple revocation, rejoin after re-share,
+  guest entry-point rate limits and metrics, frozen v1 HTTP/binary fixtures, universal
+  links and Save Unshared Copy are implemented. Complete privacy disclosures and
+  broader device/resource qualification before rollout.
   [Architecture](architecture.md#relay) and the [sharing README](../apps/sharing/README.md)
   own the technical description and operating limits.
-- **Apple follow-ups.** Universal links, App Clip exploration and widget background
-  refresh remain open. Qualify the library on Production and expand starter coverage.
+- **Apple follow-ups.** Qualify the library on Production, including background widget
+  refresh on devices, and expand starter coverage.
 
 - An additive authoring environment API exposes native platform/device identity and
   reactive compact/regular viewport layout to Svelte and editor CSS. Browser identity
@@ -187,10 +188,10 @@ directions without release dates or a platform delivery order. The
   and runtime markers. Widget location refresh follows renames and same-volume moves
   without replacing cached images.
 
-- Declared `camera` and `microphone` capabilities gate web capture in native documents,
+- Declared `camera` and `microphone` capabilities gate web capture in Mac documents,
   development previews and local browser copies, with OS/browser consent still required.
-  Declared `speech` enables native on-device transcription of stored recordings; it is
-  unavailable in previews and browser copies. There is no per-slop permission UI or
+  Declared `speech` enables on-device Mac transcription of stored recordings; it is
+  unavailable in the iPhone preview, development previews and browser copies. There is no per-slop permission UI or
   server fallback. [Capabilities](reference/runtime.md#security-boundaries) records the boundary.
 - Saved-source capture preserves live speech, file selection, downloads and resize eligibility;
   close preparation, page replacement and renderer loss cancel pending transcription.

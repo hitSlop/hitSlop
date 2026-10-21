@@ -97,19 +97,12 @@ workers-rs 0.8.7 writes directly to Analytics Engine binding `METRICS`, dataset
 `double1` is 1. No identifiers, IPs, hashes, capabilities or tokens are emitted. Lifecycle
 retries do not emit another transition; metrics are best effort, not an audit ledger.
 
-Later deployment is an operator action, after qualification:
-
-1. Enable Workers Analytics Engine on the target Cloudflare account. The configured
-   dataset is created on first write ([Analytics Engine setup](https://developers.cloudflare.com/analytics/analytics-engine/get-started/)).
-2. Deploy the relay with `wrangler deploy --config apps/sharing/wrangler.jsonc`.
-   This adds `METRICS` and the four rate-limit namespaces: `GUEST_METADATA_LIMIT`
-   `27924744`, `GUEST_SEED_LIMIT` `27924745`, `GUEST_CONNECT_LIMIT` `27924746`,
-   `GUEST_BLOB_LIMIT` `27924747`. Keep `ACCOUNT_CREATE_LIMIT` `27924743`. These numeric
-   rate-limit namespaces need no separate provisioning. No new DO migration, R2 bucket,
-   secret or Firebase credential is required; the existing Account DO adds its retry
-   fence table lazily.
-3. Deploy the host with `wrangler deploy --config apps/sharing/host.wrangler.jsonc`
-   to refresh the AASA route and generated OpenAPI asset. Existing DO bindings and R2 bucket stay.
+Deployment follows master: `.github/workflows/sharing.yml` builds the relay and host, runs this
+qualification, deploys both with the repository's Cloudflare credentials and smoke-checks
+`/health` and the app-site association. Analytics Engine must be enabled on the account (the
+dataset is created on first write). The rate-limit namespaces (`ACCOUNT_CREATE_LIMIT`
+`27924743`, `GUEST_METADATA_LIMIT` `27924744`, `GUEST_SEED_LIMIT` `27924745`,
+`GUEST_CONNECT_LIMIT` `27924746`, `GUEST_BLOB_LIMIT` `27924747`) need no separate provisioning.
 
 ## Build and qualification
 
@@ -157,8 +150,7 @@ barriers, download/native reopen and revocation. Ignored reports stay under
 Seeds and retained updates each have a 16 MiB limit; rooms admit 32 connections. App and
 attachment limits use core acceptance. Automatic CloudKit checkpoints for relay documents
 run at most once a minute per process; manual/background saves bypass the interval.
-Public rollout needs Save Unshared Copy, native account deletion UI/Apple revocation,
-privacy, remaining abuse controls and broader device qualification.
+Public rollout needs privacy disclosures and broader device qualification.
 Reliable offline web reopening and room compaction remain deferred.
 
 `HITSLOP_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,

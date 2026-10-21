@@ -8,6 +8,11 @@ the devices and host services it needs in `slop.ts`; request them from a button 
 the editor. Declaring a capability lets the app ask. The person's system or browser
 permission still decides whether it can proceed.
 
+The iPhone preview supports file selection and HTTPS embeds, but refuses camera and
+microphone capture and returns `unavailable` with `reason: "host"` for speech. See
+[where your slop runs](/docs/guides/where-your-slop-runs/) for hosts and phone layout,
+and [files and the web](/docs/guides/files-and-web/) for imports and embeds.
+
 ## Declare what your app uses
 
 ```ts title="slop.ts"
@@ -46,6 +51,7 @@ see [files and the web](/docs/guides/files-and-web/). Browser policies and CORS 
 | Environment                              | Camera and microphone                                        | `speech.transcribe`                                                                            |
 | ---------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | Mac app, interactive document            | Declared devices, subject to macOS permission.               | On-device recognition when this Mac supports the requested language and permission is granted. |
+| iPhone app (TestFlight preview)           | Refused, even when declared.                                | Unavailable: `reason: "host"`.                                                                 |
 | `slop dev` preview                       | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`. Test in the Mac app.                                            |
 | Local Chrome browser copy                | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`.                                                                 |
 | Native icon, preview, or export renderer | Refused. Render saved content instead.                       | Unavailable.                                                                                   |

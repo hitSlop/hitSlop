@@ -272,8 +272,8 @@ background execution remain design work; this proposal sets no new API names or 
 ## On the desktop, and with other people
 
 - **Widgets.** Mac desktop widgets and iPhone Home Screen widgets in the TestFlight
-  preview use dedicated `Widget.svelte` captures of saved state. Background refresh
-  on iPhone and release-candidate qualification remain;
+  preview use dedicated `Widget.svelte` captures of saved state. iPhone background
+  refresh runs when iOS allows; release-candidate qualification remains;
   see [widget qualification](roadmap.md#later).
 - **History scrubber.** A timeline of whatever history remains under the
   [current retention policy](architecture.md#saving). Saved history can be pruned while
@@ -300,6 +300,11 @@ background execution remain design work; this proposal sets no new API names or 
   It does not introduce an unrestricted JavaScript backend or imply continuous execution
   of authored code. Background scheduling needs its own design; edits keep the one owner
   path and documents remain portable.
+
+### App Clip exploration
+
+An App Clip for opening a shared slop remains a deferred idea. There is no App Clip
+host today; its scope, lifecycle and sharing admission need a separate design.
 
 ### Other platforms
 
