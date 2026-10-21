@@ -77,8 +77,14 @@ fn account_request_at<T: serde::de::DeserializeOwned>(
     serde_json::from_slice(&bytes).map_err(|_| "Invalid account reply".into())
 }
 /// Identify locally saved credentials belonging to this account before deletion.
+/// An unreadable saved credential is not owned; relay lookup failures still propagate.
 pub fn account_owns(document: &str, credential: &str, token: &str) -> Result<bool> {
-    let saved = Credential::decode(credential)?.runtime()?;
+    if !hitslop_sharing_protocol::valid_copy(document) {
+        return Ok(false);
+    }
+    let Ok(saved) = Credential::decode(credential).and_then(|saved| saved.runtime()) else {
+        return Ok(false);
+    };
     Ok(access(document, token)?.is_some_and(|room| room.room == saved.room))
 }
 fn access(document: &str, token: &str) -> Result<Option<AccountRoom>> {

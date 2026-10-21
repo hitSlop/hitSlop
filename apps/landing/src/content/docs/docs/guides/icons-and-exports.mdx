@@ -112,8 +112,9 @@ reset it at midnight. The other views refresh with saved edits.
 The same widget view serves iPhone Home Screen widgets in the TestFlight preview.
 On iPhone, add a hitSlop widget and select a library slop whose embedded app includes
 `Widget.svelte`. The phone renders its widget images locally; tap the widget to open
-the slop. The foreground app refreshes placed widgets after saves and library changes.
-Background refresh remains future work. See [availability](/docs/availability/).
+the slop. The app refreshes placed widgets after saves and library changes, and in the background
+when iCloud changes arrive or iOS schedules a refresh; iOS decides when that runs. See
+[availability](/docs/availability/).
 
 Add an optional root `Widget.svelte` to compose the same saved document for a widget:
 

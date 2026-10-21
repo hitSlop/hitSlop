@@ -139,6 +139,8 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
   private var deleting = false
   private var deletionStarted = false
   private var deletionDocuments: [String] = []
+  /// Ownership is read once, before the relay deletion starts, so a retry never repeats the lookups.
+  private var deletionSnapshot = false
 
   public func deleteAccount() async {
     guard !busy, let auth, let user = auth.currentUser else { return }
@@ -164,17 +166,18 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
     do {
       if !deletionStarted {
         let token = try await user.getIDToken(forcingRefresh: true)
-        let owned = try await Task.detached(priority: .utility) {
-          var documents: [String] = []
-          for (document, credential) in try SharingCredentials.all() {
-            if try sharingAccountOwns(document: document, credential: credential, token: token) {
+        if !deletionSnapshot {
+          deletionDocuments = try await Task.detached(priority: .utility) {
+            var documents: [String] = []
+            for (document, credential) in try SharingCredentials.all()
+            where try sharingAccountOwns(document: document, credential: credential, token: token) {
               documents.append(document)
             }
-          }
-          try sharingDeleteAccount(token: token)
-          return documents
-        }.value
-        deletionDocuments = owned
+            return documents
+          }.value
+          deletionSnapshot = true
+        }
+        try await Task.detached(priority: .utility) { try sharingDeleteAccount(token: token) }.value
         deletionStarted = true
         relayDeleted = true
       }

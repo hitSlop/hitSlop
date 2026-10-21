@@ -92,7 +92,7 @@ so the catalog uses their latest changes.
 - Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
-- Add a widget for a slop with a widget view: on your Mac desktop, or for library slops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widget background refresh is still ahead.
+- Add a widget for a slop with a widget view: on your Mac desktop, or for library slops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
 - In the developer/TestFlight preview, choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in hitSlop on Mac/iPhone or in Chrome at share.hitslop.com. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://hitslop.com/docs/guides/live-sharing/) explains the preview.
 - Pin a slop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
 - Finder icons can show what's inside, such as a counter's total.
@@ -318,7 +318,7 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 - Required `Preview.svelte` supplies a compact overview for Quick Look and in-app previews.
 - Optional `Export.svelte` supplies complete PNG/PDF output. Use normal document flow so long content can expand. Without it, export actions are hidden.
 - Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
-- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and, in the TestFlight preview, library slops on iPhone. The phone renders its own images; background refresh remains future work. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
+- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and, in the TestFlight preview, library slops on iPhone. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
 
 hitSlop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
 

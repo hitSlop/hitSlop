@@ -61,8 +61,9 @@ import UIKit
 
   private func refreshWidgets() async -> UIBackgroundFetchResult {
     let lease = PhoneRefreshLease()
+    // UIKit calls this on the main thread; end the task before returning or the app is killed.
     lease.identifier = UIApplication.shared.beginBackgroundTask(withName: "Refresh library widgets") {
-      Task { @MainActor in lease.expire() }
+      MainActor.assumeIsolated { lease.expire() }
     }
     guard lease.identifier != .invalid else { return .failed }
     defer { lease.end() }

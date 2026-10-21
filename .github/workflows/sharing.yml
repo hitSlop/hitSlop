@@ -36,11 +36,11 @@ jobs:
         with:
           nextest: "false"
           bindings: portable
-      # The real WASM relay on Miniflare: create, join, Stop, account deletion, limits, AASA.
-      - name: Qualify
-        run: bun run verify sharing
       - name: Build
         run: bun scripts/build/sharing.ts
+      # The built WASM relay on Miniflare: create, join, Stop, account deletion, limits, AASA.
+      - name: Qualify
+        run: bun run verify sharing
       - name: Deploy relay
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/wrangler.jsonc
         env:

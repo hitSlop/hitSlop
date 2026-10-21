@@ -735,10 +735,9 @@ are saved in that browser and downloadable as `.slop` files.
   like an edit; undo keeps them. A change the app refuses pauses sync and leaves the
   document as it was. Changes whose history never arrives wait inside Loro, and pause sync
   once the relay has caught the copy up. Frames wait while a command evaluates.
-- **Wire.** Binary frames (`sync::Frame`). The golden frames in
-  `crates/hitslop-core/tests/sync-frames.json` are the contract with the relay's codec.
-  The shipped TestFlight v1 relay contract is grow-only; immutable HTTP, link and both
-  binary codec fixtures live in `crates/hitslop-sharing-protocol/tests/fixtures/v1`.
+- **Wire.** Binary frames (`sync::Frame`). The shipped TestFlight v1 relay contract is
+  grow-only: immutable HTTP, link and both binary codec fixtures (frames and socket
+  envelopes in `frames.json`) live in `crates/hitslop-sharing-protocol/tests/fixtures/v1`.
   Breaking changes require `/v2` while `/v1` keeps serving old clients.
 
 Accepted limits, chosen for mini apps over heavier machinery:
