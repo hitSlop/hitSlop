@@ -9,11 +9,14 @@ its App Store release is coming soon. See [availability](/docs/availability/).
 
 ## Share a live link
 
-Open a slop and choose **Live collaboration** in the **Share** popover. The owner
-signs in with Apple to create the link. Send it to the people you want to edit with.
+Open a slop on Mac and turn on the **Live collaboration** toggle in the **Share**
+popover. On iPhone, open the document actions menu and choose **Collaborate**.
+The owner signs in with Apple to create the link, then chooses **Copy Link**.
+Send it to the people you want to edit with.
 **Anyone with the link can edit**, so pass it on with care. Guests need no account.
 
-If hitSlop is installed, the link opens it.
+Universal links open hitSlop when it is installed and enabled for sharing. Otherwise,
+open the link in Chrome to use the browser copy. Other browsers remain unqualified.
 
 Open the link in the hitSlop app on Mac or iPhone, or use Chrome at
 [share.hitslop.com](https://share.hitslop.com). Each person edits their own copy;
@@ -29,10 +32,27 @@ be cleared or evicted, so download work you want to keep.
 
 ## Stop sharing
 
-The owner can choose **Stop** to end the link. Everyone keeps their copy and can
-continue editing it independently. Sharing again creates a new link; the old link
-stays ended. Rejoining a previously joined slop after re-sharing still needs polish
-in this preview.
+The owner turns off **Live collaboration**, then confirms **Stop**. The confirmation
+explains that the link stops working and everyone keeps their own copy. Those copies
+remain editable independently. Sharing again creates a new link; the old link stays ended.
+
+Open the new link to rejoin. A matching local document keeps its identity and current
+edits, then merges with the new share. hitSlop must confirm that the previous link ended
+before replacing its membership; if that check fails, retry when connected.
+
+## Save an independent copy
+
+Choose **Save Unshared Copy…** while collaboration is live to keep an independent
+file with a new document identity and no live link. It keeps accepted edits and
+referenced attachments, without the shared history. It does not stop the original link.
+
+## Delete your sharing account
+
+In the account panel, choose **Delete Account…** and confirm. Deletion ends your live
+links and removes their relay data and your sharing account. Documents on your devices
+and in iCloud stay. The app also attempts to revoke Apple access; if that cannot finish,
+it directs you to remove hitSlop in Apple Account settings. Guests' downloaded and local
+copies remain theirs. Signing out alone does not end existing links.
 
 For an independent file, image or PDF instead, see
 [build and share](/docs/guides/build-and-share/). For your own Mac and iPhone,

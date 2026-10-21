@@ -1,0 +1,51 @@
+---
+title: Where your slop runs
+description: Design for the Mac and iPhone editors, Chrome copies, and saved-state captures.
+---
+
+The interactive editor and saved-state captures use different renderers. Check both
+when you build a slop. See [availability](/docs/availability/) for preview status.
+
+## Hosts and build baseline
+
+| Surface | Renderer |
+| --- | --- |
+| Mac app, macOS 15.2+ | WebKit |
+| iPhone app, iOS 26+ TestFlight preview | WebKit |
+| Sharing guests and `slop open --browser` copies | Chrome; other browsers remain unqualified |
+| Preview, icon, widgets, PNG and PDF | Takumi, rendering saved state rather than the live editor |
+
+JavaScript builds target Safari 17 (`safari17`), including capture programs. CSS is
+processed for the same Safari target, lowering nesting where that target requires it.
+This build baseline does not promise that every browser API or CSS feature works in
+every host. Use [styling](/docs/guides/styling/) for editor layout and shared styles.
+
+`slop check` runs the project's installed `svelte-check`, then evaluates `slop.ts` as
+the build does. It checks types, components and the definition; it does not run your
+app through each host or verify capture output. Review the packaged artwork and exports.
+
+## Saved-state rendering
+
+Capture components must render synchronously from their saved props, independently of
+the DOM, browser APIs and editor services. Takumi supports a subset of browser CSS;
+unsupported declarations can be ignored and change the result. Prefer ordinary flexbox,
+grid placement and explicit font properties. Container queries are unsupported. See [icons, widgets, previews, and exports](/docs/guides/icons-and-exports/)
+for the capture contract, supported styling, images and widget refresh behavior.
+
+## Design for the phone
+
+Use touch-sized controls and visible actions instead of hover-only controls. Keep
+forms scrollable and test them with the software keyboard open in portrait and
+landscape. The phone editor draws its page background under system areas and disables
+automatic scroll-view content insets; do not assume that the host pads your controls.
+Use `env(safe-area-inset-top, 0px)` and the other edges where needed to keep controls
+clear of system areas. The native editor retains keyboard avoidance.
+
+Use the responsive layout and platform signals described in
+[styling](/docs/guides/styling/) rather than assuming a desktop-sized window.
+
+The iPhone preview refuses camera and microphone capture and returns speech
+`unavailable` with reason `host`. File inputs use the native Files picker; HTTPS
+embeds use the shared navigation policy and cannot access the document bridge or
+borrow device permissions. See [capabilities and permissions](/docs/guides/capabilities/)
+and [files and the web](/docs/guides/files-and-web/) for the APIs and restrictions.

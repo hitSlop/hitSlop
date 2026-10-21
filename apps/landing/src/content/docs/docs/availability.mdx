@@ -11,10 +11,18 @@ The **iPhone app** for **iOS 26+** is in **TestFlight preview**; the App Store r
 is coming soon. It opens, edits and creates slops, with Quick Checklist as its starter,
 and imports `.slop` files from Files.
 
-The preview's **Synced Library** keeps slops in sync between your Mac and iPhone
-through your iCloud account. This is a managed library, separate from putting active
-`.slop` files in iCloud Drive or another synced folder, which remains unsupported.
-The Mac release with Synced Library on Production is still ahead.
+The preview's **Synced Library** syncs managed slops through your private iCloud
+storage, transferring whole files and merging document edits. Sign in to the same
+iCloud account on your devices; no separate sharing account is needed for library sync.
+Debug builds use CloudKit Development; TestFlight and App Store builds use Production.
+These are separate environments. The ordinary Mac release keeps the library off until
+its Production rollout, so a Debug Mac and a TestFlight iPhone do not share a library.
+
+If iCloud is unavailable, syncing stops. On an account switch, the previous account's
+local slops stay on the device and stop syncing; they are not uploaded to the new account.
+This managed library is separate from editing active `.slop` files in iCloud Drive or
+another synced folder, which remains unsupported. On Mac, a document in iCloud offers
+**Move to ~/hitSlop and Open** to move it into local storage before editing.
 
 macOS desktop widgets display saved document images in small, medium and large sizes
 when the embedded app includes a widget view. The iPhone preview adds Home Screen
@@ -31,7 +39,8 @@ The separate local Chrome browser beta opens independent document copies with lo
 browser storage and downloads a complete `.slop` file through Save As. It does not
 connect to the original Mac document. Safari and mobile browsers remain unqualified.
 
-Apps may declare camera and microphone capture. Native on-device speech recognition
+On Mac, apps may declare camera and microphone capture. The iPhone preview refuses
+camera and microphone requests and does not provide speech transcription. Native on-device speech recognition
 transcribes saved recordings when the Mac supports the language and speech permission
 is granted. It is not available in `slop dev` or browser copies; see
 [capabilities and permissions](/docs/guides/capabilities/) for the support matrix.

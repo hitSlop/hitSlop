@@ -17,7 +17,7 @@ Make little apps for your Mac with Svelte & your AI coding agent: a planner that
 
 **Install hitSlop once. Make and share little apps as files.** Each `.slop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with hitSlop, without packaging and signing a separate Mac app.
 
-You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone TestFlight preview brings slops to your phone, with Synced Library across Mac and iPhone through your iCloud account.
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone TestFlight preview brings slops to your phone, with a Synced Library through your iCloud account. The ordinary Mac release keeps the library off until its Production rollout.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
@@ -87,7 +87,7 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Local documents need no account or server. The preview's Synced Library keeps slops in sync between Mac and iPhone through your iCloud account.
+- Local documents need no account or server. The preview's Synced Library uses your private iCloud storage; the ordinary Mac release keeps it off until its Production rollout. Keep active files outside iCloud Drive and other synced folders.
 - A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder.
 - Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.

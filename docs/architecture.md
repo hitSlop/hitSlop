@@ -537,7 +537,11 @@ Home Screen widgets use the shared image cache and canvases, keyed by library do
 publishes an atomic library index with stored icons for the picker and renders only placed ids,
 on saves, close, library version changes and foreground freshness checks. Taps open the library
 document by id. Account changes clear the phone cache; Mac bookmarks and file identity stay local
-to macOS. iOS background capture remains follow-up work. See the [platform spike evidence](evidence/widget-images-2026-10-11.md).
+to macOS. `PhoneAppDelegate` registers a `BGAppRefreshTask` and CloudKit remote-notification
+handling. A background lease fetches library changes and refreshes placed widgets, with
+expiration cancelling work. The app requests a refresh no earlier than 30 minutes later;
+iOS decides whether and when it runs, and WidgetKit controls visible reloads. See the
+historical [platform spike evidence](evidence/widget-images-2026-10-11.md).
 
 ## CLI
 
@@ -630,14 +634,27 @@ opens, edits and creates slops, includes the Quick Checklist starter, and import
 
 Managed documents live in account-scoped Application Support. One Swift `CKSyncEngine`
 transports a complete `.slop` CKAsset per document in the fixed `Library` zone of the
-private CloudKit database in container `iCloud.com.hitslop.app`. Rust owns library metadata, retained history,
+private CloudKit database in container `iCloud.com.hitslop.app`. Debug uses Development;
+TestFlight and App Store distribution use Production ([Apple's distribution rule](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitQuickStart/TestingYourApp/TestingYourApp.html)).
+These environments do not share records. `SyncedLibraryPreview` enables the Mac library
+in Debug or with `HITSLOP_SYNCED_LIBRARY`; ordinary Mac Release keeps it off pending
+Production rollout. Rust owns library metadata, retained history,
 writer admission,
 staging, merging through the existing owner, and receipts. Swift carries file paths and
 opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
+Library sync requires iCloud sign-in, separately from the sharing account. Loss of iCloud
+availability stops the transport. A different account fences the active library and
+retains the previous account's local files without uploading them to the new account.
+Rust checks the library's stored account identity before opening it. Active loose files
+in iCloud Drive or detected synced folders remain refused; the Mac open flow offers
+**Move to ~/hitSlop and Open**, saving a verified local copy before trashing the original.
+If removing the original fails, the local copy opens and the original is retained with a warning.
 
 Creation asks for a catalog name, independent of fields inside the authored app. Both catalogs share the app icon and bundled Baloo 2 headings; controls and
-body copy use native fonts. The iPhone editor extends only its page-colored background
-under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
+body copy use native fonts. The iPhone editor extends the WebView and its page-colored
+background under system areas. The phone WebView disables automatic scroll-view content insets;
+authored controls need safe-area padding where appropriate. SwiftUI keyboard avoidance
+remains enabled.
 
 Leaving an edited iPhone document refreshes its icon and preview from an immutable saved
 source. Managed Mac documents use the same version-checked artwork publication path;
@@ -705,6 +722,26 @@ Debug enables the preview with `--live-sharing-preview` or
 The owner signs in with Apple; anyone holding the link can edit in the Mac/iPhone app
 or Chrome. Stop ends the link and every participant keeps a local copy. Browser copies
 are saved in that browser and downloadable as `.slop` files.
+
+On Mac, the Share popover contains the **Live collaboration** toggle and **Copy Link**;
+on iPhone, **Collaborate** in document actions opens the shared section. Turning the
+toggle off asks for confirmation before **Stop** ends the link. **Save Unshared Copy…**
+uses the owner's clean-copy path, retaining accepted state and referenced attachments
+with a new identity and no share/history, without ending the source's link. Rejoining
+with a new link rebinds the matching local owner and preserves current edits, but only
+after the relay confirms the previous room ended; a live predecessor or failed check
+refuses the replacement.
+
+**Delete Account…** confirms that local and iCloud documents stay. The native flow ends
+all indexed rooms and purges their relay resources, deletes the Firebase user, attempts
+Apple token revocation and clears owned link credentials on this device. Failed Apple
+revocation directs the person to Apple Account settings. Participant copies remain.
+Universal links route `/join` on `share.hitslop.com` to preview-enabled installed apps;
+without the app, the web host offers the browser path, qualified in Chrome. The associated
+domain entitlements and the host's AASA response define that route. The sharing CI workflow
+builds, qualifies, deploys the relay and host on matching `master` changes, then checks
+health and AASA; it also supports manual dispatch on `master`.
+
 [Sharing operations and qualification](../apps/sharing/README.md) describes the service;
 [the roadmap](roadmap.md#open-now) tracks release and polish work. Historical qualifications are recorded in the
 [account](evidence/live-sharing-accounts-2026-10-19.md),
