@@ -220,6 +220,8 @@ export class PreviewOwners {
         15000,
       );
       let client: WebSocketClient | undefined;
+      // A failed save stays fatal for this session; a reload shows it again instead of resuming.
+      let saveFailure: string | undefined;
       const active = () => !ended && generation === this.generation && client !== undefined;
       const read = (async () => {
         const reader = child.stdout.getReader();
@@ -254,10 +256,8 @@ export class PreviewOwners {
                 throw new Error(frame.error?.error ?? "Preview owner failed");
               } else if (frame.type === "save" && frame.error) {
                 // Keep ownership until an explicit reset/close discards this preview.
-                if (active())
-                  client?.send("slop:fatal", {
-                    error: `Preview save failed: ${frame.error}. Restart the preview to reset its disposable document.`,
-                  });
+                saveFailure = `Preview save failed: ${frame.error}. Restart the preview to reset its disposable document.`;
+                if (active()) client?.send("slop:fatal", { error: saveFailure });
               }
             }
           }
@@ -285,7 +285,8 @@ export class PreviewOwners {
       const session: Session = {
         connect(next) {
           client = next;
-          client.send("slop:ready", { resourceToken });
+          if (saveFailure) client.send("slop:fatal", { error: saveFailure });
+          else client.send("slop:ready", { resourceToken });
         },
         disconnect(previous) {
           if (client === previous) client = undefined;
