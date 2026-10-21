@@ -62,45 +62,68 @@ final class LibraryOwners: Sendable {
   @Published public private(set) var status = "Connecting to iCloud…"
   @Published public private(set) var isSyncing = false
   @Published public private(set) var isReady = false
+  @Published public private(set) var lastSuccess: Date?
+  @Published public private(set) var lastError: String?
+  @Published public private(set) var pending = 0
+  @Published public private(set) var foregroundAt = Date()
   public var visibleEntries: [SyncedSlop] { entries.filter { !$0.deleted } }
   public var editorOpen = false
-  private var transport: LibraryTransport?
+  private var sync: LibrarySync?
   private var task: Task<Void, Never>?
   private var foreground = true
   private var account = ""
-  private var connecting = false
+  private var connection: Task<Void, Never>?
+  private var accountObserver: NSObjectProtocol?
+  private var syncMessage: String?
   private var native: NativeLibrary?
   private var container: CKContainer?
   private init() {}
 
   public func start() {
     guard task == nil else { return }
+    accountObserver = NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) {
+      _ in
+      Task { @MainActor in
+        self.isReady = false
+        try? Self.active.activate(nil)
+        await self.sync?.stop()
+        self.sync = nil
+        await self.request(.full)
+      }
+    }
     task = Task {
-      if foreground { await connect() }
+      if foreground { Task { await request(.full) } }
       var seconds = 0
       while !Task.isCancelled {
-        if let transport, foreground {
+        if let sync, foreground {
+          await refresh()
           do {
-            try await transport.tick()
-            if editorOpen && seconds % 15 == 0 { try await transport.sync(explicit: false) }
-            await refresh()
-          } catch {
-            status = libraryMessage(error)
-            await refresh()
-          }
+            if try await sync.changesDue() || (editorOpen && seconds % 15 == 0 && !isSyncing) {
+              Task { await request(.changes) }
+            }
+          } catch { show(error) }
         }
         seconds += 1
         try? await Task.sleep(for: .seconds(1))
       }
     }
   }
-  private func connect(background: Bool = false) async {
-    guard !connecting else { return }
-    connecting = true
-    defer {
-      connecting = false
-      hasLoaded = true
+  private func connect() async {
+    if let connection {
+      await connection.value
+      return
     }
+    let work = Task { await self.open() }
+    connection = work
+    await work.value
+    connection = nil
+  }
+  private func show(_ error: Error) {
+    lastError = String(describing: error)
+    status = libraryMessage(error)
+  }
+  private func open() async {
+    defer { hasLoaded = true }
     do {
       // Unsigned tools and the package test host never initialize CloudKit.
       guard Bundle.main.bundleIdentifier == "com.hitslop.app" else {
@@ -112,7 +135,8 @@ final class LibraryOwners: Sendable {
       let accountStatus = try await container.accountStatus()
       try Task.checkCancellation()
       guard accountStatus == .available else {
-        await transport?.stop()
+        await sync?.stop()
+        sync = nil
         isReady = false
         try Self.active.activate(nil)
         if accountStatus == .noAccount || accountStatus == .restricted { accountIdentity = "unavailable" }
@@ -123,22 +147,18 @@ final class LibraryOwners: Sendable {
       try Task.checkCancellation()
       let fingerprint = SHA256.hash(data: Data(user.utf8)).map { String(format: "%02x", $0) }.joined()
       if !account.isEmpty && account != fingerprint {
-        await transport?.stop()
+        await sync?.stop()
+        sync = nil
         isReady = false
         try Self.active.activate(nil)
         accountIdentity = "unavailable"
         status = "Not syncing. Your previous account’s local slops are kept on this device."
         return
       }
-      if let transport {
-        if !isReady {
-          try Self.active.activate(self.native)
-          try await transport.start()
-          isReady = true
-        }
-        await refresh()
-        if !background { try await transport.sync(explicit: false) }
-        await refresh()
+      if sync != nil {
+        try Self.active.activate(native)
+        isReady = true
+        accountIdentity = account
         return
       }
       account = fingerprint
@@ -147,7 +167,7 @@ final class LibraryOwners: Sendable {
       var zoneName = "Library"
       #if DEBUG
         // Debug builds sync with CloudKit Development. The same account maps to the same
-        // folder in both environments, so keep Development's engine state and files apart
+        // folder in both environments, so keep Development's library state and files apart
         // from the Production state that TestFlight, App Store and Developer ID builds use.
         root = root.appendingPathComponent("Development", isDirectory: true)
         if let namespace = ProcessInfo.processInfo.environment["HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE"] {
@@ -167,86 +187,74 @@ final class LibraryOwners: Sendable {
       try Task.checkCancellation()
       self.native = native
       try Self.active.activate(native)
-      let transport = LibraryTransport(
+      sync = LibrarySync(
         library: native, database: container.privateCloudDatabase,
-        zone: CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName), account: fingerprint)
-      self.transport = transport
-      try await transport.start()
+        zone: CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName))
       isReady = true
-      status = "iCloud connected"
+      accountIdentity = account
       await refresh()
-      if !background { try await transport.sync(explicit: false) }
-      await refresh()
-    } catch { status = libraryMessage(error) }
+    } catch { show(error) }
   }
   public func refresh() async {
-    guard let transport else { return }
-    if !(await transport.accountIsCurrent) { accountIdentity = "unavailable" }
+    guard let sync else { return }
     do {
-      let (entries, issues) = try await transport.snapshot()
+      let (entries, state, syncing) = try await sync.snapshot()
       if entries != self.entries { self.entries = entries }
-      self.issues = issues
+      issues = state.issues
+      lastSuccess = state.lastSuccess
+      lastError = state.lastError
+      syncMessage = state.message
+      pending = state.pending
+      isSyncing = syncing
       hasLoaded = true
-      let stats = await transport.stats()
-      if !(await transport.accountIsCurrent) {
-        accountIdentity = "unavailable"
-      } else if stats.failure.isEmpty {
-        accountIdentity = account
-      }
-      if !stats.failure.isEmpty {
-        isReady = false
-        status = "Not syncing. \(stats.failure)"
-        try Self.active.activate(nil)
-      }
-    } catch { status = libraryMessage(error) }
+      updateStatus()
+    } catch { show(error) }
   }
-  /// Explicit background fetch does not depend on the foreground polling loop.
-  public func fetchInBackground() async throws {
-    while connecting || isSyncing {
-      try await Task.sleep(for: .milliseconds(100))
-    }
-    try Task.checkCancellation()
-    if transport == nil || !isReady { await connect(background: true) }
-    try Task.checkCancellation()
-    guard let transport, isReady else { throw SlopFailure(status) }
-    isSyncing = true
-    defer { isSyncing = false }
-    do {
-      try await transport.fetchInBackground()
-      try Task.checkCancellation()
-      await refresh()
-    } catch {
-      await refresh()
-      throw error
+  private func updateStatus() {
+    if isSyncing {
+      status = "Syncing…"
+    } else if let lastError {
+      status = syncMessage ?? issues.values.sorted().first ?? lastError
+    } else if !issues.isEmpty {
+      status = "Some slops need attention · will retry"
+    } else if pending > 0 {
+      status = "Saved on this device · waiting to sync"
+    } else if let lastSuccess {
+      status = "Synced " + clock(lastSuccess)
+    } else {
+      status = "Saved on this device · waiting to sync"
     }
   }
-
-  public func syncNow() async {
-    guard !isSyncing else { return }
+  private func request(_ request: LibrarySync.Request, explicit: Bool = false, background: Bool = false) async {
+    if request == .full || sync == nil || !isReady { await connect() }
+    guard let sync, isReady else { return }
     isSyncing = true
-    defer { isSyncing = false }
-    if transport == nil {
-      await connect()
-      return
-    }
-    do {
-      try await transport?.sync()
-      status = issues.isEmpty ? "Up to date" : "Some slops need attention"
-    } catch { status = libraryMessage(error) }
+    updateStatus()
+    _ = await sync.sync(request, explicit: explicit, background: background)
     await refresh()
   }
+  /// Push and background refresh use the same coalesced full reconcile.
+  public func fetchInBackground() async throws {
+    try Task.checkCancellation()
+    await request(.full, background: true)
+    try Task.checkCancellation()
+    if let lastError { throw SlopFailure(lastError) }
+    if !isReady { throw SlopFailure(status) }
+  }
+  public func receivedPush() async { await request(.full) }
+  public func syncNow() async { await request(.full, explicit: true) }
   public func create(template: URL, title: String) async throws -> SyncedSlop {
-    guard let transport, isReady else { throw SlopFailure("Sign in to iCloud before creating a synced slop.") }
+    guard let sync, isReady else { throw SlopFailure("Sign in to iCloud before creating a synced slop.") }
     do {
-      let entry = try await transport.create(template: template.path, title: title)
+      let entry = try await sync.create(template: template.path, title: title)
       await refresh()
       return entry
     } catch { throw SlopFailure(libraryMessage(error)) }
   }
   public func adopt(source: URL, title: String) async throws -> SyncedSlop {
-    guard let transport, isReady else { throw SlopFailure("Sign in to iCloud before moving this slop.") }
+    guard let sync, isReady else { throw SlopFailure("Sign in to iCloud before moving this slop.") }
     do {
-      let entry = try await transport.adopt(source: source.path, title: title)
+      let entry = try await sync.adopt(source: source.path, title: title)
       await refresh()
       return entry
     } catch { throw SlopFailure(libraryMessage(error)) }
@@ -258,8 +266,8 @@ final class LibraryOwners: Sendable {
     } catch { throw SlopFailure(libraryMessage(error)) }
   }
   public func delete(_ entry: SyncedSlop) async throws {
-    guard let transport else { throw SlopFailure("iCloud is unavailable. Your slop is kept locally.") }
-    try await transport.delete(id: entry.id)
+    guard let sync else { throw SlopFailure("iCloud is unavailable. Your slop is kept locally.") }
+    try await sync.delete(id: entry.id)
     await refresh()
   }
   public func activated(_ active: Bool) {
@@ -269,18 +277,25 @@ final class LibraryOwners: Sendable {
       foreground = active
     #endif
     if active {
+      foregroundAt = Date()
       start()
-      Task { await connect() }
+      Task { await request(.full) }
     }
   }
   public func saveToCloud() async { await syncNow() }
   public func entry(at url: URL) -> SyncedSlop? {
     entries.first { URL(fileURLWithPath: $0.path).standardizedFileURL == url.standardizedFileURL }
   }
+  private func clock(_ date: Date) -> String {
+    date.formatted(date: .omitted, time: .shortened)
+  }
   public func state(for entry: SyncedSlop) -> String {
     if entry.localOnly { return "Saved on this device" }
     if let problem = entry.problem ?? issues[entry.id] { return problem }
-    if !isReady { return "Saved locally · Not syncing" }
-    return entry.dirty ? "Saved locally · Sync pending" : "Synced with iCloud"
+    if !entry.dirty, isReady, lastError == nil, let lastSuccess, lastSuccess >= foregroundAt {
+      return "Synced with iCloud"
+    }
+    if let lastSuccess { return "Saved on this device · last synced " + clock(lastSuccess) }
+    return "Saved on this device · waiting to sync"
   }
 }

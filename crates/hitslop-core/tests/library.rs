@@ -560,3 +560,86 @@ fn adopt_cleanup_keeps_a_busy_or_changed_original() {
     assert_ne!(snapshot::inspect(&source).unwrap().fingerprint, saved.fingerprint);
     assert_eq!(snapshot::inspect(std::path::Path::new(&entry.path)).unwrap().fingerprint, saved.fingerprint);
 }
+
+#[test]
+fn complete_snapshots_include_incoming_history_even_when_import_is_a_noop() {
+    let (dir, template) = fixture();
+    let left = Library::open(&dir.path().join("left"), "account").unwrap();
+    let right = Library::open(&dir.path().join("right"), "account").unwrap();
+    let entry = left.create(&template, "History").unwrap();
+    let seed = left.stage(&entry.id).unwrap();
+    deliver(&right, &seed);
+    let path = PathBuf::from(&right.entries().unwrap()[0].path);
+    let owner = Arc::new(Owner::open(&path, Mode::Document, Arc::new(|_| {})).unwrap());
+    right.register(&owner).unwrap();
+    edit(&owner, json!([{"type":"set","path":["title"],"value":"Incoming edits"}]));
+    let incoming = right.stage(&entry.id).unwrap();
+    for _ in 0..2 {
+        deliver(&left, &incoming);
+        let saved = hitslop_core::store::Store::open(std::path::Path::new(&entry.path), Mode::Snapshot).unwrap();
+        let remote = hitslop_core::store::Store::open(
+            std::path::Path::new(incoming.asset_path.as_ref().unwrap()),
+            Mode::Snapshot,
+        )
+        .unwrap();
+        let local_doc = loro::LoroDoc::new();
+        local_doc.import(&saved.document().unwrap().checkpoint().unwrap()).unwrap();
+        let remote_doc = loro::LoroDoc::new();
+        remote_doc.import(&remote.document().unwrap().checkpoint().unwrap()).unwrap();
+        let local_vv = local_doc.oplog_vv();
+        assert!(remote_doc.state_frontiers().iter().all(|id| local_vv.includes_id(id)));
+    }
+    close(&owner);
+}
+
+#[test]
+fn history_guard_refuses_a_receipt_until_incoming_operations_are_present() {
+    let (dir, template) = fixture();
+    let left = Library::open(&dir.path().join("left"), "account").unwrap();
+    let right = Library::open(&dir.path().join("right"), "account").unwrap();
+    let entry = left.create(&template, "History guard").unwrap();
+    let seed = left.stage(&entry.id).unwrap();
+    deliver(&right, &seed);
+    let path = PathBuf::from(&right.entries().unwrap()[0].path);
+    let remote = Arc::new(Owner::open(&path, Mode::Document, Arc::new(|_| {})).unwrap());
+    right.register(&remote).unwrap();
+    edit(&remote, json!([{"type":"set","path":["title"],"value":"Missing here"}]));
+    let incoming = right.stage(&entry.id).unwrap();
+    let source = std::path::Path::new(incoming.asset_path.as_ref().unwrap());
+    let local = Arc::new(Owner::open(std::path::Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap());
+    left.register(&local).unwrap();
+    assert_eq!(
+        snapshot::require_history(&local, source).unwrap_err(),
+        "Incoming document history is incomplete; will retry"
+    );
+    deliver(&left, &incoming);
+    snapshot::require_history(&local, source).unwrap();
+    close(&local);
+    close(&remote);
+}
+
+#[test]
+fn retries_and_change_tokens_survive_reopening_without_confirming_work() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let entry = library.create(&template, "Retry").unwrap();
+    library
+        .retry(&hitslop_core::library::Retry {
+            id: entry.id.clone(),
+            title: entry.title.clone(),
+            template: entry.template.clone(),
+            message: "Offline".into(),
+            retry_at: 123.0,
+            incoming: true,
+        })
+        .unwrap();
+    library.save_change_token(&[1, 2]).unwrap();
+    drop(library);
+    let library = Library::open(&root, "account").unwrap();
+    assert_eq!(library.retries().unwrap()[0].retry_at, 123.0);
+    assert_eq!(library.change_token().unwrap(), Some(vec![1, 2]));
+    assert!(library.entries().unwrap()[0].dirty);
+    library.clear_retry(&entry.id).unwrap();
+    assert!(library.retries().unwrap().is_empty());
+}

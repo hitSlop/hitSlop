@@ -89,6 +89,17 @@ pub fn merge(owner: &Owner, source: &Path) -> Result<Info> {
     Ok(incoming)
 }
 
+/// A receipt must never confirm history absent from the flushed owner.
+pub fn require_history(owner: &Owner, source: &Path) -> Result<()> {
+    let local = Store::open(owner.path(), Mode::Snapshot).map_err(|e| e.to_string())?;
+    let remote = Store::open(source, Mode::Snapshot).map_err(|e| e.to_string())?;
+    let version = local.document().map_err(|e| e.to_string())?.doc.oplog_vv();
+    if !remote.document().map_err(|e| e.to_string())?.doc.state_frontiers().iter().all(|id| version.includes_id(id)) {
+        return Err("Incoming document history is incomplete; will retry".into());
+    }
+    Ok(())
+}
+
 /// Cosmetic bytes are independent of the Loro version. Hash only the bounded saved PNGs.
 pub fn artwork_digest(store: &Store) -> Result<String> {
     let mut hash = Sha256::new();

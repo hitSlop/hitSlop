@@ -162,8 +162,9 @@ privacy, remaining abuse controls and broader device qualification.
 Reliable offline web reopening and room compaction remain deferred.
 
 `HITSLOP_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,
-capabilities, room IDs or payloads. `HITSLOP_LIBRARY_TRACE=1` and an isolated
-`HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE` support CloudKit diagnosis without deleting cursors.
+capabilities, room IDs or payloads. CloudKit run, phase, token and retry diagnostics use
+Unified Logging subsystem `com.hitslop.library`. An isolated Debug
+`HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE` supports diagnosis without deleting cursors.
 
 See the [architecture](../../docs/architecture.md#relay), [roadmap](../../docs/roadmap.md#later),
 and historical [account](../../docs/evidence/live-sharing-accounts-2026-10-19.md),

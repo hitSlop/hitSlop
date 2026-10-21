@@ -1,6 +1,6 @@
 //! Paths, typed library metadata and opaque CloudKit state; never Loro payloads.
 use super::*;
-use core::{Entry, Issue, Upload};
+use core::{Entry, Issue, Retry, Upload};
 use hitslop_core::library as core;
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum LibraryError {
@@ -34,6 +34,15 @@ pub struct Entry {
     pub deleted: bool,
     pub local_only: bool,
     pub problem: Option<String>,
+}
+#[uniffi::remote(Record)]
+pub struct Retry {
+    pub id: String,
+    pub title: String,
+    pub template: String,
+    pub message: String,
+    pub retry_at: f64,
+    pub incoming: bool,
 }
 #[uniffi::remote(Record)]
 pub struct Upload {
@@ -134,11 +143,23 @@ impl NativeLibrary {
     pub fn cleanup(&self) -> Result<(), LibraryError> {
         Ok(self.0.cleanup()?)
     }
-    pub fn engine_state(&self) -> Result<Option<Vec<u8>>, LibraryError> {
-        Ok(self.0.engine_state()?)
+    pub fn confirmed_revision(&self, id: String) -> Result<Option<Vec<String>>, LibraryError> {
+        Ok(self.0.confirmed_revision(&id)?.map(|(version, asset)| vec![version, asset]))
     }
-    pub fn save_engine_state(&self, bytes: Vec<u8>) -> Result<(), LibraryError> {
-        Ok(self.0.save_engine_state(&bytes)?)
+    pub fn retries(&self) -> Result<Vec<core::Retry>, LibraryError> {
+        Ok(self.0.retries()?)
+    }
+    pub fn retry(&self, retry: core::Retry) -> Result<(), LibraryError> {
+        Ok(self.0.retry(&retry)?)
+    }
+    pub fn clear_retry(&self, id: String) -> Result<(), LibraryError> {
+        Ok(self.0.clear_retry(&id)?)
+    }
+    pub fn change_token(&self) -> Result<Option<Vec<u8>>, LibraryError> {
+        Ok(self.0.change_token()?)
+    }
+    pub fn save_change_token(&self, bytes: Vec<u8>) -> Result<(), LibraryError> {
+        Ok(self.0.save_change_token(&bytes)?)
     }
     pub fn release_upload(&self, path: String) -> Result<(), LibraryError> {
         Ok(self.0.release_upload(Path::new(&path))?)

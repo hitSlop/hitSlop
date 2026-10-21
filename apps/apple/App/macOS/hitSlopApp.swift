@@ -1,4 +1,5 @@
 import AppKit
+import CloudKit
 import Combine
 import HitSlopAccount
 import HitSlopCatalog
@@ -108,6 +109,13 @@ private struct UpdateSettingsView: View {
     } else {
       urls.forEach(openDocument)
     }
+  }
+  func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
+    guard SyncedLibraryPreview.enabled,
+      let notification = CKNotification(fromRemoteNotificationDictionary: userInfo),
+      notification.containerIdentifier == "iCloud.com.hitslop.app"
+    else { return }
+    Task { await SlopLibrary.shared.receivedPush() }
   }
   func applicationDidBecomeActive(_ notification: Notification) {
     NotificationCenter.default.post(name: .hitSlopSharingForeground, object: nil)

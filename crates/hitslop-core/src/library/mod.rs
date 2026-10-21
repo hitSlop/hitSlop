@@ -79,6 +79,15 @@ pub struct Entry {
     pub local_only: bool,
     pub problem: Option<String>,
 }
+#[derive(Clone, Debug)]
+pub struct Retry {
+    pub id: String,
+    pub title: String,
+    pub template: String,
+    pub message: String,
+    pub retry_at: f64,
+    pub incoming: bool,
+}
 pub struct Upload {
     pub entry: Entry,
     pub asset_path: Option<String>,
@@ -108,7 +117,9 @@ impl Library {
           CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, template TEXT NOT NULL,
             confirmed TEXT NOT NULL DEFAULT '', fields BLOB, deleted INTEGER NOT NULL DEFAULT 0,
             confirmed_deleted INTEGER NOT NULL DEFAULT 0, remote_delete INTEGER NOT NULL DEFAULT 0,
-            local_only INTEGER NOT NULL DEFAULT 0, problem TEXT);",
+            local_only INTEGER NOT NULL DEFAULT 0, problem TEXT);
+          CREATE TABLE IF NOT EXISTS retries(id TEXT PRIMARY KEY, title TEXT NOT NULL, template TEXT NOT NULL,
+            message TEXT NOT NULL, retry_at REAL NOT NULL, incoming INTEGER NOT NULL);",
         )?;
         let columns = db
             .prepare("PRAGMA table_info(documents)")?
@@ -515,8 +526,9 @@ impl Library {
                         message: "Sync paused: these copies use different data schemas or theme palettes. Your local edits are saved.".into(),
                     });
                 }
-                self.with_owner(&mut inner, id, |owner| {
+                let merged = self.with_owner(&mut inner, id, |owner| {
                     snapshot::merge(owner, source).map_err(failed)?;
+                    snapshot::require_history(owner, source).map_err(failed)?;
                     if source_version == version {
                         let store = Store::open(source, Mode::Snapshot)?;
                         let result = snapshot::request_typed(
@@ -534,7 +546,11 @@ impl Library {
                         }
                     }
                     Ok(())
-                })?;
+                });
+                if let Err(error) = merged {
+                    inner.db.execute("UPDATE documents SET problem=?2 WHERE id=?1", params![id, error.message])?;
+                    return Err(error);
+                }
             } else {
                 snapshot::install(source, &self.path(id), id).map_err(failed)?;
                 adopted_artwork = Some(source_version.into());
@@ -652,12 +668,59 @@ impl Library {
         }
         Ok(())
     }
-    pub fn engine_state(&self) -> Result<Option<Vec<u8>>> {
-        Ok(self.inner.lock().unwrap().db.query_row("SELECT value FROM meta WHERE key='engine'", [], |r| r.get(0)).ok())
+    pub fn confirmed_revision(&self, id: &str) -> Result<Option<(String, String)>> {
+        use rusqlite::OptionalExtension;
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .db
+            .query_row("SELECT confirmed,confirmed_asset FROM documents WHERE id=?1 AND problem IS NULL", [id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .optional()?)
     }
-    pub fn save_engine_state(&self, bytes: &[u8]) -> Result<()> {
+    pub fn retries(&self) -> Result<Vec<Retry>> {
+        let inner = self.inner.lock().unwrap();
+        Ok(inner
+            .db
+            .prepare("SELECT id,title,template,message,retry_at,incoming FROM retries")?
+            .query_map([], |r| {
+                Ok(Retry {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                    template: r.get(2)?,
+                    message: r.get(3)?,
+                    retry_at: r.get(4)?,
+                    incoming: r.get(5)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+    pub fn retry(&self, retry: &Retry) -> Result<()> {
         self.inner.lock().unwrap().db.execute(
-            "INSERT INTO meta VALUES('engine',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            "INSERT INTO retries VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET
+            title=excluded.title,template=excluded.template,message=excluded.message,retry_at=excluded.retry_at,incoming=excluded.incoming",
+            params![retry.id, retry.title, retry.template, retry.message, retry.retry_at, retry.incoming],
+        )?;
+        Ok(())
+    }
+    pub fn clear_retry(&self, id: &str) -> Result<()> {
+        self.inner.lock().unwrap().db.execute("DELETE FROM retries WHERE id=?1", [id])?;
+        Ok(())
+    }
+    pub fn change_token(&self) -> Result<Option<Vec<u8>>> {
+        Ok(self
+            .inner
+            .lock()
+            .unwrap()
+            .db
+            .query_row("SELECT value FROM meta WHERE key='change_token'", [], |r| r.get(0))
+            .ok())
+    }
+    pub fn save_change_token(&self, bytes: &[u8]) -> Result<()> {
+        self.inner.lock().unwrap().db.execute(
+            "INSERT INTO meta VALUES('change_token',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
             [bytes],
         )?;
         Ok(())

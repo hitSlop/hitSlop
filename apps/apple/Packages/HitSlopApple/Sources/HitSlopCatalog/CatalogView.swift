@@ -59,8 +59,8 @@ public struct CatalogView: View {
         model.primaryAction(entry)
       }
       .safeAreaInset(edge: .bottom) {
-        if !library.isReady {
-          Text("Sign in to iCloud to keep slops in sync with your iPhone.")
+        if SyncedLibraryPreview.enabled {
+          Text(library.status)
             .font(.footnote).foregroundStyle(.secondary).padding()
         }
       }
@@ -89,22 +89,12 @@ public struct CatalogView: View {
         showJoin = true
       }
     }
-    .onReceive(library.$entries) { entries in
-      model.synced = entries.filter { !$0.deleted }.map { entry in
-        var item = CatalogEntry(
-          id: "library:" + entry.id, source: .recent(URL(fileURLWithPath: entry.path)), title: entry.title)
-        item.isSynced = true
-        item.description = library.state(for: entry)
-        let url = URL(fileURLWithPath: entry.path)
-        item.icons = [
-          CatalogArtwork(file: url, name: .icon, modifiedAt: nil, byteCount: nil, revision: entry.assetRevision)
-        ]
-        item.previews = [
-          CatalogArtwork(file: url, name: .preview, modifiedAt: nil, byteCount: nil, revision: entry.assetRevision)
-        ]
-        return item
-      }
-    }
+    .onChange(of: library.entries, initial: true) { _, _ in updateLibrary() }
+    .onChange(of: library.issues) { _, _ in updateLibrary() }
+    .onChange(of: library.isReady) { _, _ in updateLibrary() }
+    .onChange(of: library.lastSuccess) { _, _ in updateLibrary() }
+    .onChange(of: library.foregroundAt) { _, _ in updateLibrary() }
+    .onChange(of: library.lastError) { _, _ in updateLibrary() }
     .onChange(of: scenePhase) { _, phase in if phase == .active { model.activated() } }
     .onReceive(NotificationCenter.default.publisher(for: .hitSlopPreviewDidChange)) { notification in
       if let url = notification.object as? URL { model.artworkChanged(url) }
@@ -149,6 +139,23 @@ public struct CatalogView: View {
       SharingJoinView { link in try await joinSharedLink(link) }
     }
   }
+  private func updateLibrary() {
+    model.synced = library.entries.filter { !$0.deleted }.map { entry in
+      var item = CatalogEntry(
+        id: "library:" + entry.id, source: .recent(URL(fileURLWithPath: entry.path)), title: entry.title)
+      item.isSynced = true
+      item.description = library.state(for: entry)
+      let url = URL(fileURLWithPath: entry.path)
+      item.icons = [
+        CatalogArtwork(file: url, name: .icon, modifiedAt: nil, byteCount: nil, revision: entry.assetRevision)
+      ]
+      item.previews = [
+        CatalogArtwork(file: url, name: .preview, modifiedAt: nil, byteCount: nil, revision: entry.assetRevision)
+      ]
+      return item
+    }
+  }
+
   private func joinSharedLink(_ link: String) async throws {
     let candidates = model.recents.compactMap { entry -> URL? in
       if case .recent(let url) = entry.source { return url }

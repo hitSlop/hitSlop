@@ -81,7 +81,7 @@ struct PhoneCatalogView: View {
           }.padding(.horizontal, 30).padding(.top, 66)
         }
       }.refreshable { await library.syncNow() }
-      if !library.isReady { Text(library.status).font(.footnote).foregroundStyle(.secondary).padding(16) }
+      Text(library.status).font(.footnote).foregroundStyle(.secondary).padding(16)
     }.background(Color(.systemBackground))
   }
   private var search: some View {

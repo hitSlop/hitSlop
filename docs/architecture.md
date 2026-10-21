@@ -628,12 +628,21 @@ person's iCloud account. The iPhone app supports iOS 26+ in TestFlight preview; 
 Store release and the Mac release with the library on Production remain open. The phone
 opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files.
 
-Managed documents live in account-scoped Application Support. One Swift `CKSyncEngine`
-transports a complete `.slop` CKAsset per document in the fixed `Library` zone of the
-private CloudKit database in container `iCloud.com.hitslop.app`. Rust owns library metadata, retained history,
-writer admission,
-staging, merging through the existing owner, and receipts. Swift carries file paths and
-opaque version tokens, never Loro bytes. Ordinary Mac files retain their existing path.
+Managed documents live in account-scoped Application Support. One Swift `LibrarySync`
+actor uses direct CloudKit zone-change, record-fetch and conflict-checked modify operations
+in the fixed `Library` zone of the private database in `iCloud.com.hitslop.app`. All callers
+await one coalesced run, with one queued rerun and full reconciliation taking precedence.
+Foreground, Sync Now, push and background refresh enumerate from a nil token: metadata
+first, then assets whose confirmed revisions differ. Debounced edits and editor polling
+fetch changes from the saved token. The token advances only after every record is accepted
+or its issue and retry are durable in `library.sqlite`. A conflict merges the server record
+and restages, with at most three save rounds. Per-record failures never stop other documents.
+Rust owns library metadata, retained history, writer admission, staging, merging through
+the existing owner, and receipts; a receipt requires the incoming history to be present.
+Swift carries file paths and opaque version tokens, never Loro bytes. Both catalogs show
+sync progress, errors and last success; a clean row says synced only after a successful
+check since foregrounding. Unified logs use subsystem `com.hitslop.library` without content.
+Ordinary Mac files retain their existing path.
 
 On Mac, creation asks where to keep a slop when the library is ready: iCloud asks for
 its catalog name, independent of fields inside the authored app; On this Mac opens the
