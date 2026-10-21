@@ -94,8 +94,8 @@ struct CatalogDetail: View {
         if let identity = entry.documentIdentity {
           Text(entry.title).font(.body).foregroundStyle(.secondary)
           Label(
-            entry.isSynced ? "iCloud" : folderName(identity.folderPath),
-            systemImage: entry.isSynced ? "icloud" : "folder"
+            entry.inCloud ? "iCloud" : folderName(identity.folderPath),
+            systemImage: entry.inCloud ? "icloud" : "folder"
           )
           .font(.callout).foregroundStyle(.secondary)
           .labelStyle(.titleAndIcon)
@@ -148,7 +148,7 @@ struct CatalogDetail: View {
     var result = [
       CatalogFact(
         title: "Source",
-        value: entry.isSynced
+        value: entry.inCloud
           ? "iCloud"
           : entry.isRecent ? "Local document" : entry.isBundled ? "Included with hitSlop" : "Installed locally")
     ]

@@ -66,6 +66,8 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
   public var slug = ""
   public var isBundled = false
   public var isSynced = false
+  /// A synced entry kept in iCloud, not one kept only on this device.
+  public var inCloud = false
   public var description = ""
   public var categories: [SlopCategory] = []
   public var authorName: String?

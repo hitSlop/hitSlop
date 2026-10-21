@@ -89,10 +89,7 @@ public struct CatalogView: View {
         showJoin = true
       }
     }
-    .onChange(of: library.entries, initial: true) { _, _ in
-      model.managedFolder = SlopLibrary.managedFolder.standardizedFileURL.path
-      updateLibrary()
-    }
+    .onChange(of: library.entries, initial: true) { _, _ in updateLibrary() }
     .onChange(of: library.issues) { _, _ in updateLibrary() }
     .onChange(of: library.isReady) { _, _ in updateLibrary() }
     .onChange(of: library.lastSuccess) { _, _ in updateLibrary() }
@@ -143,10 +140,13 @@ public struct CatalogView: View {
     }
   }
   private func updateLibrary() {
+    // Without a connected library there are no synced entries to stand in for its files.
+    model.managedFolder = library.isReady ? SlopLibrary.managedFolder.standardizedFileURL.path : nil
     model.synced = library.entries.filter { !$0.deleted }.map { entry in
       var item = CatalogEntry(
         id: "library:" + entry.id, source: .recent(URL(fileURLWithPath: entry.path)), title: entry.title)
       item.isSynced = true
+      item.inCloud = !entry.localOnly
       item.description = library.state(for: entry)
       let url = URL(fileURLWithPath: entry.path)
       item.icons = [

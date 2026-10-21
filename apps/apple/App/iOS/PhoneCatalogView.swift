@@ -54,7 +54,7 @@ struct PhoneCatalogView: View {
                 revision: entry.assetRevision, synced: library.isSynced(entry))
             }
             .contextMenu { Button("Delete Slop", role: .destructive) { model.delete(entry) } }
-            .buttonStyle(.plain).accessibilityLabel(entry.title).disabled(
+            .buttonStyle(.plain).accessibilityLabel(entry.title).accessibilityValue(library.state(for: entry)).disabled(
               entry.problem != nil && !FileManager.default.fileExists(atPath: entry.path))
           }
           ForEach(
