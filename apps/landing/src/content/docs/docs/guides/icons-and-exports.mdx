@@ -71,9 +71,9 @@ editor. A later attempt gets a fresh renderer.
 
 Icons, previews, widgets, PNG and selectable vector PDF exports use synchronous Svelte
 rendering and Takumi. Mac and Linux use a restricted Rust process; the iPhone preview
-renders locally in process. Use `snapshot`, ordinary flexbox, numeric grid
-placement, explicit font properties, and SVG attributes/currentColor. Container
-queries, named grid areas and page CSS inside inline SVG are unsupported; ignored
+renders locally in process. Use `snapshot`, ordinary flexbox, grid placement
+(including named grid areas), explicit font properties, and SVG attributes/currentColor.
+Container queries and page CSS inside inline SVG are unsupported; ignored
 CSS can change the result, so review native captures. Browser-dependent capture
 components fail the build with a role/source diagnostic, and so does your own code that
 uses `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`, `AbortController`, `Blob` or

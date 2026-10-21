@@ -6,7 +6,10 @@ description: Scaffold, style, preview, and install a small local app with Bun.
 A slop is a focused app and its document in one portable `.slop` package. Start with a working Checklist, then make the interface and data your own.
 
 To use slops on your phone, the iPhone TestFlight preview opens, edits and creates documents
-and imports them from Files. This guide covers authoring on a computer; see
+on iOS 26+, starts with Quick Checklist, and imports them from Files. Library slops
+with a widget view can appear on the Home Screen: tap to open, with background
+refresh when iOS allows. Choose **Collaborate** in the document actions menu for
+[live sharing](/docs/guides/live-sharing/). This guide covers authoring on a computer; see
 [availability](/docs/availability/) for iPhone, Synced Library and live sharing.
 
 ## Install the tools
@@ -58,7 +61,7 @@ Read `slop.ts` first. It declares the app with `defineSlop`: its title, descript
 - `slop.ts`'s `theme` declares the colors people can change.
 - `styles.css` owns layout and component styling; import it explicitly from `App.svelte`.
 
-The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state desktop images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-macos-widget).
+The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state Mac desktop and iPhone Home Screen images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-macos-widget).
 
 The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to metadata, schema, commands, their dependencies or the role inventory resets the copy. Test native persistence in a writable document copy.
 

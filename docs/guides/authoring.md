@@ -301,7 +301,8 @@ requests approximate refresh while the app runs; authoring accepts 15–1440 min
 
 The iPhone TestFlight preview renders placed library slops locally with the same
 `Widget.svelte` views and canvases; taps open the slop. Foreground saves and library
-changes refresh images. Background refresh remains open; see the
+changes refresh images. CloudKit notifications and scheduled background work also
+refresh placed widgets when iOS allows; neither gives an exact refresh time. See the
 [widget architecture](../architecture.md#macos-image-widgets).
 
 Widget rendering uses synchronous Svelte SSR in an isolated Rust child on Mac and
@@ -312,7 +313,8 @@ Use font longhands, flexbox or numeric grid placement, and SVG attributes/curren
 The build collects CSS; omit `css="injected"` from Svelte options. Native capture supports bundled PNG/JPEG/GIF/WebP and SVG images, plus referenced
 image attachments through the `attachmentURL(id)` prop. Blob reads/imports and
 remote loading are unavailable in capture views.
-Container queries, named grid areas and page CSS inside inline SVG are not portable.
+Named grid areas are supported by the pinned renderer. Container queries and page CSS
+inside inline SVG are not portable.
 Like Takumi's HTML API, native capture ignores unsupported CSS declarations and rules;
 review the native images, since a successful capture does not guarantee browser fidelity.
 All icons, previews, exports and widgets use this constrained renderer. `Preview.svelte`
