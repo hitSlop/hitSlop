@@ -139,8 +139,11 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
   private var deleting = false
   private var deletionStarted = false
   private var deletionDocuments: [String] = []
-  /// Ownership is read once, before the relay deletion starts, so a retry never repeats the lookups.
-  private var deletionSnapshot = false
+  /// Owned document ids, read once before the relay deletion and kept per account across restarts:
+  /// a relay that is mid-deletion refuses ownership lookups, so a retry must not repeat them.
+  private static func deletionSnapshotKey(_ uid: String) -> String {
+    "sharing.deletion." + SHA256.hash(data: Data(uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+  }
 
   public func deleteAccount() async {
     guard !busy, let auth, let user = auth.currentUser else { return }
@@ -166,7 +169,10 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
     do {
       if !deletionStarted {
         let token = try await user.getIDToken(forcingRefresh: true)
-        if !deletionSnapshot {
+        let snapshotKey = Self.deletionSnapshotKey(user.uid)
+        if let saved = UserDefaults.standard.stringArray(forKey: snapshotKey) {
+          deletionDocuments = saved
+        } else {
           deletionDocuments = try await Task.detached(priority: .utility) {
             var documents: [String] = []
             for (document, credential) in try SharingCredentials.all()
@@ -175,7 +181,7 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
             }
             return documents
           }.value
-          deletionSnapshot = true
+          UserDefaults.standard.set(deletionDocuments, forKey: snapshotKey)
         }
         try await Task.detached(priority: .utility) { try sharingDeleteAccount(token: token) }.value
         deletionStarted = true
@@ -211,6 +217,7 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
         try await user.delete()
       }
       deletionStarted = false
+      UserDefaults.standard.removeObject(forKey: Self.deletionSnapshotKey(user.uid))
       message = "Account deleted." + note
     } catch {
       message =

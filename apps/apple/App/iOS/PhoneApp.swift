@@ -83,7 +83,7 @@ import UIKit
         return .failed
       }
     }
-    lease.work = operation
+    lease.attach(operation)
     return await withTaskCancellationHandler {
       await operation.value
     } onCancel: {
@@ -105,8 +105,15 @@ import UIKit
 
 @MainActor private final class PhoneRefreshLease {
   var identifier: UIBackgroundTaskIdentifier = .invalid
-  var work: Task<UIBackgroundFetchResult, Never>?
+  private var work: Task<UIBackgroundFetchResult, Never>?
+  private var expired = false
+  /// Work attached after iOS already expired the task is cancelled at once.
+  func attach(_ operation: Task<UIBackgroundFetchResult, Never>) {
+    work = operation
+    if expired { operation.cancel() }
+  }
   func expire() {
+    expired = true
     work?.cancel()
     end()
   }
