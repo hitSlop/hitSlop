@@ -272,7 +272,7 @@ background execution remain design work; this proposal sets no new API names or 
 ## On the desktop, and with other people
 
 - **Widgets.** Mac desktop widgets and iPhone Home Screen widgets in the TestFlight
-  preview use dedicated `Widget.svelte` captures of saved state. iPhone background
+  app use dedicated `Widget.svelte` captures of saved state. iPhone background
   refresh runs when iOS allows; release-candidate qualification remains;
   see [widget qualification](roadmap.md#later).
 - **History scrubber.** A timeline of whatever history remains under the
@@ -411,7 +411,7 @@ The manifesto also argues for cloud sandboxes, organization-wide governance and 
 between model providers. Those serve an enterprise agent platform. hitSlop takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
 keeps local documents usable without an account. Optional Synced Library uses the
-person's iCloud account; live-link owners sign in with Apple in the sharing.
+person's iCloud account; live-link owners sign in with Apple.
 
 ## Possible command extensions after launch
 

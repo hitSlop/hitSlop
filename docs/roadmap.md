@@ -7,14 +7,14 @@ documents from bundled or installed templates, edit them in the window or throug
 The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates slops,
 bundles the Popular templates plus Little Days, and imports from Files. The current
 iPhone host is portrait-only; per-slop orientation declarations remain future work. The Mac/iPhone Synced Library
-keeps managed slops in sync through the person's iCloud account. The next Mac release
+keeps managed slops in sync through the person's iCloud account. The Mac app
 includes the Synced Library on CloudKit Production, matching TestFlight/App Store
-iPhones; the currently published Mac release does not include it. iPhone Home Screen
+iPhones. iPhone Home Screen
 widgets render library slops with a widget view locally, open them on tap, and refresh
 in the background when iOS allows.
 [Architecture](architecture.md#synced-library) owns the library design.
 
-Live sharing is enabled in all Mac builds and the iPhone app on TestFlight. The
+Live sharing is available in the Mac app and the iPhone app on TestFlight. The
 Share popover's **Live collaboration** action creates a link anyone can use to edit
 in the Mac/iPhone app or Chrome at share.hitslop.com. The owner signs in with Apple;
 Stop ends the link and everyone keeps their copy. See the
@@ -110,14 +110,10 @@ directions without release dates or a platform delivery order. The
   at those limits.
 - Exercise the release engines on darwin-arm64, linux-x64 and linux-arm64 (Windows is
   outside the current release targets; a native Windows host is a longer-term direction).
-- Loro is pinned to a git commit of its main branch (`c00c9fa`), because the fixes undo
-  relies on are not on crates.io. Return to an exact crates.io version once one ships
-  them, with the corpus passing. Re-check crates.io immediately before tagging: on
-  2026-10-14 the pin was 41 commits ahead of the latest release, 1.16.2. Capture the first
-  corpus entry only with the final pin. Re-checked the same day: crates.io still ends at
-  1.16.2, and Loro's main is three unreleased commits past the pin (history and import
-  hardening, about 5,400 added lines, five days old), so the pin stays. Check again
-  immediately before the first frozen capture.
+- Loro is pinned to the exact crates.io release 1.17.1, which contains the former
+  `c00c9fa` pin and its undo fixes. Re-check crates.io immediately before the first
+  frozen capture / tag, and upgrade only with the corpus passing. Capture the first
+  corpus entry only with the final pin.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
 - The production-window shadow refresh, and an opening-only black strip beneath a window's

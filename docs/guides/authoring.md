@@ -368,7 +368,7 @@ A failed refresh keeps the previous generation. Publishing replaces the complete
 reload; the OS decides when that reload is displayed. Optional `widget.refreshMinutes` in `slop.ts`
 requests approximate refresh while the app runs; authoring accepts 15–1440 minutes.
 
-The iPhone TestFlight renders placed library slops locally with the same
+The iPhone app renders placed library slops locally with the same
 `Widget.svelte` views and canvases; taps open the slop. Foreground saves and library
 changes refresh images. CloudKit notifications and scheduled background work also
 refresh placed widgets when iOS allows; neither gives an exact refresh time. See the

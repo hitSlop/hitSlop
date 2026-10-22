@@ -17,7 +17,7 @@ Make little apps for your Mac with Svelte & your AI coding agent: a planner that
 
 **Install hitSlop once. Make and share little apps as files.** Each `.slop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with hitSlop, without packaging and signing a separate Mac app.
 
-You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings slops to your phone, with a Synced Library through your iCloud account. The next Mac release includes the Synced Library.
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings slops to your phone, with a Synced Library through your iCloud account. The Mac app includes the Synced Library.
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
@@ -26,7 +26,7 @@ You and your agent work on the same document. Check something off and your agent
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and live collaboration. The next Mac release adds live collaboration and Synced Library on CloudKit Production, matching TestFlight/App Store iPhones.
+iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -175,7 +175,7 @@ Here’s where we’re heading:
 - [x] **iPhone app.** Open, edit and create slops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
 - [x] **Synced Library.** Keep slops in sync between Mac and iPhone through iCloud.
 - [x] **Live collaboration.** Edit together through a link on Mac, iPhone or Chrome.
-- [ ] **Release the iPhone app.** Bring iPhone to the App Store and qualify sharing on release devices. The next Mac release includes Synced Library on CloudKit Production.
+- [ ] **Release the iPhone app.** Bring iPhone to the App Store and qualify sharing on release devices.
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
 - [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.
@@ -336,7 +336,7 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 - Required `Preview.svelte` supplies a compact overview for Quick Look and in-app previews.
 - Optional `Export.svelte` supplies complete PNG/PDF output. Use normal document flow so long content can expand. Without it, export actions are hidden.
 - Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
-- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and, in the TestFlight, library slops on iPhone. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
+- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and for library slops on iPhone in TestFlight. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
 
 hitSlop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
 
