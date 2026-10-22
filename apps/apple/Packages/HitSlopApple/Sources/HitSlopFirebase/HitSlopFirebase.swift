@@ -6,7 +6,7 @@ import HitSlopCore
 
 public enum HitSlopFirebase {
   public static func configure() {
-    // Debug and test hosts never initialize Firebase, including its startup collection.
+    // Debug and test hosts never initialize the default Firebase app, including its startup collection.
     #if !DEBUG
       guard FirebaseApp.allApps?.isEmpty != false else { return }
       FirebaseApp.configure()

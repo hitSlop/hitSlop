@@ -275,7 +275,7 @@ closed export takes no writer lock and can render while another process holds th
 
 ## Telemetry
 
-Release enables Firebase Analytics and Crashlytics after configuration; Debug/tests do not initialize Firebase. Collection defaults off in the app plist. The developer/TestFlight sharing uses Sign in with Apple through a separately named Firebase app (Analytics and Crashlytics initialization is unchanged); App Check remains deferred. Existing Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
+Release enables Firebase Analytics and Crashlytics after configuration; Debug/tests do not initialize the default Firebase app. Collection defaults off in the app plist. Live collaboration uses Sign in with Apple through a separately named Firebase app (Analytics and Crashlytics initialization is unchanged). It starts only when the person signs in or opens an account or sharing panel, or on a device that has signed in before, so documents never shared start no Firebase, including in Debug and test builds; App Check remains deferred. Existing Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
 
 Non-fatals carry a fixed operation, classification (platform/authored/rejection), and reason. Native storage and WebKit callbacks supply diagnostic categories before error text is flattened. Fixed category-specific domains and stable numeric codes distinguish issue groups; per-event keys can include export format. No document IDs, paths, titles, contents, guest codes, authored error strings, or raw error userInfo enter reports. Document context never uses global Crashlytics keys.
 

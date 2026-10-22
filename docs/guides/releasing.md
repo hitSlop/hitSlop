@@ -123,18 +123,21 @@ Archive and export both use manual signing with the installed **Developer ID App
 certificate for direct DMG distribution. App Store Connect credentials are used only
 for notarization; packaging does not create development certificates or provisioning profiles.
 
-The next Mac release ships the Synced Library using **Production** CloudKit in
+Mac releases ship the Synced Library using **Production** CloudKit in
 `iCloud.com.hitslop.app`, matching TestFlight and App Store iPhones. Restricted
 CloudKit and push entitlements require a **Developer ID provisioning profile** for
 team `78UAXU8QG8`, App ID `78UAXU8QG8.com.hitslop.app`. Store its base64 bytes in the
 GitHub Actions secret `MACOS_PROVISIONING_PROFILE`. Regenerate the Developer ID
-profile after changing App ID capabilities (including iCloud containers, push, Sign in with Apple, associated domains or Keychain groups),
+profile after changing App ID capabilities (including iCloud containers, push, associated domains or Keychain groups),
 when renewing its signing certificate, or before expiration, then update the secret.
 Packaging validates the profile before building, selects it for archive/export,
 embeds it at `Contents/embedded.provisionprofile` before final signing, and checks
 the signed entitlements. Live collaboration is enabled in Mac releases; the profile
-must authorize Sign in with Apple, `applinks:share.hitslop.com` and the
-`78UAXU8QG8.com.hitslop.sharing` Keychain group.
+must authorize `applinks:share.hitslop.com` and the
+`78UAXU8QG8.com.hitslop.sharing` Keychain group. Mac Debug and Release entitlements omit
+`com.apple.developer.applesignin`: Developer ID cannot use native Sign in with Apple.
+The Mac uses Apple's web flow through Services ID `com.hitslop.app.signin`; see
+[operator setup](../../apps/sharing/README.md).
 See Apple's [provisioning profile requirements](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles).
 
 For a **local signed hand-test build without notarization or upload**, use an installed
@@ -174,6 +177,15 @@ does not block a host release; rerun the website workflow to recover. Website ar
 credentials and deployment state are outside the host release record. Public docs track
 `master`, so they can describe changes ahead of the current shipped app; identify that
 availability in the affected docs.
+
+## Sharing deployment
+
+`sharing.yml` qualifies the relay and browser host on matching `master` changes and
+deploys them when the release tag is pushed, so share.hitslop.com runs the released core.
+A relay change that a released app depends on must ship in that release. Rerun the
+workflow manually on `master` to recover a failed deploy, or roll back with
+`wrangler rollback`; the [sharing README](../../apps/sharing/README.md) lists operator
+steps such as rate-limit bindings and R2 lifecycle rules.
 
 ## Repository and npm setup
 

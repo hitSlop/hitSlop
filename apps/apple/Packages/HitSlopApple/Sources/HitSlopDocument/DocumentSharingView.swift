@@ -1,5 +1,6 @@
 import AuthenticationServices
 import HitSlopAccount
+import HitSlopCore
 import HitSlopCoreBinding
 import SwiftUI
 
@@ -37,6 +38,9 @@ public struct LiveCollaborationSection: View {
 
   private var live: Bool { model.status.map { $0.phase != .ended } ?? false }
   private var joined: Bool { live && model.status?.creator == false }
+  private var restartNeeded: Bool {
+    model.status?.creator == true && (model.status?.pauseKind == .outgrown || model.status?.pauseKind == .filesFull)
+  }
   private var holdingOpen: Bool { model.acting || signingIn || pendingStart || confirmingStop }
 
   public var body: some View {
@@ -69,25 +73,7 @@ public struct LiveCollaborationSection: View {
         }
       } else if wantsLink && (!account.signedIn || signingIn) {
         caption("Sign in with Apple to start a live link. People you invite don't need an account.")
-        SignInWithAppleButton(.continue) { request in
-          interactionChanged(true)
-          signingIn = true
-          signInError = nil
-          account.prepare(request)
-        } onCompletion: { result in
-          Task {
-            let success = await account.complete(result)
-            signingIn = false
-            if success {
-              pendingStart = true
-              startWhenReady()
-            } else {
-              signInError = account.message
-            }
-          }
-        }
-        .frame(height: signInHeight)
-        .disabled(signingIn)
+        signInButton
       } else if model.status?.phase == .preparing {
         caption("Couldn't finish starting.")
         if model.error == nil { Button("Try Again") { start() }.disabled(model.busy) }
@@ -117,7 +103,33 @@ public struct LiveCollaborationSection: View {
             : "Edit together in real time. Anyone with the link can edit.")
       }
 
-      if live, let saveUnsharedCopy {
+      if live, let kind = model.status?.pauseKind {
+        switch kind {
+        case .roomFull:
+          caption("Making room…")
+        case .outgrown, .filesFull:
+          if kind == .filesFull { caption("Attachments are full.") }
+          if joined {
+            caption("Ask for a new link, or save an unshared copy.")
+          } else {
+            caption("Save an unshared copy, then turn on live collaboration in the copy for a new link.")
+            if let saveUnsharedCopy {
+              Button("Restart Sharing…", action: saveUnsharedCopy).disabled(model.busy)
+            }
+          }
+        case .needsUpdate:
+          caption("This shared document needs a newer hitSlop.")
+          Button("Update hitSlop") { updateHitSlop() }
+        case .missingHistory, .refused:
+          caption(model.status?.detail ?? "This copy could not sync. Save an unshared copy to keep editing.")
+        case .ended:
+          caption("Live collaboration ended. You keep your copy.")
+        }
+      }
+      if live, model.status?.pauseKind != .roomFull,
+        !restartNeeded,
+        let saveUnsharedCopy
+      {
         Button("Save Unshared Copy…", action: saveUnsharedCopy).disabled(model.busy)
       }
       if confirmingStop {
@@ -179,6 +191,65 @@ public struct LiveCollaborationSection: View {
         confirmingStop = false
       }
     }
+  }
+
+  @ViewBuilder private var signInButton: some View {
+    #if os(macOS)
+      SharingAppleSignInButton {
+        interactionChanged(true)
+        signingIn = true
+        signInError = nil
+        Task {
+          let success = await account.complete()
+          signingIn = false
+          if success {
+            pendingStart = true
+            startWhenReady()
+          } else if !account.message.isEmpty {
+            signInError = account.message
+          }
+        }
+      }
+      .disabled(signingIn)
+    #else
+      SignInWithAppleButton(.continue) { request in
+        interactionChanged(true)
+        signingIn = true
+        signInError = nil
+        account.prepare(request)
+      } onCompletion: { result in
+        Task {
+          let success = await account.complete(result)
+          signingIn = false
+          if success {
+            pendingStart = true
+            startWhenReady()
+          } else {
+            signInError = account.message
+          }
+        }
+      }
+      .frame(height: signInHeight)
+      .disabled(signingIn)
+    #endif
+  }
+
+  private func updateHitSlop() {
+    #if os(macOS)
+      // Use the existing Sparkle menu action and its configured updater target.
+      func findUpdate(in menu: NSMenu) -> NSMenuItem? {
+        for item in menu.items {
+          if item.action.map(NSStringFromSelector) == "checkForUpdates:" { return item }
+          if let submenu = item.submenu, let found = findUpdate(in: submenu) { return found }
+        }
+        return nil
+      }
+      if let menu = NSApp.mainMenu, let item = findUpdate(in: menu), let action = item.action {
+        NSApp.sendAction(action, to: item.target, from: nil)
+      }
+    #else
+      UIApplication.shared.open(SlopLinks.iosDownload)
+    #endif
   }
 
   private var signInHeight: CGFloat {

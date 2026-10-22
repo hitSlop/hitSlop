@@ -390,12 +390,13 @@ format runs through the document command queue. PDF and PNG use the saved-state 
 renderer. **Live collaboration** in that popover creates an edit link through the
 service described under [Sync](#sync).
 
-Duplicate and Share Slop File flush what the page accepted and acquire a temporary saved
-source through the owner. Both artwork and the new document come from that source, so
+Duplicate and Share Slop File drain page edits and acquire a temporary clean copy of
+accepted live state through the owner, even if saving the source history returns Full.
+Both artwork and the new document come from that source, so
 edits accepted while rendering cannot make the preview disagree with the copy. After
 rendering, a temporary native owner takes the source's lock and performs the clean copy;
 no authored code runs in that owner. The copy is made a document of its own before it is published
-(`Store::copy_clean`): its saved state becomes a checkpoint with no history, it keeps
+(`Store::copy_clean`): its live snapshot becomes a checkpoint with no history, it keeps
 only the attachments that state references, and it carries the rendered artwork, or none
 if rendering failed, never the original's. Nothing deleted before the copy is in it, and
 writers zero deleted content (`secure_delete=FAST`) on every platform. The copy is
@@ -718,6 +719,37 @@ Uploading rooms expire after 24 hours. `DELETE /v1/rooms/{room}` ends sharing, c
 sockets, purges resources and update tables, and releases quota. Uploads crossing Stop
 remove late writes. Re-share creates a fresh room; the old room returns 410.
 
+Rooms expose an optional compaction hint after 4 MiB or 8,192 retained updates.
+A capability writer can POST a full-history blob and frontier to `/compact`. The relay
+archives covered records in private R2 for 14 days, then transactionally replaces them
+with one base at sequence zero; heads do not change. Hello sends the base first when
+a copy lacks its spans. No binary frame changes or base broadcasts are needed.
+Native and browser transports check the hint on connection and every ten minutes,
+then jitter 0–30 seconds and recheck before uploading. The serial Rust owner exports
+Loro updates from its retained-history start to the confirmed relay frontier; it
+checks the export metadata and 16 MiB bound. Normal compaction requires caught-up
+write access with no push or unsent local edits. A Quota acknowledgement waits as
+`RoomFull`: compact confirmed history without including the rejected local push,
+then reconnect to retry. A second Quota with no compaction due becomes `Outgrown`.
+Both transports send a text ping every twenty seconds and ignore text/pong controls.
+
+Pauses carry a typed recovery kind alongside their reason: `RoomFull` is transient;
+`Outgrown` offers the creator a clean copy and new link; `NeedsUpdate` opens updates;
+`FilesFull` stops attachment-upload retries; `MissingHistory` and `Refused` offer an
+unshared copy; `Ended` preserves the local copy. Protocol refusal codes select
+`NeedsUpdate`; app/malformed refusals select `Refused`. Swift carries these kinds
+through UniFFI; browser transport reads the same Rust classification.
+
+The base and remaining updates each have a 16 MiB bound; updates also have a 32,768-row
+bound. Per-IP admission and per-socket Push budgets bound abuse. Permanent refusals
+send Error and close 1008; transient failures close 1011 without Error so shipped
+clients reconnect. A socket over its Push budget closes 1013 before storing anything.
+
+Live rooms expire after 90 idle days without open sockets. Stop releases the account
+slot and current-room index, purges payloads and identifiers, and keeps only an Ended
+tombstone for 30 days (410), then deletes all storage (404). Account deletion need not
+revisit cleaned Ended rooms. Owner routes require an Apple-provider Firebase identity.
+
 An edit link is `https://share.hitslop.com/join#<room>.<capability>`.
 Join fetches document and seed metadata from the room. Owner recovery looks up
 `GET /v1/account/rooms/{document}`, then reads the room with Firebase identity. Guests
@@ -736,8 +768,16 @@ Automatic CloudKit checkpoints of relay documents run at most once a minute per 
 manual/background saves bypass the interval.
 
 Mac and iPhone builds enable live collaboration without a launch flag. Mac Release
-entitlements include Sign in with Apple, the sharing Keychain group and the
-`share.hitslop.com` associated domain.
+entitlements include the sharing Keychain group and the `share.hitslop.com` associated
+domain. Developer ID apps cannot use native Sign in with Apple, so Mac sign-in uses
+`ASWebAuthenticationSession` with Services ID `com.hitslop.app.signin`, grouped under
+primary App ID `com.hitslop` alongside the iPhone app. iPhone retains native
+`ASAuthorizationController`; both paths sign in to the same Firebase account. The Mac
+requests no scopes and uses a fragment response at `https://share.hitslop.com/auth/apple`.
+A static page forwards the unchanged fragment to `hitslop://auth/apple`; tokens never
+reach the host. Only the active session consumes it, checks its random state and supplies
+the ID token and raw nonce to Firebase. The callback page has a script-hash CSP,
+`no-store` and `no-referrer`.
 The owner signs in with Apple; anyone holding the link can edit in the Mac/iPhone app
 or Chrome. Stop ends the link and every participant keeps a local copy. Browser copies
 are saved in that browser and downloadable as `.slop` files.
@@ -755,11 +795,11 @@ refuses the replacement.
 all indexed rooms and purges their relay resources, deletes the Firebase user, attempts
 Apple token revocation and clears owned link credentials on this device. Failed Apple
 revocation directs the person to Apple Account settings. Participant copies remain.
-Universal links route `/join` on `share.hitslop.com` to installed Mac apps and sharing-enabled phone apps;
+Universal links route `/join` on `share.hitslop.com` to installed Mac apps and phone apps;
 without the app, the web host offers the browser path, qualified in Chrome. The associated
 domain entitlements and the host's AASA response define that route. The sharing CI workflow
-builds, qualifies, deploys the relay and host on matching `master` changes, then checks
-health and AASA; it also supports manual dispatch on `master`.
+builds and qualifies the relay and host on `master` and deploys them, checking health and
+AASA, for a release tag or a manual run.
 
 [Sharing operations and qualification](../apps/sharing/README.md) describes the service;
 [the roadmap](roadmap.md#open-now) tracks release and polish work. Historical qualifications are recorded in the
@@ -810,9 +850,11 @@ Accepted limits, chosen for mini apps over heavier machinery:
   close under the size and edit conditions above.
 - **Undo** starts over for the session if a live batch is refused after rehearsal
   admitted it, which a rehearsed batch should never be ([undo](#undo)).
-- **A shared document** never trims, so the 32 MiB save limit bounds it. Before sharing
-  ships, a full shared document needs a way to save its live state as a new, unshared copy
-  without first saving the full history: discard is refused and a copy waits for a save.
+- **A shared document** never trims, so the 32 MiB save limit bounds it, including iCloud
+  library documents. Saved history pressure warns at 75% of either storage limit.
+  Save Unshared Copy and Duplicate copy accepted live state without first saving the
+  source history, preserving unsaved edits and referenced attachments with a new identity.
+  The copy has no share row or retained history; discard remains refused on the source.
 
 ## Tests and performance
 

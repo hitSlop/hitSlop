@@ -24,23 +24,32 @@ transcription do not mean that all authored apps work offline or never use the n
 ## Live collaboration
 
 Live collaboration is optional. To create a link, the owner signs in with Apple through
-Firebase Authentication. The relay uses that account identity to manage the owner's
+Firebase Authentication. On the Mac, sign-in opens Apple's page in a browser sheet;
+the iPhone uses Apple's native sign-in. The relay uses that account identity to manage the owner's
 links. Guests join with the edit link and need no account.
 
-Sharing uploads the document's app, saved content and referenced attachments to the
-hitSlop relay, hosted on Cloudflare. Connected participants receive copies and exchange
-edits through that relay. This content is not end-to-end encrypted. Anyone with the
-link can edit, so share it only with people you intend to give access to.
+Sharing uploads the document's app, saved content, edit history and referenced
+attachments to the hitSlop relay, hosted on Cloudflare. Participants receive the same
+copy, including text that was later deleted, and exchange edits through that relay. This
+content is not end-to-end encrypted. Anyone with the link can edit, so share it only
+with people you intend to give access to. While you are signed in, the app asks the relay
+whether your shared and iCloud documents have a link, so you can manage it from any of
+your devices.
 
-Stopping sharing ends the link and deletes the room's stored relay data. Deleting the
-sharing account ends all of its links and removes its relay data and Firebase account;
-the app also attempts to revoke Apple access. Copies already saved on participants'
-devices remain theirs. Signing out alone does not end links. See
+Stopping sharing ends the link and deletes the room's documents, edits, attachments and
+your account and document identifiers from the relay. A record that the link has ended
+remains for 30 days so old links report it, then it is deleted too. A link nobody opens
+for 90 days ends the same way. When a busy room is condensed, the edits it replaces are
+kept for up to 14 days for recovery, then deleted. Deleting the sharing account ends all
+of its links, removes their relay data and deletes the Firebase account; the app also
+attempts to revoke Apple access. Copies already saved on participants' devices remain
+theirs. Signing out alone does not end links. See
 [live sharing](/docs/guides/live-sharing/) for these controls.
 
 Sharing event metrics record event names and counts, without document contents,
 account or document identifiers, IP addresses, tokens or edit links. The service uses
-client IP addresses to apply request limits.
+client IP addresses to apply request limits and does not store them after a connection
+closes.
 
 ## Analytics and crash reporting
 

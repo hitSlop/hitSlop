@@ -129,6 +129,8 @@ private struct UpdateSettingsView: View {
         continue
       }
       guard url.scheme == "hitslop" else { continue }
+      // Only an active ASWebAuthenticationSession may consume Apple credentials.
+      if url.host == "auth" { continue }
       if url.host == "widgets" {
         showCatalog()
         continue

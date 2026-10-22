@@ -13,56 +13,102 @@ import SwiftUI
   import UIKit
 #endif
 
-/// Retained for the duration of a fresh Apple request, including its presentation anchor.
-@MainActor
-private final class AccountAppleAuthorization: NSObject, ASAuthorizationControllerDelegate,
-  ASAuthorizationControllerPresentationContextProviding
-{
-  private var continuation: CheckedContinuation<ASAuthorization, Error>?
-  private var controller: ASAuthorizationController?
-  func request(_ request: ASAuthorizationAppleIDRequest) async throws -> ASAuthorization {
-    try await withCheckedThrowingContinuation { continuation in
-      self.continuation = continuation
-      let controller = ASAuthorizationController(authorizationRequests: [request])
-      self.controller = controller
-      controller.delegate = self
-      controller.presentationContextProvider = self
-      controller.performRequests()
+#if !os(macOS)
+  /// Retained for the duration of a fresh Apple request, including its presentation anchor.
+  @MainActor
+  private final class AccountAppleAuthorization: NSObject, ASAuthorizationControllerDelegate,
+    ASAuthorizationControllerPresentationContextProviding
+  {
+    private var continuation: CheckedContinuation<ASAuthorization, Error>?
+    private var controller: ASAuthorizationController?
+    func request(_ request: ASAuthorizationAppleIDRequest) async throws -> ASAuthorization {
+      try await withCheckedThrowingContinuation { continuation in
+        self.continuation = continuation
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        self.controller = controller
+        controller.delegate = self
+        controller.presentationContextProvider = self
+        controller.performRequests()
+      }
     }
-  }
-  func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-    #if os(macOS)
-      NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? ASPresentationAnchor()
-    #else
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
       UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         .flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
-    #endif
+    }
+    func authorizationController(
+      controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+      continuation?.resume(returning: authorization)
+      continuation = nil
+      self.controller = nil
+    }
+    func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
+      continuation?.resume(throwing: error)
+      continuation = nil
+      self.controller = nil
+    }
   }
-  func authorizationController(
-    controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization
-  ) {
-    continuation?.resume(returning: authorization)
-    continuation = nil
-    self.controller = nil
-  }
-  func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-    continuation?.resume(throwing: error)
-    continuation = nil
-    self.controller = nil
-  }
-}
 
-/// Explicit developer auth proof. Named Firebase initialization never enables the
-/// default app's Analytics/Crashlytics collection in Debug or on the phone.
+#else
+  @MainActor
+  private final class WebAppleAuthorization: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private var session: ASWebAuthenticationSession?
+    private var continuation: CheckedContinuation<URL, Error>?
+
+    func request(_ url: URL) async throws -> URL {
+      try await withCheckedThrowingContinuation { continuation in
+        self.continuation = continuation
+        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "hitslop") { url, error in
+          Task { @MainActor in
+            if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
+              self.finish(.failure(AppleWebCallback.Failure.cancelled))
+            } else if let error {
+              self.finish(.failure(error))
+            } else if let url {
+              self.finish(.success(url))
+            } else {
+              self.finish(.failure(AppleWebCallback.Failure.invalidCallback))
+            }
+          }
+        }
+        self.session = session
+        session.presentationContextProvider = self
+        session.prefersEphemeralWebBrowserSession = false
+        if !session.start() { finish(.failure(AppleWebCallback.Failure.invalidCallback)) }
+      }
+    }
+
+    private func finish(_ result: Result<URL, Error>) {
+      continuation?.resume(with: result)
+      continuation = nil
+      session = nil
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+      NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? ASPresentationAnchor()
+    }
+  }
+#endif
+
+/// Sign in with Apple through a named Firebase app, started only by an account action or for a
+/// device that has signed in before. It never enables the default app's Analytics/Crashlytics
+/// collection in Debug or on the phone.
 @MainActor public final class SharingAccount: ObservableObject {
   public static let shared = SharingAccount()
   private init() {}
   @Published public private(set) var signedIn = false
+  private static let signedInKey = "sharing.signedIn"
+  /// For an explicit action such as creating or stopping a link: starts Firebase if needed.
   public func token() async throws -> String {
     configure()
     guard !deleting else { throw SlopFailure("Account deletion is in progress.") }
     guard let user = auth?.currentUser else { throw SlopFailure("Sign in with Apple first.") }
     return try await user.getIDToken()
+  }
+  /// For background recovery: nil, without starting Firebase, until this device has signed in.
+  public func recoveryToken() async -> String? {
+    guard auth != nil || UserDefaults.standard.bool(forKey: Self.signedInKey) else { return nil }
+    return try? await token()
   }
   @Published var fingerprint: String?
   @Published public private(set) var message = ""
@@ -87,40 +133,88 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
   }
   private func updateIdentity() {
     signedIn = auth?.currentUser != nil
+    UserDefaults.standard.set(signedIn, forKey: Self.signedInKey)
     fingerprint = auth?.currentUser.map { user in
       SHA256.hash(data: Data(user.uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
   }
-  public func prepare(_ request: ASAuthorizationAppleIDRequest) {
+  private func randomValue() throws -> String {
     var bytes = [UInt8](repeating: 0, count: 32)
     guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-      message = "Could not prepare sign-in. Try again."
-      return
+      throw SlopFailure("Could not prepare sign-in. Try again.")
     }
-    let raw = bytes.map { String(format: "%02x", $0) }.joined()
-    nonce = raw
-    request.nonce = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
-    request.requestedScopes = []
+    return bytes.map { String(format: "%02x", $0) }.joined()
   }
-  public func complete(_ result: Result<ASAuthorization, Error>) async -> Bool {
+  public func prepare(_ request: ASAuthorizationAppleIDRequest) {
+    nonce = nil
+    do {
+      let raw = try randomValue()
+      nonce = raw
+      request.nonce = SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()
+      request.requestedScopes = []
+    } catch { message = "Could not prepare sign-in. Try again." }
+  }
+  /// The native button supplies its result on iPhone; deletion requests a fresh authorization.
+  private func appleCredential(_ result: Result<ASAuthorization, Error>? = nil) async throws -> (
+    credential: AuthCredential, appleUser: String, code: String?
+  ) {
+    #if os(macOS)
+      let raw = try randomValue()
+      let state = try randomValue()
+      var url = URLComponents(string: "https://appleid.apple.com/auth/authorize")!
+      url.queryItems = [
+        URLQueryItem(name: "client_id", value: SharingLinks.appleSignIn.servicesID),
+        URLQueryItem(name: "redirect_uri", value: SharingLinks.appleSignIn.returnURL),
+        URLQueryItem(name: "response_type", value: "code id_token"),
+        URLQueryItem(name: "response_mode", value: "fragment"),
+        URLQueryItem(
+          name: "nonce", value: SHA256.hash(data: Data(raw.utf8)).map { String(format: "%02x", $0) }.joined()),
+        URLQueryItem(name: "state", value: state),
+      ]
+      let callback = try await WebAppleAuthorization().request(url.url!)
+      let response = try AppleWebCallback.parse(callback, state: state)
+      return (
+        OAuthProvider.appleCredential(withIDToken: response.idToken, rawNonce: raw, fullName: nil),
+        response.appleUser, response.code
+      )
+    #else
+      let authorization: ASAuthorization
+      if let result {
+        authorization = try result.get()
+      } else {
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        prepare(request)
+        authorization = try await AccountAppleAuthorization().request(request)
+      }
+      guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+        let bytes = credential.identityToken, let token = String(data: bytes, encoding: .utf8), let nonce
+      else { throw SlopFailure("Apple did not return a sign-in credential. Try again.") }
+      return (
+        OAuthProvider.appleCredential(withIDToken: token, rawNonce: nonce, fullName: nil), credential.user,
+        credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+      )
+    #endif
+  }
+  public func complete(_ result: Result<ASAuthorization, Error>? = nil) async -> Bool {
     guard !busy else { return false }
     busy = true
+    #if os(macOS)
+      message = ""
+    #endif
     defer {
       busy = false
       nonce = nil
     }
     do {
-      guard let auth, let nonce,
-        let credential = try result.get().credential as? ASAuthorizationAppleIDCredential,
-        let bytes = credential.identityToken,
-        let token = String(data: bytes, encoding: .utf8)
-      else { throw SlopFailure("Apple did not return a sign-in credential. Try again.") }
-      let apple = OAuthProvider.appleCredential(withIDToken: token, rawNonce: nonce, fullName: nil)
-      _ = try await auth.signIn(with: apple)
+      guard let auth else { throw SlopFailure("Sign-in is unavailable in this app.") }
+      let apple = try await appleCredential(result)
+      _ = try await auth.signIn(with: apple.credential)
       updateIdentity()
       NotificationCenter.default.post(name: .hitSlopSharingAccountChanged, object: nil)
       try await verify()
       return true
+    } catch AppleWebCallback.Failure.cancelled {
+      return false
     } catch {
       // Auth errors can carry provider response data. Keep the UI/logs generic.
       message = "Could not finish signing in. Try again."
@@ -167,6 +261,17 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
     }
     var note = ""
     do {
+      #if os(macOS)
+        // Cancelling the browser sheet must not stop links or delete the account.
+        let webAuthorization: Result<(credential: AuthCredential, appleUser: String, code: String?), Error>
+        do {
+          webAuthorization = .success(try await appleCredential())
+        } catch AppleWebCallback.Failure.cancelled {
+          return
+        } catch {
+          webAuthorization = .failure(error)
+        }
+      #endif
       if !deletionStarted {
         let token = try await user.getIDToken(forcingRefresh: true)
         let snapshotKey = Self.deletionSnapshotKey(user.uid)
@@ -189,17 +294,16 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
       }
       var apple: AuthCredential?
       do {
-        let request = ASAuthorizationAppleIDProvider().createRequest()
-        prepare(request)
-        let authorization = try await AccountAppleAuthorization().request(request)
-        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
-          let bytes = credential.identityToken, let token = String(data: bytes, encoding: .utf8),
-          let nonce,
-          // Never revoke an Apple account different from the one being deleted.
-          user.providerData.contains(where: { $0.providerID == "apple.com" && $0.uid == credential.user })
+        #if os(macOS)
+          let authorization = try webAuthorization.get()
+        #else
+          let authorization = try await appleCredential()
+        #endif
+        // Never revoke an Apple account different from the one being deleted.
+        guard user.providerData.contains(where: { $0.providerID == "apple.com" && $0.uid == authorization.appleUser })
         else { throw SlopFailure("Apple sign-in did not match this account.") }
-        apple = OAuthProvider.appleCredential(withIDToken: token, rawNonce: nonce, fullName: nil)
-        if let bytes = credential.authorizationCode, let code = String(data: bytes, encoding: .utf8) {
+        apple = authorization.credential
+        if let code = authorization.code {
           do { try await auth.revokeToken(withAuthorizationCode: code) } catch {
             note = " Apple access could not be revoked. Remove hitSlop in your Apple Account settings."
           }
@@ -252,9 +356,13 @@ public struct SharingAccountView: View {
         Button("Sign Out") { account.signOut() }
         Button("Delete Account…", role: .destructive) { confirmingDeletion = true }
       } else {
-        SignInWithAppleButton(.signIn, onRequest: account.prepare) { result in
-          Task { _ = await account.complete(result) }
-        }.frame(height: 44)
+        #if os(macOS)
+          SharingAppleSignInButton { Task { _ = await account.complete() } }
+        #else
+          SignInWithAppleButton(.signIn, onRequest: account.prepare) { result in
+            Task { _ = await account.complete(result) }
+          }.frame(height: 44)
+        #endif
         Text("Sign in to start live links. Opening a shared link doesn't need an account.")
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
@@ -276,3 +384,24 @@ public struct SharingAccountView: View {
     }
   }
 }
+
+#if os(macOS)
+  /// Mac sign-in uses the browser session rather than the native Apple authorization button.
+  public struct SharingAppleSignInButton: View {
+    private let action: () -> Void
+    public init(action: @escaping () -> Void) { self.action = action }
+    public var body: some View {
+      Button(action: action) {
+        HStack(spacing: 6) {
+          Image(systemName: "apple.logo")
+          Text("Sign in with Apple")
+        }
+        .font(.system(size: 17, weight: .medium))
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .foregroundStyle(.white)
+        .background(.black, in: RoundedRectangle(cornerRadius: 6))
+      }
+      .buttonStyle(.plain)
+    }
+  }
+#endif
