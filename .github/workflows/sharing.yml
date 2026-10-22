@@ -1,10 +1,13 @@
 name: Deploy sharing
 
-# The live-sharing relay and its browser host (share.hitslop.com, *.dotslop.com) follow master.
-# The relay's /v1 wire contract is frozen (crates/hitslop-sharing-protocol/tests/fixtures/v1).
+# The live-sharing relay and its browser host (share.hitslop.com, *.dotslop.com) deploy with
+# a release tag or a manual run, so browser guests run the same core as released apps. Master
+# changes are qualified only. The relay's /v1 wire contract is frozen
+# (crates/hitslop-sharing-protocol/tests/fixtures/v1).
 on:
   push:
     branches: [master]
+    tags: ["v*"]
     paths:
       - apps/sharing/**
       - crates/hitslop-sharing-*/**
@@ -27,7 +30,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
     # Miniflare qualification is proven on macOS; it fails before any check on the Linux runner.
     runs-on: macos-15
     timeout-minutes: 60
@@ -43,16 +46,19 @@ jobs:
       - name: Qualify
         run: bun run verify sharing
       - name: Deploy relay
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy host
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/host.wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         run: |
           test "$(curl -s -o /dev/null -w '%{http_code}' https://share.hitslop.com/health)" = 200
           curl -sf https://share.hitslop.com/.well-known/apple-app-site-association | grep -q '"applinks"'
