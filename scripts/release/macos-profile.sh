@@ -12,12 +12,20 @@ validate_macos_profile() (
     || { profile_error "cannot decode CMS; provide an Apple Developer ID .provisionprofile"; exit 65; }
   /usr/bin/plutil -lint "$work/profile.plist" >/dev/null \
     || { profile_error "decoded payload is not a valid plist"; exit 65; }
-  /usr/bin/plutil -extract Entitlements json -o "$work/profile-entitlements.json" "$work/profile.plist"
+  # Older plutil converts the whole profile (dates, certificate data) before extracting, which
+  # JSON cannot hold; extract as XML first, then convert only that value.
+  json_value() {
+    /usr/bin/plutil -extract "$1" xml1 -o "$work/profile-value.plist" "$work/profile.plist"
+    /usr/bin/plutil -convert json -o "$2" "$work/profile-value.plist"
+  }
+  json_value Entitlements "$work/profile-entitlements.json"
   /usr/bin/plutil -convert json -o "$work/required-entitlements.json" "$required"
   expiration=$(/usr/bin/plutil -extract ExpirationDate raw -o - "$work/profile.plist")
   all_devices=$(/usr/bin/plutil -extract ProvisionsAllDevices raw -o - "$work/profile.plist" 2>/dev/null || true)
-  platform=$(/usr/bin/plutil -extract Platform json -o - "$work/profile.plist")
-  team=$(/usr/bin/plutil -extract TeamIdentifier json -o - "$work/profile.plist")
+  json_value Platform "$work/profile-platform.json"
+  json_value TeamIdentifier "$work/profile-team.json"
+  platform=$(cat "$work/profile-platform.json")
+  team=$(cat "$work/profile-team.json")
   bun --eval '
     const [work, expiration, allDevices, platform, team] = process.argv.slice(1);
     const fail = message => { console.error(`macOS provisioning profile: ${message}`); process.exit(65); };
