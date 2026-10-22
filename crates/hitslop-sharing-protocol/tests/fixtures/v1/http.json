@@ -865,5 +865,25 @@
     "name": "delete account success",
     "input": null,
     "canonical": null
+  },
+  {
+    "type": "RoomInfo",
+    "name": "compaction due metadata",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": null,
+      "seedSize": null,
+      "app": null,
+      "compact": true
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "phase": "live",
+      "seedHash": null,
+      "seedSize": null,
+      "app": null,
+      "compact": true
+    }
   }
 ]

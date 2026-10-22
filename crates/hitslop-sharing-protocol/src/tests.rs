@@ -127,3 +127,19 @@ fn unknown_variants_fail_closed_but_error_codes_remain_opaque() {
     assert_eq!(frame, Frame::Error { code: 255, message: String::new() });
     assert_eq!(envelope::encode(frame).unwrap(), bytes);
 }
+
+#[test]
+fn compaction_hint_defaults_and_limits_allow_a_base_frame() {
+    let old = json!({"document":"fixture", "phase":"live", "seedHash":null,"seedSize":null,"app":null});
+    let mut info: RoomInfo = serde_json::from_value(old.clone()).unwrap();
+    assert!(!info.compact);
+    assert_eq!(serde_json::to_value(&info).unwrap(), old);
+    info.compact = true;
+    assert_eq!(serde_json::to_value(info).unwrap()["compact"], true);
+    let frame = Frame::Records(vec![Record {
+        spans: vec![Span { peer: 1, start: 0, end: 1 }],
+        bytes: vec![0; crate::BASE_BYTES],
+    }]);
+    assert!(frame.encode().len() < MAX_FRAME);
+    assert!(Frame::decode(&frame.encode()).is_ok());
+}

@@ -8,9 +8,14 @@ const TOKEN_BYTES: usize = hitslop_sharing_protocol::limits::IDENTITY_TOKEN_BYTE
 #[derive(Clone, Deserialize)]
 pub(crate) struct Claims {
     pub sub: String,
+    pub firebase: Firebase,
     pub exp: u64,
     pub iat: u64,
     pub auth_time: u64,
+}
+#[derive(Clone, Deserialize)]
+pub(crate) struct Firebase {
+    sign_in_provider: String,
 }
 pub(crate) fn key_id(token: &str) -> Result<String, &'static str> {
     if token.len() > TOKEN_BYTES {
@@ -32,7 +37,10 @@ pub(crate) fn verify(token: &str, project: &str, key: &DecodingKey, now: u64) ->
     policy.validate_exp = false;
     policy.leeway = 0;
     let claims = decode::<Claims>(token, key, &policy).map_err(|_| "Invalid identity")?.claims;
-    if claims.sub.is_empty()
+    // Any Firebase provider may own links (Apple today; Google or others later), but an
+    // anonymous account is free to mint and must not reach the room quota.
+    if claims.firebase.sign_in_provider == "anonymous"
+        || claims.sub.is_empty()
         || claims.sub.chars().count() > 128
         || claims.exp <= now
         || claims.iat > now
@@ -155,7 +163,7 @@ mod tests {
     }
     fn claims() -> Value {
         json!({"sub":"test-user","aud":"hitslopapp","iss":"https://securetoken.google.com/hitslopapp",
-            "exp":NOW+3600,"iat":NOW,"auth_time":NOW-10})
+            "firebase":{"sign_in_provider":"apple.com"},"exp":NOW+3600,"iat":NOW,"auth_time":NOW-10})
     }
     fn token(claims: &Value, kid: &str) -> String {
         let mut header = Header::new(Algorithm::RS256);
@@ -194,6 +202,20 @@ mod tests {
         changed["sub"] = json!("other-user");
         forged[1] = token(&changed, "current").split('.').nth(1).unwrap().into();
         assert!(verify(&forged.join("."), "hitslopapp", &keys().1, NOW).is_err());
+    }
+    #[test]
+    fn owner_identity_accepts_named_providers_but_not_anonymous_accounts() {
+        for provider in ["apple.com", "google.com", "password"] {
+            let mut changed = claims();
+            changed["firebase"]["sign_in_provider"] = json!(provider);
+            assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_ok());
+        }
+        let mut changed = claims();
+        changed["firebase"]["sign_in_provider"] = json!("anonymous");
+        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());
+        let mut changed = claims();
+        changed.as_object_mut().unwrap().remove("firebase");
+        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());
     }
     #[test]
     fn firebase_identity_refuses_algorithm_confusion_and_missing_key_ids() {

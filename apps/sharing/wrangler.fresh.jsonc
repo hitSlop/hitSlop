@@ -1,0 +1,21 @@
+{
+  // Staging, fresh accounts and local `wrangler dev`: creates the Durable Object classes instead of
+  // transferring them from the retired preview script. Otherwise mirrors wrangler.jsonc.
+  "name": "hitslop-sharing-relay-staging",
+  "main": "../../generated/sharing/relay/worker/shim.mjs",
+  "compatibility_date": "2026-10-19",
+  "workers_dev": false,
+  "vars": { "BROWSER_ORIGIN": "https://share.hitslop.com", "FIREBASE_PROJECT": "hitslopapp", "CREATION_ENABLED": "1" },
+  "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "SlopRoom" }, { "name": "ACCOUNTS", "class_name": "SharingAccount" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SlopRoom", "SharingAccount"] }],
+  "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "hitslop-sharing-staging" }],
+  "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "hitslop_sharing_staging" }],
+  "ratelimits": [
+    { "name": "GUEST_COMPACT_LIMIT", "namespace_id": "27924748", "simple": { "limit": 6, "period": 60 } },
+    { "name": "ACCOUNT_CREATE_LIMIT", "namespace_id": "27924743", "simple": { "limit": 5, "period": 60 } },
+    { "name": "GUEST_METADATA_LIMIT", "namespace_id": "27924744", "simple": { "limit": 120, "period": 60 } },
+    { "name": "GUEST_SEED_LIMIT", "namespace_id": "27924745", "simple": { "limit": 30, "period": 60 } },
+    { "name": "GUEST_CONNECT_LIMIT", "namespace_id": "27924746", "simple": { "limit": 60, "period": 60 } },
+    { "name": "GUEST_BLOB_LIMIT", "namespace_id": "27924747", "simple": { "limit": 120, "period": 60 } }
+  ]
+}

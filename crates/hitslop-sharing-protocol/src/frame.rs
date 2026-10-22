@@ -23,6 +23,17 @@ pub const PROTOCOL: u8 = 1;
 /// The largest frame either side sends or accepts: a Cloudflare WebSocket message's limit.
 pub const MAX_FRAME: usize = 32 << 20;
 
+/// Permanent refusal: unsupported Hello protocol.
+pub const ERROR_PROTOCOL: u8 = 1;
+/// Permanent refusal: different app digest.
+pub const ERROR_APP: u8 = 2;
+/// Permanent refusal: ended or unknown room.
+pub const ERROR_ENDED: u8 = 3;
+/// Permanent refusal: invalid capability.
+pub const ERROR_UNAUTHORIZED: u8 = 4;
+/// Permanent refusal: malformed frame or client message sequence.
+pub const ERROR_MALFORMED: u8 = 5;
+
 /// One peer's operations `start..end`: what a record's bytes contain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {

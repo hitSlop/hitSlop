@@ -46,6 +46,10 @@ pub struct RoomInit {
     pub document: String,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
@@ -59,6 +63,9 @@ pub struct RoomInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub capability: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    pub compact: bool,
 }
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
@@ -234,6 +241,10 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             vec![("post", None, Some("RoomInfo"), "Open a room after its seed and app resources are uploaded")],
         ),
         (
+            "/v1/rooms/{room}/compact",
+            vec![("post", None, None, "Replace covered updates with an opaque full-history base")],
+        ),
+        (
             "/v1/rooms/{room}/seed",
             vec![
                 ("get", None, None, "Download the canonical SQLite seed"),
@@ -285,9 +296,29 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
                     );
                 }
             }
+            if path.ends_with("/compact") {
+                for (header, description) in [
+                    ("X-Sharing-SHA256", "Lowercase 64-digit hex SHA-256 digest of the body"),
+                    ("X-Sharing-Version", "F: JSON array of [16-digit hex peer, non-negative i32 counter] pairs"),
+                    (
+                        "X-Sharing-Root",
+                        "Seed version in the same encoding; required only without a stored root, otherwise ignored",
+                    ),
+                ] {
+                    parameters.push(serde_json::json!({"name":header,"in":"header","required":header != "X-Sharing-Root","description":description,"schema":{"type":"string"}}));
+                }
+            }
             let mut operation = serde_json::json!({"summary":summary,"parameters":parameters,"security":[{"capability":[]}],"responses":{
                 "200":{"description":"Accepted"},"403":{"$ref":"#/components/responses/Refused"},"409":{"$ref":"#/components/responses/Refused"},"410":{"$ref":"#/components/responses/Refused"},"413":{"$ref":"#/components/responses/Refused"},"429":{"$ref":"#/components/responses/Refused"}
             }});
+            if path.ends_with("/compact") {
+                operation["responses"].as_object_mut().unwrap().remove("200");
+                operation["responses"]["204"] = serde_json::json!({"description":"Base installed"});
+                for status in ["400", "404"] {
+                    operation["responses"][status] = serde_json::json!({"$ref":"#/components/responses/Refused"});
+                }
+                operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary","maxLength":crate::BASE_BYTES}}}});
+            }
             let creator = path.starts_with("/v1/account/")
                 || path == "/v1/rooms"
                 || path.ends_with("/open")
