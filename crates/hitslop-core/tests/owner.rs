@@ -322,6 +322,57 @@ fn autosave_is_bounded_while_edits_continue() {
 }
 
 #[test]
+fn a_full_shared_document_copies_its_unsaved_live_state() {
+    let (dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    call(
+        &owner,
+        Request::Share {
+            share: hitslop_core::store::Share { room: "library".into(), endpoint: "cloudkit://library".into() },
+        },
+    )
+    .unwrap();
+    let mut seed = 5u64;
+    let mut full = false;
+    for _ in 0..64 {
+        let title: String = (0..1024 * 1024)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                (b'!' + (seed % 90) as u8) as char
+            })
+            .collect();
+        call(&owner, set(&title)).unwrap();
+        if let Err(error) = call(&owner, Request::Flush) {
+            assert_eq!(error.kind, FailureKind::Full);
+            full = true;
+        }
+    }
+    assert!(full, "shared history must reach the storage limit");
+    let Reply::Attachment { item } =
+        call(&owner, Request::PutAttachment { bytes: b"live reference".to_vec() }).unwrap()
+    else {
+        panic!("attachment")
+    };
+    call(&owner, Request::PutAttachment { bytes: b"unreferenced".to_vec() }).unwrap();
+    let title = format!("Unsaved escape attachment/{}", item.id);
+    call(&owner, set(&title)).unwrap();
+    assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Full);
+    assert_eq!(state(&owner)["value"]["title"], title);
+    assert_ne!(saved_title(&path), title);
+    let destination = dir.path().join("Unshared.slop");
+    call(&owner, Request::Copy { destination: destination.clone(), preview: None, icon: None }).unwrap();
+    let copy = Store::open(&destination, Mode::Snapshot).unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&copy.document().unwrap().value()).unwrap()["title"], title);
+    assert!(copy.share().unwrap().is_none());
+    assert_eq!(copy.attachments().unwrap(), vec![item.clone()]);
+    assert_eq!(copy.attachment(&item.id).unwrap(), b"live reference");
+    assert_ne!(copy.app().document_uuid, Store::open(&path, Mode::Snapshot).unwrap().app().document_uuid);
+    copy.close().unwrap();
+}
+
+#[test]
 fn an_admitted_copy_finishes_before_close_and_contains_its_flushed_edits() {
     let (dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);

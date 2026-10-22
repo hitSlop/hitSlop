@@ -144,6 +144,7 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var presentedPageError: String?
   var documentAttention: NSPanel?
   var saveAttention = SaveAttention()
+  var storageNoticeDismissed = false
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
   var issueBadge: NSPanel?

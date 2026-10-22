@@ -62,8 +62,8 @@ pub enum Request {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
-    /// The saved document, copied after a flush as a document of its own
-    /// (`Store::copy_clean`), with the artwork its window rendered for it.
+    /// The accepted live state as a document of its own, without saving the source's
+    /// history first (`Store::copy_clean`), with the artwork its window rendered for it.
     Copy {
         destination: PathBuf,
         preview: Option<Vec<u8>>,
@@ -158,6 +158,8 @@ pub enum Event {
     SaveStatus {
         status: SaveStatus,
         failure: Option<Failure>,
+        pressure: store::Pressure,
+        shared: bool,
     },
     UndoState {
         can_undo: bool,

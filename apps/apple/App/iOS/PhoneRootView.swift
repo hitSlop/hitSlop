@@ -116,6 +116,9 @@ struct PhoneRootView: View {
     .alert("hitSlop", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
       if case .failed = model.saveStatus {
         Button("Retry Save") { model.save() }
+        if model.saveStatus == .failed(.full), model.session?.retainsHistory == true {
+          Button("Save Unshared Copy…") { model.saveUnsharedCopy() }
+        }
         Button("Keep Open", role: .cancel) { model.message = nil }
       } else {
         Button("OK", role: .cancel) { model.message = nil }

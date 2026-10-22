@@ -47,7 +47,7 @@ pub fn serve(path: &Path) -> ExitCode {
         let owner = Arc::new(Owner::open_with_evaluator(path, Mode::Document, Arc::new(move |event| {
             let message = match event {
                 Event::Publication { json: publication } => json!({"type":"push","pushes":[serde_json::from_str::<Value>(&publication).expect("page push")]}),
-                Event::SaveStatus { status, failure } => json!({"type":"save","status":format!("{status:?}"),"error":failure.map(|f| f.message)}),
+                Event::SaveStatus { status, failure, .. } => json!({"type":"save","status":format!("{status:?}"),"error":failure.map(|f| f.message)}),
                 _ => return,
             };
             events.send(message);

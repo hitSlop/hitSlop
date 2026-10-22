@@ -340,7 +340,12 @@ import WebKit
   }
   func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     self.saveStatus = saveStatus
-    if case .failed(let failure) = saveStatus { message = failure.localizedDescription }
+    if case .failed(let failure) = saveStatus {
+      message =
+        failure == .full && session.retainsHistory
+        ? "This shared document is full. Save an unshared copy to keep your unsaved edits."
+        : failure.localizedDescription
+    }
     if case .saved = saveStatus { widgets.saved(session) }
   }
   func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext) {

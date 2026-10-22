@@ -1,6 +1,7 @@
 //! Typed native adapter; sequencing and persistence remain in hitslop-core::owner.
 use super::*;
 use hitslop_core::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
+use hitslop_core::store::Pressure;
 use hitslop_core::{Batch, Code};
 use std::path::PathBuf;
 #[uniffi::remote(Enum)]
@@ -144,9 +145,15 @@ pub enum SaveStatus {
     Failed,
 }
 #[uniffi::remote(Enum)]
+pub enum Pressure {
+    Ok,
+    Near,
+    Full,
+}
+#[uniffi::remote(Enum)]
 pub enum Event {
     Publication { json: String },
-    SaveStatus { status: SaveStatus, failure: Option<Failure> },
+    SaveStatus { status: SaveStatus, failure: Option<Failure>, pressure: Pressure, shared: bool },
     UndoState { can_undo: bool, can_redo: bool },
     ThemeChanged,
 }

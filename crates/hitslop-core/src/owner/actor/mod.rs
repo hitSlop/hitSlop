@@ -96,6 +96,7 @@ pub(super) enum Message {
         result: Result<Reply>,
         callback: Completion,
         closing: bool,
+        refresh_status: bool,
     },
     Stop,
 }
@@ -268,7 +269,7 @@ impl Actor {
                     }
                 }
             }
-            Message::Stored { generation, mut result, callback, closing } => {
+            Message::Stored { generation, mut result, callback, closing, refresh_status } => {
                 if closing
                     && let Err(failure) = &mut result
                     && failure.kind == FailureKind::Failed
@@ -281,6 +282,9 @@ impl Actor {
                 }
                 if closing {
                     self.lifecycle = if result.is_ok() { Lifecycle::Closed } else { Lifecycle::Open };
+                }
+                if refresh_status && result.is_ok() {
+                    self.status(if self.revision > self.saved { SaveStatus::Saving } else { SaveStatus::Saved });
                 }
                 complete(callback, result);
             }
@@ -428,7 +432,16 @@ impl Actor {
                 return Ok(None);
             }
             Request::Copy { destination, preview, icon } => {
-                self.wait(callback, AfterSave::Storage(StorageAction::Copy { path: destination, preview, icon }))?;
+                if self.discarding {
+                    return Err(replaced());
+                }
+                self.core.doc.commit();
+                let state = self
+                    .core
+                    .doc
+                    .export(loro::ExportMode::shallow_snapshot(&self.core.doc.oplog_frontiers()))
+                    .map_err(|error| Failure::new(FailureKind::Failed, error.to_string()))?;
+                self.storage(StorageAction::Copy { path: destination, state, preview, icon }, take(callback));
                 return Ok(None);
             }
             Request::CaptureSource { destination } => {

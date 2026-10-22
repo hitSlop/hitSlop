@@ -21,6 +21,7 @@ extension SlopDocumentWindowController {
     switch command {
     case .moveToCloud: commandsEnabled && isContentReady && canMoveToCloud
     case .close, .retry, .retrySave, .discardUnsaved: true
+    case .duplicate: commandsEnabled && (isContentReady || saveAttention.failure == .full)
     case .sharePNG, .sharePDF, .exportPNG, .exportPDF: commandsEnabled && isContentReady && canExport
     case .importTheme: commandsEnabled && isContentReady && session.acceptsPageWork
     default: commandsEnabled && isContentReady

@@ -17,7 +17,8 @@ func slopIssueBadgeFrame(toolbar: NSRect, visible: NSRect?) -> NSRect {
 /// minimizes with it. Opening failures keep the overlay and save failures the sheet.
 extension SlopDocumentWindowController {
   func refreshIssueBadge() {
-    guard let window, let issue = guestIssue else {
+    if session.storageNotice == nil { storageNoticeDismissed = false }
+    guard let window, let issue = attentionIssue else {
       if let badge = issueBadge {
         badge.parent?.removeChildWindow(badge)
         badge.close()
@@ -53,12 +54,17 @@ extension SlopDocumentWindowController {
   }
 
   @objc func showIssueDetails(_ sender: NSView) {
-    guard let issue = guestIssue else { return }
+    guard let issue = attentionIssue else { return }
     let popover = NSPopover()
     popover.behavior = .transient
     popover.contentViewController = NSHostingController(
       rootView: SlopIssueDetails(
         issue: issue,
+        storageNotice: guestIssue == nil,
+        saveCopy: { [weak self, weak popover] in
+          popover?.close()
+          self?.request(.duplicate)
+        },
         reload: { [weak self, weak popover] in
           popover?.close()
           self?.reloadForIssue()
@@ -72,8 +78,14 @@ extension SlopDocumentWindowController {
   }
 
   func dismissIssue() {
+    if guestIssue == nil { storageNoticeDismissed = true }
     guestIssue = nil
     refreshIssueBadge()
+  }
+
+  private var attentionIssue: SlopPageIssue? {
+    guestIssue
+      ?? (storageNoticeDismissed ? nil : session.storageNotice.map { SlopPageIssue(message: $0, isOperation: false) })
   }
 
   /// Reloading is a command: the app runs it after any command in progress.
@@ -105,17 +117,26 @@ final class SlopIssueBadgePanel: NSPanel {
 
 struct SlopIssueDetails: View {
   let issue: SlopPageIssue
+  let storageNotice: Bool
+  let saveCopy: () -> Void
   let reload: () -> Void, copy: () -> Void, dismiss: () -> Void
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(issue.isOperation ? "An edit wasn't applied" : "This slop hit a problem").font(.headline)
+      Text(
+        storageNotice
+          ? "Document almost full" : issue.isOperation ? "An edit wasn't applied" : "This slop hit a problem"
+      ).font(.headline)
       ScrollView {
         Text(issue.message).font(.caption).textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
       }.frame(maxHeight: 120)
       HStack {
-        Button("Reload Interface", action: reload)
-        Button("Copy Details", action: copy)
+        if storageNotice {
+          Button("Save Unshared Copy…", action: saveCopy)
+        } else {
+          Button("Reload Interface", action: reload)
+          Button("Copy Details", action: copy)
+        }
         Spacer()
         Button("Dismiss", action: dismiss).keyboardShortcut(.defaultAction)
       }

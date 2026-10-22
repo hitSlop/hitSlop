@@ -112,6 +112,12 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   public weak var delegate: DocumentSessionDelegate?
   /// Whether Edit ▸ Undo and Redo have anything to do in this document.
   public private(set) var undoAvailability = UndoState(canUndo: false, canRedo: false)
+  public private(set) var retainsHistory = false
+  public private(set) var storageAlmostFull = false
+  public var storageNotice: String? {
+    retainsHistory && storageAlmostFull
+      ? "This shared document is almost full. Save an unshared copy to keep editing without limits." : nil
+  }
   let owner: DocumentOwner
   public var documentID: String? { owner.documentID }
   public private(set) var sharing: DocumentSharing?
@@ -183,9 +189,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
         }
       case .undo(let state):
         DispatchQueue.main.async { self?.undoAvailability = state }
-      case .saveStatus(let status):
+      case .saveStatus(let status, let pressure, let shared):
         DispatchQueue.main.async {
           guard let self else { return }
+          self.retainsHistory = shared
+          self.storageAlmostFull = pressure == .near
           self.delegate?.pageSession(self, saveStatus: status)
         }
       }
@@ -575,33 +583,38 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
   }
 
-  /// Saves accepted edits and acquires one source for the artwork and clean copy.
-  /// The copy has a new identity, no history, only referenced attachments and the
-  /// rendered artwork (none when nil). Never replaces an existing destination.
-  /// Returns its canonical URL, with its own Finder icon refreshed.
+  /// Drains page edits and freezes the live state as a clean copy, even when retained
+  /// history is full. Artwork renders from that independent source. The destination has
+  /// a new identity, no history and only referenced attachments, and is never replaced.
   @discardableResult public func copy(
     to destination: URL, renderArtwork: @MainActor (URL) async -> SlopRenderedArtwork? = { _ in nil }
   ) async throws -> URL {
     guard !closed, !closing else { throw SlopFailure("Document is closing") }
-    return try await withSavedSource(
-      prepare: { try await self.saveAccepted() },
-      { source in
-        let artwork = await renderArtwork(source)
-        try Task.checkCancellation()
-        // A native owner gives the private source a writer lease for the clean copy.
-        // It has no page and never consults the original document again.
-        let frozen = try await SlopPreparation.run { try DocumentOwner(url: source) }
-        do {
-          try await frozen.copy(to: destination, artwork: artwork)
-        } catch {
-          try? await frozen.close()
-          throw error
-        }
-        try await frozen.close()
-        let copied = try SlopFile.resolvedRoot(destination)
-        SlopFinderIcon.refresh(copied)
-        return copied
-      })
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appendingPathComponent("copy.slop")
+    try await withCapture {
+      do {
+        try await saveAccepted()
+      } catch let failure as OwnerFailure where failure.kind == .full {
+        // Page flush has drained bindings and accepted edits before its save barrier.
+      }
+      try await owner.copy(to: source, artwork: nil)
+    }
+    let artwork = await renderArtwork(source)
+    try Task.checkCancellation()
+    let frozen = try await SlopPreparation.run { try DocumentOwner(url: source) }
+    do {
+      try await frozen.copy(to: destination, artwork: artwork)
+    } catch {
+      try? await frozen.close()
+      throw error
+    }
+    try await frozen.close()
+    let copied = try SlopFile.resolvedRoot(destination)
+    SlopFinderIcon.refresh(copied)
+    return copied
   }
 
   /// Freeze saved state and all owned blobs before rendering. Only acquisition holds the

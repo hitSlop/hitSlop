@@ -33,6 +33,8 @@ impl Actor {
         self.emit(Event::SaveStatus {
             status: if self.failure.is_some() { SaveStatus::Failed } else { status },
             failure: self.failure.clone(),
+            pressure: self.store.pressure(),
+            shared: self.store.is_shared(),
         });
     }
     pub(super) fn wait(&mut self, callback: &mut Option<Completion>, next: AfterSave) -> Result<()> {

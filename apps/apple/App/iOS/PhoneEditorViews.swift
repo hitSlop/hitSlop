@@ -38,6 +38,14 @@ struct PhoneEditorView: View {
       }
     }
     .allowsHitTesting(!model.opening)
+    .safeAreaInset(edge: .top) {
+      if let notice = session.storageNotice {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(notice).font(.caption)
+          Button("Save Unshared Copy…") { model.saveUnsharedCopy() }
+        }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
+      }
+    }
     .overlay {
       if model.opening {
         ZStack {

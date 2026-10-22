@@ -162,7 +162,7 @@ impl BrowserCopy {
             self.fresh,
             Arc::new(move |event| match event {
                 owner::Event::Publication { json } => push(&events, Event::Publication { json }),
-                owner::Event::SaveStatus { status, failure } => push(
+                owner::Event::SaveStatus { status, failure, .. } => push(
                     &events,
                     Event::Save {
                         status: match status {
