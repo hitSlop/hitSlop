@@ -115,7 +115,7 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
     }
     let path = req.path();
     if path == "/health" {
-        return Response::ok("hitslop-sharing-preview");
+        return Response::ok("hitslop-sharing");
     }
     if let Some(binding) = crate::abuse::guest_limit(req.method().as_ref(), &path) {
         // Cloudflare sets this header. Missing IPs share a conservative fallback budget.

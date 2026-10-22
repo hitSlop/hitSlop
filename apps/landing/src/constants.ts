@@ -1,6 +1,8 @@
 export const SITE_LINKS = {
   repository: "https://github.com/hitslop/hitslop",
   download: "https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg",
+  // TODO: replace with the public TestFlight invitation before publishing.
+  iosDownload: "https://testflight.apple.com/join/REPLACE_ME",
   docs: "/docs/",
   authoring: "/docs/getting-started/",
   discord: "https://discord.gg/cqKRZjAWv3",

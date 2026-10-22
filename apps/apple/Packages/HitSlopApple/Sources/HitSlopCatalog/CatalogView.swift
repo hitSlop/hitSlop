@@ -59,10 +59,8 @@ public struct CatalogView: View {
         model.primaryAction(entry)
       }
       .safeAreaInset(edge: .bottom) {
-        if SyncedLibraryPreview.enabled {
-          Text(library.status)
-            .font(.footnote).foregroundStyle(.secondary).padding()
-        }
+        Text(library.status)
+          .font(.footnote).foregroundStyle(.secondary).padding()
       }
       .frame(minWidth: 460)
       .ignoresSafeArea(.container, edges: .top)
@@ -77,10 +75,9 @@ public struct CatalogView: View {
     .onAppear {
       model.chooseStorage = chooseStorage
       model.start()
-      if SyncedLibraryPreview.enabled { library.start() }
+      library.start()
     }
     .onReceive(NotificationCenter.default.publisher(for: .hitSlopJoinSharedSlop)) { notification in
-      guard SharingPreview.enabled else { return }
       if let link = notification.object as? String {
         Task {
           do { try await joinSharedLink(link) } catch { sharingError = sharingMessage(error) }
@@ -169,7 +166,7 @@ public struct CatalogView: View {
   }
 
   private func chooseStorage(_ entry: CatalogEntry) async throws -> CatalogStorageChoice {
-    guard SyncedLibraryPreview.enabled, library.isReady else { return .local }
+    guard library.isReady else { return .local }
     libraryTemplate = entry
     libraryName = entry.title
     return try await withCheckedThrowingContinuation { reply in

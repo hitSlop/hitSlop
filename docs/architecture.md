@@ -35,8 +35,8 @@ and a Service Worker resource channel bound to that frame client. Each successfu
 pending text, pass a Rust save barrier, and stream the current database through Chrome’s Save As dialog, including theme and attachments. Unique temporary exports are deleted
 when writing finishes or abandoned-copy cleanup acquires the lock. Resource delivery
 uses bounded chunks, incremental attachment verification and a bounded decoded cache. Browser storage is local to the profile and is not a backup.
-Safari and mobile browser support are deferred. Hosted sharing has a separate
-developer/TestFlight preview described under [Sync](#sync); ordinary Mac releases omit it.
+Safari and mobile browser support are deferred. Hosted sharing uses the live
+collaboration service described under [Sync](#sync).
 
 `slop dev` uses a temporary `.slop`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
@@ -309,7 +309,7 @@ The SQLite schema has seven tables:
 | `artwork` | Preview and icon PNGs | Pack; refreshed at close or supplied for a clean copy |
 | `document` | Identity singleton: UUID | Document creation and independent copies |
 | `history` | Loro snapshot, then updates: the saved state | Pack seeds it; saves, checkpoints and close-time trims update it; clean copies replace it with current state |
-| `share` | Singleton room and relay endpoint of a shared document | The sync path in the sharing preview; empty when unshared, cleared on clean copies |
+| `share` | Singleton room and relay endpoint of a shared document | The live sync path; empty when unshared, cleared on clean copies |
 | `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unreferenced blobs are reclaimed |
 
 The schema check is exact. A new table or column requires a storage version bump and a
@@ -381,14 +381,14 @@ local, else `~/hitSlop`. Opening a document that lives in iCloud offers "Move to
 and Open": the core copies it through coordinated access into a fresh name with the same
 identity and retained history, validates the copy, and only then moves the original to the
 Trash. If cleanup fails, both files are kept and the app says where the local one is.
-Devices share a person's own documents through the [Apple library](#apple-library-preview),
+Devices share a person's own documents through the [Apple library](#synced-library),
 not through synced folders.
 
 The native Share popover offers PDF, PNG image and editable slop-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
 format runs through the document command queue. PDF and PNG use the saved-state export
-renderer. **Live collaboration** in that popover creates an edit link in the developer/TestFlight
-preview described under [Sync](#sync); ordinary Mac releases omit it.
+renderer. **Live collaboration** in that popover creates an edit link through the
+service described under [Sync](#sync).
 
 Duplicate and Share Slop File flush what the page accepted and acquire a temporary saved
 source through the owner. Both artwork and the new document come from that source, so
@@ -625,10 +625,10 @@ history keeps nothing alive.
 
 ## Sync
 
-### Apple library preview
+### Synced Library
 
 The Synced Library keeps managed documents in sync between Mac and iPhone through the
-person's iCloud account. The iPhone app supports iOS 26+ in TestFlight preview; its App
+person's iCloud account. The iPhone app supports iOS 26+ in TestFlight; its App
 Store release and the Mac release with the library on Production remain open. The phone
 opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files.
 
@@ -696,7 +696,7 @@ checkpoint delivery does not change an existing owner's room membership.
 
 ### Relay
 
-The developer/TestFlight sharing preview uses one Rust owner per local copy and a Loro-free
+Live collaboration uses one Rust owner per local copy and a Loro-free
 Cloudflare Durable Object per room. Local saves and relay sends are independent;
 offline edits merge on reconnect. The relay stores opaque updates and their operation
 spans, backfills by version vector, and never runs authored code or validates document
@@ -735,9 +735,9 @@ Connected web opening is required. Open copies remain editable offline and after
 Automatic CloudKit checkpoints of relay documents run at most once a minute per process;
 manual/background saves bypass the interval.
 
-Debug enables the preview with `--live-sharing-preview` or
-`HITSLOP_LIVE_SHARING_PREVIEW=1`; TestFlight builds compiled with
-`HITSLOP_SHARING_PREVIEW` enable it without a flag. Ordinary Mac releases omit it.
+Mac and iPhone builds enable live collaboration without a launch flag. Mac Release
+entitlements include Sign in with Apple, the sharing Keychain group and the
+`share.hitslop.com` associated domain.
 The owner signs in with Apple; anyone holding the link can edit in the Mac/iPhone app
 or Chrome. Stop ends the link and every participant keeps a local copy. Browser copies
 are saved in that browser and downloadable as `.slop` files.
@@ -755,7 +755,7 @@ refuses the replacement.
 all indexed rooms and purges their relay resources, deletes the Firebase user, attempts
 Apple token revocation and clears owned link credentials on this device. Failed Apple
 revocation directs the person to Apple Account settings. Participant copies remain.
-Universal links route `/join` on `share.hitslop.com` to preview-enabled installed apps;
+Universal links route `/join` on `share.hitslop.com` to installed Mac apps and sharing-enabled phone apps;
 without the app, the web host offers the browser path, qualified in Chrome. The associated
 domain entitlements and the host's AASA response define that route. The sharing CI workflow
 builds, qualifies, deploys the relay and host on matching `master` changes, then checks

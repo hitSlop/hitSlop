@@ -158,7 +158,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     observeOwner()
     configureFileSaver()
     makeWebView()
-    if SharingPreview.enabled, let document = documentID {
+    if let document = documentID {
       sharing = DocumentSharing(owner: owner)
       Self.sharingSessions[document] = SharedSession(self)
     }

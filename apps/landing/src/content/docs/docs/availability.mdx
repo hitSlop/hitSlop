@@ -7,7 +7,7 @@ templates, Recents, document editing, imported file attachments, and PNG/PDF exp
 Creating, previewing and building slops, rendering template artwork, editing documents,
 and exporting closed documents as PNG/PDF also work on Linux with Bun.
 
-The **iPhone app** for **iOS 26+** is in **TestFlight preview**; the App Store release
+The **iPhone app** for **iOS 26+** is in **TestFlight**; the App Store release
 is coming soon. It opens, edits and creates slops, with the Popular templates and Little Days as starters,
 and imports `.slop` files from Files.
 
@@ -31,13 +31,12 @@ unsupported. On Mac, a document in iCloud offers **Move to ~/hitSlop and Open** 
 into local storage before editing.
 
 macOS desktop widgets display saved document images in small, medium and large sizes
-when the embedded app includes a widget view. The iPhone preview adds Home Screen
+when the embedded app includes a widget view. The iPhone app adds Home Screen
 widgets for library slops with a widget view, rendered on the phone; tap to open the
 slop. iPhone widgets also refresh in the background when iOS allows. See
 [widget setup and refresh behavior](/docs/guides/icons-and-exports/#design-a-macos-widget).
 
-**Live collaboration is a developer/TestFlight preview**, absent from ordinary Mac
-releases. Share a live link so anyone with it can edit in hitSlop on Mac or iPhone,
+**Live collaboration** is enabled in the next Mac release and the iPhone app on TestFlight. Share a live link so anyone with it can edit in hitSlop on Mac or iPhone,
 or in Chrome at share.hitslop.com. See [live sharing](/docs/guides/live-sharing/)
 for sign-in, browser copies and stopping a link.
 
@@ -45,7 +44,7 @@ The separate local Chrome browser beta opens independent document copies with lo
 browser storage and downloads a complete `.slop` file through Save As. It does not
 connect to the original Mac document. Safari and mobile browsers remain unqualified.
 
-On Mac, apps may declare camera and microphone capture. The iPhone preview refuses
+On Mac, apps may declare camera and microphone capture. The iPhone app refuses
 camera and microphone requests and does not provide speech transcription. Native on-device speech recognition
 transcribes saved recordings when the Mac supports the language and speech permission
 is granted. It is not available in `slop dev` or browser copies; see

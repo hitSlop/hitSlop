@@ -84,10 +84,8 @@ struct PhoneRootView: View {
             Text("Your edits save on this device first, then sync to your other devices.").foregroundStyle(.secondary)
           }
           Section {
-            if SharingPreview.enabled {
-              Button("Open Shared Link…", systemImage: "person.2") { showJoin = true }
-              Button("Account", systemImage: "person.crop.circle") { showSharingAccount = true }
-            }
+            Button("Open Shared Link…", systemImage: "person.2") { showJoin = true }
+            Button("Account", systemImage: "person.crop.circle") { showSharingAccount = true }
             Button("Import from Files", systemImage: "square.and.arrow.down") {
               importAfterSettings = true
               showSettings = false
@@ -171,9 +169,8 @@ struct PhoneRootView: View {
   }
 
   @discardableResult private func openSharingLink(_ url: URL) -> Bool {
-    guard SharingPreview.enabled else { return false }
     do {
-      guard let link = try SharingPreview.incomingLink(url) else { return false }
+      guard let link = try SharingLinks.incomingLink(url) else { return false }
       Task {
         do {
           try await model.join(link)

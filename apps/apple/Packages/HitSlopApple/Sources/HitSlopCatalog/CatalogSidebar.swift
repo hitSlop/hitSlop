@@ -23,9 +23,7 @@ struct CatalogSidebar: View {
           SidebarButton(title: "Recents", icon: .symbol("clock"), count: recentCount, selected: filter == .recents) {
             select(.recents)
           }
-          if SyncedLibraryPreview.enabled {
-            SidebarButton(title: "Synced", icon: .symbol("icloud"), selected: filter == .synced) { select(.synced) }
-          }
+          SidebarButton(title: "Synced", icon: .symbol("icloud"), selected: filter == .synced) { select(.synced) }
           SidebarButton(title: "Templates", icon: .symbol("square.grid.2x2"), selected: filter == .all) { select(.all) }
 
           if !categories.isEmpty {
@@ -46,6 +44,9 @@ struct CatalogSidebar: View {
       HStack(spacing: 2) {
         BrandLink(name: "github", label: "GitHub", destination: SlopLinks.github)
         BrandLink(name: "discord", label: "Discord", destination: SlopLinks.discord)
+        BrandLink(
+          name: "iphone", label: "Download for iPhone · TestFlight", destination: SlopLinks.iosDownload,
+          systemSymbol: true)
       }
       .padding(.horizontal, 12).padding(.vertical, 10)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -101,6 +102,7 @@ private struct BrandLink: View {
   let name: String
   let label: String
   let destination: URL?
+  var systemSymbol = false
   @State private var isHovering = false
 
   var body: some View {
@@ -123,7 +125,9 @@ private struct BrandLink: View {
 
   private var icon: some View {
     Group {
-      if let image = brandImage(named: name) {
+      if systemSymbol {
+        Image(systemName: name)
+      } else if let image = brandImage(named: name) {
         Image(nsImage: image).resizable().scaledToFit()
       } else {
         Image(systemName: "link")

@@ -60,7 +60,7 @@ export default defineConfig({
             { label: "CLI workflows", slug: "docs/guides/cli-workflows" },
             { label: "Availability", slug: "docs/availability" },
             { label: "Privacy", slug: "docs/privacy" },
-            { label: "Live sharing (preview)", slug: "docs/guides/live-sharing" },
+            { label: "Live sharing", slug: "docs/guides/live-sharing" },
           ],
         },
       ],

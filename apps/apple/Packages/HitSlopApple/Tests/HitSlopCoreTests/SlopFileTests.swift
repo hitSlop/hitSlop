@@ -164,17 +164,17 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
     "https://share.hitslop.com/join#" + String(repeating: "a", count: 32) + "." + String(repeating: "b", count: 64)
   let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
   activity.webpageURL = try #require(URL(string: link))
-  #expect(try SharingPreview.incomingLink(#require(activity.webpageURL)) == link)
+  #expect(try SharingLinks.incomingLink(#require(activity.webpageURL)) == link)
   for value in ["https://share.hitslop.com/join", "https://share.hitslop.com/join#"] {
     do {
-      _ = try SharingPreview.incomingLink(#require(URL(string: value)))
+      _ = try SharingLinks.incomingLink(#require(URL(string: value)))
       Issue.record("A missing capability must be explained")
     } catch { #expect(error.localizedDescription == "Open the link in hitSlop again") }
   }
   #expect(throws: (any Error).self) {
-    _ = try SharingPreview.incomingLink(#require(URL(string: "https://share.hitslop.com/join#invalid")))
+    _ = try SharingLinks.incomingLink(#require(URL(string: "https://share.hitslop.com/join#invalid")))
   }
   for value in ["https://example.com/join", "https://share.hitslop.com/", "hitslop://widgets"] {
-    #expect(try SharingPreview.incomingLink(#require(URL(string: value))) == nil)
+    #expect(try SharingLinks.incomingLink(#require(URL(string: value))) == nil)
   }
 }

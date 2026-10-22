@@ -194,7 +194,6 @@ private actor SharingDriver {
   /// Resolve the canonical local file, including an already-open document. Joining
   /// never imports a duplicate or requires an iCloud library.
   public static func join(_ link: String, candidates: [URL] = []) async throws -> URL {
-    guard SharingPreview.enabled else { throw SlopFailure("Live sharing preview is disabled.") }
     let document = try await SlopPreparation.run { try sharingDocument(link: link) }
     let live = DocumentSession.sharedSession(document: document)
     let nativeOwner = live?.owner.native

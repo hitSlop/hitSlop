@@ -529,7 +529,7 @@ async function main() {
   stage.classList.add("copies");
   title.textContent = "Browser copies";
   status.textContent = hosted
-    ? "Sharing preview · copies save in this browser"
+    ? "Live collaboration · copies save in this browser"
     : "Open a file with slop open --browser file.slop";
   const form = document.createElement("form");
   const input = document.createElement("input");

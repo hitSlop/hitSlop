@@ -128,11 +128,13 @@ The next Mac release ships the Synced Library using **Production** CloudKit in
 CloudKit and push entitlements require a **Developer ID provisioning profile** for
 team `78UAXU8QG8`, App ID `78UAXU8QG8.com.hitslop.app`. Store its base64 bytes in the
 GitHub Actions secret `MACOS_PROVISIONING_PROFILE`. Regenerate the Developer ID
-profile after changing App ID capabilities (including iCloud containers or push),
+profile after changing App ID capabilities (including iCloud containers, push, Sign in with Apple, associated domains or Keychain groups),
 when renewing its signing certificate, or before expiration, then update the secret.
 Packaging validates the profile before building, selects it for archive/export,
 embeds it at `Contents/embedded.provisionprofile` before final signing, and checks
-the signed entitlements. Live collaboration stays gated out of ordinary Mac releases.
+the signed entitlements. Live collaboration is enabled in Mac releases; the profile
+must authorize Sign in with Apple, `applinks:share.hitslop.com` and the
+`78UAXU8QG8.com.hitslop.sharing` Keychain group.
 See Apple's [provisioning profile requirements](https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles).
 
 For a **local signed hand-test build without notarization or upload**, use an installed
@@ -346,8 +348,12 @@ Mac's Time Machine backup alongside the retained release assets.
 - Check Recents, a basic PNG/PDF export, and quit/relaunch with saved edits intact.
 - Check Synced Library with the same iCloud account on the Mac candidate and a
   TestFlight/App Store iPhone: create and edit from each device, quit/relaunch,
-  and confirm both directions sync through Production. Confirm live collaboration
-  remains unavailable in the ordinary Mac release.
+  and confirm both directions sync through Production.
+- Check live collaboration without launch flags in the signed Mac candidate: Apple
+  sign-in, create/copy a link, join on another Mac/iPhone and in Chrome, edit from
+  each copy, reconnect after offline edits, Stop and re-share, Save Unshared Copy,
+  and account deletion. Open a `share.hitslop.com/join` link from the browser and
+  confirm the app receives its complete capability fragment.
 - Update from the previous supported signed release through Sparkle. Confirm publisher,
   resulting version and that its existing documents still work. For the first public
   release, record this as unavailable and exercise an isolated appcast instead.

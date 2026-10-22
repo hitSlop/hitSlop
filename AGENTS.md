@@ -103,9 +103,10 @@ for visual changes. `_vibe` is inspiration only.
 
 ## Deferred
 
-Production collaboration rollout (a developer-flagged native/web preview now connects the
-existing Rust owners through a Durable Object byte relay; see the [roadmap](docs/roadmap.md)), a document history UI, schema evolution,
-synced folders, hosted catalog/publishing, accounts/auth and sharing. `archive/`,
+A document history UI, schema evolution, synced folders and hosted catalog/publishing
+remain deferred. Live collaboration connects the existing Rust owners through a Durable
+Object byte relay and is enabled in Mac builds and the iPhone app on TestFlight;
+release qualification remains in the [roadmap](docs/roadmap.md). `archive/`,
 `spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
 local and are not active contracts. Shared decisions belong in the architecture, roadmap
 and ideas pages.

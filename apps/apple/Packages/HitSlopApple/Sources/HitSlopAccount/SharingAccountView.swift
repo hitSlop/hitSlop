@@ -70,7 +70,7 @@ private final class AccountAppleAuthorization: NSObject, ASAuthorizationControll
   private var auth: Auth?
   private var nonce: String?
   public func configure() {
-    guard auth == nil, SharingPreview.enabled else { return }
+    guard auth == nil else { return }
     let name = "sharing-auth"
     if FirebaseApp.app(name: name) == nil {
       guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
@@ -246,26 +246,22 @@ public struct SharingAccountView: View {
   public var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Account").font(.title2.bold())
-      if SharingPreview.enabled {
-        if let fingerprint = account.fingerprint {
-          Text("Signed in with Apple")
-          Text("Account code: \(fingerprint.prefix(8))").font(.footnote).textSelection(.enabled)
-          Button("Sign Out") { account.signOut() }
-          Button("Delete Account…", role: .destructive) { confirmingDeletion = true }
-        } else {
-          SignInWithAppleButton(.signIn, onRequest: account.prepare) { result in
-            Task { _ = await account.complete(result) }
-          }.frame(height: 44)
-          Text("Sign in to start live links. Opening a shared link doesn't need an account.")
-            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-        if !account.message.isEmpty {
-          Text(account.message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-        }
-        if account.busy { ProgressView() }
+      if let fingerprint = account.fingerprint {
+        Text("Signed in with Apple")
+        Text("Account code: \(fingerprint.prefix(8))").font(.footnote).textSelection(.enabled)
+        Button("Sign Out") { account.signOut() }
+        Button("Delete Account…", role: .destructive) { confirmingDeletion = true }
       } else {
-        Text("Live collaboration is unavailable in this app.")
+        SignInWithAppleButton(.signIn, onRequest: account.prepare) { result in
+          Task { _ = await account.complete(result) }
+        }.frame(height: 44)
+        Text("Sign in to start live links. Opening a shared link doesn't need an account.")
+          .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
+      if !account.message.isEmpty {
+        Text(account.message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+      }
+      if account.busy { ProgressView() }
     }
     .padding(24)
     .disabled(account.busy)

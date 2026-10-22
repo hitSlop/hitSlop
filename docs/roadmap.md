@@ -4,7 +4,7 @@ Today hitSlop is a signed Mac app and one matching npm package. People create lo
 documents from bundled or installed templates, edit them in the window or through the CLI
 (their coding agent included), and export PNG and PDF.
 
-The iPhone app (iOS 26+) is in TestFlight preview. It opens, edits and creates slops,
+The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates slops,
 bundles the Popular templates plus Little Days, and imports from Files. The current
 iPhone host is portrait-only; per-slop orientation declarations remain future work. The Mac/iPhone Synced Library
 keeps managed slops in sync through the person's iCloud account. The next Mac release
@@ -12,9 +12,9 @@ includes the Synced Library on CloudKit Production, matching TestFlight/App Stor
 iPhones; the currently published Mac release does not include it. iPhone Home Screen
 widgets render library slops with a widget view locally, open them on tap, and refresh
 in the background when iOS allows.
-[Architecture](architecture.md#apple-library-preview) owns the library design.
+[Architecture](architecture.md#synced-library) owns the library design.
 
-Live sharing is a developer/TestFlight preview, outside ordinary Mac releases. The
+Live sharing is enabled in all Mac builds and the iPhone app on TestFlight. The
 Share popover's **Live collaboration** action creates a link anyone can use to edit
 in the Mac/iPhone app or Chrome at share.hitslop.com. The owner signs in with Apple;
 Stop ends the link and everyone keeps their copy. See the
@@ -54,11 +54,14 @@ directions without release dates or a platform delivery order. The
 
 - **Apple releases.** Release the iPhone app on the App Store and the Mac app with
   Synced Library on CloudKit Production. The iPhone app, Files import, library sync
-  and Home Screen widgets are implemented previews, not future host work.
+  and Home Screen widgets are implemented.
 - **Sharing rollout.** Account deletion/Apple revocation, rejoin after re-share,
   guest entry-point rate limits and metrics, frozen v1 HTTP/binary fixtures, universal
-  links and Save Unshared Copy are implemented. Complete privacy disclosures and
-  broader device/resource qualification before rollout.
+  links and Save Unshared Copy are implemented. Privacy disclosures cover relay
+  storage and account deletion. Regenerate the Developer ID profile with Sign in
+  with Apple and associated domains, then qualify the signed Mac release with
+  sign-in, universal links, account deletion and broader device/resource scenarios
+  before publication.
   [Architecture](architecture.md#relay) and the [sharing README](../apps/sharing/README.md)
   own the technical description and operating limits.
 - **Apple follow-ups.** Qualify the library on Production, including background widget
@@ -74,7 +77,7 @@ directions without release dates or a platform delivery order. The
   command workers and Save As downloads back to native. Identity, export barriers,
   failed writes and recovery are covered at their owning boundaries. Browser launch
   polish, sustained-edit/near-limit performance qualification and Safari/mobile browser
-  support remain deferred. Hosted links use the separate sharing preview described above. `slop dev` keeps its native owner.
+  support remain deferred. Hosted links use the live sharing service described above. `slop dev` keeps its native owner.
   [Hardening evidence](evidence/browser-host-hardening-2026-10-08.md) records the scope
   and verification limits.
 - A text draft whose control is destroyed after an unknown-outcome send is retained in
@@ -191,7 +194,7 @@ directions without release dates or a platform delivery order. The
 - Declared `camera` and `microphone` capabilities gate web capture in Mac documents,
   development previews and local browser copies, with OS/browser consent still required.
   Declared `speech` enables on-device Mac transcription of stored recordings; it is
-  unavailable in the iPhone preview, development previews and browser copies. There is no per-slop permission UI or
+  unavailable in the iPhone app, development previews and browser copies. There is no per-slop permission UI or
   server fallback. [Capabilities](reference/runtime.md#security-boundaries) records the boundary.
 - Saved-source capture preserves live speech, file selection, downloads and resize eligibility;
   close preparation, page replacement and renderer loss cancel pending transcription.
@@ -223,8 +226,8 @@ directions without release dates or a platform delivery order. The
 - Beta commands are agent-only and accept flat scalar arguments. They run in the owner's restricted evaluator; pages use document handles
   and the page bundle carries no command bodies.
 - Theme overrides share Loro storage, sequence, publications, undo and saving with data.
-- The Synced Library, iPhone app and iPhone widgets are implemented in preview,
-  alongside the Mac desktop widgets. The sharing preview connects native and browser
+- The Synced Library, iPhone app and iPhone widgets are implemented,
+  alongside the Mac desktop widgets. Live sharing connects native and browser
   copies through the existing owners. [Sync](architecture.md#sync) owns both designs;
   release and polish work is [open now](#open-now).
 - `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
@@ -287,7 +290,7 @@ and checksums, immutable release identity and abuse controls are prerequisites. 
 worker kept in a local `deferred/` archive is unsupported scaffolding. The local app
 needs no document server.
 
-**Further collaboration design.** Beyond the [preview polish](#open-now), person-level
+**Further collaboration design.** Beyond the [release qualification](#open-now), person-level
 permissions, read-only links, browser creator accounts, CLI share/join, reliable offline
 web reopening and room compaction remain later work. Qualify
 [container-creation and undo conflicts](reference/document-types.md#storage-layout)

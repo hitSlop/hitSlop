@@ -10,7 +10,7 @@ extension SlopDocumentWindowController {
   /// A local slop can move into the library while iCloud is connected. The app checks this
   /// again when the move runs, after the queue has stopped accepting other commands.
   public var canMoveToCloud: Bool {
-    SyncedLibraryPreview.enabled && SlopLibrary.shared.isReady && SlopLibrary.shared.entry(at: session.file.url) == nil
+    SlopLibrary.shared.isReady && SlopLibrary.shared.entry(at: session.file.url) == nil
   }
 
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests

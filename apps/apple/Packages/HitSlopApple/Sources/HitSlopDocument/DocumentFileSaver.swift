@@ -213,7 +213,7 @@
     func cancel() {}
     func begin(_ download: WKDownload) {
       download.cancel { _ in }
-      onFailed?("App downloads are unavailable in the iPhone preview. Use Export to share this .slop document.")
+      onFailed?("App downloads are unavailable in the iPhone app. Use Export to share this .slop document.")
     }
   }
 #endif

@@ -33,7 +33,7 @@ Creating a document copies a template into a new file. As it is edited, the same
 ```
 
 A `share` table records the room and relay endpoint for documents using the
-[live sharing preview](/docs/guides/live-sharing/); it is empty for unshared documents.
+[live sharing](/docs/guides/live-sharing/); it is empty for unshared documents.
 
 The Rust owner (on Loro), shared by the app and CLI, owns the live document and persists opaque Loro history; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON projection.
 

@@ -1,4 +1,4 @@
-# Live sharing developer preview
+# Live sharing
 
 The Rust Worker is a Loro-free byte relay with private R2 resources. Contracts and limits
 live in `crates/hitslop-sharing-protocol`; native transport lives in
@@ -57,16 +57,16 @@ Worker channels and hosted resources through network requests and cookies. Autho
 never receives the link. OPFS holds SQLite and IndexedDB holds the copy catalog.
 Connected opening is required; open copies remain editable offline and after Stop.
 
-The native preview requires `--live-sharing-preview` or `HITSLOP_LIVE_SHARING_PREVIEW=1`
-in Debug. A build compiled with the `HITSLOP_SHARING_PREVIEW` condition (TestFlight preview
-builds) enables it without a flag. Normal releases omit the feature. The v1 wire contract is frozen for shipped TestFlight clients.
+Mac and iPhone builds enable live collaboration without a launch flag. The v1 wire
+contract is frozen for shipped TestFlight clients.
 
 The host serves a static, cacheable Apple App Site Association response at
 `https://share.hitslop.com/.well-known/apple-app-site-association` without a redirect.
 It associates `/join` with team `78UAXU8QG8`'s `com.hitslop.app` and reserves the
-`com.hitslop.app.Clip` App Clip ID. iOS and Debug macOS entitlements include
-`applinks:share.hitslop.com`; preview-enabled apps pass the complete URL (including
-its fragment) to the existing join flow. Ordinary Mac Release entitlements are unchanged.
+`com.hitslop.app.Clip` App Clip ID. iOS and macOS entitlements include
+`applinks:share.hitslop.com`; sharing-enabled apps pass the complete URL (including
+its fragment) to the existing join flow. Mac Release entitlements also include Sign in with Apple and the sharing Keychain
+group; the Developer ID profile must authorize these capabilities.
 
 ## Protocol compatibility
 
@@ -126,15 +126,15 @@ open, guest access, second-session owner recovery, authorization, Stop/upload cl
 re-share, stale-room refusal, account deletion of Live/Uploading rooms, socket revocation,
 cold re-sign-in with restored quota and bursts against all four guest budgets.
 
-The private R2 bucket is `hitslop-sharing-preview`. The `dotslop.com` zone needs a
+The private R2 bucket is `hitslop-sharing`. The `dotslop.com` zone needs a
 proxied wildcard DNS record (`AAAA * → 100::`); the host config declares its wildcard
 route and `share.hitslop.com` custom domain. Deployment is a separate operator action.
 
 The optional deployed campaign uses disposable infrastructure fixtures:
 
 ```sh
-cargo build --locked -p hitslop-sharing-client --example preview
-HITSLOP_SHARING_INVITATION_FILE=/private/path/to/link bun scripts/sharing/check-preview.ts
+cargo build --locked -p hitslop-sharing-client --example sharing
+HITSLOP_SHARING_INVITATION_FILE=/private/path/to/link bun scripts/sharing/check-live.ts
 ```
 
 Create the fixture with the signed owner app and save its edit link in a private file.
@@ -143,7 +143,7 @@ When prompted, Stop in the owner app. Alternatively supply `HITSLOP_SHARING_TOKE
 with a refreshed Firebase token in an owner-readable file. Never put secrets in arguments
 or reports. The campaign checks edits, offline/reconnect, private resources, attachment
 barriers, download/native reopen and revocation. Ignored reports stay under
-`.hitslop/sharing-preview/check-*`.
+`.hitslop/sharing/check-*`.
 
 ## Limits and follow-ups
 
@@ -162,3 +162,8 @@ See the [architecture](../../docs/architecture.md#relay), [roadmap](../../docs/r
 and historical [account](../../docs/evidence/live-sharing-accounts-2026-10-19.md),
 [device](../../docs/evidence/live-sharing-phone-2026-10-19.md) and
 [native/browser](../../docs/evidence/authoring-environment-2026-10-19.md) evidence.
+
+The production Worker names are `hitslop-sharing-relay` and `hitslop-sharing-host`.
+The `sharing-rename-v1` migration transfers the existing room and account namespaces;
+keep this applied migration in the configuration. Its source Worker names are historical.
+The public domains and v1 sharing contract are unchanged.

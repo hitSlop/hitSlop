@@ -199,7 +199,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     )))]
     struct Description;
     let mut doc = Description::openapi();
-    doc.info.title = "hitSlop sharing preview".into();
+    doc.info.title = "hitSlop sharing".into();
     doc.info.version = "1".into();
     // Binary files and the negotiated WebSocket remain transports of their own;
     // all JSON request and response schemas come from these Rust DTOs.

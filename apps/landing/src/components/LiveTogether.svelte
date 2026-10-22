@@ -77,7 +77,7 @@
 </script>
 
 <div class="together">
-  <section class="board" aria-label="Collaboration preview with simulated participants">
+  <section class="board" aria-label="Interactive collaboration demo with simulated participants">
     <header class="bar">
       <i></i><i></i><i></i>
       <span>Team Notes.slop</span>

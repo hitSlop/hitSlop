@@ -3,7 +3,7 @@
 ## Set up the checkout
 
 Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGen on macOS. The shipped Mac app supports Apple silicon on macOS 15.2 or newer. The iPhone app
-supports iOS 26+ in TestFlight preview; see [current availability](../../apps/landing/src/content/docs/docs/availability.mdx).
+supports iOS 26+ in TestFlight; see [current availability](../../apps/landing/src/content/docs/docs/availability.mdx).
 
 ```sh
 bun install --frozen-lockfile

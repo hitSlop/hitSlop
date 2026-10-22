@@ -11,7 +11,7 @@ when you build a slop. See [availability](/docs/availability/) for preview statu
 | Surface | Renderer |
 | --- | --- |
 | Mac app, macOS 15.2+ | WebKit |
-| iPhone app, iOS 26+ TestFlight preview | WebKit |
+| iPhone app, iOS 26+ TestFlight | WebKit |
 | Sharing guests and `slop open --browser` copies | Chrome; other browsers remain unqualified |
 | Preview, icon, widgets, PNG and PDF | Takumi, rendering saved state rather than the live editor |
 
@@ -42,7 +42,7 @@ keep forms scrollable with the software keyboard open.
 [Make it work on iPhone](/docs/guides/mobile/) covers the platform signals, layout
 patterns, safe areas and haptics, so you do not assume a desktop-sized window.
 
-The iPhone preview refuses camera and microphone capture and returns speech
+The iPhone app refuses camera and microphone capture and returns speech
 `unavailable` with reason `host`. File inputs use the native Files picker; HTTPS
 embeds use the shared navigation policy and cannot access the document bridge or
 borrow device permissions. See [capabilities and permissions](/docs/guides/capabilities/)

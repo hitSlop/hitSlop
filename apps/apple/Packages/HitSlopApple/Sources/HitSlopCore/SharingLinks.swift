@@ -8,9 +8,8 @@ extension Notification.Name {
   public static let hitSlopJoinSharedSlop = Notification.Name("hitSlop.joinSharedSlop")
 }
 
-/// Preview builds (the `HITSLOP_SHARING_PREVIEW` compilation condition, e.g. TestFlight) enable it;
-/// Debug needs a launch flag; ordinary releases never include it.
-public enum SharingPreview {
+/// Parses live collaboration invitations on Mac and iPhone.
+public enum SharingLinks {
   /// Preserve the full URL, including its capability fragment, through the Rust parser.
   /// A non-sharing URL is left to the caller's existing routing.
   public static func incomingLink(_ url: URL) throws -> String? {
@@ -22,27 +21,6 @@ public enum SharingPreview {
     _ = try sharingJoinCredential(link: link)
     return link
   }
-
-  public static let enabled: Bool = {
-    #if HITSLOP_SHARING_PREVIEW
-      true
-    #elseif DEBUG
-      ProcessInfo.processInfo.arguments.contains("--live-sharing-preview")
-        || ProcessInfo.processInfo.environment["HITSLOP_LIVE_SHARING_PREVIEW"] == "1"
-    #else
-      false
-    #endif
-  }()
-}
-
-public enum SyncedLibraryPreview {
-  public static let enabled: Bool = {
-    #if os(macOS) || DEBUG || HITSLOP_SYNCED_LIBRARY
-      true
-    #else
-      false
-    #endif
-  }()
 }
 
 /// Rust link credentials stay on this device. Verified owners recover through the account index.
@@ -50,7 +28,7 @@ public enum SharingCredentials {
   private static func query(_ document: String) throws -> [String: Any] {
     guard let group = Bundle.main.object(forInfoDictionaryKey: "SharingKeychainGroup") as? String,
       !group.isEmpty, !group.contains("$(")
-    else { throw SlopFailure("Sharing preview requires the signed hitSlop app.") }
+    else { throw SlopFailure("Sharing requires the signed hitSlop app.") }
     return [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: "com.hitslop.sharing-accounts-v1",
