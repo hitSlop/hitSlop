@@ -5,3 +5,8 @@ b24a5152f52c15f7fe790358038566ce73c7b57e:scripts/local-check.ts:cloudflare-api-k
 
 # Historical benchmark hash false positives are narrowly matched in .gitleaks.toml
 # so their exclusions also cover GitHub-generated merge commits.
+
+# Unsigned JWT-shaped test fixtures for the Apple web callback parser (no real credential);
+# the test now builds them at runtime.
+ee02c85dbb0d875f3379ee688629127aee7c976a:apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/AppleWebCallbackTests.swift:generic-api-key:5
+ee02c85dbb0d875f3379ee688629127aee7c976a:apps/apple/Packages/HitSlopApple/Tests/HitSlopCoreTests/AppleWebCallbackTests.swift:generic-api-key:22

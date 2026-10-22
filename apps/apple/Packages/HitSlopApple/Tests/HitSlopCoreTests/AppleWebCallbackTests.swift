@@ -2,7 +2,13 @@ import Foundation
 import HitSlopCore
 import Testing
 
-private let appleToken = "header.eyJzdWIiOiJhcHBsZS11c2VyIn0.signature"
+/// An unsigned JWT-shaped fixture, built at runtime so it never reads as a stored credential.
+private func fixtureToken(_ claims: String) -> String {
+  let payload = Data(claims.utf8).base64EncodedString().replacingOccurrences(of: "=", with: "")
+  return ["header", payload, "signature"].joined(separator: ".")
+}
+private let appleToken = fixtureToken(#"{"sub":"apple-user"}"#)
+private let claimlessToken = fixtureToken("{}")
 
 @Test func appleWebCallbackPreservesCredentialsAndReadsTheSubject() throws {
   let url = try #require(URL(string: "hitslop://auth/apple#state=expected&id_token=\(appleToken)&code=a%2Bb%26c%3D"))
@@ -19,7 +25,7 @@ private let appleToken = "header.eyJzdWIiOiJhcHBsZS11c2VyIn0.signature"
   "hitslop://auth/apple#state=expected&code=code",
   "hitslop://auth/apple#state=expected&id_token=",
   "hitslop://auth/apple#state=expected&id_token=invalid",
-  "hitslop://auth/apple#state=expected&id_token=header.e30.signature",
+  "hitslop://auth/apple#state=expected&id_token=\(claimlessToken)",
   "hitslop://auth/apple#state=expected&id_token=header.____.signature",
   "hitslop://auth/apple#state=expected&state=wrong&id_token=\(appleToken)",
   "hitslop://auth/apple#state=expected&id_token=\(appleToken)&id_token=other",
