@@ -15,9 +15,9 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
   no storage dependency. The engine re-executes itself with `--evaluate-command`; the
   `hitslop-evaluator` binary provides the same child for native-host integration.
 
-The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
-main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2
-and wasm-bindgen 0.2.129. `bun run verify rust` runs the workspace's lints and tests.
+The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt),
+Loro 1.17.1 (the exact crates.io release), UniFFI 0.32.2 and wasm-bindgen 0.2.129.
+`bun run verify rust` runs the workspace's lints and tests.
 Use `cargo fmt --all` to apply `rustfmt.toml` explicitly. Install the matching bindings generators and the test runner once
 (the uniffi library leaves out its generator, so every host build shares one Cargo graph):
 

@@ -115,6 +115,33 @@ fn a_page_change_undoes_and_redoes() {
 }
 
 #[test]
+fn one_undo_skips_a_step_made_noop_by_remote_deletion() {
+    let (mut a, mut view) = setup();
+    let initial_title = value(&a)["title"].clone();
+    apply(&mut a, &mut view, &set(json!(["title"]), json!("Changed")), Origin::Page);
+    apply(&mut a, &mut view, &set(json!(["rows", {"id": ROW}, "done"]), json!(true)), Origin::Page);
+
+    let mut b = Document::open(&app(schema()), &a.checkpoint().unwrap(), &[]).unwrap();
+    b.apply_json(&batch(json!([{"type":"remove","path":["rows"],"id":ROW}])), Origin::Page).unwrap();
+    view.publish(&a.import_remote(&[&b.checkpoint().unwrap()]).unwrap().unwrap().publication.unwrap());
+    assert!(a.can_undo());
+
+    let published = undo(&mut a, &mut view);
+    assert_eq!(
+        value(&a)["title"],
+        initial_title,
+        "one undo must skip the remotely deleted row and revert the earlier title edit"
+    );
+    assert!(published);
+    assert!(value(&a)["rows"].as_array().unwrap().iter().all(|row| row["$id"] != ROW));
+    view.check(&a, "after skipping the no-op undo step");
+    assert!(!a.can_undo());
+    assert!(redo(&mut a, &mut view));
+    assert_eq!(value(&a)["title"], "Changed");
+    view.check(&a, "after redoing the title edit");
+}
+
+#[test]
 fn nothing_to_undo_publishes_nothing() {
     let (mut d, mut view) = setup();
     let sequence = d.sequence();

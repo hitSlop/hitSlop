@@ -513,7 +513,7 @@ fn acceptable(doc: &LoroDoc, app: &AppSpec) -> Result<()> {
 /// `LoroDoc::fork_at` for trimmed documents.
 fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc> {
     // Measured before any export commits pending operations; those lie outside `vv`.
-    let vv = doc.frontiers_to_vv(frontiers).ok_or_else(|| engine("Version is not in history"))?;
+    let vv = doc.try_frontiers_to_vv(frontiers).map_err(engine)?.ok_or_else(|| engine("Version is not in history"))?;
     let start = doc.shallow_since_vv().to_vv();
     let replica = LoroDoc::new();
     replica.set_record_timestamp(true);
