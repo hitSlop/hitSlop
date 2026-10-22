@@ -1,6 +1,9 @@
 //! Single native Rust socket supervisor. Swift only starts/stops it and reads status.
 use super::*;
-use hitslop_core::{owner::SyncEvent, sync::MAX_FRAME};
+use hitslop_core::{
+    owner::SyncEvent,
+    sync::{MAX_FRAME, PauseKind},
+};
 use hitslop_sharing_protocol::{envelope, frame::Frame};
 use std::{
     collections::VecDeque,
@@ -61,13 +64,33 @@ pub(crate) fn http_typed(
 }
 pub(crate) enum HttpFailure {
     Ended,
+    Status(u16),
+    Paused(hitslop_core::sync::Pause),
     Other(String),
+}
+impl From<hitslop_core::owner::Failure> for HttpFailure {
+    fn from(error: hitslop_core::owner::Failure) -> Self {
+        match error.reason {
+            Some(hitslop_core::Code::RequiresUpdate) => {
+                Self::Paused(hitslop_core::sync::Pause { kind: PauseKind::NeedsUpdate, reason: error.message })
+            }
+            Some(_) => Self::Paused(hitslop_core::sync::Pause { kind: PauseKind::Refused, reason: error.message }),
+            None => Self::Other(error.message),
+        }
+    }
+}
+impl From<hitslop_core::store::Error> for HttpFailure {
+    fn from(error: hitslop_core::store::Error) -> Self {
+        hitslop_core::owner::Failure::from(error).into()
+    }
 }
 impl From<HttpFailure> for String {
     fn from(value: HttpFailure) -> Self {
         match value {
             HttpFailure::Ended => "Sharing ended".into(),
             HttpFailure::Other(message) => message,
+            HttpFailure::Paused(pause) => pause.reason,
+            HttpFailure::Status(status) => format!("Sharing service refused this request ({status})"),
         }
     }
 }
@@ -111,12 +134,36 @@ pub(crate) fn http_request_typed(
     }
     let mut response =
         agent.run(request.body(body.to_vec()).map_err(fail)?).map_err(|_| fail("Sharing service is unavailable"))?;
-    match response.status().as_u16() {
-        200 => {}
+    let status = response.status().as_u16();
+    if !matches!(status, 200 | 204) {
+        let bytes = response
+            .body_mut()
+            .with_config()
+            .limit(hitslop_sharing_protocol::CONTROL_BYTES as u64)
+            .read_to_vec()
+            .unwrap_or_default();
+        if let Ok(failure) = serde_json::from_slice::<hitslop_sharing_protocol::http::ApiFailure>(&bytes)
+            && failure.code == "requires_update"
+        {
+            return Err(HttpFailure::Paused(hitslop_core::sync::Pause {
+                kind: PauseKind::NeedsUpdate,
+                reason: failure.message,
+            }));
+        }
+    }
+    match status {
+        200 | 204 => {}
         401 => return Err("Sign in to your sharing account first".into()),
         410 if method == "DELETE" => return Ok(Vec::new()),
         410 => return Err(HttpFailure::Ended),
-        409 => return Err("Sharing changed or creation is unfinished. Retry sharing.".into()),
+        409 => return Err(HttpFailure::Status(409)),
+        413 => return Err(HttpFailure::Status(413)),
+        400 | 403 | 404 | 422 => {
+            return Err(HttpFailure::Paused(hitslop_core::sync::Pause {
+                kind: PauseKind::Refused,
+                reason: format!("Sharing service refused this request ({status})"),
+            }));
+        }
         status => return Err(HttpFailure::Other(format!("Sharing service refused this request ({status})"))),
     }
     let bytes =
@@ -154,14 +201,20 @@ impl Queue {
     }
 }
 struct Status {
-    value: Mutex<(Phase, String)>,
+    value: Mutex<(Phase, String, Option<PauseKind>)>,
     notice: Notice,
 }
 impl Status {
     fn set(&self, phase: Phase, detail: String) {
+        self.update(phase, detail, None);
+    }
+    fn paused(&self, kind: PauseKind, reason: String) {
+        self.update(Phase::Paused, reason, Some(kind));
+    }
+    fn update(&self, phase: Phase, detail: String, kind: Option<PauseKind>) {
         let changed = {
             let mut old = self.value.lock().unwrap();
-            let value = (phase, detail);
+            let value = (phase, detail, kind);
             if *old == value {
                 false
             } else {
@@ -185,11 +238,12 @@ pub(crate) struct Connection {
 impl Connection {
     pub fn start(owner: Arc<Owner>, key: RoomKey, notice: Notice) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
-        let status = Arc::new(Status { value: Mutex::new((Phase::Offline, "Connecting".into())), notice });
+        let status = Arc::new(Status { value: Mutex::new((Phase::Offline, "Connecting".into(), None)), notice });
         let (running, output) = (stop.clone(), status.clone());
         let thread = thread::spawn(move || {
             let mut backoff = Duration::from_millis(250);
             let mut bootstrapped = false;
+            let mut retried_full = false;
             while !running.load(Ordering::Relaxed) {
                 let attempt = (|| {
                     if !bootstrapped {
@@ -198,7 +252,7 @@ impl Connection {
                         bootstrapped = true;
                         trace("bootstrap_done");
                     }
-                    connected(&owner, &key, &running, &output).map_err(HttpFailure::Other)
+                    connected(&owner, &key, &running, &output, &mut retried_full)
                 })();
                 match attempt {
                     Ok(true) => break,
@@ -207,7 +261,12 @@ impl Connection {
                         output.set(Phase::Ended, "Ended".into());
                         break;
                     }
-                    Err(HttpFailure::Other(error)) => {
+                    Err(HttpFailure::Paused(pause)) => {
+                        output.paused(pause.kind, pause.reason);
+                        break;
+                    }
+                    Err(error) => {
+                        let error: String = error.into();
                         output.set(Phase::Offline, format!("Offline; reconnecting: {error}"))
                     }
                 }
@@ -223,7 +282,7 @@ impl Connection {
         });
         Self { stop, status, thread: Some(thread) }
     }
-    pub fn status(&self) -> (Phase, String) {
+    pub fn status(&self) -> (Phase, String, Option<PauseKind>) {
         self.status.value.lock().unwrap().clone()
     }
     pub fn stop(mut self) {
@@ -233,15 +292,28 @@ impl Connection {
         }
     }
 }
-fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Status) -> Result<bool> {
-    let mut req = format!("{}/v1/rooms/{}/sync", key.origin.replacen("https://", "wss://", 1), key.room)
-        .into_client_request()
-        .map_err(fail)?;
+fn connected(
+    owner: &Arc<Owner>,
+    key: &RoomKey,
+    stop: &AtomicBool,
+    status: &Status,
+    retried_full: &mut bool,
+) -> std::result::Result<bool, HttpFailure> {
+    let mut req = format!(
+        "{}/v1/rooms/{}/sync",
+        key.origin.replacen("https://", "wss://", 1).replacen("http://", "ws://", 1),
+        key.room
+    )
+    .into_client_request()
+    .map_err(fail)?;
     req.headers_mut()
         .insert("Sec-WebSocket-Protocol", hitslop_sharing_protocol::SOCKET_PROTOCOL.parse().map_err(fail)?);
     req.headers_mut().insert("Authorization", format!("Bearer {}", key.capability).parse().map_err(fail)?);
     let host = req.uri().host().ok_or("Invalid relay host")?.to_owned();
-    let addresses = (host.as_str(), 443).to_socket_addrs().map_err(|_| fail("Relay address unavailable"))?;
+    let addresses =
+        (host.as_str(), req.uri().port_u16().unwrap_or(if req.uri().scheme_str() == Some("ws") { 80 } else { 443 }))
+            .to_socket_addrs()
+            .map_err(|_| fail("Relay address unavailable"))?;
     let deadline = Instant::now() + Duration::from_secs(10);
     let mut stream = None;
     for address in addresses {
@@ -272,7 +344,7 @@ fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Stat
     let stream: &TcpStream = match socket.get_mut() {
         MaybeTlsStream::Plain(s) => s,
         MaybeTlsStream::Rustls(s) => s.get_ref(),
-        _ => return Err(fail("Unsupported TLS transport")),
+        _ => return Err(fail("Unsupported TLS transport").into()),
     };
     trace("socket_opened");
     stream.set_read_timeout(Some(Duration::from_millis(5))).map_err(fail)?;
@@ -288,20 +360,97 @@ fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Stat
     trace("owner_attached");
     let mut core_status = (Phase::Syncing, "Syncing".to_owned());
     let mut uploaded = Vec::new();
+    let mut check_at = Instant::now();
+    let mut compact_at = None;
+    let mut waiting = false;
+
+    let mut ping_at = Instant::now() + Duration::from_secs(20);
     let result = (|| {
         trace("inventory_start");
         uploaded = resources::remote_blobs(key)?;
         trace("inventory_done");
         while !stop.load(Ordering::Relaxed) {
+            let now = Instant::now();
+            if now >= ping_at {
+                socket.send(Message::Text("ping".into())).map_err(|_| fail("Socket send failed"))?;
+                ping_at = now + Duration::from_secs(20);
+            }
+            if now >= check_at {
+                let info = room_info(key, None)?;
+                check_at = now + Duration::from_secs(600);
+                if waiting && !info.compact && *retried_full {
+                    status.paused(PauseKind::Outgrown, "This document has outgrown sharing".into());
+                    return Ok(true);
+                }
+                if info.compact || waiting {
+                    let mut random = [0u8; 2];
+                    getrandom::getrandom(&mut random).map_err(|_| fail("Cannot schedule compaction"))?;
+                    compact_at = Some(now + Duration::from_millis(u16::from_le_bytes(random) as u64 * 30_000 / 65_535));
+                }
+            }
+            if compact_at.is_some_and(|at| now >= at) {
+                // Recheck after jitter: another writer may already have compacted.
+                let info = room_info(key, None)?;
+                if !info.compact {
+                    compact_at = None;
+                    if waiting {
+                        *retried_full = true;
+                        return Ok(false);
+                    }
+                } else {
+                    let (send, receive) = std::sync::mpsc::channel();
+                    admission.base(move |base| {
+                        let _ = send.send(base);
+                    });
+                    match receive.recv_timeout(Duration::from_secs(30)).map_err(|_| fail("Owner unavailable"))? {
+                        Err(pause) => {
+                            status.paused(pause.kind, pause.reason);
+                            return Ok(true);
+                        }
+                        Ok(None) => {
+                            // Not eligible yet (edits in flight); each retry re-reads RoomInfo,
+                            // so stay well inside the guest metadata budget.
+                            compact_at = Some(now + Duration::from_secs(15));
+                        }
+                        Ok(Some(base)) => {
+                            compact_at = None;
+                            match compact(key, &base) {
+                                Ok(()) | Err(HttpFailure::Status(409)) => {
+                                    if waiting {
+                                        *retried_full = true;
+                                        return Ok(false);
+                                    }
+                                }
+                                Err(HttpFailure::Status(413)) => {
+                                    status.paused(PauseKind::Outgrown, "This document has outgrown sharing".into());
+                                    return Ok(true);
+                                }
+                                Err(error) => return Err(error),
+                            }
+                        }
+                    }
+                }
+            }
             let pending = std::mem::take(&mut *queue.lock().unwrap());
             if pending.overflow {
-                return Err(fail("Socket queue budget exceeded"));
+                return Err(fail("Socket queue budget exceeded").into());
             }
             for event in pending.events {
                 match event {
                     SyncEvent::Reconnect => return Ok(false),
                     SyncEvent::Status { status: s } => {
-                        let terminal = matches!(s, hitslop_core::sync::Status::Paused { .. });
+                        if let hitslop_core::sync::Status::Paused { kind, reason } = &s {
+                            status.paused(*kind, reason.clone());
+                            if *kind == PauseKind::RoomFull {
+                                waiting = true;
+                                check_at = Instant::now();
+                                continue;
+                            }
+                            return Ok(true);
+                        }
+                        if s == hitslop_core::sync::Status::Synced {
+                            *retried_full = false;
+                        }
                         let phase = match &s {
                             hitslop_core::sync::Status::Offline => Phase::Offline,
                             hitslop_core::sync::Status::Syncing => Phase::Syncing,
@@ -309,9 +458,8 @@ fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Stat
                             hitslop_core::sync::Status::Paused { .. } => Phase::Paused,
                         };
                         core_status = (phase, format!("{s:?}"));
-                        status.set(core_status.0.clone(), core_status.1.clone());
-                        if terminal {
-                            return Ok(true);
+                        if !waiting {
+                            status.set(core_status.0.clone(), core_status.1.clone());
                         }
                     }
                     SyncEvent::Send { bytes } => {
@@ -320,7 +468,13 @@ fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Stat
                         if matches!(&frame, Frame::Push { .. }) {
                             status.set(Phase::Syncing, "Syncing files".into());
                             trace("upload_blobs_start");
-                            resources::upload_blobs(owner, key, &mut uploaded)?;
+                            match resources::upload_blobs(owner, key, &mut uploaded) {
+                                Err(HttpFailure::Status(413)) => {
+                                    status.paused(PauseKind::FilesFull, "Attachments are full".into());
+                                    return Ok(true);
+                                }
+                                result => result?,
+                            }
                             trace("upload_blobs_done");
                         }
                         let message = envelope::encode(frame).map_err(fail)?;
@@ -330,9 +484,11 @@ fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Stat
             }
             match socket.read() {
                 Ok(Message::Binary(bytes)) => {
-                    let frame = envelope::decode(&bytes).map_err(fail)?;
+                    let frame = envelope::decode(&bytes).map_err(|e| {
+                        HttpFailure::Paused(hitslop_core::sync::Pause { kind: PauseKind::Refused, reason: fail(e) })
+                    })?;
                     trace_frame(&frame, true);
-                    if matches!(&frame,Frame::Error{message,..} if message=="Sharing ended") {
+                    if matches!(&frame,Frame::Error{code,..} if *code == hitslop_sharing_protocol::frame::ERROR_ENDED) {
                         status.set(Phase::Ended, "Ended".into());
                         return Ok(true);
                     }
@@ -346,7 +502,9 @@ fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Stat
                         return Ok(false);
                     }
                     request(owner, Request::State)?;
-                    status.set(core_status.0.clone(), core_status.1.clone());
+                    if !waiting {
+                        status.set(core_status.0.clone(), core_status.1.clone());
+                    }
                 }
                 Ok(Message::Close(_)) => return Ok(false),
                 Ok(_) => {}
@@ -363,4 +521,194 @@ fn connected(owner: &Arc<Owner>, key: &RoomKey, stop: &AtomicBool, status: &Stat
     trace("socket_detached");
     let _ = request(owner, Request::State);
     result
+}
+
+/// Versions use the seed route's canonical peer encoding.
+pub(crate) fn compact(key: &RoomKey, base: &hitslop_core::sync::Base) -> std::result::Result<(), HttpFailure> {
+    let version = |vv: &loro::VersionVector| {
+        let mut pairs: Vec<_> = vv.iter().map(|(&p, &n)| (format!("{p:016x}"), n)).collect();
+        pairs.sort();
+        serde_json::to_string(&pairs).map_err(fail)
+    };
+    http_typed(
+        key,
+        "POST",
+        "compact",
+        Some(&key.capability),
+        &base.bytes,
+        &[
+            ("Content-Type", "application/octet-stream"),
+            ("X-Sharing-SHA256", &hex(&Sha256::digest(&base.bytes))),
+            ("X-Sharing-Version", &version(&base.frontier)?),
+            ("X-Sharing-Root", &version(&base.start)?),
+        ],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use tungstenite::protocol::{CloseFrame, frame::coding::CloseCode};
+
+    /// Exercise the actual socket loop and HTTP attachment barrier over loopback.
+    #[allow(clippy::result_large_err, reason = "tungstenite fixes the handshake callback error type")]
+    fn local_connection(files_full: bool, close: CloseCode) -> (bool, Phase, Option<PauseKind>) {
+        let (_dir, owner) = crate::tests::fixture();
+        request(
+            &owner,
+            Request::Share {
+                share: Share { room: "a".repeat(32), endpoint: hitslop_sharing_protocol::TRUSTED_ORIGIN.into() },
+            },
+        )
+        .unwrap();
+        let store = Store::open(owner.path(), Mode::Snapshot).unwrap();
+        let checkpoint = store.document().unwrap().checkpoint().unwrap();
+        let vv = loro::LoroDoc::decode_import_blob_meta(&checkpoint, false).unwrap().partial_end_vv;
+        let version: hitslop_core::sync::Version = vv.iter().map(|(&p, &n)| (p, n as u32)).collect();
+        if files_full {
+            request(&owner, Request::PutAttachment { bytes: b"file".to_vec() }).unwrap();
+            request(
+                &owner,
+                Request::Apply {
+                    batch: serde_json::from_value(
+                        serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}),
+                    )
+                    .unwrap(),
+                    origin: hitslop_core::Origin::Page,
+                },
+            )
+            .unwrap();
+        }
+        let info = serde_json::to_vec(&RoomInfo {
+            document: owner.app().document_uuid.clone().unwrap(),
+            phase: RoomPhase::Live,
+            seed_hash: None,
+            seed_size: None,
+            app: None,
+            capability: None,
+            compact: false,
+        })
+        .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let key = RoomKey {
+            room: "a".repeat(32),
+            capability: "b".repeat(64),
+            origin: format!("http://{}", listener.local_addr().unwrap()),
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        let serving_stop = stop.clone();
+        let serving = thread::spawn(move || {
+            let mut handlers = vec![];
+            while !serving_stop.load(Ordering::Relaxed) {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    thread::sleep(Duration::from_millis(2));
+                    continue;
+                };
+                let info = info.clone();
+                let version = version.clone();
+                handlers.push(thread::spawn(move || {
+                    stream.set_nonblocking(false).unwrap();
+                    stream.set_read_timeout(Some(Duration::from_secs(25))).unwrap();
+                    let mut peek = [0; 1024];
+                    let n = stream.peek(&mut peek).unwrap();
+                    let first = String::from_utf8_lossy(&peek[..n]);
+                    if first.contains("/sync ") {
+                        let mut ws = tungstenite::accept_hdr(
+                            stream,
+                            |request: &tungstenite::handshake::server::Request,
+                             mut response: tungstenite::handshake::server::Response| {
+                                response.headers_mut().insert(
+                                    "Sec-WebSocket-Protocol",
+                                    request.headers()["Sec-WebSocket-Protocol"].clone(),
+                                );
+                                Ok(response)
+                            },
+                        )
+                        .unwrap();
+                        assert!(matches!(ws.read().unwrap(), Message::Binary(_)));
+                        for frame in [
+                            Frame::Welcome { permission: hitslop_core::sync::Permission::Write, version },
+                            Frame::CaughtUp,
+                        ] {
+                            ws.send(Message::Binary(envelope::encode(frame).unwrap().into())).unwrap();
+                        }
+                        ws.send(Message::Text("pong".into())).unwrap();
+                        ws.send(Message::Pong(vec![1, 2].into())).unwrap();
+                        if !files_full {
+                            if close == CloseCode::Error {
+                                assert_eq!(
+                                    ws.read().unwrap(),
+                                    Message::Text("ping".into()),
+                                    "idle connections keep the relay socket alive"
+                                );
+                                ws.send(Message::Text("pong".into())).unwrap();
+                            }
+                            ws.close(Some(CloseFrame { code: close, reason: "retry".into() })).unwrap();
+                        }
+                        // Read the client's close/flush so the stream remains live through its barrier.
+                        let _ = ws.read();
+                    } else {
+                        let mut header = vec![];
+                        while !header.ends_with(b"\r\n\r\n") {
+                            let mut byte = [0];
+                            stream.read_exact(&mut byte).unwrap();
+                            header.push(byte[0]);
+                        }
+                        let header = String::from_utf8(header).unwrap();
+                        let size: usize = header
+                            .lines()
+                            .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length: ").map(str::to_owned))
+                            .unwrap_or_else(|| "0".into())
+                            .parse()
+                            .unwrap();
+                        stream.read_exact(&mut vec![0; size]).unwrap();
+                        let (code, body) = if header.starts_with("PUT ") {
+                            (413, &[][..])
+                        } else if header.contains("/blobs ") {
+                            (200, &b"[]"[..])
+                        } else {
+                            (200, info.as_slice())
+                        };
+                        write!(
+                            stream,
+                            "HTTP/1.1 {code} Reply\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
+                        )
+                        .unwrap();
+                        stream.write_all(body).unwrap();
+                    }
+                }));
+            }
+            for handler in handlers {
+                handler.join().unwrap();
+            }
+        });
+        let status = Status { value: Mutex::new((Phase::Offline, String::new(), None)), notice: Arc::default() };
+        let result = connected(&owner, &key, &stop, &status, &mut false);
+        stop.store(true, Ordering::Relaxed);
+        serving.join().unwrap();
+        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        let (phase, _, kind) = status.value.into_inner().unwrap();
+        (result.unwrap_or_else(|e| panic!("{}", String::from(e))), phase, kind)
+    }
+    #[test]
+    fn keepalive_pong_and_transient_closes_reconnect_without_pausing() {
+        for code in [CloseCode::Error, CloseCode::Again] {
+            let (terminal, phase, kind) = local_connection(false, code);
+            assert!(!terminal);
+            assert_ne!(phase, Phase::Paused);
+            assert_eq!(kind, None);
+        }
+    }
+    #[test]
+    fn attachment_capacity_is_a_terminal_files_full_pause() {
+        let (terminal, phase, kind) = local_connection(true, CloseCode::Normal);
+        assert!(terminal);
+        assert_eq!(phase, Phase::Paused);
+        assert_eq!(kind, Some(PauseKind::FilesFull));
+    }
 }

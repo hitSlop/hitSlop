@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     hitslop_sharing_protocol::http::ConnectionPlan::export_all(&config)?;
     hitslop_sharing_protocol::http::SharingControl::export_all(&config)?;
     hitslop_sharing_protocol::http::SharingEvent::export_all(&config)?;
+    hitslop_core::sync::Pause::export_all(&config)?;
     hitslop_sharing_protocol::resources::Manifest::export_all(&config)?;
     EngineRequest::export_all(&config)?;
     EngineReply::export_all(&config)?;

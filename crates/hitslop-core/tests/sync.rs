@@ -287,6 +287,11 @@ fn replicas_converge_through_the_relay_despite_faults() {
                         *joined = false;
                     }
                 }
+                96 => {
+                    if let Some(base) = r.session.base(&r.doc).unwrap() {
+                        relay.compact(base);
+                    }
+                }
                 _ => {
                     let saved = r.saved.clone();
                     *r = Replica::open(&spec, saved);
@@ -294,7 +299,7 @@ fn replicas_converge_through_the_relay_despite_faults() {
                 }
             }
             for (j, replica) in replicas.iter().enumerate() {
-                if let Status::Paused { reason } = replica.session.status() {
+                if let Status::Paused { reason, .. } = replica.session.status() {
                     panic!("seed {seed}: replica {j} paused: {reason}");
                 }
             }
@@ -371,7 +376,7 @@ fn a_change_the_app_refuses_pauses_sync_and_leaves_the_replica_as_it_was() {
     });
     let step = session.receive(&mut doc, &Frame::Records(vec![record]).encode());
     assert!(step.applied.is_none() && step.send.is_empty());
-    let Status::Paused { reason } = session.status() else { panic!("{:?}", session.status()) };
+    let Status::Paused { reason, .. } = session.status() else { panic!("{:?}", session.status()) };
     assert!(reason.contains("refused"), "{reason}");
     assert_eq!(support::value(&doc), before);
     doc.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
@@ -406,7 +411,7 @@ fn records_missing_their_history_pause_sync_once_caught_up() {
     assert!(step.applied.is_none(), "nothing applied");
     assert_eq!(session.status(), &Status::Syncing);
     session.receive(&mut doc, &Frame::CaughtUp.encode());
-    let Status::Paused { reason } = session.status() else { panic!("{:?}", session.status()) };
+    let Status::Paused { reason, .. } = session.status() else { panic!("{:?}", session.status()) };
     assert!(reason.contains("missing history"), "{reason}");
 }
 
@@ -474,4 +479,210 @@ fn synced_means_caught_up_with_nothing_unacknowledged() {
     let Frame::Push { id, .. } = Frame::decode(&push).unwrap() else { panic!() };
     session.receive(&mut doc, &Frame::Ack { id, status: Ack::Stored }.encode());
     assert_eq!(session.status(), &Status::Synced);
+}
+
+// A full relay must allow its transport to make room without discarding local edits.
+#[test]
+fn quota_waits_for_compaction() {
+    let origin = Document::create(&app(SCHEMA), r#"{"title":"Kept","done":false}"#).unwrap();
+    let (mut doc, mut session) = admitted(&origin.checkpoint().unwrap(), &version(&origin));
+    session.receive(&mut doc, &Frame::CaughtUp.encode());
+    let mut relay =
+        Relay { app: APP, records: vec![], heads: version(&origin).iter().map(|(&p, &n)| (p, n as u32)).collect() };
+    doc.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Stored history"}]}"#, Origin::Page).unwrap();
+    let (acks, _) = relay.reply(&session.push(&doc).unwrap());
+    for ack in acks {
+        session.receive(&mut doc, &ack.encode());
+    }
+    doc.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
+    let Frame::Push { id, .. } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
+    session.receive(&mut doc, &Frame::Ack { id, status: Ack::Quota }.encode());
+    assert!(format!("{:?}", session.status()).contains("RoomFull"), "{:?}", session.status());
+    assert_eq!(support::value(&doc)["done"], true);
+    relay.compact(session.base(&doc).unwrap().unwrap());
+    let (replies, _) = relay.reply(&session.connect(&doc));
+    for reply in replies {
+        for push in session.receive(&mut doc, &reply.encode()).send {
+            let (acks, _) = relay.reply(&push);
+            for ack in acks {
+                session.receive(&mut doc, &ack.encode());
+            }
+        }
+    }
+    assert_eq!(session.status(), &Status::Synced);
+    assert_eq!(relay.heads, version(&doc).iter().map(|(&p, &n)| (p, n as u32)).collect());
+}
+
+/// Measurements use the same owner commits and push encoding as interactive edits.
+/// Run with HITSLOP_NIGHTLY=1 bun run verify rust sync::room_compaction_measurements.
+#[test]
+fn room_compaction_measurements() {
+    if std::env::var("HITSLOP_NIGHTLY").as_deref() != Ok("1") {
+        return;
+    }
+    let f = fixture("checklist");
+    for workload in ["typing", "checklist", "replacement"] {
+        let mut doc = Document::create(&app(f["schema"].to_string()), &f["initial"].to_string()).unwrap();
+        let seed = version(&doc);
+        let mut session = Session::new(APP);
+        session.connect(&doc);
+        session.receive(
+            &mut doc,
+            &Frame::Welcome {
+                permission: Permission::Write,
+                version: seed.iter().map(|(&p, &n)| (p, n as u32)).collect(),
+            }
+            .encode(),
+        );
+        session.receive(&mut doc, &Frame::CaughtUp.encode());
+        let mut total = 0;
+        let steps = if workload == "replacement" { 1000 } else { 4000 };
+        for i in 0..steps {
+            let intents = match workload {
+                "typing" => json!([{"type":"set","path":["title"],"value":"abcde".repeat(i + 1)}]),
+                "checklist" => {
+                    let id = format!("{:032x}", i % 2 + 1);
+                    json!([{"type":"set","path":["rows",{"id":id},"done"],"value":(i/2)%2==0},
+                        {"type":"move","path":["rows"],"id":id}])
+                }
+                _ => {
+                    json!([{"type":"set","path":["title"],"value":format!("{i:04}{}", char::from(b'a' + (i % 26) as u8).to_string().repeat(20_000))}])
+                }
+            };
+            doc.apply_json(&json!({"intents":intents}).to_string(), Origin::Page).unwrap();
+            let _saved = doc.checkpoint().unwrap();
+            let Frame::Push { id, records } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
+            total += records.iter().map(|r| r.bytes.len()).sum::<usize>();
+            session.receive(&mut doc, &Frame::Ack { id, status: Ack::Stored }.encode());
+        }
+        let raw = LoroDoc::new();
+        raw.import(&doc.checkpoint().unwrap()).unwrap();
+        let base = raw.export(ExportMode::updates(&doc.base_start())).unwrap();
+        if base.len() > hitslop_sharing_protocol::BASE_BYTES {
+            assert_eq!(doc.base(&version(&doc)).unwrap_err().code, hitslop_core::Code::TooLarge);
+        } else {
+            assert_eq!(doc.base(&version(&doc)).unwrap(), base);
+        }
+        eprintln!(
+            "COMPACTION {workload}: pushes={steps} records={total} base={} ratio={:.2}",
+            base.len(),
+            total as f64 / base.len() as f64
+        );
+    }
+}
+
+#[test]
+fn base_is_updates_and_excludes_unsent_edits() {
+    let original = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
+    let seed = original.checkpoint().unwrap();
+    let (mut doc, mut session) = admitted(&seed, &version(&original));
+    assert!(session.base(&doc).unwrap().is_none(), "not caught up");
+    session.receive(&mut doc, &Frame::CaughtUp.encode());
+    let frontier = version(&doc);
+    let base = session.base(&doc).unwrap().unwrap();
+    let meta = LoroDoc::decode_import_blob_meta(&base.bytes, false).unwrap();
+    assert_eq!(meta.mode, loro::EncodedBlobMode::Updates);
+    assert_eq!(meta.partial_end_vv, frontier);
+    doc.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
+    assert!(session.base(&doc).unwrap().is_none(), "local edits unpushed");
+    let Frame::Push { id, .. } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
+    assert!(session.base(&doc).unwrap().is_none(), "push in flight");
+    session.receive(&mut doc, &Frame::Ack { id, status: Ack::Quota }.encode());
+    assert_eq!(session.base(&doc).unwrap().unwrap().frontier, frontier);
+    assert_eq!(
+        LoroDoc::decode_import_blob_meta(&doc.base(&frontier).unwrap(), false).unwrap().partial_end_vv,
+        frontier
+    );
+}
+
+#[test]
+fn shallow_seed_base_is_applied_by_a_joiner() {
+    let raw = LoroDoc::new();
+    raw.import(&Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap().checkpoint().unwrap())
+        .unwrap();
+    let trimmed = raw.export(ExportMode::shallow_snapshot(&raw.oplog_frontiers())).unwrap();
+    let mut writer = Document::open(&app(SCHEMA), &trimmed, &[]).unwrap();
+    writer.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
+    let base = writer.base(&version(&writer)).unwrap();
+    assert_eq!(LoroDoc::decode_import_blob_meta(&base, false).unwrap().mode, loro::EncodedBlobMode::Updates);
+    let mut joiner = Document::open(&app(SCHEMA), &trimmed, &[]).unwrap();
+    joiner.import_remote(&[&base]).unwrap();
+    assert_eq!(support::value(&joiner), support::value(&writer));
+}
+
+#[test]
+fn relay_error_codes_choose_recovery_actions() {
+    use hitslop_core::sync::PauseKind;
+    use hitslop_sharing_protocol::frame::*;
+    let origin = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
+    for (code, kind) in [
+        (ERROR_PROTOCOL, PauseKind::NeedsUpdate),
+        (ERROR_APP, PauseKind::Refused),
+        (ERROR_MALFORMED, PauseKind::Refused),
+        (ERROR_ENDED, PauseKind::Ended),
+    ] {
+        let (mut doc, mut session) = admitted(&origin.checkpoint().unwrap(), &version(&origin));
+        session.receive(&mut doc, &Frame::Error { code, message: "reason".into() }.encode());
+        assert_eq!(session.status(), &Status::Paused { kind, reason: "reason".into() });
+    }
+}
+
+#[test]
+fn compacted_backfill_merges_with_unsent_local_edits_and_later_records() {
+    let origin = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
+    let seed = origin.checkpoint().unwrap();
+    let mut writer = Document::open(&app(SCHEMA), &seed, &[]).unwrap();
+    let (record, heads) = foreign(&seed, |raw| {
+        raw.get_map("data").insert("done", true).unwrap();
+    });
+    writer.import_remote(&[&record.bytes]).unwrap();
+    let mut relay =
+        Relay { app: APP, records: vec![record], heads: heads.iter().map(|(&p, &n)| (p, n as u32)).collect() };
+    relay.compact(hitslop_core::sync::Base {
+        frontier: heads,
+        start: writer.base_start(),
+        bytes: writer.base(&version(&writer)).unwrap(),
+    });
+    let (later, _) = foreign(&writer.checkpoint().unwrap(), |raw| {
+        let Some(loro::ValueOrContainer::Container(loro::Container::Text(title))) = raw.get_map("data").get("title")
+        else {
+            panic!()
+        };
+        title.insert(0, "Later ").unwrap();
+    });
+    relay.reply(&Frame::Push { id: 1, records: vec![later] }.encode());
+    let mut joiner = Replica::open(&app(SCHEMA), seed);
+    joiner
+        .doc
+        .apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Local Seed"}]}"#, Origin::Page)
+        .unwrap();
+    joiner.view = View::of(&joiner.doc);
+    joiner.connect();
+    let mut replicas = [joiner];
+    let mut joined = [false];
+    while !replicas[0].up.is_empty() || !replicas[0].down.is_empty() {
+        deliver(&mut relay, &mut replicas, &mut joined, 0);
+        replicas[0].receive();
+    }
+    let mut expected = Document::open(&app(SCHEMA), &writer.checkpoint().unwrap(), &[]).unwrap();
+    for record in &relay.records {
+        expected.import_remote(&[&record.bytes]).unwrap();
+    }
+    assert_eq!(support::value(&replicas[0].doc), support::value(&expected));
+    assert_eq!(replicas[0].session.status(), &Status::Synced);
+    assert!(support::value(&expected)["title"].as_str().unwrap().contains("Local"));
+}
+
+#[test]
+fn read_only_offline_and_terminally_paused_sessions_cannot_compact() {
+    let mut doc = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
+    let mut session = Session::new(APP);
+    assert!(session.base(&doc).unwrap().is_none());
+    session.connect(&doc);
+    let vv = version(&doc).iter().map(|(&p, &n)| (p, n as u32)).collect();
+    session.receive(&mut doc, &Frame::Welcome { permission: Permission::Read, version: vv }.encode());
+    session.receive(&mut doc, &Frame::CaughtUp.encode());
+    assert!(session.base(&doc).unwrap().is_none());
+    session.pause(hitslop_core::sync::PauseKind::Refused, "refused".into());
+    assert!(session.base(&doc).unwrap().is_none());
 }

@@ -38,6 +38,7 @@ struct SyncQueue {
     bytes: usize,
     overflow: bool,
     status: String,
+    pause: Option<hitslop_core::sync::Pause>,
 }
 type SyncEvents = Arc<Mutex<SyncQueue>>;
 
@@ -387,7 +388,15 @@ impl BrowserCopy {
             let mut q = events.lock().unwrap();
             match e {
                 owner::SyncEvent::Reconnect => q.overflow = true,
-                owner::SyncEvent::Status { status } => q.status = format!("{status:?}"),
+                owner::SyncEvent::Status { status } => {
+                    q.pause = match &status {
+                        hitslop_core::sync::Status::Paused { kind, reason } => {
+                            Some(hitslop_core::sync::Pause { kind: *kind, reason: reason.clone() })
+                        }
+                        _ => None,
+                    };
+                    q.status = format!("{status:?}");
+                }
                 owner::SyncEvent::Send { bytes } => {
                     if q.overflow {
                         return;
@@ -435,6 +444,41 @@ impl BrowserCopy {
             })
             .transpose()
     }
+    #[wasm_bindgen(js_name = syncPause)]
+    pub fn sync_pause(&self) -> Option<String> {
+        self.sync_events.lock().unwrap().pause.as_ref().map(|p| serde_json::to_string(p).expect("pause"))
+    }
+    #[wasm_bindgen(js_name = pauseSync)]
+    pub fn pause_sync(&self, pause: &str) -> Result<(), JsValue> {
+        let pause: hitslop_core::sync::Pause = serde_json::from_str(pause).map_err(error)?;
+        if let Some(link) = &self.sync_link {
+            link.pause(pause.kind, pause.reason);
+        } else {
+            // A permanent HTTP refusal may precede the first WebSocket admission.
+            let mut q = self.sync_events.lock().unwrap();
+            q.status =
+                format!("{:?}", hitslop_core::sync::Status::Paused { kind: pause.kind, reason: pause.reason.clone() });
+            q.pause = Some(pause);
+        }
+        Ok(())
+    }
+    #[wasm_bindgen(js_name = syncBase)]
+    pub fn sync_base(&mut self, monotonic: u64, unix: u64) -> Result<Option<SharingBase>, JsValue> {
+        let link = self.sync_link.as_ref().ok_or_else(|| error("Connection missing"))?;
+        let (send, receive) = std::sync::mpsc::channel();
+        link.base(move |base| {
+            let _ = send.send(base);
+        });
+        self.driver.as_mut().ok_or_else(|| error("Copy missing"))?.poll(monotonic, unix);
+        match receive.try_recv().map_err(error)? {
+            Ok(base) => Ok(base.map(SharingBase)),
+            Err(pause) => {
+                link.pause(pause.kind, pause.reason);
+                self.driver.as_mut().expect("checked above").poll(monotonic, unix);
+                Ok(None)
+            }
+        }
+    }
     #[wasm_bindgen(js_name = syncStatus)]
     pub fn sync_status(&self) -> String {
         self.sync_events.lock().unwrap().status.clone()
@@ -473,3 +517,23 @@ pub fn decode_browser_request(json: &str) -> Result<String, JsValue> {
 
 #[path = "resources.rs"]
 mod resources;
+
+#[wasm_bindgen]
+pub struct SharingBase(hitslop_core::sync::Base);
+#[wasm_bindgen]
+impl SharingBase {
+    pub fn bytes(&self) -> Vec<u8> {
+        self.0.bytes.clone()
+    }
+    pub fn frontier(&self) -> String {
+        base_version(self.0.frontier.iter().map(|(&p, &n)| (p, n as u32)).collect())
+    }
+    pub fn root(&self) -> String {
+        base_version(self.0.start.iter().map(|(&p, &n)| (p, n as u32)).collect())
+    }
+}
+fn base_version(vv: hitslop_core::sync::Version) -> String {
+    let mut pairs: Vec<_> = vv.iter().map(|(&p, &n)| (format!("{p:016x}"), n)).collect();
+    pairs.sort();
+    serde_json::to_string(&pairs).expect("version")
+}

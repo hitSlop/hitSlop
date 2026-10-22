@@ -11,6 +11,36 @@ pub use frame::{Ack, Frame, MAX_FRAME, PROTOCOL, Permission, Record, Span, Versi
 
 use crate::{Applied, Code, Document};
 use loro::VersionVector;
+use serde::{Deserialize, Serialize};
+
+/// Stable recovery choices shared by every transport and UI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
+pub enum PauseKind {
+    RoomFull,
+    Outgrown,
+    NeedsUpdate,
+    Refused,
+    MissingHistory,
+    FilesFull,
+    Ended,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
+pub struct Pause {
+    pub kind: PauseKind,
+    pub reason: String,
+}
+/// One immutable export, taken by the serial owner.
+#[derive(Debug)]
+pub struct Base {
+    pub frontier: VersionVector,
+    pub start: VersionVector,
+    pub bytes: Vec<u8>,
+}
 
 /// What a person sees about sync.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,7 +53,7 @@ pub enum Status {
     /// Caught up, and the relay holds every change this copy made.
     Synced,
     /// Sync stopped for a reason a person must act on, until the next connection.
-    Paused { reason: String },
+    Paused { kind: PauseKind, reason: String },
 }
 
 /// What one frame from the relay did: frames to send back, and the document change it
@@ -39,11 +69,12 @@ pub struct Session {
     app_digest: [u8; 32],
     status: Status,
     /// Set by the relay's Welcome: what it holds, as far as this connection knows. Records
-    /// received and pushes sent add to it.
+    /// received and acknowledged pushes add to it.
     relay: Option<VersionVector>,
     write: bool,
     /// The one push the relay has not acknowledged; the next waits for it.
     in_flight: Option<u64>,
+    sent: Vec<Span>,
     /// The relay has sent everything this copy lacked on this connection.
     caught_up: bool,
     next_id: u64,
@@ -58,6 +89,7 @@ impl Session {
             relay: None,
             write: false,
             in_flight: None,
+            sent: vec![],
             caught_up: false,
             next_id: 1,
         }
@@ -69,6 +101,7 @@ impl Session {
     pub fn connect(&mut self, doc: &Document) -> Vec<u8> {
         self.relay = None;
         self.in_flight = None;
+        self.sent.clear();
         self.caught_up = false;
         self.status = Status::Syncing;
         Frame::Hello { protocol: PROTOCOL, app_digest: self.app_digest, version: to_wire(&doc.version_vector()) }
@@ -78,6 +111,7 @@ impl Session {
     pub fn disconnect(&mut self) {
         self.relay = None;
         self.in_flight = None;
+        self.sent.clear();
         self.caught_up = false;
         if !matches!(self.status, Status::Paused { .. }) {
             self.status = Status::Offline;
@@ -86,7 +120,7 @@ impl Session {
     /// After every local commit: a push of what the relay lacks, unless one is in flight.
     /// Updates are exported after commits, so every pushed span ends at a commit boundary.
     pub fn push(&mut self, doc: &Document) -> Option<Vec<u8>> {
-        if !self.write || self.in_flight.is_some() {
+        if !self.write || self.in_flight.is_some() || matches!(self.status, Status::Paused { .. }) {
             return None;
         }
         let relay = self.relay.as_ref()?;
@@ -104,31 +138,38 @@ impl Session {
         let bytes = match doc.updates_since(relay) {
             Ok(bytes) => bytes,
             Err(error) => {
-                self.pause(format!("This document's changes could not be exported: {}", error.message));
+                self.pause(
+                    PauseKind::Refused,
+                    format!("This document's changes could not be exported: {}", error.message),
+                );
                 return None;
             }
         };
         let id = self.next_id;
         let frame = Frame::Push { id, records: vec![Record { spans: spans.clone(), bytes }] }.encode();
         if frame.len() > MAX_FRAME {
-            self.pause("A change is too large to sync".into());
+            self.pause(PauseKind::Outgrown, "A change is too large to sync".into());
             return None;
         }
-        cover(self.relay.as_mut()?, &spans);
+        self.sent = spans;
         self.next_id += 1;
         self.in_flight = Some(id);
         self.settle();
         Some(frame)
     }
-    /// One frame from the relay. A paused session ignores everything until it reconnects.
+    /// One frame from the relay. Terminal pauses ignore frames until reconnect; RoomFull
+    /// still admits catch-up and permanent refusals while the transport makes room.
     pub fn receive(&mut self, doc: &mut Document, bytes: &[u8]) -> Step {
-        if matches!(self.status, Status::Paused { .. }) || self.status == Status::Offline {
+        if (matches!(self.status, Status::Paused { .. })
+            && !matches!(self.status, Status::Paused { kind: PauseKind::RoomFull, .. }))
+            || self.status == Status::Offline
+        {
             return Step::default();
         }
         let frame = match Frame::decode(bytes) {
             Ok(frame) => frame,
             Err(error) => {
-                self.pause(error.message);
+                self.pause(PauseKind::Refused, error.message);
                 return Step::default();
             }
         };
@@ -154,7 +195,10 @@ impl Session {
                         }
                         step.applied = applied;
                     }
-                    Err(error) => self.pause(refused(&error)),
+                    Err(error) => self.pause(
+                        if error.code == Code::RequiresUpdate { PauseKind::NeedsUpdate } else { PauseKind::Refused },
+                        refused(&error),
+                    ),
                 }
             }
             Frame::CaughtUp => {
@@ -166,7 +210,10 @@ impl Session {
                     .as_ref()
                     .is_some_and(|relay| relay.iter().any(|(peer, end)| local.get(peer).copied().unwrap_or(0) < *end));
                 if missing {
-                    self.pause("The shared document is missing history; this copy keeps its own".into());
+                    self.pause(
+                        PauseKind::MissingHistory,
+                        "The shared document is missing history; this copy keeps its own".into(),
+                    );
                 } else if self.relay.is_some() {
                     self.caught_up = true;
                 }
@@ -177,25 +224,70 @@ impl Session {
                 }
                 self.in_flight = None;
                 match status {
-                    Ack::Stored => step.send.extend(self.push(doc)),
+                    Ack::Stored => {
+                        if let Some(relay) = &mut self.relay {
+                            cover(relay, &self.sent);
+                        }
+                        self.sent.clear();
+                        step.send.extend(self.push(doc));
+                    }
                     Ack::Gap => step.send.push(self.connect(doc)),
-                    Ack::TooLarge => self.pause("A change is too large to sync".into()),
-                    Ack::Denied => self.pause("This copy may not change the shared document".into()),
-                    Ack::Quota => self.pause("The shared document is full".into()),
+                    Ack::TooLarge => self.pause(PauseKind::Outgrown, "A change is too large to sync".into()),
+                    Ack::Denied => {
+                        self.pause(PauseKind::Refused, "This copy may not change the shared document".into())
+                    }
+                    Ack::Quota => {
+                        self.sent.clear();
+                        // Keep confirmed heads and catch-up: the rejected local push must
+                        // not become part of a base until the relay has accepted it.
+                        self.status = Status::Paused { kind: PauseKind::RoomFull, reason: "Making room…".into() };
+                    }
                 }
             }
-            Frame::Error { message, .. } => self.pause(message),
-            Frame::Hello { .. } | Frame::Push { .. } => self.pause("The relay sent a client's frame".into()),
+            Frame::Error { code, message } => self.pause(
+                if code == hitslop_sharing_protocol::frame::ERROR_PROTOCOL {
+                    PauseKind::NeedsUpdate
+                } else if code == hitslop_sharing_protocol::frame::ERROR_ENDED {
+                    PauseKind::Ended
+                } else {
+                    PauseKind::Refused
+                },
+                message,
+            ),
+            Frame::Hello { .. } | Frame::Push { .. } => {
+                self.pause(PauseKind::Refused, "The relay sent a client's frame".into())
+            }
         }
         self.settle();
         step
     }
+    /// Normal compaction requires all local operations to be acknowledged. After Quota,
+    /// compact only the confirmed relay frontier, excluding the rejected local push.
+    pub fn base(&self, doc: &Document) -> Result<Option<Base>, Pause> {
+        let waiting = matches!(self.status, Status::Paused { kind: PauseKind::RoomFull, .. });
+        if !self.write
+            || !self.caught_up
+            || self.in_flight.is_some()
+            || (matches!(self.status, Status::Paused { .. }) && !waiting)
+        {
+            return Ok(None);
+        }
+        let Some(frontier) = &self.relay else { return Ok(None) };
+        if (!waiting && doc.version_vector() != *frontier) || !doc.version_vector().includes_vv(frontier) {
+            return Ok(None);
+        }
+        let bytes = doc.base(frontier).map_err(|error| Pause {
+            kind: if error.code == Code::TooLarge { PauseKind::Outgrown } else { PauseKind::Refused },
+            reason: error.message,
+        })?;
+        Ok(Some(Base { frontier: frontier.clone(), start: doc.base_start(), bytes }))
+    }
     /// Stops syncing until the next connection, for `reason`.
-    pub fn pause(&mut self, reason: String) {
+    pub fn pause(&mut self, kind: PauseKind, reason: String) {
         self.relay = None;
         self.in_flight = None;
         self.caught_up = false;
-        self.status = Status::Paused { reason };
+        self.status = Status::Paused { kind, reason };
     }
     /// While connected: synced once caught up with nothing unacknowledged. A push sends
     /// everything the relay lacks, so none in flight means the relay holds every change.

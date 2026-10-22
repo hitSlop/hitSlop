@@ -255,7 +255,9 @@ pub enum Phase {
     Paused,
     Ended,
 }
+pub use hitslop_core::sync::PauseKind;
 pub struct ClientStatus {
+    pub pause_kind: Option<PauseKind>,
     pub phase: Phase,
     pub detail: String,
     pub link: Option<String>,
@@ -400,14 +402,15 @@ impl Client {
     }
     pub fn status(&self) -> ClientStatus {
         let key = self.key.lock().expect("sharing key");
-        let (phase, detail) = self
+        let (phase, detail, pause_kind) = self
             .connection
             .lock()
             .expect("sharing connection")
             .as_ref()
-            .map_or((Phase::Offline, "Offline".into()), |c| c.status());
+            .map_or((Phase::Offline, "Offline".into(), None), |c| c.status());
         let (phase, detail) = if key.ended { (Phase::Ended, "Ended".into()) } else { (phase, detail) };
         ClientStatus {
+            pause_kind,
             phase,
             detail,
             creator: self.creator.load(std::sync::atomic::Ordering::Relaxed),

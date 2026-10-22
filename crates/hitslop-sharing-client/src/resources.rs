@@ -3,21 +3,21 @@ use hitslop_sharing_protocol::resources::{self as resource_types, Manifest, Reso
 
 /// The incoming seed is transport-bounded; a valid local file may have grown beyond
 /// CloudKit's preview checkpoint limit. Keep that policy out of relay reconnection.
-pub(crate) fn merge_seed(owner: &Owner, source: &Path) -> Result<()> {
-    let remote = Store::open(source, Mode::Snapshot).map_err(fail)?;
+pub(crate) fn merge_seed(owner: &Owner, source: &Path) -> std::result::Result<(), transport::HttpFailure> {
+    let remote = Store::open(source, Mode::Snapshot).map_err(transport::HttpFailure::from)?;
     let local = Store::open(owner.path(), Mode::Snapshot).map_err(fail)?;
     if remote.app().document_uuid != local.app().document_uuid
         || remote.app_digest().map_err(fail)? != local.app_digest().map_err(fail)?
     {
-        return Err(fail("Seed identity/app mismatch"));
+        return Err(fail("Seed identity/app mismatch").into());
     }
     for item in remote.attachments().map_err(fail)? {
         let bytes = remote.attachment(&item.id).map_err(fail)?;
         request(owner, Request::PutAttachment { bytes })?;
     }
-    let document = remote.document().map_err(fail)?;
+    let document = remote.document().map_err(transport::HttpFailure::from)?;
     let bytes = document.checkpoint().map_err(fail)?;
-    request(owner, Request::MergeSnapshot { bytes })?;
+    snapshot::request_typed(owner, Request::MergeSnapshot { bytes }).map_err(transport::HttpFailure::from)?;
     request(owner, Request::Flush)?;
     Ok(())
 }
@@ -84,13 +84,17 @@ pub(crate) fn remote_blobs(key: &RoomKey) -> Result<Vec<Resource>> {
     resource_types::validate(&items, true).map_err(fail)?;
     Ok(items)
 }
-pub(crate) fn upload_blobs(owner: &Owner, key: &RoomKey, uploaded: &mut Vec<Resource>) -> Result<()> {
+pub(crate) fn upload_blobs(
+    owner: &Owner,
+    key: &RoomKey,
+    uploaded: &mut Vec<Resource>,
+) -> std::result::Result<(), transport::HttpFailure> {
     for item in resource_types::missing_attachments(&local_blobs(owner)?, uploaded).map_err(fail)? {
         let Reply::Bytes { bytes: Some(bytes) } = request(owner, Request::ReadAttachment { id: item.hash.clone() })?
         else {
-            return Err(fail("Missing attachment bytes"));
+            return Err(fail("Missing attachment bytes").into());
         };
-        transport::http(
+        transport::http_typed(
             key,
             "PUT",
             &format!("blob/{}", item.hash),

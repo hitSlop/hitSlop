@@ -12,11 +12,18 @@ export type CreatedRoom = { room: string, capability: string, phase: RoomPhase, 
 
 export type Manifest = { app: string, resources: Array<Resource>, };
 
+export type Pause = { kind: PauseKind, reason: string, };
+
+/**
+ * Stable recovery choices shared by every transport and UI.
+ */
+export type PauseKind = "roomFull" | "outgrown" | "needsUpdate" | "refused" | "missingHistory" | "filesFull" | "ended";
+
 export type Resource = { key: string, hash: string, size: number, media_type: string, };
 
 export type ResourceGrant = { app: string, };
 
-export type RoomInfo = { document: string, phase: RoomPhase, seedHash: string | null, seedSize: number | null, app: string | null, capability?: string, };
+export type RoomInfo = { document: string, phase: RoomPhase, seedHash: string | null, seedSize: number | null, app: string | null, capability?: string, compact?: boolean, };
 
 export type RoomPhase = "uploading" | "live" | "ended";
 

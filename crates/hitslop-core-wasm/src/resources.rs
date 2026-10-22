@@ -105,7 +105,9 @@ impl BrowserCopy {
 pub fn frame_operation(bytes: &[u8]) -> Result<String, JsValue> {
     let frame = hitslop_sharing_protocol::envelope::decode(bytes).map_err(error)?;
     Ok(match frame {
-        hitslop_core::sync::Frame::Error { message, .. } if message == "Sharing ended" => "ended",
+        hitslop_core::sync::Frame::Error { code, .. } if code == hitslop_sharing_protocol::frame::ERROR_ENDED => {
+            "ended"
+        }
         hitslop_core::sync::Frame::Push { .. } => "upload",
         hitslop_core::sync::Frame::Records(_) => "download",
         _ => "control",

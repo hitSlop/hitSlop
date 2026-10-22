@@ -20,7 +20,7 @@ default-filter = """not (
 )"""
 
 [[profile.default.overrides]]
-filter = "test(/large_acceptance_vectors_/)"
+filter = "test(/large_acceptance_vectors_/) | test(/::room_compaction_measurements$/)"
 slow-timeout = { period = "60s", terminate-after = 20 }
 
 [profile.ci]
