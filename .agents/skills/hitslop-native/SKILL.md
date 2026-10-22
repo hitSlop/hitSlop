@@ -63,3 +63,9 @@ reload. Quitting retains cached images, and WidgetKit controls visible reload ti
 export; `bun run verify native` runs the CLI against the engine, renders, crashes and the
 corpus replay; `bun run bench:windows` measures window scaling.
 Templates: `bun run build:templates`, then `HITSLOP_RENDER=all bun run verify native render`.
+
+**iPhone chrome.** Every editor starts at the native top safe area with a floating
+glass actions menu. The shell exposes the corner reservation through live-editor CSS
+variables. Keep the native edge-pop gesture scoped to the editor and route completed
+navigation through the existing close path. Native layout owns system and keyboard
+insets; pages must not add them again. Done is above the keyboard.

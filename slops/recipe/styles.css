@@ -1101,3 +1101,8 @@ html[data-slop-capture="static"] input, html[data-slop-capture="static"] textare
   width: 42px;
   height: 42px;
 }
+
+/* The native phone menu shares the heading row; system safe areas belong to the host. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .intro { padding-top: 12px; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .utilityLine { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); flex-wrap: wrap; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .cookHeader { padding-inline-end: var(--slop-host-actions-width, 0px); }

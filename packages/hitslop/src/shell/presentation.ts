@@ -39,6 +39,8 @@ function presentationStageCSS(stage: PresentationStage): string {
   const root = `${page}:not([data-slop-capture])`;
   return (
     hostScrollbarCSS +
+    `${page}{--slop-host-actions-width:0px;--slop-host-actions-height:0px}` +
+    `${root}[data-slop-platform="ios"][data-slop-device="phone"]{--slop-host-actions-width:64px;--slop-host-actions-height:44px}` +
     `:where(${page},${page} body){margin:0;padding:0}` +
     `:where(${root},${root} body){width:100%;height:100%}` +
     `:where(${root} body){-webkit-user-select:none;user-select:none}` +

@@ -14,7 +14,7 @@ validation failures; feedback never runs from a document observer.
 At the default size the profile, recent care, memory, caregivers, entry actions,
 date controls, and note action remain in view. Only the timeline scrolls as the
 history grows. Compact editors put a two-column set of care actions above the daily timeline.
-Care & profile opens a secondary sheet with the profile, recent care, memory, and
+On iPhone the title shares its row with the native glass document menu; the header reserves that corner and sheets stay below it. The native host owns notch and keyboard spacing. Care & profile opens a secondary sheet with the profile, recent care, memory, and
 caregivers. One modal contains the overview, entry, profile, and caregiver screens;
 Back/Done returns to the previous screen and retains the entry draft while managing
 caregivers. Forms become bounded sheets with scrollable content and reachable actions.

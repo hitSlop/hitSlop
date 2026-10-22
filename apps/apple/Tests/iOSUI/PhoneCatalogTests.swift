@@ -60,7 +60,7 @@ final class PhoneCatalogTests: XCTestCase {
       app.buttons["document-actions"].tap()
       app.buttons["Sync Now"].tap()
     }
-    app.navigationBars.buttons["Recents"].tap()
+    app.returnToLibrary()
     XCTAssertTrue(app.buttons[String(documentName)].waitForExistence(timeout: 20))
     capture(app, "Named slop with refreshed artwork")
     if let macName = ProcessInfo.processInfo.environment["HITSLOP_MAC_DOCUMENT_NAME"] {
@@ -69,7 +69,7 @@ final class PhoneCatalogTests: XCTestCase {
       macDocument.tap()
       XCTAssertTrue(app.webViews.staticTexts["Created on Mac proof"].waitForExistence(timeout: 30))
       capture(app, "Mac-created document on iPhone")
-      app.navigationBars.buttons["Recents"].tap()
+      app.returnToLibrary()
     }
     if ProcessInfo.processInfo.environment["HITSLOP_HOME_ICON_PROOF"] == "1" {
       XCUIDevice.shared.press(.home)

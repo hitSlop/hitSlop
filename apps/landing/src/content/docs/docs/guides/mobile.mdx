@@ -13,10 +13,13 @@ and updated templates; they never rewrite the copies people already use.
 ## What the iPhone host gives you
 
 - The app is portrait-only. Plan for widths of about 320 to 430 CSS pixels.
-- Your editor sits below the native navigation bar, above the home indicator and above
-  the onscreen keyboard. Your page background still fills the whole screen.
-- A native **Done** button appears while the keyboard is up and dismisses it without
-  submitting a form.
+- Native layout accounts for the notch, home indicator and keyboard. Your page
+  background fills the screen; do not add those system insets again.
+- Your heading shares the top row with a native glass actions menu. Leave its
+  upper-right corner free.
+- A native **Done** button above the keyboard dismisses it without submitting a form.
+- Swipe from the leading edge to return to the library, or choose **Back to Library**
+  in document actions.
 - Page zoom and zoom-on-focus are off. Buttons, links and `role="button"` elements use
   `touch-action: manipulation`, and tap highlights are hidden.
 - When a focused field ends up under the keyboard, the host scrolls it into view. It
@@ -63,6 +66,27 @@ editor only. Preview, icon, export and widget views never receive them and canno
 `getEnvironment()`. Write base styles that work without the attributes; ordinary media
 and container queries work too.
 
+## Put your heading beside the native menu
+
+Reserve the menu's corner in your heading row:
+
+```css
+.app-header {
+  min-height: var(--slop-host-actions-height, 0px);
+  padding-inline-end: calc(12px + var(--slop-host-actions-width, 0px));
+}
+```
+
+The reservation is 64px wide and 44px high in phone overlay editors, and zero elsewhere.
+Let long titles wrap.
+Fixed controls and full-height sheets must also leave that corner free. A centered
+dialog can use `max-height: calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px))`;
+a bottom sheet can use `calc(100dvh - var(--slop-host-actions-height, 0px) - 24px)`.
+
+The iPhone preset exposes the reservation, but native notch, swipe and keyboard behavior
+still need review in the app. Preview, export, icon and widget output have no native
+menu reservation.
+
 ## Lay it out for a thumb
 
 - **Fluid widths.** Use grid, flex and `minmax(0, 1fr)` rather than fixed desktop
@@ -70,8 +94,7 @@ and container queries work too.
 - **Fill the editor, scroll inside it.** The host already accounts for the safe areas
   and the keyboard. Use `height: 100%` with `min-height: 0` and give long content its
   own scrolling pane, rather than subtracting keyboard height or adding a second set of
-  insets. For full-screen art that reaches under system areas, use
-  `env(safe-area-inset-top, 0px)` and the other edges.
+  insets. The native host owns system safe areas even in overlay mode.
 - **Keep the main action reachable.** Put submit and cancel in a footer that sticks to
   the bottom of its scroller, so they stay visible above the keyboard.
 - **Bound your sheets.** Cap a dialog with `max-height: calc(100dvh - 24px)` and let

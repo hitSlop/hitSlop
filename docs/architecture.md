@@ -673,8 +673,12 @@ The iPhone starter build reads Popular membership from repository metadata, adds
 `baby-journal`, and leaves out templates that declare camera, microphone or speech
 capabilities, which the iPhone host refuses.
 Both catalogs share the app icon and bundled Baloo 2 headings; controls and
-body copy use native fonts. The iPhone editor extends only its page-colored background
-under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
+body copy use native fonts. The iPhone editor's page-colored background fills the
+screen, while native layout owns notch, home-indicator and keyboard safe areas.
+Every iPhone document has a floating native glass actions menu beside its header.
+The shell exposes the corner reservation as live-editor CSS variables. Native edge
+swipes and Back to Library use the normal close path; failed saves retain ownership.
+Done appears above the keyboard.
 
 Leaving an edited iPhone document refreshes its icon and preview from an immutable saved
 source. Managed Mac documents use the same version-checked artwork publication path;

@@ -83,3 +83,9 @@ input::-webkit-inner-spin-button, input::-webkit-outer-spin-button { appearance:
 }
 @media (hover: none) { .invoice-remove { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+/* The native phone menu shares the heading row; system safe areas belong to the host. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-paper { padding-top: 12px; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-masthead { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); flex-wrap: wrap; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-masthead > div { min-width: 0; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-number { max-width: 100%; }

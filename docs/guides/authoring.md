@@ -252,11 +252,20 @@ editor attributes.
 
 ### iPhone editing
 
-The current iPhone app is portrait-only. Its editor fits below native navigation,
-above the home indicator, and above the onscreen keyboard; the background fills the
-screen. Use `height: 100%` with `min-height: 0` and scrollable content panes rather
+The current iPhone app is portrait-only. Native layout owns the notch, home indicator
+and onscreen keyboard safe areas; the background fills the screen. Every editor starts
+directly below the status bar, with a native glass actions menu beside its heading.
+
+Headers reserve `--slop-host-actions-width` (64px) at the trailing edge and
+`--slop-host-actions-height` (44px) for their minimum height. These variables are zero
+in other presentations, including captures. Reserve the corner in fixed controls and
+full-height sheets too, and let long headings wrap. The iPhone device preset exposes
+the same reservation; review notch spacing, keyboard entry, sheets, swipe-back and
+VoiceOver in the native app.
+
+Use `height: 100%` with `min-height: 0` and scrollable content panes rather
 than subtracting keyboard height or adding a second set of native safe-area insets.
-The native Done action dismisses the keyboard without submitting a form. The host suppresses tap highlights and defaults buttons, links and button-role controls to `touch-action: manipulation` on iOS, using overridable styles. Page zoom
+The native Done action above the keyboard dismisses the keyboard without submitting a form. The host suppresses tap highlights and defaults buttons, links and button-role controls to `touch-action: manipulation` on iOS, using overridable styles. Page zoom
 and input-focus zoom are disabled in the native iPhone editor; authored canvas or
 image gestures can still implement their own zoom.
 

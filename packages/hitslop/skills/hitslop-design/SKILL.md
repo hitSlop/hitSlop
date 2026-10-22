@@ -129,9 +129,22 @@ presentation differences; use media/container queries for the space available.
 Compact layouts must prioritize the slop's main job, not stack a desktop sidebar
 above it. Preserve all functions through secondary Bits UI controls when needed.
 
-The current native iPhone host is portrait-only and fits the editor within native
-navigation, home-indicator, and keyboard safe areas. Fill that viewport with 100%
-height and scroll inside panes; do not subtract keyboard height again. Keep input
+The native iPhone host is portrait-only and owns notch, home-indicator, and keyboard
+safe areas. Every editor starts directly below the status bar, with a native glass
+actions menu floating at the top right. Leave that corner free in the heading row
+using `padding-inline-end: calc(12px + var(--slop-host-actions-width, 0px))` and
+`min-height: var(--slop-host-actions-height, 0px)`. The live phone values are 64px wide
+and 44px high; they are zero in other presentations, including captures. Keep header
+text wrapping and reserve the corner in fixed controls and full-height sheets too.
+Centered dialogs can cap their height at
+`calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px))`; bottom sheets can
+use `calc(100dvh - var(--slop-host-actions-height, 0px) - 24px)`.
+
+Fill the viewport with 100% height and scroll inside panes. Do not add notch padding,
+apply a second native safe-area inset, or subtract keyboard height. Native Done sits
+above the keyboard and dismisses it without submitting. Use the `slop dev` iPhone
+preset to check the corner reservation, then a real native editor for notch, keyboard,
+swipe-back, sheets and VoiceOver as part of mobile review. Keep input
 text at least 16px and touch targets at least 44px. Use task-appropriate keyboard
 hints. Keep focus for repeated entry and avoid focusing text after unrelated actions.
 Mobile sheets need bounded, scrollable content and reachable close/submit controls.

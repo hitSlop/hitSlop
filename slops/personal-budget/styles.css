@@ -619,3 +619,7 @@ html[data-slop-capture=static] .canvas {
     transition-duration: 0s !important;
   }
 }
+
+/* The native phone menu shares the heading row; system safe areas belong to the host. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .canvas { height: 100%; padding-top: 12px; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .ledgerHead { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); flex-wrap: wrap; }

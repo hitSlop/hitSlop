@@ -636,3 +636,8 @@ button {
     justify-content: space-between;
   }
 }
+
+/* The native phone menu shares the heading row; system safe areas belong to the host. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-pad { height: 100%; min-height: 0; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-header { padding-top: 12px; padding-inline-end: var(--slop-host-actions-width, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-dialog { max-height: calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }

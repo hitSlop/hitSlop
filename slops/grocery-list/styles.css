@@ -540,3 +540,8 @@ html[data-slop-capture="static"] .row { grid-template-columns: 15px minmax(0, 1f
 }
 .export-door .notepad { flex: none; height: auto; min-height: 0; overflow: visible; }
 .export-door .list { flex: none; height: auto; overflow: visible; }
+
+/* The native phone menu shares the heading row; system safe areas belong to the host. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .door { height: 100%; padding-top: 12px; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .title-row { min-height: var(--slop-host-actions-height, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .banana { right: calc(var(--slop-host-actions-width, 0px) + 12px); }

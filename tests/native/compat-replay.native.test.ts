@@ -100,7 +100,7 @@ for (const { name, root, release, documents: saved, templates } of entries)
         const window = info.window;
         assert.ok(window?.width > 0 && window?.height > 0, "Missing saved window");
         for (const format of ["png", "pdf"] as const) {
-          const output = join(scratch, `${document}.${format}`);
+          const output = join(scratch, `${name}-${document}.${format}`);
           const { code, stderr } = await slop([
             "export",
             copy,

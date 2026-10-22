@@ -98,9 +98,12 @@ pointer/hover queries for input differences; identity does not grant capabilitie
 Keep reads reactive rather than destructuring `current` once. Editor CSS can select
 `html[data-slop-platform="macos"]`, `html[data-slop-device="phone"]` and
 `html[data-slop-layout="compact"]` (`:global(html[...])` in Svelte component CSS).
-Keep usable base styles for older hosts without those attributes. Use CSS
-`env(safe-area-inset-top, 0px)` and the other edges for system-area padding on full-screen
-pages. `slop dev` has Browser/iPhone/iPad/Mac presentation presets that retain edits;
+For mobile support, reserve the native menu's header corner with
+`--slop-host-actions-width` (64px) and `--slop-host-actions-height` (44px). These are zero
+in other presentations. The host accounts for the notch, home indicator and keyboard;
+never add those insets again. Header titles must wrap, and fixed controls and full-height
+sheets must leave the menu reachable. Follow the Mobile editors section of hitslop-design
+and review a native iPhone alongside the browser preset. `slop dev` has Browser/iPhone/iPad/Mac presentation presets that retain edits;
 they do not simulate native services. Static views use their capture props, never this
 editor helper or its CSS attributes.
 

@@ -568,3 +568,7 @@ html[data-slop-capture=static] textarea {
     transition-duration: .01ms !important;
   }
 }
+
+/* The native phone menu shares the heading row; system safe areas belong to the host. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .sidebar { padding-top: 12px; grid-template-columns: 1fr; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .contactBlock { grid-column: 1; grid-row: auto; grid-template-columns: 1fr; }
