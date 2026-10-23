@@ -3,7 +3,7 @@
 Create an app with Bun 1.4.2 or newer:
 
 ```sh
-bunx hitslop@1.1.0 init my-slop
+bunx hitslop@1.2.0 init my-slop
 cd my-slop
 bun install
 bun run dev
@@ -37,15 +37,15 @@ In a generated project, use `bun run check`, `bun run dev`, `bun run build`, and
 For an existing writable document:
 
 ```sh
-bunx hitslop@1.1.0 describe My.slop
-bunx hitslop@1.1.0 get My.slop
-bunx hitslop@1.1.0 theme get My.slop
-bunx hitslop@1.1.0 export My.slop --format pdf --output My.pdf
+bunx hitslop@1.2.0 describe My.slop
+bunx hitslop@1.2.0 get My.slop
+bunx hitslop@1.2.0 theme get My.slop
+bunx hitslop@1.2.0 export My.slop --format pdf --output My.pdf
 ```
 
-Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g hitslop@1.1.0`, then `slop skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project); `skills repair` fixes broken links and `skills uninstall` removes them. Bare `skills` means install. Project links from `init` and `--scope project` follow the pinned node_modules/hitslop install. Add `--help` to inspect a command's arguments.
+Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g hitslop@1.2.0`, then `slop skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project); `skills repair` fixes broken links and `skills uninstall` removes them. Bare `skills` means install. Project links from `init` and `--scope project` follow the pinned node_modules/hitslop install. Add `--help` to inspect a command's arguments.
 
-Alternatively, `bun install -g hitslop@1.1.0` provides `slop` on Bun's PATH. `slop` needs Bun; the package contains the document engine for its supported platforms.
+Alternatively, `bun install -g hitslop@1.2.0` provides `slop` on Bun's PATH. `slop` needs Bun; the package contains the document engine for its supported platforms.
 
 Follow the [CLI workflows](https://hitslop.com/docs/guides/cli-workflows/) for copyable examples, themes, attachments, exports, and skills. The [repository CLI reference](https://github.com/hitslop/hitslop/blob/master/docs/guides/cli.md) includes all document operation shapes and contributor setup.
 
