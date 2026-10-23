@@ -39,7 +39,7 @@ impl Actor {
         if self.barrier.held.len() >= HELD_REQUESTS {
             return Err(Failure::new(FailureKind::Busy, "Too many requests are waiting; this one was not admitted"));
         }
-        if matches!(request, Request::Close { .. }) {
+        if closes(&request) {
             self.barrier.closing = true;
         }
         self.barrier.held.push_back((request, view, deadline, take(callback)));
@@ -63,7 +63,7 @@ impl Actor {
             }
         }
         self.barrier.replaying = false;
-        self.barrier.closing = self.barrier.held.iter().any(|(r, ..)| matches!(r, Request::Close { .. }));
+        self.barrier.closing = self.barrier.held.iter().any(|(r, ..)| closes(r));
     }
     /// Answers every held request with `error`, admitting none.
     pub(super) fn fail_held(&mut self, error: Failure) {
@@ -74,10 +74,19 @@ impl Actor {
     }
 }
 
+/// Requests that end the owner once admitted, so edits queued behind them are refused.
+fn closes(request: &Request) -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    if matches!(request, Request::Handoff { .. }) {
+        return true;
+    }
+    matches!(request, Request::Close { .. })
+}
+
 /// Saved-state fences cover all earlier queued writes, including command evaluation.
 pub(super) fn fence(request: &Request) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
-    if matches!(request, Request::MergeSnapshot { .. } | Request::SetArtwork { .. }) {
+    if matches!(request, Request::MergeSnapshot { .. } | Request::SetArtwork { .. } | Request::Handoff { .. }) {
         return true;
     }
     matches!(

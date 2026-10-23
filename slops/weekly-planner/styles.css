@@ -203,11 +203,11 @@ button { cursor: pointer; }
   left: 0;
   z-index: 10;
   background: var(--slop-paper);
-  height: 1536px;
+  height: calc(24 * var(--hour, 64px));
 }
 
 .hour {
-  height: 64px;
+  height: var(--hour, 64px);
   font-size: 9px;
   text-align: right;
   padding: 2px 7px;
@@ -217,11 +217,11 @@ button { cursor: pointer; }
 
 .lane {
   position: relative;
-  height: 1536px;
+  height: calc(24 * var(--hour, 64px));
   border-right: 1px solid var(--slop-rule);
   background:
-    linear-gradient(to bottom, #dce4f0 1px, transparent 1px) 0 0 / 100% 64px,
-    linear-gradient(to bottom, #eaf0f7 1px, transparent 1px) 0 0 / 100% 32px,
+    linear-gradient(to bottom, #dce4f0 1px, transparent 1px) 0 0 / 100% var(--hour, 64px),
+    linear-gradient(to bottom, #eaf0f7 1px, transparent 1px) 0 0 / 100% calc(var(--hour, 64px) / 2),
     #fff;
 }
 
@@ -494,7 +494,86 @@ button { cursor: pointer; }
   }
 }
 
-/* The native phone menu shares the heading row; system safe areas belong to the host. */
+/* Phone and narrow windows: one day at a time, tap to edit, no drag gestures. */
+.dayTabs { display: none; }
+
+@media (max-width: 639px) {
+  .canvas .header { padding: 12px 16px 12px; gap: 10px; }
+  .canvas .identity { flex-basis: 100%; }
+  .canvas .eyebrow { font-size: 11px; }
+  .canvas .weekTitle { font-size: 24px; padding: 8px 0; }
+  .canvas .focus { flex-basis: 100%; max-width: none; font-size: 11px; }
+  .canvas .focus input { font-size: 16px; min-height: 44px; padding: 10px 0; }
+
+  .canvas .toolbar { padding: 10px 12px 8px; gap: 8px; }
+  .canvas .button, .canvas .primary, .dialog .button, .dialog .primary, .dialog .danger { min-height: 44px; padding: 10px 14px; font-size: 14px; }
+
+  .dayTabs {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(44px, 1fr));
+    padding: 0 6px 8px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--slop-border);
+  }
+  .dayTab {
+    min-height: 52px;
+    min-width: 44px;
+    display: grid;
+    place-content: center;
+    gap: 2px;
+    padding: 4px 0;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--slop-ink);
+    touch-action: manipulation;
+  }
+  .dayTabName { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--slop-muted); }
+  .dayTabDate { font-size: 18px; line-height: 1; font-weight: 700; letter-spacing: -0.03em; }
+  .dayTab[aria-pressed="true"] { background: var(--slop-accent); border-color: var(--slop-accent); }
+  .dayTab[aria-pressed="true"] .dayTabName,
+  .dayTab[aria-pressed="true"] .dayTabDate { color: var(--slop-onAccent); }
+
+  .board { min-width: 0; grid-template-columns: 56px minmax(0, 1fr); }
+  .anytimeLabel { font-size: 11px; padding: 14px 4px 14px 2px; line-height: 1.2; text-align: right; }
+  .anytime { padding: 8px; min-height: 60px; }
+  .untimed { margin-bottom: 6px; min-height: 44px; }
+  .untimed .blockBody { min-height: 44px; justify-content: center; }
+  .hour { font-size: 11px; padding: 2px 6px; }
+
+  .blockBody { touch-action: manipulation; cursor: pointer; padding: 6px 10px; font-size: 14px; line-height: 1.25; }
+  .blockBody[data-short="true"] { padding: 0 10px; font-size: 13px; line-height: 20px; }
+  .blockBody[data-short="true"] .blockTitle { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .canvas .blockTime { font-size: 12px; margin-top: 2px; }
+  .sheet { cursor: pointer; }
+
+  .footer { padding: 8px 16px; font-size: 12px; }
+
+  .overlay { background: #172e5590; }
+  .dialog { width: calc(100vw - 24px); padding: 18px 16px 0; border-radius: 14px; }
+  .dialogTitle { font-size: 22px; }
+  .dialog .description { font-size: 13px; margin-bottom: 14px; }
+  .field { font-size: 13px; }
+  .input { min-height: 44px; padding: 10px; font-size: 16px; }
+  .pair { gap: 10px; }
+  .option { min-height: 44px; display: flex; align-items: center; font-size: 16px; }
+  .selectContent { max-height: min(320px, 50dvh); overflow-y: auto; }
+  .checkLabel { min-height: 44px; gap: 12px; font-size: 14px; }
+  .check { width: 28px; height: 28px; flex: none; font-size: 16px; border-radius: 7px; }
+  .error { font-size: 13px; }
+  .actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 14px -16px 0;
+    padding: 12px 16px 16px;
+    background: var(--slop-paper);
+    border-top: 1px solid var(--slop-rule);
+  }
+}
+
+/* The page runs edge to edge: the ink header paints under the status bar, the footer pads for the home indicator, and the dialog centers in the safe area. The native phone menu shares the heading row. */
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .canvas { height: 100%; }
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .header { padding-top: 12px; padding-inline-end: var(--slop-host-actions-width, 0px); }
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .dialog { max-height: calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .header { padding-top: calc(var(--slop-safe-top, 0px) + 12px); padding-inline-end: var(--slop-host-actions-width, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .footer { padding-bottom: var(--slop-safe-bottom, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .dialog { top: calc(50% + (var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - var(--slop-keyboard-inset, 0px)) / 2); max-height: calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - var(--slop-keyboard-inset, 0px) - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }

@@ -35,3 +35,16 @@ pub const COMPACTED_ARCHIVE_DAYS: u64 = 14;
 pub const ROOM_IP_CONNECTIONS: usize = 8;
 // Even a base with the maximum peer headers fitting in CONTROL_BYTES stays in one frame.
 const _: () = assert!(BASE_BYTES + crate::CONTROL_BYTES + 16 < crate::frame::MAX_FRAME);
+
+/// Client timing, shared by the native supervisor and the browser worker.
+/// A client rereads the room this often to learn whether it should compact.
+pub const ROOM_RECHECK_MS: u64 = 600_000;
+/// A compacting client waits up to this long first, so rivals usually find it done.
+pub const COMPACT_JITTER_MS: u64 = 30_000;
+/// A client with no eligible base retries after this long.
+pub const COMPACT_RETRY_MS: u64 = 15_000;
+/// Idle sockets send a ping this often.
+pub const PING_MS: u64 = 20_000;
+/// Reconnect delays start here and double up to `BACKOFF_MAX_MS`.
+pub const BACKOFF_MIN_MS: u64 = 250;
+pub const BACKOFF_MAX_MS: u64 = 8_000;

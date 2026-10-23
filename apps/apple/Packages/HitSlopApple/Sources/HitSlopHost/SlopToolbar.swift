@@ -155,6 +155,8 @@ struct SlopToolbar: View {
     /// Whether the app accepts document operations now.
     var commandsEnabled = false
     var canExport = false
+    /// A shared document offers Save Unshared Copy, when the app accepts it.
+    var shared = false, canSaveUnsharedCopy = false
   }
   let identity: SlopDocumentIdentity
   let controls: Controls
@@ -192,6 +194,10 @@ struct SlopToolbar: View {
         .disabled(!controls.commandsEnabled).background(SlopToolbarControlRegion())
       Menu {
         Button("Duplicate…") { act(.document(.duplicate)) }.disabled(!controls.commandsEnabled)
+        if controls.shared {
+          Button("Save Unshared Copy…") { act(.document(.saveUnsharedCopy)) }
+            .disabled(!controls.canSaveUnsharedCopy)
+        }
         if controls.canExport {
           Divider()
           Button("Export PNG…") { act(.document(.exportPNG)) }.disabled(!controls.commandsEnabled)

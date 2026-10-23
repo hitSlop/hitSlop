@@ -116,13 +116,16 @@ public struct SlopDocumentRouting {
   public var pageReady: @MainActor () -> Void
   /// The page drained and saved, and its window hid while the owner finishes closing.
   public var closeHidden: @MainActor () -> Void
+  /// Runs the app's update check, for a shared document that needs a newer hitSlop.
+  public var checkForUpdates: @MainActor () -> Void
   public init(
     command: @escaping @MainActor (SlopDocumentCommand) -> Void, pageReady: @escaping @MainActor () -> Void = {},
-    closeHidden: @escaping @MainActor () -> Void = {}
+    closeHidden: @escaping @MainActor () -> Void = {}, checkForUpdates: @escaping @MainActor () -> Void = {}
   ) {
     self.command = command
     self.pageReady = pageReady
     self.closeHidden = closeHidden
+    self.checkForUpdates = checkForUpdates
   }
 }
 
@@ -144,7 +147,6 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
   var presentedPageError: String?
   var documentAttention: NSPanel?
   var saveAttention = SaveAttention()
-  var storageNoticeDismissed = false
   var guestIssue: SlopPageIssue?
   /// The red dot shown while `guestIssue` is set.
   var issueBadge: NSPanel?
@@ -155,7 +157,8 @@ public final class SlopDocumentWindowController: NSWindowController, NSWindowDel
     filename: SlopLibrary.shared.entry(at: url)?.title ?? url.lastPathComponent, canExport: canExport,
     sharing: session.sharing,
     holdToolbar: { [weak self] in self?.toolbar.holdForSharing($0) },
-    select: { [weak self] in self?.request($0) })
+    select: { [weak self] in self?.request($0) },
+    checkForUpdates: { [weak self] in self?.routing.checkForUpdates() })
   let fullscreen = FullscreenController()
   var commandsEnabled = true
   /// Undo for this window's document; see `DocumentUndoManager`.

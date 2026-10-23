@@ -21,12 +21,11 @@ You and your agent work on the same document. Check something off and your agent
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
-<!-- TODO: replace with the public TestFlight invitation before publishing. -->
-[ios-download]: https://testflight.apple.com/join/REPLACE_ME
+[ios-download]: https://hitslop.com/docs/availability/#get-the-iphone-app
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
+iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates slops, includes the Popular templates, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -35,7 +34,7 @@ iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edit
 
 ## On your iPhone
 
-The iPhone app (iOS 26+, TestFlight) opens, edits and creates slops. Start from the Popular templates or Little Days, and keep your library in sync with your Mac through iCloud.
+The iPhone app (iOS 26+, TestFlight) opens, edits and creates slops. Start from the Popular templates and keep your library in sync with your Mac through iCloud.
 
 [Download for iPhone][ios-download] · iOS 26+ · TestFlight
 
@@ -104,7 +103,7 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Local documents need no account or server. Choose iCloud when creating a slop to keep it in sync with your iPhone through your private iCloud storage, or choose On this Mac and pick a folder. Move an existing local slop with **File ▸ Move to iCloud…**. The iPhone app includes the Popular templates and Little Days. Keep active files outside iCloud Drive and other synced folders.
+- Local documents need no account or server. Choose iCloud when creating a slop to keep it in sync with your iPhone through your private iCloud storage, or choose On this Mac and pick a folder. Move an existing local slop with **File ▸ Move to iCloud…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders.
 - A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder.
 - Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.

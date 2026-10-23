@@ -20,6 +20,7 @@ pub fn err(code: Code, message: impl Into<String>) -> Error {
     Error { code, message: message.into() }
 }
 pub mod envelope;
+pub mod failure;
 pub mod frame;
 pub mod http;
 pub mod limits;

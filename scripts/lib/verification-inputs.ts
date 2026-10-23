@@ -37,7 +37,8 @@ export const tierInputs = {
     /^packages\/hitslop\/src\/(sdk|shell)\//,
     /\.generated\.(rs|swift)$/,
   ],
-  types: [/^\.prettier(?:rc(?:\.[^/]*)?|ignore)$/, /^\.oxlintrc\.json$/, /^packages\/hitslop\/src\//, /^slops\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
+  // Also the README and the app's links, which scripts/ci/hygiene.ts compares with the site.
+  types: [/^README\.md$/, /SlopLinks\.swift$/, /^\.prettier(?:rc(?:\.[^/]*)?|ignore)$/, /^\.oxlintrc\.json$/, /^packages\/hitslop\/src\//, /^slops\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
   bun: [...rustInputs, /^packages\/hitslop\/src\//, /^packages\/hitslop\/tests\/(sdk|shell)\/(?!.*\.browser\.test\.ts$)/, /^tests\/(fixtures|compat|release)\//, /^scripts\/(?!ci\/)/],
   cli: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/hitslop\/tests\/cli\/(?!.*\.(native|browser)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
   render: [...rustInputs, /^packages\/hitslop\/(src|shell)\//, /^packages\/hitslop\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^slops\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
@@ -66,6 +67,12 @@ export const nativeGateInputs = [
   /^scripts\/lib\/(native|native-fixtures|swift-tests|swift-format)\.ts$/,
   /^\.github\/actions\/native-cache\//,
 ];
+
+/** On a pull request, the sharing tier (the built relay on Miniflare) is required only when one
+ * of the tier's own inputs changes (the Rust workspace and its build inputs, so the core's sync
+ * and document code and Cargo.lock included, the relay and its scripts) or the sharing and
+ * browser hosts it serves. Master pushes and release tags qualify it in sharing.yml. */
+export const sharingGateInputs = [...tierInputs.sharing, /^packages\/hitslop\/src\/(sharing|browser)\//];
 
 // Policy workflows and tests of the runner do not change how product checks execute.
 export const sharedInputs = [

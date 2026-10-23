@@ -5,18 +5,9 @@ description: Scaffold, style, preview, and install a small local app with Bun.
 
 A slop is a focused app and its document in one portable `.slop` package. Start with a working Checklist, then make the interface and data your own.
 
-To use slops on your phone, the iPhone app on TestFlight opens, edits and creates documents
-on iOS 26+, includes the Popular templates and Little Days, and imports them from Files. Library slops
-with a widget view can appear on the Home Screen: tap to open, with background
-refresh when iOS allows. Choose **Collaborate** in the document actions menu for
-[live sharing](/docs/guides/live-sharing/). This guide covers authoring on a computer; see
-[availability](/docs/availability/) for iPhone, Synced Library and live sharing, and
-[make it work on iPhone](/docs/guides/mobile/) to design your own slop for the phone.
-
-On Mac, **New from Template…** asks where to keep your slop.
-Choose **iCloud — syncs with your iPhone**, then give it a name, or **On this Mac…**
-to pick a folder. For an existing local slop, choose **File ▸ Move to iCloud…**.
-The iPhone app starts with the Popular templates and Little Days.
+This guide covers authoring on a computer. [Availability](/docs/availability/) covers the
+iPhone app, Synced Library and live sharing, and
+[make it work on iPhone](/docs/guides/mobile/) shows how to design your own slop for the phone.
 
 ## Install the tools
 
@@ -67,7 +58,7 @@ Read `slop.ts` first. It declares the app with `defineSlop`: its title, descript
 - `slop.ts`'s `theme` declares the colors people can change.
 - `styles.css` owns layout and component styling; import it explicitly from `App.svelte`.
 
-The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state Mac desktop and iPhone Home Screen images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-macos-widget).
+The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state Mac desktop and iPhone Home Screen images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-widget).
 
 The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to metadata, schema, commands, their dependencies or the role inventory resets the copy. Test native persistence in a writable document copy.
 

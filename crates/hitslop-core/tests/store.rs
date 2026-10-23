@@ -25,11 +25,10 @@ fn storage_pressure_thresholds_cover_bytes_and_rows() {
     let rows = STORAGE_ROWS as u64;
     assert_eq!(Pressure::from_usage(0, 0), Pressure::Ok);
     assert_eq!(Pressure::from_usage(bytes * 3 / 4 - 1, rows * 3 / 4 - 1), Pressure::Ok);
-    for (bytes, rows) in [(bytes * 3 / 4, 0), (0, rows * 3 / 4), (bytes - 1, rows - 1)] {
+    // Past the limits is still Near: usage cannot show that no save fits, so the owner
+    // reports Full from a failed save.
+    for (bytes, rows) in [(bytes * 3 / 4, 0), (0, rows * 3 / 4), (bytes, rows), (bytes + 1, rows + 1)] {
         assert_eq!(Pressure::from_usage(bytes, rows), Pressure::Near);
-    }
-    for (bytes, rows) in [(bytes, 0), (0, rows), (bytes + 1, rows + 1)] {
-        assert_eq!(Pressure::from_usage(bytes, rows), Pressure::Full);
     }
 }
 

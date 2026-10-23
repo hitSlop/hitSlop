@@ -335,9 +335,13 @@ fn compact_posts_verified_bytes_and_preserves_conflict_and_size_refusals() {
             bytes: b"opaque updates".to_vec(),
         };
         let result = transport::compact(&key, &base);
-        match code {
-            204 => assert!(result.is_ok()),
-            expected => assert!(matches!(result, Err(transport::HttpFailure::Status(actual)) if actual == expected)),
+        match (code, result) {
+            (204, result) => assert!(result.is_ok()),
+            (409, Err(transport::HttpFailure::Conflict)) => {}
+            (413, Err(transport::HttpFailure::Paused(pause))) => {
+                assert_eq!(pause.kind, hitslop_core::sync::PauseKind::Outgrown);
+            }
+            (code, _) => panic!("{code} was classified wrongly"),
         }
         let (header, bytes) = serving.join().unwrap();
         assert_eq!(bytes, base.bytes);
@@ -351,5 +355,79 @@ fn compact_posts_verified_bytes_and_preserves_conflict_and_size_refusals() {
         ] {
             assert!(header.contains(&expected), "{header}");
         }
+    }
+}
+
+/// A conflict on create or open reads as a retry, not as an opaque status.
+#[test]
+fn conflicts_tell_the_person_to_retry() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", server.local_addr().unwrap());
+    let serving = std::thread::spawn(move || {
+        let (mut stream, _) = server.accept().unwrap();
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+        let mut header = Vec::new();
+        while !header.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            header.push(byte[0]);
+        }
+        write!(stream, "HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+    });
+    let key = RoomKey { room: "a".repeat(32), capability: "b".repeat(64), origin };
+    let error = transport::http(&key, "GET", "", Some(&key.capability), &[], &[]).unwrap_err();
+    serving.join().unwrap();
+    assert_eq!(error, "Sharing was busy. Try again.");
+}
+
+/// A refused blob transfer reaches the connection as the same typed pause as every other relay call.
+#[test]
+fn a_blob_download_refused_for_size_pauses_files_full() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    let (_dir, owner) = fixture();
+    let hash = "c".repeat(64);
+    let listing = serde_json::to_vec(&serde_json::json!([
+        {"key": hash, "hash": hash, "size": 4, "media_type": "application/octet-stream"}
+    ]))
+    .unwrap();
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", server.local_addr().unwrap());
+    let serving = std::thread::spawn(move || {
+        let mut paths = vec![];
+        for _ in 0..2 {
+            let (mut stream, _) = server.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                header.push(byte[0]);
+            }
+            let line = String::from_utf8(header).unwrap().lines().next().unwrap().to_owned();
+            let (code, body) = if line.contains("/blobs ") { (200, listing.as_slice()) } else { (413, &[][..]) };
+            write!(stream, "HTTP/1.1 {code} Reply\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())
+                .unwrap();
+            stream.write_all(body).unwrap();
+            paths.push(line);
+        }
+        paths
+    });
+    let key = RoomKey { room: "a".repeat(32), capability: "b".repeat(64), origin };
+    let result = resources::download_blobs(&owner, &key, &mut Vec::new());
+    let paths = serving.join().unwrap();
+    request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    assert!(paths[1].starts_with(&format!("GET /v1/rooms/{}/blob/{hash} ", key.room)), "{paths:?}");
+    match result {
+        Err(transport::HttpFailure::Paused(pause)) => {
+            assert_eq!(pause.kind, hitslop_core::sync::PauseKind::FilesFull);
+        }
+        _ => panic!("a refused blob download must pause as files full"),
     }
 }

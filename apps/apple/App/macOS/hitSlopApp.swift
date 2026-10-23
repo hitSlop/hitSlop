@@ -54,6 +54,7 @@ private struct UpdateSettingsView: View {
   private var libraryWindows: AnyCancellable?
   private var recentMenu: NSMenu?
   private var exportMenuItem: NSMenuItem?
+  private var unsharedCopyMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
   private var sharingAccountWindow: NSWindow?
   private let updaterController = SPUStandardUpdaterController(
@@ -325,6 +326,7 @@ private struct UpdateSettingsView: View {
     file.addItem(recentItem)
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
+    unsharedCopyMenuItem = item(file, "Save Unshared Copy…", .saveUnsharedCopy)
     item(file, "Move to iCloud…", .moveToCloud)
     item(file, "Share…", .share)
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
@@ -376,6 +378,7 @@ private struct UpdateSettingsView: View {
   func menuNeedsUpdate(_ menu: NSMenu) {
     if menu === exportMenuItem?.menu {
       exportMenuItem?.isHidden = coordinator.activeController?.canExport != true
+      unsharedCopyMenuItem?.isHidden = coordinator.activeController?.isShared != true
       return
     }
     guard menu === recentMenu else { return }
@@ -403,8 +406,12 @@ private struct UpdateSettingsView: View {
     return value
   }
   /// A menu item that sends `command` to the active document.
-  private func item(_ menu: NSMenu, _ title: String, _ command: SlopDocumentCommand, _ key: String = "") {
-    item(menu, title, #selector(documentCommand(_:)), key).representedObject = command
+  @discardableResult private func item(
+    _ menu: NSMenu, _ title: String, _ command: SlopDocumentCommand, _ key: String = ""
+  ) -> NSMenuItem {
+    let value = item(menu, title, #selector(documentCommand(_:)), key)
+    value.representedObject = command
+    return value
   }
   func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
     let controller = coordinator.activeController

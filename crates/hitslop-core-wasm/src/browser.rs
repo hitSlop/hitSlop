@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
 use hitslop_sharing_protocol::{
-    envelope,
+    envelope, failure, frame,
     http::{Invitation, RoomInfo, RoomPhase},
 };
 fn invitation(link: &str, origin: &str) -> Result<Invitation, JsValue> {
@@ -37,8 +37,8 @@ struct SyncQueue {
     frames: VecDeque<Vec<u8>>,
     bytes: usize,
     overflow: bool,
-    status: String,
-    pause: Option<hitslop_core::sync::Pause>,
+    /// The owner's last report; `None` until it has made one for this connection.
+    state: Option<hitslop_core::sync::SyncState>,
 }
 type SyncEvents = Arc<Mutex<SyncQueue>>;
 
@@ -389,13 +389,7 @@ impl BrowserCopy {
             match e {
                 owner::SyncEvent::Reconnect => q.overflow = true,
                 owner::SyncEvent::Status { status } => {
-                    q.pause = match &status {
-                        hitslop_core::sync::Status::Paused { kind, reason } => {
-                            Some(hitslop_core::sync::Pause { kind: *kind, reason: reason.clone() })
-                        }
-                        _ => None,
-                    };
-                    q.status = format!("{status:?}");
+                    q.state = Some(status.state());
                 }
                 owner::SyncEvent::Send { bytes } => {
                     if q.overflow {
@@ -444,9 +438,10 @@ impl BrowserCopy {
             })
             .transpose()
     }
-    #[wasm_bindgen(js_name = syncPause)]
-    pub fn sync_pause(&self) -> Option<String> {
-        self.sync_events.lock().unwrap().pause.as_ref().map(|p| serde_json::to_string(p).expect("pause"))
+    /// `{phase, pause?}` as of the owner's last report, for the worker to route on.
+    #[wasm_bindgen(js_name = syncState)]
+    pub fn sync_state(&self) -> Option<String> {
+        self.sync_events.lock().unwrap().state.as_ref().map(|s| serde_json::to_string(s).expect("sync state"))
     }
     #[wasm_bindgen(js_name = pauseSync)]
     pub fn pause_sync(&self, pause: &str) -> Result<(), JsValue> {
@@ -455,10 +450,8 @@ impl BrowserCopy {
             link.pause(pause.kind, pause.reason);
         } else {
             // A permanent HTTP refusal may precede the first WebSocket admission.
-            let mut q = self.sync_events.lock().unwrap();
-            q.status =
-                format!("{:?}", hitslop_core::sync::Status::Paused { kind: pause.kind, reason: pause.reason.clone() });
-            q.pause = Some(pause);
+            self.sync_events.lock().unwrap().state =
+                Some(hitslop_core::sync::Status::Paused { kind: pause.kind, reason: pause.reason }.state());
         }
         Ok(())
     }
@@ -479,10 +472,6 @@ impl BrowserCopy {
             }
         }
     }
-    #[wasm_bindgen(js_name = syncStatus)]
-    pub fn sync_status(&self) -> String {
-        self.sync_events.lock().unwrap().status.clone()
-    }
 }
 
 #[wasm_bindgen(js_name = invitationRequest)]
@@ -498,6 +487,13 @@ pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<St
         protocols: vec![hitslop_sharing_protocol::SOCKET_PROTOCOL.into(), format!("cap.{}", key.capability)],
     })
     .map_err(error)
+}
+
+/// What a failed relay request means (`{outcome, message}`), from the table the native client uses.
+#[wasm_bindgen(js_name = classifyFailure)]
+pub fn classify_failure(status: u16, code: Option<String>, url: &str) -> String {
+    let outcome = failure::classify(status, code.as_deref(), failure::Route::of(url));
+    serde_json::json!({"outcome": outcome, "message": outcome.message(status)}).to_string()
 }
 
 #[wasm_bindgen(js_name = socketBudget)]
@@ -526,14 +522,9 @@ impl SharingBase {
         self.0.bytes.clone()
     }
     pub fn frontier(&self) -> String {
-        base_version(self.0.frontier.iter().map(|(&p, &n)| (p, n as u32)).collect())
+        frame::version_json(self.0.frontier.iter().map(|(&p, &n)| (p, n as u32)))
     }
     pub fn root(&self) -> String {
-        base_version(self.0.start.iter().map(|(&p, &n)| (p, n as u32)).collect())
+        frame::version_json(self.0.start.iter().map(|(&p, &n)| (p, n as u32)))
     }
-}
-fn base_version(vv: hitslop_core::sync::Version) -> String {
-    let mut pairs: Vec<_> = vv.iter().map(|(&p, &n)| (format!("{p:016x}"), n)).collect();
-    pairs.sort();
-    serde_json::to_string(&pairs).expect("version")
 }

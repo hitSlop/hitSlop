@@ -13,6 +13,7 @@ import type {
   ResourceGrant,
   SharingControl,
   SharingEvent,
+  SyncPhase,
 } from "../wire/sharing.generated";
 import { SharingHost } from "../wire/constants.generated";
 
@@ -23,8 +24,7 @@ interface BrowserCopy extends LocalCopy {
   syncDetach(): void;
   syncFrame(bytes: Uint8Array): void;
   nextSyncFrame(): Uint8Array | undefined;
-  syncStatus(): string;
-  syncPause(): string | undefined;
+  syncState(): string | undefined;
   pauseSync(pause: string): void;
   syncBase(
     monotonic: bigint,
@@ -40,11 +40,27 @@ interface BrowserCopy extends LocalCopy {
 interface BrowserRuntime extends LocalRuntime<BrowserCopy> {
   invitationRequest(link: string, origin: string, info: string): string;
   frameOperation(bytes: Uint8Array): string;
+  classifyFailure(status: number, code: string | undefined, url: string): string;
 }
+/** What the WASM core makes of a failed relay request: the same table the native client uses. */
+type Failure = {
+  outcome:
+    | "ended"
+    | "needsUpdate"
+    | "refused"
+    | "outgrown"
+    | "filesFull"
+    | "conflict"
+    | "signIn"
+    | "failed";
+  message: string;
+};
+/** The owner's sync state: the phase, and the pause when sync has stopped. */
+type SyncState = { phase: SyncPhase; pause?: Pause };
 let invitation = "";
 let socket: WebSocket | undefined;
 let generation = 0,
-  backoff = 250;
+  backoff: number = SharingHost.backoffMinMs;
 let lastStatus = "";
 let sending = 0;
 let receiving = 0;
@@ -57,6 +73,26 @@ let compacting = 0;
 let compactAfter = 0;
 let checkedRoomAt = 0;
 let retriedFull = false;
+/** Room-full waits for compaction, which this worker runs, so only the other pauses stop it. */
+const stops = (pause: Pause | undefined) => pause !== undefined && pause.kind !== "roomFull";
+function copyState(): SyncState | undefined {
+  const state = owner.copy?.syncState();
+  return state ? (JSON.parse(state) as SyncState) : undefined;
+}
+const phaseText: Record<SyncPhase, string> = {
+  offline: "Offline",
+  syncing: "Syncing",
+  synced: "Synced",
+  paused: "Paused",
+  ended: "Sharing ended",
+};
+function reportState(state: SyncState | undefined) {
+  if (!state) return;
+  reportSync(
+    state.pause?.reason ?? phaseText[state.phase],
+    state.pause?.kind === "roomFull" ? "syncing" : state.phase,
+  );
+}
 function pauseSync(pause: Pause) {
   owner.copy?.pauseSync(JSON.stringify(pause));
   owner.poll();
@@ -83,7 +119,9 @@ async function compactRoom(epoch: number, full: boolean) {
       return;
     }
     if (!first.compact && !full) return;
-    await new Promise((resolve) => setTimeout(resolve, Math.random() * 30_000));
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.random() * SharingHost.compactJitterMs),
+    );
     currentEpoch(epoch);
     const latest = await info();
     if (!latest.compact) {
@@ -96,7 +134,7 @@ async function compactRoom(epoch: number, full: boolean) {
     const base = owner.copy!.syncBase(BigInt(Math.floor(performance.now())), BigInt(Date.now()));
     if (!base) {
       // Not eligible yet; each retry re-reads RoomInfo inside the guest metadata budget.
-      compactAfter = Date.now() + 15_000;
+      compactAfter = Date.now() + SharingHost.compactRetryMs;
       return;
     }
     try {
@@ -119,10 +157,7 @@ async function compactRoom(epoch: number, full: boolean) {
         epoch,
       );
     } catch (error) {
-      if (error instanceof TransportError && error.status === 413) {
-        pauseSync({ kind: "outgrown", reason: "This document has outgrown sharing" });
-        return;
-      }
+      // A 413 here is an `outgrown` pause, which the outer catch applies.
       if (!(error instanceof TransportError) || error.status !== 409) throw error;
     } finally {
       base.free();
@@ -138,8 +173,9 @@ async function compactRoom(epoch: number, full: boolean) {
       pauseSync(error.pause);
       return;
     }
+    console.warn("Room compaction failed; retrying", error);
     compactAfter = Date.now() + backoff;
-    backoff = Math.min(8000, backoff * 2);
+    backoff = Math.min(SharingHost.backoffMaxMs, backoff * 2);
     if (error instanceof TransportError && error.status === 410) resourceFailure(error, epoch);
   } finally {
     if (compacting === epoch) compacting = 0;
@@ -147,10 +183,11 @@ async function compactRoom(epoch: number, full: boolean) {
 }
 const remoteAttachments = new Map<string, Resource>();
 const sharingEvent = (event: SharingEvent) => postMessage(event);
-function reportSync(status: string) {
-  if (status === lastStatus) return;
-  lastStatus = status;
-  sharingEvent({ type: "sync", status });
+function reportSync(status: string, phase: SyncPhase) {
+  const key = `${phase}:${status}`;
+  if (key === lastStatus) return;
+  lastStatus = key;
+  sharingEvent({ type: "sync", status, phase });
 }
 class TransportError extends Error {
   constructor(
@@ -174,24 +211,24 @@ async function checkedFetch(url: string, init: RequestInit = {}, epoch = generat
   });
   currentEpoch(epoch);
   if (!response.ok) {
-    let pause: Pause | undefined = [400, 403, 404, 422].includes(response.status)
-      ? {
-          kind: "refused",
-          reason: "Sharing service refused this request (" + response.status + ")",
-        }
-      : undefined;
+    let body: { code: string; message: string } | undefined;
     try {
-      const failure = JSON.parse(await metadata(response, epoch)) as {
-        code: string;
-        message: string;
-      };
-      if (failure.code === "requires_update")
-        pause = { kind: "needsUpdate", reason: failure.message };
-      else if ([400, 403, 404, 422].includes(response.status))
-        pause = { kind: "refused", reason: failure.message };
-    } catch {
-      /* A missing error body still carries the HTTP status. */
+      body = JSON.parse(await metadata(response, epoch));
+    } catch (error) {
+      // A missing error body still carries the HTTP status.
+      console.warn("Sharing error reply unreadable (" + response.status + ")", error);
     }
+    const runtime = (await owner.initialized) as BrowserRuntime;
+    const failure = JSON.parse(
+      runtime.classifyFailure(response.status, body?.code, url),
+    ) as Failure;
+    const { outcome } = failure;
+    const pause: Pause | undefined =
+      outcome === "refused" || outcome === "needsUpdate"
+        ? { kind: outcome, reason: body?.message || failure.message }
+        : outcome === "outgrown" || outcome === "filesFull"
+          ? { kind: outcome, reason: failure.message }
+          : undefined;
     throw new TransportError(response.status, pause);
   }
   return response;
@@ -211,7 +248,7 @@ async function boundedBody(response: Response, limit: number, epoch: number) {
       chunks.push(value);
     }
   } catch (error) {
-    await reader.cancel().catch(() => {});
+    await reader.cancel().catch((cancel) => console.warn("Sharing response not cancelled", cancel));
     throw error;
   }
   currentEpoch(epoch);
@@ -250,7 +287,7 @@ async function resourceSession(epoch: number) {
   }
 }
 async function uploadFiles(epoch: number) {
-  reportSync("Syncing files");
+  reportSync("Syncing files", "syncing");
   sharingEvent({ type: "files", status: "Uploading files" });
   for (const item of JSON.parse(
     owner.copy!.missingUploads(JSON.stringify([...remoteAttachments.values()])),
@@ -274,11 +311,7 @@ async function uploadFiles(epoch: number) {
         body: new Blob(chunks.map((chunk) => new Uint8Array(chunk).buffer)),
       },
       epoch,
-    ).catch((error) => {
-      if (error instanceof TransportError && error.status === 413)
-        pauseSync({ kind: "filesFull", reason: "Attachments are full" });
-      throw error;
-    });
+    );
     currentEpoch(epoch);
     remoteAttachments.set(item.hash, item);
   }
@@ -292,7 +325,7 @@ async function receiveFiles(epoch: number) {
   }
 }
 async function receiveInventory(epoch: number) {
-  reportSync("Receiving files");
+  reportSync("Receiving files", "syncing");
   sharingEvent({ type: "files", status: "Receiving files" });
   const list = await checkedFetch(
     connection.url.replace(/seed$/, "blobs"),
@@ -320,10 +353,10 @@ function resourceFailure(error: unknown, epoch = generation) {
   if (epoch !== generation) return;
   if (error instanceof TransportError && error.pause && owner.copy) pauseSync(error.pause);
   sharingEvent({ type: "files", status: "File transfer pending: " + String(error) });
-  const pause = owner.copy?.syncPause();
-  if (pause && (JSON.parse(pause) as Pause).kind !== "roomFull") {
+  const state = copyState();
+  if (stops(state?.pause)) {
     ended = true;
-    reportSync(owner.copy!.syncStatus());
+    reportState(state);
   }
   // Fence the generation before QueuedCaughtUp can follow a failed file download.
   ++generation;
@@ -335,17 +368,17 @@ function resourceFailure(error: unknown, epoch = generation) {
   if (owner.opened) owner.poll();
   if (error instanceof TransportError && error.status === 410) {
     ended = true;
-    reportSync("Sharing ended");
+    reportSync("Sharing ended", "ended");
     return;
   }
   if (ended) return;
-  reportSync("Offline; reconnecting");
+  reportSync("Offline; reconnecting", "offline");
   clearTimeout(reconnectTimer);
   if (!ended)
     reconnectTimer = setTimeout(() => {
       void connectSocket().catch((error) => resourceFailure(error));
     }, backoff);
-  backoff = Math.min(8000, backoff * 2);
+  backoff = Math.min(SharingHost.backoffMaxMs, backoff * 2);
 }
 async function connectSocket() {
   if (ended) return;
@@ -371,7 +404,7 @@ async function connectSocket() {
       ws.close();
       return;
     }
-    backoff = 250;
+    backoff = SharingHost.backoffMinMs;
     owner.copy!.syncAttach();
     owner.poll();
   };
@@ -413,7 +446,8 @@ async function connectSocket() {
       })
       .catch((error) => resourceFailure(error, epoch));
   };
-  ws.onerror = () => {};
+  // Browsers give no detail here and always follow with `close`, which retries.
+  ws.onerror = () => console.warn("Sharing socket error");
   ws.onclose = () => {
     if (epoch !== generation || ended) return;
     resourceFailure(new Error("Connection interrupted"), epoch);
@@ -421,19 +455,18 @@ async function connectSocket() {
 }
 function flushSocket() {
   if (!owner.copy || socket?.readyState !== WebSocket.OPEN || sending === generation) return;
-  const state = owner.copy.syncStatus();
-  const pauseJSON = owner.copy.syncPause();
-  const pause = pauseJSON ? (JSON.parse(pauseJSON) as Pause) : undefined;
-  if (pause && pause.kind !== "roomFull") {
+  const state = copyState();
+  const pause = state?.pause;
+  if (stops(pause)) {
     ended = true;
     socket.close(1000, "Sharing paused");
-    reportSync(state);
+    reportState(state);
     return;
   }
-  if (state === "Synced") retriedFull = false;
-  if (pause?.kind === "roomFull" || Date.now() - checkedRoomAt >= 600_000)
+  if (state?.phase === "synced") retriedFull = false;
+  if (pause?.kind === "roomFull" || Date.now() - checkedRoomAt >= SharingHost.recheckMs)
     void compactRoom(generation, pause?.kind === "roomFull");
-  if (receiving !== generation) reportSync(state);
+  if (receiving !== generation) reportState(state);
   let frame: Uint8Array | undefined;
   try {
     frame = owner.copy.nextSyncFrame();
@@ -529,7 +562,7 @@ const owner = new WorkerOwner<BrowserCopy>({
   openCopy(installed) {
     if (ended) {
       installed.openSavedJoined(invitation, config.relay);
-      reportSync("Sharing ended");
+      reportSync("Sharing ended", "ended");
     } else installed.openJoined(invitation, config.relay, roomInfo);
   },
   afterPoll: flushSocket,
@@ -543,7 +576,7 @@ const owner = new WorkerOwner<BrowserCopy>({
         socket.send("ping");
         flushSocket();
       }
-    }, 20_000);
+    }, SharingHost.pingMs);
     setInterval(() => {
       const epoch = generation;
       if (!ended) void resourceSession(epoch).catch((error) => resourceFailure(error, epoch));

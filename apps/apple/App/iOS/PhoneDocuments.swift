@@ -22,6 +22,9 @@ import WebKit
   }
   @Published var successFeedback = 0
   @Published var deletionFeedback = 0
+  /// A light tap for a deliberate host action: opening a slop, a menu choice.
+  @Published var tapFeedback = 0
+  func tapped() { tapFeedback += 1 }
   private var manualSync = false
   @Published var message: String?
   @Published var showImporter = false
@@ -185,7 +188,10 @@ import WebKit
       try await self.show(imported)
     }
   }
-  func open(_ url: URL) { perform { try await self.show(url) } }
+  func open(_ url: URL) {
+    tapped()
+    perform { try await self.show(url) }
+  }
   func open(libraryID: String) {
     guard SlopLibrary.shared.hasLoaded else {
       pendingLibraryID = libraryID
@@ -273,26 +279,26 @@ import WebKit
       }
     }
   }
-  /// Uses the same clean-copy owner path as Mac Duplicate, with accepted page edits.
+  /// Moves a full shared document to an unshared copy of its accepted state, with accepted
+  /// page edits. The owner publishes the copy at a new path and releases the original
+  /// without saving it; until that succeeds the document stays open with every edit, and
+  /// other participants keep it.
   func saveUnsharedCopy() {
     guard let session else { return }
-    var copied: URL?
-    perform(
-      completion: { succeeded in
-        guard succeeded, let copied else { return }
-        // Use normal close so artwork, widgets, save recovery and library sync keep
-        // their usual behavior. A failed close leaves the source open and copy safe.
-        self.close { closed in if closed { self.open(copied) } }
-      },
-      {
-        let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let name = session.file.url.deletingPathExtension().lastPathComponent
-        let target = directory.appendingPathComponent("\(name) copy \(UUID().uuidString.prefix(8)).slop")
-        copied = try await session.copy(to: target)
-        self.refresh()
-        self.successFeedback += 1
-      })
+    perform {
+      let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      let name = session.file.url.deletingPathExtension().lastPathComponent
+      let target = directory.appendingPathComponent("\(name) copy \(UUID().uuidString.prefix(8)).slop")
+      let copied = try await session.handOff(to: target)
+      self.session = nil
+      self.opening = false
+      self.refresh()
+      self.successFeedback += 1
+      await SlopLibrary.shared.refresh()
+      Task { await SlopLibrary.shared.saveToCloud() }
+      try await self.show(copied)
+    }
   }
   func finishExport(completed: Bool = false) {
     if completed { successFeedback += 1 }
@@ -334,17 +340,28 @@ import WebKit
   }
   func pageSessionDidBecomeReady(_ session: DocumentSession) {
     if self.session === session { opening = false }
+    publishSafeArea(session)
   }
   func pageSessionRecovered(_ session: DocumentSession) {
     if self.session === session { opening = false }
+    publishSafeArea(session)
+  }
+  /// The edge-to-edge page pads itself by the status bar and home indicator heights. A ready
+  /// page has its shell entry point; the key window knows the insets even before the page's
+  /// view is attached, and WebKit reports none for a page that ignores the safe area.
+  private func publishSafeArea(_ session: DocumentSession) {
+    let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    guard
+      let window = (scenes.first { $0.activationState == .foregroundActive } ?? scenes.first)?.keyWindow,
+      let webView = session.currentWebView
+    else { return }
+    let (top, bottom) = (Int(window.safeAreaInsets.top.rounded()), Int(window.safeAreaInsets.bottom.rounded()))
+    webView.evaluateJavaScript("globalThis.__slop?.safeArea?.(\(top), \(bottom))", in: nil, in: .page) { _ in }
   }
   func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     self.saveStatus = saveStatus
     if case .failed(let failure) = saveStatus {
-      message =
-        failure == .full && session.retainsHistory
-        ? "This shared document is full. Save an unshared copy to keep your unsaved edits."
-        : failure.localizedDescription
+      message = (failure == .full ? session.storageNotice : nil) ?? failure.localizedDescription
     }
     if case .saved = saveStatus { widgets.saved(session) }
   }

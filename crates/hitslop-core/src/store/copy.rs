@@ -47,6 +47,12 @@ impl Store {
     /// the original and its session are untouched. Blobs precede accepted references.
     pub fn copy_clean(&self, dest: &Path, state: &[u8], artwork: &[(Artwork, &[u8])]) -> Result<()> {
         file::document_destination(dest)?;
+        self.copy_clean_unplaced(dest, state, artwork)
+    }
+
+    /// `copy_clean` for a staged file beside a destination the caller has already checked
+    /// with `file::document_destination`.
+    pub(crate) fn copy_clean_unplaced(&self, dest: &Path, state: &[u8], artwork: &[(Artwork, &[u8])]) -> Result<()> {
         self.check(true)?;
         let artwork = optimized_artwork(artwork)?;
         let app = self.app.app.spec();

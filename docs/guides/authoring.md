@@ -240,9 +240,9 @@ CSS receives the same editor information on `<html>`:
 Use plain `html[...]` selectors in standalone CSS. Keep base styles usable without
 these attributes for older hosts; ordinary media and container queries also work.
 Choose responsive layout for available space and pointer/hover media queries for input
-differences. Full-screen content can use `env(safe-area-inset-top, 0px)` and the other
-safe-area insets for padding around system areas; the page background can still fill
-the display. These insets do not describe floating host controls.
+differences. On the iPhone, pad around system areas with `--slop-safe-top` and
+`--slop-safe-bottom` (see iPhone editing below). These insets do not describe floating
+host controls.
 
 `slop dev` offers Browser, iPhone, iPad and Mac device presets. Phone/tablet presets
 change the viewport; Browser and Mac restore the authored size. Changes preserve
@@ -252,9 +252,11 @@ editor attributes.
 
 ### iPhone editing
 
-The current iPhone app is portrait-only. Native layout owns the notch, home indicator
-and onscreen keyboard safe areas; the background fills the screen. Every editor starts
-directly below the status bar, with a native glass actions menu beside its heading.
+The current iPhone app is portrait-only. The editor runs edge to edge, under the status
+bar and the home indicator: paint the background to the edges and pad the root by
+`--slop-safe-top` and `--slop-safe-bottom` (the real insets in the app, 47px and 34px in the
+iPhone preset, `0px` elsewhere). A native glass actions menu floats beside the heading,
+12px below the safe top.
 
 Headers reserve `--slop-host-actions-width` (64px) at the trailing edge and
 `--slop-host-actions-height` (44px) for their minimum height. These variables are zero
@@ -263,9 +265,16 @@ full-height sheets too, and let long headings wrap. The iPhone device preset exp
 the same reservation; review notch spacing, keyboard entry, sheets, swipe-back and
 VoiceOver in the native app.
 
-Use `height: 100%` with `min-height: 0` and scrollable content panes rather
-than subtracting keyboard height or adding a second set of native safe-area insets.
-The native Done action above the keyboard dismisses the keyboard without submitting a form. The host suppresses tap highlights and defaults buttons, links and button-role controls to `touch-action: manipulation` on iOS, using overridable styles. Page zoom
+Use `height: 100%` with `min-height: 0` and scrollable content panes. The keyboard covers the page, which
+keeps its size. The shell brings a focused field above the keyboard without app CSS: it
+scrolls the field's containers, adds temporary room at the end of the nearest one when it is
+too short, and as a last resort shifts the page up, undoing it all when the keyboard hides.
+`--slop-keyboard-inset` (the covered height; `0px` while hidden and outside the iPhone
+editor) is only for UI pinned to the bottom of the screen: bottom sheets, fixed bars and
+centered dialogs that hold fields. Never add it to the page or a layout container, which
+shrinks the layout like a resize. The SDK notice lifts automatically. Number inputs get a
+numeric keypad unless they set `inputmode`.
+The keyboard's own toolbar (previous, next and ✓) dismisses the keyboard without submitting a form. The host suppresses tap highlights and defaults buttons, links and button-role controls to `touch-action: manipulation` on iOS, using overridable styles. Page zoom
 and input-focus zoom are disabled in the native iPhone editor; authored canvas or
 image gestures can still implement their own zoom.
 

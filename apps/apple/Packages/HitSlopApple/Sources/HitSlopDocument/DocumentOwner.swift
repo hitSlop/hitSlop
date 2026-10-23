@@ -245,6 +245,13 @@ public final class DocumentOwner: Sendable {
   public func close(artwork: SlopRenderedArtwork? = nil) async throws {
     try await unit(.close(preview: artwork?.preview, icon: artwork?.icon))
   }
+  /// Moves a document that cannot save to a new document at `destination`: the owner
+  /// writes, checks and publishes the copy of its live state, never over an existing file,
+  /// then releases the writer lock without saving. After a failure it stays open with every
+  /// edit and `destination` untouched. The session fences edits first.
+  func handOff(to destination: URL, artwork: SlopRenderedArtwork?) async throws {
+    try await unit(.handoff(dest: destination.path, preview: artwork?.preview, icon: artwork?.icon))
+  }
   public static var coreBuildID: String { coreBuildId() }
 }
 

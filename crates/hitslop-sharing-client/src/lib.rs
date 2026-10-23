@@ -206,8 +206,8 @@ fn stage(owner: &Owner) -> Result<SeedBackup> {
         let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
         let checkpoint = store.document().map_err(fail)?.checkpoint().map_err(fail)?;
         let meta = loro::LoroDoc::decode_import_blob_meta(&checkpoint, true).map_err(|_| "Invalid seed history")?;
-        let mut seed: Vec<_> = meta.partial_end_vv.iter().map(|(&p, &n)| (format!("{p:016x}"), n as u32)).collect();
-        seed.sort();
+        let seed =
+            hitslop_sharing_protocol::frame::version_pairs(meta.partial_end_vv.iter().map(|(&p, &n)| (p, n as u32)));
         Ok(SeedBackup {
             path: path.clone(),
             version: seed,

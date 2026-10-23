@@ -637,7 +637,161 @@ button {
   }
 }
 
+/* Phone-width editors: 44px hit areas and 16px entry text, with the same composition. */
+@media (max-width: 639px) {
+  html:not([data-slop-capture]) {
+    .asg-term {
+      padding-block: 4px;
+      font-size: 16px;
+    }
+    .asg-toolbar {
+      flex-wrap: wrap;
+    }
+    .asg-tab {
+      min-height: 44px;
+      padding-inline: 14px;
+      font-size: 14px;
+    }
+    .asg-tab span {
+      font-size: 12px;
+    }
+    .asg-add {
+      min-height: 44px;
+      padding-inline: 14px;
+      font-size: 14px;
+    }
+    .asg-stackLabel {
+      font-size: 11px;
+    }
+    .asg-stackCount {
+      font-size: 11px;
+    }
+    .asg-row {
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 0 4px;
+      padding: 6px 0 10px;
+    }
+    .asg-checkbox {
+      position: relative;
+      width: 26px;
+      height: 26px;
+      margin: 9px;
+    }
+    .asg-checkbox::after {
+      content: "";
+      position: absolute;
+      inset: -9px;
+    }
+    .asg-itemBody {
+      min-height: 44px;
+      justify-content: center;
+      padding-block: 4px;
+    }
+    .asg-itemMeta {
+      font-size: 12px;
+    }
+    .asg-courseChip {
+      font-size: 11px;
+    }
+    .asg-notePreview {
+      font-size: 13px;
+    }
+    .asg-rowEnd {
+      grid-column: 2;
+      justify-content: space-between;
+      padding-top: 0;
+    }
+    .asg-due {
+      min-height: 44px;
+      padding-inline: 12px;
+      font-size: 13px;
+    }
+    .asg-editArrow {
+      width: 44px;
+      height: 44px;
+    }
+    .asg-empty p {
+      font-size: 14px;
+    }
+    .asg-dialog {
+      padding: 20px 18px;
+    }
+    .asg-description {
+      font-size: 13px;
+    }
+    .asg-formLabel {
+      font-size: 13px;
+    }
+    .asg-input {
+      min-height: 44px;
+      padding: 10px 12px;
+      font-size: 16px;
+    }
+    .asg-titleField {
+      min-height: 72px;
+    }
+    .asg-clearDate {
+      min-height: 44px;
+      font-size: 13px;
+    }
+    .asg-actions {
+      flex-wrap: wrap;
+    }
+    .asg-primary {
+      min-height: 44px;
+      padding-inline: 16px;
+      font-size: 14px;
+    }
+    .asg-deleteButton {
+      padding-inline: 0;
+    }
+    .asg-error {
+      font-size: 14px;
+    }
+    .asg-selectContent {
+      max-height: calc(100dvh - 24px);
+    }
+    .asg-selectItem {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      padding-inline: 12px;
+      font-size: 16px;
+    }
+    .asg-calendarPopover {
+      width: min(340px, calc(100vw - 16px));
+      padding: 8px;
+    }
+    .asg-calNav {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+    }
+    .asg-calTitle {
+      font-size: 15px;
+    }
+    .asg-calHeadCell {
+      font-size: 12px;
+    }
+    .asg-calDay {
+      width: 100%;
+      min-width: 0;
+      height: 44px;
+      font-size: 15px;
+    }
+  }
+}
+@media (max-width: 439px) {
+  html:not([data-slop-capture]) .asg-formRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* The native phone menu shares the heading row; system safe areas belong to the host. */
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-pad { height: 100%; min-height: 0; }
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-header { padding-top: 12px; padding-inline-end: var(--slop-host-actions-width, 0px); }
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-dialog { max-height: calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-header { padding-top: calc(var(--slop-safe-top, 0px) + 12px); padding-inline-end: var(--slop-host-actions-width, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-dialog { top: calc(50% - var(--slop-keyboard-inset, 0px) / 2); max-height: calc(100dvh - var(--slop-keyboard-inset, 0px) - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-stacks { padding-bottom: var(--slop-safe-bottom, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .asg-selectContent { max-height: calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 24px); }

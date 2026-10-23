@@ -69,9 +69,11 @@ input::-webkit-inner-spin-button, input::-webkit-outer-spin-button { appearance:
   .invoice-meta { grid-template-columns: 1fr 1fr; }
   .invoice-meta > div { grid-column: 1 / -1; border-top: 1px solid var(--rule); border-left: 0; padding-left: 0; }
   .invoice-line-heading { display: none; }
-  .invoice-line { grid-template-columns: 1fr 1fr 1fr; position: relative; padding: 11px 34px 11px 0; }
+  .invoice-line { grid-template-columns: minmax(0, .8fr) minmax(0, 1.1fr) minmax(0, 1.1fr) 32px; gap: 8px 9px; padding: 11px 0; }
+  .invoice-line > label:first-child { grid-column: 1 / 4; }
+  .invoice-line > .invoice-remove { grid-column: 4; grid-row: 1; align-self: end; }
+  .invoice-line > .invoice-amount { grid-column: 3 / 5; justify-self: end; align-self: end; padding-bottom: 8px; }
   .invoice-mobile-label { display: block; margin-bottom: 2px; color: var(--slop-muted); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
-  .invoice-remove { position: absolute; top: 50%; right: 0; transform: translateY(-50%); }
   .invoice-closing { grid-template-columns: 1fr; }
 }
 @container (max-width: 400px) {
@@ -82,10 +84,36 @@ input::-webkit-inner-spin-button, input::-webkit-outer-spin-button { appearance:
   .invoice-meta > div { grid-column: auto; }
 }
 @media (hover: none) { .invoice-remove { opacity: 1; } }
+/* Phone-width editors: 16px fields and 44px hit areas, with the same layout. */
+@media (max-width: 639px) {
+  html:not([data-slop-capture]) {
+    .invoice-paper { padding-inline: 16px; }
+    .invoice-status-trigger { justify-self: start; min-height: 44px; font-size: 12px; }
+    .invoice-meta input, .invoice-meta input[type="date"] { min-height: 44px; font-size: 16px; }
+    .invoice-currency-trigger { min-height: 44px; font-size: 16px; }
+    .invoice-select-content { max-height: calc(100dvh - 24px); overflow: auto; }
+    .invoice-select-content [data-select-item] { min-height: 44px; padding-inline: 12px; font-size: 16px; }
+    .invoice-party input { padding-block: 4px; font-size: 18px; }
+    .invoice-party textarea { height: 72px; padding-block: 4px; font-size: 16px; }
+    .invoice-line input { min-height: 44px; padding-block: 10px; font-size: 16px; }
+    .invoice-mobile-label { font-size: 11px; }
+    .invoice-amount { padding-bottom: 10px; font-size: 16px; }
+    .invoice-add { min-height: 44px; font-size: 12px; }
+    .invoice-notes textarea { height: 96px; font-size: 16px; }
+    .invoice-totals { font-size: 15px; }
+    .invoice-totals input { width: 56px; min-height: 40px; padding-block: 6px; font-size: 16px; }
+  }
+}
+@container (max-width: 560px) {
+  html:not([data-slop-capture]) .invoice-line { grid-template-columns: minmax(0, .8fr) minmax(0, 1.1fr) minmax(0, 1.1fr) 44px; }
+  html:not([data-slop-capture]) .invoice-remove { width: 44px; height: 44px; border-radius: 10px; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 
 /* The native phone menu shares the heading row; system safe areas belong to the host. */
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-paper { padding-top: 12px; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]), html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) body { background: var(--slop-paper); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-paper { padding-top: calc(var(--slop-safe-top, 0px) + 12px); padding-bottom: calc(var(--slop-safe-bottom, 0px) + 12px); }
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-masthead { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); flex-wrap: wrap; }
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-masthead > div { min-width: 0; }
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-number { max-width: 100%; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .invoice-select-content { max-height: calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 24px); }

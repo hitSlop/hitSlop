@@ -497,7 +497,11 @@ fn quota_waits_for_compaction() {
     doc.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
     let Frame::Push { id, .. } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
     session.receive(&mut doc, &Frame::Ack { id, status: Ack::Quota }.encode());
-    assert!(format!("{:?}", session.status()).contains("RoomFull"), "{:?}", session.status());
+    assert!(
+        matches!(session.status(), Status::Paused { kind: hitslop_core::sync::PauseKind::RoomFull, .. }),
+        "{:?}",
+        session.status()
+    );
     assert_eq!(support::value(&doc)["done"], true);
     relay.compact(session.base(&doc).unwrap().unwrap());
     let (replies, _) = relay.reply(&session.connect(&doc));
@@ -685,4 +689,27 @@ fn read_only_offline_and_terminally_paused_sessions_cannot_compact() {
     assert!(session.base(&doc).unwrap().is_none());
     session.pause(hitslop_core::sync::PauseKind::Refused, "refused".into());
     assert!(session.base(&doc).unwrap().is_none());
+}
+
+// Hosts route on the phase and the pause, never on the status's debug text.
+#[test]
+fn status_gives_hosts_a_phase_and_a_pause() {
+    use hitslop_core::sync::{Pause, PauseKind, SyncPhase};
+    let phases = [
+        (Status::Offline, SyncPhase::Offline),
+        (Status::Syncing, SyncPhase::Syncing),
+        (Status::Synced, SyncPhase::Synced),
+    ];
+    for (status, phase) in phases {
+        let state = status.state();
+        assert_eq!((state.phase, state.pause), (phase, None));
+    }
+    let paused = Status::Paused { kind: PauseKind::NeedsUpdate, reason: "Update hitSlop".into() }.state();
+    assert_eq!(paused.phase, SyncPhase::Paused);
+    assert_eq!(paused.pause, Some(Pause { kind: PauseKind::NeedsUpdate, reason: "Update hitSlop".into() }));
+    assert_eq!(
+        serde_json::to_value(&paused).unwrap(),
+        json!({"phase":"paused","pause":{"kind":"needsUpdate","reason":"Update hitSlop"}})
+    );
+    assert_eq!(serde_json::to_value(Status::Synced.state()).unwrap(), json!({"phase":"synced"}));
 }

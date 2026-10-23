@@ -12,6 +12,13 @@ struct PhoneEditorView: View {
   @State private var pageBackground = UIColor.systemBackground
   @State private var showSharing = false
   @State private var keyboardVisible = false
+  /// How far the keyboard, with its ⌃ ⌄ ✓ toolbar, covers the bottom of the page.
+  @State private var keyboardOverlap: CGFloat = 0
+
+  /// What the page reads as `--slop-keyboard-inset`.
+  private var keyboardInset: Int {
+    keyboardVisible ? Int(keyboardOverlap.rounded(.up)) : 0
+  }
 
   var body: some View {
     Group {
@@ -19,6 +26,9 @@ struct PhoneEditorView: View {
         PhoneWebView(webView: webView)
           .id(ObjectIdentifier(webView))
           .frame(maxWidth: .infinity, maxHeight: .infinity)
+          // Edge to edge: the page runs under the status bar and home indicator and pads
+          // itself with `--slop-safe-top`/`--slop-safe-bottom`; the actions menu stays inside.
+          .ignoresSafeArea()
           .background(Color(uiColor: pageBackground).ignoresSafeArea(.container))
           .onReceive(webView.publisher(for: \.underPageBackgroundColor)) { color in
             pageBackground = color ?? .systemBackground
@@ -29,12 +39,23 @@ struct PhoneEditorView: View {
               let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
             else { return }
             let keyboard = window.convert(frame, from: window.screen.coordinateSpace)
-            keyboardVisible = keyboard.height > 0 && window.bounds.intersects(keyboard)
+            let visible = keyboard.height > 0 && window.bounds.intersects(keyboard)
+            let overlap = visible ? max(0, webView.convert(webView.bounds, to: nil).maxY - keyboard.minY) : 0
+            let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+            withAnimation(.easeOut(duration: duration)) {
+              keyboardVisible = visible
+              keyboardOverlap = overlap
+            }
           }
           .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
+            keyboardOverlap = 0
           }
-          .onDisappear { keyboardVisible = false }
+          .onChange(of: keyboardInset) { _, inset in publish(inset, to: webView) }
+          .onDisappear {
+            keyboardVisible = false
+            keyboardOverlap = 0
+          }
       }
     }
     .allowsHitTesting(!model.opening)
@@ -44,20 +65,8 @@ struct PhoneEditorView: View {
         .glassEffect(.regular.interactive(), in: Circle())
         .padding(12)
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      if keyboardVisible {
-        HStack {
-          Spacer()
-          Button("Done") { session.currentWebView?.endEditing(true) }
-            .buttonStyle(.glass)
-            .controlSize(.large)
-            .accessibilityLabel("Dismiss keyboard")
-            .accessibilityIdentifier("dismiss-keyboard")
-        }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(Color(uiColor: pageBackground))
-      }
-    }
+    // The keyboard covers the page, which keeps its size. Its own toolbar's ✓ dismisses it.
+    .ignoresSafeArea(.keyboard)
     .background(PhoneNavigationGesture(blocked: model.opening || model.busy))
     .safeAreaInset(edge: .top) {
       if let notice = session.storageNotice {
@@ -86,6 +95,12 @@ struct PhoneEditorView: View {
               saveUnsharedCopy: {
                 showSharing = false
                 model.saveUnsharedCopy()
+              },
+              onUpdate: {
+                // TestFlight opens straight to the update; the download page is the fallback.
+                UIApplication.shared.open(URL(string: "itms-beta://")!) { opened in
+                  if !opened { UIApplication.shared.open(SlopLinks.iosDownload) }
+                }
               })
           }
           .navigationTitle("Share")
@@ -98,19 +113,28 @@ struct PhoneEditorView: View {
       }
     }
   }
+  /// The shell sets `--slop-keyboard-inset` and reveals the focused field.
+  private func publish(_ inset: Int, to webView: WKWebView) {
+    webView.evaluateJavaScript("globalThis.__slop?.keyboard?.(\(inset))", in: nil, in: .page) { _ in }
+  }
+  /// A menu choice taps before it acts.
+  private func tap(_ action: () -> Void) {
+    model.tapped()
+    action()
+  }
   private var documentActions: some View {
     Menu {
-      Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
-      Button("Redo", systemImage: "arrow.uturn.forward") { model.undo(redo: true) }
-      Button("Theme", systemImage: "paintpalette") { model.showTheme = true }
-      Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { Task { await model.syncNow() } }
+      Button("Undo", systemImage: "arrow.uturn.backward") { tap { model.undo() } }
+      Button("Redo", systemImage: "arrow.uturn.forward") { tap { model.undo(redo: true) } }
+      Button("Theme", systemImage: "paintpalette") { tap { model.showTheme = true } }
+      Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { tap { Task { await model.syncNow() } } }
       if session.sharing != nil {
-        Button("Collaborate", systemImage: "person.2") { showSharing = true }
+        Button("Collaborate", systemImage: "person.2") { tap { showSharing = true } }
       }
-      Button("Back Up File", systemImage: "square.and.arrow.up") { model.export() }
+      Button("Back Up File", systemImage: "square.and.arrow.up") { tap { model.export() } }
         .accessibilityIdentifier("export-file")
       Divider()
-      Button("Back to Library", systemImage: "chevron.backward") { model.close() }
+      Button("Back to Library", systemImage: "chevron.backward") { tap { model.close() } }
         .accessibilityIdentifier("back-to-library")
       Text(model.saveDescription)
     } label: {

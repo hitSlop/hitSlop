@@ -25,7 +25,7 @@ const burst = templates.map((template) => template.emoji);
 const faqs = [
   { question: "What is a .slop?", answer: "A tiny app or a living document, packaged as a single SQLite file. Open it, move it, share it, keep it. The interface and your data travel together." },
   { question: "Can I open a .slop without hitSlop?", answer: "You can look inside it: a .slop is a standard SQLite database, so any SQLite tool opens it and shows its tables. To use or edit it, open it in hitSlop or change it through the CLI. hitSlop is MIT-licensed, so the format is all in the open." },
-  { question: "What comes with the app?", answer: `A whole collection of tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond, and we keep releasing more. Pick one from Templates on Mac and hitSlop makes you your own copy. The iPhone app on TestFlight includes the Popular templates and Little Days.` },
+  { question: "What comes with the app?", answer: `A whole collection of tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond, and we keep releasing more. Pick one from Templates on Mac and hitSlop makes you your own copy. The iPhone app on TestFlight includes the Popular templates.` },
   { question: "Where does my data live?", answer: "In your document: one SQLite file holds the app and your saved work. Local Mac documents need no account. Synced Library keeps slops in sync through your private iCloud storage: on iPhone in TestFlight and on Mac. Live links connect copies between people. Apps that use online media still need the network." },
   { question: "Can an AI edit it?", answer: "Yes. A coding agent can build a slop from scratch, and it can change the tasks, notes and numbers in a document through the hitSlop CLI. It edits the same live document you have open." },
   { question: "Can a tiny app go fullscreen?", answer: "Yes, when its author enables fullscreen, as Checklist and Hourglass do. Use the green fullscreen control or View ▸ Enter Full Screen. Flexible windows fill the screen; fixed or shaped designs scale to fit on a black backdrop. You can also pin a desktop window Always on Top." },
@@ -34,7 +34,7 @@ const faqs = [
   { question: "Can I put a slop in a desktop widget?", answer: "Yes, when its author includes a widget view. Open the document in hitSlop, add a hitSlop widget from the Mac widget gallery, and choose your document in Edit Widget. Small, medium and large sizes show saved content and refresh while hitSlop runs. macOS controls when updates appear; quitting hitSlop leaves the last image visible." },
   { question: "Can I share the result without sharing the app?", answer: "Yes. Export a crisp PNG, or a PDF with selectable text and vector output. Good for invoices, recipes, plans, or anything that needs to leave your desktop." },
   { question: "Can we edit together?", answer: "Yes. Choose Live collaboration in the Share popover. The owner signs in with Apple; anyone with the link can edit on Mac, iPhone or Chrome at share.hitslop.com. Stop ends the link and everyone keeps a copy." },
-  { question: "Can I use it on my iPhone?", answer: "The iPhone app is in TestFlight for iOS 26+; the App Store release is coming soon. Open, edit and create slops, start with the Popular templates or Little Days, import from Files, and use Synced Library through your iCloud account. Choose Collaborate in the document actions menu to share a live link. Library slops with a widget view can appear on your Home Screen; tap to open them. Widgets also refresh in the background when iOS allows." },
+  { question: "Can I use it on my iPhone?", answer: "The iPhone app is in TestFlight for iOS 26+; the App Store release is coming soon. Open, edit and create slops, start with the Popular templates, import from Files, and use Synced Library through your iCloud account. Choose Collaborate in the document actions menu to share a live link. Library slops with a widget view can appear on your Home Screen; tap to open them. Widgets also refresh in the background when iOS allows." },
   { question: "Is it free?", answer: "Yes. hitSlop is free and open source under the MIT license." },
 ];
 ---
@@ -122,7 +122,7 @@ const faqs = [
           <div>
             <p class="kicker">On your iPhone · TestFlight</p>
             <h2 class="headline" id="iphone-title">Pocket-sized, <em>still yours.</em></h2>
-            <p class="lede">Open, edit and create slops on iPhone (iOS 26+). Little Days and the Popular templates are there to start with. Layouts fit the phone and the keyboard, and taps get a light haptic.</p>
+            <p class="lede">Open, edit and create slops on iPhone (iOS 26+). The Popular templates are there to start with. Layouts fit the phone and the keyboard, and taps get a light haptic.</p>
             <p class="lede">The Synced Library keeps slops in step between your Mac and iPhone through your private iCloud storage.</p>
             <div class="iphone-download">
               <a class="button button-primary" href={SITE_LINKS.iosDownload}><IPhoneIcon /> Download for iPhone</a>
@@ -144,7 +144,7 @@ const faqs = [
             <h2 class="headline" id="widgets-title">Your slop.<br /><em>At a glance.</em></h2>
             <p class="lede">Keep your checklist on your Mac desktop, even with its window closed. Choose a small, medium or large widget, and click it to open the document when you need to do more.</p>
             <p class="lede">The iPhone app on TestFlight adds Home Screen widgets for library slops with a widget view. The phone renders them locally; tap to open the slop. They also refresh in the background when iOS allows.</p>
-            <a class="text-link widget-guide" href="/docs/guides/icons-and-exports/#design-a-macos-widget">Set up Mac or iPhone widgets <span aria-hidden="true">→</span></a>
+            <a class="text-link widget-guide" href="/docs/guides/icons-and-exports/#design-a-widget">Set up Mac or iPhone widgets <span aria-hidden="true">→</span></a>
             <p class="small-print">Available for slops whose template includes a widget view. Mac widget images refresh while hitSlop runs; the system controls when updates appear.</p>
           </div>
           <DesktopWidgets />

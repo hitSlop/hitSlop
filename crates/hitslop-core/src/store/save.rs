@@ -8,7 +8,10 @@ const CHECKPOINT_BYTES: i64 = 4 * 1024 * 1024;
 /// is not free: Loro re-encodes what it keeps instead of reusing its cached snapshot.
 const TRIM_BYTES: i64 = 4 * 1024 * 1024;
 
-/// Pressure from saved history, computed against the storage format's frozen limits.
+/// How close saved history is to the storage format's frozen limits. `Full` means a save
+/// found that neither an append nor a checkpoint fits, which usage alone cannot show: an
+/// unshared document past the limits still checkpoints. The owner reports it while that
+/// failure stands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pressure {
     Ok,
@@ -16,10 +19,9 @@ pub enum Pressure {
     Full,
 }
 impl Pressure {
+    /// `Near` once the saved history uses three quarters of either limit.
     pub fn from_usage(bytes: u64, rows: u64) -> Self {
-        if bytes >= crate::STORAGE_BYTES as u64 || rows >= crate::STORAGE_ROWS as u64 {
-            Self::Full
-        } else if bytes >= crate::STORAGE_BYTES as u64 * 3 / 4 || rows >= crate::STORAGE_ROWS as u64 * 3 / 4 {
+        if bytes >= crate::STORAGE_BYTES as u64 * 3 / 4 || rows >= crate::STORAGE_ROWS as u64 * 3 / 4 {
             Self::Near
         } else {
             Self::Ok

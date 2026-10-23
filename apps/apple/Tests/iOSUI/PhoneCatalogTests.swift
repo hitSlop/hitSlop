@@ -20,16 +20,16 @@ final class PhoneCatalogTests: XCTestCase {
     let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: create)
     XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 60), .completed, "Sign the mini into the test Apple ID")
     create.tap()
-    app.alerts.buttons["Cancel"].tap()
+    app.buttons["Cancel"].tap()
     XCTAssertFalse(app.webViews.firstMatch.exists)
     create.tap()
-    let name = app.alerts.textFields.firstMatch
+    let name = app.textFields["slop-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 10))
     let documentName = "Phone artwork " + UUID().uuidString.prefix(6)
     name.tap()
     name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (name.value as? String)?.count ?? 0))
     name.typeText(String(documentName))
-    app.alerts.buttons["Create"].tap()
+    app.buttons["create-named-slop"].tap()
     XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 45))
     capture(app, "New synced document")
     let task = app.webViews.textFields["New task"]

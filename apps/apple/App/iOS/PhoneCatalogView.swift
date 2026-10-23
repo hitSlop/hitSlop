@@ -25,6 +25,7 @@ struct PhoneCatalogView: View {
       Text("hitSlop").font(SlopBrand.heading(24, relativeTo: .title)).tracking(-0.6)
       Spacer()
       Button {
+        model.tapped()
         showSettings = true
       } label: {
         Image(systemName: "gearshape").font(.title3).foregroundStyle(.primary).frame(width: 44, height: 44)
@@ -40,6 +41,7 @@ struct PhoneCatalogView: View {
         Text("Recents").font(SlopBrand.heading(20, relativeTo: .title2))
         Spacer()
         Button {
+          model.tapped()
           Task { await model.syncNow() }
         } label: {
           if library.isSyncing { ProgressView() } else { Image(systemName: "arrow.triangle.2.circlepath") }

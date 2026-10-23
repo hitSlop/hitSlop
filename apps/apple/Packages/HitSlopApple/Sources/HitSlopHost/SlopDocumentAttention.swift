@@ -28,6 +28,7 @@ extension SlopDocumentWindowController {
     if saveStatus == .saved { SlopWidgetPublisher.shared.saved(session) }
     recordSaveStatus(saveStatus)
     saveAttention.shared = session.retainsHistory
+    saveAttention.storageNotice = session.storageNotice
     refreshIssueBadge()
     apply(saveAttention.status(saveStatus, otherSheet: window?.attachedSheet != nil, hidden: attentionHidden))
   }
@@ -89,7 +90,7 @@ extension SlopDocumentWindowController {
     switch action {
     case .retrySave: request(.retrySave)
     case .discardAndRetry: request(.discardUnsaved)
-    case .saveUnsharedCopy: request(.duplicate)
+    case .saveUnsharedCopy: request(.saveUnsharedCopy)
     case .keepOpen: break
     }
   }
@@ -154,6 +155,8 @@ struct SaveAttention: Equatable {
   /// The alert is on the window.
   private(set) var presented = false
   var shared = false
+  /// What a shared document's storage tells its people (`DocumentSession.storageNotice`).
+  var storageNotice: String?
 
   mutating func status(_ status: DocumentSaveStatus, otherSheet: Bool, hidden: Bool) -> Effect {
     switch status {
@@ -177,7 +180,7 @@ struct SaveAttention: Equatable {
     }
     waiting = false
     presented = true
-    return .present(Self.alert(for: failure, shared: shared))
+    return .present(Self.alert(for: failure, shared: shared, storageNotice: storageNotice))
   }
   /// A sheet ended: whether a deferred failure should now try to show.
   mutating func otherSheetEnded() -> Bool {
@@ -192,7 +195,7 @@ struct SaveAttention: Equatable {
     presented = false
   }
 
-  static func alert(for failure: SaveFailure, shared: Bool = false) -> Alert {
+  static func alert(for failure: SaveFailure, shared: Bool = false, storageNotice: String? = nil) -> Alert {
     // Unsaved work stays live; a full or stopped document offers an explicit way back to
     // the durable state.
     let buttons: [Button] =
@@ -215,8 +218,7 @@ struct SaveAttention: Equatable {
     return Alert(
       title: failure == .invalidated ? "The document engine needs recovery" : "Changes could not be saved",
       message: failure == .full && shared
-        ? "This shared document is full. Save an unshared copy to keep your unsaved edits."
-        : failure.localizedDescription, buttons: buttons)
+        ? storageNotice ?? failure.localizedDescription : failure.localizedDescription, buttons: buttons)
   }
 }
 

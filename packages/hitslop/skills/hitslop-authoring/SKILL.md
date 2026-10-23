@@ -100,8 +100,11 @@ Keep reads reactive rather than destructuring `current` once. Editor CSS can sel
 `html[data-slop-layout="compact"]` (`:global(html[...])` in Svelte component CSS).
 For mobile support, reserve the native menu's header corner with
 `--slop-host-actions-width` (64px) and `--slop-host-actions-height` (44px). These are zero
-in other presentations. The host accounts for the notch, home indicator and keyboard;
-never add those insets again. Header titles must wrap, and fixed controls and full-height
+in other presentations. The editor runs edge to edge: pad the root by
+`var(--slop-safe-top, 0px)` and `var(--slop-safe-bottom, 0px)` and paint the background to
+the edges. The keyboard covers the page, like Messages, and the host brings the
+focused field above it with no app CSS; lift only bottom-pinned sheets, bars and dialogs by
+`var(--slop-keyboard-inset, 0px)`, never the page or a layout container. Header titles must wrap, and fixed controls and full-height
 sheets must leave the menu reachable. Follow the Mobile editors section of hitslop-design
 and review a native iPhone alongside the browser preset. `slop dev` has Browser/iPhone/iPad/Mac presentation presets that retain edits;
 they do not simulate native services. Static views use their capture props, never this

@@ -7,7 +7,7 @@ import { tierInputs, affectedTiers, type TierName } from "../../scripts/lib/veri
 import { exec } from "../../scripts/lib/test-process";
 import { repository } from "../../scripts/lib/artifacts";
 import { assertSwiftTestsRan } from "../../scripts/lib/swift-tests";
-import { ciJobs, touchesNativeGate, verificationArgs } from "../../scripts/ci/select";
+import { ciJobs, touchesNativeGate, touchesSharing, verificationArgs } from "../../scripts/ci/select";
 
 test("machine-readable selection lists native tiers without running tools or tests", async () => {
   const result = await exec([process.execPath, "scripts/verify.ts", "--list", "--json", "compat,rust,swift,native"], { cwd: repository,
@@ -73,6 +73,27 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
     expect(affected(path)).toEqual(candidates);
+});
+
+test("a pull request qualifies sharing for every input of the sharing tier, and for nothing else", () => {
+  for (const path of [
+    "crates/hitslop-core/src/owner/actor/sync.rs",
+    "crates/hitslop-core/src/document/mod.rs",
+    "Cargo.lock",
+    "crates/hitslop-sharing-client/src/transport.rs",
+    "apps/sharing/src/lib.rs",
+    "scripts/sharing/check-accounts.ts",
+    "packages/hitslop/src/browser/host.ts",
+    "packages/hitslop/src/sharing/room.ts",
+  ])
+    expect(touchesSharing([path])).toBe(true);
+  for (const path of ["docs/testing.md", "README.md", "apps/landing/src/routes/+page.svelte", "apps/apple/App/iOS/PhoneDocuments.swift", "packages/hitslop/src/sdk/context.ts"])
+    expect(touchesSharing([path])).toBe(false);
+  // Whatever the tier selects from the workspace, the pull request gate selects too.
+  for (const path of ["crates/hitslop-core/src/store.rs", "rust-toolchain.toml", "apps/sharing/Cargo.toml"]) {
+    expect(affected(path)).toContain("sharing");
+    expect(touchesSharing([path])).toBe(true);
+  }
 });
 
 test("policy and verification tests select tooling while shared execution stays conservative", () => {

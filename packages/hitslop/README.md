@@ -47,8 +47,8 @@ Use `apply` or `batch` for schema-aware edits and `attachments` for portable fil
 
 Alternatively, `bun install -g hitslop@1.0.0` provides `slop` on Bun's PATH. `slop` needs Bun; the package contains the document engine for its supported platforms.
 
-Follow the [CLI workflows](https://hitslop.com/docs/guides/cli-workflows/) for copyable examples, themes, attachments, exports, and skills. The [repository CLI reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md) includes all document operation shapes and contributor setup.
+Follow the [CLI workflows](https://hitslop.com/docs/guides/cli-workflows/) for copyable examples, themes, attachments, exports, and skills. The [repository CLI reference](https://github.com/hitslop/hitslop/blob/master/docs/guides/cli.md) includes all document operation shapes and contributor setup.
 
-See the [author guides](https://hitslop.com/docs/getting-started/) and [release guide](https://github.com/hitSlop/hitslop/blob/master/docs/guides/releasing.md).
+See the [author guides](https://hitslop.com/docs/getting-started/) and [release guide](https://github.com/hitslop/hitslop/blob/master/docs/guides/releasing.md).
 
 The CLI, SDK, templates and skills ship in this one package. MIT licensed.

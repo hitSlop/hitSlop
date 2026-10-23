@@ -4,7 +4,12 @@ use hitslop_core::{
     owner::SyncEvent,
     sync::{MAX_FRAME, PauseKind},
 };
-use hitslop_sharing_protocol::{envelope, frame::Frame};
+use hitslop_sharing_protocol::{
+    envelope,
+    failure::{self, Outcome, Route},
+    frame::Frame,
+    limits,
+};
 use std::{
     collections::VecDeque,
     net::{TcpStream, ToSocketAddrs},
@@ -62,9 +67,11 @@ pub(crate) fn http_typed(
     let suffix = if route.is_empty() { String::new() } else { format!("/{route}") };
     http_request_typed(method, &format!("{}/v1/rooms/{}{suffix}", key.origin, key.room), token, body, headers, limit)
 }
+#[derive(Debug)]
 pub(crate) enum HttpFailure {
     Ended,
-    Status(u16),
+    /// Another writer got there first, or creation is unfinished.
+    Conflict,
     Paused(hitslop_core::sync::Pause),
     Other(String),
 }
@@ -90,7 +97,7 @@ impl From<HttpFailure> for String {
             HttpFailure::Ended => "Sharing ended".into(),
             HttpFailure::Other(message) => message,
             HttpFailure::Paused(pause) => pause.reason,
-            HttpFailure::Status(status) => format!("Sharing service refused this request ({status})"),
+            HttpFailure::Conflict => Outcome::Conflict.message(409),
         }
     }
 }
@@ -102,6 +109,24 @@ impl From<&str> for HttpFailure {
 impl From<String> for HttpFailure {
     fn from(value: String) -> Self {
         Self::Other(value)
+    }
+}
+/// What a refused response means, for HTTP requests and the socket handshake alike.
+/// `body` is the relay's `ApiFailure` JSON when it sent one.
+pub(crate) fn refusal(status: u16, body: &[u8], route: Route) -> HttpFailure {
+    let body = serde_json::from_slice::<hitslop_sharing_protocol::http::ApiFailure>(body).ok();
+    let paused = |kind, reason| HttpFailure::Paused(hitslop_core::sync::Pause { kind, reason });
+    let outcome = failure::classify(status, body.as_ref().map(|b| b.code.as_str()), route);
+    match outcome {
+        Outcome::NeedsUpdate => {
+            paused(PauseKind::NeedsUpdate, body.map_or_else(|| outcome.message(status), |b| b.message))
+        }
+        Outcome::Ended => HttpFailure::Ended,
+        Outcome::Conflict => HttpFailure::Conflict,
+        Outcome::Refused => paused(PauseKind::Refused, outcome.message(status)),
+        Outcome::Outgrown => paused(PauseKind::Outgrown, outcome.message(status)),
+        Outcome::FilesFull => paused(PauseKind::FilesFull, outcome.message(status)),
+        Outcome::SignIn | Outcome::Failed => HttpFailure::Other(outcome.message(status)),
     }
 }
 pub(crate) fn http_request(
@@ -142,29 +167,11 @@ pub(crate) fn http_request_typed(
             .limit(hitslop_sharing_protocol::CONTROL_BYTES as u64)
             .read_to_vec()
             .unwrap_or_default();
-        if let Ok(failure) = serde_json::from_slice::<hitslop_sharing_protocol::http::ApiFailure>(&bytes)
-            && failure.code == "requires_update"
-        {
-            return Err(HttpFailure::Paused(hitslop_core::sync::Pause {
-                kind: PauseKind::NeedsUpdate,
-                reason: failure.message,
-            }));
-        }
-    }
-    match status {
-        200 | 204 => {}
-        401 => return Err("Sign in to your sharing account first".into()),
-        410 if method == "DELETE" => return Ok(Vec::new()),
-        410 => return Err(HttpFailure::Ended),
-        409 => return Err(HttpFailure::Status(409)),
-        413 => return Err(HttpFailure::Status(413)),
-        400 | 403 | 404 | 422 => {
-            return Err(HttpFailure::Paused(hitslop_core::sync::Pause {
-                kind: PauseKind::Refused,
-                reason: format!("Sharing service refused this request ({status})"),
-            }));
-        }
-        status => return Err(HttpFailure::Other(format!("Sharing service refused this request ({status})"))),
+        let failure = refusal(status, &bytes, Route::of(url));
+        return match failure {
+            HttpFailure::Ended if method == "DELETE" => Ok(Vec::new()),
+            failure => Err(failure),
+        };
     }
     let bytes =
         response.body_mut().with_config().limit(limit + 1).read_to_vec().map_err(|_| fail("Relay body unavailable"))?;
@@ -241,7 +248,7 @@ impl Connection {
         let status = Arc::new(Status { value: Mutex::new((Phase::Offline, "Connecting".into(), None)), notice });
         let (running, output) = (stop.clone(), status.clone());
         let thread = thread::spawn(move || {
-            let mut backoff = Duration::from_millis(250);
+            let mut backoff = Duration::from_millis(limits::BACKOFF_MIN_MS);
             let mut bootstrapped = false;
             let mut retried_full = false;
             while !running.load(Ordering::Relaxed) {
@@ -274,7 +281,7 @@ impl Connection {
                 while Instant::now() < until && !running.load(Ordering::Relaxed) {
                     thread::sleep(Duration::from_millis(25));
                 }
-                backoff = (backoff * 2).min(Duration::from_secs(8));
+                backoff = (backoff * 2).min(Duration::from_millis(limits::BACKOFF_MAX_MS));
             }
             trace("supervisor_stopped");
             owner.sync_detach();
@@ -309,6 +316,7 @@ fn connected(
     req.headers_mut()
         .insert("Sec-WebSocket-Protocol", hitslop_sharing_protocol::SOCKET_PROTOCOL.parse().map_err(fail)?);
     req.headers_mut().insert("Authorization", format!("Bearer {}", key.capability).parse().map_err(fail)?);
+    let route = Route::of(&req.uri().to_string());
     let host = req.uri().host().ok_or("Invalid relay host")?.to_owned();
     let addresses =
         (host.as_str(), req.uri().port_u16().unwrap_or(if req.uri().scheme_str() == Some("ws") { 80 } else { 443 }))
@@ -333,12 +341,17 @@ fn connected(
     stream.set_write_timeout(Some(Duration::from_secs(10))).map_err(fail)?;
     let (mut socket, _) = match tungstenite::client_tls_with_config(req, stream, None, None) {
         Ok(socket) => socket,
-        Err(tungstenite::HandshakeError::Failure(tungstenite::Error::Http(response)))
-            if response.status().as_u16() == 410 =>
-        {
-            status.set(Phase::Ended, "Ended".into());
+        // The relay answered the upgrade: permanent refusals and an ended room stop here.
+        Err(tungstenite::HandshakeError::Failure(tungstenite::Error::Http(response))) => {
+            let body = response.body().as_deref().unwrap_or_default();
+            match refusal(response.status().as_u16(), body, route) {
+                HttpFailure::Ended => status.set(Phase::Ended, "Ended".into()),
+                HttpFailure::Paused(pause) => status.paused(pause.kind, pause.reason),
+                _ => return Err("Relay socket unavailable".into()),
+            }
             return Ok(true);
         }
+        // No HTTP answer: a transport error, so the supervisor reconnects.
         Err(_) => return Err("Relay socket unavailable".into()),
     };
     let stream: &TcpStream = match socket.get_mut() {
@@ -364,7 +377,8 @@ fn connected(
     let mut compact_at = None;
     let mut waiting = false;
 
-    let mut ping_at = Instant::now() + Duration::from_secs(20);
+    let ping_every = Duration::from_millis(limits::PING_MS);
+    let mut ping_at = Instant::now() + ping_every;
     let result = (|| {
         trace("inventory_start");
         uploaded = resources::remote_blobs(key)?;
@@ -373,11 +387,11 @@ fn connected(
             let now = Instant::now();
             if now >= ping_at {
                 socket.send(Message::Text("ping".into())).map_err(|_| fail("Socket send failed"))?;
-                ping_at = now + Duration::from_secs(20);
+                ping_at = now + ping_every;
             }
             if now >= check_at {
                 let info = room_info(key, None)?;
-                check_at = now + Duration::from_secs(600);
+                check_at = now + Duration::from_millis(limits::ROOM_RECHECK_MS);
                 if waiting && !info.compact && *retried_full {
                     status.paused(PauseKind::Outgrown, "This document has outgrown sharing".into());
                     return Ok(true);
@@ -385,7 +399,11 @@ fn connected(
                 if info.compact || waiting {
                     let mut random = [0u8; 2];
                     getrandom::getrandom(&mut random).map_err(|_| fail("Cannot schedule compaction"))?;
-                    compact_at = Some(now + Duration::from_millis(u16::from_le_bytes(random) as u64 * 30_000 / 65_535));
+                    compact_at = Some(
+                        now + Duration::from_millis(
+                            u16::from_le_bytes(random) as u64 * limits::COMPACT_JITTER_MS / 65_535,
+                        ),
+                    );
                 }
             }
             if compact_at.is_some_and(|at| now >= at) {
@@ -410,21 +428,18 @@ fn connected(
                         Ok(None) => {
                             // Not eligible yet (edits in flight); each retry re-reads RoomInfo,
                             // so stay well inside the guest metadata budget.
-                            compact_at = Some(now + Duration::from_secs(15));
+                            compact_at = Some(now + Duration::from_millis(limits::COMPACT_RETRY_MS));
                         }
                         Ok(Some(base)) => {
                             compact_at = None;
                             match compact(key, &base) {
-                                Ok(()) | Err(HttpFailure::Status(409)) => {
+                                Ok(()) | Err(HttpFailure::Conflict) => {
                                     if waiting {
                                         *retried_full = true;
                                         return Ok(false);
                                     }
                                 }
-                                Err(HttpFailure::Status(413)) => {
-                                    status.paused(PauseKind::Outgrown, "This document has outgrown sharing".into());
-                                    return Ok(true);
-                                }
+                                // Pauses, an outgrown room among them, end the connection below.
                                 Err(error) => return Err(error),
                             }
                         }
@@ -468,13 +483,7 @@ fn connected(
                         if matches!(&frame, Frame::Push { .. }) {
                             status.set(Phase::Syncing, "Syncing files".into());
                             trace("upload_blobs_start");
-                            match resources::upload_blobs(owner, key, &mut uploaded) {
-                                Err(HttpFailure::Status(413)) => {
-                                    status.paused(PauseKind::FilesFull, "Attachments are full".into());
-                                    return Ok(true);
-                                }
-                                result => result?,
-                            }
+                            resources::upload_blobs(owner, key, &mut uploaded)?;
                             trace("upload_blobs_done");
                         }
                         let message = envelope::encode(frame).map_err(fail)?;
@@ -520,15 +529,20 @@ fn connected(
     admission.detach();
     trace("socket_detached");
     let _ = request(owner, Request::State);
-    result
+    match result {
+        // Any pause (a refusal, an outgrown room, full attachments) ends this connection for good.
+        Err(HttpFailure::Paused(pause)) => {
+            status.paused(pause.kind, pause.reason);
+            Ok(true)
+        }
+        result => result,
+    }
 }
 
 /// Versions use the seed route's canonical peer encoding.
 pub(crate) fn compact(key: &RoomKey, base: &hitslop_core::sync::Base) -> std::result::Result<(), HttpFailure> {
     let version = |vv: &loro::VersionVector| {
-        let mut pairs: Vec<_> = vv.iter().map(|(&p, &n)| (format!("{p:016x}"), n)).collect();
-        pairs.sort();
-        serde_json::to_string(&pairs).map_err(fail)
+        hitslop_sharing_protocol::frame::version_json(vv.iter().map(|(&p, &n)| (p, n as u32)))
     };
     http_typed(
         key,
@@ -539,8 +553,8 @@ pub(crate) fn compact(key: &RoomKey, base: &hitslop_core::sync::Base) -> std::re
         &[
             ("Content-Type", "application/octet-stream"),
             ("X-Sharing-SHA256", &hex(&Sha256::digest(&base.bytes))),
-            ("X-Sharing-Version", &version(&base.frontier)?),
-            ("X-Sharing-Root", &version(&base.start)?),
+            ("X-Sharing-Version", &version(&base.frontier)),
+            ("X-Sharing-Root", &version(&base.start)),
         ],
     )?;
     Ok(())
@@ -710,5 +724,67 @@ mod tests {
         assert!(terminal);
         assert_eq!(phase, Phase::Paused);
         assert_eq!(kind, Some(PauseKind::FilesFull));
+    }
+
+    /// Answer the socket upgrade with `answer` (or hang up) and report what `connected` made of it.
+    fn handshake(
+        answer: Option<(u16, &'static str)>,
+    ) -> (std::result::Result<bool, HttpFailure>, Phase, Option<PauseKind>) {
+        let (_dir, owner) = crate::tests::fixture();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let key = RoomKey {
+            room: "a".repeat(32),
+            capability: "b".repeat(64),
+            origin: format!("http://{}", listener.local_addr().unwrap()),
+        };
+        let serving = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut header = vec![];
+            while !header.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                header.push(byte[0]);
+            }
+            assert!(String::from_utf8(header).unwrap().starts_with(&format!("GET /v1/rooms/{}/sync ", "a".repeat(32))));
+            if let Some((code, body)) = answer {
+                write!(
+                    stream,
+                    "HTTP/1.1 {code} Reply\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+            }
+        });
+        let status = Status { value: Mutex::new((Phase::Offline, String::new(), None)), notice: Arc::default() };
+        let result = connected(&owner, &key, &AtomicBool::new(false), &status, &mut false);
+        // The relay saw one upgrade: a terminal answer does not loop back for another.
+        serving.join().unwrap();
+        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        let (phase, _, kind) = status.value.into_inner().unwrap();
+        (result, phase, kind)
+    }
+    #[test]
+    fn permanent_handshake_refusals_pause_instead_of_reconnecting() {
+        for (code, body, kind) in [
+            (403, "", PauseKind::Refused),
+            (404, "", PauseKind::Refused),
+            (400, r#"{"code":"requires_update","message":"Update hitSlop to keep sharing"}"#, PauseKind::NeedsUpdate),
+        ] {
+            let (result, phase, paused) = handshake(Some((code, body)));
+            assert!(matches!(result, Ok(true)), "{code} is terminal: {result:?}");
+            assert_eq!((phase, paused), (Phase::Paused, Some(kind)), "{code}");
+        }
+        let (result, phase, paused) = handshake(Some((410, "")));
+        assert!(matches!(result, Ok(true)));
+        assert_eq!((phase, paused), (Phase::Ended, None));
+    }
+    #[test]
+    fn transient_handshake_failures_stay_retryable() {
+        for answer in [Some((503, "")), Some((429, "")), None] {
+            let (result, phase, paused) = handshake(answer);
+            assert!(matches!(result, Err(HttpFailure::Other(_))), "{answer:?} retries: {result:?}");
+            assert_ne!(phase, Phase::Paused);
+            assert_eq!(paused, None);
+        }
     }
 }

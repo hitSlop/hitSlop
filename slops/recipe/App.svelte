@@ -228,9 +228,9 @@
           <textarea rows="1" use:grow={doc.current.title} class="title" aria-label="Recipe title" placeholder="Recipe title" use:bindText={doc.fields.title}></textarea>
           <textarea class="description" aria-label="Recipe description" placeholder="A short note about the dish" use:bindText={doc.fields.description}></textarea>
           <div class="stats">
-            <label><span>Serves</span><input aria-label="Servings" type="number" min="1" bind:value={() => doc.current.servings, (value) => (doc.fields.servings.value = servings(value))} /></label>
-            <label><span>Prep</span><span class="number"><input aria-label="Preparation minutes" type="number" min="0" bind:value={() => doc.current.prepMinutes, (value) => (doc.fields.prepMinutes.value = minutes(value))} /><small>min</small></span></label>
-            <label><span>Cook</span><span class="number"><input aria-label="Cooking minutes" type="number" min="0" bind:value={() => doc.current.cookMinutes, (value) => (doc.fields.cookMinutes.value = minutes(value))} /><small>min</small></span></label>
+            <label><span>Serves</span><input aria-label="Servings" type="number" inputmode="numeric" min="1" bind:value={() => doc.current.servings, (value) => (doc.fields.servings.value = servings(value))} /></label>
+            <label><span>Prep</span><span class="number"><input aria-label="Preparation minutes" type="number" inputmode="numeric" min="0" bind:value={() => doc.current.prepMinutes, (value) => (doc.fields.prepMinutes.value = minutes(value))} /><small>min</small></span></label>
+            <label><span>Cook</span><span class="number"><input aria-label="Cooking minutes" type="number" inputmode="numeric" min="0" bind:value={() => doc.current.cookMinutes, (value) => (doc.fields.cookMinutes.value = minutes(value))} /><small>min</small></span></label>
           </div>
         </div>
 
@@ -357,7 +357,7 @@
                   <input class="stepTitle" aria-label="Step {index + 1} title" use:bindText={doc.at(step).title} />
                   <textarea use:grow={step.text} aria-label="Step {index + 1} instructions" use:bindText={doc.at(step).text}></textarea>
                 </div>
-                <label class="stepTime" title="Optional timer"><input aria-label="Step {index + 1} timer in minutes" type="number" min="0" placeholder="–" bind:value={() => step.minutes, (value) => (doc.at(step).minutes.value = minutes(value))} /><span>min</span></label>
+                <label class="stepTime" title="Optional timer"><input aria-label="Step {index + 1} timer in minutes" type="number" inputmode="numeric" min="0" placeholder="–" bind:value={() => step.minutes, (value) => (doc.at(step).minutes.value = minutes(value))} /><span>min</span></label>
                 <div class="rowActions" data-slop-export="hide">
                   <button aria-label="Move step up" disabled={index === 0} onclick={() => moveRowBy("step", step.$id, "up")}><ArrowUp size={10} /></button>
                   <button aria-label="Move step down" disabled={index === doc.current.steps.length - 1} onclick={() => moveRowBy("step", step.$id, "down")}><ArrowDown size={10} /></button>

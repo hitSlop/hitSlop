@@ -57,6 +57,14 @@ pub enum Request {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
+    /// Moves a document that cannot save to a new file at `dest`, holding its live state,
+    /// and releases it without saving. Refused (the file exists, the copy fails its check)
+    /// with the owner open and every edit untouched, after the host's close barrier.
+    Handoff {
+        dest: PathBuf,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+    },
     /// A copy a person keeps, as a document of its own, with the artwork rendered for it.
     Copy {
         destination: PathBuf,
@@ -96,6 +104,7 @@ impl Request {
             Self::Flush => R::Flush,
             Self::Discard => R::Discard,
             Self::Close { preview, icon } => R::Close { preview, icon },
+            Self::Handoff { dest, preview, icon } => R::Handoff { dest, preview, icon },
             Self::Copy { destination, preview, icon } => R::Copy { destination, preview, icon },
             Self::CaptureSource { destination } => R::CaptureSource { destination },
             Self::Backup { destination } => R::Backup { destination },

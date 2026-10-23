@@ -78,8 +78,8 @@ fn local_blobs(owner: &Owner) -> Result<Vec<Resource>> {
         .map(|item| Resource { key: item.id.clone(), hash: item.id, size: item.bytes, media_type: item.media_type })
         .collect())
 }
-pub(crate) fn remote_blobs(key: &RoomKey) -> Result<Vec<Resource>> {
-    let list = transport::http(key, "GET", "blobs", Some(&key.capability), &[], &[])?;
+pub(crate) fn remote_blobs(key: &RoomKey) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
+    let list = transport::http_typed(key, "GET", "blobs", Some(&key.capability), &[], &[])?;
     let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
     resource_types::validate(&items, true).map_err(fail)?;
     Ok(items)
@@ -106,19 +106,23 @@ pub(crate) fn upload_blobs(
     }
     Ok(())
 }
-pub(crate) fn download_blobs(owner: &Owner, key: &RoomKey, uploaded: &mut Vec<Resource>) -> Result<()> {
+pub(crate) fn download_blobs(
+    owner: &Owner,
+    key: &RoomKey,
+    uploaded: &mut Vec<Resource>,
+) -> std::result::Result<(), transport::HttpFailure> {
     let remote = remote_blobs(key)?;
     for item in resource_types::missing_attachments(&remote, &local_blobs(owner)?).map_err(fail)? {
-        let bytes = transport::http(key, "GET", &format!("blob/{}", item.hash), Some(&key.capability), &[], &[])?;
+        let bytes = transport::http_typed(key, "GET", &format!("blob/{}", item.hash), Some(&key.capability), &[], &[])?;
         let accepted = hitslop_core::store::Attachment::from_bytes(&bytes).map_err(fail)?;
         if accepted.id != item.hash || accepted.bytes != item.size || accepted.media_type != item.media_type {
-            return Err(fail("Downloaded attachment failed verification"));
+            return Err(fail("Downloaded attachment failed verification").into());
         }
         let Reply::Attachment { item: stored } = request(owner, Request::PutAttachment { bytes })? else {
-            return Err(fail("Attachment was not stored"));
+            return Err(fail("Attachment was not stored").into());
         };
         if stored.id != item.hash {
-            return Err(fail("Attachment identity changed"));
+            return Err(fail("Attachment identity changed").into());
         }
     }
     *uploaded = remote;

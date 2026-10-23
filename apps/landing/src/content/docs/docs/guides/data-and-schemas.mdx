@@ -3,7 +3,7 @@ title: Data and schemas
 description: Typed document fields chosen by merge behavior, snapshot handles, changes, previews and persistence.
 ---
 
-The Rust document owner (on Loro), shared by the hitSlop app and CLI, merges and validates every edit and stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
+The Rust document owner, shared by the hitSlop app and CLI, merges and validates every edit and stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
 
 ## Define the shape
 
@@ -205,7 +205,7 @@ Example responses (schema and value excerpts; other fields are omitted):
 
 Edits are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/). The [numbered command walkthrough](/docs/guides/edit-installed-data/) includes full discovery and read responses.
 
-Every kind's merge rules, error codes and CLI paths are in the [document types reference](https://github.com/hitSlop/hitslop/blob/master/docs/reference/document-types.md).
+Each kind's merge behavior is in the table above, and the [operation shapes](/docs/guides/cli-workflows/#read-and-edit-data) are in the CLI guide.
 
 ### Handling refused edits
 

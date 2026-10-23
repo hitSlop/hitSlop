@@ -191,7 +191,7 @@
         <div class="stats">
           <label class="chip">
             <span class="chipLabel">Income</span>
-            <input class="chipValue" type="number" min="0" step="0.01" aria-label="Monthly income" bind:value={doc.fields.income.value} />
+            <input class="chipValue" type="number" inputmode="decimal" min="0" step="0.01" aria-label="Monthly income" bind:value={doc.fields.income.value} />
           </label>
           <div class="chip">
             <span class="chipLabel">Expenses</span>
@@ -199,7 +199,7 @@
           </div>
           <label class="chip">
             <span class="chipLabel">Savings</span>
-            <input class="chipValue" type="number" min="0" step="0.01" aria-label="Savings target" bind:value={doc.fields.savings.value} />
+            <input class="chipValue" type="number" inputmode="decimal" min="0" step="0.01" aria-label="Savings target" bind:value={doc.fields.savings.value} />
           </label>
         </div>
 
@@ -223,7 +223,7 @@
                   <div class="catFigures">
                     <span class="spent">{formatCurrency(money(cat.spent))}</span>
                     <span class="divider">/</span>
-                    <input class="allocated" type="number" min="0" step="0.01" aria-label="{cat.name} allocated amount" bind:value={() => doc.at(cat).allocated.value, (next) => { doc.at(cat).allocated.value = next; }} onclick={(event) => event.stopPropagation()} />
+                    <input class="allocated" type="number" inputmode="decimal" min="0" step="0.01" aria-label="{cat.name} allocated amount" bind:value={() => doc.at(cat).allocated.value, (next) => { doc.at(cat).allocated.value = next; }} onclick={(event) => event.stopPropagation()} />
                     <Button.Root type="button" class="deleteCat" data-slop-export="hide" aria-label="Delete {cat.name}" onclick={() => removeCategory(cat.$id)}>
                       <Trash2 size={12} />
                     </Button.Root>

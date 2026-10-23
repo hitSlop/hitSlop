@@ -6,6 +6,7 @@ import type { BrowserRequest } from "../wire/browser.generated";
 import type { Capability, WindowDefinition } from "../wire/app.generated";
 import type { PageFailure } from "../wire/page";
 import { cleanup, listCopies, lockName, putCopy, removeCopy } from "./copies";
+import { JoinGate } from "./join";
 import { silhouetteClip } from "../schema/presentation";
 import { capabilityFeatures } from "../schema/policy";
 import {
@@ -28,7 +29,7 @@ const retry = document.querySelector<HTMLButtonElement>("#retry")!;
 const fullscreen = document.querySelector<HTMLButtonElement>("#fullscreen")!;
 const awake = document.querySelector<HTMLButtonElement>("#awake")!;
 const hosted = resourceDelivery.kind === "network";
-let sharingEnded = false;
+const join = new JoinGate();
 const params = new URLSearchParams(location.search);
 let id = params.get("copy");
 let source = hosted
@@ -36,10 +37,6 @@ let source = hosted
     ? "0".repeat(64)
     : null
   : new URLSearchParams(location.hash.slice(1)).get("import");
-let resourcesResolve: () => void = () => {};
-const resourcesReady = new Promise<void>((resolve) => {
-  resourcesResolve = resolve;
-});
 const fail = (error: unknown) => {
   status.textContent = String(error);
   status.setAttribute("role", "alert");
@@ -49,10 +46,6 @@ let page: MessagePort | undefined;
 let frame: HTMLIFrameElement | undefined;
 let surface: HTMLDivElement | undefined;
 let windowSpec: WindowDefinition | undefined;
-let joinedResolve: () => void = () => {};
-const firstCatchup = new Promise<void>((resolve) => {
-  joinedResolve = resolve;
-});
 /** Everything this tab waits on: the worker's replies and the page's answers to `host` messages.
  * Once it has failed, the worker is gone for good: nothing more is sent to it or believed. */
 const requests = new PendingRequests<WorkerEvent | HostReply>();
@@ -161,7 +154,7 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
   frame = document.createElement("iframe");
   frame.title = title.textContent || "Slop";
   const origin = resourceDelivery.frameOrigin(id!);
-  frame.src = `${origin}/${sharingEnded ? "?local=1" : ""}`;
+  frame.src = `${origin}/${join.ended ? "?local=1" : ""}`;
   frame.setAttribute(
     "sandbox",
     "allow-scripts allow-same-origin allow-forms allow-downloads allow-popups",
@@ -177,7 +170,7 @@ function mount(spec: WindowDefinition, capabilities: readonly Capability[]) {
       return;
     page?.close();
     const pages = new MessageChannel();
-    const assets = hosted && !sharingEnded ? undefined : new MessageChannel();
+    const assets = hosted && !join.ended ? undefined : new MessageChannel();
     page = pages.port1;
     // The frame is the page's, so its messages are checked, not trusted.
     page.onmessage = ({ data }) => {
@@ -293,7 +286,7 @@ async function own() {
         worker.onmessage = async ({ data }: MessageEvent<WorkerEvent | SharingEvent>) => {
           if (requests.failure) return;
           if (data.type === "resourcesReady") {
-            resourcesResolve();
+            join.handle(data);
             return;
           }
           if (data.type === "files") {
@@ -301,13 +294,8 @@ async function own() {
             return;
           }
           if (data.type === "sync") {
-            if (data.status === "Sharing ended") {
-              sharingEnded = true;
-              resourcesResolve();
-              joinedResolve();
-            }
             document.querySelector("#sync")!.textContent = data.status;
-            if (data.status === "Synced") joinedResolve();
+            join.handle(data);
             return;
           }
           if (data.type === "ready") {
@@ -329,9 +317,16 @@ async function own() {
             if (requests.failure) return;
             history.replaceState(null, "", `/?copy=${id}`);
             download.disabled = false;
-            if (hosted) await resourcesReady;
-            if (hosted && source) await firstCatchup; // Initial join catches up before authored startup effects run.
+            if (hosted) await join.resources;
+            if (hosted && source) await join.catchup; // Initial join catches up before authored startup effects run.
             if (requests.failure) return;
+            if (join.stopped !== undefined) {
+              // The copy is intact and saved here; it just cannot open until sharing is dealt with.
+              fail(
+                `Sharing stopped: ${join.stopped.replace(/[.…]+$/, "")}. This copy is saved in this browser: download it, or go back to Browser copies.`,
+              );
+              return;
+            }
             mount(data.window, data.capabilities);
             download.disabled = false;
           } else if (data.type === "save") {

@@ -733,6 +733,7 @@ html[data-slop-capture] .checklist-row {
 
 .checklist-menu { transform-origin: var(--bits-dropdown-menu-content-transform-origin, top right); }
 
-/* The native phone menu shares the heading row; system safe areas belong to the host. */
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .checklist-shell { padding-top: 12px; }
+/* The page runs edge to edge: the shell paints to the screen edges and pads for the host's safe areas. The native phone menu shares the heading row. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .checklist-shell { padding-top: calc(var(--slop-safe-top, 0px) + 12px); padding-bottom: var(--slop-safe-bottom, 0px); }
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .checklist-header { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); margin-bottom: 12px; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .checklist-menu { max-height: calc(100dvh - 24px - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px)); }

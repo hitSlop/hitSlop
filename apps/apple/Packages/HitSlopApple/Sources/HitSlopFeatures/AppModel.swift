@@ -211,7 +211,7 @@ public struct AppClient {
       let next = documents[index].queue.finish(failed: false)
       refresh(id)
       // The copy opens even while quit waits; quit then waits for it too.
-      if command == .duplicate, let url { insert(url) }
+      if command == .duplicate || command == .saveUnsharedCopy, let url { insert(url) }
       return next
     case .failure(let failure):
       let next = documents[index].queue.finish(failed: true)

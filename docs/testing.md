@@ -24,7 +24,7 @@ openable, so its frozen entries never change.
 | Rust owner and commands | `crates/hitslop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | Chrome durable copies and WebKit native-owner preview, without building Swift |
-| Sharing service | `scripts/sharing/check-accounts.ts`, `verify sharing` (explicit qualification) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, room creation/open, replaceable uploads, owner recovery, quota release and Stop/upload races; local certificate substitution only |
+| Sharing service | `scripts/sharing/check-accounts.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, room creation/open, replaceable uploads, owner recovery, quota release and Stop/upload races; local certificate substitution only |
 | Engine renders | `tests/native/{render,landing}.native.test.ts`, `packages/hitslop/tests/cli/build.native.test.ts`, `bun run verify render` | Engine artwork and PNG/PDF exports on macOS and Linux, without Swift |
 | Native tools | Remaining `tests/native`, `bun run verify native` | Engine or host killed mid-edit and corpus replay on macOS |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
@@ -76,7 +76,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 
 | Tier | Runs |
 |---|---|
-| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), Oxlint for `packages/hitslop/src` and `scripts`, TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), and Svelte types for the templates and the SDK's components. Together, concurrently |
+| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), Oxlint for `packages/hitslop/src` and `scripts`, TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), Svelte types for the templates and the SDK's components, and `scripts/ci/hygiene.ts` (no placeholder invitation link in any tracked file, one iPhone download address in the site, README and Swift links, and a landing template catalog that matches the active templates; regenerate it with `bun run build:templates && bun apps/landing/scripts/templates.ts`). Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell and release tests over SDK WASM; up to four isolated file workers |
 | `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |
@@ -87,7 +87,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `swift` | Swift formatting, native bindings, shell and fixtures, then one serial `swift test` invocation after compilation, with an isolated temporary directory and registry. Requires at least one executed test. Filtered runs (`verify swift --filter X`) pass Swift’s filters through, including `name\(` patterns |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
 | `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `HITSLOP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
-| `sharing` | Builds the browser and Rust Worker, then runs the account/room boundary in pinned Miniflare with SQLite DOs and R2. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run; automatic CI qualification is not configured yet |
+| `sharing` | Builds the browser and Rust Worker, then runs the account/room boundary in pinned Miniflare with SQLite DOs and R2. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run. A pull request runs it (the `sharing` job) when it changes any of the tier's own inputs (`apps/sharing`, `scripts/sharing`, any crate or Cargo build input) or `packages/hitslop/src/{sharing,browser}`; `sharing.yml` runs it on master pushes and release tags |
 | `native` | Remaining native tests with engine/evaluator and shell; no Swift preparation |
 
 Oxlint (`.oxlintrc.json`, `bun run lint`) adds type-aware promise rules to its correctness
@@ -412,6 +412,7 @@ without changing file bytes. See [releasing](guides/releasing.md).
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
+| `sharing` (macOS 15 ARM64) | `verify sharing` on a pull request that changes the relay, any Rust crate or Cargo build input, or the sharing and browser hosts (Miniflare qualification is proven on macOS only); master pushes and release tags run it in `sharing.yml` |
 | `qualification` (nightly/manual) | Playwright browser integration and the macOS portable CLI/package matrix; not required for merging |
 | `release-templates` (Ubuntu, nightly/manual) | Builds, caches and renders the full template corpus with the engine and shell, without Swift/Xcode or WASM tools |
 | Release (`workflow_dispatch`) | Candidate builds/tests/signs/notarizes once; environment approval publishes the retained app/npm/corpus bytes; website deployment is independent |

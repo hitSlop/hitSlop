@@ -431,6 +431,20 @@
     }
   },
   {
+    "type": "SharingEvent",
+    "name": "sync with phase",
+    "input": {
+      "type": "sync",
+      "status": "Reason shown to a person",
+      "phase": "paused"
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "Reason shown to a person",
+      "phase": "paused"
+    }
+  },
+  {
     "type": "ResourceGrant",
     "name": "resource grant",
     "input": {

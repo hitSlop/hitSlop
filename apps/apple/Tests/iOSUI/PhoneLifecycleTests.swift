@@ -53,7 +53,8 @@ final class PhoneLifecycleTests: XCTestCase {
     input.typeText(edit)
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
     XCTAssertEqual(input.frame.width, originalWidth, accuracy: 1, "Focusing a small input must not zoom the page")
-    let dismiss = app.buttons["dismiss-keyboard"]
+    // The system keyboard toolbar's ✓ is the native dismissal; the page never draws its own.
+    let dismiss = app.buttons["Done"].firstMatch
     XCTAssertTrue(dismiss.waitForExistence(timeout: 5), "Every document needs a native keyboard dismissal action")
     dismiss.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))

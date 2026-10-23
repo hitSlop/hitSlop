@@ -88,8 +88,30 @@ pub enum SharingControl {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum SharingEvent {
     ResourcesReady,
-    Files { status: String },
-    Sync { status: String },
+    Files {
+        status: String,
+    },
+    /// `status` is for people. `phase` is what a host routes on; older workers omit it.
+    Sync {
+        status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        phase: Option<SyncPhase>,
+    },
+}
+/// Where a replica stands with its room, apart from the words shown for it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+pub enum SyncPhase {
+    #[default]
+    Offline,
+    Syncing,
+    Synced,
+    /// Stopped until a person acts; the reason travels with the pause.
+    Paused,
+    /// The room no longer exists; the local copy is all that remains.
+    Ended,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

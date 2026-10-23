@@ -1,11 +1,12 @@
 # Direction
 
-Today hitSlop is a signed Mac app and one matching npm package. People create local
-documents from bundled or installed templates, edit them in the window or through the CLI
-(their coding agent included), and export PNG and PDF.
+Today hitSlop is a signed Mac app, an iPhone app and one matching npm package. People
+create documents from bundled or installed templates, edit them in the window or through
+the CLI (their coding agent included), keep them in sync across their devices, edit them
+live with others, and export PNG and PDF.
 
 The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates slops,
-bundles the Popular templates plus Little Days, and imports from Files. The current
+bundles the Popular templates and imports from Files. The current
 iPhone host is portrait-only; per-slop orientation declarations remain future work. The Mac/iPhone Synced Library
 keeps managed slops in sync through the person's iCloud account. The Mac app
 includes the Synced Library on CloudKit Production, matching TestFlight/App Store
@@ -52,9 +53,9 @@ directions without release dates or a platform delivery order. The
 
 ## Open now
 
-- **Apple releases.** Release the iPhone app on the App Store and the Mac app with
-  Synced Library on CloudKit Production. The iPhone app, Files import, library sync
-  and Home Screen widgets are implemented.
+- **App Store release.** Release the iPhone app on the App Store. The Mac app with
+  Synced Library, the iPhone app in TestFlight, Files import and Home Screen widgets
+  are implemented.
 - **Sharing rollout.** Account deletion/Apple revocation, rejoin after re-share,
   guest entry-point rate limits and metrics, frozen v1 HTTP/binary fixtures, universal
   links and Save Unshared Copy are implemented. Privacy disclosures cover relay
@@ -64,8 +65,8 @@ directions without release dates or a platform delivery order. The
   before publication.
   [Architecture](architecture.md#relay) and the [sharing README](../apps/sharing/README.md)
   own the technical description and operating limits.
-- **Apple follow-ups.** Qualify the library on Production, including background widget
-  refresh on devices, and expand starter coverage.
+- **Post-1.1 follow-ups.** Qualify background widget refresh on devices and library
+  sync on more accounts, and expand starter coverage.
 
 - An additive authoring environment API exposes native platform/device identity and
   reactive compact/regular viewport layout to Svelte and editor CSS. Browser identity
@@ -83,7 +84,7 @@ directions without release dates or a platform delivery order. The
 - A text draft whose control is destroyed after an unknown-outcome send is retained in
   the page shell. Native close/quit offers to copy the complete text, discard it or cancel;
   cancelling retains the draft and resumes editing. Recovery after renderer termination
-  remains deferred. Qualify the prompt with the 1.0.1 release candidate.
+  remains deferred. Qualify the prompt with the next release candidate.
 - Qualify the release candidate with the current [release checks](guides/releasing.md).
   Complete-value replacement, template acceptance, command declaration checks,
   dedicated captures and document UUID copy rules are implemented. Historical foundation
@@ -288,9 +289,9 @@ needs no document server.
 
 **Further collaboration design.** Beyond the [release qualification](#open-now), person-level
 permissions, read-only links, browser creator accounts, CLI share/join, reliable offline
-web reopening and room compaction remain later work. Qualify
+web reopening remain later work. Keep qualifying
 [container-creation and undo conflicts](reference/document-types.md#storage-layout)
-before public rollout. Keep the existing Rust owner and relay boundaries described in
+as collaboration grows. Keep the existing Rust owner and relay boundaries described in
 [architecture](architecture.md#relay).
 
 **Sync beyond Apple devices.** The implemented CloudKit Synced Library uses a person's

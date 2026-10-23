@@ -3,7 +3,7 @@
   import { Dialog, Select, Checkbox } from "bits-ui";
   import "hitslop/base.css";
   import "./styles.css";
-  import { bindText, getDocument, haptics } from "hitslop/svelte";
+  import { bindText, getDocument, getEnvironment, haptics } from "hitslop/svelte";
   import schema from "./schema";
   import {
     type Task,
@@ -29,6 +29,23 @@
   } from "./schedule";
 
   const doc = getDocument(schema);
+  const environment = getEnvironment();
+  // A phone shows one day at a time with taps instead of drag gestures. The selected day is
+  // local view state and is never written to the document.
+  const compact = $derived(environment.current.layout === "compact");
+  const hour = $derived(compact ? 80 : HOUR);
+  const weekdays = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+  let pickedDay = $state<number | null>(null);
+  const activeDay = $derived.by(() => {
+    const days = doc.current.days;
+    if (pickedDay !== null) return Math.min(pickedDay, days.length - 1);
+    return Math.max(0, days.findIndex((day) => day.name === weekdays[new Date().getDay()]));
+  });
+  function pickDay(index: number) {
+    if (index === activeDay) return;
+    pickedDay = index;
+    haptics.selection();
+  }
   let scroller = $state<HTMLDivElement>();
   let board = $state<HTMLDivElement>();
 
@@ -36,7 +53,7 @@
     void tick().then(() =>
       requestAnimationFrame(() => {
         const lane = board?.querySelector<HTMLElement>("[data-lane]");
-        if (lane && scroller) scroller.scrollTop = lane.offsetTop + 8 * HOUR - 57;
+        if (lane && scroller) scroller.scrollTop = lane.offsetTop + 8 * hour - (compact ? 8 : 57);
       }),
     );
   });
@@ -165,7 +182,7 @@
     const day = Math.max(0, Math.min(lanes.length - 1, Math.floor((x - first.left) / first.width)));
     return {
       day,
-      at: Math.max(0, Math.min(1440, snap(((y - first.top) / HOUR) * 60))),
+      at: Math.max(0, Math.min(1440, snap(((y - first.top) / hour) * 60))),
       anytime: y < first.top,
     };
   }
@@ -281,10 +298,18 @@
     message = `Moved ${task.title} to ${doc.current.days[g.day]?.name}, ${time || "Anytime"}`;
   }
 
+  function tapLane(event: MouseEvent, day: number) {
+    if (event.detail === 0) return edit(day, undefined, 540);
+    const lane = event.currentTarget as HTMLElement;
+    const at = snap(((event.clientY - lane.getBoundingClientRect().top) / hour) * 60);
+    edit(day, undefined, Math.max(0, Math.min(1380, at)));
+  }
+
   async function keyboard(event: KeyboardEvent, day: number, task: Task, edge?: "start" | "end") {
     if (!event.key.startsWith("Arrow") || !board) return;
     event.preventDefault();
     if (!edge && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+      if (compact) return;
       const direction = event.key === "ArrowLeft" ? -1 : 1;
       const target = doc.current.days[day + direction];
       if (!target) return;
@@ -326,31 +351,49 @@
     </header>
     <div class="toolbar">
       <button class="button" onclick={() => { if (scroller) scroller.scrollTop = 0; }}>Anytime tasks</button>
-      <button class="primary" onclick={() => edit(0)}>+ Add block</button>
+      <button
+        class="primary"
+        aria-label={compact ? `Add block on ${doc.current.days[activeDay]?.name}` : undefined}
+        onclick={() => edit(compact ? activeDay : 0)}>+ Add block</button>
     </div>
-    <div class="scroll" bind:this={scroller}>
-      <div class="board" bind:this={board}>
-        <div class="corner">WEEK</div>
+    {#if compact}
+      <div class="dayTabs" role="group" aria-label="Day of the week">
         {#each doc.current.days as day, index (day.$id)}
-          <div class="dayHead">
+          <button
+            class="dayTab"
+            aria-pressed={index === activeDay}
+            aria-label="{day.name} {day.date}"
+            onclick={() => pickDay(index)}
+          >
+            <span class="dayTabName">{day.name}</span>
+            <span class="dayTabDate">{day.date}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+    <div class="scroll" bind:this={scroller}>
+      <div class="board" bind:this={board} style:--hour="{hour}px">
+        {#if !compact}<div class="corner">WEEK</div>{/if}
+        {#each doc.current.days as day, index (day.$id)}
+          {#if !compact}<div class="dayHead">
             <div>
               <span class="dayName">{day.name}</span>
               <div class="date">{day.date}</div>
             </div>
             <button class="add" aria-label="Add block on {day.name}" onclick={() => edit(index)}>+</button>
-          </div>
+          </div>{/if}
         {/each}
         <div class="anytimeLabel">ANYTIME</div>
         {#each doc.current.days as day, index (day.$id)}
-          <div class="anytime" data-anytime={index}>
+          {#if !compact || index === activeDay}<div class="anytime" data-anytime={index}>
             {#each day.tasks.filter((task) => minutes(task.time) === null) as task (task.$id)}
               <div class="untimed" data-color={task.color} data-done={task.done}>
                 <button
                   class="blockBody"
                   data-task-id={task.$id}
                   aria-label="Edit or move {task.title || 'block'}, {day.name}, Anytime"
-                  onpointerdown={(event) => begin(event, index, task, "move")}
-                  onclick={(event) => { if (event.detail === 0) edit(index, task); }}
+                  onpointerdown={compact ? undefined : (event) => begin(event, index, task, "move")}
+                  onclick={(event) => { if (compact || event.detail === 0) edit(index, task); }}
                   onkeydown={(event) => keyboard(event, index, task)}
                 >{task.done ? "✓ " : ""}{task.title || "Untitled"}</button>
               </div>
@@ -358,7 +401,7 @@
             {#if gesture?.moved && gesture.day === index && gesture.nextStart === null}
               <span class="eyebrow">Drop here</span>
             {/if}
-          </div>
+          </div>{/if}
         {/each}
         <div class="gutter">
           {#each Array.from({ length: 24 }, (_, i) => i) as hour}
@@ -366,12 +409,12 @@
           {/each}
         </div>
         {#each doc.current.days as day, index (day.$id)}
-          <div class="lane" data-lane={index}>
+          {#if !compact || index === activeDay}<div class="lane" data-lane={index}>
             <button
               class="sheet"
-              aria-label="Draw a block on {day.name}"
-              onpointerdown={(event) => begin(event, index, null, "draw")}
-              onclick={(event) => { if (event.detail === 0) edit(index, undefined, 540); }}
+              aria-label={compact ? `Add a block on ${day.name}` : `Draw a block on ${day.name}`}
+              onpointerdown={compact ? undefined : (event) => begin(event, index, null, "draw")}
+              onclick={(event) => { if (compact) tapLane(event, index); else if (event.detail === 0) edit(index, undefined, 540); }}
             ></button>
             {#each layout(day.tasks) as item (item.task.$id)}
               <article
@@ -379,8 +422,8 @@
                 data-color={item.task.color}
                 data-done={item.task.done}
                 data-active={gesture?.id === item.task.$id && gesture.moved}
-                style:top={`${(item.start / 60) * HOUR}px`}
-                style:height={`${((item.end - item.start) / 60) * HOUR}px`}
+                style:top={`${(item.start / 60) * hour}px`}
+                style:height={`${((item.end - item.start) / 60) * hour}px`}
                 style:left={`calc(${(item.column / item.columns) * 100}% + 2px)`}
                 style:width={`calc(${100 / item.columns}% - 4px)`}
               >
@@ -389,8 +432,8 @@
                   data-short={item.end - item.start <= 30}
                   data-task-id={item.task.$id}
                   aria-label="Edit or move {item.task.title || 'block'}, {day.name}, {label(item.start)} to {label(item.end)}"
-                  onpointerdown={(event) => begin(event, index, item.task, "move")}
-                  onclick={(event) => { if (event.detail === 0) edit(index, item.task); }}
+                  onpointerdown={compact ? undefined : (event) => begin(event, index, item.task, "move")}
+                  onclick={(event) => { if (compact || event.detail === 0) edit(index, item.task); }}
                   onkeydown={(event) => keyboard(event, index, item.task)}
                 >
                   <span class="blockTitle">{item.task.done ? "✓ " : ""}{item.task.title || "Untitled"}</span>
@@ -398,7 +441,7 @@
                     <span class="blockTime">{label(item.start)} – {label(item.end)}</span>
                   {/if}
                 </button>
-                <button
+                {#if !compact}<button
                   class="handle"
                   style:top="0"
                   aria-label="Change start of {item.task.title}"
@@ -411,25 +454,25 @@
                   aria-label="Change end of {item.task.title}"
                   onpointerdown={(event) => begin(event, index, item.task, "end")}
                   onkeydown={(event) => keyboard(event, index, item.task, "end")}
-                ></button>
+                ></button>{/if}
               </article>
             {/each}
             {#if gesture?.moved && gesture.day === index && gesture.nextStart !== null}
               <div
                 class="ghost"
-                style:top={`${(gesture.nextStart / 60) * HOUR}px`}
-                style:height={`${((gesture.nextEnd - gesture.nextStart) / 60) * HOUR}px`}
+                style:top={`${(gesture.nextStart / 60) * hour}px`}
+                style:height={`${((gesture.nextEnd - gesture.nextStart) / 60) * hour}px`}
               >
                 {label(gesture.nextStart)}–{label(gesture.nextEnd)}
               </div>
             {/if}
-          </div>
+          </div>{/if}
         {/each}
       </div>
     </div>
     <footer class="footer">
       <span>{doneCount} / {allTasks.length} done</span>
-      <span role="status">{message || "Drag to move · Pull edges to resize"}</span>
+      <span role="status">{message || (compact ? "Tap a block to edit" : "Drag to move · Pull edges to resize")}</span>
     </footer>
   </main>
   <Dialog.Root bind:open={dialogOpen}>

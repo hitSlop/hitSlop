@@ -129,20 +129,27 @@ presentation differences; use media/container queries for the space available.
 Compact layouts must prioritize the slop's main job, not stack a desktop sidebar
 above it. Preserve all functions through secondary Bits UI controls when needed.
 
-The native iPhone host is portrait-only and owns notch, home-indicator, and keyboard
-safe areas. Every editor starts directly below the status bar, with a native glass
-actions menu floating at the top right. Leave that corner free in the heading row
+The native iPhone host is portrait-only and runs the editor edge to edge, under the
+status bar and home indicator: paint the background to the edges and pad the root by
+`var(--slop-safe-top, 0px)` and `var(--slop-safe-bottom, 0px)` (simulated as 47px/34px in the
+`slop dev` iPhone preset). The keyboard covers the page without resizing it and the host
+scrolls the focused field into view. A native glass actions menu floats at the top right,
+12px below the safe top. Leave that corner free in the heading row
 using `padding-inline-end: calc(12px + var(--slop-host-actions-width, 0px))` and
 `min-height: var(--slop-host-actions-height, 0px)`. The live phone values are 64px wide
 and 44px high; they are zero in other presentations, including captures. Keep header
 text wrapping and reserve the corner in fixed controls and full-height sheets too.
 Centered dialogs can cap their height at
-`calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px))`; bottom sheets can
-use `calc(100dvh - var(--slop-host-actions-height, 0px) - 24px)`.
+`calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 2 * (var(--slop-host-actions-height, 0px) + 24px))`;
+bottom sheets can use `calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-host-actions-height, 0px) - 24px)`.
 
-Fill the viewport with 100% height and scroll inside panes. Do not add notch padding,
-apply a second native safe-area inset, or subtract keyboard height. Native Done sits
-above the keyboard and dismisses it without submitting. Use the `slop dev` iPhone
+Fill the viewport with 100% height and scroll inside panes. The keyboard covers the page and the host brings
+focused fields above it on its own; write no CSS for fields. Lift only bottom-pinned UI
+(bottom sheets, fixed action bars, centered dialogs that hold fields) by
+`var(--slop-keyboard-inset, 0px)`, the height the keyboard and its toolbar cover, zero when
+hidden and outside the iPhone editor. Never add it to the page or a layout container: that
+shrinks the layout like a resize. The keyboard's own toolbar ✓ dismisses it without
+submitting. Use the `slop dev` iPhone
 preset to check the corner reservation, then a real native editor for notch, keyboard,
 swipe-back, sheets and VoiceOver as part of mobile review. Keep input
 text at least 16px and touch targets at least 44px. Use task-appropriate keyboard

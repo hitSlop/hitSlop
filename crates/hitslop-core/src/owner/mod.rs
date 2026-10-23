@@ -62,6 +62,19 @@ pub enum Request {
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
+    /// Moves a document that cannot save (a shared one that is full) to a new file: writes
+    /// the accepted live state beside `dest` as `Copy` does, checks that it opens as a
+    /// document whose state and palette equal the live ones, publishes it at `dest`
+    /// without replacing anything, then releases the writer lock without saving. The host
+    /// fences edits first (the close barrier), so the state cannot move under the copy. Any
+    /// failure removes only the temporary file this request made and leaves the owner open
+    /// with every edit.
+    #[cfg(not(target_arch = "wasm32"))]
+    Handoff {
+        dest: PathBuf,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+    },
     /// The accepted live state as a document of its own, without saving the source's
     /// history first (`Store::copy_clean`), with the artwork its window rendered for it.
     Copy {

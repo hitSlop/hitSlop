@@ -29,4 +29,9 @@ export type RoomPhase = "uploading" | "live" | "ended";
 
 export type SharingControl = { "type": "joinCredential", credential: string, };
 
-export type SharingEvent = { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, };
+export type SharingEvent = { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, phase?: SyncPhase, };
+
+/**
+ * Where a replica stands with its room, apart from the words shown for it.
+ */
+export type SyncPhase = "offline" | "syncing" | "synced" | "paused" | "ended";

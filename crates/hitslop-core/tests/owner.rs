@@ -321,10 +321,10 @@ fn autosave_is_bounded_while_edits_continue() {
     close(&owner);
 }
 
-#[test]
-fn a_full_shared_document_copies_its_unsaved_live_state() {
+/// A shared document whose saved history has reached the storage limit, so a save fails.
+fn full_shared_document() -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<Event>) {
     let (dir, path) = fixture();
-    let (owner, _) = open(&path, Mode::Document);
+    let (owner, events) = open(&path, Mode::Document);
     call(
         &owner,
         Request::Share {
@@ -350,6 +350,12 @@ fn a_full_shared_document_copies_its_unsaved_live_state() {
         }
     }
     assert!(full, "shared history must reach the storage limit");
+    (dir, path, owner, events)
+}
+
+#[test]
+fn a_full_shared_document_copies_its_unsaved_live_state() {
+    let (dir, path, owner, _) = full_shared_document();
     let Reply::Attachment { item } =
         call(&owner, Request::PutAttachment { bytes: b"live reference".to_vec() }).unwrap()
     else {
@@ -370,6 +376,83 @@ fn a_full_shared_document_copies_its_unsaved_live_state() {
     assert_eq!(copy.attachment(&item.id).unwrap(), b"live reference");
     assert_ne!(copy.app().document_uuid, Store::open(&path, Mode::Snapshot).unwrap().app().document_uuid);
     copy.close().unwrap();
+}
+
+/// A full shared document holding an edit it could not save.
+fn full_with_unsaved_edit(title: &str) -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<Event>) {
+    let (dir, path, owner, events) = full_shared_document();
+    call(&owner, set(title)).unwrap();
+    assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Full);
+    assert!(
+        events.try_iter().any(|event| matches!(
+            event,
+            Event::SaveStatus { pressure: hitslop_core::store::Pressure::Full, failure: Some(_), .. }
+        )),
+        "a failed save reports the document as full"
+    );
+    (dir, path, owner, events)
+}
+fn handoff(dest: &Path) -> Request {
+    Request::Handoff { dest: dest.to_path_buf(), preview: None, icon: None }
+}
+fn leftovers(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(".hitslop"))
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_full_shared_document_hands_off_its_live_state_to_a_new_file() {
+    let (dir, path, owner, _) = full_with_unsaved_edit("Unsaved");
+    // A close must save first, so it cannot leave.
+    assert_eq!(call(&owner, Request::Close { preview: None, icon: None }).unwrap_err().kind, FailureKind::Full);
+    let dest = dir.path().join("Unshared.slop");
+    call(&owner, handoff(&dest)).unwrap();
+    assert_eq!(call(&owner, Request::State).unwrap_err().kind, FailureKind::Closed);
+    // The new file holds what the owner could not save, as a document of its own.
+    assert_eq!(saved_title(&dest), "Unsaved");
+    let copy = Store::open(&dest, Mode::Snapshot).unwrap();
+    assert!(copy.share().unwrap().is_none());
+    assert_ne!(copy.app().document_uuid, Store::open(&path, Mode::Snapshot).unwrap().app().document_uuid);
+    copy.close().unwrap();
+    // The original never received the edit, and its writer lock is free.
+    assert_ne!(saved_title(&path), "Unsaved");
+    Store::open(&path, Mode::Document).unwrap().close().unwrap();
+    assert!(leftovers(dir.path()).is_empty(), "the handoff leaves no temporary file");
+}
+
+#[test]
+fn a_refused_handoff_keeps_the_owner_open_and_never_touches_the_destination() {
+    let (dir, path, owner, _) = full_with_unsaved_edit("Unsaved");
+    // Another owner already has a document at the destination, with an edit of its own.
+    let dest = dir.path().join("Taken.slop");
+    call(&owner, Request::Copy { destination: dest.clone(), preview: None, icon: None }).unwrap();
+    let (other, _) = open(&dest, Mode::Document);
+    call(&other, set("Other owner")).unwrap();
+    call(&other, Request::Flush).unwrap();
+    let failure = call(&owner, handoff(&dest)).unwrap_err();
+    assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(hitslop_core::Code::Exists)));
+    // The destination and its owner are untouched: still locked, still the other owner's.
+    assert!(Store::open(&dest, Mode::Document).is_err());
+    assert_eq!(state(&other)["value"]["title"], "Other owner");
+    call(&other, set("Still editing")).unwrap();
+    call(&other, Request::Flush).unwrap();
+    assert_eq!(saved_title(&dest), "Still editing");
+    close(&other);
+    assert!(leftovers(dir.path()).is_empty(), "a refusal leaves no temporary file");
+    // The source stays open with its edit, still holding its lock, and can still be handed off.
+    assert_eq!(state(&owner)["value"]["title"], "Unsaved");
+    assert!(Store::open(&path, Mode::Document).is_err(), "a refused handoff keeps the writer lock");
+    call(&owner, set("Newer")).unwrap();
+    let fresh = dir.path().join("Fresh.slop");
+    call(&owner, handoff(&fresh)).unwrap();
+    assert_eq!(saved_title(&fresh), "Newer");
+    assert_eq!(saved_title(&dest), "Still editing");
+    Store::open(&path, Mode::Document).unwrap().close().unwrap();
 }
 
 #[test]

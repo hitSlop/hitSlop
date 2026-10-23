@@ -195,5 +195,5 @@ body {
 
 .checklist-icon { display: block; width: 512px; height: 512px; }
 
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .slop-paper { padding-top: 12px; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .slop-paper { padding-top: calc(var(--slop-safe-top, 0px) + 12px); padding-bottom: calc(var(--slop-safe-bottom, 0px) + 12px); }
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .slop-eyebrow { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); }

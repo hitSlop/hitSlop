@@ -441,7 +441,29 @@ input, textarea { caret-color: var(--slop-margin); }
   padding: 18px;
 }
 
+/* Phone-width editors: keyboard hints give way to larger working text. */
+@media (hover: none) {
+  .review-actions kbd { display: none; }
+}
+@media (max-width: 639px) {
+  html:not([data-slop-capture]) {
+    .box-tab { font-size: 12px; }
+    .card-index { font-size: 12px; }
+    .card-face em { font-size: 13px; }
+    .tools > span { font-size: 13px; }
+    .grade { font-size: 15px; }
+    .select-content [data-select-item] { font-size: 16px; }
+    .form-field span { font-size: 12px; }
+    .form-field input,
+    .form-field textarea { padding: 10px; font-size: 16px; }
+    .form-field input { min-height: 44px; }
+    .btn-primary,
+    .btn-secondary { padding-inline: 16px; font-size: 13px; }
+  }
+}
+
 /* The native phone menu shares the heading row; system safe areas belong to the host. */
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .catalog-shell { padding-top: 12px; min-height: 0; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) { background: var(--slop-wood); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .catalog-shell { padding-top: calc(var(--slop-safe-top, 0px) + 12px); padding-bottom: var(--slop-safe-bottom, 0px); min-height: 0; }
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .drawer-head { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); }
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .dialog-card { max-height: calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .dialog-card { top: calc(50% - var(--slop-keyboard-inset, 0px) / 2); max-height: calc(100dvh - var(--slop-keyboard-inset, 0px) - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }

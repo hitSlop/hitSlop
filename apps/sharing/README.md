@@ -58,7 +58,7 @@ never receives the link. OPFS holds SQLite and IndexedDB holds the copy catalog.
 Connected opening is required; open copies remain editable offline and after Stop.
 
 Mac and iPhone builds enable live collaboration without a launch flag. The v1 wire
-contract is frozen for shipped TestFlight clients.
+contract is frozen for shipped Mac and TestFlight clients.
 
 The host serves a static, cacheable Apple App Site Association response at
 `https://share.hitslop.com/.well-known/apple-app-site-association` without a redirect.
@@ -180,9 +180,7 @@ The relay also sweeps expired archives during compaction and Live alarms; Stop p
 the entire archive prefix. See [R2 object lifecycles](https://developers.cloudflare.com/r2/buckets/object-lifecycles/).
 
 Live rooms record activity on Hello and accepted Push, at most once per hour, and
-expire after 90 idle days when no socket is open. Existing Live rooms initialize this
-clock on their first request after upgrade; touch existing room URLs during rollout
-to start every legacy deadline. Alarms reschedule active rooms and
+expire after 90 idle days when no socket is open. Alarms reschedule active rooms and
 sweep archives. Stop and idle expiry release both the Account quota slot and its
 current-room index, remove private resources and identifiers, and retain only
 `phase=Ended` and `ended_at`. This tombstone returns 410, including repeated Stop
@@ -195,7 +193,8 @@ Only permanent socket refusals send Error then close 1008: protocol (code 1), ap
 mismatch (2), ended/unknown room (3), unauthorized (4), and malformed messages (5).
 Invalid capabilities are refused before upgrade. Storage and other transient message
 failures close 1011 without Error, allowing shipped clients to reconnect.
-Owner identity accepts any Firebase sign-in provider except `anonymous`.
+Owner identity accepts any Firebase sign-in provider except `anonymous`; clients offer
+only Sign in with Apple.
 
 ## Build and qualification
 
@@ -249,7 +248,6 @@ Seeds, retained updates (excluding the base), and the full-history base each hav
 16 MiB limit. Retained updates also have a 32,768-row cap. Rooms admit 32 connections. App and
 attachment limits use core acceptance. Automatic CloudKit checkpoints for relay documents
 run at most once a minute per process; manual/background saves bypass the interval.
-Public rollout needs privacy disclosures and broader device qualification.
 Reliable offline web reopening remains deferred.
 
 `HITSLOP_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,

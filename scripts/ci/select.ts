@@ -1,10 +1,12 @@
 /** Event policy only; file ownership remains in verification-inputs.ts. */
 import { run } from "../../packages/hitslop/src/cli/process";
 import { repository } from "../lib/artifacts";
-import { affectedTiers, nativeGateInputs, sharedInputs, touchesCompatibility, type TierName } from "../lib/verification-inputs";
+import { affectedTiers, nativeGateInputs, sharedInputs, sharingGateInputs, touchesCompatibility, type TierName } from "../lib/verification-inputs";
 import { changedPaths } from "../lib/verification";
 
-/** Required jobs exercise shipping boundaries. Browser/sync qualification never blocks a PR.
+/** Required jobs exercise shipping boundaries. Browser qualification never blocks a PR; the
+ * sharing relay's qualification (`sharing` in `main`) runs on a pull request only when it
+ * changes code that relay, the clients or the browser host share.
  * `nativeGate` is false for a pull request into master that changes nothing in
  * `nativeGateInputs`: its Swift/native tiers are deferred to the master push. */
 export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate = true, appBuild = false) {
@@ -23,6 +25,12 @@ export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate 
 /** Whether a pull request into master changes an input of the native gate. */
 export function touchesNativeGate(paths: string[]) {
   return touchesCompatibility(paths) || paths.some(path => [...sharedInputs, ...nativeGateInputs].some(pattern => pattern.test(path)));
+}
+
+/** Whether a pull request changes live-sharing code: the relay, its clients and the core
+ * and browser host they share. Master pushes qualify it in sharing.yml. */
+export function touchesSharing(paths: string[]) {
+  return paths.some(path => sharingGateInputs.some(pattern => pattern.test(path)));
 }
 
 export function verificationArgs(env: Record<string, string | undefined>): string[] {
@@ -57,5 +65,6 @@ if (import.meta.main) {
   console.log(JSON.stringify({ ...selection, jobs: {
     ...ciJobs(selection.tiers.map((tier: { name: TierName }) => tier.name), process.env.GITHUB_EVENT_NAME, gate,
       args.includes("--all") || affectedTiers(paths ?? [], ["app"]).length > 0),
+    sharing: process.env.GITHUB_EVENT_NAME === "pull_request" && touchesSharing(paths ?? []) ? "sharing" : "",
   } }));
 }

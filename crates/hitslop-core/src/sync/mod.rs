@@ -8,6 +8,7 @@
 //! acknowledgement, a dropped socket or a crash heals with the next Hello.
 mod frame;
 pub use frame::{Ack, Frame, MAX_FRAME, PROTOCOL, Permission, Record, Span, Version};
+pub use hitslop_sharing_protocol::http::SyncPhase;
 
 use crate::{Applied, Code, Document};
 use loro::VersionVector;
@@ -54,6 +55,27 @@ pub enum Status {
     Synced,
     /// Sync stopped for a reason a person must act on, until the next connection.
     Paused { kind: PauseKind, reason: String },
+}
+
+impl Status {
+    /// The structured form a host routes on, so no one parses `Status`'s debug text.
+    pub fn state(&self) -> SyncState {
+        match self {
+            Self::Offline => SyncState { phase: SyncPhase::Offline, pause: None },
+            Self::Syncing => SyncState { phase: SyncPhase::Syncing, pause: None },
+            Self::Synced => SyncState { phase: SyncPhase::Synced, pause: None },
+            Self::Paused { kind, reason } => {
+                SyncState { phase: SyncPhase::Paused, pause: Some(Pause { kind: *kind, reason: reason.clone() }) }
+            }
+        }
+    }
+}
+/// `Status` for a host: the phase, and the pause when sync has stopped.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct SyncState {
+    pub phase: SyncPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pause: Option<Pause>,
 }
 
 /// What one frame from the relay did: frames to send back, and the document change it

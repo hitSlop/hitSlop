@@ -24,23 +24,22 @@ public struct LiveCollaborationSection: View {
   @State private var failedAction: Action = .refresh
   private let interactionChanged: (Bool) -> Void
   private let saveUnsharedCopy: (() -> Void)?
+  private let onUpdate: (() -> Void)?
 
   private enum Action { case start, stop, refresh }
 
   public init(
     model: DocumentSharing, interactionChanged: @escaping (Bool) -> Void = { _ in },
-    saveUnsharedCopy: (() -> Void)? = nil
+    saveUnsharedCopy: (() -> Void)? = nil, onUpdate: (() -> Void)? = nil
   ) {
     self.model = model
     self.interactionChanged = interactionChanged
     self.saveUnsharedCopy = saveUnsharedCopy
+    self.onUpdate = onUpdate
   }
 
   private var live: Bool { model.status.map { $0.phase != .ended } ?? false }
   private var joined: Bool { live && model.status?.creator == false }
-  private var restartNeeded: Bool {
-    model.status?.creator == true && (model.status?.pauseKind == .outgrown || model.status?.pauseKind == .filesFull)
-  }
   private var holdingOpen: Bool { model.acting || signingIn || pendingStart || confirmingStop }
 
   public var body: some View {
@@ -112,25 +111,20 @@ public struct LiveCollaborationSection: View {
           if joined {
             caption("Ask for a new link, or save an unshared copy.")
           } else {
-            caption("Save an unshared copy, then turn on live collaboration in the copy for a new link.")
-            if let saveUnsharedCopy {
-              Button("Restart Sharing…", action: saveUnsharedCopy).disabled(model.busy)
-            }
+            caption("This document can't keep syncing. Save an unshared copy to keep editing.")
           }
         case .needsUpdate:
           caption("This shared document needs a newer hitSlop.")
-          Button("Update hitSlop") { updateHitSlop() }
+          if let onUpdate { Button("Update hitSlop", action: onUpdate) }
         case .missingHistory, .refused:
           caption(model.status?.detail ?? "This copy could not sync. Save an unshared copy to keep editing.")
         case .ended:
           caption("Live collaboration ended. You keep your copy.")
         }
       }
-      if live, model.status?.pauseKind != .roomFull,
-        !restartNeeded,
-        let saveUnsharedCopy
-      {
+      if live, model.status?.pauseKind != .roomFull, let saveUnsharedCopy {
         Button("Save Unshared Copy…", action: saveUnsharedCopy).disabled(model.busy)
+        caption("The copy is an independent document. To share it, turn on live collaboration in the copy.")
       }
       if confirmingStop {
         caption("Stop live collaboration? The link stops working. Everyone keeps their own copy.")
@@ -231,24 +225,6 @@ public struct LiveCollaborationSection: View {
       }
       .frame(height: signInHeight)
       .disabled(signingIn)
-    #endif
-  }
-
-  private func updateHitSlop() {
-    #if os(macOS)
-      // Use the existing Sparkle menu action and its configured updater target.
-      func findUpdate(in menu: NSMenu) -> NSMenuItem? {
-        for item in menu.items {
-          if item.action.map(NSStringFromSelector) == "checkForUpdates:" { return item }
-          if let submenu = item.submenu, let found = findUpdate(in: submenu) { return found }
-        }
-        return nil
-      }
-      if let menu = NSApp.mainMenu, let item = findUpdate(in: menu), let action = item.action {
-        NSApp.sendAction(action, to: item.target, from: nil)
-      }
-    #else
-      UIApplication.shared.open(SlopLinks.iosDownload)
     #endif
   }
 

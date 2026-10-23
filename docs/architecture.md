@@ -347,7 +347,8 @@ While open, an unshared document's checkpoint keeps the whole history when it fi
 saving fails and ownership is retained for retry. The live document keeps its own history
 either way, so the session's undo still works. There is no live history rebuild: a long,
 heavy session's memory can grow until it closes. This retention policy is intentional;
-live compaction remains deferred, and there is no public live-compaction command. Only
+compacting a document's live history on the owner remains deferred (a relay room's
+compaction is separate), and there is no public live-compaction command. Only
 the checkpoint may start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
@@ -629,9 +630,9 @@ history keeps nothing alive.
 ### Synced Library
 
 The Synced Library keeps managed documents in sync between Mac and iPhone through the
-person's iCloud account. The iPhone app supports iOS 26+ in TestFlight; its App
-Store release and the Mac release with the library on Production remain open. The phone
-opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files.
+person's iCloud account. The Mac app includes the library on CloudKit Production. The
+iPhone app supports iOS 26+ in TestFlight; its App Store release remains open. The phone
+opens, edits and creates slops, includes the Popular templates and imports from Files.
 
 Managed documents live in account-scoped Application Support. One Swift `LibrarySync`
 actor uses direct CloudKit zone-change, record-fetch and conflict-checked modify operations
@@ -669,12 +670,13 @@ refuses shared or already managed documents, and records library membership for 
 After the library copy opens, coordinated cleanup takes the source lock, verifies both
 saved copies and checks the source has not changed before moving it to Trash. Failed
 cleanup keeps both files and reports their locations. No document format changes.
-The iPhone starter build reads Popular membership from repository metadata, adds
-`baby-journal`, and leaves out templates that declare camera, microphone or speech
-capabilities, which the iPhone host refuses.
+The iPhone starter build reads Popular membership from repository metadata, which
+includes Little Days (`baby-journal`), and leaves out templates that declare camera,
+microphone or speech capabilities, which the iPhone host refuses.
 Both catalogs share the app icon and bundled Baloo 2 headings; controls and
-body copy use native fonts. The iPhone editor's page-colored background fills the
-screen, while native layout owns notch, home-indicator and keyboard safe areas.
+body copy use native fonts. The iPhone editor runs edge to edge: the page extends under
+the status bar and home indicator and pads itself with `--slop-safe-top` and
+`--slop-safe-bottom`, and the keyboard covers the page while the shell reveals fields.
 Every iPhone document has a floating native glass actions menu beside its header.
 The shell exposes the corner reservation as live-editor CSS variables. Native edge
 swipes and Back to Library use the normal close path; failed saves retain ownership.
@@ -850,8 +852,9 @@ Accepted limits, chosen for mini apps over heavier machinery:
   values over its whole history, reach 2^53 (about 9×10^15). Beyond that envelope an
   off-by-one result is possible; no exactness is guaranteed.
 - **Live history** can grow through a long session despite the undo step limit and saved
-  data limits. Live compaction remains deferred; unshared documents attempt pruning on
-  close under the size and edit conditions above.
+  data limits. Compacting a document's live history on the owner remains deferred (a
+  relay room's compaction is separate); unshared documents attempt pruning on close under
+  the size and edit conditions above.
 - **Undo** starts over for the session if a live batch is refused after rehearsal
   admitted it, which a rehearsed batch should never be ([undo](#undo)).
 - **A shared document** never trims, so the 32 MiB save limit bounds it, including iCloud

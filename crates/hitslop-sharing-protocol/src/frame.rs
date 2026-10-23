@@ -49,6 +49,17 @@ pub struct Record {
 }
 /// A version vector: each peer's exclusive end counter.
 pub type Version = BTreeMap<u64, u32>;
+/// A version's canonical wire form, which the seed and compact routes share: each peer as 16
+/// lowercase hex digits with its end, sorted.
+pub fn version_pairs(version: impl IntoIterator<Item = (u64, u32)>) -> Vec<(String, u32)> {
+    let mut pairs: Vec<_> = version.into_iter().map(|(peer, end)| (format!("{peer:016x}"), end)).collect();
+    pairs.sort();
+    pairs
+}
+/// `version_pairs` as the JSON the relay's version headers carry.
+pub fn version_json(version: impl IntoIterator<Item = (u64, u32)>) -> String {
+    serde_json::to_string(&version_pairs(version)).expect("version")
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Permission {

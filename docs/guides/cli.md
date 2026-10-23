@@ -23,7 +23,7 @@ does not supply inside the same `pack` request (see
 Add `--help` to a CLI command for its arguments. Package versions here reflect repository
 metadata, not npm availability; see [releasing](releasing.md).
 
-## Local browser copies (Chrome beta)
+## Local browser copies (Chrome)
 
 ```sh
 slop open --browser ./MyDocument.slop
@@ -40,7 +40,7 @@ Chrome’s Save As dialog; choosing a destination does not change the original d
 The original file stays unchanged. Browser storage can be cleared or evicted: download
 copies you want to keep. Reload requires the local host to be running.
 
-The first version supports Chrome on desktop. Safari, private browsing and mobile browsers remain unqualified. Hosted edit links use the separate
+Local copies support Chrome on desktop. Safari, private browsing and mobile browsers remain unqualified. Hosted edit links use the separate
 [live sharing](../architecture.md#relay). Fullscreen appears for apps declaring
 `fullscreenable`; **Keep awake** is a separate, initially off toggle. It displays
 **paused** when requested but the browser has released the screen wake lock.

@@ -100,7 +100,7 @@ languages your document uses; vector PDF reports uncovered characters as an erro
 Do not use Svelte's `css="injected"`; the build collects
 the capture component's styles and global CSS.
 
-## Design a macOS widget
+## Design a widget
 
 Quick Checklist, Water Tracker, Grocery List, Reading Tracker, Habit Heatmap,
 Daily Planner, Assignment Tracker and Countdown Milestones include small, medium
@@ -173,7 +173,7 @@ To request occasional recaptures while hitSlop is running, add
 15 to 1440 are accepted and require `Widget.svelte`. Only documents used by placed
 widgets are scheduled. This requests capture attempts, not an exact visible refresh
 rate: macOS controls scheduling and WidgetKit controls display updates. Quitting
-hitSlop leaves the last images on the desktop. iOS background capture is not implemented.
+hitSlop leaves the last images on the desktop. `refreshMinutes` applies on Mac.
 
 ## Design an icon at 512 × 512
 
@@ -226,7 +226,7 @@ Successful responses, respectively (your paths will differ):
 
 An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both pass the saved snapshot and theme to the static view. The open editor is not used as the rendering workspace.
 
-The editor barrier lasts through saving and copying; rendering then proceeds independently. Mac capture loads packaged fonts and saved image resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF export is experimental. It keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side; complex layouts and long documents may need further refinement.
+The editor barrier lasts through saving and copying; rendering then proceeds independently. Mac capture loads packaged fonts and saved image resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF export keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side; complex layouts and long documents may need further refinement.
 
 Completed captures publish atomically before their deadline. If the acknowledgement is lost, inspect the destination before retrying.
 

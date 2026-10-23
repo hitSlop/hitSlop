@@ -1510,7 +1510,9 @@ body {
   .bj-sheet.bj-has-back .bj-dialog-heading { padding-top: 44px; }
 }
 
-/* The native phone menu shares the heading row; system safe areas belong to the host. */
+/* The page runs edge to edge: the app pads past the status bar and home indicator, and the native phone menu shares the heading row. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .bj-app { padding-top: calc(var(--slop-safe-top, 0px) + 12px); padding-bottom: var(--slop-safe-bottom, 0px); }
 html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .bj-header { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); }
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .bj-dialog { max-height: calc(100dvh - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .bj-sheet { max-height: calc(100dvh - var(--slop-host-actions-height, 0px) - 24px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .bj-dialog:not(.bj-sheet) { top: calc(50% - var(--slop-keyboard-inset, 0px) / 2); max-height: calc(100dvh - var(--slop-keyboard-inset, 0px) - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 2 * (var(--slop-host-actions-height, 0px) + 24px)); }
+/* The keyboard covers the page; the bottom sheet rides above it. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .bj-sheet { top: auto; bottom: var(--slop-keyboard-inset, 0px); max-height: calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-host-actions-height, 0px) - var(--slop-keyboard-inset, 0px) - 24px); padding-bottom: max(0px, calc(var(--slop-safe-bottom, 0px) - var(--slop-keyboard-inset, 0px))); }

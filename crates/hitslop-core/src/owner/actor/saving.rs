@@ -33,7 +33,11 @@ impl Actor {
         self.emit(Event::SaveStatus {
             status: if self.failure.is_some() { SaveStatus::Failed } else { status },
             failure: self.failure.clone(),
-            pressure: self.store.pressure(),
+            pressure: if self.failure.as_ref().is_some_and(|failure| failure.kind == FailureKind::Full) {
+                store::Pressure::Full
+            } else {
+                self.store.pressure()
+            },
             shared: self.store.is_shared(),
         });
     }
@@ -41,12 +45,19 @@ impl Actor {
         if self.discarding {
             return Err(replaced());
         }
+        if self.lifecycle == Lifecycle::Releasing {
+            return Err(Failure::new(FailureKind::Closing, "Document is closing"));
+        }
         self.waiters.push(Waiter { target: self.revision, callback: take(callback), next });
         self.pump();
         Ok(())
     }
     pub(super) fn pump(&mut self) {
-        if self.writing || self.discarding || self.invalidated || self.lifecycle == Lifecycle::Closed {
+        if self.writing
+            || self.discarding
+            || self.invalidated
+            || matches!(self.lifecycle, Lifecycle::Releasing | Lifecycle::Closed)
+        {
             return;
         }
         if self.revision <= self.saved {
@@ -112,7 +123,7 @@ impl Actor {
         if let Err(mpsc::SendError(work)) = self.persist.send(work) {
             self.writing = false;
             self.discarding = false;
-            if self.lifecycle == Lifecycle::Closing {
+            if matches!(self.lifecycle, Lifecycle::Closing | Lifecycle::Releasing) {
                 self.lifecycle = Lifecycle::Open;
             }
             self.fail(poisoned(), u64::MAX);
@@ -120,6 +131,8 @@ impl Actor {
                 Work::Store { callback, .. } | Work::Restore { callback, .. } | Work::Close { callback, .. } => {
                     complete(callback, Err(poisoned()))
                 }
+                #[cfg(not(target_arch = "wasm32"))]
+                Work::Handoff { callback, .. } => complete(callback, Err(poisoned())),
                 Work::Save { .. } => {}
             }
         }

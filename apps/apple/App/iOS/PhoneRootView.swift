@@ -80,13 +80,23 @@ struct PhoneRootView: View {
           }
           Section("iCloud") {
             Text(library.status)
-            Button("Sync Now") { Task { await model.syncNow() } }.disabled(library.isSyncing)
+            Button("Sync Now") {
+              model.tapped()
+              Task { await model.syncNow() }
+            }.disabled(library.isSyncing)
             Text("Your edits save on this device first, then sync to your other devices.").foregroundStyle(.secondary)
           }
           Section {
-            Button("Open Shared Link…", systemImage: "person.2") { showJoin = true }
-            Button("Account", systemImage: "person.crop.circle") { showSharingAccount = true }
+            Button("Open Shared Link…", systemImage: "person.2") {
+              model.tapped()
+              showJoin = true
+            }
+            Button("Account", systemImage: "person.crop.circle") {
+              model.tapped()
+              showSharingAccount = true
+            }
             Button("Import from Files", systemImage: "square.and.arrow.down") {
+              model.tapped()
               importAfterSettings = true
               showSettings = false
             }
@@ -125,6 +135,10 @@ struct PhoneRootView: View {
       }
     } message: {
       Text(model.message ?? "")
+    }
+    .appHaptic(.impact(weight: .light), trigger: model.tapFeedback)
+    .appHaptic(.selection, trigger: path.last) { _, route in
+      if case .template = route { true } else { false }
     }
     .appHaptic(.success, trigger: model.successFeedback)
     .appHaptic(.impact(weight: .medium), trigger: model.deletionFeedback)

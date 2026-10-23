@@ -156,6 +156,8 @@ const tiers: Tier[] = [
         // The type tests' own project relaxes only the unused rules: their checks are never read.
         tsc("tsconfig.json").then(async (root) => [root, await tsc("packages/hitslop/tests/tsconfig.json")]),
         quiet([process.execPath, "scripts/templates/check.ts"]),
+        // Placeholders, the iPhone download address and the landing catalog's drift from the templates.
+        quiet([process.execPath, "scripts/ci/hygiene.ts"]),
       ]);
       console.log(output.flat().filter(Boolean).join("\n"));
     },
