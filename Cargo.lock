@@ -1360,13 +1360,16 @@ dependencies = [
  "getrandom 0.2.17",
  "hitslop-core",
  "hitslop-sharing-protocol",
+ "httparse",
  "loro",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
  "tungstenite",
  "ureq",
+ "webpki-roots 1.0.9",
 ]
 
 [[package]]
