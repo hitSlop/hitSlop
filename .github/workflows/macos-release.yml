@@ -243,7 +243,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
-      actions: read
+      actions: write
       id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
@@ -270,3 +270,6 @@ jobs:
         run: bun scripts/release/publish.ts npm
       - name: Promote npm and Sparkle
         run: bun scripts/release/publish.ts promote
+      # Tags created with GITHUB_TOKEN do not start tag-push workflows.
+      - name: Deploy sharing from the released tag
+        run: gh workflow run sharing.yml --ref "$HITSLOP_RELEASE_TAG"
