@@ -297,6 +297,10 @@ extension HostTests {
     let hold = try Fixtures.DatabaseHold(root, readable: true)
     #expect(try await command("batch", url: root, setTitle("Unsaved title")).code == .saveFailed)
     await #expect(throws: (any Error).self) { try await engine.prepareClose() }
+    #expect(engine.acceptsPageWork)
+    let unblocked = try await engine.webView.callAsyncJavaScript(
+      "return !document.body.inert", arguments: [:], in: nil, contentWorld: .page)
+    #expect(unblocked as? Bool == true, "a failed save must release the page's close barrier")
     try await engine.discardPending()
     // Writes still fail: this succeeds only if discard really removed pending writes.
     #expect(try await savedValue(root) == baseline)

@@ -21,7 +21,7 @@ You and your agent work on the same document. Check something off and your agent
 
 [Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
-[ios-download]: https://hitslop.com/docs/availability/#get-the-iphone-app
+[ios-download]: https://testflight.apple.com/join/F4qfCkgg
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 

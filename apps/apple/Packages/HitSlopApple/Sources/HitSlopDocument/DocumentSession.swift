@@ -30,9 +30,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     case opening, ready
     case failed(String, terminated: Bool)
   }
+  private enum Preparation { case pending, drained, durable }
+  private enum ClosePurpose { case close, handoff }
   private enum Phase {
     case active(Renderer)
-    case closing(Renderer, prepared: Bool)
+    case closing(Renderer, preparation: Preparation)
     case closed
   }
   private var phase: Phase = .active(.opening)
@@ -76,17 +78,17 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
     set {
       guard let renderer else { return }
-      phase = newValue ? .closing(renderer, prepared: false) : .active(renderer)
+      phase = newValue ? .closing(renderer, preparation: .pending) : .active(renderer)
     }
   }
-  private var closePrepared: Bool {
+  private var closePreparation: Preparation {
     get {
-      if case .closing(_, prepared: true) = phase { return true }
-      return false
+      if case .closing(_, let preparation) = phase { return preparation }
+      return .pending
     }
     set {
       guard case .closing(let renderer, _) = phase else { return }
-      phase = .closing(renderer, prepared: newValue)
+      phase = .closing(renderer, preparation: newValue)
     }
   }
   private var closeDrafts: [UnresolvedTextDraft] = []
@@ -317,7 +319,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
   private func makeWebView() {
     // Each page gets its own view token; requests from a replaced page are refused.
-    closePrepared = false
+    closePreparation = .pending
     view = UUID().uuidString
     pushes.configure(view: view)
     owner.attach(view: view)
@@ -353,16 +355,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       configuration: configuration)
     #if os(iOS)
       view.accessibilityIdentifier = "document-page"
-      // The keyboard covers the page, which keeps its size; the shell reveals focused fields
-      // inside the app's own scrollers. WebKit's own keyboard avoidance would pan the whole
-      // page up, so the web view never hears about the keyboard.
-      for name in [
-        UIResponder.keyboardWillShowNotification, UIResponder.keyboardDidShowNotification,
-        UIResponder.keyboardWillHideNotification, UIResponder.keyboardDidHideNotification,
-        UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardDidChangeFrameNotification,
-      ] {
-        NotificationCenter.default.removeObserver(view, name: name, object: nil)
-      }
       view.scrollView.keyboardDismissMode = .interactive
       view.allowsLinkPreview = false
       view.scrollView.bounces = false
@@ -463,7 +455,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       case .active(.opening): phase = .active(.ready)
       // A close that began while the page was opening must not turn its readiness
       // into a renderer failure.
-      case .closing(.opening, let prepared): phase = .closing(.ready, prepared: prepared)
+      case .closing(.opening, let preparation): phase = .closing(.ready, preparation: preparation)
       default:
         reply(pageFailure(OwnerFailure.rejected("Document page is not opening")), nil)
         return
@@ -659,7 +651,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       let interval = trace?.begin("Snapshot acquisition")
       defer { trace?.end("Snapshot acquisition", interval) }
       guard !closed else { throw SlopFailure("Document closed") }
-      if !closePrepared { try await prepare() }
+      if closePreparation != .durable { try await prepare() }
       try await owner.captureSource(to: source)
     }
     return try await consume(source)
@@ -690,31 +682,47 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   @discardableResult public func prepareClose() async throws -> [UnresolvedTextDraft] {
-    guard !closed, !closePrepared else { return closeDrafts }
+    try await prepareClose(for: .close)
+  }
+
+  /// Draining the page and saving the source are separate barriers. Handoff must reach
+  /// the live state even when the source cannot save; ordinary close still saves first.
+  @discardableResult private func prepareClose(for purpose: ClosePurpose) async throws -> [UnresolvedTextDraft] {
+    guard !closed else { return closeDrafts }
+    if closePreparation == .durable || (purpose == .handoff && closePreparation == .drained) { return closeDrafts }
     guard !capturing else { throw SlopFailure("Document is exporting; try again when it finishes") }
     filePicker.cancel()
     fileSaver.cancel()
-    closing = true
+    if !closing { closing = true }
     cancelSpeech()
     do {
-      if isReady {
-        closeDrafts = try decodeClosePreparation(json: await callPage(.prepareClose))
+      if closePreparation == .pending {
+        if isReady {
+          do {
+            closeDrafts = try decodeClosePreparation(json: await callPage(.prepareClose))
+          } catch {
+            // A dead renderer cannot drain more text. Its accepted native edits remain
+            // available, and the ordinary close must still save them below.
+            if !rendererDead { throw error }
+          }
+        }
+        closePreparation = .drained
       }
-      closePrepared = true
+      if purpose == .close {
+        try await owner.flush()
+        closePreparation = .durable
+      }
       return closeDrafts
     } catch {
-      if rendererDead {
-        closePrepared = true
-        return closeDrafts
-      }
-      closing = false
-      if let failure = owner.saveFailure { throw failure }
+      // The page remains fenced after a drain succeeded but saving failed. Undo the
+      // page barrier too, and never mask an uncertain drain with an older save failure.
+      await cancelClose()
       throw error
     }
   }
 
   public func cancelClose() async {
-    closePrepared = false
+    closePreparation = .pending
     closeDrafts = []
     if isReady {
       _ = try? await callPage(.cancelClose)
@@ -724,7 +732,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   /// Saves, writes `artwork` and releases the document, then retires the page.
   public func close(artwork: SlopRenderedArtwork? = nil, trace: SlopCloseTrace? = nil) async throws {
-    try await leave(trace: trace) { try await $0.close(artwork: artwork) }
+    try await leave(for: .close, trace: trace) { try await $0.close(artwork: artwork) }
   }
 
   /// Leaves a document that cannot save (a shared one that is full) without saving it:
@@ -733,12 +741,19 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   /// releases the original. The owner never replaces an existing file; any failure leaves
   /// the document open with every edit, so other participants keep the original.
   @discardableResult public func handOff(
-    to destination: URL, renderArtwork: @MainActor (URL) async -> SlopRenderedArtwork? = { _ in nil }
+    to destination: URL,
+    resolveDrafts: @MainActor ([UnresolvedTextDraft]) async throws -> Void = { drafts in
+      guard drafts.isEmpty else {
+        throw SlopFailure("Some text could not be saved. Keep this document open and copy that text before leaving.")
+      }
+    },
+    renderArtwork: @MainActor (URL) async -> SlopRenderedArtwork? = { _ in nil }
   ) async throws -> URL {
     guard !closed, !closing, closeTask == nil else { throw SlopFailure("Document is closing") }
-    try await prepareClose()
+    let drafts = try await prepareClose(for: .handoff)
     let artwork: SlopRenderedArtwork?
     do {
+      try await resolveDrafts(drafts)
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
         UUID().uuidString, isDirectory: true)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -746,21 +761,23 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       let source = directory.appendingPathComponent("copy.slop")
       try await owner.copy(to: source, artwork: nil)
       artwork = await renderArtwork(source)
+      try Task.checkCancellation()
     } catch {
       await cancelClose()
       throw error
     }
-    try await leave { try await $0.handOff(to: destination, artwork: artwork) }
+    try await leave(for: .handoff) { try await $0.handOff(to: destination, artwork: artwork) }
     let handedOff = try await SlopPreparation.run { try SlopFile.resolvedRoot(destination) }
     SlopFinderIcon.refresh(handedOff)
     return handedOff
   }
 
   private func leave(
-    trace: SlopCloseTrace? = nil, _ end: @escaping @Sendable (DocumentOwner) async throws -> Void
+    for purpose: ClosePurpose, trace: SlopCloseTrace? = nil,
+    _ end: @escaping @Sendable (DocumentOwner) async throws -> Void
   ) async throws {
     if let closeTask { return try await closeTask.value }
-    let task = Task { try await self.finishClose(trace: trace, end) }
+    let task = Task { try await self.finishClose(for: purpose, trace: trace, end) }
     closeTask = task
     do { try await task.value } catch {
       closeTask = nil
@@ -773,10 +790,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   /// handing it off to a verified copy) before the app unmounts; a failed end leaves the app
   /// mounted and editable.
   private func finishClose(
-    trace: SlopCloseTrace?, _ end: @Sendable (DocumentOwner) async throws -> Void
+    for purpose: ClosePurpose, trace: SlopCloseTrace?, _ end: @Sendable (DocumentOwner) async throws -> Void
   ) async throws {
     if closed { return }
-    try await prepareClose()
+    try await prepareClose(for: purpose)
     // Discovery goes before the writer lock, so it can never name the next owner. A
     // failed close keeps ownership, so commands reach this session again.
     server?.withdraw()
@@ -899,7 +916,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     cancelSpeech()
     let wasReady = isReady
     let failed = Renderer.failed(message, terminated: terminated)
-    phase = closing ? .closing(failed, prepared: false) : .active(failed)
+    phase = closing ? .closing(failed, preparation: .pending) : .active(failed)
     // The owner is fully loaded before the page starts, so it keeps the writer lock and
     // the socket; a retry reattaches a new page to the same owner.
     if !wasReady {

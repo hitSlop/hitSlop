@@ -38,7 +38,9 @@ without touching the document, then store it in the app schema with
 `slop apply PATH --attach FILE --op ...` (or `batch --attach`, repeatable): the file and
 its reference are saved together. `slop attachments list PATH` and
 `slop attachments export PATH ID --output FILE` read them back. Store the `id` exactly as
-printed; a file whose ID appears nowhere in the document is removed when it closes.
+printed; an unshared document removes a file whose ID appears nowhere in it when it closes.
+Shared and Synced Library documents retain every attachment for other replicas.
+A clean unshared copy keeps only referenced attachments.
 Never write attachments into the file yourself. Limits are 10 MiB per file, 100 MiB and
 256 unique files per document. After an uncertain edit, run `get` before another.
 

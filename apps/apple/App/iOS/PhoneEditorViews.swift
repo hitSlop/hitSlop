@@ -97,10 +97,7 @@ struct PhoneEditorView: View {
                 model.saveUnsharedCopy()
               },
               onUpdate: {
-                // TestFlight opens straight to the update; the download page is the fallback.
-                UIApplication.shared.open(URL(string: "itms-beta://")!) { opened in
-                  if !opened { UIApplication.shared.open(SlopLinks.iosDownload) }
-                }
+                UIApplication.shared.open(SlopLinks.iosDownload)
               })
           }
           .navigationTitle("Share")
@@ -232,6 +229,16 @@ private struct PhoneWebView: UIViewRepresentable {
   let webView: WKWebView
   func makeUIView(context: Context) -> WKWebView {
     webView.scrollView.contentInsetAdjustmentBehavior = .never
+    // Keep WebKit from panning the fixed-height editor while the shell reveals fields.
+    // This relies on WebKit registering these observers on the view at initialization;
+    // requalify it on every iOS major release. Replaced views enter this adapter again.
+    for name in [
+      UIResponder.keyboardWillShowNotification, UIResponder.keyboardDidShowNotification,
+      UIResponder.keyboardWillHideNotification, UIResponder.keyboardDidHideNotification,
+      UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardDidChangeFrameNotification,
+    ] {
+      NotificationCenter.default.removeObserver(webView, name: name, object: nil)
+    }
     return webView
   }
   func updateUIView(_ view: WKWebView, context: Context) {}

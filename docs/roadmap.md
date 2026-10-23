@@ -59,8 +59,9 @@ directions without release dates or a platform delivery order. The
 - **Sharing rollout.** Account deletion/Apple revocation, rejoin after re-share,
   guest entry-point rate limits and metrics, frozen v1 HTTP/binary fixtures, universal
   links and Save Unshared Copy are implemented. Privacy disclosures cover relay
-  storage and account deletion. Regenerate the Developer ID profile with Sign in
-  with Apple and associated domains, then qualify the signed Mac release with
+  storage and account deletion. Validate the Developer ID profile for associated
+  domains and the sharing Keychain group; Mac Apple sign-in uses the web flow,
+  without the native Apple sign-in entitlement. Qualify the signed Mac release with
   sign-in, universal links, account deletion and broader device/resource scenarios
   before publication.
   [Architecture](architecture.md#relay) and the [sharing README](../apps/sharing/README.md)
@@ -89,32 +90,31 @@ directions without release dates or a platform delivery order. The
   Complete-value replacement, template acceptance, command declaration checks,
   dedicated captures and document UUID copy rules are implemented. Historical foundation
   runs do not certify the current candidate.
-- Before the first public release, finish the bundled-library license review. App bundles
+- Finish the bundled-library license review; completion is not recorded here. App bundles
   retain library license comments; fonts and other non-JS media rely on the review because
   those comments do not cover them.
-- Requalify every widget family and size on the release candidate before capturing the
-  first corpus entry; the earlier hands-on reviews predate the two-stage capture ABI.
-- At launch, capture and freeze the first [compatibility corpus](testing.md#compatibility-corpus)
-  entry; capture one permanent entry per released version thereafter, even when markers
-  stay unchanged. From then on every released document stays openable.
+- Requalify every widget family and size on the release candidate; the earlier
+  hands-on reviews predate the two-stage capture ABI.
+- Public releases 1.0.0, 1.0.1 and 1.1.0 carry frozen
+  [compatibility corpora](testing.md#compatibility-corpus). Keep the permanent 1.0.0
+  hash pin and capture one new entry per release, even when markers stay unchanged.
+  The candidate must replay every published corpus and its own entry.
 - Storage version 2, whenever it comes, ships with: a backup of each file before its first
   migration (a clean copy, `file/copy.rs`); a test that a frozen version-1 file migrated by
   a write equals a newly created version-2 file in layout and value; and a test that an
   interrupted migration leaves the version-1 file intact.
-- Freezing that entry also freezes runtime ABI 1's command prelude: capture records its
-  digest, and `scripts/build/runner.ts` refuses to change it afterwards.
+- Runtime ABI 1's command prelude is frozen by the published corpora. Capture records
+  its digest, and `scripts/build/runner.ts` refuses to change those released bytes.
 - Check Quick Look by hand on a document received by Mail and AirDrop. Quarantined copies,
   a file another process is writing and a crashed write (the document icon until the app
   recovers it) are checked.
-- The first release ships with the current attachment, asset and storage limits; raising
-  them later requires a storage-version bump. Qualify whole-document Time Machine copies
-  at those limits.
+- Published attachment, asset and storage limits stay governed by their owning format
+  markers. Qualify whole-document Time Machine copies at those limits.
 - Exercise the release engines on darwin-arm64, linux-x64 and linux-arm64 (Windows is
   outside the current release targets; a native Windows host is a longer-term direction).
 - Loro is pinned to the exact crates.io release 1.17.1, which contains the former
-  `c00c9fa` pin and its undo fixes. Re-check crates.io immediately before the first
-  frozen capture / tag, and upgrade only with the corpus passing. Capture the first
-  corpus entry only with the final pin.
+  `c00c9fa` pin and its undo fixes. Qualify this upgrade against every published
+  corpus and capture the next entry with the exact candidate writer.
 - Check system IME composition and Edit ▸ Undo by hand (typing, ⌘Z inside a field, an
   agent edit between steps); no evidence file covers them.
 - The production-window shadow refresh, and an opening-only black strip beneath a window's
@@ -123,13 +123,21 @@ directions without release dates or a platform delivery order. The
 - A long-lived memory study across windows, captures and close/reopen cycles, including
   owner-queue growth and capture concurrency before choosing admission caps. The window
   benchmarks record footprints only and make no leak claim.
-- Recover unresolved text after its field unmounts. A draft whose outcome is unknown is
-  reported and dropped when its control unmounts. Recovering it needs a UI outside the
-  control; indefinitely holding close after unmount previously made windows impossible
-  to close.
+- **Older documents on iPhone.** Edge-to-edge editors require safe-area padding and
+  a reservation for the floating actions menu. Existing documents keep their compiled
+  app and may lack these styles. Qualify released documents on the phone, including
+  top and bottom controls, menus and keyboard entry. Record overlap as a known
+  TestFlight layout issue; updating starter templates does not fix old files.
+  Inaccessible editing controls still need a host fallback before qualification.
 
 ## Next
 
+- **Sharing client lifecycle.** Make HTTP and attachment transfers cancellable during
+  shutdown, preserve typed local owner failures through retry classification, replace
+  error-driven reconnects with explicit outcomes, and generate the remaining sharing
+  failure/state types from Rust. Native and browser compaction scheduling should share
+  policy. These remain follow-ups to the release fixes; working details are in the
+  local `plans/sharing-client-followups.md` when present.
 - **Review the restored examples in the app.** The archived examples now live in
   `slops/` in the current format, with model modules and commands. They have been checked
   in the dev preview; individual native checks do not qualify the entire collection.
@@ -149,7 +157,7 @@ directions without release dates or a platform delivery order. The
   `SharedArrayBuffer`.
 - **Failure hardening.** Add an aggregate close-time artwork deadline; rendering under
   the writer lock is currently bounded only by per-child watchdogs. Consider a cap on
-  concurrent restricted children after measurement. Unresolved detached-text recovery remains open above.
+  concurrent restricted children after measurement. Recovery after renderer termination remains open above.
 - **Platform drivers and feature discovery.** Define a driver seam for the registry,
   socket, exclusive rename and evaluator for additional platforms. iPhone already
   uses in-process Rust capture; authored commands there remain unavailable. Add a feature

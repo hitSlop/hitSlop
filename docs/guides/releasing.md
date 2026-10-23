@@ -1,8 +1,8 @@
 # Releasing hitSlop
 
 The latest host must open, render, edit, save and reopen every document a public
-release wrote. Downgrades are unsupported. Before the first public release, `dev`
-fixtures are replaceable; the unpublished 1.0.0 capture is not a public baseline.
+release wrote. Downgrades are unsupported. The public v1.0.0 corpus starts the frozen
+compatibility history; retain it and every later release's original evidence.
 
 ## Release flow
 

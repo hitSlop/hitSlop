@@ -37,7 +37,7 @@ const attachFlag = {
   type: "string",
   multiple: true,
   description:
-    "A file the operations reference, stored in the same batch; repeat for more. slop attachments ref prints its reference. A file nothing references is removed when the document closes",
+    "A file the operations reference, stored in the same batch; repeat for more. slop attachments ref prints its reference. Unshared documents remove unreferenced files on close; shared and library documents retain them",
 } as const;
 const retrySection = {
   title: "Retries",

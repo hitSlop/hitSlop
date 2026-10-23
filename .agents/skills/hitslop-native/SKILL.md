@@ -64,8 +64,13 @@ export; `bun run verify native` runs the CLI against the engine, renders, crashe
 corpus replay; `bun run bench:windows` measures window scaling.
 Templates: `bun run build:templates`, then `HITSLOP_RENDER=all bun run verify native render`.
 
-**iPhone chrome.** Every editor starts at the native top safe area with a floating
-glass actions menu. The shell exposes the corner reservation through live-editor CSS
-variables. Keep the native edge-pop gesture scoped to the editor and route completed
-navigation through the existing close path. Native layout owns system and keyboard
-insets; pages must not add them again. Done is above the keyboard.
+**iPhone chrome.** The editor runs edge to edge with a floating glass actions menu.
+The page pads by `--slop-safe-top` and `--slop-safe-bottom`; headers reserve the corner
+through `--slop-host-actions-width` and `--slop-host-actions-height`. The host publishes
+`--slop-keyboard-inset` while the keyboard covers the page, and the shell reveals focused
+fields inside their scrollers. Only bottom-pinned controls use that keyboard inset;
+do not shrink the page by it. `PhoneWebView` isolates the workaround that removes
+WebKit's keyboard observers; requalify its initialization assumption on each iOS major
+release. Keep native edge-pop scoped to the editor and route completed navigation
+through the existing close path. Done is above the keyboard. Older embedded apps
+without the safe-area styles need separate phone layout qualification.

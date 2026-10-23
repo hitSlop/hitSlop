@@ -44,7 +44,7 @@ export function installMobileEditing(environment: Environment) {
   const reveal = () => {
     pending = 0;
     restore();
-    if (!ios() || !inset || document.documentElement.hasAttribute("data-slop-capture")) return;
+    if (!ios() || document.documentElement.hasAttribute("data-slop-capture")) return;
     const field = document.activeElement;
     if (!(field instanceof HTMLElement) || !field.matches(TEXT_FIELD)) return;
     const viewTop = viewport?.offsetTop ?? 0;
@@ -78,7 +78,7 @@ export function installMobileEditing(environment: Environment) {
           ? element.scrollHeight - element.clientHeight - element.scrollTop
           : -element.scrollTop;
       // Only the field's nearest container grows, and only by what it lacks.
-      if (delta > available && index === 0 && room) {
+      if (inset > 0 && delta > available && index === 0 && room) {
         const padding = parseFloat(getComputedStyle(room).paddingBottom) || 0;
         set(room, "padding-bottom", `${padding + delta - available}px`);
       }
@@ -87,7 +87,7 @@ export function installMobileEditing(environment: Environment) {
     });
     // Nothing could scroll it far enough: shift the page up just enough, keeping the field's
     // top in view.
-    if (rect.bottom > keyboardTop) {
+    if (inset > 0 && rect.bottom > keyboardTop) {
       const shift = Math.min(
         rect.bottom - keyboardTop + MARGIN,
         Math.max(0, rect.top - viewTop - MARGIN),

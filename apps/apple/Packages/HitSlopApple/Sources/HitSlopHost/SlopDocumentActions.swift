@@ -184,10 +184,18 @@ extension SlopDocumentWindowController {
   private func handOffDocument(to target: URL) async throws -> URL {
     let canRender = session.isReady
     let telemetry = telemetry
-    return try await session.handOff(to: target) { source in
-      guard canRender else { return nil }
-      return await SlopRenderer.artwork(url: source, telemetry: telemetry)
-    }
+    return try await session.handOff(
+      to: target,
+      resolveDrafts: { drafts in
+        guard !drafts.isEmpty else { return }
+        guard let window = self.window else { throw CancellationError() }
+        try await self.draftRecovery.resolve(
+          drafts, document: self.url.lastPathComponent, in: window, copy: TextDraftRecovery.copy)
+      },
+      renderArtwork: { source in
+        guard canRender else { return nil }
+        return await SlopRenderer.artwork(url: source, telemetry: telemetry)
+      })
   }
 
   /// Save status and renderer callbacks own their incidents; outer operations add only context.

@@ -289,8 +289,8 @@ its operations from the live Loro document.
 - `flush` resolves when the saved sequence covers every edit accepted before the call.
   `close` refuses new edits, flushes, trims history (below; never a shared document's),
   writes the artwork its
-  window captured ([close](#close-export-and-capture)), reclaims attachments nothing
-  references ([attachments](#themes-and-attachments)), then releases the lock.
+  window captured ([close](#close-export-and-capture)), reclaims unreferenced attachments
+  in unshared documents only ([attachments](#themes-and-attachments)), then releases the lock.
   `discard` waits for the write in flight and reloads saved bytes; work queued for the
   discarded state (a waiting flush, a page that was replaced) is refused with
   `owner_replaced`.
@@ -310,7 +310,7 @@ The SQLite schema has seven tables:
 | `document` | Identity singleton: UUID | Document creation and independent copies |
 | `history` | Loro snapshot, then updates: the saved state | Pack seeds it; saves, checkpoints and close-time trims update it; clean copies replace it with current state |
 | `share` | Singleton room and relay endpoint of a shared document | The live sync path; empty when unshared, cleared on clean copies |
-| `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unreferenced blobs are reclaimed |
+| `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unshared documents reclaim unreferenced blobs |
 
 The schema check is exact. A new table or column requires a storage version bump and a
 lazy migration under the writer lock. An older build refuses that file with
@@ -410,9 +410,13 @@ a file without artwork shows the `.slop` document icon.
 
 ## Close, export and capture
 
-The page barrier sends unsent text, waits for queued writes and attachment imports, then
-flushes; it never joins a flush that already passed its drain point. Inputs stay
-enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
+The page close barrier sends unsent text and waits for queued writes and attachment
+imports; the native session then flushes the owner for ordinary close. Preparation
+distinguishes drained edits from durable edits. Handoff drains without requiring the
+full source to save, resolves retained text drafts, and publishes a verified clean
+copy before releasing the original. A failed save or cancelled recovery unblocks the
+page and keeps ownership. A page flush never joins a flush that already passed its
+drain point. Inputs stay enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
 saved state independently of the editor. For an open document, the core first backs up
 SQLite after the page drain (within the page-call deadline) and save; a page that does
 not answer counts as a dead renderer. The temporary copy owns its app, attachments,
@@ -471,7 +475,8 @@ recording document content or paths.
 
 An attachment import stores the blob, then submits its reference through a
 collector admitted past an active barrier. A collector that throws, or an edit the core
-refuses, leaves the blob unreferenced until the document closes.
+refuses, leaves the blob unreferenced. Unshared documents reclaim it on close; shared
+and Synced Library documents retain it for other replicas.
 
 ## macOS image widgets
 

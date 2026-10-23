@@ -342,13 +342,13 @@ export class OwnerDocument<N extends ObjectNode> {
       })(),
     );
   }
-  /** Close and capture: refuse new work, drain what is pending, then save. Inputs stay
+  /** Close preparation: refuse new work and drain what is pending. The host owns saving. Inputs stay
    * enabled so focus and composition survive a barrier that is cancelled. */
   async prepareClose() {
     this.blocked = true;
     this.snapshots.notify();
     try {
-      await this.drainAndSave();
+      await this.drain();
     } catch (error) {
       this.blocked = false;
       this.snapshots.notify();
