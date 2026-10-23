@@ -1,5 +1,6 @@
 import AuthenticationServices
 import HitSlopAccount
+import HitSlopCore
 import HitSlopCoreBinding
 import SwiftUI
 
@@ -23,16 +24,18 @@ public struct LiveCollaborationSection: View {
   @State private var failedAction: Action = .refresh
   private let interactionChanged: (Bool) -> Void
   private let saveUnsharedCopy: (() -> Void)?
+  private let onUpdate: (() -> Void)?
 
   private enum Action { case start, stop, refresh }
 
   public init(
     model: DocumentSharing, interactionChanged: @escaping (Bool) -> Void = { _ in },
-    saveUnsharedCopy: (() -> Void)? = nil
+    saveUnsharedCopy: (() -> Void)? = nil, onUpdate: (() -> Void)? = nil
   ) {
     self.model = model
     self.interactionChanged = interactionChanged
     self.saveUnsharedCopy = saveUnsharedCopy
+    self.onUpdate = onUpdate
   }
 
   private var live: Bool { model.status.map { $0.phase != .ended } ?? false }
@@ -69,25 +72,7 @@ public struct LiveCollaborationSection: View {
         }
       } else if wantsLink && (!account.signedIn || signingIn) {
         caption("Sign in with Apple to start a live link. People you invite don't need an account.")
-        SignInWithAppleButton(.continue) { request in
-          interactionChanged(true)
-          signingIn = true
-          signInError = nil
-          account.prepare(request)
-        } onCompletion: { result in
-          Task {
-            let success = await account.complete(result)
-            signingIn = false
-            if success {
-              pendingStart = true
-              startWhenReady()
-            } else {
-              signInError = account.message
-            }
-          }
-        }
-        .frame(height: signInHeight)
-        .disabled(signingIn)
+        signInButton
       } else if model.status?.phase == .preparing {
         caption("Couldn't finish starting.")
         if model.error == nil { Button("Try Again") { start() }.disabled(model.busy) }
@@ -117,8 +102,29 @@ public struct LiveCollaborationSection: View {
             : "Edit together in real time. Anyone with the link can edit.")
       }
 
-      if live, let saveUnsharedCopy {
+      if live, let kind = model.status?.pauseKind {
+        switch kind {
+        case .roomFull:
+          caption("Making room…")
+        case .outgrown, .filesFull:
+          if kind == .filesFull { caption("Attachments are full.") }
+          if joined {
+            caption("Ask for a new link, or save an unshared copy.")
+          } else {
+            caption("This document can't keep syncing. Save an unshared copy to keep editing.")
+          }
+        case .needsUpdate:
+          caption("This shared document needs a newer hitSlop.")
+          if let onUpdate { Button("Update hitSlop", action: onUpdate) }
+        case .missingHistory, .refused:
+          caption(model.status?.detail ?? "This copy could not sync. Save an unshared copy to keep editing.")
+        case .ended:
+          caption("Live collaboration ended. You keep your copy.")
+        }
+      }
+      if live, model.status?.pauseKind != .roomFull, let saveUnsharedCopy {
         Button("Save Unshared Copy…", action: saveUnsharedCopy).disabled(model.busy)
+        caption("The copy is an independent document. To share it, turn on live collaboration in the copy.")
       }
       if confirmingStop {
         caption("Stop live collaboration? The link stops working. Everyone keeps their own copy.")
@@ -179,6 +185,47 @@ public struct LiveCollaborationSection: View {
         confirmingStop = false
       }
     }
+  }
+
+  @ViewBuilder private var signInButton: some View {
+    #if os(macOS)
+      SharingAppleSignInButton {
+        interactionChanged(true)
+        signingIn = true
+        signInError = nil
+        Task {
+          let success = await account.complete()
+          signingIn = false
+          if success {
+            pendingStart = true
+            startWhenReady()
+          } else if !account.message.isEmpty {
+            signInError = account.message
+          }
+        }
+      }
+      .disabled(signingIn)
+    #else
+      SignInWithAppleButton(.continue) { request in
+        interactionChanged(true)
+        signingIn = true
+        signInError = nil
+        account.prepare(request)
+      } onCompletion: { result in
+        Task {
+          let success = await account.complete(result)
+          signingIn = false
+          if success {
+            pendingStart = true
+            startWhenReady()
+          } else {
+            signInError = account.message
+          }
+        }
+      }
+      .frame(height: signInHeight)
+      .disabled(signingIn)
+    #endif
   }
 
   private var signInHeight: CGFloat {

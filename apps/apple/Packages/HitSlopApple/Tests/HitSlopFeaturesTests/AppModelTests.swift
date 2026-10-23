@@ -178,13 +178,14 @@ import Testing
   #expect(native.performed == [.exportPNG, .discardUnsaved, .close])
 }
 
-@Test @MainActor func aDuplicateOpensTheCopy() async {
+@Test(arguments: [SlopDocumentCommand.duplicate, .saveUnsharedCopy]) @MainActor
+func aCopyCommandOpensTheCopy(command: SlopDocumentCommand) async {
   let native = Native()
   let duplicateURL = URL(fileURLWithPath: "/tmp/duplicate.slop")
   let model = await app(native, open: [documentID], ids: [otherID])
   native.perform = { _, _ in duplicateURL }
   native.open = { _, _ in }
-  model.send(.duplicate, to: documentID)
+  model.send(command, to: documentID)
   await model.settled()
   #expect(model.documents.map(\.url) == [documentURL, duplicateURL])
   #expect(model.acceptsCommands(otherID))

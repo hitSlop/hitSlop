@@ -74,6 +74,18 @@ impl SyncConnection {
         let ticket = Reservation { admission: self.admission.clone(), epoch: self.epoch, size: bytes.len() };
         self.sender.send(Message::Sync(SyncMessage::Frame { bytes, ticket })).is_ok()
     }
+    /// Export in the owner queue, ordered with local and remote edits.
+    pub fn base(
+        &self,
+        reply: impl FnOnce(std::result::Result<Option<crate::sync::Base>, crate::sync::Pause>) + Send + 'static,
+    ) {
+        let _ = self.sender.send(Message::Sync(SyncMessage::Base { epoch: self.epoch, reply: Box::new(reply) }));
+    }
+    pub fn pause(&self, kind: crate::sync::PauseKind, reason: String) {
+        let _ = self
+            .sender
+            .send(Message::Sync(SyncMessage::Pause { epoch: self.epoch, pause: crate::sync::Pause { kind, reason } }));
+    }
     pub fn detach(&self) {
         let mut a = self.admission.lock().expect("sync admission");
         if a.epoch != self.epoch {
@@ -85,7 +97,10 @@ impl SyncConnection {
         let _ = self.sender.send(Message::Sync(SyncMessage::Detach { epoch }));
     }
 }
+type BaseReply = Box<dyn FnOnce(std::result::Result<Option<crate::sync::Base>, crate::sync::Pause>) + Send>;
 pub(in crate::owner) enum SyncMessage {
+    Base { epoch: u64, reply: BaseReply },
+    Pause { epoch: u64, pause: crate::sync::Pause },
     Attach { sink: SyncSink, epoch: u64, admission: Arc<std::sync::Mutex<Admission>> },
     Frame { bytes: Vec<u8>, ticket: Reservation },
     Detach { epoch: u64 },
@@ -144,6 +159,27 @@ impl Owner {
 impl Actor {
     pub(super) fn sync(&mut self, message: SyncMessage) {
         match message {
+            SyncMessage::Base { epoch, reply } => {
+                let eligible = epoch == self.link.epoch
+                    && self.lifecycle == Lifecycle::Open
+                    && !self.evaluating
+                    && !self.discarding
+                    && !self.invalidated;
+                let result = if eligible {
+                    self.link.session.as_ref().map_or(Ok(None), |s| s.base(&self.core))
+                } else {
+                    Ok(None)
+                };
+                reply(result);
+            }
+            SyncMessage::Pause { epoch, pause } => {
+                if epoch == self.link.epoch {
+                    if let Some(session) = &mut self.link.session {
+                        session.pause(pause.kind, pause.reason);
+                    }
+                    self.reported_status();
+                }
+            }
             SyncMessage::Attach { sink, epoch, admission } => {
                 if admission.lock().expect("sync admission").epoch != epoch {
                     return;
@@ -154,7 +190,10 @@ impl Actor {
                 self.link.reported = Status::Offline;
                 if self.mode != store::Mode::Document || !self.store.is_shared() {
                     self.link.session = None;
-                    self.report(Status::Paused { reason: "This document is not shared".into() });
+                    self.report(Status::Paused {
+                        kind: crate::sync::PauseKind::Refused,
+                        reason: "This document is not shared".into(),
+                    });
                     return;
                 }
                 if self.link.session.is_none() {
@@ -162,7 +201,10 @@ impl Actor {
                     match self.store.app_digest() {
                         Ok(digest) => self.link.session = Some(Session::new(digest)),
                         Err(error) => {
-                            self.report(Status::Paused { reason: error.to_string() });
+                            self.report(Status::Paused {
+                                kind: crate::sync::PauseKind::Refused,
+                                reason: error.to_string(),
+                            });
                             return;
                         }
                     }

@@ -25,6 +25,19 @@ test("device presets and viewport changes update Svelte and CSS without replacin
     await preset.selectOption("iphone");
     await env.filter({ hasText: "ios/phone/compact" }).waitFor();
     const mobileFrame = page.frames().find(frame => frame.url().includes("/app.html"))!;
+    // Authored headers reserve the same corner as native actions, without a
+    // document-specific chrome mode. Device changes must release that space.
+    await mobileFrame.evaluate(() => {
+      const corner = document.createElement("div");
+      corner.id = "host-actions-reservation-probe";
+      corner.style.cssText = "position:fixed;pointer-events:none;width:var(--slop-host-actions-width);height:var(--slop-host-actions-height)";
+      document.body.append(corner);
+    });
+    const cornerSize = () => mobileFrame.locator("#host-actions-reservation-probe").evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return { width: bounds.width, height: bounds.height };
+    });
+    expect(await cornerSize()).toEqual({ width: 64, height: 44 });
     // Mobile reflow can move the focused field outside a nested scroller.
     // Use a minimal nested scroller, independent of any shipped template.
     await mobileFrame.evaluate(async () => {
@@ -51,8 +64,10 @@ test("device presets and viewport changes update Svelte and CSS without replacin
     await mobileFrame.evaluate(() => document.getElementById("mobile-editing-probe")!.remove());
     await preset.selectOption("ipad");
     await env.filter({ hasText: "ios/tablet/regular" }).waitFor();
+    expect(await cornerSize()).toEqual({ width: 0, height: 0 });
     await preset.selectOption("mac");
     await env.filter({ hasText: "macos/desktop/compact" }).waitFor();
+    expect(await cornerSize()).toEqual({ width: 0, height: 0 });
     expect(await env.evaluate(element => getComputedStyle(element).color)).toBe("rgb(11, 22, 33)");
     for (const width of [640, 639]) {
       await page.locator(".stage").evaluate((element, width) => (element as HTMLElement).style.setProperty("--editor-width", `${width}px`), width);

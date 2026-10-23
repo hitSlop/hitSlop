@@ -1,4 +1,4 @@
-/** Developer preview artifacts: the trusted host, isolated authored frame and Rust relay. */
+/** Live sharing artifacts: the trusted host, isolated authored frame and Rust relay. */
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -30,9 +30,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     case opening, ready
     case failed(String, terminated: Bool)
   }
+  private enum Preparation { case pending, drained, durable }
+  private enum ClosePurpose { case close, handoff }
   private enum Phase {
     case active(Renderer)
-    case closing(Renderer, prepared: Bool)
+    case closing(Renderer, preparation: Preparation)
     case closed
   }
   private var phase: Phase = .active(.opening)
@@ -76,17 +78,17 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
     set {
       guard let renderer else { return }
-      phase = newValue ? .closing(renderer, prepared: false) : .active(renderer)
+      phase = newValue ? .closing(renderer, preparation: .pending) : .active(renderer)
     }
   }
-  private var closePrepared: Bool {
+  private var closePreparation: Preparation {
     get {
-      if case .closing(_, prepared: true) = phase { return true }
-      return false
+      if case .closing(_, let preparation) = phase { return preparation }
+      return .pending
     }
     set {
       guard case .closing(let renderer, _) = phase else { return }
-      phase = .closing(renderer, prepared: newValue)
+      phase = .closing(renderer, preparation: newValue)
     }
   }
   private var closeDrafts: [UnresolvedTextDraft] = []
@@ -112,6 +114,24 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   public weak var delegate: DocumentSessionDelegate?
   /// Whether Edit ▸ Undo and Redo have anything to do in this document.
   public private(set) var undoAvailability = UndoState(canUndo: false, canRedo: false)
+  public private(set) var retainsHistory = false
+  public private(set) var storagePressure = Pressure.ok
+  /// What a shared document tells its people when saved history nears or reaches the
+  /// storage limit. An unshared copy has the same limit but keeps no shared history, so it
+  /// frees room. Every view that mentions storage uses this sentence.
+  public var storageNotice: String? {
+    guard retainsHistory else { return nil }
+    return switch storagePressure {
+    case .ok: nil
+    case .near:
+      "This shared document is almost full. Save an unshared copy to free up room: it keeps your content without the shared history."
+    case .full:
+      "This shared document is full, so new edits cannot be saved. Save an unshared copy to keep editing: it keeps your content without the shared history."
+    }
+  }
+  /// A shared document at its storage limit cannot save, so it leaves through
+  /// `handOff(to:)` rather than a close.
+  public var isFullShared: Bool { retainsHistory && storagePressure == .full }
   let owner: DocumentOwner
   public var documentID: String? { owner.documentID }
   public private(set) var sharing: DocumentSharing?
@@ -158,7 +178,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     observeOwner()
     configureFileSaver()
     makeWebView()
-    if SharingPreview.enabled, let document = documentID {
+    if let document = documentID {
       sharing = DocumentSharing(owner: owner)
       Self.sharingSessions[document] = SharedSession(self)
     }
@@ -183,9 +203,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
         }
       case .undo(let state):
         DispatchQueue.main.async { self?.undoAvailability = state }
-      case .saveStatus(let status):
+      case .saveStatus(let status, let pressure, let shared):
         DispatchQueue.main.async {
           guard let self else { return }
+          self.retainsHistory = shared
+          self.storagePressure = pressure
           self.delegate?.pageSession(self, saveStatus: status)
         }
       }
@@ -297,7 +319,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
   private func makeWebView() {
     // Each page gets its own view token; requests from a replaced page are refused.
-    closePrepared = false
+    closePreparation = .pending
     view = UUID().uuidString
     pushes.configure(view: view)
     owner.attach(view: view)
@@ -333,8 +355,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       configuration: configuration)
     #if os(iOS)
       view.accessibilityIdentifier = "document-page"
-      // Native keyboard avoidance sizes the page; authored panes keep their own scrolling.
       view.scrollView.keyboardDismissMode = .interactive
+      view.allowsLinkPreview = false
       view.scrollView.bounces = false
       view.scrollView.pinchGestureRecognizer?.isEnabled = false
     #endif
@@ -433,7 +455,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       case .active(.opening): phase = .active(.ready)
       // A close that began while the page was opening must not turn its readiness
       // into a renderer failure.
-      case .closing(.opening, let prepared): phase = .closing(.ready, prepared: prepared)
+      case .closing(.opening, let preparation): phase = .closing(.ready, preparation: preparation)
       default:
         reply(pageFailure(OwnerFailure.rejected("Document page is not opening")), nil)
         return
@@ -575,33 +597,38 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     }
   }
 
-  /// Saves accepted edits and acquires one source for the artwork and clean copy.
-  /// The copy has a new identity, no history, only referenced attachments and the
-  /// rendered artwork (none when nil). Never replaces an existing destination.
-  /// Returns its canonical URL, with its own Finder icon refreshed.
+  /// Drains page edits and freezes the live state as a clean copy, even when retained
+  /// history is full. Artwork renders from that independent source. The destination has
+  /// a new identity, no history and only referenced attachments, and is never replaced.
   @discardableResult public func copy(
     to destination: URL, renderArtwork: @MainActor (URL) async -> SlopRenderedArtwork? = { _ in nil }
   ) async throws -> URL {
     guard !closed, !closing else { throw SlopFailure("Document is closing") }
-    return try await withSavedSource(
-      prepare: { try await self.saveAccepted() },
-      { source in
-        let artwork = await renderArtwork(source)
-        try Task.checkCancellation()
-        // A native owner gives the private source a writer lease for the clean copy.
-        // It has no page and never consults the original document again.
-        let frozen = try await SlopPreparation.run { try DocumentOwner(url: source) }
-        do {
-          try await frozen.copy(to: destination, artwork: artwork)
-        } catch {
-          try? await frozen.close()
-          throw error
-        }
-        try await frozen.close()
-        let copied = try SlopFile.resolvedRoot(destination)
-        SlopFinderIcon.refresh(copied)
-        return copied
-      })
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let source = directory.appendingPathComponent("copy.slop")
+    try await withCapture {
+      do {
+        try await saveAccepted()
+      } catch let failure as OwnerFailure where failure.kind == .full {
+        // Page flush has drained bindings and accepted edits before its save barrier.
+      }
+      try await owner.copy(to: source, artwork: nil)
+    }
+    let artwork = await renderArtwork(source)
+    try Task.checkCancellation()
+    let frozen = try await SlopPreparation.run { try DocumentOwner(url: source) }
+    do {
+      try await frozen.copy(to: destination, artwork: artwork)
+    } catch {
+      try? await frozen.close()
+      throw error
+    }
+    try await frozen.close()
+    let copied = try SlopFile.resolvedRoot(destination)
+    SlopFinderIcon.refresh(copied)
+    return copied
   }
 
   /// Freeze saved state and all owned blobs before rendering. Only acquisition holds the
@@ -624,7 +651,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       let interval = trace?.begin("Snapshot acquisition")
       defer { trace?.end("Snapshot acquisition", interval) }
       guard !closed else { throw SlopFailure("Document closed") }
-      if !closePrepared { try await prepare() }
+      if closePreparation != .durable { try await prepare() }
       try await owner.captureSource(to: source)
     }
     return try await consume(source)
@@ -655,31 +682,47 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   @discardableResult public func prepareClose() async throws -> [UnresolvedTextDraft] {
-    guard !closed, !closePrepared else { return closeDrafts }
+    try await prepareClose(for: .close)
+  }
+
+  /// Draining the page and saving the source are separate barriers. Handoff must reach
+  /// the live state even when the source cannot save; ordinary close still saves first.
+  @discardableResult private func prepareClose(for purpose: ClosePurpose) async throws -> [UnresolvedTextDraft] {
+    guard !closed else { return closeDrafts }
+    if closePreparation == .durable || (purpose == .handoff && closePreparation == .drained) { return closeDrafts }
     guard !capturing else { throw SlopFailure("Document is exporting; try again when it finishes") }
     filePicker.cancel()
     fileSaver.cancel()
-    closing = true
+    if !closing { closing = true }
     cancelSpeech()
     do {
-      if isReady {
-        closeDrafts = try decodeClosePreparation(json: await callPage(.prepareClose))
+      if closePreparation == .pending {
+        if isReady {
+          do {
+            closeDrafts = try decodeClosePreparation(json: await callPage(.prepareClose))
+          } catch {
+            // A dead renderer cannot drain more text. Its accepted native edits remain
+            // available, and the ordinary close must still save them below.
+            if !rendererDead { throw error }
+          }
+        }
+        closePreparation = .drained
       }
-      closePrepared = true
+      if purpose == .close {
+        try await owner.flush()
+        closePreparation = .durable
+      }
       return closeDrafts
     } catch {
-      if rendererDead {
-        closePrepared = true
-        return closeDrafts
-      }
-      closing = false
-      if let failure = owner.saveFailure { throw failure }
+      // The page remains fenced after a drain succeeded but saving failed. Undo the
+      // page barrier too, and never mask an uncertain drain with an older save failure.
+      await cancelClose()
       throw error
     }
   }
 
   public func cancelClose() async {
-    closePrepared = false
+    closePreparation = .pending
     closeDrafts = []
     if isReady {
       _ = try? await callPage(.cancelClose)
@@ -689,8 +732,52 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
 
   /// Saves, writes `artwork` and releases the document, then retires the page.
   public func close(artwork: SlopRenderedArtwork? = nil, trace: SlopCloseTrace? = nil) async throws {
+    try await leave(for: .close, trace: trace) { try await $0.close(artwork: artwork) }
+  }
+
+  /// Leaves a document that cannot save (a shared one that is full) without saving it:
+  /// freezes its edits, renders `renderArtwork` from a copy of the frozen state, and has the
+  /// owner publish the live state as a new, unshared document at `destination` before it
+  /// releases the original. The owner never replaces an existing file; any failure leaves
+  /// the document open with every edit, so other participants keep the original.
+  @discardableResult public func handOff(
+    to destination: URL,
+    resolveDrafts: @MainActor ([UnresolvedTextDraft]) async throws -> Void = { drafts in
+      guard drafts.isEmpty else {
+        throw SlopFailure("Some text could not be saved. Keep this document open and copy that text before leaving.")
+      }
+    },
+    renderArtwork: @MainActor (URL) async -> SlopRenderedArtwork? = { _ in nil }
+  ) async throws -> URL {
+    guard !closed, !closing, closeTask == nil else { throw SlopFailure("Document is closing") }
+    let drafts = try await prepareClose(for: .handoff)
+    let artwork: SlopRenderedArtwork?
+    do {
+      try await resolveDrafts(drafts)
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        UUID().uuidString, isDirectory: true)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let source = directory.appendingPathComponent("copy.slop")
+      try await owner.copy(to: source, artwork: nil)
+      artwork = await renderArtwork(source)
+      try Task.checkCancellation()
+    } catch {
+      await cancelClose()
+      throw error
+    }
+    try await leave(for: .handoff) { try await $0.handOff(to: destination, artwork: artwork) }
+    let handedOff = try await SlopPreparation.run { try SlopFile.resolvedRoot(destination) }
+    SlopFinderIcon.refresh(handedOff)
+    return handedOff
+  }
+
+  private func leave(
+    for purpose: ClosePurpose, trace: SlopCloseTrace? = nil,
+    _ end: @escaping @Sendable (DocumentOwner) async throws -> Void
+  ) async throws {
     if let closeTask { return try await closeTask.value }
-    let task = Task { try await self.finishClose(artwork: artwork, trace: trace) }
+    let task = Task { try await self.finishClose(for: purpose, trace: trace, end) }
     closeTask = task
     do { try await task.value } catch {
       closeTask = nil
@@ -699,11 +786,14 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     closeTask = nil
   }
 
-  /// The barrier has refused new edits, so the owner saves and releases the document
-  /// before the app unmounts; a failed close leaves the app mounted and editable.
-  private func finishClose(artwork: SlopRenderedArtwork?, trace: SlopCloseTrace?) async throws {
+  /// The barrier has refused new edits, so the owner ends the document (saving it, or
+  /// handing it off to a verified copy) before the app unmounts; a failed end leaves the app
+  /// mounted and editable.
+  private func finishClose(
+    for purpose: ClosePurpose, trace: SlopCloseTrace?, _ end: @Sendable (DocumentOwner) async throws -> Void
+  ) async throws {
     if closed { return }
-    try await prepareClose()
+    try await prepareClose(for: purpose)
     // Discovery goes before the writer lock, so it can never name the next owner. A
     // failed close keeps ownership, so commands reach this session again.
     server?.withdraw()
@@ -711,7 +801,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     do {
       let interval = trace?.begin("Rust owner close")
       defer { trace?.end("Rust owner close", interval) }
-      try await owner.close(artwork: artwork)
+      try await end(owner)
     } catch {
       sharing?.resume()
       try? publishDiscovery()
@@ -826,7 +916,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     cancelSpeech()
     let wasReady = isReady
     let failed = Renderer.failed(message, terminated: terminated)
-    phase = closing ? .closing(failed, prepared: false) : .active(failed)
+    phase = closing ? .closing(failed, preparation: .pending) : .active(failed)
     // The owner is fully loaded before the page starts, so it keeps the writer lock and
     // the socket; a retry reattaches a new page to the same owner.
     if !wasReady {

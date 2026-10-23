@@ -230,7 +230,8 @@ import SwiftUI
         self?.coordinator?.hideCatalog()
         self?.coordinator?.prewarmCatalog()
       },
-      closeHidden: { [weak self] in self?.coordinator?.model.documentHiddenForClose(id) })
+      closeHidden: { [weak self] in self?.coordinator?.model.documentHiddenForClose(id) },
+      checkForUpdates: { [weak self] in self?.coordinator?.checkForUpdates() })
     let progress = presentsWindows ? SlopOpeningProgress() : nil
     openings[id] = progress
     defer { openings[id] = nil }
@@ -293,7 +294,7 @@ import SwiftUI
       }
     }
     let result = try await controller.perform(command)
-    if command == .duplicate, result != nil { telemetry.send(.duplicated) }
+    if command == .duplicate || command == .saveUnsharedCopy, result != nil { telemetry.send(.duplicated) }
     if command == .close { controllers.removeValue(forKey: id) }
     return result
   }

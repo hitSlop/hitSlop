@@ -40,7 +40,14 @@ import type { Environment } from "./environment";
  *   The Svelte root renders
  *   `[data-slop-notice]`, a status region holding the current notice as a `<p>`.
  * - CSS variables: `--slop-<token>` for each theme color and `--slop-window-radius`,
- *   `--slop-window-width` and `--slop-window-height`.
+ *   `--slop-window-width` and `--slop-window-height`. Live editors additionally expose
+ *   `--slop-host-actions-width` and `--slop-host-actions-height`: the corner reserved
+ *   for native actions in phone editors, zero in other presentations. Phone editors also
+ *   set `--slop-keyboard-inset`: the height of the bottom edge the keyboard and its
+ *   toolbar cover; 0 when the keyboard is hidden and everywhere else. The phone editor
+ *   runs edge to edge, so it also sets `--slop-safe-top` and `--slop-safe-bottom`: the
+ *   status bar/notch and home indicator heights the page extends under, for the app to
+ *   pad by; 0 everywhere else.
  * - Host-internal, not app ABI (the shell and host ship together and may change them):
  *   `slop:render-error` (the shell telling itself a remount failed), the
  *   `style[data-slop-host]` sheet, the `__slop` host entry point, and `__slopPreview`

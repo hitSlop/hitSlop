@@ -3,24 +3,28 @@ title: Make it work on iPhone
 description: Design a slop for a phone-sized window, the keyboard, touch and haptics.
 ---
 
-The iPhone app opens the same slops as the Mac. It is in TestFlight preview on iOS 26+
+The iPhone app opens the same slops as the Mac. It is in TestFlight on iOS 26+
 (see [availability](/docs/availability/)), so a slop you build for the Mac already opens
 on a phone. This guide makes it comfortable there.
-
-An existing document keeps the app it was made with. Layout changes reach new documents
-and updated templates; they never rewrite the copies people already use.
 
 ## What the iPhone host gives you
 
 - The app is portrait-only. Plan for widths of about 320 to 430 CSS pixels.
-- Your editor sits below the native navigation bar, above the home indicator and above
-  the onscreen keyboard. Your page background still fills the whole screen.
-- A native **Done** button appears while the keyboard is up and dismisses it without
-  submitting a form.
+- The editor runs edge to edge, under the status bar and the home indicator. Paint your
+  background to the edges and pad your root by `--slop-safe-top` and `--slop-safe-bottom`
+  (see [fill the screen](#fill-the-screen)).
+- The keyboard covers the page, like Messages or Notes. The page keeps its size, and the
+  host brings a focused field above the keyboard with no CSS from you (see
+  [above the keyboard](#keep-bottom-pinned-controls-above-the-keyboard)).
+- Your heading shares the top row with a native glass actions menu. Leave its
+  upper-right corner free.
+- The keyboard's own toolbar moves between fields, and its ✓ dismisses the keyboard
+  without submitting a form.
+- Swipe from the leading edge to return to the library, or choose **Back to Library**
+  in document actions.
 - Page zoom and zoom-on-focus are off. Buttons, links and `role="button"` elements use
   `touch-action: manipulation`, and tap highlights are hidden.
-- When a focused field ends up under the keyboard, the host scrolls it into view. It
-  never resizes your page or moves a field you are typing in.
+- Number inputs get a numeric keypad unless they set `inputmode`.
 
 You still design the layout, the touch targets and the haptics.
 
@@ -63,17 +67,56 @@ editor only. Preview, icon, export and widget views never receive them and canno
 `getEnvironment()`. Write base styles that work without the attributes; ordinary media
 and container queries work too.
 
+## Put your heading beside the native menu
+
+Reserve the menu's corner in your heading row:
+
+```css
+.app-header {
+  min-height: var(--slop-host-actions-height, 0px);
+  padding-inline-end: calc(12px + var(--slop-host-actions-width, 0px));
+}
+```
+
+The reservation is 64px wide and 44px high in the iPhone editor, and zero elsewhere.
+Let long titles wrap.
+Fixed controls and full-height sheets must also leave that corner free. A centered
+dialog can use `max-height: calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 2 * (var(--slop-host-actions-height, 0px) + 24px))`;
+a bottom sheet can use `calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-host-actions-height, 0px) - 24px)`.
+
+The iPhone preset exposes the reservation and simulates a notched phone's safe areas
+(47px top, 34px bottom), but native notch, swipe and keyboard behavior still need review
+in the app. The preset has no keyboard, so `--slop-keyboard-inset`
+stays `0px` there. Preview, export, icon and widget output have no native
+menu reservation.
+
+## Fill the screen
+
+The iPhone editor runs edge to edge: your page extends under the status bar (and notch)
+at the top and the home indicator at the bottom. Paint the background on the element that
+fills the page, or on `html` and `body`, so those strips match your app. Then pad that
+element by `--slop-safe-top` and `--slop-safe-bottom`, the heights of those areas. They are
+`0px` everywhere except the iPhone editor, and the iPhone preset simulates them.
+
+```css
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .app {
+  padding-top: calc(var(--slop-safe-top, 0px) + 12px);
+  padding-bottom: var(--slop-safe-bottom, 0px);
+}
+```
+
+Give fixed bars the same padding on the edge they touch. The bottom inset already leaves
+room around the home indicator, so a bottom bar sits right on it.
+
 ## Lay it out for a thumb
 
 - **Fluid widths.** Use grid, flex and `minmax(0, 1fr)` rather than fixed desktop
   sizes. Let text wrap. Check 320, 390 and 430 pixels.
-- **Fill the editor, scroll inside it.** The host already accounts for the safe areas
-  and the keyboard. Use `height: 100%` with `min-height: 0` and give long content its
-  own scrolling pane, rather than subtracting keyboard height or adding a second set of
-  insets. For full-screen art that reaches under system areas, use
-  `env(safe-area-inset-top, 0px)` and the other edges.
+- **Fill the editor, scroll inside it.** Use `height: 100%` with `min-height: 0` and give
+  long content its own scrolling pane.
 - **Keep the main action reachable.** Put submit and cancel in a footer that sticks to
-  the bottom of its scroller, so they stay visible above the keyboard.
+  the bottom of its scroller, and lift anything pinned to the page's bottom edge by
+  `--slop-keyboard-inset`.
 - **Bound your sheets.** Cap a dialog with `max-height: calc(100dvh - 24px)` and let
   its content scroll.
 - **Make targets 44px.** The icon can be smaller than the hit area. Prefer visible
@@ -84,6 +127,32 @@ and container queries work too.
   still on screen. Repeated-entry tools can keep focus after Add; a destructive or
   unrelated action should not raise the keyboard.
 - **Leave touch alone.** Do not cancel touch events or text selection globally.
+
+### Keep bottom-pinned controls above the keyboard
+
+The keyboard covers the bottom of the page and the page keeps its size, so headers do not
+squash and content does not reflow. You do not need any CSS for fields: when one gains
+focus, the host scrolls its container until the field sits above the keyboard, adds room at
+the end of that container when it is too short, and only if nothing can scroll shifts the
+page up just enough. It undoes all of this when the keyboard hides, and never moves a field
+you are typing in.
+
+What the host cannot know is which of your controls are pinned to the bottom of the
+screen. For those it publishes `--slop-keyboard-inset` on the root: the height, in CSS
+pixels, of the bottom edge the keyboard and its toolbar cover. It is `0px` while the
+keyboard is hidden and in every other presentation, including previews, exports and Mac,
+so always give it a fallback. Lift bottom sheets, fixed bars and centered dialogs that hold
+fields by it. Never add it to the page or a layout container: that shrinks the layout
+exactly like a resize. The SDK notice lifts automatically.
+
+```css
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) {
+  .sheet {
+    bottom: var(--slop-keyboard-inset, 0px);
+    max-height: calc(100dvh - var(--slop-host-actions-height, 0px) - var(--slop-keyboard-inset, 0px) - 24px);
+  }
+}
+```
 
 A sticky footer inside a scrolling sheet, from Little Days:
 
@@ -170,8 +239,8 @@ framework-neutral app can reach the same service as optional `ctx.haptics`.
 Run `slop dev` and choose **iPhone** in the Device menu. That sets a 390 by 844
 viewport and reports `ios` and `phone`, so you can check your compact layout. Check the
 320 and 430 pixel edges with your browser's responsive design tools. The preview simulates layout and identity only. It has no
-native keyboard, navigation bar or haptics, so check text entry, sheets and the Done
-button in the TestFlight app. Preview, icon, export and widget views render saved state
+native keyboard, navigation bar or haptics, so check text entry, bottom-pinned controls
+above the keyboard, sheets and dismissing the keyboard in the TestFlight app. Preview, icon, export and widget views render saved state
 and ignore the device menu, so review them separately.
 
 Because a document keeps its own app, test the change on a new document. Updated
@@ -181,14 +250,15 @@ templates reach new copies only.
 
 Quick Checklist keeps its scroll budget for tasks. Below 640px it tightens padding,
 gives the composer a 44px add button, sets inputs to 16px, gives menu items 44px rows and
-caps menus at `100dvh`. It plays `haptics.selection()` for tab and checkbox changes and
+caps menus at `100dvh`, and lifts its bottom padding above the keyboard. It
+plays `haptics.selection()` for tab and checkbox changes and
 `haptics.notification("success")` after filing finished tasks. After removing a task it
 keeps focus off the keyboard on a phone by returning it to a tab instead of the input.
 
 Little Days uses `layout === "compact"` to put a two-column set of care actions above
 the timeline. Its forms become bounded sheets with scrolling content and a sticky
-footer, with one modal holding the overview, entry, profile and caregiver screens. The
-sheet takes focus without raising the keyboard. Haptics confirm a saved entry, flag a
+footer, with one modal holding the overview, entry, profile and caregiver screens. Its sheet
+rides above the keyboard, and takes focus without raising it. Haptics confirm a saved entry, flag a
 refused one and accompany choices.
 
 See [style an app](/docs/guides/styling/) for themes and CSS,

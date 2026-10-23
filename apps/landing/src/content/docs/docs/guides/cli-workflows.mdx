@@ -22,36 +22,6 @@ The npm package includes its document engine, which does that rendering. `open` 
 
 Append `--help` to any command to see its arguments.
 
-## Local browser copies (Chrome beta)
-
-```sh
-slop open --browser ./MyDocument.slop
-slop open --browser
-```
-
-Example responses (copy and import IDs vary):
-
-```text
-http://127.0.0.1:41238/?copy=COPY_ID#import=IMPORT_ID
-Local browser host is running. Keep this terminal open; Ctrl-C stops it.
-```
-
-Opening the list prints `http://127.0.0.1:41238`. The host message appears only when
-this invocation starts the host; one that reuses it prints the URL and exits.
-
-The first command opens an independent copy in desktop Google Chrome. The second
-opens your saved browser copies. Keep the host terminal running; Ctrl-C stops it.
-Later invocations reuse the same host. No account or server upload is involved.
-
-Edits autosave in this browser profile on this device. **Download .slop** includes the
-current app, data, theme and referenced attachments for opening in the desktop client.
-The original file stays unchanged. Browser storage can be cleared or evicted: download
-copies you want to keep. Reload requires the local host to be running.
-
-The first version supports Chrome on desktop. Safari, private browsing and mobile browsers remain unqualified. Hosted edit links use the separate
-[live sharing preview](/docs/guides/live-sharing/). Fullscreen appears for apps declaring
-`fullscreenable`; **Keep awake** is a separate, initially off toggle.
-
 ## Create, preview, and register an app
 
 ```sh
@@ -164,94 +134,33 @@ The following `create` prints `/Users/you/Documents/Weekend.slop`. Run one of th
 ## Read and edit data
 
 For a complete numbered example with every response, follow
-[edit a Checklist document](/docs/guides/edit-installed-data/). It creates a writable
-copy, discovers its commands, calls `addTask`, reads the returned row, and changes its
-`done` field with `apply`.
-
-For an existing document, replace `My.slop` with its path. Quote paths containing spaces:
+[edit installed documents](/docs/guides/edit-installed-data/). For an existing document,
+replace `My.slop` with its path and quote paths containing spaces:
 
 ```sh
-bunx hitslop describe My.slop
-```
-
-Example excerpt from a Checklist response:
-
-```text
-Commands (slop call PATH NAME --args JSON)
-  Arguments accept only the listed fields.
-
-  addTask — Add an unfinished task and return its stable row ID.
-    text: string (required)
-```
-
-`describe` marks arguments as required or optional and shows their defaults, choices,
-bounds and descriptions when present. It also prints fields, operations, a version,
-and current values. Add `--json` for a structured description with full argument
-JSON Schemas. Run an action that it lists:
-
-```sh
+bunx hitslop describe My.slop      # fields, commands and current values (add --json for tools)
 bunx hitslop call My.slop addTask --args '{"text":"Buy coffee"}'
+bunx hitslop schema My.slop        # the stored descriptor
+bunx hitslop get My.slop           # saved values
+bunx hitslop apply My.slop --op '{"type":"set","path":["title"],"value":"Ready"}'
+bunx hitslop batch My.slop --ops '[...]'
 ```
 
-```json
-{ "result": { "id": "example-task-id" }, "ids": ["example-task-id"] }
-```
+`call` runs one of the commands `describe` lists, as one undo step. `apply` takes one
+operation and `batch` an array committed all-or-nothing; both print `{"ids":[...]}`, the
+inserted row IDs. An operation is `{"type":..., "path":[...]}`, where `type` is `set`,
+`clear`, `insert`, `remove`, `move`, `increment` or `replace`. A path walks the schema
+from the root: field names and record keys are strings, rows are `{"id":"<$id>"}`, and
+elements of a scalar list are `{"index":n}`. Use row IDs, never list positions. Each
+kind's merge behavior is in [data and schemas](/docs/guides/data-and-schemas/).
 
-The real ID differs. Commands use the app’s authored behavior and apply as one undo
-step. A command without a return value reports `"result": null`.
+`get` prints the saved value, while `get --snapshot` also includes the schema, the template's colors (`defaults`), the version and the effective colors (`theme`).
 
-Inspect the stored descriptor separately:
-
-```sh
-bunx hitslop schema My.slop
-```
-
-Response excerpt for Checklist’s title field:
-
-```json
-{ "kind": "text", "description": "The title shown in the window." }
-```
-
-Read saved values:
-
-```sh
-bunx hitslop get My.slop
-```
-
-Response excerpt from its `tasks` array:
-
-```json
-{ "$id": "example-task-id", "archived": false, "done": false, "text": "Buy coffee" }
-```
-
-For a direct edit, use that row’s actual ID:
-
-```sh
-bunx hitslop apply My.slop --op '{"type":"set","path":["tasks",{"id":"example-task-id"},"done"],"value":true}'
-```
-
-```json
-{ "ids": [] }
-```
-
-Or group edits in one atomic batch:
-
-```sh
-bunx hitslop batch My.slop --ops '[{"type":"set","path":["tasks",{"id":"example-task-id"},"done"],"value":false},{"type":"set","path":["tasks",{"id":"example-task-id"},"archived"],"value":false}]'
-```
-
-```json
-{ "ids": [] }
-```
-
-`ids` lists inserted rows, so it is empty for these field changes. If one batch operation
-is invalid, none apply. Use row IDs rather than list positions. See the
-[operation reference](https://github.com/hitSlop/hitslop/blob/master/docs/guides/cli.md#operations).
-
-Successful edits are saved. Errors go to stderr with a nonzero exit status. On a Mac,
-**Edit ▸ Undo** can revert agent edits in the open window. If a command’s outcome is
-uncertain, run `get` before retrying. Document creation and editing work on macOS and
-Linux; closed PNG/PDF export works on both platforms, and opening a window needs the Mac app.
+A refused batch exits 1 and prints `Refused ops[N] (reason): message` on stderr, naming
+the zero-based index of the operation to fix and whether anything was applied. Successful
+edits are saved. On a Mac, **Edit ▸ Undo** can revert agent edits in the open window. If a
+command's outcome is uncertain, run `get` before retrying. Document creation and editing
+work on macOS and Linux; opening a window needs the Mac app.
 
 ## Move data between documents
 
@@ -275,30 +184,9 @@ Both documents must come from the same template, so the data fits its schema; a 
 
 ## Change theme colors
 
-```sh
-bunx hitslop theme get My.slop
-bunx hitslop theme set My.slop --values '{"accent":"#7050ad"}'
-bunx hitslop theme reset My.slop --token accent
-bunx hitslop theme reset My.slop
-bunx hitslop theme export My.slop --output Purple.json
-bunx hitslop theme import Other.slop Purple.json
-```
-
-Example responses for the counter tutorial’s three-color palette:
-
-| Command                                     | Response                                                                                                                                                                      |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `theme get My.slop`                         | `{"defaults":{"accent":"#28634b","ink":"#382d24","surface":"#fff7e6"},"overrides":{},"effective":{"accent":"#28634b","ink":"#382d24","surface":"#fff7e6"}}`                   |
-| `theme set My.slop …`                       | `{"defaults":{"accent":"#28634b","ink":"#382d24","surface":"#fff7e6"},"overrides":{"accent":"#7050ad"},"effective":{"accent":"#7050ad","ink":"#382d24","surface":"#fff7e6"}}` |
-| `theme reset My.slop --token accent`        | The original `theme get` response above, with `"overrides":{}`.                                                                                                               |
-| `theme reset My.slop`                       | The same original palette, with all overrides cleared.                                                                                                                        |
-| `theme export My.slop --output Purple.json` | `/Users/you/Documents/Purple.json`                                                                                                                                            |
-| `theme import Other.slop Purple.json`       | The full `defaults`, `overrides`, and `effective` palette, like `theme get`.                                                                                                  |
-
-These commands run in order, so this example exports the reset palette. Export before
-resetting if you want to keep the purple accent.
-
-`theme get` reports the template's colors, the document's changes, and the effective palette. Set only colors the app declares, as lowercase `#rrggbb` or `#rrggbbaa`. Reset one color with `--token`, or omit it to reset them all. `theme export` prints the full palette as a theme file, or writes it with `--output`; `theme import` replaces the palette with a file made for the same template. The open window, its theme panel and subsequent captures use the changes. After an uncertain result, inspect `theme get` before retrying. See [styling](/docs/guides/styling/) for declaring a theme.
+`theme get`, `set`, `reset`, `export` and `import` read and change a document's palette.
+Their commands and example responses are in
+[styling](/docs/guides/styling/#let-people-change-the-colors).
 
 ## Work with attachments
 
@@ -411,11 +299,32 @@ Update the global CLI with `bun install -g hitslop@VERSION`, replacing `VERSION`
 
 Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
 
-The CLI and native owner use the same generated socket contract. Socket requests
-carry the document path and the command protocol they are written in. Correlation IDs
-are not part of this contract; each request receives its reply on its own exchange.
+## Local browser copies
 
-`apply` submits one operation through the same batch path as `batch`. Both read modes
-use one owner snapshot: `get` prints its value, while `get --snapshot` includes the
-schema, the template's colors (`defaults`), the version, the value and the effective
-colors (`theme`).
+```sh
+slop open --browser ./MyDocument.slop
+slop open --browser
+```
+
+Example responses (copy and import IDs vary):
+
+```text
+http://127.0.0.1:41238/?copy=COPY_ID#import=IMPORT_ID
+Local browser host is running. Keep this terminal open; Ctrl-C stops it.
+```
+
+Opening the list prints `http://127.0.0.1:41238`. The host message appears only when
+this invocation starts the host; one that reuses it prints the URL and exits.
+
+The first command opens an independent copy in desktop Google Chrome. The second
+opens your saved browser copies. Keep the host terminal running; Ctrl-C stops it.
+Later invocations reuse the same host. No account or server upload is involved.
+
+Edits autosave in this browser profile on this device. **Download .slop** includes the
+current app, data, theme and referenced attachments for opening in the desktop client.
+The original file stays unchanged. Browser storage can be cleared or evicted: download
+copies you want to keep. Reload requires the local host to be running.
+
+Chrome on desktop is supported. Safari, private browsing and mobile browsers remain unqualified. Hosted edit links use the separate
+[live sharing](/docs/guides/live-sharing/). Fullscreen appears for apps declaring
+`fullscreenable`; **Keep awake** is a separate, initially off toggle.

@@ -272,7 +272,7 @@ background execution remain design work; this proposal sets no new API names or 
 ## On the desktop, and with other people
 
 - **Widgets.** Mac desktop widgets and iPhone Home Screen widgets in the TestFlight
-  preview use dedicated `Widget.svelte` captures of saved state. iPhone background
+  app use dedicated `Widget.svelte` captures of saved state. iPhone background
   refresh runs when iOS allows; release-candidate qualification remains;
   see [widget qualification](roadmap.md#later).
 - **History scrubber.** A timeline of whatever history remains under the
@@ -309,7 +309,7 @@ host today; its scope, lifecycle and sharing admission need a separate design.
 ### Other platforms
 
 The Swift Mac and iPhone hosts use the same Rust core and page shell; the iPhone app
-is in TestFlight preview on iOS 26+. See the [Apple library architecture](architecture.md#apple-library-preview).
+is in TestFlight on iOS 26+. See the [Apple library architecture](architecture.md#synced-library).
 Windows, Android and Linux remain proposed thin hosts around that core and shell. A host never owns document semantics, so a new
 one is a window, a WebView, one bridge and a lifecycle, not a second engine. No additional platform is
 scheduled; the [roadmap](roadmap.md#next) lists the prerequisites.
@@ -330,7 +330,7 @@ contract](engineering-contract.md) governs their document and bridge boundaries.
 
 | Platform | Host | Notes |
 |---|---|---|
-| iPhone (TestFlight preview) | Native Swift: SwiftUI and `WKWebView`, reusing the Apple packages through UniFFI | In-process Rust capture and Home Screen widgets are implemented; authored commands remain unavailable. |
+| iPhone (TestFlight) | Native Swift: SwiftUI and `WKWebView`, reusing the Apple packages through UniFFI | In-process Rust capture and Home Screen widgets are implemented; authored commands remain unavailable. |
 | Android | Native Kotlin: Activity and Android WebView, the core through UniFFI's Kotlin bindings | The WebView message-listener API reports the sender's origin and whether it is the main frame, which would give native admission. Not yet verified here. Needs an in-process evaluator design. |
 | Windows and Linux | One Rust desktop host on `tao` and `wry`, with the bridge admission and window-shape code owned by per-OS adapter modules | One codebase for two systems is the only case where `wry` pays for itself. Windows may use `webview2-com` directly; a Windows spike decides. |
 
@@ -366,7 +366,7 @@ Windows.
 
 ### Sync between your own devices
 
-Apple devices use the CloudKit Synced Library ([architecture](architecture.md#apple-library-preview)).
+Apple devices use the CloudKit Synced Library ([architecture](architecture.md#synced-library)).
 For platforms without CloudKit, a person's own devices could use the same room model as people
 collaborating. Each keeps a `.slop` replica and its local writer lease, edits offline and
 merges through the relay when it reconnects. Replicate Loro updates, not SQL rows or a
@@ -411,7 +411,7 @@ The manifesto also argues for cloud sandboxes, organization-wide governance and 
 between model providers. Those serve an enterprise agent platform. hitSlop takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
 keeps local documents usable without an account. Optional Synced Library uses the
-person's iCloud account; live-link owners sign in with Apple in the sharing preview.
+person's iCloud account; live-link owners sign in with Apple.
 
 ## Possible command extensions after launch
 

@@ -7,7 +7,7 @@
       "productivity",
       "personal"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 560,
     "height": 760,
     "emoji": "3️⃣",
@@ -15,7 +15,9 @@
       "background": "#f7f6f2",
       "accent": "#1e3a8a",
       "ink": "#201f1d"
-    }
+    },
+    "icon": "/assets/templates/three-three-three/icon.png",
+    "preview": "/assets/templates/three-three-three/preview.png"
   },
   {
     "slug": "alien-radio",
@@ -33,7 +35,9 @@
       "background": "#16190c",
       "accent": "#caff42",
       "ink": "#eaffb3"
-    }
+    },
+    "icon": "/assets/templates/alien-radio/icon.png",
+    "preview": "/assets/templates/alien-radio/preview.png"
   },
   {
     "slug": "ambient-sound-mixer",
@@ -51,7 +55,9 @@
       "background": "#13151b",
       "accent": "#38bdf8",
       "ink": "#f1f5f9"
-    }
+    },
+    "icon": "/assets/templates/ambient-sound-mixer/icon.png",
+    "preview": "/assets/templates/ambient-sound-mixer/preview.png"
   },
   {
     "slug": "assignment-tracker",
@@ -59,7 +65,7 @@
     "description": "A plum study pad for assignments, deadlines, course notes, and the satisfaction of checking work off.",
     "categories": [
       "education",
-      "productivity"
+      "popular"
     ],
     "shape": "rounded",
     "width": 620,
@@ -69,7 +75,28 @@
       "background": "#ffffff",
       "accent": "#a64038",
       "ink": "#32223f"
-    }
+    },
+    "icon": "/assets/templates/assignment-tracker/icon.png",
+    "preview": "/assets/templates/assignment-tracker/preview.png"
+  },
+  {
+    "slug": "beat-pad",
+    "title": "Beat Pad",
+    "description": "A 16-step drum and bass sequencer: tap in a beat, pick a kit, set the tempo and swing, and your pattern is saved with the document.",
+    "categories": [
+      "music"
+    ],
+    "shape": "rounded",
+    "width": 560,
+    "height": 700,
+    "emoji": "✨",
+    "colors": {
+      "background": "#14121c",
+      "accent": "#6c16ed",
+      "ink": "#ffffff"
+    },
+    "icon": "/assets/templates/beat-pad/icon.png",
+    "preview": "/assets/templates/beat-pad/preview.png"
   },
   {
     "slug": "bullet-journal",
@@ -87,7 +114,48 @@
       "background": "#fcfbf7",
       "accent": "#b45309",
       "ink": "#22201d"
-    }
+    },
+    "icon": "/assets/templates/bullet-journal/icon.png",
+    "preview": "/assets/templates/bullet-journal/preview.png"
+  },
+  {
+    "slug": "minesweeper",
+    "title": "Buoy Sweep",
+    "description": "Minesweeper on a harbor chart: clear the water, flag the mines with buoys, and beat your best time. Your game resumes where you left it.",
+    "categories": [
+      "games"
+    ],
+    "shape": "rounded",
+    "width": 400,
+    "height": 560,
+    "emoji": "✨",
+    "colors": {
+      "background": "#bcd8d4",
+      "accent": "#6c16ed",
+      "ink": "#12263a"
+    },
+    "icon": "/assets/templates/minesweeper/icon.png",
+    "preview": "/assets/templates/minesweeper/preview.png"
+  },
+  {
+    "slug": "capture-notebook",
+    "title": "Capture Notebook",
+    "description": "A field notebook with a camera and a tape recorder built in: take photos, record audio and jot notes, all kept in the document.",
+    "categories": [
+      "media",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 520,
+    "height": 700,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f6f1e5",
+      "accent": "#6c16ed",
+      "ink": "#262a22"
+    },
+    "icon": "/assets/templates/capture-notebook/icon.png",
+    "preview": "/assets/templates/capture-notebook/preview.png"
   },
   {
     "slug": "choice-point",
@@ -105,7 +173,9 @@
       "background": "#f5f1e9",
       "accent": "#e4dccf",
       "ink": "#29241f"
-    }
+    },
+    "icon": "/assets/templates/choice-point/icon.png",
+    "preview": "/assets/templates/choice-point/preview.png"
   },
   {
     "slug": "codex-pet",
@@ -115,7 +185,7 @@
       "personal",
       "developer-tools"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 240,
     "height": 180,
     "emoji": "🐾",
@@ -123,7 +193,9 @@
       "background": "#3b2821",
       "accent": "#ffd281",
       "ink": "#fff7eb"
-    }
+    },
+    "icon": "/assets/templates/codex-pet/icon.png",
+    "preview": "/assets/templates/codex-pet/preview.png"
   },
   {
     "slug": "contact-card",
@@ -141,7 +213,9 @@
       "background": "#1c352a",
       "accent": "#0f766e",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/contact-card/icon.png",
+    "preview": "/assets/templates/contact-card/preview.png"
   },
   {
     "slug": "cornell-notes",
@@ -159,7 +233,9 @@
       "background": "#ffffff",
       "accent": "#b31b1b",
       "ink": "#0f172a"
-    }
+    },
+    "icon": "/assets/templates/cornell-notes/icon.png",
+    "preview": "/assets/templates/cornell-notes/preview.png"
   },
   {
     "slug": "countdown-milestones",
@@ -177,7 +253,29 @@
       "background": "#b9dcff",
       "accent": "#6c16ed",
       "ink": "#25212c"
-    }
+    },
+    "icon": "/assets/templates/countdown-milestones/icon.png",
+    "preview": "/assets/templates/countdown-milestones/preview.png"
+  },
+  {
+    "slug": "daily-frame",
+    "title": "Daily Frame",
+    "description": "One photo a day from your camera, kept as a stack of prints and played back as a flipbook. For a plant, a drawing, a workout or a growing baby.",
+    "categories": [
+      "creative",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 540,
+    "height": 780,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f4efff",
+      "accent": "#ffbe55",
+      "ink": "#2a2622"
+    },
+    "icon": "/assets/templates/daily-frame/icon.png",
+    "preview": "/assets/templates/daily-frame/preview.png"
   },
   {
     "slug": "daily-planner",
@@ -187,7 +285,7 @@
       "productivity",
       "personal"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 400,
     "height": 900,
     "emoji": "📅",
@@ -195,7 +293,9 @@
       "background": "#f9fcfb",
       "accent": "#ffb17e",
       "ink": "#183d3b"
-    }
+    },
+    "icon": "/assets/templates/daily-planner/icon.png",
+    "preview": "/assets/templates/daily-planner/preview.png"
   },
   {
     "slug": "pros-cons-sheet",
@@ -205,7 +305,7 @@
       "productivity",
       "personal"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 720,
     "height": 680,
     "emoji": "⚖️",
@@ -213,7 +313,49 @@
       "background": "#343935",
       "accent": "#8b937c",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/pros-cons-sheet/icon.png",
+    "preview": "/assets/templates/pros-cons-sheet/preview.png"
+  },
+  {
+    "slug": "departure-board",
+    "title": "Departure Board",
+    "description": "Your day as a split-flap airport board: set the stops, tap a status to flip it, and watch every letter clack into place.",
+    "categories": [
+      "personal",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 560,
+    "height": 640,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f1ecdd",
+      "accent": "#6c16ed",
+      "ink": "#10132c"
+    },
+    "icon": "/assets/templates/departure-board/icon.png",
+    "preview": "/assets/templates/departure-board/preview.png"
+  },
+  {
+    "slug": "dice-tray",
+    "title": "Dice Tray",
+    "description": "A walnut dice tray for tabletop games: pick your dice and a modifier, roll, and read the total with a short history of what came up.",
+    "categories": [
+      "games",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 460,
+    "height": 700,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f6eedd",
+      "accent": "#d9ad55",
+      "ink": "#2b1d15"
+    },
+    "icon": "/assets/templates/dice-tray/icon.png",
+    "preview": "/assets/templates/dice-tray/preview.png"
   },
   {
     "slug": "doodle-board",
@@ -231,7 +373,9 @@
       "background": "#ef7965",
       "accent": "#f9e4cf",
       "ink": "#382c2a"
-    }
+    },
+    "icon": "/assets/templates/doodle-board/icon.png",
+    "preview": "/assets/templates/doodle-board/preview.png"
   },
   {
     "slug": "eisenhower-matrix",
@@ -249,7 +393,49 @@
       "background": "#efe8db",
       "accent": "#6c16ed",
       "ink": "#231f1c"
-    }
+    },
+    "icon": "/assets/templates/eisenhower-matrix/icon.png",
+    "preview": "/assets/templates/eisenhower-matrix/preview.png"
+  },
+  {
+    "slug": "equation-notebook",
+    "title": "Equation Notebook",
+    "description": "Work through maths one typeset line at a time on green engineering paper, with a live graph beside any line and sliders for its letters.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 640,
+    "height": 780,
+    "emoji": "✨",
+    "colors": {
+      "background": "#eef3e1",
+      "accent": "#255f86",
+      "ink": "#1e2b23"
+    },
+    "icon": "/assets/templates/equation-notebook/icon.png",
+    "preview": "/assets/templates/equation-notebook/preview.png"
+  },
+  {
+    "slug": "exam-deck",
+    "title": "Exam Deck",
+    "description": "Flashcards scheduled to get you ready by exam day: today's cards, a two-week load forecast and how ready you'll be.",
+    "categories": [
+      "education",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 520,
+    "height": 720,
+    "emoji": "✨",
+    "colors": {
+      "background": "#fbf7ec",
+      "accent": "#6c16ed",
+      "ink": "#10132c"
+    },
+    "icon": "/assets/templates/exam-deck/icon.png",
+    "preview": "/assets/templates/exam-deck/preview.png"
   },
   {
     "slug": "expense-log",
@@ -267,7 +453,9 @@
       "background": "#f7f1e3",
       "accent": "#c2410c",
       "ink": "#1c1917"
-    }
+    },
+    "icon": "/assets/templates/expense-log/icon.png",
+    "preview": "/assets/templates/expense-log/preview.png"
   },
   {
     "slug": "five-minute-journal",
@@ -277,7 +465,7 @@
       "personal",
       "productivity"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 560,
     "height": 780,
     "emoji": "💛",
@@ -285,7 +473,9 @@
       "background": "#f1eadc",
       "accent": "#6c16ed",
       "ink": "#2a241c"
-    }
+    },
+    "icon": "/assets/templates/five-minute-journal/icon.png",
+    "preview": "/assets/templates/five-minute-journal/preview.png"
   },
   {
     "slug": "flashcards",
@@ -293,7 +483,7 @@
     "description": "A tactile index-card study machine with 3D flipping cards, deck editing, and Leitner spaced repetition.",
     "categories": [
       "education",
-      "productivity"
+      "popular"
     ],
     "shape": "rounded",
     "width": 540,
@@ -301,9 +491,31 @@
     "emoji": "🗂️",
     "colors": {
       "background": "#284bd8",
-      "accent": "#3659df",
+      "accent": "#284bd8",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/flashcards/icon.png",
+    "preview": "/assets/templates/flashcards/preview.png"
+  },
+  {
+    "slug": "fog",
+    "title": "Fog",
+    "description": "Your webcam as a steamed-up bathroom mirror: breathe to fog it, pinch to draw in it, swipe a fist to wipe it clear.",
+    "categories": [
+      "creative",
+      "media"
+    ],
+    "shape": "rounded",
+    "width": 720,
+    "height": 540,
+    "emoji": "✨",
+    "colors": {
+      "background": "#e5f2ed",
+      "accent": "#ffffff",
+      "ink": "#203e34"
+    },
+    "icon": "/assets/templates/fog/icon.png",
+    "preview": "/assets/templates/fog/preview.png"
   },
   {
     "slug": "grade-calculator",
@@ -321,7 +533,9 @@
       "background": "#171615",
       "accent": "#2b593f",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/grade-calculator/icon.png",
+    "preview": "/assets/templates/grade-calculator/preview.png"
   },
   {
     "slug": "grocery-list",
@@ -329,7 +543,7 @@
     "description": "A playful fridge-magnet shopping pad for organizing and checking grocery essentials by aisle.",
     "categories": [
       "personal",
-      "utilities"
+      "popular"
     ],
     "shape": "rounded",
     "width": 440,
@@ -339,7 +553,9 @@
       "background": "#e9e4d8",
       "accent": "#d9534f",
       "ink": "#232220"
-    }
+    },
+    "icon": "/assets/templates/grocery-list/icon.png",
+    "preview": "/assets/templates/grocery-list/preview.png"
   },
   {
     "slug": "habit-heatmap",
@@ -357,7 +573,9 @@
       "background": "#eee8dd",
       "accent": "#6c16ed",
       "ink": "#29232b"
-    }
+    },
+    "icon": "/assets/templates/habit-heatmap/icon.png",
+    "preview": "/assets/templates/habit-heatmap/preview.png"
   },
   {
     "slug": "harada-method",
@@ -367,7 +585,7 @@
       "productivity",
       "education"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 800,
     "height": 880,
     "emoji": "🎯",
@@ -375,7 +593,69 @@
       "background": "#eceef4",
       "accent": "#4c3bd6",
       "ink": "#14161e"
-    }
+    },
+    "icon": "/assets/templates/harada-method/icon.png",
+    "preview": "/assets/templates/harada-method/preview.png"
+  },
+  {
+    "slug": "hourglass",
+    "title": "Hourglass",
+    "description": "A frosted sand glass that drains toward a time you choose.",
+    "categories": [
+      "productivity",
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 280,
+    "height": 460,
+    "emoji": "✨",
+    "colors": {
+      "background": "#4b2f1f",
+      "accent": "#fff8ec5c",
+      "ink": "#ffffff"
+    },
+    "icon": "/assets/templates/hourglass/icon.png",
+    "preview": "/assets/templates/hourglass/preview.png"
+  },
+  {
+    "slug": "household-chores",
+    "title": "Household Chores",
+    "description": "A fridge-door chore wheel for roommates, families and kids: assign chores, tick them off, rotate each week, and keep the points fair.",
+    "categories": [
+      "personal",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 460,
+    "height": 740,
+    "emoji": "✨",
+    "colors": {
+      "background": "#fffdf5",
+      "accent": "#2b6f9e",
+      "ink": "#26323a"
+    },
+    "icon": "/assets/templates/household-chores/icon.png",
+    "preview": "/assets/templates/household-chores/preview.png"
+  },
+  {
+    "slug": "internship-tracker",
+    "title": "Internship Tracker",
+    "description": "A conference name badge for tracking internship and job applications from wishlist to offer, with follow-up dates and a coffee-chat log.",
+    "categories": [
+      "personal",
+      "productivity"
+    ],
+    "shape": "rounded",
+    "width": 480,
+    "height": 700,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f4efff",
+      "accent": "#6c16ed",
+      "ink": "#1b1d2a"
+    },
+    "icon": "/assets/templates/internship-tracker/icon.png",
+    "preview": "/assets/templates/internship-tracker/preview.png"
   },
   {
     "slug": "invoice",
@@ -383,9 +663,9 @@
     "description": "A warm paper invoice for parties, line items, tax, and payment status.",
     "categories": [
       "business",
-      "finance"
+      "popular"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 640,
     "height": 640,
     "emoji": "💸",
@@ -393,7 +673,9 @@
       "background": "#faf8f1",
       "accent": "#2f7052",
       "ink": "#1b2421"
-    }
+    },
+    "icon": "/assets/templates/invoice/icon.png",
+    "preview": "/assets/templates/invoice/preview.png"
   },
   {
     "slug": "ivy-lee-method",
@@ -403,7 +685,7 @@
       "productivity",
       "personal"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 460,
     "height": 680,
     "emoji": "✅",
@@ -411,7 +693,9 @@
       "background": "#f9f8f5",
       "accent": "#b45309",
       "ink": "#1f1e1c"
-    }
+    },
+    "icon": "/assets/templates/ivy-lee-method/icon.png",
+    "preview": "/assets/templates/ivy-lee-method/preview.png"
   },
   {
     "slug": "kanban-board",
@@ -421,7 +705,7 @@
       "productivity",
       "business"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 880,
     "height": 620,
     "emoji": "📋",
@@ -429,7 +713,9 @@
       "background": "#ece5d6",
       "accent": "#6c16ed",
       "ink": "#24211b"
-    }
+    },
+    "icon": "/assets/templates/kanban-board/icon.png",
+    "preview": "/assets/templates/kanban-board/preview.png"
   },
   {
     "slug": "koi-pond",
@@ -447,16 +733,39 @@
       "background": "#5f9fa3",
       "accent": "#a9d3c6",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/koi-pond/icon.png",
+    "preview": "/assets/templates/koi-pond/preview.png"
+  },
+  {
+    "slug": "lab-notebook",
+    "title": "Lab Notebook",
+    "description": "Type in measurements and get a clean figure for a lab report: scatter, line or bar, with error bars and an optional least-squares fit.",
+    "categories": [
+      "education",
+      "utilities"
+    ],
+    "shape": "rounded",
+    "width": 760,
+    "height": 880,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f3efe2",
+      "accent": "#6c16ed",
+      "ink": "#1d2433"
+    },
+    "icon": "/assets/templates/lab-notebook/icon.png",
+    "preview": "/assets/templates/lab-notebook/preview.png"
   },
   {
     "slug": "baby-journal",
     "title": "Little Days",
     "description": "A gentle baby journal for feedings, diaper changes, sleep, and little memories, with a name beside every act of care.",
     "categories": [
-      "personal"
+      "personal",
+      "popular"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 900,
     "height": 640,
     "emoji": "🍼",
@@ -467,6 +776,25 @@
     },
     "icon": "/assets/templates/baby-journal/icon.png",
     "preview": "/assets/templates/baby-journal/preview.png"
+  },
+  {
+    "slug": "little-lamp",
+    "title": "Little Lamp",
+    "description": "A little desktop companion. Tap to wake it; move your pointer and it looks back.",
+    "categories": [
+      "personal"
+    ],
+    "shape": "rectangle",
+    "width": 320,
+    "height": 320,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f4efff",
+      "accent": "#f3c76d",
+      "ink": "#10132c"
+    },
+    "icon": "/assets/templates/little-lamp/icon.png",
+    "preview": "/assets/templates/little-lamp/preview.png"
   },
   {
     "slug": "markdown-editor",
@@ -484,7 +812,29 @@
       "background": "#faf6eb",
       "accent": "#d4551a",
       "ink": "#1c1914"
-    }
+    },
+    "icon": "/assets/templates/markdown-editor/icon.png",
+    "preview": "/assets/templates/markdown-editor/preview.png"
+  },
+  {
+    "slug": "mash",
+    "title": "MASH",
+    "description": "The sleepover fortune game on a notebook page: fill in your futures, draw the spiral, and see where you end up.",
+    "categories": [
+      "games",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 520,
+    "height": 760,
+    "emoji": "✨",
+    "colors": {
+      "background": "#fdfdf7",
+      "accent": "#fff17a",
+      "ink": "#27408b"
+    },
+    "icon": "/assets/templates/mash/icon.png",
+    "preview": "/assets/templates/mash/preview.png"
   },
   {
     "slug": "meeting-notes",
@@ -494,7 +844,7 @@
       "productivity",
       "business"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 680,
     "height": 780,
     "emoji": "💬",
@@ -502,7 +852,9 @@
       "background": "#faf8f2",
       "accent": "#c4dc33",
       "ink": "#1a251e"
-    }
+    },
+    "icon": "/assets/templates/meeting-notes/icon.png",
+    "preview": "/assets/templates/meeting-notes/preview.png"
   },
   {
     "slug": "metronome-tapper",
@@ -520,7 +872,9 @@
       "background": "#1a1614",
       "accent": "#d4a337",
       "ink": "#fdfbf7"
-    }
+    },
+    "icon": "/assets/templates/metronome-tapper/icon.png",
+    "preview": "/assets/templates/metronome-tapper/preview.png"
   },
   {
     "slug": "mood-log",
@@ -538,7 +892,28 @@
       "background": "#fcfbfa",
       "accent": "#6c16ed",
       "ink": "#26221f"
-    }
+    },
+    "icon": "/assets/templates/mood-log/icon.png",
+    "preview": "/assets/templates/mood-log/preview.png"
+  },
+  {
+    "slug": "moodboard",
+    "title": "Moodboard",
+    "description": "Drop in images and fly through them in a soft 3D tunnel; caption each one and keep the whole board in one document.",
+    "categories": [
+      "creative"
+    ],
+    "shape": "rounded",
+    "width": 560,
+    "height": 720,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f2eee6",
+      "accent": "#ff6b4a",
+      "ink": "#10132c"
+    },
+    "icon": "/assets/templates/moodboard/icon.png",
+    "preview": "/assets/templates/moodboard/preview.png"
   },
   {
     "slug": "morning-pages",
@@ -548,15 +923,17 @@
       "personal",
       "productivity"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 640,
     "height": 820,
     "emoji": "🌅",
     "colors": {
-      "background": "#e8d48a",
+      "background": "#f6e59b",
       "accent": "#d24a4a",
       "ink": "#2c2618"
-    }
+    },
+    "icon": "/assets/templates/morning-pages/icon.png",
+    "preview": "/assets/templates/morning-pages/preview.png"
   },
   {
     "slug": "packing-list",
@@ -574,7 +951,28 @@
       "background": "#ffffff",
       "accent": "#2563eb",
       "ink": "#172b4d"
-    }
+    },
+    "icon": "/assets/templates/packing-list/icon.png",
+    "preview": "/assets/templates/packing-list/preview.png"
+  },
+  {
+    "slug": "paycheck-flow",
+    "title": "Paycheck Flow",
+    "description": "See where one month of income goes: money in on the left, flowing into rent, food, savings and the rest, with what's left over in gold.",
+    "categories": [
+      "finance"
+    ],
+    "shape": "rounded",
+    "width": 560,
+    "height": 780,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f7f4ec",
+      "accent": "#6c16ed",
+      "ink": "#1c2430"
+    },
+    "icon": "/assets/templates/paycheck-flow/icon.png",
+    "preview": "/assets/templates/paycheck-flow/preview.png"
   },
   {
     "slug": "personal-budget",
@@ -582,7 +980,7 @@
     "description": "A graphite pocket calculator fused with a dark paper ledger for monthly income, allocations, spending, and remaining funds.",
     "categories": [
       "finance",
-      "utilities"
+      "popular"
     ],
     "shape": "rounded",
     "width": 780,
@@ -592,7 +990,9 @@
       "background": "#16171b",
       "accent": "#6c16ed",
       "ink": "#f3f4f6"
-    }
+    },
+    "icon": "/assets/templates/personal-budget/icon.png",
+    "preview": "/assets/templates/personal-budget/preview.png"
   },
   {
     "slug": "pixel-art",
@@ -610,7 +1010,29 @@
       "background": "#8b8a86",
       "accent": "#6c16ed",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/pixel-art/icon.png",
+    "preview": "/assets/templates/pixel-art/preview.png"
+  },
+  {
+    "slug": "pocket-pod",
+    "title": "Pocket Pod",
+    "description": "A pocket click-wheel player: paste YouTube links, spin through them in Cover Flow, and cover the case in stickers.",
+    "categories": [
+      "music",
+      "media"
+    ],
+    "shape": "rounded",
+    "width": 360,
+    "height": 603,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f4efff",
+      "accent": "#2f7de1",
+      "ink": "#10132c"
+    },
+    "icon": "/assets/templates/pocket-pod/icon.png",
+    "preview": "/assets/templates/pocket-pod/preview.png"
   },
   {
     "slug": "pocket-sheet",
@@ -628,25 +1050,49 @@
       "background": "#fdfbf4",
       "accent": "#e2553f",
       "ink": "#2f3a4a"
-    }
+    },
+    "icon": "/assets/templates/pocket-sheet/icon.png",
+    "preview": "/assets/templates/pocket-sheet/preview.png"
   },
   {
-    "slug": "focus-timer",
-    "title": "Pomodoro",
-    "description": "A playful tomato timer for focus sprints, breaks, and local session history.",
+    "slug": "practice-sheet",
+    "title": "Practice Sheet",
+    "description": "Learn a piece at a speed you can play: an engraved score with a playback cursor, a tempo ladder that climbs after each clean run, and a practice record with a streak.",
     "categories": [
-      "productivity",
-      "personal"
+      "music",
+      "education"
     ],
-    "shape": "ellipse",
-    "width": 320,
-    "height": 320,
-    "emoji": "🍅",
+    "shape": "rounded",
+    "width": 940,
+    "height": 660,
+    "emoji": "✨",
     "colors": {
-      "background": "#d94935",
-      "accent": "#bd3e2d",
+      "background": "#5e1a24",
+      "accent": "#d4a548",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/practice-sheet/icon.png",
+    "preview": "/assets/templates/practice-sheet/preview.png"
+  },
+  {
+    "slug": "project-pan",
+    "title": "Project Pan",
+    "description": "A rose-gold compact for using up your makeup and skincare before buying more: watch each pan hollow out, track expiry, and shelve the empties.",
+    "categories": [
+      "personal",
+      "other"
+    ],
+    "shape": "rounded",
+    "width": 480,
+    "height": 740,
+    "emoji": "✨",
+    "colors": {
+      "background": "#d9a79a",
+      "accent": "#c2476b",
+      "ink": "#2f2227"
+    },
+    "icon": "/assets/templates/project-pan/icon.png",
+    "preview": "/assets/templates/project-pan/preview.png"
   },
   {
     "slug": "quick-checklist",
@@ -654,7 +1100,7 @@
     "description": "A blush pocket utility for capturing, finishing, and filing short task lists.",
     "categories": [
       "productivity",
-      "personal"
+      "popular"
     ],
     "shape": "rounded",
     "width": 480,
@@ -664,7 +1110,29 @@
       "background": "#e98996",
       "accent": "#a43d59",
       "ink": "#432830"
-    }
+    },
+    "icon": "/assets/templates/quick-checklist/icon.png",
+    "preview": "/assets/templates/quick-checklist/preview.png"
+  },
+  {
+    "slug": "quiet-meter",
+    "title": "Quiet Meter",
+    "description": "A desk-top traffic light that listens to a room and shows when it is too loud. Nothing is recorded.",
+    "categories": [
+      "utilities",
+      "education"
+    ],
+    "shape": "rounded",
+    "width": 420,
+    "height": 660,
+    "emoji": "✨",
+    "colors": {
+      "background": "#d8d3c6",
+      "accent": "#6c16ed",
+      "ink": "#262a2e"
+    },
+    "icon": "/assets/templates/quiet-meter/icon.png",
+    "preview": "/assets/templates/quiet-meter/preview.png"
   },
   {
     "slug": "reading-tracker",
@@ -682,7 +1150,9 @@
       "background": "#ffffff",
       "accent": "#6c16ed",
       "ink": "#382337"
-    }
+    },
+    "icon": "/assets/templates/reading-tracker/icon.png",
+    "preview": "/assets/templates/reading-tracker/preview.png"
   },
   {
     "slug": "recipe",
@@ -690,17 +1160,19 @@
     "description": "A crisp recipe workspace with ingredients, method, meal photos, and focused step-by-step cooking timers.",
     "categories": [
       "personal",
-      "other"
+      "popular"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 680,
     "height": 680,
     "emoji": "🍴",
     "colors": {
-      "background": "#edf1ff",
+      "background": "#ffffff",
       "accent": "#2448c8",
       "ink": "#182338"
-    }
+    },
+    "icon": "/assets/templates/recipe/icon.png",
+    "preview": "/assets/templates/recipe/preview.png"
   },
   {
     "slug": "resume",
@@ -708,9 +1180,9 @@
     "description": "An editorial paper resume with direct editing, strong typography, and clean export.",
     "categories": [
       "personal",
-      "business"
+      "popular"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 680,
     "height": 780,
     "emoji": "💼",
@@ -718,7 +1190,9 @@
       "background": "#fbfaf5",
       "accent": "#247a73",
       "ink": "#202725"
-    }
+    },
+    "icon": "/assets/templates/resume/icon.png",
+    "preview": "/assets/templates/resume/preview.png"
   },
   {
     "slug": "school-schedule",
@@ -726,7 +1200,7 @@
     "description": "Your week in color: classes, rooms, bell times, and after-class plans with a live now and next readout.",
     "categories": [
       "education",
-      "productivity"
+      "popular"
     ],
     "shape": "rounded",
     "width": 880,
@@ -736,7 +1210,29 @@
       "background": "#f7faff",
       "accent": "#ff907f",
       "ink": "#172e62"
-    }
+    },
+    "icon": "/assets/templates/school-schedule/icon.png",
+    "preview": "/assets/templates/school-schedule/preview.png"
+  },
+  {
+    "slug": "scratch-off-list",
+    "title": "Scratch-Off List",
+    "description": "A lottery-ticket bucket list: scratch the silver foil to reveal your next adventure, then stamp it done and share the card.",
+    "categories": [
+      "games",
+      "personal"
+    ],
+    "shape": "rounded",
+    "width": 480,
+    "height": 720,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f4efff",
+      "accent": "#6c16ed",
+      "ink": "#3a0f4a"
+    },
+    "icon": "/assets/templates/scratch-off-list/icon.png",
+    "preview": "/assets/templates/scratch-off-list/preview.png"
   },
   {
     "slug": "semester-planner",
@@ -754,7 +1250,9 @@
       "background": "#181716",
       "accent": "#2563eb",
       "ink": "#ffffff"
-    }
+    },
+    "icon": "/assets/templates/semester-planner/icon.png",
+    "preview": "/assets/templates/semester-planner/preview.png"
   },
   {
     "slug": "side-quest",
@@ -764,7 +1262,7 @@
       "games",
       "education"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 940,
     "height": 640,
     "emoji": "🗺️",
@@ -772,7 +1270,9 @@
       "background": "#fbf7ec",
       "accent": "#f19a9a",
       "ink": "#27304a"
-    }
+    },
+    "icon": "/assets/templates/side-quest/icon.png",
+    "preview": "/assets/templates/side-quest/preview.png"
   },
   {
     "slug": "slide-deck",
@@ -790,7 +1290,9 @@
       "background": "#171920",
       "accent": "#f97316",
       "ink": "#f1f5f9"
-    }
+    },
+    "icon": "/assets/templates/slide-deck/icon.png",
+    "preview": "/assets/templates/slide-deck/preview.png"
   },
   {
     "slug": "small-expenses",
@@ -799,7 +1301,7 @@
     "categories": [
       "productivity"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 640,
     "height": 760,
     "emoji": "🪙",
@@ -807,7 +1309,9 @@
       "background": "#faf7f0",
       "accent": "#8b4e31",
       "ink": "#312c29"
-    }
+    },
+    "icon": "/assets/templates/small-expenses/icon.png",
+    "preview": "/assets/templates/small-expenses/preview.png"
   },
   {
     "slug": "soma-amp",
@@ -817,7 +1321,7 @@
       "music",
       "media"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 275,
     "height": 470,
     "emoji": "📻",
@@ -825,7 +1329,9 @@
       "background": "#080a0b",
       "accent": "#43db7f",
       "ink": "#b7c0c6"
-    }
+    },
+    "icon": "/assets/templates/soma-amp/icon.png",
+    "preview": "/assets/templates/soma-amp/preview.png"
   },
   {
     "slug": "subscription-tracker",
@@ -835,7 +1341,7 @@
       "finance",
       "personal"
     ],
-    "shape": "rectangle",
+    "shape": "rounded",
     "width": 640,
     "height": 720,
     "emoji": "🔁",
@@ -843,7 +1349,29 @@
       "background": "#f4f3fa",
       "accent": "#6740c8",
       "ink": "#242039"
-    }
+    },
+    "icon": "/assets/templates/subscription-tracker/icon.png",
+    "preview": "/assets/templates/subscription-tracker/preview.png"
+  },
+  {
+    "slug": "tiny-planet",
+    "title": "Tiny Planet",
+    "description": "A little low-poly world to spin and decorate: plant trees, build houses, drop crystals, and watch the seasons change.",
+    "categories": [
+      "creative",
+      "games"
+    ],
+    "shape": "rounded",
+    "width": 480,
+    "height": 560,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f4efff",
+      "accent": "#ffd166",
+      "ink": "#10132c"
+    },
+    "icon": "/assets/templates/tiny-planet/icon.png",
+    "preview": "/assets/templates/tiny-planet/preview.png"
   },
   {
     "slug": "trip-itinerary",
@@ -861,7 +1389,29 @@
       "background": "#fbf9ff",
       "accent": "#5b4fe0",
       "ink": "#1e1b4b"
-    }
+    },
+    "icon": "/assets/templates/trip-itinerary/icon.png",
+    "preview": "/assets/templates/trip-itinerary/preview.png"
+  },
+  {
+    "slug": "voice-note",
+    "title": "Voice Note",
+    "description": "A pocket dictation recorder: talk, keep the clip, and get an editable transcript made on-device.",
+    "categories": [
+      "productivity",
+      "media"
+    ],
+    "shape": "rounded",
+    "width": 460,
+    "height": 720,
+    "emoji": "✨",
+    "colors": {
+      "background": "#eef2dc",
+      "accent": "#d3584b",
+      "ink": "#26302b"
+    },
+    "icon": "/assets/templates/voice-note/icon.png",
+    "preview": "/assets/templates/voice-note/preview.png"
   },
   {
     "slug": "water-tracker",
@@ -879,7 +1429,9 @@
       "background": "#08212b",
       "accent": "#22d3ee",
       "ink": "#f0fdfa"
-    }
+    },
+    "icon": "/assets/templates/water-tracker/icon.png",
+    "preview": "/assets/templates/water-tracker/preview.png"
   },
   {
     "slug": "weekly-planner",
@@ -887,7 +1439,7 @@
     "description": "A magnetic week board: draw, move, and stretch colorful time blocks to make room for your week.",
     "categories": [
       "productivity",
-      "personal"
+      "popular"
     ],
     "shape": "rounded",
     "width": 880,
@@ -897,7 +1449,9 @@
       "background": "#f7f9fd",
       "accent": "#2449a5",
       "ink": "#172e55"
-    }
+    },
+    "icon": "/assets/templates/weekly-planner/icon.png",
+    "preview": "/assets/templates/weekly-planner/preview.png"
   },
   {
     "slug": "wordle",
@@ -915,7 +1469,9 @@
       "background": "#181c24",
       "accent": "#354054",
       "ink": "#f8fafc"
-    }
+    },
+    "icon": "/assets/templates/wordle/icon.png",
+    "preview": "/assets/templates/wordle/preview.png"
   },
   {
     "slug": "workout-planner",
@@ -933,6 +1489,27 @@
       "background": "#101214",
       "accent": "#c3f653",
       "ink": "#f2f5ed"
-    }
+    },
+    "icon": "/assets/templates/workout-planner/icon.png",
+    "preview": "/assets/templates/workout-planner/preview.png"
+  },
+  {
+    "slug": "wrap-poster",
+    "title": "Wrap Poster",
+    "description": "An editorial poster where your words flow around shapes you drag, line by line, so text and layout always fit together.",
+    "categories": [
+      "creative"
+    ],
+    "shape": "rounded",
+    "width": 560,
+    "height": 780,
+    "emoji": "✨",
+    "colors": {
+      "background": "#f6efe1",
+      "accent": "#1f1b16",
+      "ink": "#1f1b16"
+    },
+    "icon": "/assets/templates/wrap-poster/icon.png",
+    "preview": "/assets/templates/wrap-poster/preview.png"
   }
 ]

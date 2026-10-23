@@ -112,6 +112,8 @@ export async function boot() {
   const environment = installEnvironment(
     preview.host?.environment?.current ?? (await hostEnvironment)?.environment,
   );
+  globalThis.__slop!.keyboard = environment.keyboard;
+  globalThis.__slop!.safeArea = environment.safeArea;
   const stopPreviewEnvironment = preview.host?.environment?.subscribe(() => {
     environment.setHost(preview.host!.environment!.current);
   });

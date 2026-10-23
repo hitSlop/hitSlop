@@ -96,6 +96,7 @@ pub(super) enum Message {
         result: Result<Reply>,
         callback: Completion,
         closing: bool,
+        refresh_status: bool,
     },
     Stop,
 }
@@ -103,6 +104,8 @@ pub(super) enum Message {
 enum Lifecycle {
     Open,
     Closing,
+    /// A handoff is writing its copy: nothing more is saved, and edits are refused.
+    Releasing,
     Closed,
 }
 enum AfterSave {
@@ -268,7 +271,7 @@ impl Actor {
                     }
                 }
             }
-            Message::Stored { generation, mut result, callback, closing } => {
+            Message::Stored { generation, mut result, callback, closing, refresh_status } => {
                 if closing
                     && let Err(failure) = &mut result
                     && failure.kind == FailureKind::Failed
@@ -281,6 +284,13 @@ impl Actor {
                 }
                 if closing {
                     self.lifecycle = if result.is_ok() { Lifecycle::Closed } else { Lifecycle::Open };
+                    if result.is_err() && self.revision > self.saved && !self.writing {
+                        // Edits the refused request had fenced off are saved again, or fail visibly.
+                        self.deadline = Some(self.now);
+                    }
+                }
+                if refresh_status && result.is_ok() {
+                    self.status(if self.revision > self.saved { SaveStatus::Saving } else { SaveStatus::Saved });
                 }
                 complete(callback, result);
             }
@@ -428,7 +438,16 @@ impl Actor {
                 return Ok(None);
             }
             Request::Copy { destination, preview, icon } => {
-                self.wait(callback, AfterSave::Storage(StorageAction::Copy { path: destination, preview, icon }))?;
+                if self.discarding {
+                    return Err(replaced());
+                }
+                self.core.doc.commit();
+                let state = self
+                    .core
+                    .doc
+                    .export(loro::ExportMode::shallow_snapshot(&self.core.doc.oplog_frontiers()))
+                    .map_err(|error| Failure::new(FailureKind::Failed, error.to_string()))?;
+                self.storage(StorageAction::Copy { path: destination, state, preview, icon }, take(callback));
                 return Ok(None);
             }
             Request::CaptureSource { destination } => {
@@ -461,8 +480,33 @@ impl Actor {
                 self.wait(callback, AfterSave::Close { preview, icon })?;
                 return Ok(None);
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            Request::Handoff { dest, preview, icon } => {
+                self.mutation()?;
+                let reading = self.core.reading()?;
+                self.core.doc.commit();
+                let state = self
+                    .core
+                    .doc
+                    .export(loro::ExportMode::shallow_snapshot(&self.core.doc.oplog_frontiers()))
+                    .map_err(|error| Failure::new(FailureKind::Failed, error.to_string()))?;
+                self.lifecycle = Lifecycle::Releasing;
+                self.deadline = None;
+                self.requested = false;
+                self.persist(Work::Handoff {
+                    generation: self.generation,
+                    dest,
+                    state,
+                    preview,
+                    icon,
+                    value: reading.value,
+                    theme: reading.theme,
+                    callback: take(callback),
+                });
+                return Ok(None);
+            }
             Request::Discard => {
-                if self.discarding || self.lifecycle == Lifecycle::Closing {
+                if self.discarding || self.lifecycle != Lifecycle::Open {
                     return Err(replaced());
                 }
                 if self.store.is_shared() {

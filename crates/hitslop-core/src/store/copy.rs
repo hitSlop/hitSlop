@@ -43,13 +43,22 @@ impl Store {
     /// connection so saves queue behind the copy: its current state without history, only
     /// the attachments that state references, and `artwork` (none when empty) in place of
     /// the original's, which can show what was since deleted. Duplicate and Share a Copy
-    /// use it after flushing; the original and its session are untouched.
-    pub fn copy_clean(&self, dest: &Path, artwork: &[(Artwork, &[u8])]) -> Result<()> {
+    /// use the actor's shallow live snapshot, even when the source cannot save its full history;
+    /// the original and its session are untouched. Blobs precede accepted references.
+    pub fn copy_clean(&self, dest: &Path, state: &[u8], artwork: &[(Artwork, &[u8])]) -> Result<()> {
         file::document_destination(dest)?;
+        self.copy_clean_unplaced(dest, state, artwork)
+    }
+
+    /// `copy_clean` for a staged file beside a destination the caller has already checked
+    /// with `file::document_destination`.
+    pub(crate) fn copy_clean_unplaced(&self, dest: &Path, state: &[u8], artwork: &[(Artwork, &[u8])]) -> Result<()> {
         self.check(true)?;
         let artwork = optimized_artwork(artwork)?;
         let app = self.app.app.spec();
-        self.read(|conn| file::copy(conn, dest, false, true, Some(&|staged: &Connection| clean(staged, app, &artwork))))
+        self.read(|conn| {
+            file::copy(conn, dest, false, true, Some(&|staged: &Connection| clean(staged, app, state, &artwork)))
+        })
     }
 
     /// Copies the open document to `dest` as it is stored, without syncing: a capture's
@@ -81,15 +90,14 @@ fn optimized_artwork(artwork: &[(Artwork, &[u8])]) -> Result<Vec<(Artwork, Vec<u
 }
 /// A copy's state made its own, in one transaction: the current state without history,
 /// the attachments it references, and `artwork` in place of the original's.
-fn clean(conn: &Connection, app: &crate::AppSpec, artwork: &[(Artwork, Vec<u8>)]) -> Result<()> {
-    let (doc, _) = load(conn, app)?;
-    let state = doc.doc.export(ExportMode::shallow_snapshot(&doc.doc.oplog_frontiers())).map_err(failed)?;
+fn clean(conn: &Connection, app: &crate::AppSpec, state: &[u8], artwork: &[(Artwork, Vec<u8>)]) -> Result<()> {
     if !within(0, checkpoint_row(state.len())) {
         return Err(Error::Full);
     }
+    let doc = Document::open(app, state, &[]).map_err(load_failure)?;
     let tx = file::begin_write(conn, "clean copy")?;
     rows::renew_document(&tx)?;
-    rows::replace_history(&tx, &state)?;
+    rows::replace_history(&tx, state)?;
     rows::clear_artwork(&tx)?;
     delete_unreferenced(&tx, Some(&doc), app)?;
     for (name, png) in artwork {

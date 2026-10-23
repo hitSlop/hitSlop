@@ -18,6 +18,20 @@ use support::{App, isolate_registry, type_text, write_app};
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
 
+#[test]
+fn storage_pressure_thresholds_cover_bytes_and_rows() {
+    use hitslop_core::store::Pressure;
+    let bytes = STORAGE_BYTES as u64;
+    let rows = STORAGE_ROWS as u64;
+    assert_eq!(Pressure::from_usage(0, 0), Pressure::Ok);
+    assert_eq!(Pressure::from_usage(bytes * 3 / 4 - 1, rows * 3 / 4 - 1), Pressure::Ok);
+    // Past the limits is still Near: usage cannot show that no save fits, so the owner
+    // reports Full from a failed save.
+    for (bytes, rows) in [(bytes * 3 / 4, 0), (0, rows * 3 / 4), (bytes, rows), (bytes + 1, rows + 1)] {
+        assert_eq!(Pressure::from_usage(bytes, rows), Pressure::Near);
+    }
+}
+
 /// A new document file, created from a packed template of `schema` and `initial`, alone
 /// in its folder.
 fn document_with(schema: &str, initial: &str) -> (tempfile::TempDir, PathBuf) {
@@ -624,11 +638,13 @@ fn a_full_document_refuses_appends_and_keeps_saved_state() {
     let job = store.job(&mut doc).unwrap().unwrap();
     let result = store.write(&job);
     assert!(matches!(result, Err(Error::Full)), "{result:?}");
+    assert_eq!(store.pressure(), hitslop_core::store::Pressure::Near);
     assert!(stored(&path).update_bytes > 0, "saved state is intact");
     // Sizes were re-read, so the next save checkpoints, which fits.
     let retry = store.job(&mut doc).unwrap().unwrap();
     assert!(retry.is_checkpoint());
     store.write(&retry).unwrap();
+    assert_eq!(store.pressure(), hitslop_core::store::Pressure::Ok);
 }
 
 #[test]
@@ -665,7 +681,7 @@ fn a_copy_has_the_same_state_version_and_theme() {
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
     // The source stays open: the copy is an online backup through its writer.
-    store.copy_clean(&copy, &[]).unwrap();
+    store.copy_clean(&copy, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[]).unwrap();
     let (_copied_store, copied) = open(&copy);
     assert_eq!(title(&copied), "Copied");
     assert_eq!(accent(&copied), "#123456");
@@ -694,7 +710,7 @@ fn a_shared_document_keeps_its_history_and_blobs_and_a_clean_copy_is_unshared() 
     assert!(!stale(&doc, &edited), "compaction keeps a shared document's history");
     assert!(store.attachments().unwrap().iter().any(|a| a.id == unreferenced));
     let copy = dir.path().join("Copy.slop");
-    store.copy_clean(&copy, &[]).unwrap();
+    store.copy_clean(&copy, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[]).unwrap();
     let copied = Store::open(&copy, Mode::Document).unwrap();
     assert_eq!(copied.share().unwrap(), None, "a clean copy is shared with no one");
     assert_ne!(copied.app().document_uuid, store.app().document_uuid);
@@ -721,7 +737,7 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
     doc.apply_json(&reference.to_string(), Origin::Page).unwrap();
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
-    store.copy_clean(&copy, &[]).unwrap();
+    store.copy_clean(&copy, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[]).unwrap();
     let holds =
         |path: &Path, text: &str| std::fs::read(path).unwrap().windows(text.len()).any(|w| w == text.as_bytes());
     assert!(holds(&path, replaced), "the original keeps its history");
@@ -782,7 +798,7 @@ fn a_clean_copy_excludes_deleted_nested_content() {
     .unwrap();
     save(&store, &mut doc);
     let copy = dir.path().join("Copy.slop");
-    store.copy_clean(&copy, &[]).unwrap();
+    store.copy_clean(&copy, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[]).unwrap();
     let (_copied_store, mut copied) = open(&copy);
     assert_eq!(copied.value(), doc.value());
     let raw = LoroDoc::new();

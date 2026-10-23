@@ -37,7 +37,7 @@ const attachFlag = {
   type: "string",
   multiple: true,
   description:
-    "A file the operations reference, stored in the same batch; repeat for more. slop attachments ref prints its reference. A file nothing references is removed when the document closes",
+    "A file the operations reference, stored in the same batch; repeat for more. slop attachments ref prints its reference. Unshared documents remove unreferenced files on close; shared and library documents retain them",
 } as const;
 const retrySection = {
   title: "Retries",
@@ -248,7 +248,7 @@ export const app = new Crust("slop", {
       "build",
       {
         description:
-          "Build a runtime template, rendering missing Preview and Icon artwork on macOS",
+          "Build a runtime template, rendering missing Preview and Icon artwork on macOS or Linux",
       },
       (c) =>
         c.args(source).action(async ({ args }) => {
@@ -312,7 +312,7 @@ export const app = new Crust("slop", {
   .add(
     defineCommand(
       "open",
-      { description: "Open a document in hitSlop, or a local browser copy (beta)" },
+      { description: "Open a document in hitSlop, or a local browser copy" },
       (c) =>
         c
           .args({ name: "document", type: "string", description: "Path to a .slop document" })
@@ -320,7 +320,7 @@ export const app = new Crust("slop", {
             name: "browser",
             type: "boolean",
             description:
-              "Open an independent browser copy with local autosave (beta); omit the file to list copies",
+              "Open an independent browser copy with local autosave; omit the file to list copies",
           })
           .action(async ({ args, flags }) => {
             if (flags.browser) return (await import("./browser")).openBrowser(args.document);
@@ -481,7 +481,7 @@ export const app = new Crust("slop", {
     defineCommand(
       "export",
       {
-        description: "Export a document as PNG or PDF on macOS",
+        description: "Export a document as PNG or PDF on macOS or Linux",
         sections: [
           {
             title: "Capture behavior",

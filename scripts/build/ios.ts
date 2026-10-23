@@ -3,6 +3,7 @@ import { mkdtemp, cp, copyFile, readFile, rm, readdir, stat } from "node:fs/prom
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildEngine, buildCoreNative, cargoOutput, cargoProfile, releaseRustflags } from "./core";
+import { buildShell } from "./shell";
 import { publishFolder, repository } from "../lib/artifacts";
 import { buildTemplates } from "../templates/build";
 import { discoverTemplates } from "../templates/discover";
@@ -74,7 +75,7 @@ export async function iphoneStarterSlugs(): Promise<string[]> {
   const starters: string[] = [];
   for (const template of await discoverTemplates()) {
     const metadata = (await import(join(template.source, "slop.ts"))).default as AppDeclaration;
-    if (template.slug !== "baby-journal" && !metadata.categories.includes("popular")) continue;
+    if (!metadata.categories.includes("popular")) continue;
     const unsupported = metadata.capabilities?.filter(capability =>
       ["camera", "microphone", "speech"].includes(capability));
     if (unsupported?.length) {
@@ -91,6 +92,8 @@ if (import.meta.main) {
   const icons = join(repository, "apps/apple/App/Shared/Assets.xcassets/AppIcon.appiconset");
   await run(["swift", join(repository, "scripts/build/ios-icon.swift"), join(icons, "appicon-1024.png"), join(icons, "appicon-ios-1024.png")]);
   await buildCoreIOS();
+  // The app bundles the page shell; a device build carries the current one.
+  await buildShell();
   await prepareIOSFixtures();
   await buildTemplates(join(repository,"generated/ios/StarterTemplates"),await iphoneStarterSlugs());
   await run(["xcodegen", "generate", "--spec", "apps/apple/project.yml"]);

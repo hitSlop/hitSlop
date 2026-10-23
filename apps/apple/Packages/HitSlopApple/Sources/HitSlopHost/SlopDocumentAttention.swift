@@ -27,6 +27,9 @@ extension SlopDocumentWindowController {
   public func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     if saveStatus == .saved { SlopWidgetPublisher.shared.saved(session) }
     recordSaveStatus(saveStatus)
+    saveAttention.shared = session.retainsHistory
+    saveAttention.storageNotice = session.storageNotice
+    refreshIssueBadge()
     apply(saveAttention.status(saveStatus, otherSheet: window?.attachedSheet != nil, hidden: attentionHidden))
   }
   /// The edited mark and save telemetry: one failure report until the next save.
@@ -87,6 +90,7 @@ extension SlopDocumentWindowController {
     switch action {
     case .retrySave: request(.retrySave)
     case .discardAndRetry: request(.discardUnsaved)
+    case .saveUnsharedCopy: request(.saveUnsharedCopy)
     case .keepOpen: break
     }
   }
@@ -128,7 +132,7 @@ extension SlopDocumentWindowController {
 /// tested without a window (`SaveAttentionTests`); the window controller presents it.
 struct SaveAttention: Equatable {
   /// What a button in the save-failure alert does.
-  enum Action: Equatable { case retrySave, discardAndRetry, keepOpen }
+  enum Action: Equatable { case retrySave, discardAndRetry, saveUnsharedCopy, keepOpen }
   struct Button: Equatable {
     let title: String
     let action: Action
@@ -150,6 +154,9 @@ struct SaveAttention: Equatable {
   private(set) var waiting = false
   /// The alert is on the window.
   private(set) var presented = false
+  var shared = false
+  /// What a shared document's storage tells its people (`DocumentSession.storageNotice`).
+  var storageNotice: String?
 
   mutating func status(_ status: DocumentSaveStatus, otherSheet: Bool, hidden: Bool) -> Effect {
     switch status {
@@ -173,7 +180,7 @@ struct SaveAttention: Equatable {
     }
     waiting = false
     presented = true
-    return .present(Self.alert(for: failure))
+    return .present(Self.alert(for: failure, shared: shared, storageNotice: storageNotice))
   }
   /// A sheet ended: whether a deferred failure should now try to show.
   mutating func otherSheetEnded() -> Bool {
@@ -188,7 +195,7 @@ struct SaveAttention: Equatable {
     presented = false
   }
 
-  static func alert(for failure: SaveFailure) -> Alert {
+  static func alert(for failure: SaveFailure, shared: Bool = false, storageNotice: String? = nil) -> Alert {
     // Unsaved work stays live; a full or stopped document offers an explicit way back to
     // the durable state.
     let buttons: [Button] =
@@ -201,14 +208,17 @@ struct SaveAttention: Equatable {
       case .full:
         [
           .init(title: "Retry Save", action: .retrySave),
-          .init(title: "Discard Unsaved Edits", action: .discardAndRetry),
+          shared
+            ? .init(title: "Save Unshared Copy…", action: .saveUnsharedCopy)
+            : .init(title: "Discard Unsaved Edits", action: .discardAndRetry),
           .init(title: "Keep Open", action: .keepOpen),
         ]
       default: [.init(title: "Retry Save", action: .retrySave), .init(title: "Keep Open", action: .keepOpen)]
       }
     return Alert(
       title: failure == .invalidated ? "The document engine needs recovery" : "Changes could not be saved",
-      message: failure.localizedDescription, buttons: buttons)
+      message: failure == .full && shared
+        ? storageNotice ?? failure.localizedDescription : failure.localizedDescription, buttons: buttons)
   }
 }
 

@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
 use hitslop_sharing_protocol::{
-    envelope,
+    envelope, failure, frame,
     http::{Invitation, RoomInfo, RoomPhase},
 };
 fn invitation(link: &str, origin: &str) -> Result<Invitation, JsValue> {
@@ -37,7 +37,8 @@ struct SyncQueue {
     frames: VecDeque<Vec<u8>>,
     bytes: usize,
     overflow: bool,
-    status: String,
+    /// The owner's last report; `None` until it has made one for this connection.
+    state: Option<hitslop_core::sync::SyncState>,
 }
 type SyncEvents = Arc<Mutex<SyncQueue>>;
 
@@ -162,7 +163,7 @@ impl BrowserCopy {
             self.fresh,
             Arc::new(move |event| match event {
                 owner::Event::Publication { json } => push(&events, Event::Publication { json }),
-                owner::Event::SaveStatus { status, failure } => push(
+                owner::Event::SaveStatus { status, failure, .. } => push(
                     &events,
                     Event::Save {
                         status: match status {
@@ -387,7 +388,9 @@ impl BrowserCopy {
             let mut q = events.lock().unwrap();
             match e {
                 owner::SyncEvent::Reconnect => q.overflow = true,
-                owner::SyncEvent::Status { status } => q.status = format!("{status:?}"),
+                owner::SyncEvent::Status { status } => {
+                    q.state = Some(status.state());
+                }
                 owner::SyncEvent::Send { bytes } => {
                     if q.overflow {
                         return;
@@ -435,9 +438,39 @@ impl BrowserCopy {
             })
             .transpose()
     }
-    #[wasm_bindgen(js_name = syncStatus)]
-    pub fn sync_status(&self) -> String {
-        self.sync_events.lock().unwrap().status.clone()
+    /// `{phase, pause?}` as of the owner's last report, for the worker to route on.
+    #[wasm_bindgen(js_name = syncState)]
+    pub fn sync_state(&self) -> Option<String> {
+        self.sync_events.lock().unwrap().state.as_ref().map(|s| serde_json::to_string(s).expect("sync state"))
+    }
+    #[wasm_bindgen(js_name = pauseSync)]
+    pub fn pause_sync(&self, pause: &str) -> Result<(), JsValue> {
+        let pause: hitslop_core::sync::Pause = serde_json::from_str(pause).map_err(error)?;
+        if let Some(link) = &self.sync_link {
+            link.pause(pause.kind, pause.reason);
+        } else {
+            // A permanent HTTP refusal may precede the first WebSocket admission.
+            self.sync_events.lock().unwrap().state =
+                Some(hitslop_core::sync::Status::Paused { kind: pause.kind, reason: pause.reason }.state());
+        }
+        Ok(())
+    }
+    #[wasm_bindgen(js_name = syncBase)]
+    pub fn sync_base(&mut self, monotonic: u64, unix: u64) -> Result<Option<SharingBase>, JsValue> {
+        let link = self.sync_link.as_ref().ok_or_else(|| error("Connection missing"))?;
+        let (send, receive) = std::sync::mpsc::channel();
+        link.base(move |base| {
+            let _ = send.send(base);
+        });
+        self.driver.as_mut().ok_or_else(|| error("Copy missing"))?.poll(monotonic, unix);
+        match receive.try_recv().map_err(error)? {
+            Ok(base) => Ok(base.map(SharingBase)),
+            Err(pause) => {
+                link.pause(pause.kind, pause.reason);
+                self.driver.as_mut().expect("checked above").poll(monotonic, unix);
+                Ok(None)
+            }
+        }
     }
 }
 
@@ -454,6 +487,13 @@ pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<St
         protocols: vec![hitslop_sharing_protocol::SOCKET_PROTOCOL.into(), format!("cap.{}", key.capability)],
     })
     .map_err(error)
+}
+
+/// What a failed relay request means (`{outcome, message}`), from the table the native client uses.
+#[wasm_bindgen(js_name = classifyFailure)]
+pub fn classify_failure(status: u16, code: Option<String>, url: &str) -> String {
+    let outcome = failure::classify(status, code.as_deref(), failure::Route::of(url));
+    serde_json::json!({"outcome": outcome, "message": outcome.message(status)}).to_string()
 }
 
 #[wasm_bindgen(js_name = socketBudget)]
@@ -473,3 +513,18 @@ pub fn decode_browser_request(json: &str) -> Result<String, JsValue> {
 
 #[path = "resources.rs"]
 mod resources;
+
+#[wasm_bindgen]
+pub struct SharingBase(hitslop_core::sync::Base);
+#[wasm_bindgen]
+impl SharingBase {
+    pub fn bytes(&self) -> Vec<u8> {
+        self.0.bytes.clone()
+    }
+    pub fn frontier(&self) -> String {
+        frame::version_json(self.0.frontier.iter().map(|(&p, &n)| (p, n as u32)))
+    }
+    pub fn root(&self) -> String {
+        frame::version_json(self.0.start.iter().map(|(&p, &n)| (p, n as u32)))
+    }
+}

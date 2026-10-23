@@ -3,12 +3,79 @@ import Foundation
 import HitSlopCore
 import HitSlopCoreBinding
 import HitSlopTestSupport
+import Security
 import Testing
 import WebKit
 
 @testable import HitSlopDocument
 
 @Suite(.serialized) struct DocumentSessionTests {
+  // Rust tests cover publishing a full owner's live state. This crosses the real page
+  // barrier too: unsent text must reach that owner without saving the full source first.
+  @Test @MainActor func aFullSharedSessionHandsOffUnsentPageText() async throws {
+    let stage = try Fixtures.stage()
+    try Fixtures.updateApp(stage) {
+      $0["document"] = ["kind": "object", "properties": ["title": ["kind": "text"], "padding": ["kind": "string"]]]
+      $0["initial"] = ["title": "Saved title", "padding": ""]
+    }
+    try Fixtures.writeApp(
+      """
+      export default { mount(ctx, target) {
+        const input = document.createElement('textarea');
+        target.append(input);
+        const binding = ctx.bind.text(input, ctx.document.fields.title);
+        return { unmount() { binding.destroy(); } };
+      }};
+      """, to: stage)
+    let original = try Fixtures.document(stage: stage)
+    let directory = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: original)
+      try? FileManager.default.removeItem(at: directory)
+    }
+    let library = try NativeLibrary.open(root: directory.appendingPathComponent("library").path, account: "test")
+    let entry = try library.adopt(source: original.path, title: "Full document")
+    let root = URL(fileURLWithPath: entry.path)
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    let destination = directory.appendingPathComponent("Recovered.slop")
+    do {
+      var full = false
+      for _ in 0..<64 {
+        var bytes = Data(count: 1024 * 1024)
+        let status = bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, $0.count, $0.baseAddress!) }
+        #expect(status == errSecSuccess)
+        let batch = try JSONSerialization.data(withJSONObject: [
+          "intents": [["type": "set", "path": ["padding"], "value": bytes.base64EncodedString()]]
+        ])
+        _ = try await session.owner.apply(batch: String(decoding: batch, as: UTF8.self))
+        do { try await session.owner.flush() } catch let failure as OwnerFailure where failure.kind == .full {
+          full = true
+        }
+      }
+      try #require(full, "real retained history must fill the store")
+      do {
+        try await session.owner.flush()
+        Issue.record("The retained history must still refuse saving before handoff")
+      } catch let failure as OwnerFailure { #expect(failure.kind == .full) }
+      _ = try await session.webView.callAsyncJavaScript(
+        "const input = document.querySelector('textarea'); input.value = 'Unsent recovery text'; input.dispatchEvent(new Event('input', {bubbles:true})); return true",
+        arguments: [:], in: nil, contentWorld: .page)
+      try await session.handOff(to: destination)
+      #expect(!Fixtures.isLocked(root))
+      let copy = try DocumentOwner(url: destination)
+      let state = try Fixtures.object(await copy.state())
+      #expect((state["value"] as? [String: Any])?["title"] as? String == "Unsent recovery text")
+      try await copy.close()
+    } catch {
+      // The unfixed session barrier fails before handoff; release its real full owner
+      // directly so the regression run does not leave a writer behind.
+      try? await session.owner.handOff(to: directory.appendingPathComponent("cleanup.slop"), artwork: nil)
+      throw error
+    }
+  }
+
   @Test @MainActor func environmentIsAvailableBeforeMountAndTracksTheWebViewWidth() async throws {
     let stage = try Fixtures.stage()
     try Fixtures.writeApp(
@@ -42,6 +109,64 @@ import WebKit
           })
       }
       try await session.close()
+    } catch {
+      try? await session.close()
+      throw error
+    }
+  }
+
+  // A handoff used to discard prepareClose's draft reply. Cancellation or a failed
+  // destination must leave the same renderer editable and its writer lease intact.
+  @Test @MainActor func handoffRetainsDraftsAndOwnershipUntilRecoverySucceeds() async throws {
+    let root = try Fixtures.document()
+    let directory = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: directory)
+    }
+    let session = try await DocumentSession.open(url: root)
+    session.load()
+    try await session.waitUntilReady()
+    _ = try await session.webView.callAsyncJavaScript(
+      """
+      const original = globalThis.__slop.prepareClose;
+      globalThis.__slop.prepareClose = async () => {
+        await original();
+        return {unresolvedDrafts:[{path:['title'],text:'Keep this entire draft 🐈'}]};
+      };
+      return true;
+      """, arguments: [:], in: nil, contentWorld: .page)
+    let destination = directory.appendingPathComponent("Recovered.slop")
+    do {
+      await #expect(throws: (any Error).self) { try await session.handOff(to: destination) }
+      #expect(session.acceptsPageWork && Fixtures.isLocked(root))
+      #expect(!FileManager.default.fileExists(atPath: destination.path))
+      await #expect(throws: CancellationError.self) {
+        try await session.handOff(
+          to: destination,
+          resolveDrafts: { drafts in
+            #expect(drafts.map(\.text) == ["Keep this entire draft 🐈"])
+            throw CancellationError()
+          })
+      }
+      #expect(session.acceptsPageWork && Fixtures.isLocked(root))
+      let occupied = directory.appendingPathComponent("Occupied.slop")
+      try Data("Do not replace".utf8).write(to: occupied)
+      await #expect(throws: (any Error).self) {
+        try await session.handOff(to: occupied, resolveDrafts: { _ in })
+      }
+      #expect(try String(contentsOf: occupied, encoding: .utf8) == "Do not replace")
+      #expect(session.acceptsPageWork && Fixtures.isLocked(root))
+      let editable = try await session.webView.callAsyncJavaScript(
+        "return !document.body.inert", arguments: [:], in: nil, contentWorld: .page)
+      #expect(editable as? Bool == true)
+      try await session.handOff(
+        to: destination,
+        resolveDrafts: { drafts in
+          #expect(drafts.map(\.text) == ["Keep this entire draft 🐈"])
+        })
+      #expect(!Fixtures.isLocked(root))
+      #expect(FileManager.default.fileExists(atPath: destination.path))
     } catch {
       try? await session.close()
       throw error

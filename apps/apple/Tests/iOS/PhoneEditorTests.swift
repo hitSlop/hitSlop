@@ -8,8 +8,44 @@ import WebKit
 import XCTest
 
 @testable import HitSlopDocument
+@testable import hitSlopPhone
 
 final class PhoneEditorTests: XCTestCase {
+  @MainActor func testLibraryNavigationRetainsTheDocumentWhenSaveFailsAndCanRetry() async throws {
+    let file = try outputFolder().appendingPathComponent("close-\(UUID().uuidString).slop")
+    let moved = file.appendingPathExtension("moved")
+    _ = try SlopFile.importCopy(from: input("host-probe"), to: file)
+    let (session, window) = try await show(file)
+    defer { window.isHidden = true }
+    let model = PhoneDocuments()
+    model.session = session
+    session.delegate = model
+    _ = try await session.owner.apply(
+      batch: #"{"intents":[{"type":"set","path":["title"],"value":"Keep my edits"}]}"#)
+    try FileManager.default.moveItem(at: file, to: moved)
+    defer {
+      if FileManager.default.fileExists(atPath: moved.path) {
+        try? FileManager.default.moveItem(at: moved, to: file)
+      }
+    }
+    let closed = await withCheckedContinuation { reply in
+      model.close { reply.resume(returning: $0) }
+    }
+    XCTAssertFalse(closed)
+    XCTAssertTrue(model.session === session)
+    XCTAssertNotNil(model.message)
+    try FileManager.default.moveItem(at: moved, to: file)
+    let retried = await withCheckedContinuation { reply in
+      model.close { reply.resume(returning: $0) }
+    }
+    XCTAssertTrue(retried)
+    XCTAssertNil(model.session)
+    let reopened = try await DocumentSession.open(url: file)
+    let saved = try await state(reopened.owner)
+    XCTAssertEqual((saved["value"] as? [String: Any])?["title"] as? String, "Keep my edits")
+    try await reopened.close()
+  }
+
   @MainActor func testHapticsReachOnlyAnEnabledVisibleEditor() async throws {
     let file = try outputFolder().appendingPathComponent("haptics-\(UUID().uuidString).slop")
     _ = try SlopFile.importCopy(from: input("host-probe"), to: file)

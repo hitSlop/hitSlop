@@ -1,4 +1,4 @@
-//! Disposable fixture driver for the deployed-preview check. Never ships in the app.
+//! Disposable fixture driver for the deployed sharing check. Never ships in the app.
 //! Invitations and credentials are written only to owner-readable files, never stdout.
 use hitslop_core::{
     file,

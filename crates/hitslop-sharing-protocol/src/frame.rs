@@ -23,6 +23,17 @@ pub const PROTOCOL: u8 = 1;
 /// The largest frame either side sends or accepts: a Cloudflare WebSocket message's limit.
 pub const MAX_FRAME: usize = 32 << 20;
 
+/// Permanent refusal: unsupported Hello protocol.
+pub const ERROR_PROTOCOL: u8 = 1;
+/// Permanent refusal: different app digest.
+pub const ERROR_APP: u8 = 2;
+/// Permanent refusal: ended or unknown room.
+pub const ERROR_ENDED: u8 = 3;
+/// Permanent refusal: invalid capability.
+pub const ERROR_UNAUTHORIZED: u8 = 4;
+/// Permanent refusal: malformed frame or client message sequence.
+pub const ERROR_MALFORMED: u8 = 5;
+
 /// One peer's operations `start..end`: what a record's bytes contain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
@@ -38,6 +49,17 @@ pub struct Record {
 }
 /// A version vector: each peer's exclusive end counter.
 pub type Version = BTreeMap<u64, u32>;
+/// A version's canonical wire form, which the seed and compact routes share: each peer as 16
+/// lowercase hex digits with its end, sorted.
+pub fn version_pairs(version: impl IntoIterator<Item = (u64, u32)>) -> Vec<(String, u32)> {
+    let mut pairs: Vec<_> = version.into_iter().map(|(peer, end)| (format!("{peer:016x}"), end)).collect();
+    pairs.sort();
+    pairs
+}
+/// `version_pairs` as the JSON the relay's version headers carry.
+pub fn version_json(version: impl IntoIterator<Item = (u64, u32)>) -> String {
+    serde_json::to_string(&version_pairs(version)).expect("version")
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Permission {

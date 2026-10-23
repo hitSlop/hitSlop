@@ -27,17 +27,18 @@ public final class DocumentOwner: Sendable {
     case publication(String)
     case themeChanged
     case undo(UndoState)
-    case saveStatus(DocumentSaveStatus)
+    case saveStatus(DocumentSaveStatus, Pressure, Bool)
   }
-  /// Receives the owner's events. A new listener first receives the current undo state.
+  /// Receives the owner's events. A new listener first receives current undo and save state.
   var listener: (@Sendable (Event) -> Void)? {
     get { events.facts.withLock { $0.listener } }
     set {
-      let undo = events.facts.withLock { facts in
+      let facts = events.facts.withLock { facts in
         facts.listener = newValue
-        return facts.undo
+        return facts
       }
-      newValue?(.undo(undo))
+      newValue?(.undo(facts.undo))
+      newValue?(.saveStatus(facts.saveStatus, facts.pressure, facts.shared))
     }
   }
   /// The latest save's failure, until a save succeeds.
@@ -81,6 +82,9 @@ public final class DocumentOwner: Sendable {
   private struct Facts {
     var undo = UndoState(canUndo: false, canRedo: false)
     var failure: OwnerFailure?
+    var saveStatus: DocumentSaveStatus = .saved
+    var pressure: Pressure = .ok
+    var shared = false
     var published = false
     var listener: (@Sendable (Event) -> Void)?
   }
@@ -99,14 +103,17 @@ public final class DocumentOwner: Sendable {
           let state = UndoState(canUndo: canUndo, canRedo: canRedo)
           facts.undo = state
           return (facts.listener, .undo(state))
-        case .saveStatus(let status, let failure):
+        case .saveStatus(let status, let failure, let pressure, let shared):
           let failed =
             status == .failed
             ? failure ?? OwnerFailure(kind: .saveFailed, message: "Saving failed", reason: nil, opIndex: nil) : nil
           facts.failure = failed
           let saveStatus: DocumentSaveStatus =
             if let failed { .failed(SaveFailure(failed)) } else if status == .saving { .saving } else { .saved }
-          return (facts.listener, .saveStatus(saveStatus))
+          facts.saveStatus = saveStatus
+          facts.pressure = pressure
+          facts.shared = shared
+          return (facts.listener, .saveStatus(saveStatus, pressure, shared))
         }
       }
       if let forwarded { listener?(forwarded) }
@@ -175,7 +182,8 @@ public final class DocumentOwner: Sendable {
   func startServer(exporter: any NativeExportHandler) throws -> NativeSocketServer {
     try storeCall { try NativeSocketServer.start(owner: native, exporter: exporter) }
   }
-  /// The saved document at `destination` as a document of its own: its current state
+  /// The accepted live state at `destination` as a document of its own, without saving
+  /// the source history first: its current state
   /// without history, the attachments that state references, and `artwork` (none when
   /// nil) in place of the original's.
   func copy(to destination: URL, artwork: SlopRenderedArtwork?) async throws {
@@ -236,6 +244,13 @@ public final class DocumentOwner: Sendable {
   }
   public func close(artwork: SlopRenderedArtwork? = nil) async throws {
     try await unit(.close(preview: artwork?.preview, icon: artwork?.icon))
+  }
+  /// Moves a document that cannot save to a new document at `destination`: the owner
+  /// writes, checks and publishes the copy of its live state, never over an existing file,
+  /// then releases the writer lock without saving. After a failure it stays open with every
+  /// edit and `destination` untouched. The session fences edits first.
+  func handOff(to destination: URL, artwork: SlopRenderedArtwork?) async throws {
+    try await unit(.handoff(dest: destination.path, preview: artwork?.preview, icon: artwork?.icon))
   }
   public static var coreBuildID: String { coreBuildId() }
 }

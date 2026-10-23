@@ -20,6 +20,7 @@ pub fn err(code: Code, message: impl Into<String>) -> Error {
     Error { code, message: message.into() }
 }
 pub mod envelope;
+pub mod failure;
 pub mod frame;
 pub mod http;
 pub mod limits;
@@ -64,3 +65,8 @@ pub fn valid_room(room: &str) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+pub use limits::{
+    BASE_BYTES, COMPACT_AFTER_BYTES, COMPACT_AFTER_RECORDS, COMPACTED_ARCHIVE_DAYS, ENDED_TOMBSTONE_DAYS,
+    ROOM_IDLE_DAYS, ROOM_RECORD_BYTES, ROOM_RECORDS, SOCKET_PUSH_BYTES_PER_MINUTE, SOCKET_PUSHES_PER_MINUTE,
+};

@@ -42,6 +42,7 @@ struct SlopShareButton: NSViewRepresentable {
   private let filename: String
   private let holdToolbar: (Bool) -> Void
   private let select: (SlopDocumentCommand) -> Void
+  let checkForUpdates: () -> Void
   private let popover = NSPopover()
   private var picking = false
 
@@ -50,13 +51,14 @@ struct SlopShareButton: NSViewRepresentable {
 
   init(
     filename: String, canExport: Bool, sharing: DocumentSharing? = nil, holdToolbar: @escaping (Bool) -> Void,
-    select: @escaping (SlopDocumentCommand) -> Void
+    select: @escaping (SlopDocumentCommand) -> Void, checkForUpdates: @escaping () -> Void
   ) {
     self.sharing = sharing
     self.filename = filename
     self.canExport = canExport
     self.holdToolbar = holdToolbar
     self.select = select
+    self.checkForUpdates = checkForUpdates
     super.init()
     popover.behavior = .transient
     // The native picker replaces this surface immediately after preparation.
@@ -162,7 +164,7 @@ private struct SlopShareView: View {
       if let sharing = model.sharing {
         LiveCollaborationSection(
           model: sharing, interactionChanged: model.setCollaborationInteracting,
-          saveUnsharedCopy: { model.choose(.duplicate) }
+          saveUnsharedCopy: { model.choose(.saveUnsharedCopy) }, onUpdate: model.checkForUpdates
         ).disabled(!model.commandsEnabled || model.preparing != nil)
       } else {
         Toggle(isOn: .constant(false)) {

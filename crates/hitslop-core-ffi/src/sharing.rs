@@ -1,6 +1,6 @@
 //! Native sharing façade: no network frames or Loro bytes cross this boundary.
 use crate::owner::NativeOwner;
-use hitslop_sharing_client::{AccountAccess, Client, ClientStatus, Phase};
+use hitslop_sharing_client::{AccountAccess, Client, ClientStatus, PauseKind, Phase};
 use std::{path::Path, sync::Arc};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -31,8 +31,19 @@ pub enum Phase {
     Paused,
     Ended,
 }
+#[uniffi::remote(Enum)]
+pub enum PauseKind {
+    RoomFull,
+    Outgrown,
+    NeedsUpdate,
+    Refused,
+    MissingHistory,
+    FilesFull,
+    Ended,
+}
 #[uniffi::remote(Record)]
 pub struct ClientStatus {
+    pub pause_kind: Option<PauseKind>,
     pub phase: Phase,
     pub detail: String,
     pub link: Option<String>,

@@ -56,7 +56,7 @@ private final class PublicationTimes: @unchecked Sendable {
       try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
       try JSONSerialization.data(
         withJSONObject: [
-          "loro": "c00c9fa501f8",
+          "loro": "1.17.1",
           "method":
             "Frameless window controllers with hover panels in the Host test harness, not the catalog application. One sequential run per cell, fully rendered rows, host plus identified WebContent physical footprints; excludes GPU/network processes. Creation plus opening, warm machine. Checkbox acceptance, rendering and durable drain. Owner publication callback to JS arrival matched by sequence using epoch clocks (approximately millisecond precision); includes test timestamp/JSON decoding overhead. Only the first 100 edits enter publication phase samples; save-status pushes are excluded. Debug test bundle, not an optimized app. Absolute memory only; no leak or matched-control percentage claim.",
           "results": records, "failure": failure as Any? ?? NSNull(),

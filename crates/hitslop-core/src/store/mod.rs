@@ -30,8 +30,8 @@ pub use attachments::Attachment;
 use attachments::delete_unreferenced;
 use loro::{ExportMode, Frontiers, VersionVector};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
-pub use save::SaveJob;
 use save::{Metadata, Rows, bounds, checked_bounds, checkpoint_row, within};
+pub use save::{Pressure, SaveJob};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 #[cfg(not(target_arch = "wasm32"))]

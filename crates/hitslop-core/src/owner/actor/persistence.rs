@@ -23,6 +23,19 @@ pub(super) enum Work {
         icon: Option<Vec<u8>>,
         callback: Completion,
     },
+    /// Publishes a verified copy of the live state at `dest`, then releases the store
+    /// without saving.
+    #[cfg(not(target_arch = "wasm32"))]
+    Handoff {
+        generation: u64,
+        dest: PathBuf,
+        state: Vec<u8>,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+        value: serde_json::Value,
+        theme: std::collections::BTreeMap<String, String>,
+        callback: Completion,
+    },
 }
 /// The artwork a window rendered, by name, leaving out what it did not render.
 #[cfg(not(target_arch = "wasm32"))]
@@ -39,6 +52,7 @@ fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) ->
 pub(super) enum StorageAction {
     Copy {
         path: PathBuf,
+        state: Vec<u8>,
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
     },
@@ -79,11 +93,12 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
             result: contained(|| store.document().map(Box::new).map_err(Failure::from)),
         },
         Work::Store { generation, action, callback } => {
+            let refresh_status = matches!(action, StorageAction::Share(_));
             let result = contained(|| {
                 Ok(match action {
                     #[cfg(not(target_arch = "wasm32"))]
-                    StorageAction::Copy { path, preview, icon } => {
-                        store.copy_clean(&path, &named_artwork(&preview, &icon))?;
+                    StorageAction::Copy { path, state, preview, icon } => {
+                        store.copy_clean(&path, &state, &named_artwork(&preview, &icon))?;
                         Reply::Unit
                     }
                     #[cfg(not(target_arch = "wasm32"))]
@@ -121,7 +136,7 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                     }
                 })
             });
-            Message::Stored { generation, result, callback, closing: false }
+            Message::Stored { generation, result, callback, closing: false, refresh_status }
         }
         Work::Close { generation, job, preview, icon, callback } => {
             let result = contained(|| {
@@ -145,7 +160,60 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                 store.close()?;
                 Ok(Reply::Unit)
             });
-            Message::Stored { generation, result, callback, closing: true }
+            Message::Stored { generation, result, callback, closing: true, refresh_status: false }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        Work::Handoff { generation, dest, state, preview, icon, value, theme, callback } => {
+            let result = contained(|| {
+                hand_off(store, &dest, &state, &named_artwork(&preview, &icon), &value, &theme)?;
+                store.close()?;
+                Ok(Reply::Unit)
+            });
+            Message::Stored { generation, result, callback, closing: true, refresh_status: false }
         }
     }
+}
+/// Publishes the live `state` at `dest` as a document of its own, never replacing anything:
+/// a clean copy is staged beside `dest`, must open as a document holding the live `value`
+/// and palette, and only then is published. The staged file is removed unless published.
+/// A published copy whose folder sync failed stays in place and is reported as an unknown
+/// outcome, with the owner still open.
+#[cfg(not(target_arch = "wasm32"))]
+fn hand_off(
+    store: &store::Store,
+    dest: &Path,
+    state: &[u8],
+    artwork: &[(Artwork, &[u8])],
+    value: &serde_json::Value,
+    theme: &std::collections::BTreeMap<String, String>,
+) -> Result<()> {
+    file::document_destination(dest)?;
+    let dest = file::resolve(dest)?;
+    if std::fs::symlink_metadata(&dest).is_ok() {
+        return Err(Failure::rejected(Code::Exists, "A file already exists there"));
+    }
+    let staged = file::Staged::beside(&dest)?;
+    store.copy_clean_unplaced(staged.path(), state, artwork)?;
+    verify_copy(staged.path(), value, theme)?;
+    Ok(staged.publish_new(&dest, true)?.confirmed()?)
+}
+/// Refuses unless `copy` opens as a document holding the live `value` and palette, so a
+/// handoff can never lose what the copy does not have.
+#[cfg(not(target_arch = "wasm32"))]
+fn verify_copy(
+    copy: &Path,
+    value: &serde_json::Value,
+    theme: &std::collections::BTreeMap<String, String>,
+) -> Result<()> {
+    let unusable =
+        |why: String| Failure::new(FailureKind::Failed, format!("The copy cannot replace this document: {why}"));
+    let snapshot = store::Store::open(copy, store::Mode::Snapshot).map_err(|e| unusable(e.to_string()))?;
+    let reading =
+        snapshot.document().map_err(|e| e.to_string()).and_then(|document| document.reading().map_err(|e| e.message));
+    let _ = snapshot.close();
+    let reading = reading.map_err(unusable)?;
+    if reading.value != *value || reading.theme != *theme {
+        return Err(unusable("it does not match the document".into()));
+    }
+    Ok(())
 }

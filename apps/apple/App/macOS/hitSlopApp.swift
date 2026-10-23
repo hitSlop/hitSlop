@@ -54,6 +54,7 @@ private struct UpdateSettingsView: View {
   private var libraryWindows: AnyCancellable?
   private var recentMenu: NSMenu?
   private var exportMenuItem: NSMenuItem?
+  private var unsharedCopyMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
   private var sharingAccountWindow: NSWindow?
   private let updaterController = SPUStandardUpdaterController(
@@ -67,21 +68,19 @@ private struct UpdateSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
-    if SyncedLibraryPreview.enabled {
-      NSApp.registerForRemoteNotifications()
-      SlopLibrary.shared.start()
-      libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
-        [weak self] _ in
-        SlopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
-      }
-      libraryChanges = SlopLibrary.shared.$entries.sink { [weak self] entries in
-        guard let self else { return }
-        SlopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
-        for entry in entries where entry.deleted {
-          for controller in self.coordinator.documentControllers
-          where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
-            controller.close()
-          }
+    NSApp.registerForRemoteNotifications()
+    SlopLibrary.shared.start()
+    libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
+      [weak self] _ in
+      SlopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
+    }
+    libraryChanges = SlopLibrary.shared.$entries.sink { [weak self] entries in
+      guard let self else { return }
+      SlopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
+      for entry in entries where entry.deleted {
+        for controller in self.coordinator.documentControllers
+        where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
+          controller.close()
         }
       }
     }
@@ -111,21 +110,18 @@ private struct UpdateSettingsView: View {
     }
   }
   func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
-    guard SyncedLibraryPreview.enabled,
-      let notification = CKNotification(fromRemoteNotificationDictionary: userInfo),
+    guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo),
       notification.containerIdentifier == "iCloud.com.hitslop.app"
     else { return }
     Task { await SlopLibrary.shared.receivedPush() }
   }
   func applicationDidBecomeActive(_ notification: Notification) {
     NotificationCenter.default.post(name: .hitSlopSharingForeground, object: nil)
-    if SyncedLibraryPreview.enabled {
-      SlopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
-      SlopLibrary.shared.activated(true)
-    }
+    SlopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
+    SlopLibrary.shared.activated(true)
   }
   func applicationDidResignActive(_ notification: Notification) {
-    if SyncedLibraryPreview.enabled { SlopLibrary.shared.activated(false) }
+    SlopLibrary.shared.activated(false)
   }
   func application(_ application: NSApplication, open urls: [URL]) {
     for url in urls {
@@ -134,6 +130,8 @@ private struct UpdateSettingsView: View {
         continue
       }
       guard url.scheme == "hitslop" else { continue }
+      // Only an active ASWebAuthenticationSession may consume Apple credentials.
+      if url.host == "auth" { continue }
       if url.host == "widgets" {
         showCatalog()
         continue
@@ -160,11 +158,11 @@ private struct UpdateSettingsView: View {
     _ application: NSApplication, continue userActivity: NSUserActivity,
     restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void
   ) -> Bool {
-    guard SharingPreview.enabled, userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+    guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
       let url = userActivity.webpageURL
     else { return false }
     do {
-      guard let link = try SharingPreview.incomingLink(url) else { return false }
+      guard let link = try SharingLinks.incomingLink(url) else { return false }
       showCatalog()
       DispatchQueue.main.async {
         NotificationCenter.default.post(name: .hitSlopJoinSharedSlop, object: link)
@@ -255,7 +253,6 @@ private struct UpdateSettingsView: View {
     NSApp.activate()
   }
   @objc private func showSharingAccount() {
-    guard SharingPreview.enabled else { return }
     if sharingAccountWindow == nil {
       let content = SharingAccountView().frame(minWidth: 440, minHeight: 260)
       let window = NSWindow(contentViewController: NSHostingController(rootView: content))
@@ -299,7 +296,7 @@ private struct UpdateSettingsView: View {
     updates.target = updaterController
     app.addItem(.separator())
     item(app, "Settings…", #selector(showSettings), ",")
-    if SharingPreview.enabled { item(app, "Account…", #selector(showSharingAccount), "") }
+    item(app, "Account…", #selector(showSharingAccount), "")
     app.addItem(.separator())
     let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
     let servicesMenu = NSMenu(title: "Services")
@@ -319,7 +316,7 @@ private struct UpdateSettingsView: View {
     fileItem.submenu = file
     file.delegate = self
     item(file, "New from Template…", #selector(showCatalog), "n")
-    if SharingPreview.enabled { item(file, "Open Shared Link…", #selector(joinSharedSlop), "") }
+    item(file, "Open Shared Link…", #selector(joinSharedSlop), "")
     item(file, "Open…", #selector(openPanel), "o")
     let recentItem = NSMenuItem(title: "Open Recent", action: nil, keyEquivalent: "")
     let recent = NSMenu(title: "Open Recent")
@@ -329,7 +326,8 @@ private struct UpdateSettingsView: View {
     file.addItem(recentItem)
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
-    if SyncedLibraryPreview.enabled { item(file, "Move to iCloud…", .moveToCloud) }
+    unsharedCopyMenuItem = item(file, "Save Unshared Copy…", .saveUnsharedCopy)
+    item(file, "Move to iCloud…", .moveToCloud)
     item(file, "Share…", .share)
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
@@ -380,6 +378,7 @@ private struct UpdateSettingsView: View {
   func menuNeedsUpdate(_ menu: NSMenu) {
     if menu === exportMenuItem?.menu {
       exportMenuItem?.isHidden = coordinator.activeController?.canExport != true
+      unsharedCopyMenuItem?.isHidden = coordinator.activeController?.isShared != true
       return
     }
     guard menu === recentMenu else { return }
@@ -407,8 +406,12 @@ private struct UpdateSettingsView: View {
     return value
   }
   /// A menu item that sends `command` to the active document.
-  private func item(_ menu: NSMenu, _ title: String, _ command: SlopDocumentCommand, _ key: String = "") {
-    item(menu, title, #selector(documentCommand(_:)), key).representedObject = command
+  @discardableResult private func item(
+    _ menu: NSMenu, _ title: String, _ command: SlopDocumentCommand, _ key: String = ""
+  ) -> NSMenuItem {
+    let value = item(menu, title, #selector(documentCommand(_:)), key)
+    value.representedObject = command
+    return value
   }
   func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
     let controller = coordinator.activeController

@@ -54,6 +54,7 @@ mod runtime {
             // Only the room uses this path; the public router never forwards it.
             if req.path() == "/internal/release" && req.method() == Method::Post {
                 let room = req.text().await?;
+                self.sql.exec("DELETE FROM rooms WHERE room=?", vec![room.clone().into()])?;
                 self.sql.exec("DELETE FROM live WHERE room=?", vec![room.into()])?;
                 self.state.storage().sync().await?;
                 return Response::ok("released");
@@ -92,7 +93,7 @@ mod runtime {
                         .await?;
                     // A reserved slot whose init never reached Room has no payloads
                     // or invitation to revoke. It can be removed with the account.
-                    if !matches!(response.status_code(), 200 | 404) {
+                    if !matches!(response.status_code(), 200 | 404 | 410) {
                         return Ok(response);
                     }
                 }

@@ -20,16 +20,16 @@ final class PhoneCatalogTests: XCTestCase {
     let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: create)
     XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 60), .completed, "Sign the mini into the test Apple ID")
     create.tap()
-    app.alerts.buttons["Cancel"].tap()
+    app.buttons["Cancel"].tap()
     XCTAssertFalse(app.webViews.firstMatch.exists)
     create.tap()
-    let name = app.alerts.textFields.firstMatch
+    let name = app.textFields["slop-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 10))
     let documentName = "Phone artwork " + UUID().uuidString.prefix(6)
     name.tap()
     name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (name.value as? String)?.count ?? 0))
     name.typeText(String(documentName))
-    app.alerts.buttons["Create"].tap()
+    app.buttons["create-named-slop"].tap()
     XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 45))
     capture(app, "New synced document")
     let task = app.webViews.textFields["New task"]
@@ -60,7 +60,7 @@ final class PhoneCatalogTests: XCTestCase {
       app.buttons["document-actions"].tap()
       app.buttons["Sync Now"].tap()
     }
-    app.navigationBars.buttons["Recents"].tap()
+    app.returnToLibrary()
     XCTAssertTrue(app.buttons[String(documentName)].waitForExistence(timeout: 20))
     capture(app, "Named slop with refreshed artwork")
     if let macName = ProcessInfo.processInfo.environment["HITSLOP_MAC_DOCUMENT_NAME"] {
@@ -69,7 +69,7 @@ final class PhoneCatalogTests: XCTestCase {
       macDocument.tap()
       XCTAssertTrue(app.webViews.staticTexts["Created on Mac proof"].waitForExistence(timeout: 30))
       capture(app, "Mac-created document on iPhone")
-      app.navigationBars.buttons["Recents"].tap()
+      app.returnToLibrary()
     }
     if ProcessInfo.processInfo.environment["HITSLOP_HOME_ICON_PROOF"] == "1" {
       XCUIDevice.shared.press(.home)

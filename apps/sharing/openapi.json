@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "hitSlop sharing preview",
+    "title": "hitSlop sharing",
     "description": "",
     "license": {
       "name": ""
@@ -508,6 +508,92 @@
         ]
       }
     },
+    "/v1/rooms/{room}/compact": {
+      "post": {
+        "summary": "Replace covered updates with an opaque full-history base",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "X-Sharing-SHA256",
+            "in": "header",
+            "description": "Lowercase 64-digit hex SHA-256 digest of the body",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Sharing-Version",
+            "in": "header",
+            "description": "F: JSON array of [16-digit hex peer, non-negative i32 counter] pairs",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Sharing-Root",
+            "in": "header",
+            "description": "Seed version in the same encoding; required only without a stored root, otherwise ignored",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 16777216
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Base installed"
+          },
+          "400": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "404": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
     "/v1/rooms/{room}/open": {
       "post": {
         "summary": "Open a room after its seed and app resources are uploaded",
@@ -897,6 +983,9 @@
               "string",
               "null"
             ]
+          },
+          "compact": {
+            "type": "boolean"
           },
           "document": {
             "type": "string"

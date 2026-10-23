@@ -4,14 +4,14 @@ description: Design for the Mac and iPhone editors, Chrome copies, and saved-sta
 ---
 
 The interactive editor and saved-state captures use different renderers. Check both
-when you build a slop. See [availability](/docs/availability/) for preview status.
+when you build a slop. See [availability](/docs/availability/) for what each host supports.
 
 ## Hosts and build baseline
 
 | Surface | Renderer |
 | --- | --- |
 | Mac app, macOS 15.2+ | WebKit |
-| iPhone app, iOS 26+ TestFlight preview | WebKit |
+| iPhone app, iOS 26+ TestFlight | WebKit |
 | Sharing guests and `slop open --browser` copies | Chrome; other browsers remain unqualified |
 | Preview, icon, widgets, PNG and PDF | Takumi, rendering saved state rather than the live editor |
 
@@ -34,16 +34,15 @@ for the capture contract, supported styling, images and widget refresh behavior.
 
 ## Design for the phone
 
-The iPhone app is portrait-only. Its editor sits below the native navigation bar,
-above the home indicator and above the keyboard, and the page background fills the
-screen. Use touch-sized controls and visible actions instead of hover-only controls, and
-keep forms scrollable with the software keyboard open.
+The iPhone app is portrait-only. Its editor runs edge to edge, under the status bar and
+the home indicator, so pad your root by `--slop-safe-top` and `--slop-safe-bottom`. The software
+keyboard covers the page without resizing it, and the host scrolls a focused field into
+view, so keep forms in scrollers. Lift bottom-pinned controls with
+`--slop-keyboard-inset`. Use touch-sized controls and visible
+actions instead of hover-only controls.
 
 [Make it work on iPhone](/docs/guides/mobile/) covers the platform signals, layout
 patterns, safe areas and haptics, so you do not assume a desktop-sized window.
 
-The iPhone preview refuses camera and microphone capture and returns speech
-`unavailable` with reason `host`. File inputs use the native Files picker; HTTPS
-embeds use the shared navigation policy and cannot access the document bridge or
-borrow device permissions. See [capabilities and permissions](/docs/guides/capabilities/)
-and [files and the web](/docs/guides/files-and-web/) for the APIs and restrictions.
+Some device features differ on iPhone; see [capabilities and permissions](/docs/guides/capabilities/)
+and [files and the web](/docs/guides/files-and-web/).

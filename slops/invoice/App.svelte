@@ -110,8 +110,8 @@
         {#each doc.current.items as item, index (item.$id)}
           <div class="invoice-line">
             <label><span class="invoice-mobile-label">Item</span><input aria-label="Description for line {index + 1}" placeholder="Service or item" use:bindText={doc.at(item).description} /></label>
-            <label><span class="invoice-mobile-label">Qty</span><input aria-label="Quantity for line {index + 1}" type="number" min="0" step="0.01" bind:value={() => doc.at(item).quantity.value, (next) => { doc.at(item).quantity.value = next; }} /></label>
-            <label><span class="invoice-mobile-label">Rate</span><input aria-label="Rate for line {index + 1}" type="number" min="0" step="0.01" bind:value={() => doc.at(item).rate.value, (next) => { doc.at(item).rate.value = next; }} /></label>
+            <label><span class="invoice-mobile-label">Qty</span><input aria-label="Quantity for line {index + 1}" type="number" inputmode="decimal" min="0" step="0.01" bind:value={() => doc.at(item).quantity.value, (next) => { doc.at(item).quantity.value = next; }} /></label>
+            <label><span class="invoice-mobile-label">Rate</span><input aria-label="Rate for line {index + 1}" type="number" inputmode="decimal" min="0" step="0.01" bind:value={() => doc.at(item).rate.value, (next) => { doc.at(item).rate.value = next; }} /></label>
             <output class="invoice-amount"><span class="invoice-mobile-label">Amount</span>{money(item.quantity * item.rate)}</output>
             <button class="invoice-remove" data-slop-export="hide" aria-label="Remove line {index + 1}" onclick={async () => { await doc.change(tx => removeItem(tx, item.$id)); haptics.impact("medium"); }}><Trash2 size={15} strokeWidth={1.7} /></button>
           </div>
@@ -126,7 +126,7 @@
         </label>
         <dl class="invoice-totals">
           <div><dt>Subtotal</dt><dd>{money(totals.subtotal)}</dd></div>
-          <div><dt>Tax <input aria-label="Tax percentage" type="number" min="0" max="100" step="0.1" bind:value={doc.fields.taxPercent.value} />%</dt><dd>{money(totals.tax)}</dd></div>
+          <div><dt>Tax <input aria-label="Tax percentage" type="number" inputmode="decimal" min="0" max="100" step="0.1" bind:value={doc.fields.taxPercent.value} />%</dt><dd>{money(totals.tax)}</dd></div>
           <div class="invoice-grand"><dt>Total</dt><dd>{money(totals.total)}</dd></div>
         </dl>
       </section>

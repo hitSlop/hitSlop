@@ -9,6 +9,22 @@ pub struct Relay {
     pub heads: Version,
 }
 impl Relay {
+    /// Same transactional replacement as the opaque relay: retain uncovered records,
+    /// then put the base first for the next Hello. Connected clients see no broadcast.
+    pub fn compact(&mut self, base: hitslop_core::sync::Base) {
+        self.records
+            .retain(|r| r.spans.iter().any(|s| s.end > base.frontier.get(&s.peer).copied().unwrap_or(0) as u32));
+        let spans = base
+            .frontier
+            .iter()
+            .filter_map(|(&peer, &end)| {
+                let start = base.start.get(&peer).copied().unwrap_or(0);
+                (end > start).then_some(Span { peer, start: start as u32, end: end as u32 })
+            })
+            .collect();
+        self.records.insert(0, Record { spans, bytes: base.bytes });
+    }
+
     /// The frames answering one client frame, and the records it stored, which go to the
     /// room's other joined clients.
     pub fn reply(&mut self, from: &[u8]) -> (Vec<Frame>, Vec<Record>) {

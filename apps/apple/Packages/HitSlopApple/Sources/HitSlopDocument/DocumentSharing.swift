@@ -32,11 +32,13 @@ private actor SharingDriver {
     self.listener = listener
     client?.listen(listener: listener)
   }
-  func refresh(token: String?, reconnect: Bool = false) throws -> SharingStatus? {
+  /// Recovery asks the relay about this document, so it runs only for one that can have a link:
+  /// a saved credential, or a library copy that may have been shared from another device.
+  func refresh(token: String?, library: Bool = false, reconnect: Bool = false) throws -> SharingStatus? {
     var saved = try SharingCredentials.read(document)
     var recoveryError: Error?
     accountPhase = nil
-    if let token {
+    if let token, saved != nil || library {
       do {
         let recovery = try sharingRecover(owner: owner, token: token)
         accountPhase = recovery.phase
@@ -64,16 +66,18 @@ private actor SharingDriver {
   }
   func status() -> SharingStatus? {
     if accountPhase == .ended {
-      return SharingStatus(phase: .ended, detail: "Sharing ended", link: nil, creator: true)
+      return SharingStatus(pauseKind: nil, phase: .ended, detail: "Sharing ended", link: nil, creator: true)
     }
     if accountPhase == .preparing {
       return SharingStatus(
+        pauseKind: nil,
         phase: .preparing, detail: "Sharing upload is incomplete. Try starting the live link again.", link: nil,
         creator: true)
     }
     if let client { return client.status() }
     guard let phase = accountPhase else { return nil }
     return SharingStatus(
+      pauseKind: nil,
       phase: phase,
       detail: phase == .ended ? "Sharing ended" : "Sharing upload is incomplete. Try starting the live link again.",
       link: nil,
@@ -109,11 +113,13 @@ private actor SharingDriver {
   @Published public private(set) var busy = false
   @Published public private(set) var acting = false
   private let driver: SharingDriver
+  private let document: String
   private var active = true
   private var pendingRefresh = false
   private var triggers: AnyCancellable?
   init(owner: DocumentOwner) {
-    driver = SharingDriver(owner: owner.native, document: owner.documentID ?? "")
+    document = owner.documentID ?? ""
+    driver = SharingDriver(owner: owner.native, document: document)
     triggers = NotificationCenter.default.publisher(for: .hitSlopSharingAccountChanged)
       .merge(with: NotificationCenter.default.publisher(for: .hitSlopSharingForeground))
       .sink { [weak self] _ in Task { @MainActor [weak self] in self?.refresh() } }
@@ -136,10 +142,11 @@ private actor SharingDriver {
       return
     }
     run(acting: false) {
-      let token = try? await SharingAccount.shared.token()
-      return try await self.driver.refresh(token: token)
+      let token = await SharingAccount.shared.recoveryToken()
+      return try await self.driver.refresh(token: token, library: self.inLibrary)
     }
   }
+  private var inLibrary: Bool { SlopLibrary.shared.entries.contains { $0.id == document } }
   public func pause() async {
     active = false
     await driver.pause()
@@ -153,8 +160,8 @@ private actor SharingDriver {
   }
   public func retry() {
     run {
-      let token = try? await SharingAccount.shared.token()
-      return try await self.driver.refresh(token: token, reconnect: true)
+      let token = await SharingAccount.shared.recoveryToken()
+      return try await self.driver.refresh(token: token, library: self.inLibrary, reconnect: true)
     }
   }
   public func stop() {
@@ -194,7 +201,6 @@ private actor SharingDriver {
   /// Resolve the canonical local file, including an already-open document. Joining
   /// never imports a duplicate or requires an iCloud library.
   public static func join(_ link: String, candidates: [URL] = []) async throws -> URL {
-    guard SharingPreview.enabled else { throw SlopFailure("Live sharing preview is disabled.") }
     let document = try await SlopPreparation.run { try sharingDocument(link: link) }
     let live = DocumentSession.sharedSession(document: document)
     let nativeOwner = live?.owner.native

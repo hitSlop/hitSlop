@@ -5,6 +5,7 @@ pub(crate) fn guest_limit(method: &str, path: &str) -> Option<&'static str> {
         return None;
     }
     match (method, parts.as_slice()) {
+        ("POST", [_, "compact"]) => Some("GUEST_COMPACT_LIMIT"),
         ("GET", [_]) => Some("GUEST_METADATA_LIMIT"),
         ("GET", [_, "seed"]) => Some("GUEST_SEED_LIMIT"),
         ("GET", [_, "sync"]) => Some("GUEST_CONNECT_LIMIT"),

@@ -70,7 +70,7 @@ An export or icon component that throws fails that capture without changing the 
 editor. A later attempt gets a fresh renderer.
 
 Icons, previews, widgets, PNG and selectable vector PDF exports use synchronous Svelte
-rendering and Takumi. Mac and Linux use a restricted Rust process; the iPhone preview
+rendering and Takumi. Mac and Linux use a restricted Rust process; the iPhone app
 renders locally in process. Use `snapshot`, ordinary flexbox, grid placement
 (including named grid areas), explicit font properties, and SVG attributes/currentColor.
 Container queries and page CSS inside inline SVG are unsupported; ignored
@@ -100,7 +100,7 @@ languages your document uses; vector PDF reports uncovered characters as an erro
 Do not use Svelte's `css="injected"`; the build collects
 the capture component's styles and global CSS.
 
-## Design a macOS widget
+## Design a widget
 
 Quick Checklist, Water Tracker, Grocery List, Reading Tracker, Habit Heatmap,
 Daily Planner, Assignment Tracker and Countdown Milestones include small, medium
@@ -109,7 +109,7 @@ approximate 30-minute refreshes for date-dependent content. Daily Planner shows
 the date saved in its plan; Water Tracker shows the saved intake log and does not
 reset it at midnight. The other views refresh with saved edits.
 
-The same widget view serves iPhone Home Screen widgets in the TestFlight preview.
+The same widget view serves iPhone Home Screen widgets in the iPhone app on TestFlight.
 On iPhone, add a hitSlop widget and select a library slop whose embedded app includes
 `Widget.svelte`. The phone renders its widget images locally; tap the widget to open
 the slop. The app refreshes placed widgets after saves and library changes, and in the background
@@ -158,7 +158,7 @@ Each static role imports its own shared stylesheets (directly or through a compo
 In `slop dev`, use the Preview selector to switch between the editor, the preview, the
 icon and each widget family. Accepted edits survive switching, and component/CSS changes
 update the view live. Static views still mount inside the editor page and share its CSS cascade. These are browser layouts: review built preview/icon artwork with
-`slop build` and widget images on Mac and, for library slops, the iPhone preview. Icon and widget canvases clip overflow; the preview warns when content
+`slop build` and widget images on Mac and, for library slops, the iPhone app. Icon and widget canvases clip overflow; the preview warns when content
 extends beyond its canvas.
 
 Successful saves refresh images after a one-second debounce, including edits while
@@ -173,7 +173,7 @@ To request occasional recaptures while hitSlop is running, add
 15 to 1440 are accepted and require `Widget.svelte`. Only documents used by placed
 widgets are scheduled. This requests capture attempts, not an exact visible refresh
 rate: macOS controls scheduling and WidgetKit controls display updates. Quitting
-hitSlop leaves the last images on the desktop. iOS background capture is not implemented.
+hitSlop leaves the last images on the desktop. `refreshMinutes` applies on Mac.
 
 ## Design an icon at 512 × 512
 
@@ -226,7 +226,7 @@ Successful responses, respectively (your paths will differ):
 
 An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both pass the saved snapshot and theme to the static view. The open editor is not used as the rendering workspace.
 
-The editor barrier lasts through saving and copying; rendering then proceeds independently. Mac capture loads packaged fonts and saved image resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF export is experimental. It keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side; complex layouts and long documents may need further refinement.
+The editor barrier lasts through saving and copying; rendering then proceeds independently. Mac capture loads packaged fonts and saved image resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF export keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side; complex layouts and long documents may need further refinement.
 
 Completed captures publish atomically before their deadline. If the acknowledgement is lost, inspect the destination before retrying.
 

@@ -1,5 +1,5 @@
 use super::*;
-fn fixture() -> (tempfile::TempDir, Arc<Owner>) {
+pub(super) fn fixture() -> (tempfile::TempDir, Arc<Owner>) {
     static REGISTRY: std::sync::Once = std::sync::Once::new();
     REGISTRY.call_once(|| {
         hitslop_core::registry::use_folder(&std::env::temp_dir().join("hitslop-sharing-test-registry")).unwrap()
@@ -99,6 +99,7 @@ fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry()
         seed_size: Some(size),
         app: Some(hex(&Store::open(owner.path(), Mode::Snapshot).unwrap().app_digest().unwrap())),
         capability: None,
+        compact: false,
     })
     .unwrap();
     let serving = thread::spawn(move || {
@@ -232,6 +233,7 @@ fn rejoin_reuses_local_identity_only_after_the_previous_room_ended() {
         seed_size: None,
         app: None,
         capability: None,
+        compact: false,
     };
     let server = TcpListener::bind("127.0.0.1:0").unwrap();
     server.set_nonblocking(true).unwrap();
@@ -297,4 +299,135 @@ fn rejoin_reuses_local_identity_only_after_the_previous_room_ended() {
     assert_eq!(reopened.app().document_uuid.as_deref(), Some(document.as_str()));
     assert_eq!(reopened.document().unwrap().reading().unwrap().value["hits"], 3);
     assert_eq!(reopened.share().unwrap().unwrap().room, "c".repeat(32));
+}
+
+/// The HTTP boundary preserves the binary base and both seed-format version headers.
+#[test]
+fn compact_posts_verified_bytes_and_preserves_conflict_and_size_refusals() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    for code in [204, 409, 413] {
+        let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", server.local_addr().unwrap());
+        let serving = std::thread::spawn(move || {
+            let (mut stream, _) = server.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                header.push(byte[0]);
+            }
+            let header = String::from_utf8(header).unwrap().to_lowercase();
+            let length: usize =
+                header.lines().find_map(|l| l.strip_prefix("content-length: ")).unwrap().parse().unwrap();
+            let mut body = vec![0; length];
+            stream.read_exact(&mut body).unwrap();
+            write!(stream, "HTTP/1.1 {code} Reply\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            (header, body)
+        });
+        let key = RoomKey { room: "a".repeat(32), capability: "b".repeat(64), origin };
+        let base = hitslop_core::sync::Base {
+            frontier: [(1, 42)].into_iter().collect(),
+            start: [(1, 3)].into_iter().collect(),
+            bytes: b"opaque updates".to_vec(),
+        };
+        let result = transport::compact(&key, &base);
+        match (code, result) {
+            (204, result) => assert!(result.is_ok()),
+            (409, Err(transport::HttpFailure::Conflict)) => {}
+            (413, Err(transport::HttpFailure::Paused(pause))) => {
+                assert_eq!(pause.kind, hitslop_core::sync::PauseKind::Outgrown);
+            }
+            (code, _) => panic!("{code} was classified wrongly"),
+        }
+        let (header, bytes) = serving.join().unwrap();
+        assert_eq!(bytes, base.bytes);
+        assert!(header.starts_with(&format!("post /v1/rooms/{}/compact ", key.room)));
+        for expected in [
+            format!("authorization: bearer {}", key.capability),
+            format!("x-sharing-sha256: {}", hex(&Sha256::digest(&base.bytes))),
+            "x-sharing-version: [[\"0000000000000001\",42]]".into(),
+            "x-sharing-root: [[\"0000000000000001\",3]]".into(),
+            "content-type: application/octet-stream".into(),
+        ] {
+            assert!(header.contains(&expected), "{header}");
+        }
+    }
+}
+
+/// A conflict on create or open reads as a retry, not as an opaque status.
+#[test]
+fn conflicts_tell_the_person_to_retry() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", server.local_addr().unwrap());
+    let serving = std::thread::spawn(move || {
+        let (mut stream, _) = server.accept().unwrap();
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+        let mut header = Vec::new();
+        while !header.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            stream.read_exact(&mut byte).unwrap();
+            header.push(byte[0]);
+        }
+        write!(stream, "HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+    });
+    let key = RoomKey { room: "a".repeat(32), capability: "b".repeat(64), origin };
+    let error = transport::http(&key, "GET", "", Some(&key.capability), &[], &[]).unwrap_err();
+    serving.join().unwrap();
+    assert_eq!(error, "Sharing was busy. Try again.");
+}
+
+/// A refused blob transfer reaches the connection as the same typed pause as every other relay call.
+#[test]
+fn a_blob_download_refused_for_size_pauses_files_full() {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+    };
+    let (_dir, owner) = fixture();
+    let hash = "c".repeat(64);
+    let listing = serde_json::to_vec(&serde_json::json!([
+        {"key": hash, "hash": hash, "size": 4, "media_type": "application/octet-stream"}
+    ]))
+    .unwrap();
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", server.local_addr().unwrap());
+    let serving = std::thread::spawn(move || {
+        let mut paths = vec![];
+        for _ in 0..2 {
+            let (mut stream, _) = server.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                let mut byte = [0];
+                stream.read_exact(&mut byte).unwrap();
+                header.push(byte[0]);
+            }
+            let line = String::from_utf8(header).unwrap().lines().next().unwrap().to_owned();
+            let (code, body) = if line.contains("/blobs ") { (200, listing.as_slice()) } else { (413, &[][..]) };
+            write!(stream, "HTTP/1.1 {code} Reply\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())
+                .unwrap();
+            stream.write_all(body).unwrap();
+            paths.push(line);
+        }
+        paths
+    });
+    let key = RoomKey { room: "a".repeat(32), capability: "b".repeat(64), origin };
+    let result = resources::download_blobs(&owner, &key, &mut Vec::new());
+    let paths = serving.join().unwrap();
+    request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    assert!(paths[1].starts_with(&format!("GET /v1/rooms/{}/blob/{hash} ", key.room)), "{paths:?}");
+    match result {
+        Err(transport::HttpFailure::Paused(pause)) => {
+            assert_eq!(pause.kind, hitslop_core::sync::PauseKind::FilesFull);
+        }
+        _ => panic!("a refused blob download must pause as files full"),
+    }
 }

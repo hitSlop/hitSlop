@@ -14,7 +14,26 @@ mod resources;
 
 const CHUNK: usize = 1_800_000;
 const BACKFILL: usize = 1 << 20;
-const ROOM_LIMIT: usize = 16 << 20;
+use hitslop_sharing_protocol::limits::*;
+const DAY_MS: u64 = 86_400_000;
+fn now() -> u64 {
+    js_sys::Date::now() as u64
+}
+
+#[derive(Debug)]
+enum SocketFailure {
+    Refused(u8, String),
+    Transient(worker::Error),
+}
+impl From<worker::Error> for SocketFailure {
+    fn from(e: worker::Error) -> Self {
+        Self::Transient(e)
+    }
+}
+type SocketResult = std::result::Result<(), SocketFailure>;
+fn refused(code: u8, message: &str) -> SocketFailure {
+    SocketFailure::Refused(code, message.into())
+}
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -84,7 +103,7 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         response.headers_mut().set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE")?;
         response.headers_mut().set(
             "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, X-Sharing-SHA256, X-Sharing-App, X-Sharing-Version",
+            "Authorization, Content-Type, X-Sharing-SHA256, X-Sharing-App, X-Sharing-Version, X-Sharing-Root",
         )?;
         response.headers_mut().set("Vary", "Origin")?;
         return Ok(response);
@@ -115,7 +134,7 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
     }
     let path = req.path();
     if path == "/health" {
-        return Response::ok("hitslop-sharing-preview");
+        return Response::ok("hitslop-sharing");
     }
     if let Some(binding) = crate::abuse::guest_limit(req.method().as_ref(), &path) {
         // Cloudflare sets this header. Missing IPs share a conservative fallback budget.
@@ -168,9 +187,17 @@ extern "C" {
     fn transaction_sync(this: &RawStorage, callback: &js_sys::Function) -> std::result::Result<JsValue, JsValue>;
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Default)]
 struct SocketState {
     joined: bool,
+    #[serde(default)]
+    ip: String,
+    #[serde(default)]
+    window_start: u64,
+    #[serde(default)]
+    bytes: usize,
+    #[serde(default)]
+    pushes: usize,
 }
 #[derive(Deserialize)]
 struct TextRow {
@@ -243,8 +270,224 @@ impl SlopRoom {
             seed_hash: self.text("seed_hash")?,
             seed_size: self.text("seed_size")?.map(|s| s.parse().map_err(|_| fail("Invalid seed size"))).transpose()?,
             app: self.text("app")?,
+            compact: self.compact_due()?,
             capability: if owner { self.text("capability")? } else { None },
         })
+    }
+    fn update_usage(&self) -> Result<(usize, usize)> {
+        let bytes =
+            self.sql.exec("SELECT coalesce(sum(size),0) AS n FROM records WHERE seq>0", None)?.one::<NumberRow>()?.n
+                as usize;
+        let rows = self.sql.exec("SELECT count(*) AS n FROM records WHERE seq>0", None)?.one::<NumberRow>()?.n as usize;
+        Ok((bytes, rows))
+    }
+    fn compact_due(&self) -> Result<bool> {
+        let (bytes, rows) = self.update_usage()?;
+        Ok(bytes >= COMPACT_AFTER_BYTES || rows >= COMPACT_AFTER_RECORDS)
+    }
+    async fn sweep_archives(&self) -> Result<()> {
+        let Some(room) = self.text("room")? else {
+            return Ok(());
+        };
+        let bucket = self.env.bucket("SEEDS")?;
+        let mut cursor = None;
+        loop {
+            let mut list = bucket.list().prefix(format!("rooms/{room}/compacted/"));
+            if let Some(c) = cursor {
+                list = list.cursor(c);
+            }
+            let listed = list.execute().await?;
+            for item in listed.objects() {
+                if bucket
+                    .head(item.key())
+                    .await?
+                    .and_then(|o| o.custom_metadata().ok())
+                    .and_then(|m| m.get("expires").and_then(|s| s.parse::<u64>().ok()))
+                    .is_some_and(|expiry| expiry <= now())
+                {
+                    bucket.delete(item.key()).await?;
+                }
+            }
+            if !listed.truncated() {
+                break;
+            }
+            cursor = listed.cursor();
+        }
+        Ok(())
+    }
+    async fn compact(&self, req: &mut Request, room: &str) -> Result<Response> {
+        // Serialize competing archives; Push and Stop may still progress across the R2 await.
+        let _guard = self.uploads.lock().await;
+        let body = match bounded_body(req, BASE_BYTES).await {
+            Ok(body) => body,
+            Err(worker::Error::RustError(message)) if message == "Request exceeds its byte limit" => {
+                return Response::error(message, 413);
+            }
+            Err(error) => return Err(error),
+        };
+        match self.phase()? {
+            Some(RoomPhase::Live) => {}
+            Some(RoomPhase::Uploading) => return Response::error("Publication pending", 409),
+            Some(RoomPhase::Ended) => return Response::error("Sharing ended", 410),
+            None => return Response::error("Unknown room", 404),
+        }
+        let digest = req.headers().get("X-Sharing-SHA256")?.unwrap_or_default();
+        let parse = |text: Option<String>| -> Option<Version> {
+            let text = text?;
+            if text.len() > CONTROL_BYTES {
+                return None;
+            }
+            let pairs: Vec<(String, u32)> = serde_json::from_str(&text).ok()?;
+            let vv = version(&pairs).ok()?;
+            (vv.len() == pairs.len()).then_some(vv)
+        };
+        let Some(frontier) = parse(req.headers().get("X-Sharing-Version")?) else {
+            return Response::error("Invalid version", 400);
+        };
+        let root = match self.text("root")? {
+            Some(root) => parse(Some(root)),
+            None => parse(req.headers().get("X-Sharing-Root")?),
+        };
+        let Some(root) = root else {
+            return Response::error("Root version required", 400);
+        };
+        let previous_json = self.text("base_version")?;
+        let previous = match &previous_json {
+            Some(value) => parse(Some(value.clone())).ok_or_else(|| fail("Invalid stored base version"))?,
+            None => root.clone(),
+        };
+        let heads = self.heads()?;
+        if self.phase()? != Some(RoomPhase::Live) {
+            return Response::error("Sharing ended", 410);
+        }
+        if !self.compact_due()?
+            || frontier.iter().any(|(p, n)| *n > heads.get(p).copied().unwrap_or(0))
+            || previous.iter().chain(root.iter()).any(|(p, n)| frontier.get(p).copied().unwrap_or(0) < *n)
+            || !frontier.iter().any(|(p, n)| *n > previous.get(p).copied().unwrap_or(0))
+        {
+            return Response::error("Compaction conflict", 409);
+        }
+        if !crate::resource_types::hash_id(&digest) || hex(&Sha256::digest(&body)) != digest {
+            return Response::error("Base checksum mismatch", 400);
+        }
+        let mut covered = vec![];
+        let mut archive = vec![];
+        for row in self.sql.exec("SELECT seq,spans,size FROM records ORDER BY seq", None)?.next::<RecordRow>() {
+            let row = row?;
+            let spans: Vec<(String, u32, u32)> = serde_json::from_str(&row.spans)?;
+            let spans: Vec<Span> = spans
+                .into_iter()
+                .map(|(p, start, end)| {
+                    Ok(Span { peer: u64::from_str_radix(&p, 16).map_err(|_| fail("Stored peer"))?, start, end })
+                })
+                .collect::<Result<_>>()?;
+            if row.seq == 0 || spans.iter().all(|s| s.end <= frontier.get(&s.peer).copied().unwrap_or(0)) {
+                let frame = Frame::Records(vec![Record { spans, bytes: self.bytes(row.seq, row.size)? }]).encode();
+                archive.extend_from_slice(&(frame.len() as u32).to_be_bytes());
+                archive.extend(frame);
+                covered.push(row.seq);
+            }
+        }
+        let n = self.text("archive_counter")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0) + 1;
+        self.put("archive_counter", &n.to_string())?;
+        let key = format!("rooms/{room}/compacted/{n}");
+        let bucket = self.env.bucket("SEEDS")?;
+        if self.state.storage().get_alarm().await?.is_none_or(|alarm| alarm as u64 > now() + DAY_MS) {
+            self.state.storage().set_alarm(std::time::Duration::from_millis(DAY_MS)).await?;
+        }
+        bucket
+            .put(key.clone(), archive)
+            .custom_metadata(std::collections::HashMap::from([(
+                "expires".into(),
+                (now() + COMPACTED_ARCHIVE_DAYS * DAY_MS).to_string(),
+            )]))
+            .execute()
+            .await?;
+        if self.phase()? != Some(RoomPhase::Live) {
+            bucket.delete(key).await?;
+            return Response::error("Sharing ended", 410);
+        }
+        // No await within the swap. Recheck the generation and due state inside transactionSync.
+        let sql = self.sql.clone();
+        let frontier_json = serde_json::to_string(&wire_version(&frontier))?;
+        let root_json = serde_json::to_string(&wire_version(&root))?;
+        let spans: Vec<_> = frontier
+            .iter()
+            .filter_map(|(p, end)| {
+                let start = root.get(p).copied().unwrap_or(0);
+                (*end > start).then(|| (format!("{p:016x}"), start, *end))
+            })
+            .collect();
+        let spans_json = serde_json::to_string(&spans)?;
+        let installed = std::rc::Rc::new(std::cell::Cell::new(false));
+        let swapped = installed.clone();
+        self.transaction(move || {
+            let get = |key: &str| -> Result<Option<String>> {
+                Ok(sql
+                    .exec("SELECT value FROM meta WHERE key=?", vec![key.into()])?
+                    .to_array::<TextRow>()?
+                    .into_iter()
+                    .next()
+                    .map(|r| r.value))
+            };
+            let bytes =
+                sql.exec("SELECT coalesce(sum(size),0) AS n FROM records WHERE seq>0", None)?.one::<NumberRow>()?.n
+                    as usize;
+            let rows = sql.exec("SELECT count(*) AS n FROM records WHERE seq>0", None)?.one::<NumberRow>()?.n as usize;
+            if get("phase")?.as_deref() != Some("\"live\"")
+                || get("base_version")? != previous_json
+                || (bytes < COMPACT_AFTER_BYTES && rows < COMPACT_AFTER_RECORDS)
+            {
+                return Ok(());
+            }
+            let committed_heads =
+                version(&serde_json::from_str::<Vec<(String, u32)>>(&get("heads")?.unwrap_or_else(|| "[]".into()))?)?;
+            if frontier.iter().any(|(p, n)| *n > committed_heads.get(p).copied().unwrap_or(0))
+                || previous.iter().chain(root.iter()).any(|(p, n)| frontier.get(p).copied().unwrap_or(0) < *n)
+                || !frontier.iter().any(|(p, n)| *n > previous.get(p).copied().unwrap_or(0))
+            {
+                return Ok(());
+            }
+            for seq in &covered {
+                sql.exec("DELETE FROM chunks WHERE seq=?", vec![(*seq).into()])?;
+                sql.exec("DELETE FROM records WHERE seq=?", vec![(*seq).into()])?;
+            }
+            sql.exec(
+                "INSERT INTO records(seq,spans,size) VALUES(0,?,?)",
+                vec![spans_json.clone().into(), (body.len() as i64).into()],
+            )?;
+            for (part, chunk) in body.chunks(CHUNK).enumerate() {
+                sql.exec("INSERT INTO chunks VALUES(0,?,?)", vec![(part as i64).into(), chunk.to_vec().into()])?;
+            }
+            for (key, value) in [("base_version", &frontier_json), ("root", &root_json)] {
+                sql.exec(
+                    "INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    vec![key.into(), value.clone().into()],
+                )?;
+            }
+            swapped.set(true);
+            Ok(())
+        })?;
+        if !installed.get() {
+            return Response::error("Compaction conflict", 409);
+        }
+        self.state.storage().sync().await?;
+        self.sweep_archives().await?;
+        let expiry = now() + COMPACTED_ARCHIVE_DAYS * DAY_MS;
+        if self.state.storage().get_alarm().await?.is_none_or(|alarm| alarm as u64 > expiry) {
+            self.state.storage().set_alarm(std::time::Duration::from_millis(COMPACTED_ARCHIVE_DAYS * DAY_MS)).await?;
+        }
+        Response::empty().map(|r| r.with_status(204))
+    }
+    async fn active(&self) -> Result<()> {
+        let last = self.text("last_active")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+        if now().saturating_sub(last) >= 3_600_000 {
+            self.put("last_active", &now().to_string())?;
+            if self.state.storage().get_alarm().await?.is_none() {
+                self.state.storage().set_alarm(std::time::Duration::from_millis(ROOM_IDLE_DAYS * DAY_MS)).await?;
+            }
+        }
+        Ok(())
     }
     async fn authorized(&self, req: &Request, admin: bool) -> Result<bool> {
         if admin {
@@ -262,13 +505,17 @@ impl SlopRoom {
     async fn stop_room(&self, room: &str, reason: Metric) -> Result<Response> {
         let was_ended = self.phase()? == Some(RoomPhase::Ended);
         self.set_phase(RoomPhase::Ended)?;
+        if self.text("ended_at")?.is_none() {
+            self.put("ended_at", &now().to_string())?;
+        }
         if !was_ended {
             record(&self.env, reason);
         }
         // A retry alarm finishes cleanup and quota release after a transient failure.
         self.state.storage().set_alarm(std::time::Duration::from_secs(60)).await?;
         for ws in self.state.get_websockets() {
-            let _ = self.send(&ws, Frame::Error { code: 1, message: "Sharing ended".into() });
+            let _ = ws.serialize_attachment(SocketState::default());
+            let _ = self.send(&ws, Frame::Error { code: crate::frame::ERROR_ENDED, message: "Sharing ended".into() });
             let _ = ws.close(Some(1008), Some("Sharing ended"));
         }
         let bucket = self.env.bucket("SEEDS")?;
@@ -282,7 +529,16 @@ impl SlopRoom {
                 bucket.delete(item.key()).await?;
             }
         }
-        self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key NOT IN ('phase','owner_uid','document','room')", None)?;
+        loop {
+            let listed = bucket.list().prefix(format!("rooms/{room}/compacted/")).execute().await?;
+            if listed.objects().is_empty() {
+                break;
+            }
+            for item in listed.objects() {
+                bucket.delete(item.key()).await?;
+            }
+        }
+        self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key NOT IN ('phase','ended_at','owner_uid','document','room')", None)?;
         self.state.storage().sync().await?;
         let uid = self.text("owner_uid")?.ok_or_else(|| fail("Missing owner"))?;
         let mut init = RequestInit::new();
@@ -296,7 +552,17 @@ impl SlopRoom {
         if response.status_code() != 200 {
             return Err(fail("Account release failed"));
         }
-        self.state.storage().delete_alarm().await?;
+        let ended = self.text("ended_at")?.unwrap_or_else(|| now().to_string());
+        self.sql.exec("DELETE FROM meta", None)?;
+        self.set_phase(RoomPhase::Ended)?;
+        self.put("ended_at", &ended)?;
+        let ended_ms = ended.parse::<u64>().map_err(|_| fail("Invalid ended time"))?;
+        self.state
+            .storage()
+            .set_alarm(std::time::Duration::from_millis(
+                (ended_ms + ENDED_TOMBSTONE_DAYS * DAY_MS).saturating_sub(now()).max(1),
+            ))
+            .await?;
         Response::ok("ended")
     }
     fn bytes(&self, seq: i64, size: usize) -> Result<Vec<u8>> {
@@ -348,7 +614,21 @@ impl SlopRoom {
         s.joined = true;
         ws.serialize_attachment(s)
     }
-    async fn push(&self, ws: &WebSocket, id: u64, records: Vec<Record>) -> Result<()> {
+    async fn push(&self, ws: &WebSocket, id: u64, records: Vec<Record>, wire_bytes: usize) -> Result<()> {
+        let mut budget = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
+        if now().saturating_sub(budget.window_start) >= 60_000 {
+            budget.window_start = now();
+            budget.bytes = 0;
+            budget.pushes = 0;
+        }
+        budget.bytes = budget.bytes.saturating_add(wire_bytes);
+        budget.pushes += 1;
+        let limited = budget.bytes > SOCKET_PUSH_BYTES_PER_MINUTE || budget.pushes > SOCKET_PUSHES_PER_MINUTE;
+        ws.serialize_attachment(budget)?;
+        if limited {
+            ws.close(Some(1013), Some("Push budget exceeded"))?;
+            return Ok(());
+        }
         if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.joined) {
             return Err(fail("Hello required"));
         }
@@ -367,9 +647,11 @@ impl SlopRoom {
             }
             added.push(record);
         }
-        let stored =
-            self.sql.exec("SELECT coalesce(sum(size),0) AS n FROM records", None)?.one::<NumberRow>()?.n as usize;
-        if stored + added.iter().map(|r| r.bytes.len()).sum::<usize>() > ROOM_LIMIT {
+        let (stored, rows) = self.update_usage()?;
+        if stored + added.iter().map(|r| r.bytes.len()).sum::<usize>() > ROOM_RECORD_BYTES
+            || rows >= ROOM_RECORDS
+            || rows + added.len() > ROOM_RECORDS
+        {
             return self.send(ws, Frame::Ack { id, status: Ack::Quota });
         }
         let sql = self.sql.clone();
@@ -399,30 +681,57 @@ impl SlopRoom {
         if self.phase()? == Some(RoomPhase::Ended) {
             return Err(fail("Sharing ended"));
         }
+        self.active().await?;
         self.send(ws, Frame::Ack { id, status: Ack::Stored })?;
         for other in self.state.get_websockets() {
             // Echo is harmless and keeps broadcast routing independent of JS object identity.
-            if other.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.joined) {
+            if other.deserialize_attachment::<SocketState>().ok().flatten().is_some_and(|s| s.joined) {
                 for record in &added {
-                    self.send(&other, Frame::Records(vec![record.clone()]))?;
+                    if self.send(&other, Frame::Records(vec![record.clone()])).is_err() {
+                        let _ = other.close(Some(1011), None::<String>);
+                        break;
+                    }
                 }
             }
         }
         Ok(())
     }
-    async fn message(&self, ws: &WebSocket, msg: WebSocketIncomingMessage) -> Result<()> {
+    async fn message(&self, ws: &WebSocket, msg: WebSocketIncomingMessage) -> SocketResult {
         if self.phase()? != Some(RoomPhase::Live) {
-            return Err(fail("Sharing ended"));
+            return Err(refused(crate::frame::ERROR_ENDED, "Sharing ended"));
         }
         let WebSocketIncomingMessage::Binary(bytes) = msg else {
-            return Err(fail("Binary frame required"));
+            return Err(refused(crate::frame::ERROR_MALFORMED, "Binary frame required"));
         };
-        match crate::envelope::decode(&bytes).map_err(fail)? {
-            Frame::Hello { protocol, app_digest, version } => self.hello(ws, protocol, &app_digest, version),
-            Frame::Push { id, records } => self.push(ws, id, records).await,
-            _ => Err(fail("Client frame required")),
+        let frame =
+            crate::envelope::decode(&bytes).map_err(|e| refused(crate::frame::ERROR_MALFORMED, &e.to_string()))?;
+        match frame {
+            Frame::Hello { protocol, app_digest, version } => {
+                if protocol != PROTOCOL {
+                    return Err(refused(crate::frame::ERROR_PROTOCOL, "Different app or protocol"));
+                }
+                let expected_app = self.text("app")?.ok_or_else(|| fail("Missing app"))?;
+                if expected_app != hex(&app_digest) {
+                    return Err(refused(crate::frame::ERROR_APP, "Different app or protocol"));
+                }
+                self.hello(ws, protocol, &app_digest, version)?;
+                self.active().await?;
+                Ok(())
+            }
+            Frame::Push { id, records } => {
+                if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.joined) {
+                    return Err(refused(crate::frame::ERROR_MALFORMED, "Hello required"));
+                }
+                self.push(ws, id, records, bytes.len()).await?;
+                Ok(())
+            }
+            _ => Err(refused(crate::frame::ERROR_MALFORMED, "Client frame required")),
         }
     }
+}
+
+fn initialize(sql: &SqlStorage) {
+    sql.exec("CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
 }
 
 fn decode_hex(text: &str) -> Result<Vec<u8>> {
@@ -442,7 +751,7 @@ impl DurableObject for SlopRoom {
             &worker::worker_sys::WebSocketRequestResponsePair::new("ping", "pong").expect("valid ping/pong"),
         );
         let sql = state.storage().sql();
-        sql.exec("CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
+        initialize(&sql);
         Self { state, env, sql, uploads: futures_util::lock::Mutex::new(()) }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
@@ -503,6 +812,13 @@ impl DurableObject for SlopRoom {
         let Some(phase) = self.phase()? else {
             return Response::error("Unknown room", 404);
         };
+        if phase == RoomPhase::Live && self.text("last_active")?.is_none() {
+            // Rooms created before idle expiry get their first deadline on access.
+            self.active().await?;
+        }
+        if phase == RoomPhase::Ended && self.text("owner_uid")?.is_none() {
+            return Response::error("Sharing ended", 410);
+        }
         if route.is_empty() && req.method() == Method::Delete {
             if !self.authorized(&req, true).await? {
                 return Response::error("Denied", 403);
@@ -578,6 +894,7 @@ impl DurableObject for SlopRoom {
                 return Response::error("Sharing ended", 410);
             }
             self.set_phase(RoomPhase::Live)?;
+            self.active().await?;
             record(&self.env, Metric::RoomOpened);
             return Response::from_json(&self.info(true)?);
         }
@@ -589,6 +906,9 @@ impl DurableObject for SlopRoom {
         }
         if matches!(route, "resources" | "asset" | "blobs" | "blob") {
             return self.resource_api(&mut req, room, route).await;
+        }
+        if route == "compact" && req.method() == Method::Post {
+            return self.compact(&mut req, room).await;
         }
         if route == "seed" {
             let bucket = self.env.bucket("SEEDS")?;
@@ -628,6 +948,7 @@ impl DurableObject for SlopRoom {
                 self.put("seed_hash", &digest)?;
                 self.put("seed_size", &size.to_string())?;
                 self.put("app", &app)?;
+                self.put("root", &serde_json::to_string(&wire_version(&heads))?)?;
                 self.put("heads", &serde_json::to_string(&wire_version(&heads))?)?;
                 return Response::ok("ready");
             }
@@ -645,25 +966,79 @@ impl DurableObject for SlopRoom {
             if self.state.get_websockets().len() >= hitslop_sharing_protocol::limits::ROOM_CONNECTIONS {
                 return Response::error("Room connection limit", 429);
             }
+            let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "unknown".into());
+            let mut count = 0;
+            for socket in self.state.get_websockets() {
+                if socket.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.ip == ip) {
+                    count += 1;
+                }
+            }
+            if count >= ROOM_IP_CONNECTIONS {
+                return Response::error("Room IP connection limit", 429);
+            }
             let pair = WebSocketPair::new()?;
             self.state.accept_web_socket(&pair.server);
-            pair.server.serialize_attachment(SocketState { joined: false })?;
+            pair.server.serialize_attachment(SocketState {
+                joined: false,
+                ip,
+                window_start: now(),
+                bytes: 0,
+                pushes: 0,
+            })?;
             record(&self.env, Metric::GuestJoin);
             return Response::from_websocket(pair.client);
         }
         Response::error("Not found", 404)
     }
     async fn alarm(&self) -> Result<Response> {
+        if self.phase()? == Some(RoomPhase::Ended) && self.text("owner_uid")?.is_none() {
+            let ended = self.text("ended_at")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
+            if now() >= ended + ENDED_TOMBSTONE_DAYS * DAY_MS {
+                self.state.storage().delete_all().await?;
+                initialize(&self.sql);
+            } else {
+                self.state
+                    .storage()
+                    .set_alarm(std::time::Duration::from_millis(ended + ENDED_TOMBSTONE_DAYS * DAY_MS - now()))
+                    .await?;
+            }
+            return Response::ok("ended");
+        }
         if matches!(self.phase()?, Some(RoomPhase::Uploading | RoomPhase::Ended)) {
             let room = self.text("room")?.ok_or_else(|| fail("Missing room"))?;
             return self.stop_room(&room, Metric::RoomEndedAlarm).await;
+        }
+        if self.phase()? == Some(RoomPhase::Live) {
+            self.sweep_archives().await?;
+            let last = self.text("last_active")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(now);
+            if self.state.get_websockets().is_empty() && now() >= last + ROOM_IDLE_DAYS * DAY_MS {
+                return self
+                    .stop_room(&self.text("room")?.ok_or_else(|| fail("Missing room"))?, Metric::RoomEndedIdle)
+                    .await;
+            }
+            self.state
+                .storage()
+                .set_alarm(std::time::Duration::from_millis(if self.state.get_websockets().is_empty() {
+                    (last + ROOM_IDLE_DAYS * DAY_MS).saturating_sub(now()).clamp(1, DAY_MS)
+                } else {
+                    DAY_MS
+                }))
+                .await?;
         }
         Response::ok("live")
     }
     async fn websocket_message(&self, ws: WebSocket, message: WebSocketIncomingMessage) -> Result<()> {
         if let Err(error) = self.message(&ws, message).await {
-            let _ = self.send(&ws, Frame::Error { code: 1, message: error.to_string() });
-            let _ = ws.close(Some(1008), Some("Protocol refused"));
+            match error {
+                SocketFailure::Refused(code, message) => {
+                    let _ = self.send(&ws, Frame::Error { code, message });
+                    let _ = ws.close(Some(1008), Some("Protocol refused"));
+                }
+                SocketFailure::Transient(error) => {
+                    let _ = error;
+                    let _ = ws.close(Some(1011), None::<String>);
+                }
+            }
         }
         Ok(())
     }

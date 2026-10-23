@@ -8,6 +8,11 @@ const appleAppSiteAssociation = JSON.stringify({
   appclips: { apps: ["78UAXU8QG8.com.hitslop.app.Clip"] },
 });
 
+// Keep the callback fragment in the browser: it never reaches the host or its logs.
+const appleCallbackScript = 'if (location.hash) location.replace("hitslop://auth/apple" + location.hash);';
+const appleCallbackPage = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Sign in with Apple</title><p>Returning to hitSlop…</p><script>${appleCallbackScript}</script></html>`;
+const appleCallbackPolicy = "default-src 'none'; script-src 'sha256-dK5bMXUEDI+WHBPUTX228sBNAIgNZlMMmLz0Wi7JLV0='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
 type Binding = { fetch(request: Request): Promise<Response> };
 /** HTTP/static glue only; Rust authorizes resources and owns the protocol. */
 export default {
@@ -21,6 +26,17 @@ export default {
       return env.RELAY.fetch(request);
     if (request.method !== "GET" && request.method !== "HEAD")
       return new Response(null, { status: 405 });
+    if (trusted && url.pathname === "/auth/apple") {
+      return new Response(request.method === "HEAD" ? null : appleCallbackPage, {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Security-Policy": appleCallbackPolicy,
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
     if (trusted && url.pathname === "/.well-known/apple-app-site-association") {
       return new Response(request.method === "HEAD" ? null : appleAppSiteAssociation, {
         headers: {

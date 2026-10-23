@@ -1,6 +1,8 @@
 export const SITE_LINKS = {
   repository: "https://github.com/hitslop/hitslop",
   download: "https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg",
+  // `bun run verify types` checks README.md and SlopLinks.swift match.
+  iosDownload: "https://testflight.apple.com/join/F4qfCkgg",
   docs: "/docs/",
   authoring: "/docs/getting-started/",
   discord: "https://discord.gg/cqKRZjAWv3",

@@ -761,7 +761,7 @@ fn document_uuid_survives_reopen_and_capture_but_independent_copies_get_new_uuid
     store.capture_source(&capture).unwrap();
     assert_eq!(uuid(&capture), original);
     let duplicate = dir.path().join("Duplicate.slop");
-    store.copy_clean(&duplicate, &[]).unwrap();
+    store.copy_clean(&duplicate, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[]).unwrap();
     assert_ne!(uuid(&duplicate), original);
     store.close().unwrap();
     let moved = dir.path().join("Moved.slop");
@@ -1536,7 +1536,14 @@ fn create_and_copy_never_overwrite() {
     fs::write(&taken, "keep me").unwrap();
     assert_eq!(code(file::create_document(&dir.path().join("Template.slop"), &taken).unwrap_err()), Code::Exists);
     let store = Store::open(&doc, Mode::Document).unwrap();
-    assert_eq!(code(store.copy_clean(&taken, &[]).unwrap_err()), Code::Exists);
+    assert_eq!(
+        code(
+            store
+                .copy_clean(&taken, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[])
+                .unwrap_err()
+        ),
+        Code::Exists
+    );
     store.close().unwrap();
     assert_eq!(fs::read_to_string(&taken).unwrap(), "keep me");
     assert!(temporaries(dir.path()).is_empty());
@@ -1770,8 +1777,21 @@ fn an_open_document_copies_through_its_owner() {
     state.apply_json(&reference, Origin::Page).unwrap();
     store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let copy = dir.path().join("Copy.slop");
-    store.copy_clean(&copy, &[(Artwork::Preview, &png(640, 480, 6))]).unwrap();
-    assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::Exists);
+    store
+        .copy_clean(
+            &copy,
+            &support::trimmed(&store.document().unwrap().checkpoint().unwrap()),
+            &[(Artwork::Preview, &png(640, 480, 6))],
+        )
+        .unwrap();
+    assert_eq!(
+        code(
+            store
+                .copy_clean(&copy, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[])
+                .unwrap_err()
+        ),
+        Code::Exists
+    );
     // The owner keeps saving after the copy.
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Owner"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
@@ -2101,7 +2121,14 @@ fn documents_open_and_go_only_where_the_app_opens_them() {
     fs::rename(&renamed, &doc).unwrap();
     let store = Store::open(&doc, Mode::Document).unwrap();
     let copy = dir.path().join("Copy");
-    assert_eq!(code(store.copy_clean(&copy, &[]).unwrap_err()), Code::InvalidRequest);
+    assert_eq!(
+        code(
+            store
+                .copy_clean(&copy, &support::trimmed(&store.document().unwrap().checkpoint().unwrap()), &[])
+                .unwrap_err()
+        ),
+        Code::InvalidRequest
+    );
     assert!(!copy.exists());
     store.close().unwrap();
 }

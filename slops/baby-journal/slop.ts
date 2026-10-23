@@ -5,7 +5,7 @@ export default defineSlop({
   title: "Little Days",
   description: "A gentle baby journal for feedings, diaper changes, sleep, and little memories, with a name beside every act of care.",
   author: { name: "hitSlop", url: "https://hitslop.com" },
-  categories: ["personal"],
+  categories: ["personal", "popular"],
   window: { kind: "standard", resizable: true, width: 900, height: 640 },
   theme: {
     surface: "#fffaf0",

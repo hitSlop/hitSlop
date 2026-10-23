@@ -1,4 +1,5 @@
 import type { WindowDefinition } from "../wire/app.generated";
+import { preview } from "./preview";
 
 /** Host-supplied initial geometry, not the current viewport or a live resize API. */
 type PresentationStage = {
@@ -37,12 +38,19 @@ const hostScrollbarCSS =
 function presentationStageCSS(stage: PresentationStage): string {
   const page = `html[data-slop-presentation="${stage.mode}"]`;
   const root = `${page}:not([data-slop-capture])`;
+  // The iPhone editor runs edge to edge. The native host publishes the real safe areas
+  // (`__slop.safeArea`); the iPhone preset stands in a notched phone's.
+  const simulatedSafeArea = preview.host ? ";--slop-safe-top:47px;--slop-safe-bottom:34px" : "";
   return (
     hostScrollbarCSS +
+    `${page}{--slop-host-actions-width:0px;--slop-host-actions-height:0px;--slop-keyboard-inset:0px;--slop-safe-top:0px;--slop-safe-bottom:0px}` +
+    `${root}[data-slop-platform="ios"][data-slop-device="phone"]{--slop-host-actions-width:64px;--slop-host-actions-height:44px${simulatedSafeArea}}` +
     `:where(${page},${page} body){margin:0;padding:0}` +
     `:where(${root},${root} body){width:100%;height:100%}` +
     `:where(${root} body){-webkit-user-select:none;user-select:none}` +
-    `:where(${root}[data-slop-platform="ios"] body){-webkit-tap-highlight-color:transparent}` +
+    `:where(${root}[data-slop-platform="ios"] body){-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none}` +
+    `:where(${root}[data-slop-platform="ios"] input,${root}[data-slop-platform="ios"] textarea,${root}[data-slop-platform="ios"] [contenteditable=""],${root}[data-slop-platform="ios"] [contenteditable="true"],${root}[data-slop-platform="ios"] [contenteditable="plaintext-only"]){-webkit-touch-callout:default}` +
+    `${root}[data-slop-platform="ios"][data-slop-device="phone"] [data-slop-notice]{bottom:calc(16px + max(var(--slop-keyboard-inset),var(--slop-safe-bottom)))}` +
     `:where(${root}[data-slop-platform="ios"] button,${root}[data-slop-platform="ios"] a,${root}[data-slop-platform="ios"] [role="button"]){touch-action:manipulation}` +
     `:where(${root} input,${root} textarea,${root} [contenteditable=""],${root} [contenteditable="true"],${root} [contenteditable="plaintext-only"]){-webkit-user-select:text;user-select:text}` +
     `:where(${root} [data-slop-root],${root} body *:has([data-slop-root])){height:100%;min-height:0}` +

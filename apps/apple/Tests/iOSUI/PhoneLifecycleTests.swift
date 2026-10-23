@@ -2,13 +2,50 @@ import XCTest
 
 /// Run after PhoneEditorTests, which prepares a minimal document in the app container.
 final class PhoneLifecycleTests: XCTestCase {
+  @MainActor func testEdgeSwipeCanCancelAndReturnToLibrary() throws {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launch()
+    let document = app.buttons["Editor fixture with icon"]
+    XCTAssertTrue(document.waitForExistence(timeout: 30))
+    document.tap()
+    let page = app.descendants(matching: .any)["document-page"].firstMatch
+    XCTAssertTrue(page.waitForExistence(timeout: 30))
+    let actions = app.buttons["document-actions"]
+    let actionsReady = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: actions)
+    XCTAssertEqual(XCTWaiter.wait(for: [actionsReady], timeout: 20), .completed)
+    XCTAssertLessThan(page.frame.minY, actions.frame.minY, "The page begins alongside native actions")
+    XCTAssertFalse(app.navigationBars.buttons["Recents"].exists)
+    let originalPage = page.frame
+    let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+    edge.press(
+      forDuration: 0.05,
+      thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.5)),
+      withVelocity: .slow, thenHoldForDuration: 0.2)
+    let settled = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in page.exists && abs(page.frame.minX - originalPage.minX) < 1 }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
+    XCTAssertTrue(actions.isHittable)
+    edge.press(
+      forDuration: 0.05,
+      thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
+      withVelocity: .slow, thenHoldForDuration: 0.2)
+    XCTAssertTrue(document.waitForExistence(timeout: 30))
+    document.tap()
+    XCTAssertTrue(page.waitForExistence(timeout: 30))
+    app.returnToLibrary()
+    XCTAssertTrue(document.waitForExistence(timeout: 30))
+  }
+
   @MainActor func testKeyboardCanBeDismissedWithoutLeavingTheDocument() throws {
     let app = XCUIApplication()
     app.launch()
     let document = app.buttons["Editor fixture with icon"]
     XCTAssertTrue(document.waitForExistence(timeout: 30), "Run PhoneEditorTests to prepare the fixture")
     document.tap()
-    let input = app.textViews.firstMatch
+    app.waitForDocument()
+    let input = app.webViews.textViews.firstMatch
     XCTAssertTrue(input.waitForExistence(timeout: 30))
     let originalWidth = input.frame.width
     input.tap()
@@ -16,7 +53,8 @@ final class PhoneLifecycleTests: XCTestCase {
     input.typeText(edit)
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
     XCTAssertEqual(input.frame.width, originalWidth, accuracy: 1, "Focusing a small input must not zoom the page")
-    let dismiss = app.buttons["dismiss-keyboard"]
+    // The system keyboard toolbar's ✓ is the native dismissal; the page never draws its own.
+    let dismiss = app.buttons["Done"].firstMatch
     XCTAssertTrue(dismiss.waitForExistence(timeout: 5), "Every document needs a native keyboard dismissal action")
     dismiss.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))
@@ -41,7 +79,8 @@ final class PhoneLifecycleTests: XCTestCase {
     let document = app.buttons["Editor fixture with icon"]
     XCTAssertTrue(document.waitForExistence(timeout: 30), "Run the unit-test proof before the UI proof")
     document.tap()
-    let input = app.textViews.firstMatch
+    app.waitForDocument()
+    let input = app.webViews.textViews.firstMatch
     XCTAssertTrue(input.waitForExistence(timeout: 30))
     let edit = " phone-ui-" + UUID().uuidString.prefix(8)
     input.tap()
@@ -65,6 +104,7 @@ final class PhoneLifecycleTests: XCTestCase {
     app.launch()
     XCTAssertTrue(document.waitForExistence(timeout: 15))
     document.tap()
+    app.waitForDocument()
     XCTAssertTrue(input.waitForExistence(timeout: 30))
     XCTAssertTrue((input.value as? String)?.contains(edit) == true)
     app.buttons["document-actions"].tap()
@@ -78,10 +118,7 @@ final class PhoneLifecycleTests: XCTestCase {
     save.tap()
     if app.buttons["Replace"].waitForExistence(timeout: 5) { app.buttons["Replace"].tap() }
     XCTAssertTrue(save.waitForNonExistence(timeout: 15))
-    let close = app.navigationBars.buttons["Recents"]
-    let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: close)
-    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
-    close.tap()
+    app.returnToLibrary()
     app.buttons["Settings"].tap()
     let importAction = app.buttons["Import from Files"]
     XCTAssertTrue(importAction.waitForExistence(timeout: 15))
@@ -92,7 +129,7 @@ final class PhoneLifecycleTests: XCTestCase {
     exported.tap()
     XCTAssertTrue(input.waitForExistence(timeout: 30))
     XCTAssertTrue((input.value as? String)?.contains(edit) == true)
-    app.navigationBars.buttons["Recents"].tap()
+    app.returnToLibrary()
     let files = XCUIApplication(bundleIdentifier: "com.apple.DocumentsApp")
     files.activate()
     if files.buttons["Recents"].waitForExistence(timeout: 5) { files.buttons["Recents"].tap() }
@@ -103,5 +140,25 @@ final class PhoneLifecycleTests: XCTestCase {
     filesIcon.lifetime = .keepAlways
     add(filesIcon)
     app.activate()
+  }
+}
+
+// Shared navigation for lifecycle and signed-device catalog proofs.
+extension XCUIApplication {
+  @MainActor func waitForDocument(file: StaticString = #filePath, line: UInt = #line) {
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"),
+      object: buttons["document-actions"])
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 45), .completed, file: file, line: line)
+  }
+  @MainActor func returnToLibrary(file: StaticString = #filePath, line: UInt = #line) {
+    let actions = buttons["document-actions"]
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: actions)
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed, file: file, line: line)
+    actions.tap()
+    let back = buttons["back-to-library"]
+    XCTAssertTrue(back.waitForExistence(timeout: 5), file: file, line: line)
+    back.tap()
   }
 }

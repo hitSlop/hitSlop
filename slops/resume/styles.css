@@ -543,8 +543,11 @@ html[data-slop-capture=static] textarea {
     grid-template-columns: 1fr;
   }
   .experienceItem {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
+  }
+  .experienceItem > * {
+    min-width: 0;
   }
   .experienceMeta {
     justify-content: space-between;
@@ -561,6 +564,123 @@ html[data-slop-capture=static] textarea {
     opacity: 0.72;
   }
 }
+/* Phone-width editors: 16px fields, 44px hit areas and nothing that waits for hover. */
+@media (max-width: 639px) {
+  html:not([data-slop-capture]) {
+    .monogram {
+      font-size: 16px;
+    }
+    .field,
+    .educationSchool {
+      padding-block: 7px;
+      font-size: 16px;
+    }
+    .contactBlock {
+      gap: 4px;
+    }
+    .addCompact {
+      position: relative;
+      width: 28px;
+      height: 28px;
+    }
+    .addCompact::after,
+    .skillRemove::after {
+      content: "";
+      position: absolute;
+      inset: -8px;
+    }
+    .skillRemove::after {
+      inset: -4px;
+    }
+    .skills {
+      gap: 6px;
+    }
+    .skill {
+      min-height: 44px;
+      padding: 0 4px 0 12px;
+    }
+    .skill input {
+      width: auto;
+      field-sizing: content;
+      min-width: 48px;
+      max-width: min(200px, 100%);
+      padding-block: 8px;
+      font-size: 16px;
+    }
+    .skillRemove {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      font-size: 20px;
+    }
+    .educationItem {
+      gap: 0;
+    }
+    .removeCompact {
+      width: 44px;
+      height: 44px;
+      margin-block: -6px;
+      opacity: 0.8;
+    }
+    .removeCompact svg {
+      width: 16px;
+      height: 16px;
+    }
+    .summary,
+    .experienceCopy {
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    .experienceHeading {
+      padding-bottom: 0;
+    }
+    .addExperience {
+      min-height: 44px;
+      padding-inline: 8px 2px;
+      font-size: 11px;
+    }
+    .experienceItem {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2px;
+      padding: 6px 0 14px;
+    }
+    .experienceMeta {
+      align-items: center;
+      justify-content: space-between;
+    }
+    .period {
+      width: auto;
+      flex: 1 1 auto;
+      padding-block: 6px;
+      font-size: 16px;
+    }
+    .removeExperience {
+      width: 44px;
+      height: 44px;
+      opacity: 0.8;
+    }
+    .removeExperience svg {
+      width: 16px;
+      height: 16px;
+    }
+    .roleLine {
+      flex-wrap: wrap;
+      row-gap: 0;
+    }
+    .roleLine > span {
+      display: none;
+    }
+    .jobRole,
+    .company {
+      flex: 1 1 100%;
+      padding-block: 6px;
+      font-size: 16px;
+    }
+    .experienceCopy {
+      margin-top: 2px;
+    }
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -568,3 +688,9 @@ html[data-slop-capture=static] textarea {
     transition-duration: .01ms !important;
   }
 }
+
+/* The page runs edge to edge: the rail paints under the status bar, the paper under the home indicator. The native phone menu shares the heading row. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]), html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) body { background: var(--slop-paper); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .canvas { padding-bottom: var(--slop-safe-bottom, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .sidebar { padding-top: calc(var(--slop-safe-top, 0px) + 12px); grid-template-columns: 1fr; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .contactBlock { grid-column: 1; grid-row: auto; grid-template-columns: 1fr; }

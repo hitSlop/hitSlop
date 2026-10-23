@@ -12,12 +12,14 @@ func slopIssueBadgeFrame(toolbar: NSRect, visible: NSRect?) -> NSRect {
 }
 
 /// A page issue that leaves the slop running (a refused edit, an authored error) shows as
-/// a red dot beside the toolbar, without blocking the window. The dot exists exactly while
-/// an issue is shown; it is a child of the document window, so it moves, hides and
-/// minimizes with it. Opening failures keep the overlay and save failures the sheet.
+/// a red dot beside the toolbar, without blocking the window. A shared document that is
+/// nearly or completely full shows the same way as an orange dot, while no page issue is
+/// shown. The dot exists exactly while either is shown; it is a child of the document
+/// window, so it moves, hides and minimizes with it. Opening failures keep the overlay
+/// and save failures the sheet.
 extension SlopDocumentWindowController {
   func refreshIssueBadge() {
-    guard let window, let issue = guestIssue else {
+    guard let window, let message = guestIssue?.message ?? session.storageNotice else {
       if let badge = issueBadge {
         badge.parent?.removeChildWindow(badge)
         badge.close()
@@ -27,7 +29,8 @@ extension SlopDocumentWindowController {
     }
     let badge = issueBadge ?? makeIssueBadge()
     issueBadge = badge
-    badge.contentView?.toolTip = issue.message
+    badge.contentView?.toolTip = message
+    (badge.contentView as? SlopIssueDotButton)?.storage = guestIssue == nil
     badge.setFrame(
       slopIssueBadgeFrame(
         toolbar: slopToolbarFrame(document: window.frame, visible: window.screen?.visibleFrame),
@@ -53,21 +56,33 @@ extension SlopDocumentWindowController {
   }
 
   @objc func showIssueDetails(_ sender: NSView) {
-    guard let issue = guestIssue else { return }
     let popover = NSPopover()
     popover.behavior = .transient
-    popover.contentViewController = NSHostingController(
-      rootView: SlopIssueDetails(
-        issue: issue,
-        reload: { [weak self, weak popover] in
-          popover?.close()
-          self?.reloadForIssue()
-        },
-        copy: { NSPasteboard.general.copy(issue.message) },
-        dismiss: { [weak self, weak popover] in
-          popover?.close()
-          self?.dismissIssue()
-        }))
+    if let issue = guestIssue {
+      popover.contentViewController = NSHostingController(
+        rootView: SlopIssueDetails(
+          issue: issue,
+          reload: { [weak self, weak popover] in
+            popover?.close()
+            self?.reloadForIssue()
+          },
+          copy: { NSPasteboard.general.copy(issue.message) },
+          dismiss: { [weak self, weak popover] in
+            popover?.close()
+            self?.dismissIssue()
+          }))
+    } else if let message = session.storageNotice {
+      popover.contentViewController = NSHostingController(
+        rootView: SlopStorageNotice(
+          message: message,
+          saveCopy: { [weak self, weak popover] in
+            popover?.close()
+            self?.request(.saveUnsharedCopy)
+          },
+          dismiss: { [weak popover] in popover?.close() }))
+    } else {
+      return
+    }
     popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
   }
 
@@ -86,6 +101,13 @@ final class SlopIssueBadgePanel: NSPanel {
 }
 
 @MainActor final class SlopIssueDotButton: NSButton {
+  /// The dot reports the document's storage, not a page issue.
+  var storage = false {
+    didSet {
+      needsDisplay = true
+      setAccessibilityLabel(storage ? "Show the document's storage notice" : "Show the slop's problem")
+    }
+  }
   init() {
     super.init(frame: NSRect(x: 0, y: 0, width: 22, height: 22))
     isBordered = false
@@ -95,7 +117,7 @@ final class SlopIssueBadgePanel: NSPanel {
   @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
   override func draw(_ dirtyRect: NSRect) {
     let dot = NSBezierPath(ovalIn: bounds.insetBy(dx: 5, dy: 5))
-    NSColor.systemRed.setFill()
+    (storage ? NSColor.systemOrange : NSColor.systemRed).setFill()
     dot.fill()
     NSColor.white.withAlphaComponent(0.9).setStroke()
     dot.lineWidth = 1.5
@@ -116,6 +138,23 @@ struct SlopIssueDetails: View {
       HStack {
         Button("Reload Interface", action: reload)
         Button("Copy Details", action: copy)
+        Spacer()
+        Button("Dismiss", action: dismiss).keyboardShortcut(.defaultAction)
+      }
+    }.padding(14).frame(width: 340)
+  }
+}
+
+/// A shared document that is nearly or completely full: what it means and the way out.
+struct SlopStorageNotice: View {
+  let message: String
+  let saveCopy: () -> Void, dismiss: () -> Void
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Shared document is filling up").font(.headline)
+      Text(message).font(.caption).fixedSize(horizontal: false, vertical: true)
+      HStack {
+        Button("Save Unshared Copy…", action: saveCopy)
         Spacer()
         Button("Dismiss", action: dismiss).keyboardShortcut(.defaultAction)
       }

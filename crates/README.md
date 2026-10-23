@@ -7,17 +7,21 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
   `storage`, the `.slop` file, its writer lock and the save policy.
 - `hitslop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
 - `hitslop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
-- `slop-engine`: the document engine the CLI runs on any platform (`request`, `create`,
-  `pack`, `inspect`, `schema`); `pack` also renders the artwork a build does not supply
-  when asked. On macOS and Linux the engine exports closed documents in its own
+- `slop-engine`: the document engine the CLI runs on any platform (templates, create,
+  pack, inspect, schema, export and document operations); `pack` also renders the artwork
+  a build does not supply when asked. On macOS and Linux the engine exports closed documents in its own
   restricted evaluator; on macOS it also opens documents in hitSlop.app.
+- `hitslop-sharing-protocol`: the relay's wire types, shared limits and failure table,
+  free of Loro, used by the owner, the native and web clients and the relay.
+- `hitslop-sharing-client`: the native relay client over the existing owner; Swift
+  persists the opaque credentials.
 - `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with
   no storage dependency. The engine re-executes itself with `--evaluate-command`; the
   `hitslop-evaluator` binary provides the same child for native-host integration.
 
-The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt), Loro
-main at `c00c9fa` (an exact git rev until crates.io publishes its fixes), UniFFI 0.32.2
-and wasm-bindgen 0.2.129. `bun run verify rust` runs the workspace's lints and tests.
+The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt),
+Loro 1.17.1 (the exact crates.io release), UniFFI 0.32.2 and wasm-bindgen 0.2.129.
+`bun run verify rust` runs the workspace's lints and tests.
 Use `cargo fmt --all` to apply `rustfmt.toml` explicitly. Install the matching bindings generators and the test runner once
 (the uniffi library leaves out its generator, so every host build shares one Cargo graph):
 

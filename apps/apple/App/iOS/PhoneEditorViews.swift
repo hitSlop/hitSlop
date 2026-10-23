@@ -12,6 +12,13 @@ struct PhoneEditorView: View {
   @State private var pageBackground = UIColor.systemBackground
   @State private var showSharing = false
   @State private var keyboardVisible = false
+  /// How far the keyboard, with its ⌃ ⌄ ✓ toolbar, covers the bottom of the page.
+  @State private var keyboardOverlap: CGFloat = 0
+
+  /// What the page reads as `--slop-keyboard-inset`.
+  private var keyboardInset: Int {
+    keyboardVisible ? Int(keyboardOverlap.rounded(.up)) : 0
+  }
 
   var body: some View {
     Group {
@@ -19,6 +26,9 @@ struct PhoneEditorView: View {
         PhoneWebView(webView: webView)
           .id(ObjectIdentifier(webView))
           .frame(maxWidth: .infinity, maxHeight: .infinity)
+          // Edge to edge: the page runs under the status bar and home indicator and pads
+          // itself with `--slop-safe-top`/`--slop-safe-bottom`; the actions menu stays inside.
+          .ignoresSafeArea()
           .background(Color(uiColor: pageBackground).ignoresSafeArea(.container))
           .onReceive(webView.publisher(for: \.underPageBackgroundColor)) { color in
             pageBackground = color ?? .systemBackground
@@ -29,15 +39,43 @@ struct PhoneEditorView: View {
               let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect
             else { return }
             let keyboard = window.convert(frame, from: window.screen.coordinateSpace)
-            keyboardVisible = keyboard.height > 0 && window.bounds.intersects(keyboard)
+            let visible = keyboard.height > 0 && window.bounds.intersects(keyboard)
+            let overlap = visible ? max(0, webView.convert(webView.bounds, to: nil).maxY - keyboard.minY) : 0
+            let duration = note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double ?? 0.25
+            withAnimation(.easeOut(duration: duration)) {
+              keyboardVisible = visible
+              keyboardOverlap = overlap
+            }
           }
           .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
+            keyboardOverlap = 0
           }
-          .onDisappear { keyboardVisible = false }
+          .onChange(of: keyboardInset) { _, inset in publish(inset, to: webView) }
+          .onDisappear {
+            keyboardVisible = false
+            keyboardOverlap = 0
+          }
       }
     }
     .allowsHitTesting(!model.opening)
+    .overlay(alignment: .topTrailing) {
+      documentActions
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: Circle())
+        .padding(12)
+    }
+    // The keyboard covers the page, which keeps its size. Its own toolbar's ✓ dismisses it.
+    .ignoresSafeArea(.keyboard)
+    .background(PhoneNavigationGesture(blocked: model.opening || model.busy))
+    .safeAreaInset(edge: .top) {
+      if let notice = session.storageNotice {
+        VStack(alignment: .leading, spacing: 6) {
+          Text(notice).font(.caption)
+          Button("Save Unshared Copy…") { model.saveUnsharedCopy() }
+        }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
+      }
+    }
     .overlay {
       if model.opening {
         ZStack {
@@ -46,39 +84,8 @@ struct PhoneEditorView: View {
         }
       }
     }
-    .toolbar(.visible, for: .navigationBar)
-    .toolbarBackground(.hidden, for: .navigationBar)
-    .navigationTitle("")
-    .navigationBarTitleDisplayMode(.inline)
-    .toolbarRole(.editor)
-    .toolbar {
-      if keyboardVisible {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button("Done") { session.currentWebView?.endEditing(true) }
-            .accessibilityLabel("Dismiss keyboard")
-            .accessibilityIdentifier("dismiss-keyboard")
-        }
-      }
-      ToolbarItem(placement: .topBarTrailing) {
-        Menu {
-          Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
-          Button("Redo", systemImage: "arrow.uturn.forward") { model.undo(redo: true) }
-          Button("Theme", systemImage: "paintpalette") { model.showTheme = true }
-          Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { Task { await model.syncNow() } }
-          if session.sharing != nil {
-            Button("Collaborate", systemImage: "person.2") { showSharing = true }
-          }
-          Button("Back Up File", systemImage: "square.and.arrow.up") { model.export() }
-            .accessibilityIdentifier("export-file")
-          Divider()
-          Text(model.saveDescription)
-        } label: {
-          Image(systemName: "ellipsis").font(.title3)
-        }
-        .accessibilityLabel("Document actions").accessibilityIdentifier("document-actions")
-        .disabled(model.opening || model.busy)
-      }
-    }
+    .toolbar(.hidden, for: .navigationBar)
+    .navigationBarBackButtonHidden(true)
     .sheet(isPresented: $showSharing) {
       if let sharing = session.sharing {
         NavigationStack {
@@ -88,6 +95,9 @@ struct PhoneEditorView: View {
               saveUnsharedCopy: {
                 showSharing = false
                 model.saveUnsharedCopy()
+              },
+              onUpdate: {
+                UIApplication.shared.open(SlopLinks.iosDownload)
               })
           }
           .navigationTitle("Share")
@@ -100,12 +110,135 @@ struct PhoneEditorView: View {
       }
     }
   }
+  /// The shell sets `--slop-keyboard-inset` and reveals the focused field.
+  private func publish(_ inset: Int, to webView: WKWebView) {
+    webView.evaluateJavaScript("globalThis.__slop?.keyboard?.(\(inset))", in: nil, in: .page) { _ in }
+  }
+  /// A menu choice taps before it acts.
+  private func tap(_ action: () -> Void) {
+    model.tapped()
+    action()
+  }
+  private var documentActions: some View {
+    Menu {
+      Button("Undo", systemImage: "arrow.uturn.backward") { tap { model.undo() } }
+      Button("Redo", systemImage: "arrow.uturn.forward") { tap { model.undo(redo: true) } }
+      Button("Theme", systemImage: "paintpalette") { tap { model.showTheme = true } }
+      Button("Sync Now", systemImage: "arrow.triangle.2.circlepath") { tap { Task { await model.syncNow() } } }
+      if session.sharing != nil {
+        Button("Collaborate", systemImage: "person.2") { tap { showSharing = true } }
+      }
+      Button("Back Up File", systemImage: "square.and.arrow.up") { tap { model.export() } }
+        .accessibilityIdentifier("export-file")
+      Divider()
+      Button("Back to Library", systemImage: "chevron.backward") { tap { model.close() } }
+        .accessibilityIdentifier("back-to-library")
+      Text(model.saveDescription)
+    } label: {
+      Image(systemName: "ellipsis").font(.system(size: 19, weight: .semibold))
+        .frame(width: 44, height: 44)
+    }
+    .accessibilityLabel("Document actions").accessibilityIdentifier("document-actions")
+    .disabled(model.opening || model.busy)
+    .tint(.primary)
+  }
+}
+
+/// Keep the system edge transition without a visible Back button. Scope the
+/// delegate override to this editor and leave authored horizontal gestures alone.
+private struct PhoneNavigationGesture: UIViewControllerRepresentable {
+  let blocked: Bool
+
+  func makeUIViewController(context: Context) -> Controller { Controller() }
+  func updateUIViewController(_ controller: Controller, context: Context) {
+    controller.blocked = blocked
+    if controller.viewIfLoaded?.window != nil { controller.install() }
+  }
+  static func dismantleUIViewController(_ controller: Controller, coordinator: ()) { controller.restore() }
+
+  final class Controller: UIViewController, UIGestureRecognizerDelegate {
+    var blocked = false
+    private weak var edgeGesture: UIGestureRecognizer?
+    private weak var previousDelegate: (any UIGestureRecognizerDelegate)?
+    private var previousEnabled = false
+    private weak var contentGesture: UIGestureRecognizer?
+    private var contentEnabled = false
+
+    override func loadView() {
+      view = UIView()
+      view.isUserInteractionEnabled = false
+    }
+    override func viewDidAppear(_ animated: Bool) {
+      super.viewDidAppear(animated)
+      install()
+    }
+    override func viewDidDisappear(_ animated: Bool) {
+      super.viewDidDisappear(animated)
+      restore()
+    }
+    func install() {
+      guard edgeGesture == nil, let navigationController,
+        let gesture = navigationController.interactivePopGestureRecognizer
+      else { return }
+      edgeGesture = gesture
+      previousDelegate = gesture.delegate
+      previousEnabled = gesture.isEnabled
+      gesture.delegate = self
+      gesture.isEnabled = true
+      contentGesture = navigationController.interactiveContentPopGestureRecognizer
+      contentEnabled = contentGesture?.isEnabled ?? false
+      contentGesture?.isEnabled = false
+    }
+    func restore() {
+      if let gesture = edgeGesture, gesture.delegate === self {
+        gesture.delegate = previousDelegate
+        gesture.isEnabled = previousEnabled
+      }
+      contentGesture?.isEnabled = contentEnabled
+      edgeGesture = nil
+      contentGesture = nil
+    }
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+      guard !blocked, let navigationController else { return false }
+      return navigationController.viewControllers.count > 1
+        && navigationController.transitionCoordinator == nil
+        && navigationController.presentedViewController == nil
+    }
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldReceive: touch) ?? true
+    }
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool {
+      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldRecognizeSimultaneouslyWith: other) ?? false
+    }
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf other: UIGestureRecognizer
+    ) -> Bool {
+      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldRequireFailureOf: other) ?? false
+    }
+    func gestureRecognizer(
+      _ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer
+    ) -> Bool {
+      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldBeRequiredToFailBy: other) ?? false
+    }
+  }
 }
 
 private struct PhoneWebView: UIViewRepresentable {
   let webView: WKWebView
   func makeUIView(context: Context) -> WKWebView {
     webView.scrollView.contentInsetAdjustmentBehavior = .never
+    // Keep WebKit from panning the fixed-height editor while the shell reveals fields.
+    // This relies on WebKit registering these observers on the view at initialization;
+    // requalify it on every iOS major release. Replaced views enter this adapter again.
+    for name in [
+      UIResponder.keyboardWillShowNotification, UIResponder.keyboardDidShowNotification,
+      UIResponder.keyboardWillHideNotification, UIResponder.keyboardDidHideNotification,
+      UIResponder.keyboardWillChangeFrameNotification, UIResponder.keyboardDidChangeFrameNotification,
+    ] {
+      NotificationCenter.default.removeObserver(webView, name: name, object: nil)
+    }
     return webView
   }
   func updateUIView(_ view: WKWebView, context: Context) {}

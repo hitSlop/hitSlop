@@ -12,7 +12,7 @@
   import EyeOff from "@lucide/svelte/icons/eye-off";
   import "hitslop/base.css";
   import "./styles.css";
-  import { getDocument, haptics } from "hitslop/svelte";
+  import { getDocument, getEnvironment, haptics } from "hitslop/svelte";
   import schema, { DAYS, COLORS } from "./schema";
   import {
     DAY_NAMES,
@@ -45,6 +45,10 @@
   } from "./schedule";
   import Choice from "./Choice.svelte";
   const doc = getDocument(schema);
+  const environment = getEnvironment();
+  // A phone shows one weekday at a time and edits by tapping. The selected day is local view
+  // state and is never written to the document.
+  const compact = $derived(environment.current.layout === "compact");
   let now = $state(new Date());
   $effect(() => {
     const update = () => {
@@ -61,6 +65,13 @@
     };
   });
   const status = $derived(liveStatus(doc.current, now));
+  let pickedDay = $state<DayKey | null>(null);
+  const activeDay = $derived<DayKey>(pickedDay ?? status.day ?? "MON");
+  function pickDay(day: DayKey) {
+    if (day === activeDay) return;
+    pickedDay = day;
+    haptics.selection();
+  }
   const periods = $derived(scheduleView(doc.current).periods);
   const days = DAYS.map((value) => ({ value, label: DAY_NAMES[value] }));
   const periodItems = $derived(periods.map((p) => ({ value: p.periodKey, label: `${p.name} · ${clockLabel(p.start)}` })));
@@ -294,7 +305,7 @@
         <button
           class={"sch-tool"}
           onclick={(e) => {
-            copyFrom = status.day || "MON";
+            copyFrom = compact ? activeDay : status.day || "MON";
             begin("copy", e);
           }}><Copy size={13} /> Copy day</button
         ><button class={"sch-tool"} onclick={(e) => editPeriod(undefined, e)}
@@ -302,9 +313,24 @@
         >
       </div>
     </div>
+    {#if compact}
+      <div class={"sch-dayTabs"} role="group" aria-label="Day of the week">
+        {#each DAYS as day}<button
+            class={"sch-dayTab"}
+            aria-pressed={day === activeDay}
+            aria-label={DAY_NAMES[day] + (status.day === day ? ", today" : "")}
+            data-today={status.day === day}
+            onclick={() => pickDay(day)}
+            ><span class={"sch-dayTabName"}>{day}</span>{#if status.day === day}<span
+                class={"sch-dayTabToday"}
+                aria-hidden="true">Today</span
+              >{/if}</button
+          >{/each}
+      </div>
+    {/if}
     <div class={"sch-scroller"} bind:this={scroller}>
       <div class={"sch-board"} role="region" aria-label="Weekly timetable">
-        <div class={"sch-dayRow"}>
+        {#if !compact}<div class={"sch-dayRow"}>
           <div class={"sch-corner"}>BELL TIMES</div>
           {#each DAYS as day}<div
               class={"sch-dayHead"}
@@ -314,7 +340,7 @@
                   >TODAY</span
                 >{/if}
             </div>{/each}
-        </div>
+        </div>{/if}
         {#each periods as p (p.$id)}<div class={"sch-periodRow"}>
             <button
               class={"sch-periodCell"}
@@ -324,7 +350,7 @@
                 >{clockLabel(p.start)}<br />{clockLabel(p.end)}</span
               ></button
             >
-            {#each DAYS as day}{@const c = getClass(day, p.periodKey)}{@const nowCell =
+            {#each DAYS as day}{#if !compact || day === activeDay}{@const c = getClass(day, p.periodKey)}{@const nowCell =
                 status.day === day && status.periodKey === p.periodKey}
               <div
                 class={"sch-slot"}
@@ -340,12 +366,12 @@
                     data-color={c.color}
                     data-now={nowCell}
                     data-dragging={drag?.id === c.$id && drag.moved}
-                    onpointerdown={(e) => startDrag(e, c)}
-                    onpointermove={moveDrag}
-                    onpointerup={endDrag}
-                    onpointercancel={cancelDrag}
+                    onpointerdown={compact ? undefined : (e) => startDrag(e, c)}
+                    onpointermove={compact ? undefined : moveDrag}
+                    onpointerup={compact ? undefined : endDrag}
+                    onpointercancel={compact ? undefined : cancelDrag}
                     onclick={(e) => {
-                      if (e.detail === 0) editClass(day, p.periodKey, e);
+                      if (compact || e.detail === 0) editClass(day, p.periodKey, e);
                     }}
                     aria-label="Edit {c.subject || 'class'}, {DAY_NAMES[
                       day
@@ -353,7 +379,10 @@
                     title="{c.subject} · {c.room} · {c.teacher}"
                     ><strong class={"sch-subject"}
                       >{c.subject || "Untitled class"}</strong
-                    ><span class={"sch-room"}>{c.room || "Room to be added"}</span
+                    ><span class={"sch-room"}
+                      >{c.room || "Room to be added"}{compact && c.teacher
+                        ? ` · ${c.teacher}`
+                        : ""}</span
                     >{#if nowCell}<span class={"sch-nowBadge"}>NOW</span
                       >{/if}</button
                   >
@@ -368,7 +397,7 @@
                 {#if drag?.moved && target?.day === day && target?.periodKey === p.periodKey}<span
                     class={"sch-dropLabel"}>{dragLabel}</span
                   >{/if}
-              </div>{/each}
+              </div>{/if}{/each}
           </div>
         {:else}<div class={"sch-emptyBoard"}>
             <Star size={28} />
@@ -383,10 +412,10 @@
           <span>Clubs, practice & your kind of plans.</span>
         </div>
         <div class={"sch-afterGrid"}>
-          <div class={"sch-afterCorner"} aria-hidden="true">
+          {#if !compact}<div class={"sch-afterCorner"} aria-hidden="true">
             <ArrowUpRight size={24} />
-          </div>
-          {#each DAYS as day}<section
+          </div>{/if}
+          {#each DAYS as day}{#if !compact || day === activeDay}<section
               class={"sch-activityColumn"}
               aria-label="{DAY_NAMES[day]} after class"
             >
@@ -403,7 +432,7 @@
                 aria-label="Add after-class plan on {DAY_NAMES[day]}"
                 ><Plus size={12} /> Add plan</button
               >
-            </section>{/each}
+            </section>{/if}{/each}
         </div>
       </div>
     </div>

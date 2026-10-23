@@ -394,9 +394,9 @@ replicas independently creating the same absent field, record key or row ID crea
 different containers, and the parent map chooses one complete container by last-writer-wins.
 Undo may restore a row in new containers, so remote edits to its previous containers need
 not follow it. The local owner serializes page, window and CLI writes; these creation and
-restoration races are limits of the live sharing preview.
+restoration races are limits of live sharing.
 
-Public rollout must qualify these conflicts. The preview seeds a room from a backup
+Public rollout must qualify these conflicts. Live sharing seeds a room from a backup
 that preserves the document UUID and history; see the
 [relay architecture](../architecture.md#relay) for seed and retention rules.
 

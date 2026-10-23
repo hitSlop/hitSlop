@@ -45,8 +45,11 @@ validate_macos_profile() (
       // App groups, sandbox and hardened-runtime permissions are unrestricted on macOS.
       if (key.startsWith("com.apple.security.")) continue;
       const grant = allowed[key];
-      // Apple grants some capabilities as a "*" wildcard (e.g. icloud-services).
-      const covers = item => grant === "*" || (Array.isArray(grant) ? grant.includes(item) || grant.includes("*") : grant === item);
+      // Apple grants some capabilities as "*", and Keychain groups as "TEAM.*".
+      const matches = (allowed, item) => allowed === item || allowed === "*"
+        || (typeof allowed === "string" && allowed.endsWith(".*")
+          && typeof item === "string" && item.startsWith(allowed.slice(0, -1)));
+      const covers = item => (Array.isArray(grant) ? grant : [grant]).some(allowed => matches(allowed, item));
       if (!(Array.isArray(value) ? value.every(covers) : covers(value)))
         fail(`Entitlements do not authorize ${key}; regenerate the Developer ID profile with the release capabilities`);
     }

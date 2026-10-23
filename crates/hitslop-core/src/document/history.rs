@@ -39,15 +39,25 @@ impl Document {
         self.run = None;
         let before = self.doc.state_frontiers();
         let label = if undo { "undo" } else { "redo" };
-        self.doc.set_next_commit_message(label);
-        let done = if undo { self.undo.undo() } else { self.undo.redo() };
-        let done = match done {
-            Ok(done) => done,
-            Err(error) => {
-                self.abort(&before)?;
-                return Err(engine(error));
+        let mut done = false;
+        for _ in 0..UNDO_STEPS {
+            self.doc.set_next_commit_message(label);
+            done = match if undo { self.undo.undo() } else { self.undo.redo() } {
+                Ok(done) => done,
+                Err(error) => {
+                    // Loro rolls back a failed inverse itself, leaving its history item
+                    // in place. Reset history even when abort has nothing left to rebuild.
+                    self.undo.clear();
+                    self.abort(&before)?;
+                    return Err(engine(error));
+                }
+            };
+            // A remote edit can make one item a no-op. One request still reaches the
+            // next effective step, within the session's bounded history.
+            if done || !(if undo { self.undo.can_undo() } else { self.undo.can_redo() }) {
+                break;
             }
-        };
+        }
         if !done {
             return Ok(Self::applied(self.sequence, vec![], None, None));
         }

@@ -7,10 +7,12 @@ import HitSlopDocument
 /// the file's location only change the window, so the window does them at once.
 extension SlopDocumentWindowController {
   public var canExport: Bool { session.file.views.export }
+  /// Whether this is a shared document, which can save an unshared copy.
+  public var isShared: Bool { session.retainsHistory }
   /// A local slop can move into the library while iCloud is connected. The app checks this
   /// again when the move runs, after the queue has stopped accepting other commands.
   public var canMoveToCloud: Bool {
-    SyncedLibraryPreview.enabled && SlopLibrary.shared.isReady && SlopLibrary.shared.entry(at: session.file.url) == nil
+    SlopLibrary.shared.isReady && SlopLibrary.shared.entry(at: session.file.url) == nil
   }
 
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
@@ -21,6 +23,9 @@ extension SlopDocumentWindowController {
     switch command {
     case .moveToCloud: commandsEnabled && isContentReady && canMoveToCloud
     case .close, .retry, .retrySave, .discardUnsaved: true
+    case .duplicate: commandsEnabled && isContentReady
+    case .saveUnsharedCopy:
+      commandsEnabled && isShared && (isContentReady || saveAttention.failure == .full)
     case .sharePNG, .sharePDF, .exportPNG, .exportPDF: commandsEnabled && isContentReady && canExport
     case .importTheme: commandsEnabled && isContentReady && session.acceptsPageWork
     default: commandsEnabled && isContentReady
@@ -48,14 +53,8 @@ extension SlopDocumentWindowController {
     switch command {
     case .importTheme: try await importTheme()
     case .exportTheme: try await exportTheme()
-    case .duplicate:
-      sharePopover.dismiss()
-      let panel = NSSavePanel()
-      panel.allowedContentTypes = [.slop]
-      panel.nameFieldStringValue =
-        url.deletingPathExtension().lastPathComponent + " copy.slop"
-      try panel.startInLocalDocuments()
-      return try await duplicateDocument(to: await SlopPanels.select(panel, in: window))
+    case .duplicate: return try await saveCopy(unshared: false)
+    case .saveUnsharedCopy: return try await saveCopy(unshared: true)
     case .share:
       toolbar.willHide = { [weak self] in self?.sharePopover.dismiss() }
       toolbar.show()
@@ -93,14 +92,33 @@ extension SlopDocumentWindowController {
     return nil
   }
 
-  func duplicateDocument(to target: URL?) async throws -> URL? {
+  /// Asks where the copy goes, then makes it: the one picker flow for both copy commands.
+  private func saveCopy(unshared: Bool) async throws -> URL? {
+    sharePopover.dismiss()
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.slop]
+    panel.nameFieldStringValue = url.deletingPathExtension().lastPathComponent + " copy.slop"
+    try panel.startInLocalDocuments()
+    return try await duplicateDocument(to: await SlopPanels.select(panel, in: window), unshared: unshared)
+  }
+
+  /// `unshared` is Save Unshared Copy: a full shared document cannot save, so it would never
+  /// close. The owner hands it off to the copy, and its window closes behind the command.
+  /// Duplicate always copies.
+  func duplicateDocument(to target: URL?, unshared: Bool = false) async throws -> URL? {
     guard let target else {
       telemetry.send(.breadcrumb(.duplicate, .cancelled))
       return nil
     }
     telemetry.send(.breadcrumb(.duplicate, .started))
     do {
-      let copied = try await copyDocument(to: try SlopFile.newDocumentURL(target))
+      let destination = try SlopFile.newDocumentURL(target)
+      let handOff = unshared && session.isFullShared
+      let copied =
+        handOff
+        ? try await handOffDocument(to: destination)
+        : try await copyDocument(to: destination)
+      if handOff { routing.command(.close) }
       SlopSaveLocation.remember(copied)
       telemetry.send(.breadcrumb(.duplicate, .completed))
       return copied
@@ -159,6 +177,25 @@ extension SlopDocumentWindowController {
       guard canRender else { return nil }
       return await SlopRenderer.artwork(url: source, telemetry: telemetry)
     }
+  }
+
+  /// A full shared document's way out: the copy and its artwork come from the frozen live
+  /// state, and the owner publishes the copy and releases the original in one operation.
+  private func handOffDocument(to target: URL) async throws -> URL {
+    let canRender = session.isReady
+    let telemetry = telemetry
+    return try await session.handOff(
+      to: target,
+      resolveDrafts: { drafts in
+        guard !drafts.isEmpty else { return }
+        guard let window = self.window else { throw CancellationError() }
+        try await self.draftRecovery.resolve(
+          drafts, document: self.url.lastPathComponent, in: window, copy: TextDraftRecovery.copy)
+      },
+      renderArtwork: { source in
+        guard canRender else { return nil }
+        return await SlopRenderer.artwork(url: source, telemetry: telemetry)
+      })
   }
 
   /// Save status and renderer callbacks own their incidents; outer operations add only context.

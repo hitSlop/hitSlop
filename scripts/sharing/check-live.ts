@@ -1,5 +1,5 @@
-/** Explicit deployed-preview qualification, using only disposable infrastructure fixtures.
- * Run after build/deploy: bun scripts/sharing/check-preview.ts
+/** Explicit deployed sharing qualification, using only disposable infrastructure fixtures.
+ * Run after build/deploy: bun scripts/sharing/check-live.ts
  * No invitation, capability or identity token is printed or included in reports. */
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -14,21 +14,21 @@ import { repository } from "../lib/artifacts";
 import { SharingHost } from "../../packages/hitslop/src/wire/constants.generated";
 import type { Batch } from "../../packages/hitslop/src/wire/core.generated";
 
-const root=join(repository,".hitslop/sharing-preview",`check-${crypto.randomUUID()}`);
+const root=join(repository,".hitslop/sharing",`check-${crypto.randomUUID()}`);
 await mkdir(root,{recursive:true,mode:0o700});
 const checks:string[]=[];
 const note=(value:string)=>{checks.push(value);console.log(value);};
 const report=join(root,"report.json");
 const template=await buildTemplate(join(repository,"tests/apps/sharing"),join(root,"fixture.slop"),{renderViews:false});
 const invitationFile=process.env.HITSLOP_SHARING_INVITATION_FILE;
-const child=spawn(join(repository,"target/debug/examples/preview"),[template,root,invitationFile ?? process.env.HITSLOP_SHARING_TOKEN_FILE ?? join(repository,".hitslop/sharing-preview/identity-token"),...(invitationFile?["--guest"]:[])],{stdio:["pipe","pipe","pipe"]});
+const child=spawn(join(repository,"target/debug/examples/sharing"),[template,root,invitationFile ?? process.env.HITSLOP_SHARING_TOKEN_FILE ?? join(repository,".hitslop/sharing/identity-token"),...(invitationFile?["--guest"]:[])],{stdio:["pipe","pipe","pipe"]});
 let failure="";child.stderr.on("data",bytes=>{failure+=String(bytes);});
 const messages:any[]=[];let waiting:((value:any)=>void)|undefined;
 createInterface({input:child.stdout}).on("line",line=>{const value=JSON.parse(line);if(waiting){const next=waiting;waiting=undefined;next(value);}else messages.push(value);});
 const next=async()=>{
   if(messages.length)return messages.shift();
   return await new Promise<any>((resolve,reject)=>{
-    const timer=setTimeout(()=>{waiting=undefined;reject(new Error("Native preview driver timed out: "+failure));},120_000);
+    const timer=setTimeout(()=>{waiting=undefined;reject(new Error("Native sharing driver timed out: "+failure));},120_000);
     waiting=value=>{clearTimeout(timer);resolve(value);};
   });
 };
@@ -128,7 +128,7 @@ try {
   await first.unroute("**/rooms/*/blob/*");
   note("An interrupted receive fences queued CaughtUp; reconnect installs the verified image before publishing its reference");
   await page.evaluate(async()=>{
-    const root=await navigator.storage.getDirectory();const file=await root.getFileHandle("preview-download.slop",{create:true});
+    const root=await navigator.storage.getDirectory();const file=await root.getFileHandle("sharing-download.slop",{create:true});
     (window as any).__download=file;(window as any).showSaveFilePicker=async()=>file;
   });
   await page.getByRole("button",{name:"Download .slop",exact:true}).click();
@@ -191,7 +191,7 @@ try {
   assert.equal(await refused.locator("iframe").count(),0);
   note("A fresh browser still refuses an ended invitation");
   await writeFile(report,JSON.stringify({passed:true,checks,document:ready.document,copy,chrome:restored.browser()?.version()},null,2));
-  console.log("Preview checks passed; report: "+report);
+  console.log("Sharing checks passed; report: "+report);
 } catch(error) {
   const message=String(error).replace(/https:\/\/share\.hitslop\.com\/join#[a-f0-9]+\.[a-f0-9]+/g,"[private invitation]");
   await writeFile(report,JSON.stringify({passed:false,checks,error:message},null,2));

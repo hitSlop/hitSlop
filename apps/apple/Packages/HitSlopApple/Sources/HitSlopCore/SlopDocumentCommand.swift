@@ -6,6 +6,10 @@ import HitSlopCoreBinding
 /// Reveal) is the window's own.
 public enum SlopDocumentCommand: Equatable, Sendable {
   case exportPNG, exportPDF, duplicate, retry, close, moveToCloud
+  /// A shared document's way to keep going without its shared history: a copy that opens in
+  /// its own window, or, when the shared document is full and cannot save, the owner's
+  /// hand-off to the copy followed by closing the original.
+  case saveUnsharedCopy
   /// Opens the share chooser. Preparing a selected format is a separate operation.
   case share
   case sharePDF, sharePNG, shareSlop

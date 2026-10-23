@@ -1101,3 +1101,171 @@ html[data-slop-capture="static"] input, html[data-slop-capture="static"] textare
   width: 42px;
   height: 42px;
 }
+
+/* Phone-width editors: 16px fields, 44px hit areas, and row actions in their own column. */
+@media (max-width: 639px) {
+  html:not([data-slop-capture]) {
+    .difficultyTrigger {
+      min-height: 44px;
+      font-size: 12px;
+    }
+    .selectContent {
+      max-height: calc(100dvh - 24px);
+      overflow: auto;
+    }
+    .selectContent [data-select-item] {
+      min-height: 44px;
+      font-size: 16px;
+    }
+    .description {
+      font-size: 16px;
+    }
+    .stats {
+      gap: 4px;
+    }
+    .stats input {
+      width: 56px;
+      min-height: 44px;
+      padding-block: 8px;
+      font-size: 16px;
+    }
+    .number {
+      align-items: center;
+    }
+    .number small {
+      font-size: 11px;
+    }
+    .photoActions button {
+      min-height: 44px;
+      padding-inline: 14px;
+      font-size: 13px;
+    }
+    .photoRemove {
+      width: 44px;
+    }
+    .sectionTitle > button {
+      width: 44px;
+      height: 44px;
+    }
+    .ingredientRow {
+      grid-template-columns: 44px minmax(0, 1fr) auto;
+      align-items: center;
+      padding-block: 0;
+    }
+    .ingredientRow [data-checkbox-root] {
+      position: relative;
+      width: 26px;
+      height: 26px;
+      margin: 9px;
+    }
+    .ingredientRow [data-checkbox-root]::after {
+      content: "";
+      position: absolute;
+      inset: -9px;
+    }
+    .itemCopy {
+      padding-block: 10px;
+      font-size: 16px;
+    }
+    .rowActions {
+      position: static;
+      padding: 0;
+      border-radius: 0;
+      background: transparent;
+      opacity: 1;
+    }
+    .rowActions button {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+    }
+    .rowActions button svg {
+      width: 16px;
+      height: 16px;
+    }
+    .stepRow {
+      grid-template-columns: 44px minmax(0, 1fr) 44px;
+      grid-template-areas: "num copy act" "num time act";
+      padding-block: 4px;
+    }
+    .stepNumber {
+      grid-area: num;
+      width: 28px;
+      height: 28px;
+      margin: 9px 8px;
+      font-size: 11px;
+    }
+    .stepCopy {
+      grid-area: copy;
+    }
+    .stepTitle {
+      padding-block: 10px 4px;
+      font-size: 16px;
+    }
+    .stepCopy textarea {
+      font-size: 16px;
+    }
+    .stepTime {
+      grid-area: time;
+      grid-column: auto;
+      justify-content: flex-start;
+      align-items: center;
+      min-height: 44px;
+      margin-top: 0;
+      font-size: 12px;
+    }
+    .stepTime input {
+      width: 56px;
+      min-height: 44px;
+      padding-block: 8px;
+      font-size: 16px;
+      text-align: left;
+    }
+    .stepRow .rowActions {
+      grid-area: act;
+      flex-direction: column;
+      gap: 0;
+    }
+    .error button {
+      min-height: 44px;
+      padding-inline: 14px;
+      font-size: 13px;
+    }
+    .cookClose {
+      width: 44px;
+      height: 44px;
+      margin-inline-end: -6px;
+    }
+    .cookingDescription,
+    .cookStage > p[data-dialog-description] {
+      font-size: 16px;
+    }
+    .stepKicker {
+      font-size: 11px;
+    }
+    .untimedStep p {
+      font-size: 13px;
+    }
+    .cookNav button,
+    .finishActions button {
+      font-size: 12px;
+    }
+  }
+}
+@container (max-width: 420px) {
+  html:not([data-slop-capture]) .ingredientRow {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  html:not([data-slop-capture]) .ingredientRow .rowActions {
+    grid-column: 2;
+    justify-self: end;
+  }
+}
+
+/* The native phone menu shares the heading row; system safe areas belong to the host. */
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .canvas { padding-bottom: var(--slop-safe-bottom, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .intro { padding-top: calc(var(--slop-safe-top, 0px) + 12px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .utilityLine { min-height: var(--slop-host-actions-height, 0px); padding-inline-end: var(--slop-host-actions-width, 0px); flex-wrap: wrap; }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .cookHeader { padding-inline-end: var(--slop-host-actions-width, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .cookDialog { padding-top: var(--slop-safe-top, 0px); padding-bottom: var(--slop-safe-bottom, 0px); }
+html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .selectContent { max-height: calc(100dvh - 24px - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px)); }

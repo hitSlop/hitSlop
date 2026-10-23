@@ -20,15 +20,15 @@ export default defineConfig({
         ThemeSelect: "./src/components/DocsThemeSelect.astro",
       },
       editLink: {
-        baseUrl: "https://github.com/hitSlop/hitslop/edit/master/apps/landing/",
+        baseUrl: "https://github.com/hitslop/hitslop/edit/master/apps/landing/",
       },
       lastUpdated: true,
-      social: [{ icon: "github", label: "GitHub", href: "https://github.com/hitSlop/hitslop" }],
+      social: [{ icon: "github", label: "GitHub", href: "https://github.com/hitslop/hitslop" }],
       sidebar: [
         {
           label: "Start here",
           items: [
-            { label: "Overview", slug: "docs" },
+            { label: "hitSlop documentation", slug: "docs" },
             { label: "Create your first slop", slug: "docs/getting-started" },
           ],
         },
@@ -38,20 +38,20 @@ export default defineConfig({
             { label: "Data and schemas", slug: "docs/guides/data-and-schemas" },
             { label: "Files and the web", slug: "docs/guides/files-and-web" },
             { label: "Capabilities and permissions", slug: "docs/guides/capabilities" },
-            { label: "Manifest and windows", slug: "docs/guides/manifest-and-windows" },
-            { label: "Style an app", slug: "docs/guides/styling" },
+            { label: "App definition and windows", slug: "docs/guides/manifest-and-windows" },
+            { label: "Style a slop", slug: "docs/guides/styling" },
             { label: "Where your slop runs", slug: "docs/guides/where-your-slop-runs" },
             { label: "Make it work on iPhone", slug: "docs/guides/mobile" },
             { label: "PNG window skins", slug: "docs/guides/png-window-skins" },
-            { label: "Icons, widgets, and exports", slug: "docs/guides/icons-and-exports" },
-            { label: "Build and share", slug: "docs/guides/build-and-share" },
+            { label: "Icons, widgets, previews, and exports", slug: "docs/guides/icons-and-exports" },
+            { label: "Build, register, and share", slug: "docs/guides/build-and-share" },
           ],
         },
         {
           label: "Work with a document",
           items: [
             { label: "How .slop files work", slug: "docs/concepts/how-slop-files-work" },
-            { label: "Edit installed data", slug: "docs/guides/edit-installed-data" },
+            { label: "Edit installed documents", slug: "docs/guides/edit-installed-data" },
           ],
         },
         {
@@ -60,7 +60,7 @@ export default defineConfig({
             { label: "CLI workflows", slug: "docs/guides/cli-workflows" },
             { label: "Availability", slug: "docs/availability" },
             { label: "Privacy", slug: "docs/privacy" },
-            { label: "Live sharing (preview)", slug: "docs/guides/live-sharing" },
+            { label: "Live sharing", slug: "docs/guides/live-sharing" },
           ],
         },
       ],

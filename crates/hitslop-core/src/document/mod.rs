@@ -468,6 +468,34 @@ impl Document {
     pub(crate) fn updates_since(&self, version: &loro::VersionVector) -> Result<Vec<u8>> {
         self.doc.export(ExportMode::updates(version)).map_err(engine)
     }
+    /// Opaque room base: retained operations, never a shallow snapshot. Seed state is
+    /// already present in every room replica; snapshots would leave pending imports.
+    pub fn base(&self, frontier: &loro::VersionVector) -> Result<Vec<u8>> {
+        let start = self.base_start();
+        if !frontier.includes_vv(&start) || !self.doc.oplog_vv().includes_vv(frontier) {
+            return Err(err(Code::MissingDependencies, "The base frontier is outside retained history"));
+        }
+        let bytes = if self.doc.oplog_vv() == *frontier {
+            self.doc.export(ExportMode::updates(&start))
+        } else {
+            self.doc.export(ExportMode::updates_in_range(frontier.sub_iter(&start).collect::<Vec<_>>()))
+        }
+        .map_err(engine)?;
+        let meta = LoroDoc::decode_import_blob_meta(&bytes, false).map_err(engine)?;
+        if meta.mode != loro::EncodedBlobMode::Updates
+            || meta.partial_end_vv != *frontier
+            || !start.includes_vv(&meta.partial_start_vv)
+        {
+            return Err(err(Code::InvalidBytes, "The base does not cover its declared history"));
+        }
+        if bytes.len() > hitslop_sharing_protocol::BASE_BYTES {
+            return Err(err(Code::TooLarge, "This document has outgrown sharing"));
+        }
+        Ok(bytes)
+    }
+    pub fn base_start(&self) -> loro::VersionVector {
+        self.doc.shallow_since_vv().to_vv()
+    }
     /// Changes other replicas made, as Loro updates from a relay: imported, checked
     /// against the app as a saved document is, and published like an edit. An update
     /// whose dependencies have not arrived waits inside Loro until they do. A change the
@@ -513,7 +541,7 @@ fn acceptable(doc: &LoroDoc, app: &AppSpec) -> Result<()> {
 /// `LoroDoc::fork_at` for trimmed documents.
 fn replica_at(doc: &LoroDoc, frontiers: &Frontiers) -> Result<LoroDoc> {
     // Measured before any export commits pending operations; those lie outside `vv`.
-    let vv = doc.frontiers_to_vv(frontiers).ok_or_else(|| engine("Version is not in history"))?;
+    let vv = doc.try_frontiers_to_vv(frontiers).map_err(engine)?.ok_or_else(|| engine("Version is not in history"))?;
     let start = doc.shallow_since_vv().to_vv();
     let replica = LoroDoc::new();
     replica.set_record_timestamp(true);

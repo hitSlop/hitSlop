@@ -19,6 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     hitslop_sharing_protocol::http::ConnectionPlan::export_all(&config)?;
     hitslop_sharing_protocol::http::SharingControl::export_all(&config)?;
     hitslop_sharing_protocol::http::SharingEvent::export_all(&config)?;
+    hitslop_core::sync::Pause::export_all(&config)?;
     hitslop_sharing_protocol::resources::Manifest::export_all(&config)?;
     EngineRequest::export_all(&config)?;
     EngineReply::export_all(&config)?;
@@ -45,6 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "socketProtocol":hitslop_sharing_protocol::SOCKET_PROTOCOL,"seedBytes":hitslop_sharing_protocol::SEED_BYTES,
         "queueBytes":hitslop_sharing_protocol::QUEUED_BYTES,"queueFrames":hitslop_sharing_protocol::QUEUED_FRAMES,
         "controlBytes":hitslop_sharing_protocol::CONTROL_BYTES,"resourceRenewMs":hitslop_sharing_protocol::RESOURCE_RENEW_MS,
+        "recheckMs":hitslop_sharing_protocol::limits::ROOM_RECHECK_MS,"compactJitterMs":hitslop_sharing_protocol::limits::COMPACT_JITTER_MS,
+        "compactRetryMs":hitslop_sharing_protocol::limits::COMPACT_RETRY_MS,"pingMs":hitslop_sharing_protocol::limits::PING_MS,
+        "backoffMinMs":hitslop_sharing_protocol::limits::BACKOFF_MIN_MS,"backoffMaxMs":hitslop_sharing_protocol::limits::BACKOFF_MAX_MS,
         "hostPolicy":hitslop_sharing_protocol::host_policy(),"pagePolicy":hitslop_sharing_protocol::page_policy()
     }))?));
     std::fs::write(

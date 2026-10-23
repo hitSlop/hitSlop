@@ -23,11 +23,15 @@ export function installEnvironment(identity?: HostEnvironment) {
   const observer = new MutationObserver(attributes);
   observer.observe(root, { attributes: true, attributeFilter: ["data-slop-capture"] });
   attributes();
-  const stopEditing = installMobileEditing(state.environment);
+  const editing = installMobileEditing(state.environment);
   return {
     ...state,
+    /** The host's report of the height the keyboard covers (`__slop.keyboard`). */
+    keyboard: editing.keyboard,
+    /** The host's report of the safe areas the page runs under (`__slop.safeArea`). */
+    safeArea: editing.safeArea,
     dispose() {
-      stopEditing();
+      editing.dispose();
       observer.disconnect();
       unsubscribe();
       state.dispose();

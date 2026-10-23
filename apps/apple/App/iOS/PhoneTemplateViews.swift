@@ -1,4 +1,5 @@
 import HitSlopCore
+import HitSlopDocument
 import SwiftUI
 import UIKit
 
@@ -58,6 +59,10 @@ struct PhoneTemplateDetail: View {
   let creating: Bool, canCreate: Bool
   let create: (String) -> Void
   @State private var showName = false
+  /// The name chosen in the sheet, created once the sheet has closed: navigation and any
+  /// error alert cannot present from behind a sheet.
+  @State private var chosenName: String?
+  @State private var taps = 0
   @State private var name = ""
   var body: some View {
     ScrollView {
@@ -84,17 +89,26 @@ struct PhoneTemplateDetail: View {
         }.padding(20).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
       }.padding(24)
     }
-    .alert("Name your slop", isPresented: $showName) {
-      TextField("Name", text: $name).accessibilityIdentifier("slop-name")
-      Button("Cancel", role: .cancel) {}
-      Button("Create") { create(name.trimmingCharacters(in: .whitespacesAndNewlines)) }
-        .disabled(creating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    .appHaptic(.impact(weight: .light), trigger: taps)
+    .sheet(
+      isPresented: $showName,
+      onDismiss: {
+        guard let chosen = chosenName else { return }
+        chosenName = nil
+        create(chosen)
+      }
+    ) {
+      PhoneNameSheet(template: template, creating: creating, name: $name) { chosen in
+        chosenName = chosen
+        showName = false
+      }
     }
     .toolbar(.visible, for: .navigationBar)
     .navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 8) {
         Button {
+          taps += 1
           name = template.title
           showName = true
         } label: {
@@ -115,5 +129,59 @@ struct PhoneTemplateDetail: View {
         .font(.caption).foregroundStyle(.secondary)
       }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8).background(.regularMaterial)
     }
+  }
+}
+
+/// Names a new slop before it is made: the template's icon, the name ready to type over,
+/// and one Create that rides above the keyboard.
+private struct PhoneNameSheet: View {
+  let template: PhoneTemplate
+  let creating: Bool
+  @Binding var name: String
+  let create: (String) -> Void
+  @Environment(\.dismiss) private var dismiss
+  @FocusState private var focused: Bool
+  @State private var selection: TextSelection?
+  private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+  var body: some View {
+    NavigationStack {
+      VStack(spacing: 20) {
+        PhoneArtworkView(url: template.url).padding(6).frame(width: 84, height: 92)
+          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+        TextField("Name", text: $name, selection: $selection)
+          .font(.title3).focused($focused).submitLabel(.done)
+          .onSubmit { if !trimmed.isEmpty { create(trimmed) } }
+          .padding(.horizontal, 16).padding(.vertical, 14)
+          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+          .accessibilityLabel("Slop name").accessibilityIdentifier("slop-name")
+        Text("Saved on this iPhone. Synced with your Mac.").font(.caption).foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+      }
+      .padding(24)
+      .safeAreaInset(edge: .bottom) {
+        Button {
+          create(trimmed)
+        } label: {
+          Text(creating ? "Creating…" : "Create slop").fontWeight(.semibold)
+            .font(.title3).frame(maxWidth: .infinity).padding(.vertical, 8)
+        }
+        .buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 18))
+        .tint(PhoneStyle.accent).controlSize(.large)
+        .disabled(creating || trimmed.isEmpty)
+        .accessibilityIdentifier("create-named-slop")
+        .padding(.horizontal, 20).padding(.bottom, 12)
+      }
+      .navigationTitle("New Slop").navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+      }
+      .onAppear {
+        // The title is ready to type over, as when naming a new list.
+        selection = TextSelection(range: name.startIndex..<name.endIndex)
+        focused = true
+      }
+    }
+    .presentationDetents([.large])
   }
 }

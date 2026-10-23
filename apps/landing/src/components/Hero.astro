@@ -1,5 +1,6 @@
 ---
 import AppleIcon from "./AppleIcon.astro";
+import IPhoneIcon from "./IPhoneIcon.astro";
 import Desktop from "./playground/Desktop.svelte";
 import { SITE_LINKS } from "../constants";
 
@@ -34,26 +35,28 @@ const shelf = [
 <section class="hero" aria-labelledby="hero-title">
   <div class="hero-grid">
     <div class="hero-copy">
-      <p class="kicker"><svg class="doodle rays wide" viewBox="0 0 48 46" aria-hidden="true"><path d="m11 7 14 16M5 32l13 4M40 4l-3 15" /></svg>Local-first mini apps for Mac + iPhone preview</p>
+      <p class="kicker"><svg class="doodle rays wide" viewBox="0 0 48 46" aria-hidden="true"><path d="m11 7 14 16M5 32l13 4M40 4l-3 15" /></svg>Local-first mini apps for Mac + iPhone app</p>
       <h1 class="hero-title" id="hero-title">
         <span class="line">Tiny apps.<svg class="smiley wiggle" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" /><path d="M16 29c5 6 12 6 17-1" /><path class="dot" d="M17 18v2M31 18v2" /></svg><svg class="doodle title-star wiggle wide" viewBox="0 0 40 40" aria-hidden="true"><path d="m20 3 5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1Z" /></svg></span>
         <span class="line"><span class="big">Big</span> <span class="underlined">personality.<svg class="underline draw" viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden="true" style="--len: 330"><path d="M4 12C70 4 170 3 296 9" /></svg></span></span>
       </h1>
       <p class="hero-sub">A packing list for one trip. A timer shaped like a tomato. A weird little desktop experiment you’ve been meaning to try. Each <span class="slop-format">.slop</span> is <strong>a single file that lives on your desktop</strong>, and your AI can edit it too.</p>
       <div class="hero-actions">
-        <a class="button button-primary" href={SITE_LINKS.download}><AppleIcon /> Download for Mac</a>
-        <button class="button button-secondary" type="button" data-make-slop aria-haspopup="dialog" aria-controls="make-slop-modal">Make my own slop <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12" /></svg></button>
+        <div class="platform-download">
+          <a class="button button-primary" href={SITE_LINKS.download} aria-describedby="mac-requirements"><AppleIcon /> Download for Mac</a>
+          <p id="mac-requirements">macOS 15.2+ · Apple silicon</p>
+        </div>
+        <div class="platform-download">
+          <a class="button button-secondary" href={SITE_LINKS.iosDownload} aria-describedby="iphone-requirements"><IPhoneIcon /> Download for iPhone</a>
+          <p id="iphone-requirements">iOS 26+ · TestFlight</p>
+        </div>
       </div>
-      <p class="hero-meta"><span>Local use needs no account</span><span>Free &amp; open source</span><span>macOS 15.2+ on Apple silicon</span><span>Signed &amp; notarized</span></p>
-      <p class="hero-soon"><span class="soon-pill"><i aria-hidden="true"></i>iPhone (iOS 26+) + live collaboration: TestFlight preview</span></p>
-      <ul class="hero-stickers" aria-label="Why people like hitSlop">
-        <li class="sticker float" data-tone="sun" style="--tilt: -8deg; --delay: -1s">📁 It’s just a SQLite file</li>
-        <li class="sticker float" data-tone="pink" style="--tilt: 6deg; --delay: -3s">📁 Yours to keep</li>
-        <li class="sticker float" data-tone="sun" style="--tilt: -5deg; --delay: -5s">💸 No subscriptions</li>
-        <li class="sticker float" data-tone="mint" style="--tilt: -3deg; --delay: -2s">✈️ Works offline</li>
-        <li class="sticker float" data-tone="sky" style="--tilt: 7deg; --delay: -4s">🤖 Your AI can edit it</li>
+      <button class="text-link hero-make" type="button" data-make-slop aria-haspopup="dialog" aria-controls="make-slop-modal">Make your own slop <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12" /></svg></button>
+      <ul class="hero-trust" aria-label="Why people like hitSlop">
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-7 7 7 7m8-14 7 7-7 7" /></svg>Free &amp; open source</li>
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3Z" /></svg>Local use needs no account</li>
+        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 4a6 6 0 0 1 8 0" /><circle cx="12" cy="20" r="1" /></svg>Works offline</li>
       </ul>
-      <p class="annotation small-files wide" aria-hidden="true">Small files.<br />Big possibilities.<svg viewBox="0 0 70 50"><path d="M4 8c27-11 44 13 53 31m-15-7 17 9 2-17" /></svg></p>
     </div>
 
     <div class="hero-stage" id="playground">
@@ -63,7 +66,7 @@ const shelf = [
       <p class="bubble wide" aria-hidden="true">Local first.<br />Always <span>♥</span><svg viewBox="0 0 30 24"><path d="M4 2c6 10 14 16 24 20C16 22 8 18 2 10" /></svg></p>
       <svg class="doodle stars-top wide" viewBox="0 0 36 75" aria-hidden="true"><path d="M21 3c0 18 4 23 12 25-8 2-12 8-12 23-1-15-5-21-13-23C16 25 20 20 21 3Z" /><path stroke="#f443a1" d="M8 48c0 8 2 11 7 12-5 2-7 4-7 12-1-8-3-10-7-12 4-1 6-4 7-12Z" /></svg>
       <svg class="doodle stars-bottom wide" viewBox="0 0 26 38" aria-hidden="true"><path d="M13 2c0 11 3 15 11 17-8 2-11 6-11 17C12 25 9 21 2 19 9 17 12 13 13 2Z" /></svg>
-      <p class="playground-caption">Interactive previews in your browser. Use the real ones on Mac, or on iPhone in TestFlight preview.</p>
+      <p class="playground-caption">Interactive previews in your browser. Use the real ones on Mac, or on iPhone in TestFlight.</p>
     </div>
   </div>
 
@@ -111,16 +114,14 @@ const shelf = [
   .hero-sub { max-width: 40rem; margin: 26px 0 0; color: var(--muted); font-size: clamp(1.1rem, 1.45vw, 1.35rem); font-weight: 600; line-height: 1.5; }
   .hero-sub strong { color: var(--ink); }
   .slop-format { display: inline-block; padding: .04em .35em .08em; border: 2px solid transparent; border-radius: .45em; color: var(--ink); background: linear-gradient(var(--raised), var(--raised)) padding-box, linear-gradient(120deg, var(--accent), var(--accent-2), var(--sun), var(--sky)) border-box; font-family: "HitSlop Display", sans-serif; font-size: 1.12em; font-weight: 800; line-height: 1; white-space: nowrap; }
-  .hero-actions { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; }
-  .hero-meta { margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--faint); font-size: .9rem; font-weight: 600; }
-  .hero-meta span + span::before { margin-right: 14px; content: "·"; }
-  .hero-soon { margin: 12px 0 0; }
-  .soon-pill { display: inline-flex; align-items: center; gap: 9px; padding: 7px 14px 7px 12px; border: 2px dashed var(--accent); border-radius: 999px; color: var(--accent); background: var(--accent-soft); font-family: "HitSlop Display", sans-serif; font-size: 1rem; font-weight: 800; line-height: 1; transition: color 400ms var(--ease-out), border-color 400ms var(--ease-out), background-color 400ms var(--ease-out); }
-  .soon-pill i { width: 9px; height: 9px; flex: none; border-radius: 50%; background: currentColor; }
-  @media (prefers-reduced-motion: no-preference) { .soon-pill i { animation: soon-blink 2s ease-in-out infinite; } }
-  @keyframes soon-blink { 50% { opacity: .35; scale: .75; } }
-  .hero-stickers { margin: 26px 0 0; padding: 0 0 0 4px; display: flex; flex-wrap: wrap; gap: 16px 12px; list-style: none; }
-  .hero-stickers .sticker { padding: 8px 12px; font-size: .95rem; }
+  .hero-actions { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 18px 12px; }
+  .platform-download { display: grid; gap: 12px; flex: 1 1 230px; }
+  .platform-download p { margin: 0; color: var(--faint); font-size: .85rem; font-weight: 600; text-align: center; }
+  .hero-make { margin-top: 26px; padding: 0; border: 0; border-bottom: 2px solid currentColor; color: var(--accent); background: none; font: inherit; font-weight: 800; cursor: pointer; }
+  .hero-make svg { width: 20px; height: 20px; }
+  .hero-trust { margin: 28px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px 20px; list-style: none; font-size: .85rem; font-weight: 600; }
+  .hero-trust li { display: flex; align-items: center; gap: 8px; }
+  .hero-trust svg { width: 23px; height: 23px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
   .hero-stage { position: relative; }
   .hero .wide { display: none; }
@@ -167,39 +168,23 @@ const shelf = [
     .hero .wide { display: block; }
     .hero .annotation.wide { display: inline-flex; }
     .hero .badge.wide { display: grid; }
-    .small-files { margin-top: 18px; }
-    .small-files svg { rotate: 8deg; }
     .shelf { margin-inline: clamp(28px, 4vw, 64px); }
     .shelf-note { position: absolute; right: 60px; bottom: calc(100% + 2px); font-size: 1.05rem; text-align: right; --tilt: -4deg; }
-  }
-  @media (min-width: 1200px) and (max-width: 1359px) {
-    .hero-meta { gap: 2px 14px; }
-    .hero-meta span + span::before { content: none; }
   }
   @media (min-width: 1200px) and (max-height: 850px) {
     .hero-sub { margin-top: 18px; }
     .hero-actions { margin-top: 20px; }
-    .hero-stickers { margin-top: 18px; }
   }
   @media (max-width: 779px) {
     .hero { padding: 28px 16px 24px; }
     .hero-grid { padding: 0; gap: 24px; }
     .hero-title { font-size: clamp(1.9rem, 12cqw, 4.2rem); }
     .hero-sub { margin-top: 18px; font-size: 1rem; line-height: 1.5; }
-    .hero-actions { margin-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-    .hero-meta { margin-top: 14px; gap: 3px 12px; font-size: .8rem; }
-    .hero-meta span + span::before { content: none; }
-    .hero-soon { margin-top: 10px; }
-    .soon-pill { padding: 0; border: 0; border-radius: 0; background: transparent; font-family: "HitSlop Sans", sans-serif; font-size: .8rem; font-weight: 700; line-height: 1.45; }
-    .soon-pill i { width: 6px; height: 6px; animation: none; }
-    .hero-stickers { margin-top: 18px; padding: 0; gap: 7px; }
-    .hero-stickers .sticker { padding: 6px 9px; border: 1px solid #10132c26; border-radius: 9px; box-shadow: none; font-size: .8rem; line-height: 1.2; rotate: 0deg; scale: 1; animation: none; }
+    .hero-actions { margin-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+    .platform-download { gap: 10px; }
+    .hero-make { margin-top: 22px; }
+    .hero-trust { margin-top: 22px; gap: 12px 18px; font-size: .8rem; }
     .playground-caption { margin-top: 12px; font-size: .8rem; text-align: left; }
     .shelf { margin: 24px 0 0; }
-  }
-  @media (max-width: 480px) {
-    .hero-actions { display: grid; }
-    .hero-meta span + span::before { content: none; }
-    .hero-meta { gap: 2px 12px; }
   }
 </style>

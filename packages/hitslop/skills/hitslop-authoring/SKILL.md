@@ -98,9 +98,15 @@ pointer/hover queries for input differences; identity does not grant capabilitie
 Keep reads reactive rather than destructuring `current` once. Editor CSS can select
 `html[data-slop-platform="macos"]`, `html[data-slop-device="phone"]` and
 `html[data-slop-layout="compact"]` (`:global(html[...])` in Svelte component CSS).
-Keep usable base styles for older hosts without those attributes. Use CSS
-`env(safe-area-inset-top, 0px)` and the other edges for system-area padding on full-screen
-pages. `slop dev` has Browser/iPhone/iPad/Mac presentation presets that retain edits;
+For mobile support, reserve the native menu's header corner with
+`--slop-host-actions-width` (64px) and `--slop-host-actions-height` (44px). These are zero
+in other presentations. The editor runs edge to edge: pad the root by
+`var(--slop-safe-top, 0px)` and `var(--slop-safe-bottom, 0px)` and paint the background to
+the edges. The keyboard covers the page, like Messages, and the host brings the
+focused field above it with no app CSS; lift only bottom-pinned sheets, bars and dialogs by
+`var(--slop-keyboard-inset, 0px)`, never the page or a layout container. Header titles must wrap, and fixed controls and full-height
+sheets must leave the menu reachable. Follow the Mobile editors section of hitslop-design
+and review a native iPhone alongside the browser preset. `slop dev` has Browser/iPhone/iPad/Mac presentation presets that retain edits;
 they do not simulate native services. Static views use their capture props, never this
 editor helper or its CSS attributes.
 
@@ -174,7 +180,7 @@ Describe every argument that names a row as its `$id` so agents know to pass one
 
 ## Widgets
 
-Optional root `Widget.svelte` renders a fixed canvas from its saved `snapshot` prop and the effective theme. Import `WidgetProps` from `hitslop/svelte`; it supplies `family` (`small`, `medium`, `large`), `width` and `height`. Use the `slop dev` Preview selector to switch between Editor, Preview, Icon and the three widget sizes without discarding edits; component/CSS HMR updates the selected composition. Overflow is clipped and the preview warns when the capture target overflows. Share authored typography, colors and components, and choose a useful amount of content for each size. There is no export/preview fallback. The Mac picker lists created documents only after all three images have been captured. Successful saves coalesce for one second before a native widget capture; opening with missing images and closing after edits also capture. Each complete generation requests a WidgetKit reload; the OS controls visible timing. Optional `widget: { refreshMinutes: 30 }` in `slop.ts` adds approximate scheduled refresh while the Mac app runs (15–1440 minutes). Save, file-watch and startup freshness checks also run without an interval. Clicking a placed widget opens its source document. iOS is deferred.
+Optional root `Widget.svelte` renders a fixed canvas from its saved `snapshot` prop and the effective theme. Import `WidgetProps` from `hitslop/svelte`; it supplies `family` (`small`, `medium`, `large`), `width` and `height`. Use the `slop dev` Preview selector to switch between Editor, Preview, Icon and the three widget sizes without discarding edits; component/CSS HMR updates the selected composition. Overflow is clipped and the preview warns when the capture target overflows. Share authored typography, colors and components, and choose a useful amount of content for each size. There is no export/preview fallback. The Mac picker lists created documents only after all three images have been captured. Successful saves coalesce for one second before a native widget capture; opening with missing images and closing after edits also capture. Each complete generation requests a WidgetKit reload; the OS controls visible timing. Optional `widget: { refreshMinutes: 30 }` in `slop.ts` adds approximate scheduled refresh while the Mac app runs (15–1440 minutes). Save, file-watch and startup freshness checks also run without an interval. Clicking a placed widget opens its source document. The iPhone app renders Home Screen widget images for library slops locally from the same views. Foreground saves and library changes refresh them; CloudKit notifications and scheduled background work also refresh placed widgets when iOS allows. Tap a widget to open its slop. Background refresh has no exact timing guarantee.
 
 Widgets render through synchronous Svelte SSR and Takumi in a restricted Rust child.
 Read `snapshot`; handles, writes, async/await, browser globals, `onMount`, DOM/canvas,

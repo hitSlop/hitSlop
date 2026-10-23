@@ -8,6 +8,27 @@ const CHECKPOINT_BYTES: i64 = 4 * 1024 * 1024;
 /// is not free: Loro re-encodes what it keeps instead of reusing its cached snapshot.
 const TRIM_BYTES: i64 = 4 * 1024 * 1024;
 
+/// How close saved history is to the storage format's frozen limits. `Full` means a save
+/// found that neither an append nor a checkpoint fits, which usage alone cannot show: an
+/// unshared document past the limits still checkpoints. The owner reports it while that
+/// failure stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pressure {
+    Ok,
+    Near,
+    Full,
+}
+impl Pressure {
+    /// `Near` once the saved history uses three quarters of either limit.
+    pub fn from_usage(bytes: u64, rows: u64) -> Self {
+        if bytes >= crate::STORAGE_BYTES as u64 * 3 / 4 || rows >= crate::STORAGE_ROWS as u64 * 3 / 4 {
+            Self::Near
+        } else {
+            Self::Ok
+        }
+    }
+}
+
 /// Stored sizes, refreshed by every write, so choosing append or checkpoint needs no
 /// database read.
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
@@ -89,6 +110,12 @@ fn trimmed(doc: &Document, start: &Frontiers, accept: impl Fn(&[u8]) -> bool) ->
 }
 
 impl Store {
+    /// Saved history pressure; attachments and immutable app assets have separate limits.
+    pub fn pressure(&self) -> Pressure {
+        let meta = lock(&self.account).meta;
+        Pressure::from_usage(meta.stored() as u64, meta.rows as u64)
+    }
+
     /// The next write, or none when already durable. Exports only updates since the
     /// last save, or a checkpoint once the log is long or full.
     pub fn job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {

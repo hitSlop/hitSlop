@@ -119,7 +119,7 @@ extension DocumentSession {
           reply: .speechTranscribe(
             outcome: .unavailable(
               reason: .host,
-              message: "Speech is unavailable in the iPhone preview"))), nil)
+              message: "Speech is unavailable in the iPhone app"))), nil)
     #else
       guard acceptsPageWork else {
         return reply(

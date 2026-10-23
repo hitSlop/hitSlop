@@ -80,15 +80,23 @@ struct PhoneRootView: View {
           }
           Section("iCloud") {
             Text(library.status)
-            Button("Sync Now") { Task { await model.syncNow() } }.disabled(library.isSyncing)
+            Button("Sync Now") {
+              model.tapped()
+              Task { await model.syncNow() }
+            }.disabled(library.isSyncing)
             Text("Your edits save on this device first, then sync to your other devices.").foregroundStyle(.secondary)
           }
           Section {
-            if SharingPreview.enabled {
-              Button("Open Shared Link…", systemImage: "person.2") { showJoin = true }
-              Button("Account", systemImage: "person.crop.circle") { showSharingAccount = true }
+            Button("Open Shared Link…", systemImage: "person.2") {
+              model.tapped()
+              showJoin = true
+            }
+            Button("Account", systemImage: "person.crop.circle") {
+              model.tapped()
+              showSharingAccount = true
             }
             Button("Import from Files", systemImage: "square.and.arrow.down") {
+              model.tapped()
               importAfterSettings = true
               showSettings = false
             }
@@ -118,12 +126,19 @@ struct PhoneRootView: View {
     .alert("hitSlop", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
       if case .failed = model.saveStatus {
         Button("Retry Save") { model.save() }
+        if model.saveStatus == .failed(.full), model.session?.retainsHistory == true {
+          Button("Save Unshared Copy…") { model.saveUnsharedCopy() }
+        }
         Button("Keep Open", role: .cancel) { model.message = nil }
       } else {
         Button("OK", role: .cancel) { model.message = nil }
       }
     } message: {
       Text(model.message ?? "")
+    }
+    .appHaptic(.impact(weight: .light), trigger: model.tapFeedback)
+    .appHaptic(.selection, trigger: path.last) { _, route in
+      if case .template = route { true } else { false }
     }
     .appHaptic(.success, trigger: model.successFeedback)
     .appHaptic(.impact(weight: .medium), trigger: model.deletionFeedback)
@@ -171,9 +186,8 @@ struct PhoneRootView: View {
   }
 
   @discardableResult private func openSharingLink(_ url: URL) -> Bool {
-    guard SharingPreview.enabled else { return false }
     do {
-      guard let link = try SharingPreview.incomingLink(url) else { return false }
+      guard let link = try SharingLinks.incomingLink(url) else { return false }
       Task {
         do {
           try await model.join(link)

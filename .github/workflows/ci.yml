@@ -40,6 +40,7 @@ jobs:
       native-rust: ${{ steps.select.outputs.nativeRust }}
       rust: ${{ steps.select.outputs.rust }}
       qualification: ${{ steps.select.outputs.qualification }}
+      sharing: ${{ steps.select.outputs.sharing }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,7 +54,7 @@ jobs:
         run: |
           bun scripts/ci/select.ts > selection.json
           jq -r '.jobs | to_entries[] | "\(.key): \(.value)"' selection.json >> "$GITHUB_STEP_SUMMARY"
-          for job in fast app native nativeRust rust deferred qualification; do
+          for job in fast app native nativeRust rust deferred qualification sharing; do
             echo "$job=$(jq -r --arg job "$job" '.jobs[$job]' selection.json)" >> "$GITHUB_OUTPUT"
           done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -210,8 +211,32 @@ jobs:
           name: linux-rust-evidence
           path: .hitslop/evidence
           include-hidden-files: true
-  # Browser hosting and collaboration are unshipped. Keep their qualification, and
-  # the second-platform portable checks, outside required PR jobs.
+  # Live sharing: the built relay on Miniflare, proven on macOS (it fails before any check on
+  # Linux). A pull request runs it only when it changes the relay, its clients, the sync code,
+  # the WASM adapter or the browser host; master pushes and release tags run it in sharing.yml.
+  sharing:
+    needs: select
+    if: needs.select.outputs.sharing != ''
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/prepare-checks
+        with:
+          bindings: portable
+          nextest: "false"
+      - name: Sharing relay
+        run: bun run verify --ci sharing
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: sharing-evidence
+          path: .hitslop/evidence
+          include-hidden-files: true
+  # Browser qualification and the second-platform portable checks run nightly and on demand,
+  # outside required PR jobs.
   qualification:
     needs: select
     if: needs.select.outputs.qualification != ''

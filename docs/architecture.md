@@ -35,8 +35,8 @@ and a Service Worker resource channel bound to that frame client. Each successfu
 pending text, pass a Rust save barrier, and stream the current database through Chrome’s Save As dialog, including theme and attachments. Unique temporary exports are deleted
 when writing finishes or abandoned-copy cleanup acquires the lock. Resource delivery
 uses bounded chunks, incremental attachment verification and a bounded decoded cache. Browser storage is local to the profile and is not a backup.
-Safari and mobile browser support are deferred. Hosted sharing has a separate
-developer/TestFlight preview described under [Sync](#sync); ordinary Mac releases omit it.
+Safari and mobile browser support are deferred. Hosted sharing uses the live
+collaboration service described under [Sync](#sync).
 
 `slop dev` uses a temporary `.slop`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
@@ -289,8 +289,8 @@ its operations from the live Loro document.
 - `flush` resolves when the saved sequence covers every edit accepted before the call.
   `close` refuses new edits, flushes, trims history (below; never a shared document's),
   writes the artwork its
-  window captured ([close](#close-export-and-capture)), reclaims attachments nothing
-  references ([attachments](#themes-and-attachments)), then releases the lock.
+  window captured ([close](#close-export-and-capture)), reclaims unreferenced attachments
+  in unshared documents only ([attachments](#themes-and-attachments)), then releases the lock.
   `discard` waits for the write in flight and reloads saved bytes; work queued for the
   discarded state (a waiting flush, a page that was replaced) is refused with
   `owner_replaced`.
@@ -309,8 +309,8 @@ The SQLite schema has seven tables:
 | `artwork` | Preview and icon PNGs | Pack; refreshed at close or supplied for a clean copy |
 | `document` | Identity singleton: UUID | Document creation and independent copies |
 | `history` | Loro snapshot, then updates: the saved state | Pack seeds it; saves, checkpoints and close-time trims update it; clean copies replace it with current state |
-| `share` | Singleton room and relay endpoint of a shared document | The sync path in the sharing preview; empty when unshared, cleared on clean copies |
-| `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unreferenced blobs are reclaimed |
+| `share` | Singleton room and relay endpoint of a shared document | The live sync path; empty when unshared, cleared on clean copies |
+| `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unshared documents reclaim unreferenced blobs |
 
 The schema check is exact. A new table or column requires a storage version bump and a
 lazy migration under the writer lock. An older build refuses that file with
@@ -347,7 +347,8 @@ While open, an unshared document's checkpoint keeps the whole history when it fi
 saving fails and ownership is retained for retry. The live document keeps its own history
 either way, so the session's undo still works. There is no live history rebuild: a long,
 heavy session's memory can grow until it closes. This retention policy is intentional;
-live compaction remains deferred, and there is no public live-compaction command. Only
+compacting a document's live history on the owner remains deferred (a relay room's
+compaction is separate), and there is no public live-compaction command. Only
 the checkpoint may start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
@@ -381,21 +382,22 @@ local, else `~/hitSlop`. Opening a document that lives in iCloud offers "Move to
 and Open": the core copies it through coordinated access into a fresh name with the same
 identity and retained history, validates the copy, and only then moves the original to the
 Trash. If cleanup fails, both files are kept and the app says where the local one is.
-Devices share a person's own documents through the [Apple library](#apple-library-preview),
+Devices share a person's own documents through the [Apple library](#synced-library),
 not through synced folders.
 
 The native Share popover offers PDF, PNG image and editable slop-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
 format runs through the document command queue. PDF and PNG use the saved-state export
-renderer. **Live collaboration** in that popover creates an edit link in the developer/TestFlight
-preview described under [Sync](#sync); ordinary Mac releases omit it.
+renderer. **Live collaboration** in that popover creates an edit link through the
+service described under [Sync](#sync).
 
-Duplicate and Share Slop File flush what the page accepted and acquire a temporary saved
-source through the owner. Both artwork and the new document come from that source, so
+Duplicate and Share Slop File drain page edits and acquire a temporary clean copy of
+accepted live state through the owner, even if saving the source history returns Full.
+Both artwork and the new document come from that source, so
 edits accepted while rendering cannot make the preview disagree with the copy. After
 rendering, a temporary native owner takes the source's lock and performs the clean copy;
 no authored code runs in that owner. The copy is made a document of its own before it is published
-(`Store::copy_clean`): its saved state becomes a checkpoint with no history, it keeps
+(`Store::copy_clean`): its live snapshot becomes a checkpoint with no history, it keeps
 only the attachments that state references, and it carries the rendered artwork, or none
 if rendering failed, never the original's. Nothing deleted before the copy is in it, and
 writers zero deleted content (`secure_delete=FAST`) on every platform. The copy is
@@ -408,9 +410,13 @@ a file without artwork shows the `.slop` document icon.
 
 ## Close, export and capture
 
-The page barrier sends unsent text, waits for queued writes and attachment imports, then
-flushes; it never joins a flush that already passed its drain point. Inputs stay
-enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
+The page close barrier sends unsent text and waits for queued writes and attachment
+imports; the native session then flushes the owner for ordinary close. Preparation
+distinguishes drained edits from durable edits. Handoff drains without requiring the
+full source to save, resolves retained text drafts, and publishes a verified clean
+copy before releasing the original. A failed save or cancelled recovery unblocks the
+page and keeps ownership. A page flush never joins a flush that already passed its
+drain point. Inputs stay enabled, so focus survives a cancelled barrier. Export, preview and icon rendering use
 saved state independently of the editor. For an open document, the core first backs up
 SQLite after the page drain (within the page-call deadline) and save; a page that does
 not answer counts as a dead renderer. The temporary copy owns its app, attachments,
@@ -469,7 +475,8 @@ recording document content or paths.
 
 An attachment import stores the blob, then submits its reference through a
 collector admitted past an active barrier. A collector that throws, or an edit the core
-refuses, leaves the blob unreferenced until the document closes.
+refuses, leaves the blob unreferenced. Unshared documents reclaim it on close; shared
+and Synced Library documents retain it for other replicas.
 
 ## macOS image widgets
 
@@ -625,12 +632,12 @@ history keeps nothing alive.
 
 ## Sync
 
-### Apple library preview
+### Synced Library
 
 The Synced Library keeps managed documents in sync between Mac and iPhone through the
-person's iCloud account. The iPhone app supports iOS 26+ in TestFlight preview; its App
-Store release and the Mac release with the library on Production remain open. The phone
-opens, edits and creates slops, includes the Popular templates and Little Days, and imports from Files.
+person's iCloud account. The Mac app includes the library on CloudKit Production. The
+iPhone app supports iOS 26+ in TestFlight; its App Store release remains open. The phone
+opens, edits and creates slops, includes the Popular templates and imports from Files.
 
 Managed documents live in account-scoped Application Support. One Swift `LibrarySync`
 actor uses direct CloudKit zone-change, record-fetch and conflict-checked modify operations
@@ -668,12 +675,17 @@ refuses shared or already managed documents, and records library membership for 
 After the library copy opens, coordinated cleanup takes the source lock, verifies both
 saved copies and checks the source has not changed before moving it to Trash. Failed
 cleanup keeps both files and reports their locations. No document format changes.
-The iPhone starter build reads Popular membership from repository metadata, adds
-`baby-journal`, and leaves out templates that declare camera, microphone or speech
-capabilities, which the iPhone host refuses.
+The iPhone starter build reads Popular membership from repository metadata, which
+includes Little Days (`baby-journal`), and leaves out templates that declare camera,
+microphone or speech capabilities, which the iPhone host refuses.
 Both catalogs share the app icon and bundled Baloo 2 headings; controls and
-body copy use native fonts. The iPhone editor extends only its page-colored background
-under the home indicator, keeping its interactive viewport and keyboard avoidance safe.
+body copy use native fonts. The iPhone editor runs edge to edge: the page extends under
+the status bar and home indicator and pads itself with `--slop-safe-top` and
+`--slop-safe-bottom`, and the keyboard covers the page while the shell reveals fields.
+Every iPhone document has a floating native glass actions menu beside its header.
+The shell exposes the corner reservation as live-editor CSS variables. Native edge
+swipes and Back to Library use the normal close path; failed saves retain ownership.
+Done appears above the keyboard.
 
 Leaving an edited iPhone document refreshes its icon and preview from an immutable saved
 source. Managed Mac documents use the same version-checked artwork publication path;
@@ -696,7 +708,7 @@ checkpoint delivery does not change an existing owner's room membership.
 
 ### Relay
 
-The developer/TestFlight sharing preview uses one Rust owner per local copy and a Loro-free
+Live collaboration uses one Rust owner per local copy and a Loro-free
 Cloudflare Durable Object per room. Local saves and relay sends are independent;
 offline edits merge on reconnect. The relay stores opaque updates and their operation
 spans, backfills by version vector, and never runs authored code or validates document
@@ -718,6 +730,37 @@ Uploading rooms expire after 24 hours. `DELETE /v1/rooms/{room}` ends sharing, c
 sockets, purges resources and update tables, and releases quota. Uploads crossing Stop
 remove late writes. Re-share creates a fresh room; the old room returns 410.
 
+Rooms expose an optional compaction hint after 4 MiB or 8,192 retained updates.
+A capability writer can POST a full-history blob and frontier to `/compact`. The relay
+archives covered records in private R2 for 14 days, then transactionally replaces them
+with one base at sequence zero; heads do not change. Hello sends the base first when
+a copy lacks its spans. No binary frame changes or base broadcasts are needed.
+Native and browser transports check the hint on connection and every ten minutes,
+then jitter 0–30 seconds and recheck before uploading. The serial Rust owner exports
+Loro updates from its retained-history start to the confirmed relay frontier; it
+checks the export metadata and 16 MiB bound. Normal compaction requires caught-up
+write access with no push or unsent local edits. A Quota acknowledgement waits as
+`RoomFull`: compact confirmed history without including the rejected local push,
+then reconnect to retry. A second Quota with no compaction due becomes `Outgrown`.
+Both transports send a text ping every twenty seconds and ignore text/pong controls.
+
+Pauses carry a typed recovery kind alongside their reason: `RoomFull` is transient;
+`Outgrown` offers the creator a clean copy and new link; `NeedsUpdate` opens updates;
+`FilesFull` stops attachment-upload retries; `MissingHistory` and `Refused` offer an
+unshared copy; `Ended` preserves the local copy. Protocol refusal codes select
+`NeedsUpdate`; app/malformed refusals select `Refused`. Swift carries these kinds
+through UniFFI; browser transport reads the same Rust classification.
+
+The base and remaining updates each have a 16 MiB bound; updates also have a 32,768-row
+bound. Per-IP admission and per-socket Push budgets bound abuse. Permanent refusals
+send Error and close 1008; transient failures close 1011 without Error so shipped
+clients reconnect. A socket over its Push budget closes 1013 before storing anything.
+
+Live rooms expire after 90 idle days without open sockets. Stop releases the account
+slot and current-room index, purges payloads and identifiers, and keeps only an Ended
+tombstone for 30 days (410), then deletes all storage (404). Account deletion need not
+revisit cleaned Ended rooms. Owner routes require an Apple-provider Firebase identity.
+
 An edit link is `https://share.hitslop.com/join#<room>.<capability>`.
 Join fetches document and seed metadata from the room. Owner recovery looks up
 `GET /v1/account/rooms/{document}`, then reads the room with Firebase identity. Guests
@@ -735,9 +778,17 @@ Connected web opening is required. Open copies remain editable offline and after
 Automatic CloudKit checkpoints of relay documents run at most once a minute per process;
 manual/background saves bypass the interval.
 
-Debug enables the preview with `--live-sharing-preview` or
-`HITSLOP_LIVE_SHARING_PREVIEW=1`; TestFlight builds compiled with
-`HITSLOP_SHARING_PREVIEW` enable it without a flag. Ordinary Mac releases omit it.
+Mac and iPhone builds enable live collaboration without a launch flag. Mac Release
+entitlements include the sharing Keychain group and the `share.hitslop.com` associated
+domain. Developer ID apps cannot use native Sign in with Apple, so Mac sign-in uses
+`ASWebAuthenticationSession` with Services ID `com.hitslop.app.signin`, grouped under
+primary App ID `com.hitslop` alongside the iPhone app. iPhone retains native
+`ASAuthorizationController`; both paths sign in to the same Firebase account. The Mac
+requests no scopes and uses a fragment response at `https://share.hitslop.com/auth/apple`.
+A static page forwards the unchanged fragment to `hitslop://auth/apple`; tokens never
+reach the host. Only the active session consumes it, checks its random state and supplies
+the ID token and raw nonce to Firebase. The callback page has a script-hash CSP,
+`no-store` and `no-referrer`.
 The owner signs in with Apple; anyone holding the link can edit in the Mac/iPhone app
 or Chrome. Stop ends the link and every participant keeps a local copy. Browser copies
 are saved in that browser and downloadable as `.slop` files.
@@ -755,11 +806,11 @@ refuses the replacement.
 all indexed rooms and purges their relay resources, deletes the Firebase user, attempts
 Apple token revocation and clears owned link credentials on this device. Failed Apple
 revocation directs the person to Apple Account settings. Participant copies remain.
-Universal links route `/join` on `share.hitslop.com` to preview-enabled installed apps;
+Universal links route `/join` on `share.hitslop.com` to installed Mac apps and phone apps;
 without the app, the web host offers the browser path, qualified in Chrome. The associated
 domain entitlements and the host's AASA response define that route. The sharing CI workflow
-builds, qualifies, deploys the relay and host on matching `master` changes, then checks
-health and AASA; it also supports manual dispatch on `master`.
+builds and qualifies the relay and host on `master` and deploys them, checking health and
+AASA, for a release tag or a manual run.
 
 [Sharing operations and qualification](../apps/sharing/README.md) describes the service;
 [the roadmap](roadmap.md#open-now) tracks release and polish work. Historical qualifications are recorded in the
@@ -806,13 +857,16 @@ Accepted limits, chosen for mini apps over heavier machinery:
   values over its whole history, reach 2^53 (about 9×10^15). Beyond that envelope an
   off-by-one result is possible; no exactness is guaranteed.
 - **Live history** can grow through a long session despite the undo step limit and saved
-  data limits. Live compaction remains deferred; unshared documents attempt pruning on
-  close under the size and edit conditions above.
+  data limits. Compacting a document's live history on the owner remains deferred (a
+  relay room's compaction is separate); unshared documents attempt pruning on close under
+  the size and edit conditions above.
 - **Undo** starts over for the session if a live batch is refused after rehearsal
   admitted it, which a rehearsed batch should never be ([undo](#undo)).
-- **A shared document** never trims, so the 32 MiB save limit bounds it. Before sharing
-  ships, a full shared document needs a way to save its live state as a new, unshared copy
-  without first saving the full history: discard is refused and a copy waits for a save.
+- **A shared document** never trims, so the 32 MiB save limit bounds it, including iCloud
+  library documents. Saved history pressure warns at 75% of either storage limit.
+  Save Unshared Copy and Duplicate copy accepted live state without first saving the
+  source history, preserving unsaved edits and referenced attachments with a new identity.
+  The copy has no share row or retained history; discard remains refused on the source.
 
 ## Tests and performance
 
