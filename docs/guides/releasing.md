@@ -180,10 +180,12 @@ availability in the affected docs.
 
 ## Sharing deployment
 
-`sharing.yml` qualifies the relay and browser host on matching `master` changes and
-deploys them when the release tag is pushed, so share.hitslop.com runs the released core.
+`sharing.yml` qualifies the relay and browser host on matching `master` changes. After
+publication and promotion, the release job explicitly dispatches it on the released tag,
+so share.hitslop.com runs the released core. Tags created with `GITHUB_TOKEN` do not
+trigger tag-push workflows; keep the explicit dispatch and the sharing workflow enabled.
 A relay change that a released app depends on must ship in that release. Rerun the
-workflow manually on `master` to recover a failed deploy, or roll back with
+workflow manually on that release tag to recover a failed deploy, or roll back with
 `wrangler rollback`; the [sharing README](../../apps/sharing/README.md) lists operator
 steps such as rate-limit bindings and R2 lifecycle rules.
 
