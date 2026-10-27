@@ -57,6 +57,12 @@ Archives, extracted manifests and file hashes are checked again on reuse. Extrac
 are read-only; replay makes only its disposable document copies writable. A corrupt
 cache fails with the affected path; remove only that cache entry and resolve again. Historical writer binaries come from the npm tarball attached to the
 same immutable release, without depending on npm's availability.
+Release asset reads retry transient GitHub failures up to three times, waiting 1, 2 and
+4 seconds. Authentication and missing-asset failures stop immediately. Each retry
+discards the failed response; normal history, JSON and checksum validation still applies
+to the successful download. Retry decisions use the HTTP response status independently
+of CLI error text. Transport failures, including plain EOF, can retry before a response
+or during its body download; response headers are stripped without decoding the asset.
 
 The verifier prepares this automatically for corpus-consuming tiers. Listings and
 unrelated filtered Rust tests stay network-free. `HITSLOP_COMPAT_OFFLINE=1` explicitly
