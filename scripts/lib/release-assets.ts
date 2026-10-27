@@ -10,17 +10,39 @@ export async function releaseInventory(): Promise<PublishedRelease[]> {
   return pages.flat().filter((entry: PublishedRelease) => stableTag.test(entry.tag_name));
 }
 
+/** gh prints an LF status line, then headers and a blank line. Only the prefix is text. */
+function assetResponse(bytes: Buffer): { status: number | undefined; body?: Buffer } {
+  const firstLine = bytes.indexOf(10);
+  const match = firstLine < 0 ? null
+    : /^HTTP\/\d+(?:\.\d+)? (\d{3})(?: |\r?$)/.exec(bytes.subarray(0, firstLine).toString("ascii"));
+  const status = match ? Number(match[1]) : undefined;
+  if (status === undefined) return { status };
+  for (let start = firstLine + 1; ;) {
+    const end = bytes.indexOf(10, start);
+    if (end < 0) return { status };
+    if (end === start || (end === start + 1 && bytes[start] === 13))
+      return { status, body: bytes.subarray(end + 1) };
+    start = end + 1;
+  }
+}
+
 export async function assetBytes(id: number): Promise<Buffer> {
   for (let attempt = 0; ; attempt++) {
-    const child = Bun.spawn(["gh", "api", "-H", "Accept: application/octet-stream", `repos/${releaseRepository}/releases/assets/${id}`], { stdout: "pipe", stderr: "pipe" });
+    const child = Bun.spawn(["gh", "api", "--include", "-H", "Accept: application/octet-stream", `repos/${releaseRepository}/releases/assets/${id}`], { stdout: "pipe", stderr: "pipe" });
     const [bytes, error, code] = await Promise.all([new Response(child.stdout).arrayBuffer(), new Response(child.stderr).text(), child.exited]);
-    if (!code) return Buffer.from(bytes);
-    const status = /\bHTTP (\d{3})\b/.exec(error)?.[1];
-    const transient = status ? /^(408|429|5\d\d)$/.test(status)
-      : /unexpected (EOF|end of JSON input)|(?:i\/o|TLS handshake) timeout|context deadline exceeded|connection reset|connection refused|temporary failure in name resolution|no such host|network is unreachable/i.test(error);
-    if (!transient || attempt === 3) throw new Error(`Cannot download release asset ${id}: ${error}`);
+    const { status, body } = assetResponse(Buffer.from(bytes));
+    if (!code) {
+      if (status === undefined || body === undefined) throw new Error(`Invalid HTTP response for release asset ${id}`);
+      if (status >= 200 && status < 300) return body;
+    }
+    const transient = status !== undefined && status >= 300
+      ? status === 408 || status === 429 || (status >= 500 && status < 600)
+      : /\bEOF\b|unexpected end of JSON input|(?:i\/o|TLS handshake) timeout|context deadline exceeded|connection reset|connection refused|temporary failure in name resolution|no such host|network is unreachable/i.test(error);
+    const responseStatus = status === undefined ? "" : ` (HTTP ${status})`;
+    if (!transient || attempt === 3)
+      throw new Error(`Cannot download release asset ${id}${responseStatus}: ${error.trim() || `gh exited with status ${code}`}`);
     const delay = 1000 * 2 ** attempt;
-    console.warn(`Release asset ${id}: transient GitHub download failure; retry ${attempt + 1}/3 in ${delay / 1000}s.`);
+    console.warn(`Release asset ${id}: transient GitHub download failure${responseStatus}; retry ${attempt + 1}/3 in ${delay / 1000}s.`);
     await Bun.sleep(delay);
   }
 }
