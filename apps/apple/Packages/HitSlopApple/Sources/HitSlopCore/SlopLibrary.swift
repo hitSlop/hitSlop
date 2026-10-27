@@ -287,6 +287,20 @@ final class LibraryOwners: Sendable {
     try await sync.delete(id: entry.id)
     await refresh()
   }
+  public func removeDownload(_ entry: SyncedSlop) async throws {
+    guard let sync, isReady else { throw SlopFailure("iCloud is unavailable. Your download is kept on this device.") }
+    do {
+      try await sync.removeDownload(id: entry.id)
+      await refresh()
+    } catch { throw SlopFailure(libraryMessage(error)) }
+  }
+  public func download(_ entry: SyncedSlop) async throws {
+    guard let sync, isReady else { throw SlopFailure("Connect to iCloud to download this slop.") }
+    do {
+      try await sync.download(id: entry.id)
+      await refresh()
+    } catch { throw SlopFailure(libraryMessage(error)) }
+  }
   public func activated(_ active: Bool) {
     #if os(macOS)
       foreground = true
@@ -308,7 +322,8 @@ final class LibraryOwners: Sendable {
   }
   /// Clean and confirmed by a successful check since the app came to the front.
   public func isSynced(_ entry: SyncedSlop) -> Bool {
-    guard !entry.localOnly, entry.problem == nil, issues[entry.id] == nil, !entry.dirty, isReady, lastError == nil,
+    guard entry.downloaded, !entry.localOnly, entry.problem == nil, issues[entry.id] == nil, !entry.dirty, isReady,
+      lastError == nil,
       let lastSuccess
     else { return false }
     return lastSuccess >= foregroundAt
@@ -316,6 +331,7 @@ final class LibraryOwners: Sendable {
   public func state(for entry: SyncedSlop) -> String {
     if entry.localOnly { return "Saved on this device" }
     if let problem = entry.problem ?? issues[entry.id] { return problem }
+    if !entry.downloaded { return "In iCloud · tap to download" }
     if isSynced(entry) { return "Synced with iCloud" }
     if let lastSuccess { return "Saved on this device · last synced " + clock(lastSuccess) }
     return "Saved on this device · waiting to sync"

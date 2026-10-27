@@ -77,6 +77,7 @@ pub struct Entry {
     pub dirty: bool,
     pub deleted: bool,
     pub local_only: bool,
+    pub downloaded: bool,
     pub problem: Option<String>,
 }
 #[derive(Clone, Debug)]
@@ -129,6 +130,9 @@ impl Library {
             if !columns.iter().any(|column| column == name) {
                 db.execute_batch(&format!("ALTER TABLE documents ADD COLUMN {name} TEXT NOT NULL DEFAULT '';"))?;
             }
+        }
+        if !columns.iter().any(|column| column == "download_removed") {
+            db.execute_batch("ALTER TABLE documents ADD COLUMN download_removed INTEGER NOT NULL DEFAULT 0;")?;
         }
         let saved: Option<String> =
             db.query_row("SELECT CAST(value AS TEXT) FROM meta WHERE key='account'", [], |r| r.get(0)).ok();
@@ -193,8 +197,12 @@ impl Library {
             inner.db.query_row("SELECT confirmed_asset,artwork_version FROM documents WHERE id=?1", [id], |r| {
                 Ok((r.get(0)?, r.get(1)?))
             })?;
+        let removed: bool =
+            inner.db.query_row("SELECT download_removed FROM documents WHERE id=?1", [id], |r| r.get(0))?;
         let (version, asset_revision) = if deleted || problem.is_some() {
             (String::new(), String::new())
+        } else if removed {
+            (confirmed.clone(), confirmed_asset.clone())
         } else {
             let path = self.path(id);
             let stat = std::fs::metadata(&path)?;
@@ -222,6 +230,8 @@ impl Library {
                 && !local_only
                 && if deleted {
                     !confirmed_deleted
+                } else if removed {
+                    false
                 } else if confirmed_asset.is_empty() {
                     version != confirmed || source_version == version
                 } else {
@@ -232,6 +242,7 @@ impl Library {
             asset_revision,
             deleted,
             local_only,
+            downloaded: !removed,
             problem,
         })
     }
@@ -583,7 +594,7 @@ impl Library {
             fields=excluded.fields, deleted=excluded.deleted,confirmed_deleted=excluded.deleted,remote_delete=excluded.deleted,problem=NULL",
             params![id,title,template,version,fields,deleted])?;
         tx.execute(
-            "UPDATE documents SET confirmed_asset=?2, artwork_version=COALESCE(?3,artwork_version) WHERE id=?1",
+            "UPDATE documents SET confirmed_asset=?2, artwork_version=COALESCE(?3,artwork_version),download_removed=0 WHERE id=?1",
             params![id, confirmed_asset, adopted_artwork],
         )?;
         tx.commit()?;
@@ -631,6 +642,53 @@ impl Library {
             .db
             .execute("UPDATE documents SET deleted=1,confirmed_deleted=0,remote_delete=0 WHERE id=?1", [id])?;
         Ok(())
+    }
+    /// Evicts only a closed, cloud-confirmed replica. The local-only intent is committed
+    /// before unlinking, so a crash never leaves a missing file treated as an unsynced edit.
+    pub fn remove_download(&self, id: &str) -> Result<()> {
+        Self::valid_id(id)?;
+        let inner = self.inner.lock().unwrap();
+        let removed: bool =
+            inner.db.query_row("SELECT download_removed FROM documents WHERE id=?1", [id], |r| r.get(0))?;
+        if removed {
+            return Ok(());
+        }
+        let path = self.path(id);
+        let lease = crate::registry::Lease::acquire(&path)?;
+        let entry = self.entry(&inner, id)?;
+        if entry.deleted || entry.local_only || entry.problem.is_some() || entry.dirty || entry.version.is_empty() {
+            return Err(failed("Sync this slop with iCloud before removing its download"));
+        }
+        lease.check()?;
+        inner.db.execute("UPDATE documents SET download_removed=1 WHERE id=?1", [id])?;
+        if let Err(error) = std::fs::remove_file(&path) {
+            inner.db.execute("UPDATE documents SET download_removed=0 WHERE id=?1", [id])?;
+            return Err(failed(error));
+        }
+        inner.artwork_cache.borrow_mut().remove(id);
+        Ok(())
+    }
+    /// Accepts cloud metadata for an evicted replica without downloading its file.
+    /// Explicit downloads use receive_with_artwork and its complete file acceptance.
+    #[allow(clippy::too_many_arguments, reason = "One complete cloud metadata record enters at this boundary")]
+    pub fn receive_removed_metadata(
+        &self,
+        id: &str,
+        title: &str,
+        template: &str,
+        version: &str,
+        fields: &[u8],
+        artwork_version: Option<&str>,
+        asset_revision: Option<&str>,
+    ) -> Result<bool> {
+        Self::valid_id(id)?;
+        let inner = self.inner.lock().unwrap();
+        let changed = inner.db.execute(
+            "UPDATE documents SET title=?2,template=?3,confirmed=?4,fields=?5,artwork_version=?6,confirmed_asset=?7,problem=NULL
+             WHERE id=?1 AND download_removed=1 AND deleted=0",
+            params![id, title, template, version, fields, artwork_version.unwrap_or_default(), asset_revision.unwrap_or_default()],
+        )?;
+        Ok(changed != 0)
     }
     /// Finalize only after an editor releases ownership. Remote dirty edits become a
     /// new local identity; a tombstone always remains for the canonical cloud identity.

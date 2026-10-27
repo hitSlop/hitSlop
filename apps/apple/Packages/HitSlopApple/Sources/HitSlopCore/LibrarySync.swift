@@ -109,6 +109,21 @@ actor LibrarySync {
     try library.adopt(source: source, title: title)
   }
   func delete(id: String) throws { try library.delete(id: id) }
+  func removeDownload(id: String) async throws {
+    if let running { _ = await running.value }
+    try check()
+    try library.removeDownload(id: id)
+  }
+  func download(id: String) async throws {
+    if let running { _ = await running.value }
+    try check()
+    let options = Options(request: .full, explicit: true, background: false)
+    let record = try await fetchRecord(CKRecord.ID(recordName: id, zoneID: zone), options)
+    try await accept(record, options, downloading: true)
+    guard let entry = try library.entries().first(where: { $0.id == id }), !entry.deleted, entry.downloaded else {
+      throw CloudFailure("This slop is no longer available in iCloud.")
+    }
+  }
 
   func snapshot() throws -> ([LibraryEntry], Outcome, Bool) {
     var state = outcome
@@ -233,11 +248,10 @@ actor LibrarySync {
     try check()
     let config = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
     config.previousServerChangeToken = token
-    if options.request == .full {
-      config.desiredKeys = [
-        "deleted", "title", "template", "snapshotVersion", "assetRevision", "artworkVersion", "format",
-      ]
-    }
+    // Fetch metadata first so an evicted document stays off this device during sync.
+    config.desiredKeys = [
+      "deleted", "title", "template", "snapshotVersion", "assetRevision", "artworkVersion", "format",
+    ]
     let op = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zone], configurationsByRecordZoneID: [zone: config])
     op.fetchAllChanges = false
     configure(op, options, payload: options.request == .changes)
@@ -410,8 +424,23 @@ actor LibrarySync {
     return coder.encodedData
   }
 
-  private func accept(_ input: CKRecord, _ options: Options) async throws {
+  private func accept(_ input: CKRecord, _ options: Options, downloading: Bool = false) async throws {
     guard input.recordID.zoneID == zone, input.recordType == "SlopDocument" else { return }
+    try check()
+    if !downloading, (input["deleted"] as? Int) != 1 {
+      guard let version = input["snapshotVersion"] as? String,
+        let title = input["title"] as? String, let template = input["template"] as? String,
+        (input["format"] as? Int) == 1
+      else { throw CloudFailure("This synced slop needs a newer hitSlop.") }
+      if try library.receiveRemovedMetadata(
+        id: input.recordID.recordName, title: title, template: template, version: version, fields: fields(input),
+        artworkVersion: input["artworkVersion"] as? String, assetRevision: input["assetRevision"] as? String)
+      {
+        failures[input.recordID.recordName] = nil
+        try library.clearRetry(id: input.recordID.recordName)
+        return
+      }
+    }
     var record = input
     if (record["deleted"] as? Int) != 1 && (record["payload"] as? CKAsset)?.fileURL == nil {
       record = try await fetchRecord(input.recordID, options)

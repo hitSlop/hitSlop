@@ -36,6 +36,91 @@ fn close(owner: &Owner) {
 }
 
 #[test]
+fn removing_downloads_keeps_cloud_metadata_and_restores_only_on_request() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let entry = library.create(&template, "A synced document").unwrap();
+    let path = std::path::Path::new(&entry.path);
+    let before = std::fs::read(path).unwrap();
+    assert!(library.remove_download(&entry.id).is_err(), "unsynced data must stay local");
+    assert_eq!(std::fs::read(path).unwrap(), before);
+    let upload = library.stage(&entry.id).unwrap();
+    library
+        .acknowledge_asset(&entry.id, &upload.entry.version, Some(&upload.entry.asset_revision), &[1], false)
+        .unwrap();
+    let cloud = dir.path().join("cloud.slop");
+    std::fs::copy(upload.asset_path.as_ref().unwrap(), &cloud).unwrap();
+    let owner = Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap();
+    assert_eq!(library.remove_download(&entry.id).unwrap_err().issue, Issue::Busy);
+    assert!(path.exists());
+    close(&owner);
+    library.remove_download(&entry.id).unwrap();
+    library.remove_download(&entry.id).unwrap();
+    assert!(!path.exists());
+    let removed = &library.entries().unwrap()[0];
+    assert!(!removed.downloaded && !removed.deleted && !removed.dirty);
+    drop(library);
+
+    let library = Library::open(&root, "account").unwrap();
+    assert!(!library.entries().unwrap()[0].downloaded);
+    assert!(
+        library
+            .receive_removed_metadata(
+                &entry.id,
+                "Renamed in iCloud",
+                &entry.template,
+                &upload.entry.version,
+                &[2],
+                Some(&upload.entry.artwork_version),
+                Some(&upload.entry.asset_revision),
+            )
+            .unwrap()
+    );
+    assert_eq!(library.entries().unwrap()[0].title, "Renamed in iCloud");
+    assert!(!path.exists(), "a metadata update never restores the file");
+    library
+        .receive_with_artwork(
+            &entry.id,
+            "Renamed in iCloud",
+            &entry.template,
+            Some(&cloud),
+            &upload.entry.version,
+            &[2],
+            false,
+            Some(&upload.entry.artwork_version),
+            Some(&upload.entry.asset_revision),
+        )
+        .unwrap();
+    let restored = &library.entries().unwrap()[0];
+    assert!(restored.downloaded && !restored.dirty);
+    assert_eq!(snapshot::inspect(path).unwrap().id, entry.id);
+
+    library.remove_download(&entry.id).unwrap();
+    library.delete(&entry.id).unwrap();
+    let tombstone = library.stage(&entry.id).unwrap();
+    assert!(tombstone.entry.deleted && tombstone.asset_path.is_none());
+    assert!(
+        !library
+            .receive_removed_metadata(
+                &entry.id,
+                "Stale record",
+                &entry.template,
+                &upload.entry.version,
+                &[3],
+                None,
+                None,
+            )
+            .unwrap()
+    );
+    library
+        .receive(&entry.id, &entry.title, &entry.template, Some(&cloud), &upload.entry.version, &[3], false)
+        .unwrap();
+    assert!(library.entries().unwrap()[0].deleted);
+    assert!(!path.exists(), "a stale cloud record cannot restore a deleted document");
+}
+
+#[test]
 fn relay_checkpoints_throttle_automatic_staging_but_manual_saves_and_ordinary_documents_do_not() {
     let (dir, template) = fixture();
     let library = Library::open(&dir.path().join("library"), "account").unwrap();

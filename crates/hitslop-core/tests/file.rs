@@ -16,6 +16,24 @@ const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
 
 #[test]
+fn deleting_a_document_refuses_a_live_writer_and_preserves_templates() {
+    let dir = tempfile::tempdir().unwrap();
+    let source = document(dir.path());
+    let before = fs::read(&source).unwrap();
+    let writer = Store::open(&source, Mode::Document).unwrap();
+    assert!(matches!(file::delete_document(&source), Err(Error::Locked)));
+    assert_eq!(fs::read(&source).unwrap(), before);
+    writer.close().unwrap();
+    file::delete_document(&source).unwrap();
+    assert!(!source.exists());
+
+    let template = dir.path().join("Template.slop");
+    let before = fs::read(&template).unwrap();
+    assert_eq!(code(file::delete_document(&template).unwrap_err()), Code::IsTemplate);
+    assert_eq!(fs::read(&template).unwrap(), before);
+}
+
+#[test]
 fn files_import_creates_an_independent_document_without_writing_the_source() {
     let dir = tempfile::tempdir().unwrap();
     let source = document(dir.path());
@@ -90,7 +108,9 @@ fn every_existing_document_entry_refuses_non_regular_leaves_without_waiting() {
             })
             .collect();
         let preexisting: Vec<bool> = names.iter().map(|name| name.exists()).collect();
-        for (entry, open) in entries {
+        for (entry, open) in
+            entries.into_iter().chain([("delete", file::delete_document as fn(&Path) -> Result<(), Error>)])
+        {
             let (tx, rx) = mpsc::channel();
             let supplied = path.clone();
             std::thread::spawn(move || {

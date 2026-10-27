@@ -51,6 +51,7 @@ _vibe/
 # Historical source, working plans and inspiration stay local.
 /archive/
 /plans/
+/playing/
 /spikes/
 /SLOPS.todo
 /apps/promo/inspo/

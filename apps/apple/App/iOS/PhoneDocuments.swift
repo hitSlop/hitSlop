@@ -5,10 +5,19 @@ import SwiftUI
 import UIKit
 import WebKit
 
+struct PhoneRecent: Identifiable, Sendable {
+  let url: URL
+  let title: String
+  let entry: SyncedSlop?
+  var id: String { url.standardizedFileURL.path }
+}
+
 @MainActor final class PhoneDocuments: ObservableObject, DocumentSessionDelegate {
   @Published var documents: [URL] = []
   @Published var templates: [PhoneTemplate] = []
   @Published var localTitles: [URL: String] = [:]
+  @Published private var fileDates: [URL: Date] = [:]
+  @Published private var openedAt: [String: Double] = [:]
   @Published var session: DocumentSession?
   @Published var opening = false
   @Published var busy = false
@@ -34,10 +43,13 @@ import WebKit
   private(set) lazy var widgets = PhoneWidgetPublisher { [weak self] in self?.session }
   private var backgroundID: UIBackgroundTaskIdentifier = .invalid
   private var backgroundSave: Task<Void, Never>?
+  private var refreshTask: Task<Void, Never>?
+  private static let recentsKey = "phone.recents.openedAt"
   private let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("Documents", isDirectory: true)
 
   init() {
+    openedAt = UserDefaults.standard.dictionary(forKey: Self.recentsKey) as? [String: Double] ?? [:]
     _ = widgets
     SlopRegistry.sweep()
     do {
@@ -67,9 +79,29 @@ import WebKit
       self.successFeedback += 1
     }
   }
-  func delete(_ entry: SyncedSlop) {
+  func recents(in entries: [SyncedSlop]) -> [PhoneRecent] {
+    let synced = entries.map { PhoneRecent(url: URL(fileURLWithPath: $0.path), title: $0.title, entry: $0) }
+    let managed = Set(synced.map(\.id))
+    let local = documents.compactMap { url -> PhoneRecent? in
+      guard !managed.contains(url.standardizedFileURL.path) else { return nil }
+      return PhoneRecent(url: url, title: localTitles[url] ?? url.deletingPathExtension().lastPathComponent, entry: nil)
+    }
+    func activity(_ recent: PhoneRecent) -> Date {
+      max(
+        fileDates[recent.url] ?? .distantPast,
+        openedAt[recent.id].map(Date.init(timeIntervalSince1970:)) ?? .distantPast)
+    }
+    return (synced + local).sorted {
+      let first = activity($0)
+      let second = activity($1)
+      if first != second { return first > second }
+      let titleOrder = $0.title.localizedStandardCompare($1.title)
+      return titleOrder == .orderedSame ? $0.id < $1.id : titleOrder == .orderedAscending
+    }
+  }
+  func delete(_ recent: PhoneRecent) {
     perform {
-      if let session = self.session, session.file.url == URL(fileURLWithPath: entry.path) {
+      if let session = self.session, session.file.url == recent.url {
         let drafts = try await session.prepareClose()
         guard drafts.isEmpty else {
           await session.cancelClose()
@@ -79,7 +111,21 @@ import WebKit
         self.session = nil
         self.opening = false
       }
-      try await SlopLibrary.shared.delete(entry)
+      if let entry = recent.entry {
+        try await SlopLibrary.shared.delete(entry)
+      } else {
+        try await SlopPreparation.run { try SlopFile.delete(recent.url) }
+      }
+      self.openedAt.removeValue(forKey: recent.id)
+      UserDefaults.standard.set(self.openedAt, forKey: Self.recentsKey)
+      self.refresh()
+      self.deletionFeedback += 1
+    }
+  }
+  func removeDownload(_ entry: SyncedSlop) {
+    perform {
+      try await SlopLibrary.shared.removeDownload(entry)
+      self.refresh()
       self.deletionFeedback += 1
     }
   }
@@ -98,6 +144,7 @@ import WebKit
     }
   }
   func libraryChanged() {
+    refresh()
     if SlopLibrary.shared.hasLoaded, let id = pendingLibraryID {
       pendingLibraryID = nil
       open(libraryID: id)
@@ -127,19 +174,27 @@ import WebKit
       (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
     }
     .filter { $0.pathExtension == "slop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-    let paths = documents
-    Task {
-      localTitles = await Task.detached(priority: .utility) {
-        Dictionary(
-          uniqueKeysWithValues: paths.map { url in
-            var name = url.deletingPathExtension().lastPathComponent
-            if let dash = name.lastIndex(of: "-") {
-              let suffix = name[name.index(after: dash)...]
-              if suffix.count == 8 && suffix.allSatisfy({ $0.isHexDigit }) { name = String(name[..<dash]) }
-            }
-            return (url, name)
-          })
+    let paths = Set(documents + SlopLibrary.shared.visibleEntries.map { URL(fileURLWithPath: $0.path) })
+    refreshTask?.cancel()
+    refreshTask = Task {
+      let metadata = await Task.detached(priority: .utility) {
+        var titles: [URL: String] = [:]
+        var dates: [URL: Date] = [:]
+        for url in paths {
+          var name = url.deletingPathExtension().lastPathComponent
+          if let dash = name.lastIndex(of: "-") {
+            let suffix = name[name.index(after: dash)...]
+            if suffix.count == 8 && suffix.allSatisfy({ $0.isHexDigit }) { name = String(name[..<dash]) }
+          }
+          titles[url] = name
+          let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
+          dates[url] = max(values?.contentModificationDate ?? .distantPast, values?.creationDate ?? .distantPast)
+        }
+        return (titles, dates)
       }.value
+      guard !Task.isCancelled else { return }
+      localTitles = metadata.0
+      fileDates = metadata.1
     }
   }
   private func perform(
@@ -226,9 +281,14 @@ import WebKit
   private func show(_ url: URL) async throws {
     opening = true
     do {
+      if let entry = SlopLibrary.shared.entry(at: url), !entry.downloaded {
+        try await SlopLibrary.shared.download(entry)
+      }
       let opened = try await DocumentSession.open(url: url)
       opened.delegate = self
       session = opened
+      openedAt[url.standardizedFileURL.path] = Date().timeIntervalSince1970
+      UserDefaults.standard.set(openedAt, forKey: Self.recentsKey)
       saveStatus = .saved
       opened.load()
     } catch {
