@@ -17,11 +17,12 @@ packages:
   Sparkle:
     exactVersion: 9.8.7
 `;
-const source = "# hitSlop 7.2.0\n\n## Mac app\n\n### Fixed\n\n- Preserve a document title containing & or <.\n\n## Authoring\n\n- Add a command.\n";
+const source = "# hitSlop 7.2.0\n\n## Mac app\n\n### Fixed\n\n- Preserve a document title containing & or <.\n\n## iPhone app\n\n- Remove an iCloud download without deleting the document.\n\n## Authoring\n\n- Add a command.\n";
 
 test("release notes separate Mac changes from authoring and retain Markdown", () => {
   const parsed = parseReleaseNotes(source.replaceAll("\n", "\r\n"), "7.2.0");
   expect(parsed.mac).toBe("### Fixed\n\n- Preserve a document title containing & or <.");
+  expect(parsed.iphone).toBe("- Remove an iCloud download without deleting the document.");
   expect(parsed.authoring).toBe("- Add a command.");
   expect(parseReleaseNotes("# hitSlop 7.2.0\n\n## Mac app\n\nNo Mac app changes in this release.\n", "7.2.0").authoring).toBeUndefined();
   const withExample = `${source}\n\`\`\`md\n## Mac app\nExample heading\n\`\`\`\n`;
@@ -43,6 +44,8 @@ test("release notes reject a wrong version, missing or empty Mac section, and am
     "# hitSlop 7.2.0\n\n## Mac app\n\n### Fixed\n<!-- draft -->\n",
     "# hitSlop 7.2.0\n\n## Authoring\n\n- Something\n",
     `${source}\n## Mac app\nDuplicate\n`,
+    `${source}\n## iPhone app\nDuplicate\n`,
+    "# hitSlop 7.2.0\n\n## Mac app\n\nNo changes.\n\n## iPhone app\n\n<!-- draft -->\n",
     `${source}\n## Other\nUnmapped notes\n`,
     `${source}\n\`\`\`md\nUnclosed example`,
   ]) expect(() => parseReleaseNotes(invalid, "7.2.0")).toThrow();
@@ -64,6 +67,8 @@ test("release publication uses the reviewed source and the project's Sparkle pin
     const github = await readFile(join(output, "release-notes.md"), "utf8");
     expect(mac).toBe("# hitSlop 7.2.0\n\n### Fixed\n\n- Preserve a document title containing & or <.\n");
     expect(github).toContain("## Authoring\n\n- Add a command.");
+    expect(github).toContain("## iPhone app\n\n- Remove an iCloud download without deleting the document.");
+    expect(mac).not.toContain("iCloud download");
     expect(github).toContain("bun install -g hitslop@7.2.0");
     expect(github).toContain("Requires macOS 15.2 or newer.");
     expect(github).not.toContain("prelaunch experiments");

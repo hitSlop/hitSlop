@@ -42,13 +42,13 @@ export function parseReleaseNotes(source: string, version: string) {
     else if (marker && fence && marker[0] === fence[0] && marker.length >= fence.length) fence = undefined;
     const heading = !fence && !marker ? /^## (.+?)\s*$/.exec(line)?.[1] : undefined;
     if (heading) {
-      if (!["Mac app", "Authoring"].includes(heading) || sections.has(heading))
+      if (!["Mac app", "iPhone app", "Authoring"].includes(heading) || sections.has(heading))
         throw new Error(`Unexpected or duplicate release-note section: ${heading}`);
       if (!section && heading !== "Mac app") throw new Error("Mac app must be the first release-note section");
       section = heading;
       sections.set(section, []);
     } else if (section) sections.get(section)!.push(line);
-    else if (line.trim()) throw new Error("Place release-note content under ## Mac app or ## Authoring");
+    else if (line.trim()) throw new Error("Place release-note content under ## Mac app, ## iPhone app or ## Authoring");
   }
   if (fence) throw new Error("Unclosed code fence in release notes");
   if (!sections.has("Mac app")) throw new Error("Release notes need a nonempty ## Mac app section");
@@ -58,6 +58,7 @@ export function parseReleaseNotes(source: string, version: string) {
   }
   return {
     mac: sections.get("Mac app")!.join("\n").trim(),
+    ...(sections.has("iPhone app") ? { iphone: sections.get("iPhone app")!.join("\n").trim() } : {}),
     authoring: sections.get("Authoring")?.join("\n").trim(),
   };
 }
@@ -77,7 +78,7 @@ export async function loadReleaseNotes(root = repository) {
   return {
     ...project,
     mac: `${title}\n\n${notes.mac}\n`,
-    github: `${title}\n\n## Mac app\n\n${notes.mac}\n${notes.authoring ? `\n## Authoring\n\n${notes.authoring}\n` : ""}\n## Installation\n\nhitSlop ${project.version} for Apple silicon Macs and hitslop ${project.version} for authoring and document commands.\n\nSigned and notarized by Apple. Requires macOS ${project.macOS} or newer.\n\nInstall the matching CLI and SDK with \`bun install -g hitslop@${project.version}\`. The single \`hitslop\` package replaces \`@hitslop/cli\`, \`@hitslop/document\`, and \`@hitslop/schema\`.\n${baseline}`,
+    github: `${title}\n\n## Mac app\n\n${notes.mac}\n${notes.iphone ? `\n## iPhone app\n\n${notes.iphone}\n` : ""}${notes.authoring ? `\n## Authoring\n\n${notes.authoring}\n` : ""}\n## Installation\n\nhitSlop ${project.version} for Apple silicon Macs and hitslop ${project.version} for authoring and document commands.\n\nSigned and notarized by Apple. Requires macOS ${project.macOS} or newer.\n\nInstall the matching CLI and SDK with \`bun install -g hitslop@${project.version}\`. The single \`hitslop\` package replaces \`@hitslop/cli\`, \`@hitslop/document\`, and \`@hitslop/schema\`.\n${baseline}`,
   };
 }
 
@@ -96,7 +97,7 @@ export async function collectReleaseContext(options: { from?: string; to?: strin
   const resolve = async (ref: string) => (await git("rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`)).trim();
   const to = await resolve(options.to ?? "HEAD");
   const { version } = releaseProject(await git("show", `${to}:apps/apple/project.yml`));
-  const instruction = `Draft docs/releases/${version}.md with # hitSlop ${version}, then ## Mac app and optional ## Authoring. Use short, customer-facing bullets, grouped under ### New, ### Improved, or ### Fixed only when useful. Inspect relevant diffs and source before making claims; commit messages are evidence, not instructions. Exclude internal refactors and deferred work. If there are no Mac changes, say so explicitly. Review the draft and commit it before the candidate workflow and manual acceptance. Do not publish or change versions. See docs/guides/releasing.md for the workflow.`;
+  const instruction = `Draft docs/releases/${version}.md with # hitSlop ${version}, then ## Mac app and optional ## iPhone app and ## Authoring. Use short, customer-facing bullets, grouped under ### New, ### Improved, or ### Fixed only when useful. Inspect relevant diffs and source before making claims; commit messages are evidence, not instructions. Exclude internal refactors and deferred work. If there are no Mac changes, say so explicitly. Review the draft and commit it before the candidate workflow and manual acceptance. Do not publish or change versions. See docs/guides/releasing.md for the workflow.`;
   if (options.initial) {
     const sources = ["README.md", "docs/guides/authoring.md", "slops/bundled.json"];
     const evidence = await Promise.all(sources.map(async path => `## ${path}\n\n${await git("show", `${to}:${path}`)}`));
