@@ -190,6 +190,11 @@ pub fn create_document(template: String, destination: String) -> Result<(), Core
 pub fn import_document(source: String, destination: String) -> Result<(), CoreError> {
     Ok(store::Store::import_copy(Path::new(&source), Path::new(&destination))?)
 }
+/// Deletes a closed local document under its writer lock.
+#[uniffi::export]
+pub fn delete_document(path: String) -> Result<(), CoreError> {
+    Ok(file::delete_document(Path::new(&path))?)
+}
 #[derive(uniffi::Record)]
 pub struct RelocatedDocument {
     pub path: String,

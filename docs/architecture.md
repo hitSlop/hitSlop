@@ -648,7 +648,8 @@ These environments do not share records, and Debug keeps its library state in a 
 `Development` folder. All callers await one coalesced run, with one queued rerun and full
 reconciliation taking precedence. Foreground, Sync Now, push and background refresh
 enumerate from a nil token: metadata first, then assets whose confirmed revisions differ.
-Debounced edits and editor polling fetch changes from the saved token. The token advances
+Debounced edits and editor polling fetch metadata changes from the saved token, then
+fetch any required assets. The token advances
 only after every record is accepted or its issue and retry are durable in `library.sqlite`.
 A conflict merges the server record and restages, with at most three save rounds.
 Per-record failures never stop other documents.
@@ -658,6 +659,18 @@ Swift carries file paths and opaque version tokens, never Loro bytes. Both catal
 sync progress, errors and last success; a clean row says synced only after a successful
 check since foregrounding. Unified logs use subsystem `com.hitslop.library` without content.
 Ordinary Mac files retain their existing path.
+On iPhone, Recents interleaves local and library documents by their latest opening or
+file change. Opening times are device preferences, never edits to a document. Swipe
+actions distinguish **Delete Everywhere** from **Remove Download** for iCloud documents;
+local documents offer **Delete from This iPhone**. A full swipe removes a clean iCloud
+download, never the cloud document. Rust refuses eviction of unsynced data or an active
+writer and records eviction in local library metadata before removing the file. Sync
+continues accepting metadata without restoring that download. Tapping its cloud-marked
+row explicitly fetches and validates the asset before opening it with its existing
+identity. Files imports remain independent local copies.
+Deleting a local-only rescue copy removes its file under the writer lock without waiting
+for a cloud receipt. Cleanup finishes interrupted local deletions and reclaims copies
+left behind by earlier deletion attempts.
 Library sync requires iCloud sign-in, separately from the sharing account. A different
 account fences the active library and retains the previous account's local files without
 uploading them to the new account. Rust checks the library's stored account identity before

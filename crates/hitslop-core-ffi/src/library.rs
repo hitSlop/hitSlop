@@ -33,6 +33,7 @@ pub struct Entry {
     pub dirty: bool,
     pub deleted: bool,
     pub local_only: bool,
+    pub downloaded: bool,
     pub problem: Option<String>,
 }
 #[uniffi::remote(Record)]
@@ -139,6 +140,30 @@ impl NativeLibrary {
     }
     pub fn delete(&self, id: String) -> Result<(), LibraryError> {
         Ok(self.0.delete(&id)?)
+    }
+    pub fn remove_download(&self, id: String) -> Result<(), LibraryError> {
+        Ok(self.0.remove_download(&id)?)
+    }
+    #[allow(clippy::too_many_arguments, reason = "One complete cloud metadata record enters at this boundary")]
+    pub fn receive_removed_metadata(
+        &self,
+        id: String,
+        title: String,
+        template: String,
+        version: String,
+        fields: Vec<u8>,
+        artwork_version: Option<String>,
+        asset_revision: Option<String>,
+    ) -> Result<bool, LibraryError> {
+        Ok(self.0.receive_removed_metadata(
+            &id,
+            &title,
+            &template,
+            &version,
+            &fields,
+            artwork_version.as_deref(),
+            asset_revision.as_deref(),
+        )?)
     }
     pub fn cleanup(&self) -> Result<(), LibraryError> {
         Ok(self.0.cleanup()?)

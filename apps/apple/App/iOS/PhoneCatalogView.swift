@@ -47,35 +47,18 @@ struct PhoneCatalogView: View {
           if library.isSyncing { ProgressView() } else { Image(systemName: "arrow.triangle.2.circlepath") }
         }.accessibilityLabel("Sync Now").disabled(library.isSyncing)
       }.padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 4)
-      ScrollView {
-        LazyVStack(spacing: 0) {
-          ForEach(library.visibleEntries.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }) {
-            entry in
-            Button {
-              model.open(URL(fileURLWithPath: entry.path))
-            } label: {
-              PhoneSlopRow(
-                url: URL(fileURLWithPath: entry.path), title: entry.title, subtitle: library.state(for: entry),
-                revision: entry.assetRevision, synced: library.isSynced(entry))
-            }
-            .contextMenu { Button("Delete Slop", role: .destructive) { model.delete(entry) } }
-            .buttonStyle(.plain).accessibilityLabel(entry.title).accessibilityValue(library.state(for: entry)).disabled(
-              entry.problem != nil && !FileManager.default.fileExists(atPath: entry.path))
+      List {
+        ForEach(
+          model.recents(in: library.visibleEntries).filter {
+            query.isEmpty || $0.title.localizedCaseInsensitiveContains(query)
           }
-          ForEach(
-            model.documents.filter { query.isEmpty || $0.lastPathComponent.localizedCaseInsensitiveContains(query) },
-            id: \.self
-          ) { url in
-            Button {
-              model.open(url)
-            } label: {
-              PhoneSlopRow(
-                url: url, title: model.localTitles[url] ?? url.deletingPathExtension().lastPathComponent,
-                subtitle: "On this iPhone")
-            }.buttonStyle(.plain).accessibilityLabel(
-              model.localTitles[url] ?? url.deletingPathExtension().lastPathComponent)
-          }
-        }.padding(.horizontal, 14)
+        ) {
+          recent in
+          recentRow(recent)
+            .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+        }
         if library.visibleEntries.isEmpty && model.documents.isEmpty {
           VStack(spacing: 14) {
             Image(systemName: "sparkles").font(.system(size: 34)).foregroundStyle(PhoneStyle.accent)
@@ -83,11 +66,50 @@ struct PhoneCatalogView: View {
             Text("Start a checklist here. Pick it up on your Mac.").foregroundStyle(.secondary).multilineTextAlignment(
               .center)
             Button("Explore templates") { tab = .templates }.buttonStyle(.borderedProminent).tint(PhoneStyle.accent)
-          }.padding(.horizontal, 30).padding(.top, 66)
+          }.padding(.horizontal, 14).padding(.top, 66)
+            .listRowSeparator(.hidden).listRowBackground(Color.clear)
         }
-      }.refreshable { await model.syncNow() }
+      }
+      .listStyle(.plain).scrollContentBackground(.hidden)
+      .contentMargins(.top, 0, for: .scrollContent)
+      .refreshable { await model.syncNow() }
       Text(library.status).font(.caption2).foregroundStyle(.secondary).padding(.vertical, 6)
     }.background(Color(.systemBackground))
+  }
+  private func recentRow(_ recent: PhoneRecent) -> some View {
+    let subtitle = recent.entry.map { library.state(for: $0) } ?? "On this iPhone"
+    let cloud = recent.entry.map { !$0.localOnly } ?? false
+    let canRemoveDownload = recent.entry.map { $0.downloaded && !$0.dirty && $0.problem == nil } ?? false
+    let unavailable =
+      recent.entry?.problem != nil && recent.entry?.downloaded != false
+      && !FileManager.default.fileExists(atPath: recent.url.path)
+    return Button {
+      model.open(recent.url)
+    } label: {
+      PhoneSlopRow(
+        url: recent.url, title: recent.title, subtitle: subtitle,
+        revision: recent.entry?.assetRevision ?? "", synced: recent.entry.map { library.isSynced($0) } ?? false,
+        downloaded: recent.entry?.downloaded ?? true)
+    }
+    .buttonStyle(.plain)
+    .disabled(unavailable)
+    .contextMenu { removalActions(recent) }
+    .swipeActions(edge: .trailing, allowsFullSwipe: !cloud || canRemoveDownload) {
+      removalActions(recent)
+    }
+    .accessibilityLabel(recent.title).accessibilityValue(subtitle)
+    .disabled(model.busy)
+  }
+  @ViewBuilder private func removalActions(_ recent: PhoneRecent) -> some View {
+    if let entry = recent.entry, !entry.localOnly {
+      if entry.downloaded {
+        Button("Remove Download", systemImage: "icloud.and.arrow.down") { model.removeDownload(entry) }
+          .tint(.gray).disabled(entry.dirty || entry.problem != nil)
+      }
+      Button("Delete Everywhere", systemImage: "trash", role: .destructive) { model.delete(recent) }
+    } else {
+      Button("Delete from This iPhone", systemImage: "trash", role: .destructive) { model.delete(recent) }
+    }
   }
   private var search: some View {
     HStack(spacing: 10) {

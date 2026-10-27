@@ -36,6 +36,91 @@ fn close(owner: &Owner) {
 }
 
 #[test]
+fn removing_downloads_keeps_cloud_metadata_and_restores_only_on_request() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let entry = library.create(&template, "A synced document").unwrap();
+    let path = std::path::Path::new(&entry.path);
+    let before = std::fs::read(path).unwrap();
+    assert!(library.remove_download(&entry.id).is_err(), "unsynced data must stay local");
+    assert_eq!(std::fs::read(path).unwrap(), before);
+    let upload = library.stage(&entry.id).unwrap();
+    library
+        .acknowledge_asset(&entry.id, &upload.entry.version, Some(&upload.entry.asset_revision), &[1], false)
+        .unwrap();
+    let cloud = dir.path().join("cloud.slop");
+    std::fs::copy(upload.asset_path.as_ref().unwrap(), &cloud).unwrap();
+    let owner = Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap();
+    assert_eq!(library.remove_download(&entry.id).unwrap_err().issue, Issue::Busy);
+    assert!(path.exists());
+    close(&owner);
+    library.remove_download(&entry.id).unwrap();
+    library.remove_download(&entry.id).unwrap();
+    assert!(!path.exists());
+    let removed = &library.entries().unwrap()[0];
+    assert!(!removed.downloaded && !removed.deleted && !removed.dirty);
+    drop(library);
+
+    let library = Library::open(&root, "account").unwrap();
+    assert!(!library.entries().unwrap()[0].downloaded);
+    assert!(
+        library
+            .receive_removed_metadata(
+                &entry.id,
+                "Renamed in iCloud",
+                &entry.template,
+                &upload.entry.version,
+                &[2],
+                Some(&upload.entry.artwork_version),
+                Some(&upload.entry.asset_revision),
+            )
+            .unwrap()
+    );
+    assert_eq!(library.entries().unwrap()[0].title, "Renamed in iCloud");
+    assert!(!path.exists(), "a metadata update never restores the file");
+    library
+        .receive_with_artwork(
+            &entry.id,
+            "Renamed in iCloud",
+            &entry.template,
+            Some(&cloud),
+            &upload.entry.version,
+            &[2],
+            false,
+            Some(&upload.entry.artwork_version),
+            Some(&upload.entry.asset_revision),
+        )
+        .unwrap();
+    let restored = &library.entries().unwrap()[0];
+    assert!(restored.downloaded && !restored.dirty);
+    assert_eq!(snapshot::inspect(path).unwrap().id, entry.id);
+
+    library.remove_download(&entry.id).unwrap();
+    library.delete(&entry.id).unwrap();
+    let tombstone = library.stage(&entry.id).unwrap();
+    assert!(tombstone.entry.deleted && tombstone.asset_path.is_none());
+    assert!(
+        !library
+            .receive_removed_metadata(
+                &entry.id,
+                "Stale record",
+                &entry.template,
+                &upload.entry.version,
+                &[3],
+                None,
+                None,
+            )
+            .unwrap()
+    );
+    library
+        .receive(&entry.id, &entry.title, &entry.template, Some(&cloud), &upload.entry.version, &[3], false)
+        .unwrap();
+    assert!(library.entries().unwrap()[0].deleted);
+    assert!(!path.exists(), "a stale cloud record cannot restore a deleted document");
+}
+
+#[test]
 fn relay_checkpoints_throttle_automatic_staging_but_manual_saves_and_ordinary_documents_do_not() {
     let (dir, template) = fixture();
     let library = Library::open(&dir.path().join("library"), "account").unwrap();
@@ -168,6 +253,7 @@ fn deletion_waits_for_editor_close_and_rescues_unsent_edits_without_resurrection
     assert!(!rescued.dirty);
     let saved = hitslop_core::store::Store::open(std::path::Path::new(&rescued.path), Mode::Snapshot).unwrap();
     assert_eq!(saved.document().unwrap().reading().unwrap().value["title"], "Keep my offline edits");
+    drop(saved);
     left.receive(
         &entry.id,
         &entry.title,
@@ -180,6 +266,52 @@ fn deletion_waits_for_editor_close_and_rescues_unsent_edits_without_resurrection
     .unwrap();
     assert!(left.entries().unwrap()[0].deleted);
     assert!(left.stage(&entry.id).unwrap().entry.deleted);
+
+    right.delete(&rescued.id).unwrap();
+    assert!(!std::path::Path::new(&rescued.path).exists(), "deleting a local-only rescue must reclaim its file");
+    right.delete(&rescued.id).unwrap();
+    drop(right);
+    let reopened = Library::open(&dir.path().join("right"), "account").unwrap();
+    let deleted = reopened.entries().unwrap().into_iter().find(|entry| entry.id == rescued.id).unwrap();
+    assert!(deleted.deleted && deleted.local_only && !deleted.dirty);
+    reopened.cleanup().unwrap();
+    assert!(!std::path::Path::new(&rescued.path).exists());
+}
+
+#[test]
+fn local_only_deletion_preserves_busy_files_and_cleans_legacy_tombstones() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let entry = library.create(&template, "Shared").unwrap();
+    let seed = library.stage(&entry.id).unwrap();
+    library.acknowledge(&entry.id, &seed.entry.version, &[1], false).unwrap();
+    let owner = Owner::open(std::path::Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap();
+    edit(&owner, json!([{"type":"set","path":["title"],"value":"Keep my offline edits"}]));
+    close(&owner);
+    library.receive(&entry.id, &entry.title, &entry.template, None, "", &[2], true).unwrap();
+    library.cleanup().unwrap();
+    let rescued = library.entries().unwrap().into_iter().find(|entry| entry.local_only).unwrap();
+    let path = std::path::Path::new(&rescued.path);
+    let owner = Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap();
+    let before = std::fs::read(path).unwrap();
+    assert_eq!(library.delete(&rescued.id).unwrap_err().issue, Issue::Busy);
+    assert_eq!(std::fs::read(path).unwrap(), before);
+    assert!(!library.entries().unwrap().into_iter().find(|entry| entry.id == rescued.id).unwrap().deleted);
+
+    // Older builds hid local-only rows without ever confirming a cloud tombstone.
+    rusqlite::Connection::open(root.join("library.sqlite"))
+        .unwrap()
+        .execute("UPDATE documents SET deleted=1 WHERE id=?1", [&rescued.id])
+        .unwrap();
+    assert_eq!(library.cleanup().unwrap_err().issue, Issue::Busy);
+    assert_eq!(std::fs::read(path).unwrap(), before);
+    close(&owner);
+    library.cleanup().unwrap();
+    assert!(!path.exists());
+    let deleted = library.entries().unwrap().into_iter().find(|entry| entry.id == rescued.id).unwrap();
+    assert!(deleted.deleted && !deleted.dirty);
+    library.cleanup().unwrap();
 }
 
 #[test]

@@ -274,15 +274,16 @@ capability or change; omit internal refactors and deferred work. Use this struct
 - Describe CLI or SDK changes for app authors.
 ```
 
-`Mac app` is required and must contain text; omit `Authoring` if there are no authoring
-changes. Use optional third-level New, Improved and Fixed headings when useful. For an
-authoring-only release, write “No Mac app changes in this release.” in the Mac section.
+`Mac app` is required and must contain text. An optional `## iPhone app` section
+describes iPhone changes; omit it or `Authoring` when that platform has no changes.
+Use optional third-level New, Improved and Fixed headings when useful. For an
+iPhone- or authoring-only release, write “No Mac app changes in this release.” in the Mac section.
 Keep links absolute so they work outside GitHub. Review and edit the draft, run
 `bun run release:notes --check`, then commit it before running the candidate workflow. `bun run release:check` also validates the current notes
 before building. Regenerate or amend the draft if later code changes affect its claims.
 
 Packaging writes `hitSlop-<version>.md` for Sparkle with only the Mac app section and
-`release-notes.md` for GitHub with both sections, installation requirements and the
+`release-notes.md` for GitHub with all supplied sections, installation requirements and the
 first-release compatibility notice when applicable. Both files are checksummed and
 retained with the candidate. The appcast links to the versioned Markdown asset on
 GitHub; the release body uses the retained GitHub notes. Change the committed source

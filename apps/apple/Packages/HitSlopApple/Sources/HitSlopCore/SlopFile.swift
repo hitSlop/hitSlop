@@ -128,6 +128,11 @@ public struct SlopFile: Sendable {
     try opening { try fileKind(path: url.path) }
   }
 
+  /// Deletes a closed local document; the core refuses another writer or a template.
+  public static func delete(_ url: URL) throws {
+    try opening { try deleteDocument(path: url.path) }
+  }
+
   #if os(macOS)
     /// User-requested relocation. The core holds the source lease through validated copy
     /// and coordinated cleanup; a cleanup warning means both files were retained.

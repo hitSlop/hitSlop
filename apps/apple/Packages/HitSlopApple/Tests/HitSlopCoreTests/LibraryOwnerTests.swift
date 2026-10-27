@@ -43,6 +43,56 @@ import Testing
 /// Counts finished callers across tasks.
 private final class FinishedCount: Sendable { let value = Mutex(0) }
 
+@Test func removedDownloadsStayEvictedDuringSyncAndDownloadOnRequest() async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let template = try Fixtures.template(stage: Fixtures.stage())
+  defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let entry = try library.create(template: template.path, title: "Downloadable")
+  let checkpoint = try library.stage(id: entry.id)
+  let asset = try #require(checkpoint.assetPath)
+  try library.acknowledge(
+    id: entry.id, version: checkpoint.entry.version, assetRevision: checkpoint.entry.assetRevision,
+    fields: Data(), deleted: false)
+  try library.removeDownload(id: entry.id)
+  let zone = CKRecordZone.ID(zoneName: "Library")
+  let id = CKRecord.ID(recordName: entry.id, zoneID: zone)
+  let metadata = CKRecord(recordType: "SlopDocument", recordID: id)
+  metadata["format"] = 1
+  metadata["title"] = "Renamed in iCloud"
+  metadata["template"] = entry.template
+  metadata["snapshotVersion"] = checkpoint.entry.version
+  metadata["assetRevision"] = checkpoint.entry.assetRevision
+  metadata["artworkVersion"] = checkpoint.entry.artworkVersion
+  let downloads = FinishedCount()
+  let sync = LibrarySync(library: library, zone: zone) { operation in
+    if let operation = operation as? CKModifyRecordZonesOperation {
+      operation.modifyRecordZonesResultBlock?(.success(()))
+    } else if let operation = operation as? CKModifySubscriptionsOperation {
+      operation.modifySubscriptionsResultBlock?(.success(()))
+    } else if let operation = operation as? CKFetchRecordZoneChangesOperation {
+      operation.recordWasChangedBlock?(id, .success(metadata))
+      operation.fetchRecordZoneChangesResultBlock?(.failure(CKError(.networkUnavailable)))
+    } else if let operation = operation as? CKFetchRecordsOperation {
+      downloads.value.withLock { $0 += 1 }
+      metadata["payload"] = CKAsset(fileURL: URL(fileURLWithPath: asset))
+      operation.perRecordResultBlock?(id, .success(metadata))
+      operation.fetchRecordsResultBlock?(.success(()))
+    }
+  }
+  _ = await sync.sync(.changes)
+  #expect(downloads.value.withLock { $0 } == 0)
+  #expect(try library.entries().first?.title == "Renamed in iCloud")
+  #expect(try library.entries().first?.downloaded == false)
+  #expect(!FileManager.default.fileExists(atPath: entry.path))
+  try await sync.download(id: entry.id)
+  #expect(downloads.value.withLock { $0 } == 1)
+  #expect(try library.entries().first?.downloaded == true)
+  #expect(FileManager.default.fileExists(atPath: entry.path))
+  await sync.stop()
+}
+
 // A second request must await the queued run, including its failure, rather than
 // reporting success while the first CloudKit operation is still outstanding.
 @Test(.timeLimit(.minutes(1))) func overlappingLibrarySyncRequestsAwaitTheRerun() async throws {

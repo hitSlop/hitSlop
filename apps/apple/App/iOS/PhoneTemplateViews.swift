@@ -34,11 +34,14 @@ struct PhoneSlopRow: View {
   var revision = ""
   /// A synced row shows a small iCloud mark instead of a status line.
   var synced = false
+  var downloaded = true
   var body: some View {
     HStack(spacing: 12) {
-      PhoneArtworkView(url: url, revision: revision).padding(3).frame(width: 44, height: 46)
-        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+      PhoneArtworkView(url: url, revision: revision + (downloaded ? "|local" : "|cloud")).padding(3).frame(
+        width: 44, height: 46
+      )
+      .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
+      .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
       VStack(alignment: .leading, spacing: 2) {
         Text(title).font(SlopBrand.heading(16)).foregroundStyle(.primary).lineLimit(1)
         if !synced { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
@@ -47,7 +50,8 @@ struct PhoneSlopRow: View {
         Image(systemName: "checkmark.icloud").font(.footnote).foregroundStyle(.tertiary)
           .accessibilityLabel(subtitle)
       }
-      Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+      Image(systemName: downloaded ? "chevron.right" : "icloud.and.arrow.down")
+        .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
     }.padding(.vertical, 6).padding(.horizontal, 8).contentShape(Rectangle())
       .overlay(alignment: .bottom) {
         Rectangle().fill(Color.primary.opacity(0.065)).frame(height: 0.5).padding(.leading, 64)

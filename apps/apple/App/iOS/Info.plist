@@ -21,7 +21,7 @@
   <key>UIApplicationSupportsIndirectInputEvents</key><true/>
   <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
   <key>UIFileSharingEnabled</key><true/>
-  <key>LSSupportsOpeningDocumentsInPlace</key><false/>
+  <key>LSSupportsOpeningDocumentsInPlace</key><true/>
   <key>CFBundleURLTypes</key><array><dict>
     <key>CFBundleURLName</key><string>com.hitslop.widgets</string>
     <key>CFBundleURLSchemes</key><array><string>hitslop</string></array>
@@ -29,7 +29,7 @@
   <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>hitSlop document</string>
     <key>CFBundleTypeRole</key><string>Editor</string>
-    <key>LSHandlerRank</key><string>Alternate</string>
+    <key>LSHandlerRank</key><string>Owner</string>
     <key>LSItemContentTypes</key><array><string>com.hitslop.slop</string></array>
   </dict></array>
   <key>UISupportedInterfaceOrientations</key><array>

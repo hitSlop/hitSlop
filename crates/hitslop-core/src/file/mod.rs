@@ -55,6 +55,18 @@ pub fn document_location(path: &std::path::Path) -> crate::store::Result<()> {
     places::document_location(path)
 }
 
+/// Deletes a closed document while holding its writer lease. Templates stay immutable.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn delete_document(path: &std::path::Path) -> crate::store::Result<()> {
+    document_location(path)?;
+    let lease = crate::registry::Lease::acquire(path)?;
+    if kind(path)? != Kind::Document {
+        return Err(crate::error::rejected(crate::Code::IsTemplate, "A template cannot be deleted as a document"));
+    }
+    lease.check()?;
+    std::fs::remove_file(path).map_err(crate::error::failed)
+}
+
 pub(crate) const APPLICATION_ID: i64 = 0x4853_4C50; // HSLP
 /// These tables. A compatibility requirement, not a release number: a build refuses a
 /// newer one with `requires_update`.
