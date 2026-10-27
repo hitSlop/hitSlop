@@ -51,16 +51,15 @@ public struct CatalogView: View {
         isCreating: model.creating != nil || creatingLibrary, isCopying: model.isCopying, isQuitting: model.isQuitting
       ) { entry in
         if entry.isSynced, let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) {
-          if let problem = document.problem, !FileManager.default.fileExists(atPath: document.path) {
-            libraryError = problem
+          if document.problem != nil, !FileManager.default.fileExists(atPath: document.path) {
+            libraryError = "This slop isn’t available on this device. Check iCloud needs attention for sync details."
             return
           }
         }
         model.primaryAction(entry)
       }
       .safeAreaInset(edge: .bottom) {
-        Text(library.status)
-          .font(.footnote).foregroundStyle(.secondary).padding()
+        LibrarySyncStatusView(library: library).padding()
       }
       .frame(minWidth: 460)
       .ignoresSafeArea(.container, edges: .top)

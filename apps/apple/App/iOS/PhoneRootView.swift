@@ -79,7 +79,7 @@ struct PhoneRootView: View {
               .appHaptic(.selection, trigger: hapticsEnabled)
           }
           Section("iCloud") {
-            Text(library.status)
+            LibrarySyncStatusView(library: library)
             Button("Sync Now") {
               model.tapped()
               Task { await model.syncNow() }

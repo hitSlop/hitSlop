@@ -138,7 +138,7 @@ struct PhoneRecent: Identifiable, Sendable {
     let previousSuccess = library.lastSuccess
     await library.syncNow()
     if !library.isReady || library.lastError != nil || !library.issues.isEmpty {
-      message = library.status
+      return
     } else if let lastSuccess = library.lastSuccess, lastSuccess != previousSuccess, library.pending == 0 {
       successFeedback += 1
     }

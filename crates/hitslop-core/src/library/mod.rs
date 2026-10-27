@@ -793,6 +793,22 @@ impl Library {
         )?;
         Ok(())
     }
+    /// Forget a missing cloud record only for a durable local deletion. The next
+    /// upload creates a tombstone; absence alone is never a deletion receipt.
+    pub fn prepare_deletion_reupload(&self, id: &str) -> Result<bool> {
+        Self::valid_id(id)?;
+        let mut inner = self.inner.lock().unwrap();
+        let tx = inner.db.transaction()?;
+        let changed = tx.execute(
+            "UPDATE documents SET fields=NULL,problem=NULL,confirmed_deleted=0 WHERE id=?1 AND deleted=1 AND local_only=0",
+            [id],
+        )?;
+        if changed != 0 {
+            tx.execute("DELETE FROM retries WHERE id=?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(changed != 0)
+    }
     pub fn clear_retry(&self, id: &str) -> Result<()> {
         self.inner.lock().unwrap().db.execute("DELETE FROM retries WHERE id=?1", [id])?;
         Ok(())

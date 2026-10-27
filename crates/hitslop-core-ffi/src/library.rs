@@ -177,6 +177,9 @@ impl NativeLibrary {
     pub fn retry(&self, retry: core::Retry) -> Result<(), LibraryError> {
         Ok(self.0.retry(&retry)?)
     }
+    pub fn prepare_deletion_reupload(&self, id: String) -> Result<bool, LibraryError> {
+        Ok(self.0.prepare_deletion_reupload(&id)?)
+    }
     pub fn clear_retry(&self, id: String) -> Result<(), LibraryError> {
         Ok(self.0.clear_retry(&id)?)
     }

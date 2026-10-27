@@ -16,6 +16,7 @@ actor LibrarySync {
     var lastSuccess: Date?
     var lastError: String?
     var message: String?
+    var diagnosticCodes: [String] = []
     var pending = 0
     var issues: [String: String] = [:]
   }
@@ -163,6 +164,7 @@ actor LibrarySync {
 
   private func run(_ options: Options) async {
     logger.info("run start request=\(options.request.rawValue, privacy: .public) background=\(options.background)")
+    outcome.diagnosticCodes = []
     outcome.lastError = nil
     outcome.message = nil
     retryRunAt = nil
@@ -193,6 +195,7 @@ actor LibrarySync {
   }
 
   private func failed(_ error: Error) {
+    recordDiagnostic(error)
     outcome.lastError = outcome.lastError.map { $0 + "\n" + String(describing: error) } ?? String(describing: error)
     outcome.message = outcome.message ?? message(error)
     if retryRunAt == nil { runFailures += 1 }
@@ -336,6 +339,7 @@ actor LibrarySync {
         }
       }
       for id in batch.deleted {
+        if try library.prepareDeletionReupload(id: id.recordName) { continue }
         if !block(id, CloudFailure("Removed from iCloud unexpectedly; your local copy is kept"), incoming: true) {
           safe = false
         }
@@ -364,6 +368,14 @@ actor LibrarySync {
     }
   }
 
+  private func recordDiagnostic(_ error: Error) {
+    let value = error as NSError
+    let code = "\(value.domain) code=\(value.code)"
+    if !outcome.diagnosticCodes.contains(code), outcome.diagnosticCodes.count < 20 {
+      outcome.diagnosticCodes.append(code)
+    }
+  }
+
   private func message(_ error: Error) -> String {
     if let error = error as? CKError,
       [.networkFailure, .networkUnavailable, .serviceUnavailable, .requestRateLimited, .zoneBusy, .operationCancelled]
@@ -371,12 +383,29 @@ actor LibrarySync {
     {
       return "Couldn't reach iCloud · will retry"
     }
-    return libraryMessage(error)
+    if let error = error as? CKError {
+      switch error.code {
+      case .notAuthenticated: return "Sign in to iCloud to sync your slops."
+      case .quotaExceeded: return "Your iCloud storage is full. Free up space, then retry."
+      case .unknownItem: return "An iCloud record is missing. Sync needs attention."
+      default: return "iCloud couldn't sync some changes. Please retry."
+      }
+    }
+    if case LibraryError.Failed(let issue, _) = error {
+      switch issue {
+      case .requiresUpdate: return "Update hitSlop to sync this slop."
+      case .appMismatch: return "These copies use different data schemas or theme palettes."
+      case .busy: return "This slop is busy. Please retry shortly."
+      default: break
+      }
+    }
+    return "Some changes couldn't sync. Please retry."
   }
 
   @discardableResult private func block(
     _ id: CKRecord.ID, _ error: Error, record: CKRecord? = nil, incoming: Bool
   ) -> Bool {
+    recordDiagnostic(error)
     let message = message(error)
     outcome.message = outcome.message ?? message
     outcome.lastError = outcome.lastError ?? String(describing: error)
@@ -404,16 +433,31 @@ actor LibrarySync {
   }
 
   private func retryIncoming(_ options: Options) async throws {
-    for retry in try library.retries() where retry.incoming && retry.retryAt <= Date().timeIntervalSince1970 {
+    for retry in try library.retries()
+    where retry.incoming && (options.explicit || retry.retryAt <= Date().timeIntervalSince1970) {
       let id = CKRecord.ID(recordName: retry.id, zoneID: zone)
       logger.info("retry incoming id=\(retry.id, privacy: .public)")
-      do { try await accept(try await fetchRecord(id, options), options) } catch { block(id, error, incoming: true) }
+      do { try await accept(try await fetchRecord(id, options), options) } catch {
+        if (error as? CKError)?.code == .unknownItem,
+          try library.prepareDeletionReupload(id: id.recordName)
+        {
+          continue
+        }
+        block(id, error, incoming: true)
+      }
     }
     // Problems written by earlier preview builds also need a durable retry path.
     let retries = Set(try library.retries().map(\.id))
     for entry in try library.entries() where entry.problem != nil && !retries.contains(entry.id) {
       let id = CKRecord.ID(recordName: entry.id, zoneID: zone)
-      do { try await accept(try await fetchRecord(id, options), options) } catch { block(id, error, incoming: true) }
+      do { try await accept(try await fetchRecord(id, options), options) } catch {
+        if (error as? CKError)?.code == .unknownItem,
+          try library.prepareDeletionReupload(id: id.recordName)
+        {
+          continue
+        }
+        block(id, error, incoming: true)
+      }
     }
   }
 
@@ -488,7 +532,11 @@ actor LibrarySync {
     var sent = 0
     var conflicts = 0
     for entry in try library.entries() where entry.dirty {
-      if let retry = retries[entry.id], retry.incoming || retry.retryAt > Date().timeIntervalSince1970 { continue }
+      if let retry = retries[entry.id],
+        retry.incoming || (!options.explicit && retry.retryAt > Date().timeIntervalSince1970)
+      {
+        continue
+      }
       let id = CKRecord.ID(recordName: entry.id, zoneID: zone)
       for round in 0..<3 {
         var path: String?
@@ -533,6 +581,10 @@ actor LibrarySync {
           try library.clearRetry(id: entry.id)
           failures[entry.id] = nil
           sent += 1
+          break
+        } catch let error as CKError where error.code == .unknownItem {
+          if try library.prepareDeletionReupload(id: entry.id), round < 2 { continue }
+          block(id, error, incoming: false)
           break
         } catch let error as CKError where error.code == .serverRecordChanged {
           conflicts += 1

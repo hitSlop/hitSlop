@@ -190,3 +190,42 @@ private final class FinishedCount: Sendable { let value = Mutex(0) }
   #expect(submitted.value.withLock { $0 } == 2)
   await sync.stop()
 }
+
+@Test(arguments: [false, true]) func missingCloudDeletionPublishesAFreshTombstone(persistentFailure: Bool) async throws
+{
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let template = try Fixtures.template(stage: Fixtures.stage())
+  defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let entry = try library.create(template: template.path, title: "Deletion")
+  try library.delete(id: entry.id)
+  let saves = FinishedCount()
+  let sync = LibrarySync(library: library, zone: CKRecordZone.ID(zoneName: "Library")) { operation in
+    if let op = operation as? CKModifyRecordZonesOperation {
+      op.modifyRecordZonesResultBlock?(.success(()))
+    } else if let op = operation as? CKModifySubscriptionsOperation {
+      op.modifySubscriptionsResultBlock?(.success(()))
+    } else if let op = operation as? CKFetchRecordZoneChangesOperation {
+      op.fetchRecordZoneChangesResultBlock?(.success(()))
+    } else if let op = operation as? CKModifyRecordsOperation, let record = op.recordsToSave?.first {
+      let attempt = saves.value.withLock {
+        $0 += 1
+        return $0
+      }
+      #expect(record["deleted"] as? Int == 1)
+      #expect(record["payload"] == nil)
+      if attempt == 1 || persistentFailure {
+        op.perRecordSaveBlock?(record.recordID, .failure(CKError(.unknownItem)))
+      } else {
+        op.perRecordSaveBlock?(record.recordID, .success(record))
+      }
+      op.modifyRecordsResultBlock?(.success(()))
+    }
+  }
+  _ = await sync.sync(.full, explicit: true)
+  #expect(saves.value.withLock { $0 } == (persistentFailure ? 3 : 2))
+  #expect(try library.entries().allSatisfy { $0.deleted && $0.dirty == persistentFailure })
+  #expect(try library.retries().isEmpty == !persistentFailure)
+  await sync.stop()
+}
