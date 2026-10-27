@@ -253,6 +253,7 @@ fn deletion_waits_for_editor_close_and_rescues_unsent_edits_without_resurrection
     assert!(!rescued.dirty);
     let saved = hitslop_core::store::Store::open(std::path::Path::new(&rescued.path), Mode::Snapshot).unwrap();
     assert_eq!(saved.document().unwrap().reading().unwrap().value["title"], "Keep my offline edits");
+    drop(saved);
     left.receive(
         &entry.id,
         &entry.title,
@@ -265,6 +266,52 @@ fn deletion_waits_for_editor_close_and_rescues_unsent_edits_without_resurrection
     .unwrap();
     assert!(left.entries().unwrap()[0].deleted);
     assert!(left.stage(&entry.id).unwrap().entry.deleted);
+
+    right.delete(&rescued.id).unwrap();
+    assert!(!std::path::Path::new(&rescued.path).exists(), "deleting a local-only rescue must reclaim its file");
+    right.delete(&rescued.id).unwrap();
+    drop(right);
+    let reopened = Library::open(&dir.path().join("right"), "account").unwrap();
+    let deleted = reopened.entries().unwrap().into_iter().find(|entry| entry.id == rescued.id).unwrap();
+    assert!(deleted.deleted && deleted.local_only && !deleted.dirty);
+    reopened.cleanup().unwrap();
+    assert!(!std::path::Path::new(&rescued.path).exists());
+}
+
+#[test]
+fn local_only_deletion_preserves_busy_files_and_cleans_legacy_tombstones() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let entry = library.create(&template, "Shared").unwrap();
+    let seed = library.stage(&entry.id).unwrap();
+    library.acknowledge(&entry.id, &seed.entry.version, &[1], false).unwrap();
+    let owner = Owner::open(std::path::Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap();
+    edit(&owner, json!([{"type":"set","path":["title"],"value":"Keep my offline edits"}]));
+    close(&owner);
+    library.receive(&entry.id, &entry.title, &entry.template, None, "", &[2], true).unwrap();
+    library.cleanup().unwrap();
+    let rescued = library.entries().unwrap().into_iter().find(|entry| entry.local_only).unwrap();
+    let path = std::path::Path::new(&rescued.path);
+    let owner = Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap();
+    let before = std::fs::read(path).unwrap();
+    assert_eq!(library.delete(&rescued.id).unwrap_err().issue, Issue::Busy);
+    assert_eq!(std::fs::read(path).unwrap(), before);
+    assert!(!library.entries().unwrap().into_iter().find(|entry| entry.id == rescued.id).unwrap().deleted);
+
+    // Older builds hid local-only rows without ever confirming a cloud tombstone.
+    rusqlite::Connection::open(root.join("library.sqlite"))
+        .unwrap()
+        .execute("UPDATE documents SET deleted=1 WHERE id=?1", [&rescued.id])
+        .unwrap();
+    assert_eq!(library.cleanup().unwrap_err().issue, Issue::Busy);
+    assert_eq!(std::fs::read(path).unwrap(), before);
+    close(&owner);
+    library.cleanup().unwrap();
+    assert!(!path.exists());
+    let deleted = library.entries().unwrap().into_iter().find(|entry| entry.id == rescued.id).unwrap();
+    assert!(deleted.deleted && !deleted.dirty);
+    library.cleanup().unwrap();
 }
 
 #[test]

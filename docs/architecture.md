@@ -668,6 +668,9 @@ writer and records eviction in local library metadata before removing the file. 
 continues accepting metadata without restoring that download. Tapping its cloud-marked
 row explicitly fetches and validates the asset before opening it with its existing
 identity. Files imports remain independent local copies.
+Deleting a local-only rescue copy removes its file under the writer lock without waiting
+for a cloud receipt. Cleanup finishes interrupted local deletions and reclaims copies
+left behind by earlier deletion attempts.
 Library sync requires iCloud sign-in, separately from the sharing account. A different
 account fences the active library and retains the previous account's local files without
 uploading them to the new account. Rust checks the library's stored account identity before

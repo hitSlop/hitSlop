@@ -635,12 +635,30 @@ impl Library {
         Ok(())
     }
     pub fn delete(&self, id: &str) -> Result<()> {
+        use rusqlite::OptionalExtension;
         Self::valid_id(id)?;
-        self.inner
-            .lock()
-            .unwrap()
+        let inner = self.inner.lock().unwrap();
+        let local: Option<(bool, bool)> = inner
             .db
-            .execute("UPDATE documents SET deleted=1,confirmed_deleted=0,remote_delete=0 WHERE id=?1", [id])?;
+            .query_row("SELECT local_only,deleted FROM documents WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()?;
+        if let Some((true, deleted)) = local {
+            // Commit the local deletion intent before unlinking. Cleanup can finish an
+            // interrupted deletion without waiting for a cloud receipt that will never exist.
+            inner.db.execute("UPDATE documents SET deleted=1 WHERE id=?1", [id])?;
+            let path = self.path(id);
+            let removal = match std::fs::symlink_metadata(&path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                _ => file::delete_document(&path),
+            };
+            if let Err(error) = removal {
+                inner.db.execute("UPDATE documents SET deleted=?2 WHERE id=?1", params![id, deleted])?;
+                return Err(error.into());
+            }
+            inner.artwork_cache.borrow_mut().remove(id);
+        } else {
+            inner.db.execute("UPDATE documents SET deleted=1,confirmed_deleted=0,remote_delete=0 WHERE id=?1", [id])?;
+        }
         Ok(())
     }
     /// Evicts only a closed, cloud-confirmed replica. The local-only intent is committed
@@ -690,16 +708,17 @@ impl Library {
         )?;
         Ok(changed != 0)
     }
-    /// Finalize only after an editor releases ownership. Remote dirty edits become a
-    /// new local identity; a tombstone always remains for the canonical cloud identity.
+    /// Finalize only after an editor releases ownership. Local-only deletions need no
+    /// cloud receipt. Remote dirty edits become a new local identity; a tombstone always
+    /// remains for the canonical cloud identity.
     pub fn cleanup(&self) -> Result<()> {
         let inner = self.inner.lock().unwrap();
         let ids = inner
             .db
-            .prepare("SELECT id FROM documents WHERE deleted=1 AND confirmed_deleted=1")?
-            .query_map([], |r| r.get::<_, String>(0))?
+            .prepare("SELECT id,local_only FROM documents WHERE deleted=1 AND (confirmed_deleted=1 OR local_only=1)")?
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        for id in ids {
+        for (id, local_only) in ids {
             if !self.path(&id).exists() {
                 continue;
             }
@@ -709,6 +728,11 @@ impl Library {
                 .and_then(Weak::upgrade)
                 .is_some_and(|o| snapshot::request(&o, Request::State).is_ok())
             {
+                continue;
+            }
+            if local_only {
+                file::delete_document(&self.path(&id))?;
+                inner.artwork_cache.borrow_mut().remove(&id);
                 continue;
             }
             let owner = Owner::open(&self.path(&id), Mode::Document, Arc::new(|_| {}))?;
