@@ -7,6 +7,14 @@ import SwiftUI
 import Synchronization
 
 func libraryMessage(_ error: Error) -> String {
+  if let error = error as? CKError {
+    switch error.code {
+    case .notAuthenticated: return "Sign in to iCloud to sync your slops."
+    case .quotaExceeded: return "Your iCloud storage is full. Free up space, then retry."
+    case .unknownItem: return "This slop is no longer available in iCloud."
+    default: return "Couldn't connect to iCloud. Please retry."
+    }
+  }
   if case LibraryError.Failed(_, let message) = error { return message }
   return error.localizedDescription
 }
@@ -41,6 +49,11 @@ final class LibraryOwners: Sendable {
   }
 }
 
+public struct LibrarySyncAttention {
+  public let explanation: String
+  public let report: String
+}
+
 /// Native presentation of the account-scoped Rust library. No document state lives here.
 @MainActor public final class SlopLibrary: ObservableObject {
   public static let shared = SlopLibrary()
@@ -68,6 +81,27 @@ final class LibraryOwners: Sendable {
   @Published public private(set) var pending = 0
   @Published public private(set) var foregroundAt = Date()
   public var visibleEntries: [SyncedSlop] { entries.filter { !$0.deleted } }
+  public var attention: LibrarySyncAttention? {
+    guard lastError != nil || !issues.isEmpty else { return nil }
+    return LibrarySyncAttention(explanation: syncExplanation, report: syncReport)
+  }
+  public var syncExplanation: String {
+    syncMessage ?? "Some changes couldn’t sync with iCloud. Retry, or ask us for help if this keeps happening."
+  }
+  public var syncReport: String {
+    let info = Bundle.main.infoDictionary ?? [:]
+    return """
+      hitSlop sync report
+      App: \(info["CFBundleShortVersionString"] as? String ?? "unknown") (\(info["CFBundleVersion"] as? String ?? "unknown"))
+      System: \(ProcessInfo.processInfo.operatingSystemVersionString)
+      Captured: \(Date().ISO8601Format())
+      Errors: \(diagnosticCodes.isEmpty ? "Unavailable (retained issue)" : diagnosticCodes.joined(separator: ", "))
+      Pending: \(pending)
+      Last success: \(lastSuccess?.ISO8601Format() ?? "none")
+      Affected records: \(issues.keys.sorted().joined(separator: ", "))
+      \(syncExplanation)
+      """
+  }
   public var editorOpen = false
   private var sync: LibrarySync?
   private var task: Task<Void, Never>?
@@ -76,6 +110,7 @@ final class LibraryOwners: Sendable {
   private var connection: Task<Void, Never>?
   private var accountObserver: NSObjectProtocol?
   private var syncMessage: String?
+  private var diagnosticCodes: [String] = []
   private var native: NativeLibrary?
   private var container: CKContainer?
   private init() {}
@@ -138,7 +173,7 @@ final class LibraryOwners: Sendable {
   }
   private func show(_ error: Error) {
     lastError = String(describing: error)
-    status = libraryMessage(error)
+    status = "iCloud needs attention. Please retry."
   }
   private func open() async {
     defer { hasLoaded = true }
@@ -219,8 +254,12 @@ final class LibraryOwners: Sendable {
       if entries != self.entries { self.entries = entries }
       issues = state.issues
       lastSuccess = state.lastSuccess
-      lastError = state.lastError
-      syncMessage = state.message
+      // Keep attention visible until a retry has actually finished successfully.
+      if !syncing || state.lastError != nil {
+        lastError = state.lastError
+        syncMessage = state.message
+        diagnosticCodes = state.diagnosticCodes
+      }
       pending = state.pending
       isSyncing = syncing
       hasLoaded = true
@@ -230,8 +269,8 @@ final class LibraryOwners: Sendable {
   private func updateStatus() {
     if isSyncing {
       status = "Syncing…"
-    } else if let lastError {
-      status = syncMessage ?? issues.values.sorted().first ?? lastError
+    } else if lastError != nil {
+      status = syncMessage ?? "Some changes couldn’t sync. Please retry."
     } else if !issues.isEmpty {
       status = "Some slops need attention · will retry"
     } else if pending > 0 {
@@ -330,7 +369,7 @@ final class LibraryOwners: Sendable {
   }
   public func state(for entry: SyncedSlop) -> String {
     if entry.localOnly { return "Saved on this device" }
-    if let problem = entry.problem ?? issues[entry.id] { return problem }
+    if entry.problem != nil || issues[entry.id] != nil { return "Sync needs attention" }
     if !entry.downloaded { return "In iCloud · tap to download" }
     if isSynced(entry) { return "Synced with iCloud" }
     if let lastSuccess { return "Saved on this device · last synced " + clock(lastSuccess) }

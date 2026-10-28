@@ -652,7 +652,13 @@ Debounced edits and editor polling fetch metadata changes from the saved token, 
 fetch any required assets. The token advances
 only after every record is accepted or its issue and retry are durable in `library.sqlite`.
 A conflict merges the server record and restages, with at most three save rounds.
-Per-record failures never stop other documents.
+Per-record failures never stop other documents. A missing CloudKit record for a local
+pending deletion clears only its stale library transport metadata and republishes a
+conflict-checked tombstone; absence alone never acknowledges a deletion. Live entries
+are never reset through this recovery. Both catalogs expose sync attention through a
+tappable status and a help sheet with Retry, Copy diagnostics and Discord. Background
+and manual sync failures never present that sheet automatically; diagnostics exclude
+document contents and credentials.
 Rust owns library metadata, retained history, writer admission, staging, merging through
 the existing owner, and receipts; a receipt requires the incoming history to be present.
 Swift carries file paths and opaque version tokens, never Loro bytes. Both catalogs show

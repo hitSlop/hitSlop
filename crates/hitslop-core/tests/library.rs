@@ -799,3 +799,28 @@ fn retries_and_change_tokens_survive_reopening_without_confirming_work() {
     library.clear_retry(&entry.id).unwrap();
     assert!(library.retries().unwrap().is_empty());
 }
+
+#[test]
+fn missing_cloud_deletion_is_pending_across_reopen_and_never_resets_live_records() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account").unwrap();
+    let entry = library.create(&template, "Deleted").unwrap();
+    library.acknowledge(&entry.id, &entry.version, &[1, 2], false).unwrap();
+    assert!(!library.prepare_deletion_reupload(&entry.id).unwrap());
+    let live = library.stage(&entry.id).unwrap();
+    assert_eq!(live.fields, Some(vec![1, 2]));
+    library.release_upload(std::path::Path::new(live.asset_path.as_deref().unwrap())).unwrap();
+    library.delete(&entry.id).unwrap();
+    library.acknowledge(&entry.id, "", &[1, 2], true).unwrap();
+    library.block(&entry.id, "Deleted", "fixture", "old error").unwrap();
+    assert!(library.prepare_deletion_reupload(&entry.id).unwrap());
+    drop(library);
+    let library = Library::open(&root, "account").unwrap();
+    let upload = library.stage(&entry.id).unwrap();
+    assert!(upload.entry.deleted && upload.entry.dirty);
+    assert!(upload.fields.is_none() && upload.asset_path.is_none());
+    assert!(upload.entry.problem.is_none());
+    library.acknowledge(&entry.id, "", &[3], true).unwrap();
+    assert!(!library.entries().unwrap()[0].dirty);
+}

@@ -190,3 +190,108 @@ private final class FinishedCount: Sendable { let value = Mutex(0) }
   #expect(submitted.value.withLock { $0 } == 2)
   await sync.stop()
 }
+
+@Test(arguments: [false, true]) func missingCloudDeletionPublishesAFreshTombstone(persistentFailure: Bool) async throws
+{
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let template = try Fixtures.template(stage: Fixtures.stage())
+  defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let entry = try library.create(template: template.path, title: "Deletion")
+  try library.delete(id: entry.id)
+  let saves = FinishedCount()
+  let sync = LibrarySync(library: library, zone: CKRecordZone.ID(zoneName: "Library")) { operation in
+    if let op = operation as? CKModifyRecordZonesOperation {
+      op.modifyRecordZonesResultBlock?(.success(()))
+    } else if let op = operation as? CKModifySubscriptionsOperation {
+      op.modifySubscriptionsResultBlock?(.success(()))
+    } else if let op = operation as? CKFetchRecordZoneChangesOperation {
+      op.fetchRecordZoneChangesResultBlock?(.success(()))
+    } else if let op = operation as? CKModifyRecordsOperation, let record = op.recordsToSave?.first {
+      let attempt = saves.value.withLock {
+        $0 += 1
+        return $0
+      }
+      #expect(record["deleted"] as? Int == 1)
+      #expect(record["payload"] == nil)
+      if attempt == 1 || persistentFailure {
+        op.perRecordSaveBlock?(record.recordID, .failure(CKError(.unknownItem)))
+      } else {
+        op.perRecordSaveBlock?(record.recordID, .success(record))
+      }
+      op.modifyRecordsResultBlock?(.success(()))
+    }
+  }
+  _ = await sync.sync(.full, explicit: true)
+  #expect(saves.value.withLock { $0 } == (persistentFailure ? 3 : 2))
+  #expect(try library.entries().allSatisfy { $0.deleted && $0.dirty == persistentFailure })
+  #expect(try library.retries().isEmpty == !persistentFailure)
+  await sync.stop()
+}
+
+@Test(arguments: ["fetch", "retry", "download"])
+func unsupportedCloudRecordsPreserveUpdateGuidance(path: String) async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let zone = CKRecordZone.ID(zoneName: "Library")
+  let id = CKRecord.ID(recordName: UUID().uuidString.lowercased(), zoneID: zone)
+  let record = CKRecord(recordType: "SlopDocument", recordID: id)
+  record["format"] = 2
+  record["title"] = "Future slop"
+  record["template"] = "fixture"
+  record["snapshotVersion"] = "future"
+  // A tombstone reaches download's final metadata guard without fetching an asset.
+  record["deleted"] = path == "download" ? 1 : 0
+  if path == "retry" {
+    try library.retry(
+      retry: LibraryRetry(
+        id: id.recordName, title: "Future slop", template: "fixture", message: "Previous issue",
+        retryAt: 0, incoming: true))
+  }
+  let sync = LibrarySync(library: library, zone: zone) { operation in
+    if let op = operation as? CKModifyRecordZonesOperation {
+      op.modifyRecordZonesResultBlock?(.success(()))
+    } else if let op = operation as? CKModifySubscriptionsOperation {
+      op.modifySubscriptionsResultBlock?(.success(()))
+    } else if let op = operation as? CKFetchRecordZoneChangesOperation {
+      if path == "fetch" { op.recordWasChangedBlock?(id, .success(record)) }
+      op.fetchRecordZoneChangesResultBlock?(.failure(CKError(.networkUnavailable)))
+    } else if let op = operation as? CKFetchRecordsOperation {
+      op.perRecordResultBlock?(id, .success(record))
+      op.fetchRecordsResultBlock?(.success(()))
+    }
+  }
+  if path == "download" {
+    do {
+      try await sync.download(id: id.recordName)
+      Issue.record("An unsupported cloud record must require an update")
+    } catch LibraryError.Failed(let issue, _) {
+      #expect(issue == .requiresUpdate)
+    } catch {
+      Issue.record("Expected a typed update refusal, received: \(error)")
+    }
+    #expect(try library.entries().isEmpty)
+  } else {
+    let result = await sync.sync(.full, explicit: true)
+    #expect(result.message == "Update hitSlop to sync this slop.")
+    #expect(result.issues[id.recordName] == "Update hitSlop to sync this slop.")
+    let reopened = try NativeLibrary.open(root: folder.path, account: "fixture")
+    #expect(try reopened.retries().first?.message == "Update hitSlop to sync this slop.")
+  }
+  await sync.stop()
+}
+
+@Test func unknownCloudFailuresKeepTheirDetailsOutOfGuidance() async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let sync = LibrarySync(library: library, zone: CKRecordZone.ID(zoneName: "Library")) { operation in
+    (operation as? CKModifyRecordZonesOperation)?.modifyRecordZonesResultBlock?(
+      .failure(CloudFailure("Private transport details")))
+  }
+  let result = await sync.sync(.full)
+  #expect(result.message == "Some changes couldn't sync. Please retry.")
+  await sync.stop()
+}

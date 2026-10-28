@@ -73,7 +73,7 @@ struct PhoneCatalogView: View {
       .listStyle(.plain).scrollContentBackground(.hidden)
       .contentMargins(.top, 0, for: .scrollContent)
       .refreshable { await model.syncNow() }
-      Text(library.status).font(.caption2).foregroundStyle(.secondary).padding(.vertical, 6)
+      LibrarySyncStatusView(library: library)
     }.background(Color(.systemBackground))
   }
   private func recentRow(_ recent: PhoneRecent) -> some View {
