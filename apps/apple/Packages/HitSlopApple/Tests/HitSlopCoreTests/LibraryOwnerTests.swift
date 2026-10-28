@@ -267,7 +267,7 @@ func unsupportedCloudRecordsPreserveUpdateGuidance(path: String) async throws {
     do {
       try await sync.download(id: id.recordName)
       Issue.record("An unsupported cloud record must require an update")
-    } catch let LibraryError.Failed(issue, _) {
+    } catch LibraryError.Failed(let issue, _) {
       #expect(issue == .requiresUpdate)
     } catch {
       Issue.record("Expected a typed update refusal, received: \(error)")
