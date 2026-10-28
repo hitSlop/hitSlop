@@ -318,7 +318,7 @@ actor LibrarySync {
           let confirmed = try library.confirmedRevision(id: id.recordName)
           guard (record["format"] as? Int) == 1, record["title"] is String, record["template"] is String,
             record["snapshotVersion"] is String
-          else { throw CloudFailure("This synced slop needs a newer hitSlop.") }
+          else { throw LibraryError.Failed(issue: .requiresUpdate, message: "This synced slop needs a newer hitSlop.") }
           let retrying = try library.retries().contains { $0.id == id.recordName && $0.incoming }
           let unchanged =
             options.request == .full && confirmed?.count == 2
@@ -475,7 +475,7 @@ actor LibrarySync {
       guard let version = input["snapshotVersion"] as? String,
         let title = input["title"] as? String, let template = input["template"] as? String,
         (input["format"] as? Int) == 1
-      else { throw CloudFailure("This synced slop needs a newer hitSlop.") }
+      else { throw LibraryError.Failed(issue: .requiresUpdate, message: "This synced slop needs a newer hitSlop.") }
       if try library.receiveRemovedMetadata(
         id: input.recordID.recordName, title: title, template: template, version: version, fields: fields(input),
         artworkVersion: input["artworkVersion"] as? String, assetRevision: input["assetRevision"] as? String)
@@ -494,7 +494,7 @@ actor LibrarySync {
       let title = record["title"] as? String,
       let template = record["template"] as? String,
       (record["format"] as? Int) == 1
-    else { throw CloudFailure("This synced slop needs a newer hitSlop.") }
+    else { throw LibraryError.Failed(issue: .requiresUpdate, message: "This synced slop needs a newer hitSlop.") }
     try library.receive(
       id: record.recordID.recordName, title: title, template: template,
       asset: (record["payload"] as? CKAsset)?.fileURL?.path, version: version, fields: fields(record),
