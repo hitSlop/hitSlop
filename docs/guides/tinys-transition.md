@@ -4,7 +4,7 @@ tinys is a new product lineage, starting at 1.0.0 in https://github.com/hitSlop/
 
 ## Retained identities
 
-Apple bundle IDs, the CloudKit `SlopDocument` record type and `Library` zone, widget kind, iCloud containers, Keychain/app groups, Firebase project and Apple Services ID remain unchanged. Cloudflare Worker names, Durable Object class identities/migration history, R2 buckets and analytics datasets retain their deployed names. `dotslop.com` remains the isolated browser rendering domain. These names are intentional exceptions to the source rename.
+Apple bundle IDs, the CloudKit `SlopDocument` record type and `Library` zone, widget kind, iCloud containers, Keychain/app groups, Firebase project and Apple Services ID remain unchanged. The stateful Cloudflare relay/host Worker names, Durable Object class identities/migration history, R2 buckets and analytics datasets retain their deployed names. The new stateless `tinys-landing` Worker serves tinys.click separately, leaving the original landing Worker intact. `dotslop.com` remains the isolated browser rendering domain. These names are intentional exceptions to the source rename.
 
 Historical hitSlop protocol fixtures, release evidence, command prelude and `scripts/compat/required-history.json` remain unchanged. Active compatibility discovery reads the new repository and `scripts/compat/tinys-required-history.json`. Pin the first tinys corpus hash permanently after the first publication; every release still captures and qualifies its own corpus.
 

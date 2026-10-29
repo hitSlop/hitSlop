@@ -1,9 +1,11 @@
-# tinys
+# @hitslop/tinys
+
+The tinys author SDK and the `tiny` CLI, shipped together.
 
 Create an app with Bun 1.4.2 or newer:
 
 ```sh
-bunx @hitslop/tinys@1.2.0 init my-tiny
+bunx @hitslop/tinys@1.0.0 init my-tiny
 cd my-tiny
 bun install
 bun run dev
@@ -37,15 +39,15 @@ In a generated project, use `bun run check`, `bun run dev`, `bun run build`, and
 For an existing writable document:
 
 ```sh
-bunx @hitslop/tinys@1.2.0 describe My.tiny
-bunx @hitslop/tinys@1.2.0 get My.tiny
-bunx @hitslop/tinys@1.2.0 theme get My.tiny
-bunx @hitslop/tinys@1.2.0 export My.tiny --format pdf --output My.pdf
+bunx @hitslop/tinys@1.0.0 describe My.tiny
+bunx @hitslop/tinys@1.0.0 get My.tiny
+bunx @hitslop/tinys@1.0.0 theme get My.tiny
+bunx @hitslop/tinys@1.0.0 export My.tiny --format pdf --output My.pdf
 ```
 
-Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g @hitslop/tinys@1.2.0`, then `tiny skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project); `skills repair` fixes broken links and `skills uninstall` removes them. Bare `skills` means install. Project links from `init` and `--scope project` follow the pinned node_modules/@hitslop/tinys install. Add `--help` to inspect a command's arguments.
+Use `apply` or `batch` for schema-aware edits and `attachments` for portable files. Agent skills link to the global CLI so they update with it: run `bun install -g @hitslop/tinys@1.0.0`, then `tiny skills install` to choose skills and agent targets. Installation is additive and global by default (`--scope project` links one project); `skills repair` fixes broken links and `skills uninstall` removes them. Bare `skills` means install. Project links from `init` and `--scope project` follow the pinned node_modules/@hitslop/tinys install. Add `--help` to inspect a command's arguments.
 
-Alternatively, `bun install -g @hitslop/tinys@1.2.0` provides `tiny` on Bun's PATH. `tiny` needs Bun; the package contains the document engine for its supported platforms.
+Alternatively, `bun install -g @hitslop/tinys@1.0.0` provides `tiny` on Bun's PATH. `tiny` needs Bun; the package contains the document engine for its supported platforms.
 
 Follow the [CLI workflows](https://tinys.click/docs/guides/cli-workflows/) for copyable examples, themes, attachments, exports, and skills. The [repository CLI reference](https://github.com/hitSlop/tinys/blob/master/docs/guides/cli.md) includes all document operation shapes and contributor setup.
 
