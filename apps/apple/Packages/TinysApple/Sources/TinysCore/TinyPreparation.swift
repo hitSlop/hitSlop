@@ -4,7 +4,7 @@ import Foundation
 /// runs here, outside both the UI actor and Swift's cooperative thread pool.
 public enum TinyPreparation {
   /// Opening documents, at the priority of a person waiting for a window.
-  public static let documents = DispatchQueue(label: "com.hitslop.preparation", qos: .userInitiated)
+  public static let documents = DispatchQueue(label: "click.tinys.preparation", qos: .userInitiated)
   /// The catalog's file work, away from document opening.
   public static let catalog = DispatchQueue(label: "tinys.catalog", qos: .utility)
 

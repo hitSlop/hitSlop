@@ -38,7 +38,7 @@ public enum TinysFirebase {
         Crashlytics.crashlytics().record(
           error: NSError(
             // Fixed domains also separate categories on backends that merge different codes.
-            domain: "com.hitslop.operation.\(label)", code: context.code(for: operation),
+            domain: "click.tinys.operation.\(label)", code: context.code(for: operation),
             userInfo: [NSLocalizedDescriptionKey: label]), userInfo: context.fields(for: operation))
       }
     #endif

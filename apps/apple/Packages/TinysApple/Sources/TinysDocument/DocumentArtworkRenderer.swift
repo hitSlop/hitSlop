@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 
 /// One saved source and one serial capture queue. Rust owns rendering and publication.
 @MainActor public enum DocumentArtworkRenderer {
-  private static let queue = DispatchQueue(label: "com.hitslop.document-artwork", qos: .utility)
+  private static let queue = DispatchQueue(label: "click.tinys.document-artwork", qos: .utility)
   private static let runtime: Result<CaptureRuntime, Error> = Result {
     #if os(iOS)
       guard let path = Bundle.main.executableURL?.path else { throw TinyFailure("Artwork renderer is unavailable") }

@@ -469,7 +469,7 @@ or opened. Artwork and final close continue with the same owner and writer lock.
 catalog initially shows existing artwork and refreshes when new artwork is written.
 Opening that document meanwhile queues one reopen after ownership is released; a failed
 close restores the retained window. Quit waits for these closes and cancels queued reopens.
-Local Instruments signposts in `com.hitslop` / `DocumentClose` separate the barrier,
+Local Instruments signposts in `click.tinys` / `DocumentClose` separate the barrier,
 browser handoff, snapshot, rendering, owner close and artwork announcement, without
 recording document content or paths.
 
@@ -663,7 +663,7 @@ Rust owns library metadata, retained history, writer admission, staging, merging
 the existing owner, and receipts; a receipt requires the incoming history to be present.
 Swift carries file paths and opaque version tokens, never Loro bytes. Both catalogs show
 sync progress, errors and last success; a clean row says synced only after a successful
-check since foregrounding. Unified logs use subsystem `com.hitslop.library` without content.
+check since foregrounding. Unified logs use subsystem `click.tinys.library` without content.
 Ordinary Mac files retain their existing path.
 On iPhone, Recents interleaves local and library documents by their latest opening or
 file change. Opening times are device preferences, never edits to a document. Swipe
@@ -861,9 +861,9 @@ AASA, for a release tag or a manual run.
   like an edit; undo keeps them. A change the app refuses pauses sync and leaves the
   document as it was. Changes whose history never arrives wait inside Loro, and pause sync
   once the relay has caught the copy up. Frames wait while a command evaluates.
-- **Wire.** Binary frames (`sync::Frame`). The shipped TestFlight v1 relay contract is
+- **Wire.** Binary frames (`sync::Frame`). The tinys v1 relay contract is
   grow-only: immutable HTTP, link and both binary codec fixtures (frames and socket
-  envelopes in `frames.json`) live in `crates/hitslop-sharing-protocol/tests/fixtures/v1`.
+  envelopes in `frames.json`) live in `crates/tinys-sharing-protocol/tests/fixtures/v1`. Historical hitSlop fixtures remain preserved separately and are not tinys acceptance inputs.
   Breaking changes require `/v2` while `/v1` keeps serving old clients.
 
 Accepted limits, chosen for mini apps over heavier machinery:

@@ -254,7 +254,7 @@ fn saved_images(path: &Path, count: usize, padded: bool) -> Vec<String> {
             if padded {
                 // Large encoded bytes, one pixel to decode. An unknown ancillary
                 // chunk keeps the PNG valid without adding raster work.
-                writer.write_chunk(png::chunk::ChunkType(*b"slOp"), &vec![0; 6 << 20]).unwrap();
+                writer.write_chunk(png::chunk::ChunkType(*b"teSt"), &vec![0; 6 << 20]).unwrap();
             }
             writer.write_image_data(&[i as u8, 0, 0, 255]).unwrap();
             writer.finish().unwrap();

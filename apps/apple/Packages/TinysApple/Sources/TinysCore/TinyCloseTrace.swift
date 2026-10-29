@@ -3,7 +3,7 @@ import os
 /// Local Instruments timings only. One ephemeral signpost ID links a close's phases;
 /// paths, titles, document content and uploaded telemetry never enter this trace.
 @MainActor public final class TinyCloseTrace {
-  private static let signposter = OSSignposter(subsystem: "com.hitslop", category: "DocumentClose")
+  private static let signposter = OSSignposter(subsystem: "click.tinys", category: "DocumentClose")
   private let id: OSSignpostID
   private var total: OSSignpostIntervalState?
 

@@ -40,7 +40,7 @@ actor LibrarySync {
   let library: NativeLibrary
   private let submit: @Sendable (CKDatabaseOperation) -> Void
   private let zone: CKRecordZone.ID
-  private let logger = Logger(subsystem: "com.hitslop.library", category: "sync")
+  private let logger = Logger(subsystem: "click.tinys.library", category: "sync")
   private var running: Task<Outcome, Never>?
   private var queued: Options?
   private var operation: CKOperation?

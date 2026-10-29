@@ -104,7 +104,7 @@ error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports a
 unrecognized outcome and tells the user to inspect state before retrying; the engine relay
 forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--tiny-*`,
 `data-tiny-root`, the embed relay, and capture program requests and replies.
-The shipped TestFlight sharing `/v1` HTTP/link/socket contract grows only additively; its [immutable fixtures](../crates/hitslop-sharing-protocol/tests/fixtures/v1/README.md), including both binary frame and socket-envelope codecs, remain valid and are never replaced, regenerated or deleted. Breaking changes require `/v2` while `/v1` continues serving old clients. The npm package ships the document engine; the Mac app contains its linked core
+The tinys sharing `/v1` HTTP/link/socket contract grows only additively; its [immutable fixtures](../crates/tinys-sharing-protocol/tests/fixtures/v1/README.md), including both binary frame and socket-envelope codecs, remain valid and are never replaced, regenerated or deleted. Breaking changes require `/v2` while `/v1` continues serving old tinys clients. Historical hitSlop fixtures remain preserved separately and are not tinys acceptance inputs. The npm package ships the document engine; the Mac app contains its linked core
 and restricted evaluator. Release acceptance checks that the engine and the app contain
 the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
 

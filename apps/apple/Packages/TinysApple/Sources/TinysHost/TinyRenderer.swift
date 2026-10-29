@@ -9,7 +9,7 @@ import TinysWidgets
 /// first (`withCaptureSnapshot`); a closed one is read in place, without a writer lease.
 @MainActor public enum TinyRenderer {
   static let captureQueue = DispatchQueue(
-    label: "com.hitslop.capture-render", qos: .utility, attributes: .concurrent)
+    label: "click.tinys.capture-render", qos: .utility, attributes: .concurrent)
   static let nativeRuntime: Result<CaptureRuntime, Error> = Result {
     guard let evaluator = DocumentOwner.evaluatorPath else { throw TinyFailure("Capture renderer is missing") }
     return try CaptureRuntime(evaluatorPath: evaluator)

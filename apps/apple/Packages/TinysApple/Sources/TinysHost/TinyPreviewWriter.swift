@@ -3,7 +3,7 @@ import Foundation
 import TinysDocument
 
 extension Notification.Name {
-  public static let tinysPreviewDidChange = Notification.Name("com.hitslop.preview-did-change")
+  public static let tinysPreviewDidChange = Notification.Name("click.tinys.preview-did-change")
 }
 
 /// A document's artwork lives in its file (`artwork`): the build's preview and icon, and
