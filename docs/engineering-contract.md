@@ -1,5 +1,8 @@
 # Engineering contract
 
+tinys starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not tinys acceptance inputs.
+
+
 How the system works is in [architecture](architecture.md).
 
 ## Compatibility
@@ -13,15 +16,15 @@ Old documents depend on a few public boundaries; everything behind them may chan
 
 | Boundary | Marker | A later build |
 |---|---|---|
-| The app in a `.slop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
+| The app in a `.tiny` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
 | App behavior: `ctx`, handles, errors, the command prelude, stored capture programs and host DOM/CSS conventions | `app.runtime_abi`, stamped by the build | Dispatches to the app-facing context adapter for that ABI |
 | The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
 | How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
-| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `slop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's `socket` and `documentPath` fields (other fields are ignored; its location is per platform); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
+| CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `tiny-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's `socket` and `documentPath` fields (other fields are ignored; its location is per platform); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
 
 ### Local browser storage
 
-The Chrome beta uses browser-container format 1, separate from the `.slop` storage
+The Chrome beta uses browser-container format 1, separate from the `.tiny` storage
 version. Each `copies/<id>/container.json` marker is checked before sahpool opens or
 cleanup touches that pool. Unknown and unmarked pre-launch containers are refused
 without repair or migration. IndexedDB version 1 stores only the copies catalog.
@@ -37,7 +40,7 @@ owning tab disappears. No browser edit writes back to the original desktop file.
 
 ### How documents evolve
 
-A slop carries its own copy of the SDK: its `ui.js` and `commands.js` were compiled with
+A tiny carries its own copy of the SDK: its `ui.js` and `commands.js` were compiled with
 the SDK its project pinned, Svelte included. Changing the SDK therefore never affects a
 released document, and authors move to a new SDK when they rebuild. What old documents
 depend on is the host side they call into, the runtime ABI that `sdk/abi.ts` lists. A
@@ -90,7 +93,7 @@ and damaged or oversized artwork reads as absent rather than refusing the docume
 files are created by replaying `storage-1.sql` and then each storage migration in order,
 so a migrated file and a new one share one exact layout. A frozen corpus entry records
 the command prelude of its runtime ABI; that prelude's bytes are then final. A security fix that must reject old documents needs an assessment and a
-recovery path for their data. Installing hitSlop never replaces the app inside an
+recovery path for their data. Installing tinys never replaces the app inside an
 existing document; upgrading a document's app is an explicit operation. Only a write
 under the writer lock migrates a file, validating the result and committing the data and
 its markers together; reads that only display it (Quick Look, the catalog, `get`,
@@ -99,8 +102,8 @@ methods (host members start with `$` exactly when the handle also carries author
 fields; handles without authored fields keep plain names; reserved field names never grow),
 error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports an
 unrecognized outcome and tells the user to inspect state before retrying; the engine relay
-forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--slop-*`,
-`data-slop-root`, the embed relay, and capture program requests and replies.
+forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--tiny-*`,
+`data-tiny-root`, the embed relay, and capture program requests and replies.
 The shipped TestFlight sharing `/v1` HTTP/link/socket contract grows only additively; its [immutable fixtures](../crates/hitslop-sharing-protocol/tests/fixtures/v1/README.md), including both binary frame and socket-envelope codecs, remain valid and are never replaced, regenerated or deleted. Breaking changes require `/v2` while `/v1` continues serving old clients. The npm package ships the document engine; the Mac app contains its linked core
 and restricted evaluator. Release acceptance checks that the engine and the app contain
 the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
@@ -150,12 +153,12 @@ including after replacement, undo or reopen; no exactness is guaranteed. See
 
 How an edit, a save and a close move is in [architecture](architecture.md). The rules:
 
-- `hitslop-core` (Rust on Loro, `crates/`) owns document semantics and durable storage
-  (the writer lock, the `.slop` file, the save policy), and is the only code that opens a
-  `.slop` file: the app, Quick Look and the CLI's `slop-engine` all read and
+- `tinys-core` (Rust on Loro, `crates/`) owns document semantics and durable storage
+  (the writer lock, the `.tiny` file, the save policy), and is the only code that opens a
+  `.tiny` file: the app, Quick Look and the CLI's `tiny-engine` all read and
   write through it. The Rust owner schedules saves and serializes edits; Swift
-  `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/hitslop/src/shell`) holds no CRDT.
-- A `.slop` file is one SQLite database. A template holds its app: the `app` row
+  `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/tinys/src/shell`) holds no CRDT.
+- A `.tiny` file is one SQLite database. A template holds its app: the `app` row
   (catalog columns, a definition document and two requirements), `assets` (including
   `ui.js`, optional CSS, media and the private command program) and optional preview and icon `artwork`, and its initial values as its
   `checkpoint`. A document also holds its identity, theme overrides, saved state and
@@ -174,7 +177,7 @@ changes an unchanged app's digest.
 
 - One edit path. The CLI forwards to the live owner's socket or takes the writer lock
   and runs the owner in-process, without WebKit or authored code. Never bypass a busy
-  lock or remove a lock file from the registry (`~/.hitslop/live`).
+  lock or remove a lock file from the registry (`~/.tinys/live`).
 - Storage: one write in flight. Failed or unacknowledged saves keep ownership, all edits
   and the last confirmed saved version, and show a native retry. The store re-reads its
   sizes after a failure; it advances the saved version only on confirmed success.
@@ -199,7 +202,7 @@ changes an unchanged app's digest.
   refused without modifying the file.
 - Never add a JSON copy of the document, persistent JSON mirrors, JSON reconciliation, a
   JavaScriptCore engine or a second document engine. The WASM core serves SDK tests and local browser copies with the same Rust owner and SQLite store. Browser authoring development uses a native owner; the native engine validates authoring input. Browser copies hold a per-copy Web Lock and save through OPFS; authored code runs on a separate per-copy origin. A download drains the page, flushes the owner and streams one SQLite read transaction.
-- Rust owns wire types and shared limits (`crates/hitslop-core/src/wire`); ts-rs exports
+- Rust owns wire types and shared limits (`crates/tinys-core/src/wire`); ts-rs exports
   TypeScript and UniFFI carries native types to Swift. App acceptance also belongs to Rust; JSON Schema is only a descriptor projection for tool clients. Run `bun run schema:generate`; never edit generated files.
 - The core checks every file it opens (its layout, rows, markers and resource bounds) and
   every build it packs, not authored UI behavior. Rust decodes and checks page/socket requests once; Swift checks the page sender and receives typed native actions.
@@ -207,12 +210,12 @@ changes an unchanged app's digest.
   `attachments` table, referenced by ordinary document fields and served by URL. Media types are sniffed when stored; the first read verifies the full hash and refuses a stored label that does not match the content, except `application/octet-stream`, the fallback any content may carry.
 - Agent commands use the owner's descriptor validation and restricted child. Pages use handles and `doc.change`; command implementations stay outside the UI graph. Every evaluation gets a fresh runtime; no command globals persist across calls.
 - The app row seals assets at pack time. No app or asset updates/deletes, and no asset insert after the seal, including conflict-replacement forms. Catalog summaries never parse `definition_json` or read app/attachment blobs.
-- Preserve the macOS client: app lifecycle and quit, catalog and Recents, slop windows and
+- Preserve the macOS client: app lifecycle and quit, catalog and Recents, tiny windows and
   toolbar, PNG/PDF export, Quick Look previews and Finder icons, Firebase
   Analytics/Crashlytics and Sparkle.
-- Active examples are the directories with a `slop.ts` under `slops`;
+- Active examples are the directories with a `tiny.ts` under `tinys`;
   `bundled.json` selects shipped templates. Dedicated fixtures own platform semantics. Use plain CSS and
-  `slop.ts` theme colors; read `slops/PRODUCT.md` and `docs/guides/authoring.md` for
+  `tiny.ts` theme colors; read `tinys/PRODUCT.md` and `docs/guides/authoring.md` for
   visual changes.
 - Deferred work is tracked in the [roadmap](roadmap.md#later). Changing a descriptor
   currently makes a new document type; schema evolution is deferred.

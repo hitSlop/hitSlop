@@ -2,13 +2,13 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chromium, type BrowserContext, type Frame, type Page, type Worker as PageWorker } from "playwright";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { startBrowserHost } from "../../packages/hitslop/src/cli/browser";
-import { createFixture } from "../../packages/hitslop/tests/cli/dev-fixture";
-import { buildTemplate } from "../../packages/hitslop/src/cli/template";
-import { execute } from "../../packages/hitslop/src/cli/engine";
+import { startBrowserHost } from "../../packages/tinys/src/cli/browser";
+import { createFixture } from "../../packages/tinys/tests/cli/dev-fixture";
+import { buildTemplate } from "../../packages/tinys/src/cli/template";
+import { execute } from "../../packages/tinys/src/cli/engine";
 import { releases, documents } from "../../scripts/compat/corpus";
-import { BrowserHost } from "../../packages/hitslop/src/schema/constants";
-import { copyDeadline } from "../../packages/hitslop/src/browser/requests";
+import { BrowserHost } from "../../packages/tinys/src/schema/constants";
+import { copyDeadline } from "../../packages/tinys/src/browser/requests";
 import { Database } from "bun:sqlite";
 
 function documentIdentity(file: string) {
@@ -31,7 +31,7 @@ async function saveCopy(page: Page, output: string) {
     (globalThis as any).__saveTarget = handle;
     (window as any).showSaveFilePicker = async () => handle;
   });
-  await page.getByRole("button", { name: "Download .slop", exact: true }).click();
+  await page.getByRole("button", { name: "Download .tiny", exact: true }).click();
   await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#download")?.disabled);
   const encoded = await page.evaluate(async () => {
     const file = await (globalThis as any).__saveTarget.getFile();
@@ -50,13 +50,13 @@ beforeAll(async () => {
   directory = await mkdtemp(join(process.cwd(), ".browser-host-test-"));
   const source = join(directory, "source");
   await createFixture(process.cwd(), source);
-  const declaration = join(source, "slop.ts");
+  const declaration = join(source, "tiny.ts");
   await writeFile(declaration, (await readFile(declaration, "utf8")).replace('window: { kind: "standard",', 'window: { kind: "standard", fullscreenable: true,'));
-  const template = await buildTemplate(source, join(directory, "fixture.slop"), { renderViews: false });
-  const original = join(directory, "original.slop");
+  const template = await buildTemplate(source, join(directory, "fixture.tiny"), { renderViews: false });
+  const original = join(directory, "original.tiny");
   await execute({ method: "create", from: template, output: original });
   await execute({ method: "batch", documentPath: original, batch: { intents: [{ type: "setTheme", values: { accent: "#123456" } }] } });
-  snapshot = join(directory, "snapshot.slop");
+  snapshot = join(directory, "snapshot.tiny");
   await execute({ method: "copy", documentPath: original, output: snapshot });
   host = await startBrowserHost();
 }, 120_000);
@@ -120,7 +120,7 @@ for (const [name, engine] of [["Chrome", chromium]] as const) {
       await second.close();
       // Download without blurring the field: the host must call the page's drain.
       await app.getByRole("textbox", { name: "Document title" }).fill("Typed just before download");
-      const file = join(directory, `${name}-edited.slop`);
+      const file = join(directory, `${name}-edited.tiny`);
       await saveCopy(page, file);
       const reopened = await execute({ method: "get", documentPath: file });
       expect((reopened.state as any).value.title).toBe("Typed just before download");
@@ -140,7 +140,7 @@ for (const [name, engine] of [["Chrome", chromium]] as const) {
       await recovered.frameLocator("iframe").getByRole("textbox", { name: "Document title" }).waitFor();
       expect(await recovered.frameLocator("iframe").getByRole("textbox").inputValue()).toBe("Typed just before download");
       await recovered.frameLocator("iframe").getByRole("textbox").fill("Typed before returning to copies");
-      await recovered.getByRole("link", { name: "hitSlop", exact: true }).click();
+      await recovered.getByRole("link", { name: "tinys", exact: true }).click();
       await recovered.getByRole("heading", { name: "Browser copies", exact: true }).waitFor();
       await recovered.goto(url);
       await recovered.frameLocator("iframe").getByRole("textbox").waitFor();
@@ -162,12 +162,12 @@ for (const [name, engine] of [["Chrome", chromium]] as const) {
       expect(new URL(a.url()).origin).not.toBe(new URL(b.url()).origin);
       await a.evaluate(() => localStorage.setItem("isolation-probe", "first"));
       expect(await b.evaluate(() => localStorage.getItem("isolation-probe"))).toBeNull();
-      const file = join(directory, `${name}-unchanged.slop`);
+      const file = join(directory, `${name}-unchanged.tiny`);
       await saveCopy(first, file);
       expect(documentIdentity(file)).not.toBe(documentIdentity(snapshot));
       expect(documentContents(file)).toEqual(documentContents(snapshot));
       const identity = documentIdentity(file);
-      const other = join(directory, "other-import.slop"); await saveCopy(second, other);
+      const other = join(directory, "other-import.tiny"); await saveCopy(second, other);
       expect(documentIdentity(other)).not.toBe(identity);
       await first.reload(); await first.frameLocator("iframe").getByRole("textbox").waitFor();
       await saveCopy(first, file); expect(documentIdentity(file)).toBe(identity);
@@ -188,10 +188,10 @@ test("Chrome refuses WAL and malformed snapshots without presenting a saved copy
     for (const kind of ["wal", "malformed"]) {
       const bytes = new Uint8Array(await Bun.file(snapshot).arrayBuffer());
       if (kind === "wal") { bytes[18] = 2; bytes[19] = 2; } else bytes[0] = 0;
-      const file = join(directory, `${kind}.slop`); await Bun.write(file, bytes);
+      const file = join(directory, `${kind}.tiny`); await Bun.write(file, bytes);
       const page = await context.newPage(); await page.goto(await imported(file));
       await page.waitForFunction(() => document.querySelector("#status")?.textContent?.includes("rollback-journal"));
-      expect(await page.getByRole("button", { name: "Download .slop" }).isDisabled()).toBe(true);
+      expect(await page.getByRole("button", { name: "Download .tiny" }).isDisabled()).toBe(true);
       expect(new Uint8Array(await Bun.file(file).arrayBuffer())).toEqual(bytes);
       await page.close();
     }
@@ -228,14 +228,14 @@ test("Chrome opens and exports every saved compatibility document without conten
   const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "corpus-profile-")), { channel: "chrome", acceptDownloads: true });
   try {
     for (const release of await releases()) for (const name of await documents(release.root)) {
-      const original = join(release.root, "documents", `${name}.slop`);
+      const original = join(release.root, "documents", `${name}.tiny`);
       const page = await context.newPage();
       await page.goto(await imported(original));
       await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#download")?.disabled);
       await page.frameLocator("iframe").locator("body").waitFor();
       const frame = page.frames().find(frame => frame.url().includes(".localhost:"))!;
-      await frame.waitForFunction(() => typeof (globalThis as any).__slop?.flush === "function");
-      const file = join(directory, "corpus-export.slop"); await saveCopy(page, file);
+      await frame.waitForFunction(() => typeof (globalThis as any).__tiny?.flush === "function");
+      const file = join(directory, "corpus-export.tiny"); await saveCopy(page, file);
       expect(documentContents(file), `${release.name}/${name}`).toEqual(documentContents(original));
       expect(documentIdentity(file)).not.toBe(documentIdentity(original));
       await page.close();
@@ -245,7 +245,7 @@ test("Chrome opens and exports every saved compatibility document without conten
 
 
 test("Chrome imports snapshots across bounded ranges and downloads their complete SQLite bytes", async () => {
-  const file = join(directory, "large.slop");
+  const file = join(directory, "large.tiny");
   await execute({ method: "copy", documentPath: snapshot, output: file });
   const bytes = new Uint8Array(10 * 1024 * 1024).fill(97);
   const id = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
@@ -281,7 +281,7 @@ test("Chrome imports snapshots across bounded ranges and downloads their complet
     const cdp = await context.newCDPSession(page); await cdp.send("ServiceWorker.enable"); await cdp.send("ServiceWorker.stopAllWorkers");
     expect(await frame.evaluate(async id => (await fetch((globalThis as any).__devProbe.attachments.url(id), { headers: { Range: "bytes=10485752-10485759" } })).text(), id)).toBe("aaaaaaaa");
     await cdp.detach();
-    const output = join(directory, "large-export.slop"); await saveCopy(page, output);
+    const output = join(directory, "large-export.tiny"); await saveCopy(page, output);
     expect(ranges.length).toBeGreaterThan(8);
     for (const range of ranges) { const [start, end] = range.slice(6).split("-").map(Number); expect(end! - start! + 1).toBeLessThanOrEqual(BrowserHost.chunkBytes); }
     expect(documentContents(output)).toEqual(documentContents(file));
@@ -352,7 +352,7 @@ test("Chrome Rust export flushes accepted edits and resource reads reject oversi
     await page.frameLocator("iframe").getByRole("textbox").waitFor();
     const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
     const result = await worker.evaluate(async input => {
-      const runtimeURL = "/browser/core/hitslop_core_wasm.js";
+      const runtimeURL = "/browser/core/tinys_core_wasm.js";
       const runtime = await import(runtimeURL);
       await runtime.default();
       const copy = await runtime.installCopy(crypto.randomUUID());
@@ -374,7 +374,7 @@ test("Chrome Rust export flushes accepted edits and resource reads reject oversi
       copy.export(() => {});
       return { chunks, oversized, refused, began };
     }, [...new Uint8Array(await Bun.file(snapshot).arrayBuffer())]);
-    const file = join(directory, "rust-barrier.slop"); await Bun.write(file, new Uint8Array(result.chunks));
+    const file = join(directory, "rust-barrier.tiny"); await Bun.write(file, new Uint8Array(result.chunks));
     const reopened = await execute({ method: "get", documentPath: file });
     expect((reopened.state as any).value.title).toBe("Rust barrier saved this");
     expect(result.oversized).toBe(true); expect(result.refused).toBe(true); expect(result.began).toBe(false);
@@ -422,16 +422,16 @@ test("Chrome Save As cancellation and failed writes leave no completed temporary
       } catch (error) { if ((error as DOMException).name === "NotFoundError") return []; throw error; }
     });
     await page.evaluate(() => { (window as any).showSaveFilePicker = async () => { throw new DOMException("Cancelled", "AbortError"); }; });
-    await page.getByRole("button", { name: "Download .slop" }).click();
+    await page.getByRole("button", { name: "Download .tiny" }).click();
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#download")?.disabled);
     expect(await page.getByRole("alert").count()).toBe(0);
     expect(await exportsRemaining()).toEqual([]);
     await page.evaluate(() => { (window as any).showSaveFilePicker = async () => ({ createWritable: async () => new WritableStream({ write() { throw new Error("Destination write failed"); } }) }); });
-    await page.getByRole("button", { name: "Download .slop" }).click();
+    await page.getByRole("button", { name: "Download .tiny" }).click();
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#download")?.disabled);
     expect(await page.getByRole("alert").textContent()).toContain("Destination write failed");
     expect(await exportsRemaining()).toEqual([]);
-    const file = join(directory, "save-as-recovered.slop"); await saveCopy(page, file);
+    const file = join(directory, "save-as-recovered.tiny"); await saveCopy(page, file);
     expect(documentContents(file)).toEqual(documentContents(snapshot));
     expect(await exportsRemaining()).toEqual([]);
     await saveCopy(page, file);
@@ -468,7 +468,7 @@ test("Chrome refuses unknown container formats without altering their files", as
     const refused = await context.newPage(); await refused.goto(url);
     await refused.getByRole("alert").waitFor();
     expect(await refused.getByRole("alert").textContent()).toContain("Unsupported browser storage format");
-    expect(await refused.getByRole("button", { name: "Download .slop" }).isDisabled()).toBe(true);
+    expect(await refused.getByRole("button", { name: "Download .tiny" }).isDisabled()).toBe(true);
     expect(await files()).toEqual(before);
   } finally { await context.close(); }
 }, 30_000);
@@ -480,7 +480,7 @@ test("Chrome reclaims an abandoned export only after the owning tab closes", asy
     await page.frameLocator("iframe").getByRole("textbox").waitFor();
     const id = new URL(page.url()).searchParams.get("copy")!;
     await page.evaluate(() => { (window as any).showSaveFilePicker = async () => ({ createWritable: async () => new WritableStream({ write() { return new Promise(() => {}); } }) }); });
-    await page.getByRole("button", { name: "Download .slop" }).click();
+    await page.getByRole("button", { name: "Download .tiny" }).click();
     const observer = await context.newPage(); await observer.goto(origin);
     const hasExport = () => observer.evaluate(async id => {
       try { const folder = await (await (await navigator.storage.getDirectory()).getDirectoryHandle("exports")).getDirectoryHandle(id); return (await Array.fromAsync((folder as any).keys())).length > 0; }
@@ -631,7 +631,7 @@ test("Chrome rejects every outstanding and later page request when the document 
     expect(errors.some(message => message.includes("The document worker stopped"))).toBe(true);
     expect(await asked(worker)).toEqual(sent);
     // The person is not held on a dead copy: the catalog link leaves without the save that cannot happen.
-    await page.getByRole("link", { name: "hitSlop", exact: true }).click();
+    await page.getByRole("link", { name: "tinys", exact: true }).click();
     await page.getByRole("heading", { name: "Browser copies", exact: true }).waitFor({ timeout: 5000 });
   } finally { await context.close(); }
 }, 60_000);
@@ -650,7 +650,7 @@ test("Chrome fails a page request when the worker throws outside request handlin
     const frame = page.frames().find(frame => frame.url().includes(".localhost:"))!;
     const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
     await worker.evaluate(async () => {
-      const runtimeURL = "/browser/core/hitslop_core_wasm.js";
+      const runtimeURL = "/browser/core/tinys_core_wasm.js";
       const runtime = await import(runtimeURL);
       runtime.BrowserCopy.prototype.poll = function () { throw new Error("simulated poll failure"); };
     });

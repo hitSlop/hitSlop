@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   import CaptureContent from "./CaptureContent.svelte";
   let { snapshot, attachmentURL, mode }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();

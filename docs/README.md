@@ -1,6 +1,6 @@
-# hitSlop documentation
+# tinys documentation
 
-hitSlop ships a macOS app and a matching Bun authoring CLI and SDK. The iPhone app
+tinys ships a macOS app and a matching Bun authoring CLI and SDK. The iPhone app
 (iOS 26+) is in TestFlight, with opening, editing, creation, Files import and
 Home Screen widgets that refresh in the background when iOS allows. The Mac app
 includes the Synced Library.
@@ -10,11 +10,11 @@ The Mac catalog combines bundled templates, installed templates and Recents.
 
 Authors, including us, start with the
 [public guides](../apps/landing/src/content/docs/docs/getting-started.mdx), which are also
-published on hitslop.com. The pages here cover how the platform works and how to change it.
+published on tinys.click. The pages here cover how the platform works and how to change it.
 
 | Task | Page |
 | --- | --- |
-| Where hitSlop is going, and what's open now | [Direction](roadmap.md) |
+| Where tinys is going, and what's open now | [Direction](roadmap.md) |
 | Proposals and the reasoning behind them | [Ideas](ideas.md) |
 | Understand how an edit, a save and a close move | [Architecture](architecture.md) |
 | Rules for platform changes | [Engineering contract](engineering-contract.md) |
@@ -28,7 +28,7 @@ published on hitslop.com. The pages here cover how the platform works and how to
 | Choose checks and write tests | [Testing](testing.md) |
 | Validate and release the app and npm package | [Releasing](guides/releasing.md) |
 
-Packaged agent guidance lives in [packages/hitslop/skills](../packages/hitslop/skills).
+Packaged agent guidance lives in [packages/tinys/skills](../packages/tinys/skills).
 Measurements live in [`evidence/`](evidence/). They are frozen snapshots of the
 builds and environments named in each report, not current release acceptance. The
 [pre-launch simplification summary](evidence/prelaunch-simplification-2026-10-04.md)

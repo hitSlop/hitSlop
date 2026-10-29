@@ -1,16 +1,16 @@
 import { repository } from "../lib/artifacts";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { exists } from "../../packages/hitslop/src/cli/fs";
-import { projectSlug } from "../../packages/hitslop/src/cli/build";
+import { exists } from "../../packages/tinys/src/cli/fs";
+import { projectSlug } from "../../packages/tinys/src/cli/build";
 
 export type TemplateSource = { slug: string; source: string; bundled: boolean };
 
-/** Only immediate authored projects (folders with a `slop.ts`) are active; archives and
+/** Only immediate authored projects (folders with a `tiny.ts`) are active; archives and
  * build outputs are not scanned. Discovery never runs author code: a folder's name is its
  * slug, and building it refuses an app that declares another. */
 export async function discoverTemplates(
-  root = join(repository, "slops"),
+  root = join(repository, "tinys"),
 ): Promise<TemplateSource[]> {
   const selected: unknown = JSON.parse(await readFile(join(root, "bundled.json"), "utf8"));
   if (
@@ -29,7 +29,7 @@ export async function discoverTemplates(
     )
       continue;
     const source = join(root, entry.name);
-    if (!(await exists(join(source, "slop.ts"), true))) continue;
+    if (!(await exists(join(source, "tiny.ts"), true))) continue;
     const slug = projectSlug(source);
     slugs.add(slug);
     templates.push({ slug, source, bundled: selected.includes(slug) });

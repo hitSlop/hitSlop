@@ -1,10 +1,10 @@
-import HitSlopCore
-import HitSlopDocument
 import SwiftUI
+import TinysCore
+import TinysDocument
 
 struct PhoneCatalogView: View {
   @ObservedObject var model: PhoneDocuments
-  @ObservedObject var library: SlopLibrary
+  @ObservedObject var library: TinyLibrary
   @Binding var tab: PhoneTab
   @Binding var showSettings: Bool
   @Binding var query: String
@@ -21,8 +21,8 @@ struct PhoneCatalogView: View {
   }
   private var header: some View {
     HStack(spacing: 12) {
-      SlopBrandMark(size: 30)
-      Text("hitSlop").font(SlopBrand.heading(24, relativeTo: .title)).tracking(-0.6)
+      TinyBrandMark(size: 30)
+      Text("tinys").font(TinyBrand.heading(24, relativeTo: .title)).tracking(-0.6)
       Spacer()
       Button {
         model.tapped()
@@ -38,7 +38,7 @@ struct PhoneCatalogView: View {
       header
       search
       HStack {
-        Text("Recents").font(SlopBrand.heading(20, relativeTo: .title2))
+        Text("Recents").font(TinyBrand.heading(20, relativeTo: .title2))
         Spacer()
         Button {
           model.tapped()
@@ -86,7 +86,7 @@ struct PhoneCatalogView: View {
     return Button {
       model.open(recent.url)
     } label: {
-      PhoneSlopRow(
+      PhoneTinyRow(
         url: recent.url, title: recent.title, subtitle: subtitle,
         revision: recent.entry?.assetRevision ?? "", synced: recent.entry.map { library.isSynced($0) } ?? false,
         downloaded: recent.entry?.downloaded ?? true)
@@ -114,7 +114,7 @@ struct PhoneCatalogView: View {
   private var search: some View {
     HStack(spacing: 10) {
       Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-      TextField("Search slops", text: $query).autocorrectionDisabled()
+      TextField("Search tinys", text: $query).autocorrectionDisabled()
     }.padding(.horizontal, 13).padding(.vertical, 9).background(
       Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12)
     )
@@ -148,7 +148,7 @@ struct PhoneCatalogView: View {
         }.padding(.horizontal, 22)
       }.padding(.top, 18)
       HStack {
-        Text(category).font(SlopBrand.heading(24, relativeTo: .title2))
+        Text(category).font(TinyBrand.heading(24, relativeTo: .title2))
         Spacer()
       }
       .padding(.horizontal, 24).padding(.top, 25).padding(.bottom, 12)
@@ -161,7 +161,7 @@ struct PhoneCatalogView: View {
           ) {
             template in
             NavigationLink(value: PhoneRoute.template(template)) {
-              PhoneSlopRow(
+              PhoneTinyRow(
                 url: template.url, title: template.title, subtitle: template.categories.joined(separator: " · "))
             }.buttonStyle(.plain).accessibilityLabel(template.title)
           }

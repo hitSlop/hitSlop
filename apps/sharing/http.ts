@@ -1,4 +1,4 @@
-import { SharingHost } from "../../packages/hitslop/src/wire/constants.generated";
+import { SharingHost } from "../../packages/tinys/src/wire/constants.generated";
 
 const appleAppSiteAssociation = JSON.stringify({
   applinks: { details: [{
@@ -9,9 +9,9 @@ const appleAppSiteAssociation = JSON.stringify({
 });
 
 // Keep the callback fragment in the browser: it never reaches the host or its logs.
-const appleCallbackScript = 'if (location.hash) location.replace("hitslop://auth/apple" + location.hash);';
-const appleCallbackPage = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Sign in with Apple</title><p>Returning to hitSlop…</p><script>${appleCallbackScript}</script></html>`;
-const appleCallbackPolicy = "default-src 'none'; script-src 'sha256-dK5bMXUEDI+WHBPUTX228sBNAIgNZlMMmLz0Wi7JLV0='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const appleCallbackScript = 'if (location.hash) location.replace("tinys://auth/apple" + location.hash);';
+const appleCallbackPage = `<!doctype html><html lang="en"><meta charset="utf-8"><title>Sign in with Apple</title><p>Returning to tinys…</p><script>${appleCallbackScript}</script></html>`;
+const appleCallbackPolicy = "default-src 'none'; script-src 'sha256-nSgW3bjHXA+FNMBx3iDyJGSo+iV78NDifT5JYO5oOQ0='; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 type Binding = { fetch(request: Request): Promise<Response> };
 /** HTTP/static glue only; Rust authorizes resources and owns the protocol. */

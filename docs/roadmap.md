@@ -1,33 +1,33 @@
 # Direction
 
-Today hitSlop is a signed Mac app, an iPhone app and one matching npm package. People
+Today tinys is a signed Mac app, an iPhone app and one matching npm package. People
 create documents from bundled or installed templates, edit them in the window or through
 the CLI (their coding agent included), keep them in sync across their devices, edit them
 live with others, and export PNG and PDF.
 
-The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates slops,
+The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates tinys,
 bundles the Popular templates and imports from Files. The current
-iPhone host is portrait-only; per-slop orientation declarations remain future work. The Mac/iPhone Synced Library
-keeps managed slops in sync through the person's iCloud account. The Mac app
+iPhone host is portrait-only; per-tiny orientation declarations remain future work. The Mac/iPhone Synced Library
+keeps managed tinys in sync through the person's iCloud account. The Mac app
 includes the Synced Library on CloudKit Production, matching TestFlight/App Store
 iPhones. iPhone Home Screen
-widgets render library slops with a widget view locally, open them on tap, and refresh
+widgets render library tinys with a widget view locally, open them on tap, and refresh
 in the background when iOS allows.
 [Architecture](architecture.md#synced-library) owns the library design.
 
 Live sharing is available in the Mac app and the iPhone app on TestFlight. The
 Share popover's **Live collaboration** action creates a link anyone can use to edit
-in the Mac/iPhone app or Chrome at share.hitslop.com. The owner signs in with Apple;
+in the Mac/iPhone app or Chrome at share.tinys.click. The owner signs in with Apple;
 Stop ends the link and everyone keeps their copy. See the
 [relay architecture](architecture.md#relay) and [sharing operations](../apps/sharing/README.md).
 
 ## Where we're heading
 
 AI made writing a small tool cheap. What's still missing is a place where those tools live,
-keep their data and stay changeable. hitSlop is that place. Every slop gets merging
+keep their data and stay changeable. tinys is that place. Every tiny gets merging
 storage, saving and recovery, export and a Finder icon without its author doing anything,
 and a person and their agent edit the same live document. The next steps make the climb
-from using a slop to changing it gentle:
+from using a tiny to changing it gentle:
 
 ```text
 use ──▶ tweak ──▶ ask ──▶ remix ──▶ author
@@ -40,14 +40,14 @@ In order, with the reasoning in [ideas](ideas.md):
    from the toolbar, editing the open document.
 2. [Attribution and "Undo that"](ideas.md#attribution-and-undo-that): every change says
    who made it. Edit ▸ Undo already reverts an agent's edits.
-3. [`slop watch` and `slop mcp`](ideas.md#slop-watch-and-slop-mcp): agents follow edits and
-   reach slops without a shell.
+3. [`tiny watch` and `tiny mcp`](ideas.md#tiny-watch-and-tiny-mcp): agents follow edits and
+   reach tinys without a shell.
 4. [Remix](ideas.md#remix) with [additive app upgrades](ideas.md#additive-app-upgrades).
    Both change the engineering contract and need a decision before work starts.
 
 Beyond those steps, the longer-term direction includes native hosts for iPadOS, Android,
 Windows and Linux; sync beyond Apple devices; an app-store-style catalog for discovering,
-publishing and installing community slops; and deeper native integrations. These are
+publishing and installing community tinys; and deeper native integrations. These are
 directions without release dates or a platform delivery order. The
 [README roadmap](../README.md#roadmap) gives the short version; proposals live in [ideas](ideas.md).
 
@@ -71,7 +71,7 @@ directions without release dates or a platform delivery order. The
 
 - An additive authoring environment API exposes native platform/device identity and
   reactive compact/regular viewport layout to Svelte and editor CSS. Browser identity
-  stays unknown. `slop dev` device presets preserve accepted edits; static captures
+  stays unknown. `tiny dev` device presets preserve accepted edits; static captures
   remain independent. See the [authoring guide](guides/authoring.md#platform-device-and-responsive-layout).
 
 - Native `window.fullscreenable` and the local Chrome browser beta are implemented.
@@ -79,7 +79,7 @@ directions without release dates or a platform delivery order. The
   command workers and Save As downloads back to native. Identity, export barriers,
   failed writes and recovery are covered at their owning boundaries. Browser launch
   polish, sustained-edit/near-limit performance qualification and Safari/mobile browser
-  support remain deferred. Hosted links use the live sharing service described above. `slop dev` keeps its native owner.
+  support remain deferred. Hosted links use the live sharing service described above. `tiny dev` keeps its native owner.
   [Hardening evidence](evidence/browser-host-hardening-2026-10-08.md) records the scope
   and verification limits.
 - A text draft whose control is destroyed after an unknown-outcome send is retained in
@@ -95,7 +95,7 @@ directions without release dates or a platform delivery order. The
   those comments do not cover them.
 - Requalify every widget family and size on the release candidate; the earlier
   hands-on reviews predate the two-stage capture ABI.
-- Public releases 1.0.0, 1.0.1 and 1.1.0 carry frozen
+- Historical hitSlop releases 1.0.0, 1.0.1 and 1.1.0 carry frozen
   [compatibility corpora](testing.md#compatibility-corpus). Keep the permanent 1.0.0
   hash pin and capture one new entry per release, even when markers stay unchanged.
   The candidate must replay every published corpus and its own entry.
@@ -139,21 +139,21 @@ directions without release dates or a platform delivery order. The
   policy. These remain follow-ups to the release fixes; working details are in the
   local `plans/sharing-client-followups.md` when present.
 - **Review the restored examples in the app.** The archived examples now live in
-  `slops/` in the current format, with model modules and commands. They have been checked
+  `tinys/` in the current format, with model modules and commands. They have been checked
   in the dev preview; individual native checks do not qualify the entire collection.
   Check each in the built app and PNG/PDF export, and review the bundled selection.
   One example stays archived because its engine is AGPL.
-- **Author diagnostics.** Add a read-only [`slop doctor`](ideas.md#slop-doctor) for
+- **Author diagnostics.** Add a read-only [`tiny doctor`](ideas.md#tiny-doctor) for
   installation and PATH conflicts, CLI/SDK alignment, engine availability and skill links.
   Explain why a rebuilt template does not update an existing document, and suggest
   concrete next steps. Repairs remain explicit actions.
-- **Preview asset serving.** `slop dev` serves only the slop folder and the CLI, so
-  assets inside packages (fonts, models) must be copied into the slop to preview.
+- **Preview asset serving.** `tiny dev` serves only the tiny folder and the CLI, so
+  assets inside packages (fonts, models) must be copied into the tiny to preview.
 - **Worker and worklet assets.** The shared page CSP is defined in Rust for native and
   browser pages. Explicit worker policy and build support for worker and
   worklet entry points remain: emit them as files in `assets` so `new Worker` and
   `addModule` load local URLs. Keep `blob:` and `data:` code refused and make failures
-  understandable. WebKit does not isolate `slop:` pages, so there is no
+  understandable. WebKit does not isolate `tiny:` pages, so there is no
   `SharedArrayBuffer`.
 - **Failure hardening.** Add an aggregate close-time artwork deadline; rendering under
   the writer lock is currently bounded only by per-child watchdogs. Consider a cap on
@@ -171,7 +171,7 @@ directions without release dates or a platform delivery order. The
   `user_version` into read/write versions, and rename `artwork.png`. Keep the storage-2
   backup and interruption checklist above.
 - **Revisit the native Svelte checker.** `svelte-check-native` (Rust, TypeScript 7's native
-  compiler) matched `svelte-check` on every slop and 14 of 15 injected mistakes, and runs
+  compiler) matched `svelte-check` on every tiny and 14 of 15 injected mistakes, and runs
   about 8 to 10 times faster, but it has one maintainer, ships unsigned binaries without
   release CI, trails `svelte-check` by weeks, and by default exits 0 on CSS and some markup
   syntax errors. Look again when TypeScript 7.1 gives `svelte-check` a JS API (which lets
@@ -192,14 +192,14 @@ directions without release dates or a platform delivery order. The
 
 - The native failure screen retains accepted edits and offers Reopen, Copy details and
   Get help; a pending save keeps its recovery sheet. Page-call deadlines and never-ready
-  recovery use the same renderer-death path. Reports include the slop's and build's format
+  recovery use the same renderer-death path. Reports include the tiny's and build's format
   and runtime markers. Widget location refresh follows renames and same-volume moves
   without replacing cached images.
 
 - Declared `camera` and `microphone` capabilities gate web capture in Mac documents,
   development previews and local browser copies, with OS/browser consent still required.
   Declared `speech` enables on-device Mac transcription of stored recordings; it is
-  unavailable in the iPhone app, development previews and browser copies. There is no per-slop permission UI or
+  unavailable in the iPhone app, development previews and browser copies. There is no per-tiny permission UI or
   server fallback. [Capabilities](reference/runtime.md#security-boundaries) records the boundary.
 - Saved-source capture preserves live speech, file selection, downloads and resize eligibility;
   close preparation, page replacement and renderer loss cancel pending transcription.
@@ -215,8 +215,8 @@ directions without release dates or a platform delivery order. The
   The candidate workflow captures and tests once; approval publishes those exact bytes.
 - Static roles import their own CSS in import order, without editor stylesheet inheritance.
   Pack renders every declared view, including Export PNG/PDF and all Widget families,
-  even with supplied artwork. `slop dev` still mounts static views inside the editor page.
-- Active templates are discovered under `slops/`; `bundled.json` chooses the starters.
+  even with supplied artwork. `tiny dev` still mounts static views inside the editor page.
+- Active templates are discovered under `tinys/`; `bundled.json` chooses the starters.
   Xcode's embedding phase refreshes `generated/templates/` through the template cache
   before copying selected starters into the app. Prepare changed tooling first; see
   [the build workflow](guides/development.md#build-current-templates-with-the-app).
@@ -224,7 +224,7 @@ directions without release dates or a platform delivery order. The
   live socket. Swift delivers events and provides native UI and rendering.
 - The CLI's engine creates, edits and validates documents on macOS and Linux, renders template artwork and exports closed documents itself. The Mac app links
   its core independently.
-- The CLI, SDK, contracts, templates and skills ship as one `hitslop` npm package with
+- The CLI, SDK, contracts, templates and skills ship as one `tinys` npm package with
   the Mac app's release version.
 - Rust types own every wire and the app definition; ts-rs generates TypeScript and UniFFI
   carries types to Swift. Command arguments are `s.*` descriptors the owner checks.
@@ -235,21 +235,21 @@ directions without release dates or a platform delivery order. The
   alongside the Mac desktop widgets. Live sharing connects native and browser
   copies through the existing owners. [Sync](architecture.md#sync) owns both designs;
   release and polish work is [open now](#open-now).
-- `slop.ts` declares metadata and artwork; `schema.ts` supplies the document,
+- `tiny.ts` declares metadata and artwork; `schema.ts` supplies the document,
   `App.svelte` the editor, required `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte`, `Widget.svelte`
   and `commands.ts` the other roles. Captures use saved-state Svelte SSR and Takumi,
   with restricted children on Mac/Linux and in-process capture on iPhone; there is no
-  WebKit capture, automatic fallback or public per-slop override.
-  `slop dev` runs the native owner on a disposable copy per preview page.
+  WebKit capture, automatic fallback or public per-tiny override.
+  `tiny dev` runs the native owner on a disposable copy per preview page.
 
 A historical summary of the ownership decisions and integration findings is retained in
 the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10-04.md).
 
 ## Later
 
-**Catalog capture fidelity.** The [visual review](evidence/slop-capture-review-2026-10-12.md)
+**Catalog capture fidelity.** The [visual review](evidence/tiny-capture-review-2026-10-12.md)
 finds blank icons, lost SVG styling and collapsed exports in its historical build. The
-current Takumi capture compositions cover the bundled slops, including saved cells and
+current Takumi capture compositions cover the bundled tinys, including saved cells and
 attachments. Broader theme and populated-state coverage remains product qualification;
 successful rendering does not imply support for every browser CSS feature.
 
@@ -270,15 +270,15 @@ Broader desktop qualification and cache management UI remain pending. iPhone bac
 refresh is tracked [above](#open-now); implemented widget behavior lives in the
 [architecture](architecture.md#macos-image-widgets).
 
-**Menu-bar presentation.** Explore [menu-bar slops](ideas.md#menu-bar-slops) for timers,
+**Menu-bar presentation.** Explore [menu-bar tinys](ideas.md#menu-bar-tinys) for timers,
 players and quick capture, alongside the implemented widgets. Consider creating the
 WebView only when its editor is opened. Ownership, saving, quit behavior and any
 background work need a lifecycle design before this becomes an authoring option.
 
-**Permissions and device services.** Code-bound grants and per-slop consent remain a
+**Permissions and device services.** Code-bound grants and per-tiny consent remain a
 [proposal](ideas.md#permissions-bound-to-the-apps-code), as do additional devices such
 as MIDI. [Native integrations and richer media](ideas.md#native-integrations-and-richer-media)
-also proposes calendar and reminder access, notifications, Shortcuts/Siri, a "Send to slop"
+also proposes calendar and reminder access, notifications, Shortcuts/Siri, a "Send to tiny"
 share extension, packaged worker/audio-worklet support and broader transcription.
 Camera, microphone and supported on-device Mac transcription already work; browser
 transcription and a newer native speech backend are not implemented. New capability
@@ -286,7 +286,7 @@ names require an implementation and owning-boundary tests; the proposed addition
 not authoring options today.
 
 **Hosted templates.** The goal is an app-store-style catalog where people discover,
-publish and install community slops. A publishing service may accept validated immutable template
+publish and install community tinys. A publishing service may accept validated immutable template
 artifacts, expose a generated OpenAPI catalog, and download immutable cached masters.
 Creating a document still makes a writable local copy, and bundled and cached masters
 work offline. Plan a separate Cloudflare HTTP module with R2 artifacts and catalog

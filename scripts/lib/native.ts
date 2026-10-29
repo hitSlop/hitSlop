@@ -3,17 +3,17 @@
 import { PNG } from "pngjs";
 import { Database } from "bun:sqlite";
 import { appAsset } from "./artifacts";
-import { exec } from "../../packages/hitslop/src/cli/process";
+import { exec } from "../../packages/tinys/src/cli/process";
 import { strict as assert } from "node:assert";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execute, findEngine } from "../../packages/hitslop/src/cli/engine";
+import { execute, findEngine } from "../../packages/tinys/src/cli/engine";
 import type {
   EngineMethod,
   EngineRequestFor,
   EngineSuccess,
-} from "../../packages/hitslop/src/wire/engine";
+} from "../../packages/tinys/src/wire/engine";
 
 /** This checkout's document engine. */
 export const debugEngine = () => findEngine();
@@ -54,9 +54,9 @@ export async function createDocument(
 /** A new document at `document` from a build stage, made the way a user's are: the CLI's
  * file engine packs the template, and the document engine creates the document from it. */
 export async function documentFromStage(stage: string, document: string, options?: Placement) {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-fixture-"));
+  const folder = await mkdtemp(join(tmpdir(), "tinys-fixture-"));
   try {
-    const template = join(folder, "template.slop");
+    const template = join(folder, "template.tiny");
     await engineRequest(
       {
         method: "pack",
@@ -205,7 +205,7 @@ export async function storedCapture(
   const images: Record<string, string> = {};
   for (const frame of batch.frames) {
     assert.ok(frame.html.length > 0, `${kind}: empty markup`);
-    for (const match of (frame.html + frame.css).matchAll(/slop-attachment:([a-f0-9]{64})/g)) {
+    for (const match of (frame.html + frame.css).matchAll(/tiny-attachment:([a-f0-9]{64})/g)) {
       const id = match[1]!;
       const bytes = blobs.get(id);
       assert.ok(bytes, `Missing capture attachment ${id}`);

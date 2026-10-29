@@ -4,7 +4,7 @@ const rustInputs = [/^crates\//, /^apps\/sharing\/src\//, /^apps\/sharing\/Cargo
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
-  /^packages\/hitslop\/(src\/(sdk|shell|schema|wire)|generated|acceptance)\//,
+  /^packages\/tinys\/(src\/(sdk|shell|schema|wire)|generated|acceptance)\//,
   /^tests\/(abi|apps|presentation|fixtures|compat)\//,
   /^scripts\/(lib|build|templates|compat)\//,
   /^\.github\/actions\/native-cache\//,
@@ -13,43 +13,43 @@ const nativeInputs = [
 export const appBuildInputs = [
   ...rustInputs,
   /^apps\/apple\//,
-  /^packages\/hitslop\/(src\/(sdk|shell|schema|wire)|generated|acceptance|templates)\//,
+  /^packages\/tinys\/(src\/(sdk|shell|schema|wire)|generated|acceptance|templates)\//,
   /^scripts\/(build|lib|templates|release)\//,
-  /^slops\/(?!.*\.md$)/,
+  /^tinys\/(?!.*\.md$)/,
   /^\.github\/actions\/native-cache\//,
 ];
 
 export const tierInputs = {
-  compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/hitslop-core\/src\/(app|file)\//],
+  compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/tinys-core\/src\/(app|file)\//],
   tooling: [
     /^tests\/verification\//,
     /^scripts\/compat\//,
     /^scripts\/ci\//,
     /^\.github\/workflows\/(block-ai-attribution|secret-scan)\.yml$/,
-    /^packages\/hitslop\/src\/cli\/process\.ts$/,
+    /^packages\/tinys\/src\/cli\/process\.ts$/,
   ],
   contracts: [
     /^apps\/sharing\/openapi.json$/,
     ...rustInputs,
-    /^packages\/hitslop\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
+    /^packages\/tinys\/(src\/(schema|wire)|generated|acceptance|tests\/schema)\//,
     /^scripts\/build\/(generate|rust-bindings)\.ts$/,
     /^scripts\/build\/(acceptance|runner)\.ts$/,
-    /^packages\/hitslop\/src\/(sdk|shell)\//,
+    /^packages\/tinys\/src\/(sdk|shell)\//,
     /\.generated\.(rs|swift)$/,
   ],
   // Also the README and the app's links, which scripts/ci/hygiene.ts compares with the site.
-  types: [/^README\.md$/, /SlopLinks\.swift$/, /^\.prettier(?:rc(?:\.[^/]*)?|ignore)$/, /^\.oxlintrc\.json$/, /^packages\/hitslop\/src\//, /^slops\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
-  bun: [...rustInputs, /^packages\/hitslop\/src\//, /^packages\/hitslop\/tests\/(sdk|shell)\/(?!.*\.browser\.test\.ts$)/, /^tests\/(fixtures|compat|release)\//, /^scripts\/(?!ci\/)/],
-  cli: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/hitslop\/tests\/cli\/(?!.*\.(native|browser)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
-  render: [...rustInputs, /^packages\/hitslop\/(src|shell)\//, /^packages\/hitslop\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^slops\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
-  browser: [...rustInputs, /^packages\/hitslop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/hitslop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
-  rust: [/^scripts\/compat\//, ...rustInputs, /^packages\/hitslop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
+  types: [/^README\.md$/, /TinyLinks\.swift$/, /^\.prettier(?:rc(?:\.[^/]*)?|ignore)$/, /^\.oxlintrc\.json$/, /^packages\/tinys\/src\//, /^tinys\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
+  bun: [...rustInputs, /^packages\/tinys\/src\//, /^packages\/tinys\/tests\/(sdk|shell)\/(?!.*\.browser\.test\.ts$)/, /^tests\/(fixtures|compat|release)\//, /^scripts\/(?!ci\/)/],
+  cli: [...rustInputs, /^packages\/tinys\/(src|templates|skills)\//, /^packages\/tinys\/tests\/cli\/(?!.*\.(native|browser)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
+  render: [...rustInputs, /^packages\/tinys\/(src|shell)\//, /^packages\/tinys\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/tinys\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^tinys\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
+  browser: [...rustInputs, /^packages\/tinys\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/tinys\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
+  rust: [/^scripts\/compat\//, ...rustInputs, /^packages\/tinys\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
   sharing: [...rustInputs, /^apps\/sharing\//, /^scripts\/sharing\//, /^scripts\/build\/sharing\.ts$/],
   landing: [/^apps\/landing\//],
-  packed: [...rustInputs, /^packages\/hitslop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
+  packed: [...rustInputs, /^packages\/tinys\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,
   app: appBuildInputs,
-  native: [...nativeInputs, /^packages\/hitslop\/(src\/cli|shell)\//, /^tests\/native\/(?!(render|landing)\.native\.test\.ts$)/, /^(?!packages\/hitslop\/tests\/cli\/build\.native\.test\.ts$|tests\/native\/(render|landing)\.native\.test\.ts$).*\.native\.test\.ts$/, /^scripts\/compat\//],
+  native: [...nativeInputs, /^packages\/tinys\/(src\/cli|shell)\//, /^tests\/native\/(?!(render|landing)\.native\.test\.ts$)/, /^(?!packages\/tinys\/tests\/cli\/build\.native\.test\.ts$|tests\/native\/(render|landing)\.native\.test\.ts$).*\.native\.test\.ts$/, /^scripts\/compat\//],
 };
 
 /** On a pull request into master, the Swift and native tiers are required only when one of
@@ -60,7 +60,7 @@ export const tierInputs = {
 export const nativeGateInputs = [
   ...rustInputs,
   /^apps\/apple\//,
-  /^packages\/hitslop\/(src\/(shell|wire)|generated|acceptance)\//,
+  /^packages\/tinys\/(src\/(shell|wire)|generated|acceptance)\//,
   /^tests\/(abi|apps|compat|fixtures|native|presentation)\//,
   /\.native\.test\.ts$/,
   /^scripts\/(build|compat)\//,
@@ -72,7 +72,7 @@ export const nativeGateInputs = [
  * of the tier's own inputs changes (the Rust workspace and its build inputs, so the core's sync
  * and document code and Cargo.lock included, the relay and its scripts) or the sharing and
  * browser hosts it serves. Master pushes and release tags qualify it in sharing.yml. */
-export const sharingGateInputs = [...tierInputs.sharing, /^packages\/hitslop\/src\/(sharing|browser)\//];
+export const sharingGateInputs = [...tierInputs.sharing, /^packages\/tinys\/src\/(sharing|browser)\//];
 
 // Policy workflows and tests of the runner do not change how product checks execute.
 export const sharedInputs = [
@@ -92,8 +92,8 @@ export const compatibilityInputs = [
   /^crates\/[^/]+\/(?!tests\/|README\.md$)/,
   /^apps\/apple\/(?!.*\/Tests\/)/,
   /^apps\/apple\/.*\/Tests\/.*\/CompatCorpusTests\.swift$/,
-  /^packages\/hitslop\/(src\/(sdk|shell|schema|wire)|generated|acceptance)\//,
-  /^packages\/hitslop\/src\/cli\/(cli|main|documents|engine|process|json)\.ts$/,
+  /^packages\/tinys\/(src\/(sdk|shell|schema|wire)|generated|acceptance)\//,
+  /^packages\/tinys\/src\/cli\/(cli|main|documents|engine|process|json)\.ts$/,
   /^tests\/(abi|compat|apps|fixtures)\//,
   /^tests\/native\/compat-replay\.native\.test\.ts$/,
   /^scripts\/(build|compat)\//,

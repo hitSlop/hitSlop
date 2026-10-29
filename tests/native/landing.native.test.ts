@@ -5,18 +5,18 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { generateTemplates } from "../../apps/landing/scripts/templates";
 import { prepareNativeFixtures } from "../../scripts/lib/native-fixtures";
-import { execute } from "../../packages/hitslop/src/cli/engine";
-import { png } from "../../packages/hitslop/tests/cli/png-fixture";
-import { PackageFormat, RuntimeABI } from "../../packages/hitslop/src/schema/constants";
+import { execute } from "../../packages/tinys/src/cli/engine";
+import { png } from "../../packages/tinys/tests/cli/png-fixture";
+import { PackageFormat, RuntimeABI } from "../../packages/tinys/src/schema/constants";
 
-// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// Nightly and release only (`TINYS_NIGHTLY=1`): website, documentation, onboarding and
 // wording checks that never guard opening, editing or saving a document (docs/testing.md).
-const nightly = process.env.HITSLOP_NIGHTLY === "1";
+const nightly = process.env.TINYS_NIGHTLY === "1";
 
 test.if(nightly)("landing generation reads current templates and preserves outputs when a later input fails", async () => {
   await prepareNativeFixtures();
   const destination = await mkdtemp(join(tmpdir(), "hitslop-landing-"));
-  const source = { slug: "document-fixture", file: resolve("generated/native-fixtures/document-fixture.slop") };
+  const source = { slug: "document-fixture", file: resolve("generated/native-fixtures/document-fixture.tiny") };
   try {
     const before = await readFile(source.file);
     await generateTemplates([source], destination);
@@ -30,7 +30,7 @@ test.if(nightly)("landing generation reads current templates and preserves outpu
     const image = join(destination, "public/assets/templates/document-fixture/preview.png");
     const png = await readFile(image);
     expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-    const invalid = join(destination, "invalid.slop");
+    const invalid = join(destination, "invalid.tiny");
     await writeFile(invalid, "not a document");
     await expect(generateTemplates([source, { slug: "invalid", file: invalid }], destination)).rejects.toThrow();
     expect(await readFile(output, "utf8")).toBe(inventory);
@@ -54,11 +54,11 @@ test.if(nightly)("a skinned template without artwork keeps its dimensions and fa
     await writeFile(join(stage, "preview.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
     await writeFile(join(stage, "icon.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
     await writeFile(join(stage, "export.js"), await readFile(resolve("tests/fixtures/checklist/document/assets/export.js")));
-    const file = join(folder, "skin.slop");
+    const file = join(folder, "skin.tiny");
     await execute({ method: "pack", stage, file, renderViews: false, app: {
       packageFormat: PackageFormat, runtimeABI: RuntimeABI,
       declaration: {
-        metadata: { slug: "skin", title: "Skin", description: "Landing fixture", author: { name: "hitSlop" }, categories: ["utilities"] },
+        metadata: { slug: "skin", title: "Skin", description: "Landing fixture", author: { name: "tinys" }, categories: ["utilities"] },
         window: { kind: "skin", width: 320, height: 240, image: "/assets/" + key },
         document: { kind: "object", properties: {} }, initial: {},
         theme: [{ token: "surface", color: "#112233" }], commands: [], views: { preview: true, export: true, icon: true },

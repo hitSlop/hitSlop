@@ -27,7 +27,7 @@
   <div class="stage">
     <div class="printer" aria-hidden="true">
       <div class="printer-top"><span class="led" class:on={!!printing}></span><span class="slot"></span></div>
-      <div class="printer-body"><span>hitSlop</span></div>
+      <div class="printer-body"><span>tinys</span></div>
     </div>
     {#key run}
       <div class="paper" data-state={printing ? "printing" : printed ? "done" : "idle"}>
@@ -56,18 +56,18 @@
   .led.on { background: #28c840; animation: led 400ms steps(2) infinite; }
   @keyframes led { 50% { background: #b7f0c4; } }
   .printer-body { height: 88px; display: grid; place-items: center; border: 3px solid #10132c; border-radius: 22px; background: linear-gradient(#fff, #f1ecff); box-shadow: 0 6px 0 #10132c, 0 22px 30px #2a1b5c30; }
-  .printer-body span { padding: 4px 12px; border: 2px solid #10132c; border-radius: 99px; background: #ffe66b; font-family: "HitSlop Display", sans-serif; font-size: 1rem; font-weight: 800; }
+  .printer-body span { padding: 4px 12px; border: 2px solid #10132c; border-radius: 99px; background: #ffe66b; font-family: "Tinys Display", sans-serif; font-size: 1rem; font-weight: 800; }
   .paper { position: absolute; z-index: 1; left: 50%; top: 112px; width: 74%; padding: 26px 22px 22px; border: 1px solid #d9d0bd; border-radius: 3px; background: #fffaf0; box-shadow: 0 20px 34px #2a1b5c26; color: #1f1c16; transform: translateX(-50%) translateY(-100%); opacity: 0; }
   .paper[data-state="printing"] { opacity: 1; animation: print 1500ms steps(12) forwards; }
   .paper[data-state="idle"], .paper[data-state="done"] { opacity: 1; transform: translateX(-50%) translateY(0) rotate(-2deg); transition: transform 500ms var(--spring); }
   @keyframes print { from { transform: translateX(-50%) translateY(-100%); } to { transform: translateX(-50%) translateY(0); } }
   .paper header { padding-bottom: 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e3d9c4; font-family: "Newsreader", Georgia, serif; font-size: 1.5rem; }
-  .paper header b { padding: 4px 9px; border-radius: 99px; color: #1d5c39; background: #c7f3dc; font-family: "HitSlop Sans", sans-serif; font-size: .75rem; }
+  .paper header b { padding: 4px 9px; border-radius: 99px; color: #1d5c39; background: #c7f3dc; font-family: "Tinys Sans", sans-serif; font-size: .75rem; }
   .paper p { margin: 18px 0 24px; font-weight: 800; }
   .paper div, .paper footer { padding: 10px 0; display: flex; justify-content: space-between; border-bottom: 1px solid #ece3d0; font-size: .95rem; }
   .paper footer { margin-top: 18px; border-top: 2px solid #1f1c16; border-bottom: 0; font-size: 1.1rem; font-weight: 800; }
   .file { position: absolute; z-index: 3; right: -12px; bottom: 16px; display: grid; gap: 3px; animation: land 520ms var(--spring); }
-  .file small { color: var(--muted); font-family: "HitSlop Sans", sans-serif; font-size: .8rem; font-weight: 700; }
+  .file small { color: var(--muted); font-family: "Tinys Sans", sans-serif; font-size: .8rem; font-weight: 700; }
   @keyframes land { from { opacity: 0; transform: translateY(-40px) scale(.6) rotate(-20deg); } }
   @media (max-width: 779px) {
     .buttons { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -5,11 +5,11 @@ rules and standards for templates in this repository.
 
 | Topic | Guide |
 | --- | --- |
-| First slop, end to end | [Create your first slop](../../apps/landing/src/content/docs/docs/getting-started.mdx) |
+| First tiny, end to end | [Create your first tiny](../../apps/landing/src/content/docs/docs/getting-started.mdx) |
 | Fields, handles, changes and previews | [Data and schemas](../../apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx) |
 | Saved state, lifecycle, attachments, HTTPS and YouTube | [Files and the web](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx) |
 | App definition, window shapes and hover controls | [App definition and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx), [PNG window skins](../../apps/landing/src/content/docs/docs/guides/png-window-skins.mdx) |
-| Plain CSS and the theme palette | [Style a slop](../../apps/landing/src/content/docs/docs/guides/styling.mdx) |
+| Plain CSS and the theme palette | [Style a tiny](../../apps/landing/src/content/docs/docs/guides/styling.mdx) |
 | Export views, icons and capture | [Icons, previews, and exports](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx) |
 | Build, register and share | [Build and share](../../apps/landing/src/content/docs/docs/guides/build-and-share.mdx) |
 | Every document kind, error code and CLI path | [Document types](../reference/document-types.md) |
@@ -17,13 +17,13 @@ rules and standards for templates in this repository.
 
 ## Work in this checkout
 
-Use `bun slop dev slops/SLUG`, `bun slop build SOURCE` and
-`bun slop register SOURCE`. [Development](development.md) covers preparing the tools,
+Use `bun tiny dev tinys/SLUG`, `bun tiny build SOURCE` and
+`bun tiny register SOURCE`. [Development](development.md) covers preparing the tools,
 adding a template and choosing which templates ship.
 
 ## Rules for authored code
 
-- Read `slop.ts` first. One slop does one understandable job.
+- Read `tiny.ts` first. One tiny does one understandable job.
 - Apps never import the runtime, call the host bridge, write SQLite or keep a second JSON
   copy of the document.
 - Save only what is worth keeping. Selection, hover, drag positions and timers stay in
@@ -35,16 +35,16 @@ adding a template and choosing which templates ship.
   the template's own way. Order rows with `move`, not a position field.
 - Declare a scalar's `default` in the schema instead of repeating it at every insert.
 - Use `EditableText` for text, `draft` for composers, `motion` for animated numbers and
-  `notify` for messages (all from `hitslop/svelte`) rather than reimplementing them.
+  `notify` for messages (all from `@hitslop/tinys/svelte`) rather than reimplementing them.
 - Use required `Preview.svelte` for a compact overview and optional `Export.svelte` with natural height for complete growing content; derive their
   data from the `snapshot` prop and keep editor controls and effects out of it. All capture
   views must render synchronously without browser APIs.
-- Import optional `hitslop/base.css` before app styles for low-specificity form, focus
+- Import optional `@hitslop/tinys/base.css` before app styles for low-specificity form, focus
   and reduced-motion defaults. App CSS still owns typography, layout and palette. Of two
   equally specific rules, the later import wins. A capture's CSS is exactly what its own
   Preview/Export/Icon/Widget role imports, in import order, including component CSS.
   Captures no longer inherit the editor's stylesheets; import shared CSS in each role
-  or a component it imports. `slop dev` still mounts static views inside the editor page.
+  or a component it imports. `tiny dev` still mounts static views inside the editor page.
 - Optional-object handles use `$set(value)` and `$clear()` because they also carry
   authored fields; scalar and text handles keep `set` and `clear`.
 - Build and register render every declared view during pack, including Export PNG/PDF
@@ -59,7 +59,7 @@ For shared editing controls in static views, follow the platform's
 The examples are references, not a limit or a default visual
 style. Start each template from its own purpose. Paper, Instrument and Skin are optional
 directions. `_vibe/` is inspiration only; never ship its images. Record product context in
-[PRODUCT.md](../../slops/PRODUCT.md) and each object's actual palette, typography,
+[PRODUCT.md](../../tinys/PRODUCT.md) and each object's actual palette, typography,
 layout, state language and motion in its `DESIGN.md`.
 
 Make the purpose visible in the first viewport. Keep controls familiar, state readable
@@ -71,8 +71,8 @@ visible focus, sufficient contrast and reduced-motion behavior.
 The host disables ordinary text selection in the editor by default; inputs, textareas
 (including readonly fields), and editable content retain normal selection. Enable
 `-webkit-user-select: text; user-select: text` on useful copyable content such as notes,
-addresses, or code, or on `body` for the whole slop. The default also applies in
-`slop dev` and leaves captures alone. See the
+addresses, or code, or on `body` for the whole tiny. The default also applies in
+`tiny dev` and leaves captures alone. See the
 [styling guide](../../apps/landing/src/content/docs/docs/guides/styling.mdx#text-selection)
 for CSS overrides.
 
@@ -91,12 +91,12 @@ controls for temporary review data rather than changing creation defaults.
 Run check and build, register, create a writable copy, type then immediately close,
 reopen, duplicate, and export PNG and PDF. Inspect the editor, export and icon from the
 same revision. Review persistence, clipping, skins and desktop click-through in the
-native app. **Do not create an automated test or test suite for each slop.** Creating,
-styling, animating, or updating a slop requires existing checks/builds and hands-on
+native app. **Do not create an automated test or test suite for each tiny.** Creating,
+styling, animating, or updating a tiny requires existing checks/builds and hands-on
 review, not new example-specific tests. Shared SDK, storage, or host regressions belong
 in the existing tests at their owning boundary. See [testing](../testing.md),
 [presentation fixtures](development.md#focused-checks) and the
-packaged [design skill](../../packages/hitslop/skills/hitslop-design/SKILL.md).
+packaged [design skill](../../packages/tinys/skills/tinys-design/SKILL.md).
 
 ## Commands
 
@@ -104,8 +104,8 @@ Keep the stored shape and initial values in `schema.ts`. Optional `commands.ts`
 default-exports one `defineCommands` set for CLI and agent callers:
 
 ```ts
-import { defineCommands } from "hitslop/commands";
-import { s } from "hitslop";
+import { defineCommands } from "@hitslop/tinys/commands";
+import { s } from "@hitslop/tinys";
 import schema from "./schema";
 
 export default defineCommands(schema, {
@@ -117,13 +117,13 @@ export default defineCommands(schema, {
 });
 ```
 
-Only root `commands.ts` may import `hitslop/commands`, and the page cannot import
+Only root `commands.ts` may import `@hitslop/tinys/commands`, and the page cannot import
 `commands.ts`. The page edits with handles and `doc.change()`. To give the page and an
 agent the same edit, write it once over `Tx<typeof schema>` in a plain module:
 
 ```ts
 // tasks.ts
-import type { Tx } from "hitslop";
+import type { Tx } from "@hitslop/tinys";
 import type schema from "./schema";
 export const rename = (tx: Tx<typeof schema>, title: string) => tx.fields.title.set(title);
 ```
@@ -131,8 +131,8 @@ export const rename = (tx: Tx<typeof schema>, title: string) => tx.fields.title.
 The page calls `doc.change(tx => rename(tx, title))`; the command's `run` calls
 `rename(tx, title)`.
 The [public command walkthrough](../../apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
-shows discovery with `slop describe My.slop` and invocation with
-`slop call My.slop rename --args '{"title":"Weekend"}'`. A command without a return
+shows discovery with `tiny describe My.tiny` and invocation with
+`tiny call My.tiny rename --args '{"title":"Weekend"}'`. A command without a return
 value or inserts prints `{"result":null,"ids":[]}`.
 
 Commands synchronously read immutable `ctx.current`, collect writes with `ctx.tx`,
@@ -152,7 +152,7 @@ conflict retries once with the same clock and seed; an unknown outcome never ret
 
 Command descriptors live in `definition_json`; `commands.js` is private and immutable.
 JSON Schema is computed only for `describe`, never stored or accepted as input.
-Installing hitSlop does not replace a document's embedded app.
+Installing tinys does not replace a document's embedded app.
 
 ## Platform, device and responsive layout
 
@@ -162,7 +162,7 @@ targets, haptics and testing. Keep it and this section in step.
 
 ### Haptic feedback
 
-`haptics` from `hitslop/svelte` plays short native feedback for deliberate editor
+`haptics` from `@hitslop/tinys/svelte` plays short native feedback for deliberate editor
 actions. `haptics.selection()` accompanies a changed selection;
 `haptics.impact()` defaults to `"light"` and also accepts `"medium"`, `"heavy"`,
 `"soft"` and `"rigid"`. `haptics.notification("success" | "warning" | "error")`
@@ -183,7 +183,7 @@ document observers, typing, rendering, static views and background work.
 ### Surface motion
 
 `surfaceTransition`, `overlayTransition` and `popoverTransition` from
-`hitslop/svelte` are Svelte transition functions with reduced-motion support. Use
+`@hitslop/tinys/svelte` are Svelte transition functions with reduced-motion support. Use
 `transition:surfaceTransition={{ kind: "sheet" }}` for bottom sheets (the default
 kind is `"dialog"`), `transition:overlayTransition` for the dimming layer and
 `transition:popoverTransition` for menus/selects. They preserve existing transforms.
@@ -203,12 +203,12 @@ screen block. Animate keyed list reordering with Svelte's `animate:flip` and hon
 
 ### Environment
 
-Call `getEnvironment()` from `hitslop/svelte` during editor component initialization,
+Call `getEnvironment()` from `@hitslop/tinys/svelte` during editor component initialization,
 just like `getDocument(schema)`. Its read-only `current` snapshot is reactive:
 
 ```svelte
 <script lang="ts">
-  import { getEnvironment } from "hitslop/svelte";
+  import { getEnvironment } from "@hitslop/tinys/svelte";
   const environment = getEnvironment();
 </script>
 
@@ -233,18 +233,18 @@ reactive expressions; destructuring it once keeps that old snapshot.
 CSS receives the same editor information on `<html>`:
 
 ```css
-:global(html[data-slop-layout="compact"]) .controls { flex-direction: column; }
-:global(html[data-slop-platform="macos"]) .mac-controls { display: flex; }
+:global(html[data-tiny-layout="compact"]) .controls { flex-direction: column; }
+:global(html[data-tiny-platform="macos"]) .mac-controls { display: flex; }
 ```
 
 Use plain `html[...]` selectors in standalone CSS. Keep base styles usable without
 these attributes for older hosts; ordinary media and container queries also work.
 Choose responsive layout for available space and pointer/hover media queries for input
-differences. On the iPhone, pad around system areas with `--slop-safe-top` and
-`--slop-safe-bottom` (see iPhone editing below). These insets do not describe floating
+differences. On the iPhone, pad around system areas with `--tiny-safe-top` and
+`--tiny-safe-bottom` (see iPhone editing below). These insets do not describe floating
 host controls.
 
-`slop dev` offers Browser, iPhone, iPad and Mac device presets. Phone/tablet presets
+`tiny dev` offers Browser, iPhone, iPad and Mac device presets. Phone/tablet presets
 change the viewport; Browser and Mac restore the authored size. Changes preserve
 accepted edits and simulate presentation only. Preview, Export, Icon and Widget remain
 static views of their capture props and never read `getEnvironment()` or receive these
@@ -254,12 +254,12 @@ editor attributes.
 
 The current iPhone app is portrait-only. The editor runs edge to edge, under the status
 bar and the home indicator: paint the background to the edges and pad the root by
-`--slop-safe-top` and `--slop-safe-bottom` (the real insets in the app, 47px and 34px in the
+`--tiny-safe-top` and `--tiny-safe-bottom` (the real insets in the app, 47px and 34px in the
 iPhone preset, `0px` elsewhere). A native glass actions menu floats beside the heading,
 12px below the safe top.
 
-Headers reserve `--slop-host-actions-width` (64px) at the trailing edge and
-`--slop-host-actions-height` (44px) for their minimum height. These variables are zero
+Headers reserve `--tiny-host-actions-width` (64px) at the trailing edge and
+`--tiny-host-actions-height` (44px) for their minimum height. These variables are zero
 in other presentations, including captures. Reserve the corner in fixed controls and
 full-height sheets too, and let long headings wrap. The iPhone device preset exposes
 the same reservation; review notch spacing, keyboard entry, sheets, swipe-back and
@@ -269,7 +269,7 @@ Use `height: 100%` with `min-height: 0` and scrollable content panes. The keyboa
 keeps its size. The shell brings a focused field above the keyboard without app CSS: it
 scrolls the field's containers, adds temporary room at the end of the nearest one when it is
 too short, and as a last resort shifts the page up, undoing it all when the keyboard hides.
-`--slop-keyboard-inset` (the covered height; `0px` while hidden and outside the iPhone
+`--tiny-keyboard-inset` (the covered height; `0px` while hidden and outside the iPhone
 editor) is only for UI pinned to the bottom of the screen: bottom sheets, fixed bars and
 centered dialogs that hold fields. Never add it to the page or a layout container, which
 shrinks the layout like a resize. The SDK notice lifts automatically. Number inputs get a
@@ -292,7 +292,7 @@ layout and identity, not the native keyboard, navigation, or permissions.
 
 ## Entry and media
 
-`slop.ts` exports metadata through `defineSlop({ slug, title, description, author,
+`tiny.ts` exports metadata through `defineTiny({ slug, title, description, author,
 categories, window, theme, artwork?, capabilities? })`. Required `schema.ts` default-exports
 `defineDocument(fields, { initial })`; `initial` is optional when all fields have defaults
 or may be omitted. Required `App.svelte` is the editor; required `Preview.svelte` supplies compact preview artwork, and required `Icon.svelte` supplies the icon. `Export.svelte`, `Widget.svelte` and `commands.ts` are optional. These root names are case-sensitive. Import CSS from
@@ -319,16 +319,16 @@ renders it. `public/` is not copied; import those files explicitly. Supplied art
 the logical window size; Rust validates its pixels before packing.
 
 User-imported images are attachments, separate from template assets. Import `attachments`
-from `hitslop/svelte`, use `attachments.import(file, (tx, ref) => { ... })`, store the
+from `@hitslop/tinys/svelte`, use `attachments.import(file, (tx, ref) => { ... })`, store the
 reference, and render `attachments.url(ref.id)` in an image or media element. `read(id)` fetches a Blob when
 code needs bytes. The host supplies the media type and serves ranges without a base64
 read bridge. Attachments stay with the document when it is copied or shared.
 
 The [capability guide](../reference/runtime.md#security-boundaries) records the permission boundary and links to
-complete public examples. A slop that uses the camera or microphone declares it: `capabilities: ["camera",
+complete public examples. A tiny that uses the camera or microphone declares it: `capabilities: ["camera",
 "microphone"]`. Then use the web APIs directly (`navigator.mediaDevices.getUserMedia`,
-`MediaRecorder`, canvas). The host refuses a device the slop did not declare, and macOS asks
-the person once for hitSlop. Start devices from a button, show that capture is on, handle
+`MediaRecorder`, canvas). The host refuses a device the tiny did not declare, and macOS asks
+the person once for tinys. Start devices from a button, show that capture is on, handle
 `NotAllowedError`, and stop every track when finished. Keep live streams and unfinished
 recordings in view state; keep a finished photo or clip by importing it as an attachment,
 wrapping the Blob in a File for its name: `new File([blob], "photo.jpg", { type: blob.type })`.
@@ -336,13 +336,13 @@ One attachment holds at most 10 MiB (about ten minutes of 128 kbit/s audio). Exp
 icon views render saved content and never request devices.
 
 To turn a kept recording into text, declare `"speech"` and pass its attachment reference
-(or ID) to `speech.transcribe` from `hitslop/svelte`; the recording is never sent again
+(or ID) to `speech.transcribe` from `@hitslop/tinys/svelte`; the recording is never sent again
 through the page. Recognition runs on the Mac only: a locale the Mac can recognize only
 through Apple's servers is unavailable, never uploaded. Saving the text is an ordinary
 edit.
 
 ```ts
-import { attachments, isSpeechError, speech } from "hitslop/svelte";
+import { attachments, isSpeechError, speech } from "@hitslop/tinys/svelte";
 
 const ref = await attachments.import(new File([blob], "note.m4a", { type: blob.type }), (tx, ref) => {
   tx.fields.notes.insert({ clip: ref.id, text: "" });
@@ -362,9 +362,9 @@ m4a, mp3, wav, flac, mp4 and mov. It returns `unavailable` with reason `format` 
 other formats, including Ogg and WebM, before asking for permission. Let the provider
 decide format support rather than keeping a format list in authored code. A transcript holds at most
 1 MiB of text. `unavailable` carries a `reason`: `notDeclared` (no `"speech"` in
-`capabilities`), `host` (`slop dev`, a browser copy, an export, or an older hitSlop),
+`capabilities`), `host` (`tiny dev`, a browser copy, an export, or an older tinys),
 `system` (the Mac cannot recognize speech now), `locale` (no on-device recognizer for the
-locale), `permission` (the person declined speech recognition for hitSlop), or
+locale), `permission` (the person declined speech recognition for tinys), or
 `format` (this provider cannot transcribe the recording format). `cancelled`
 means the window closed, the interface reloaded or an export began first; `failed` means
 the recording could not be read or recognized. Keep a usable path without a transcript.
@@ -372,22 +372,22 @@ the recording could not be read or recognized. Keep a usable path without a tran
 
 ### Widget authoring
 
-Optional `Widget.svelte` receives `WidgetProps` from `hitslop/svelte`: `family`, `width`, `height`.
+Optional `Widget.svelte` receives `WidgetProps` from `@hitslop/tinys/svelte`: `family`, `width`, `height`.
 It draws saved document state and theme into a fixed canvas; content outside the canvas is clipped.
-Use the `slop dev` Preview selector for Editor, Preview, Icon, Small widget, Medium widget and Large widget.
+Use the `tiny dev` Preview selector for Editor, Preview, Icon, Small widget, Medium widget and Large widget.
 Switching preserves accepted edits; component and CSS changes update the selected view live.
 The browser preview helps compose each view, but native output uses Takumi and can differ.
 Review an actual native capture before shipping. The Mac app captures all three sizes after
 successful saves (coalesced for one second), on opening when cached state is stale or missing, and on close
-after edits. While hitSlop runs it also watches cached source files for closed-document
+after edits. While tinys runs it also watches cached source files for closed-document
 edits, and checks for missed edits on startup. Renderer and bundled-font updates
 also invalidate cached images without a document edit. Quitting retains the last image.
 A failed refresh keeps the previous generation. Publishing replaces the complete image generation, then requests a WidgetKit
-reload; the OS decides when that reload is displayed. Optional `widget.refreshMinutes` in `slop.ts`
+reload; the OS decides when that reload is displayed. Optional `widget.refreshMinutes` in `tiny.ts`
 requests approximate refresh while the app runs; authoring accepts 15–1440 minutes.
 
-The iPhone app renders placed library slops locally with the same
-`Widget.svelte` views and canvases; taps open the slop. Foreground saves and library
+The iPhone app renders placed library tinys locally with the same
+`Widget.svelte` views and canvases; taps open the tiny. Foreground saves and library
 changes refresh images. CloudKit notifications and scheduled background work also
 refresh placed widgets when iOS allows; neither gives an exact refresh time. See the
 [widget architecture](../architecture.md#macos-image-widgets).

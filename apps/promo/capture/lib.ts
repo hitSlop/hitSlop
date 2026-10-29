@@ -20,10 +20,10 @@ export function launch() {
 }
 
 let nextPort = 5400;
-/** Serves one example through `slop dev` and resolves once it answers. */
+/** Serves one example through `tiny dev` and resolves once it answers. */
 export async function serve(slug: string) {
   const port = nextPort++;
-  const proc = Bun.spawn(["bun", "packages/hitslop/src/cli/cli.ts", "dev", `slops/${slug}`, "--port", String(port)], {
+  const proc = Bun.spawn(["bun", "packages/tinys/src/cli/cli.ts", "dev", `tinys/${slug}`, "--port", String(port)], {
     cwd: repo,
     stdout: "ignore",
     stderr: "inherit",
@@ -39,8 +39,8 @@ export async function serve(slug: string) {
   throw new Error(`preview for ${slug} never started`);
 }
 
-export async function openSlop(browser: Browser, slug: string, scale = 2) {
-  const manifest = await Bun.file(join(repo, "slops", slug, "manifest.json")).json();
+export async function openTiny(browser: Browser, slug: string, scale = 2) {
+  const manifest = await Bun.file(join(repo, "tinys", slug, "manifest.json")).json();
   const { width, height } = manifest.presentation;
   const server = await serve(slug);
   const page = await browser.newPage({ viewport: { width, height }, userAgent });

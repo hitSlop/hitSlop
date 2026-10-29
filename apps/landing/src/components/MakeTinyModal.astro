@@ -1,0 +1,185 @@
+---
+import { SITE_LINKS } from "../constants";
+
+const prompt = `Help me create a personalized tinys mini app.
+
+First, check that Bun is available. If it is missing, direct me to https://bun.sh/ to install it myself, then pause until I’m ready. Do not install Bun for me.
+
+Initialize a project using \`bunx @hitslop/tinys init my-tiny\` in a new directory. Never overwrite an existing project; use another available directory name if needed. Enter the project and run \`bun install\`. If setup fails, explain the issue and help resolve it before continuing.
+
+After initialization succeeds, read \`tiny.ts\`, \`AGENTS.md\`, and the included tinys authoring and design skills.
+
+Before customizing the starter, ask me a few useful questions: What do I want this tiny for? Who will use it? What are its essential actions and data? What aesthetic, colors, typography, or visual references do I like? Should it feel like a compact desktop tool or a document, and do I need PNG or PDF exports?
+
+Ask follow-up questions where they will help, offer suggestions when I’m unsure, and agree on a focused first version before building.
+
+Then create the tiny using the project’s instructions. Adapt the starter’s design to my purpose, run its checks and build, help me preview and refine it, then register the finished template and explain how to create my own writable document in tinys.`;
+---
+
+<dialog id="make-tiny-modal" aria-labelledby="make-tiny-title" aria-describedby="make-tiny-description">
+  <div class="make-tiny-shell">
+    <header class="make-tiny-header">
+      <p class="make-tiny-eyebrow">Your next little app</p>
+      <button class="make-tiny-close" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+      </button>
+    </header>
+    <h2 id="make-tiny-title" tabindex="-1">Do you have the tinys desktop app installed?</h2>
+    <p id="make-tiny-description">You’ll use it to open your finished tiny on your Mac.</p>
+
+    <div data-install-step>
+      <p class="make-tiny-requirements">Apple silicon · macOS 15.2+</p>
+      <div class="make-tiny-actions">
+        <button class="make-tiny-button make-tiny-primary" type="button" data-installed>Yes</button>
+        <a class="make-tiny-button make-tiny-secondary" href={SITE_LINKS.download} target="_blank" rel="noopener noreferrer" data-download>Download now <span aria-hidden="true">↗</span></a>
+      </div>
+      <p class="make-tiny-status" role="status" data-download-status></p>
+    </div>
+
+    <div data-prompt-step hidden>
+      <p class="make-tiny-requirements">You’ll need Bun. <a href="https://bun.sh/" target="_blank" rel="noopener noreferrer">Install Bun <span aria-hidden="true">↗</span></a></p>
+      <label class="visually-hidden" for="make-tiny-prompt">Prompt for your coding agent</label>
+      <textarea id="make-tiny-prompt" readonly spellcheck="false" rows="10">{prompt}</textarea>
+      <div class="make-tiny-actions">
+        <button class="make-tiny-button make-tiny-primary" type="button" data-copy-prompt>Copy prompt <span aria-hidden="true">↗</span></button>
+      </div>
+      <p class="make-tiny-status" role="status" data-copy-status></p>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  // Any button marked data-make-tiny opens the flow; focus returns to whichever opened it.
+  const triggers = document.querySelectorAll<HTMLElement>("[data-make-tiny]");
+  const dialog = document.querySelector<HTMLDialogElement>("#make-tiny-modal");
+  let trigger: HTMLElement | null = null;
+
+  if (triggers.length && dialog) {
+    const storageKey = "tinys:desktop-installed";
+    const title = dialog.querySelector<HTMLHeadingElement>("#make-tiny-title")!;
+    const description = dialog.querySelector<HTMLParagraphElement>("#make-tiny-description")!;
+    const installStep = dialog.querySelector<HTMLDivElement>("[data-install-step]")!;
+    const promptStep = dialog.querySelector<HTMLDivElement>("[data-prompt-step]")!;
+    const installedButton = dialog.querySelector<HTMLButtonElement>("[data-installed]")!;
+    const downloadStatus = dialog.querySelector<HTMLParagraphElement>("[data-download-status]")!;
+    const copyStatus = dialog.querySelector<HTMLParagraphElement>("[data-copy-status]")!;
+    const promptField = dialog.querySelector<HTMLTextAreaElement>("#make-tiny-prompt")!;
+    const copyButton = dialog.querySelector<HTMLButtonElement>("[data-copy-prompt]")!;
+    let confirmedThisVisit = false;
+    let previousOverflow = "";
+
+    function showStep(installed: boolean) {
+      installStep.hidden = installed;
+      promptStep.hidden = !installed;
+      title.textContent = installed
+        ? "Make something of your own"
+        : "Do you have the tinys desktop app installed?";
+      description.textContent = installed
+        ? "Copy this prompt into your coding agent in the terminal. It’ll help you set up, then ask what you want to make."
+        : "You’ll use it to open your finished tiny on your Mac.";
+    }
+
+    triggers.forEach((button) => button.addEventListener("click", () => {
+      trigger = button;
+      let installed = confirmedThisVisit;
+      try {
+        installed ||= localStorage.getItem(storageKey) === "yes";
+      } catch {
+        // Browser storage is optional; the flow still works for this visit.
+      }
+      showStep(installed);
+      copyStatus.textContent = "";
+      downloadStatus.textContent = "";
+      previousOverflow = document.body.style.overflow;
+      dialog.showModal();
+      document.body.style.overflow = "hidden";
+      if (installed) title.focus();
+      else installedButton.focus();
+    }));
+
+    installedButton.addEventListener("click", () => {
+      confirmedThisVisit = true;
+      try {
+        localStorage.setItem(storageKey, "yes");
+      } catch {
+        // Do not block someone whose browser disallows local storage.
+      }
+      showStep(true);
+      title.focus();
+    });
+
+    dialog.querySelector("[data-download]")!.addEventListener("click", () => {
+      downloadStatus.textContent = "Install tinys, then choose Yes to continue.";
+    });
+
+    copyButton.addEventListener("click", async () => {
+      copyStatus.textContent = "";
+      try {
+        await navigator.clipboard.writeText(promptField.value);
+        copyStatus.textContent = "Copied! Paste it into your terminal coding agent.";
+      } catch {
+        copyStatus.textContent = "Select the prompt above and copy it manually.";
+        promptField.focus();
+        promptField.select();
+      }
+    });
+
+    dialog.querySelector(".make-tiny-close")!.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => {
+      if (event.target !== dialog) return;
+      const bounds = dialog.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) {
+        dialog.close();
+      }
+    });
+    dialog.addEventListener("close", () => {
+      document.body.style.overflow = previousOverflow;
+      trigger?.focus();
+    });
+  }
+</script>
+
+<style>
+  dialog {
+    width: min(600px, calc(100% - 32px));
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border: 1px solid #dbd0fd;
+    border-radius: 24px;
+    background: #faf8ff;
+    color: #10132c;
+    font-family: "Tinys Sans", sans-serif;
+    box-shadow: 0 24px 80px #10132c30;
+  }
+  dialog::backdrop { background: #10132c80; }
+  [hidden] { display: none !important; }
+  .make-tiny-shell { padding: clamp(22px, 5vw, 36px); }
+  .make-tiny-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; }
+  .make-tiny-eyebrow { margin: 0; color: #6743a1; font-size: .8rem; font-weight: 700; }
+  .make-tiny-close { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; margin: -8px -8px -8px 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+  .make-tiny-close:hover { background: #eae3f7; }
+  .make-tiny-close svg { width: 22px; height: 22px; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+  #make-tiny-title { font-family: "Tinys Display", sans-serif; font-size: clamp(2rem, 6vw, 2.6rem); font-weight: 800; line-height: 1.1; letter-spacing: -.02em; }
+  #make-tiny-title:focus { outline: none; }
+  #make-tiny-description { margin: 16px 0; color: #505168; line-height: 1.6; }
+  .make-tiny-requirements { margin: 0 0 22px; color: #505168; font-size: .85rem; }
+  .make-tiny-requirements a { color: #6233a8; text-decoration: underline; text-underline-offset: 3px; }
+  .make-tiny-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+  .make-tiny-button { min-height: 48px; padding: 12px 22px; display: inline-flex; justify-content: center; align-items: center; gap: 10px; border: 1px solid; border-radius: 14px; font-size: .95rem; font-weight: 700; line-height: 1.4; cursor: pointer; transition: transform 160ms ease-out; }
+  .make-tiny-primary { color: #faf8ff; background: #171a30; border-color: #171a30; box-shadow: 0 3px 0 #090c1b; }
+  .make-tiny-secondary { color: #10132c; background: #fefcff; border-color: #dbd0fd; box-shadow: 0 3px 0 #e5ddf7; }
+  .make-tiny-button:active { transform: translateY(2px); }
+  button:focus-visible, a:focus-visible, textarea:focus-visible { outline: 3px solid #6c16ed; outline-offset: 4px; }
+  textarea { display: block; width: 100%; min-height: 180px; max-height: 36dvh; resize: vertical; margin-bottom: 20px; padding: 16px; border: 1px solid #d4cae7; border-radius: 12px; color: #32354c; background: #f0ebf8; font: inherit; font-size: .9rem; line-height: 1.65; }
+  .make-tiny-status { min-height: 1.5em; margin: 14px 0 0; color: #505168; font-size: .85rem; }
+  @media (max-width: 420px) {
+    .make-tiny-actions { flex-direction: column; }
+    .make-tiny-button { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .make-tiny-button { transition: none; }
+  }
+</style>

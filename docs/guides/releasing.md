@@ -1,4 +1,4 @@
-# Releasing hitSlop
+# Releasing tinys
 
 The latest host must open, render, edit, save and reopen every document a public
 release wrote. Downgrades are unsupported. The public v1.0.0 corpus starts the frozen
@@ -38,17 +38,17 @@ workflow run/attempt, all artifact hashes and `qualified` (every prior corpus ve
 and SHA-256 actually replayed). Frozen evidence is never imported into Git, edited,
 deleted or recaptured. GitHub allows whole-release deletion even with immutability;
 do not delete public releases. The secondary copy lives on the maintainer's Mac, under
-`~/.cache/hitslop/compat-corpora/releases/`, and is retained by Time Machine. Keep this
+`~/.cache/tinys/compat-corpora/releases/`, and is retained by Time Machine. Keep this
 folder when cleaning build caches. Recovery requires original retained bytes;
 rebuilding from a tag creates new evidence. See [Local release backup](#local-release-backup).
 
 `bun run compat:resolve` discovers published releases with pagination, verifies their
 immutable status and history closure, downloads missing archives and verifies hashes,
-then extracts each archive once under `~/.cache/hitslop/compat-corpora/trees/<sha>/`.
-A verified snapshot of version links is activated atomically at `.hitslop/compat/current`.
+then extracts each archive once under `~/.cache/tinys/compat-corpora/trees/<sha>/`.
+A verified snapshot of version links is activated atomically at `.tinys/compat/current`.
 Standalone Rust, Swift and TypeScript tests use that pointer; run `bun run compat:resolve`
 before them on a fresh checkout and whenever published history changes. The verifier
-passes a fixed snapshot through `HITSLOP_COMPAT_ROOT` so concurrent preparation cannot
+passes a fixed snapshot through `TINYS_COMPAT_ROOT` so concurrent preparation cannot
 change an in-progress run. Candidate snapshots never replace the published pointer.
 An explicit root is checked against the required published inventory and original archive
 manifests before replay. Every selected manifest, including the candidate, contributes to
@@ -65,7 +65,7 @@ of CLI error text. Transport failures, including plain EOF, can retry before a r
 or during its body download; response headers are stripped without decoding the asset.
 
 The verifier prepares this automatically for corpus-consuming tiers. Listings and
-unrelated filtered Rust tests stay network-free. `HITSLOP_COMPAT_OFFLINE=1` explicitly
+unrelated filtered Rust tests stay network-free. `TINYS_COMPAT_OFFLINE=1` explicitly
 uses cached history for local work, announces the limitation, and cannot certify a
 release or run in CI. CI and publication refresh discovery. A new corpus invalidates
 local verification passes. Drafts do not block ordinary PR tests; incomplete
@@ -74,7 +74,7 @@ publications block starting another release.
 Capture is automatic in the candidate job:
 
 ```sh
-bun run compat:capture X.Y.Z --writer generated/engines/darwin-arm64/slop-engine --out dist/corpus
+bun run compat:capture X.Y.Z --writer generated/engines/darwin-arm64/tiny-engine --out dist/corpus
 ```
 
 Before capture, the candidate checks the command prelude: unreleased ABIs must match
@@ -83,11 +83,13 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-The first public release, v1.0.0, passed cold-cache replay. Its version and `corpus.sha256`
-from the retained release record are pinned in `scripts/compat/required-history.json`.
-Retain that pin permanently: it prevents a cold machine from accepting empty or changed
-history if the remote evidence disappears. There is no prelaunch fixture or fallback.
-Later releases do not require edits to this file; their recorded history provides the closure.
+tinys starts a separate release history in `hitSlop/tinys`. Before its first publication,
+ordinary development permits empty history; release qualification still requires a frozen
+candidate corpus. After publishing v1.0.0, permanently pin its `corpus.sha256` from the
+retained release record in `scripts/compat/tinys-required-history.json` before another
+release. Missing or changed published history must then fail on a cold machine.
+The original hitSlop pin in `scripts/compat/required-history.json` and its release assets
+remain immutable historical evidence. They are not tinys acceptance inputs.
 
 ## Publication and recovery
 
@@ -139,7 +141,7 @@ when renewing its signing certificate, or before expiration, then update the sec
 Packaging validates the profile before building, selects it for archive/export,
 embeds it at `Contents/embedded.provisionprofile` before final signing, and checks
 the signed entitlements. Live collaboration is enabled in Mac releases; the profile
-must authorize `applinks:share.hitslop.com` and the
+must authorize `applinks:share.tinys.click` and the
 `78UAXU8QG8.com.hitslop.sharing` Keychain group. Mac Debug and Release entitlements omit
 `com.apple.developer.applesignin`: Developer ID cannot use native Sign in with Apple.
 The Mac uses Apple's web flow through Services ID `com.hitslop.app.signin`; see
@@ -150,10 +152,10 @@ For a **local signed hand-test build without notarization or upload**, use an in
 Developer ID identity, the regenerated profile and a local Sparkle key:
 
 ```sh
-MACOS_PROVISIONING_PROFILE_FILE="/absolute/path/hitSlop-DeveloperID.provisionprofile" \
+MACOS_PROVISIONING_PROFILE_FILE="/absolute/path/tinys-DeveloperID.provisionprofile" \
 SPARKLE_PRIVATE_KEY_FILE="/absolute/path/sparkle_eddsa_private.key" \
-SKIP_NOTARIZE=1 HITSLOP_SKIP_ACCEPTANCE=1 HITSLOP_SKIP_SYMBOL_UPLOAD=1 \
-HITSLOP_OUTPUT_DIR="$PWD/dist/macos-library-handtest" \
+SKIP_NOTARIZE=1 TINYS_SKIP_ACCEPTANCE=1 TINYS_SKIP_SYMBOL_UPLOAD=1 \
+TINYS_OUTPUT_DIR="$PWD/dist/macos-library-handtest" \
 scripts/release/package-macos-release.sh
 ```
 
@@ -188,7 +190,7 @@ availability in the affected docs.
 
 `sharing.yml` qualifies the relay and browser host on matching `master` changes. After
 publication and promotion, the release job explicitly dispatches it on the released tag,
-so share.hitslop.com runs the released core. Tags created with `GITHUB_TOKEN` do not
+so share.tinys.click runs the released core. Tags created with `GITHUB_TOKEN` do not
 trigger tag-push workflows; keep the explicit dispatch and the sharing workflow enabled.
 A relay change that a released app depends on must ship in that release. Rerun the
 workflow manually on that release tag to recover a failed deploy, or roll back with
@@ -201,18 +203,18 @@ steps such as rate-limit bindings and R2 lifecycle rules.
 - Protect the `release` environment with the release owner's required approval. A solo
   maintainer must be allowed to approve their own candidate. Restrict deployment branches
   to `master` and `hotfix/*`; do not allow administrator bypass of the approval.
-- Configure npm trusted publishing for repository `hitSlop/hitSlop`, workflow
+- Configure npm trusted publishing for repository `hitSlop/tinys`, workflow
   `macos-release.yml`, environment `release`, with both direct publish and dist-tag
   permissions. The workflow uses npm 11.21.0. Configure a new publisher close to release
   because its first publish must occur within two days. See
   [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
-- Confirm ownership of `hitslop`. If npm requires a bootstrap package before configuring
+- Confirm ownership of `tinys`. If npm requires a bootstrap package before configuring
   trust, separately approve a metadata-only `0.0.0-bootstrap.0` under `bootstrap`.
   It contains no executable/runtime and creates no supported document format.
 - Confirm Apple signing/notarization and Sparkle credentials, and Cloudflare credentials
   for the independent website workflow. Keep the dSYM
   upload phase. Only after the first release is verified should superseded packages
-  be deprecated in favor of `hitslop`.
+  be deprecated in favor of `tinys`.
 
 After publication, verify npm integrity/dist-tags, all GitHub assets and immutable
 status, the Sparkle appcast, and a cold-cache corpus replay. Complete the local backup
@@ -230,10 +232,10 @@ Replace `X.Y.Z` with the published version:
 
 ```sh
 bun run compat:resolve
-gh release download vX.Y.Z --repo hitSlop/hitSlop --skip-existing \
-  --dir "$HOME/.cache/hitslop/compat-corpora/releases/vX.Y.Z"
-(cd "$HOME/.cache/hitslop/compat-corpora/releases/vX.Y.Z" && shasum -a 256 -c SHA256SUMS)
-tmutil isexcluded "$HOME/.cache/hitslop/compat-corpora/releases/vX.Y.Z"
+gh release download vX.Y.Z --repo hitSlop/tinys --skip-existing \
+  --dir "$HOME/.cache/tinys/compat-corpora/releases/vX.Y.Z"
+(cd "$HOME/.cache/tinys/compat-corpora/releases/vX.Y.Z" && shasum -a 256 -c SHA256SUMS)
+tmutil isexcluded "$HOME/.cache/tinys/compat-corpora/releases/vX.Y.Z"
 ```
 
 Require every checksum to pass and the folder to report `Included`. `--skip-existing`
@@ -267,7 +269,7 @@ Ask the agent to inspect relevant diffs and referenced PRs, then draft
 capability or change; omit internal refactors and deferred work. Use this structure:
 
 ```markdown
-# hitSlop 1.0.1
+# tinys 1.0.1
 
 ## Mac app
 
@@ -288,7 +290,7 @@ Keep links absolute so they work outside GitHub. Review and edit the draft, run
 `bun run release:notes --check`, then commit it before running the candidate workflow. `bun run release:check` also validates the current notes
 before building. Regenerate or amend the draft if later code changes affect its claims.
 
-Packaging writes `hitSlop-<version>.md` for Sparkle with only the Mac app section and
+Packaging writes `tinys-<version>.md` for Sparkle with only the Mac app section and
 `release-notes.md` for GitHub with all supplied sections, installation requirements and the
 first-release compatibility notice when applicable. Both files are checksummed and
 retained with the candidate. The appcast links to the versioned Markdown asset on
@@ -324,7 +326,7 @@ candidate DMG; do not substitute a local rebuild.
 
 Keep a personal library under the ignored `release-sanity/` directory in this checkout.
 After each public release, create about ten varied mini apps with that exact published
-`hitslop@X.Y.Z` package, then use the matching released Mac app to fill, save and close
+`tinys@X.Y.Z` package, then use the matching released Mac app to fill, save and close
 their documents. Pin the SDK dependency too; a versioned CLI alone does not pin the
 app's SDK. Keep these projects outside the repository's npm workspace resolution and
 confirm they use the installed release, not a workspace link or engine override.
@@ -333,10 +335,10 @@ Start this history with the first public release; local prelaunch builds are pra
 ```text
 release-sanity/
   1.0.0/
-    originals/          # Closed, saved .slop documents; never edit these
+    originals/          # Closed, saved .tiny documents; never edit these
     projects/           # Optional original source and lockfiles
     README.md           # Package/host versions, build, and checks for each example
-    SHA256SUMS          # Hashes of originals/*.slop
+    SHA256SUMS          # Hashes of originals/*.tiny
   runs/
     1.1.0-candidate-RUN/
       1.0.0/            # Disposable writable copies of the 1.0.0 documents
@@ -373,7 +375,7 @@ Mac's Time Machine backup alongside the retained release assets.
 - Check live collaboration without launch flags in the signed Mac candidate: Apple
   sign-in, create/copy a link, join on another Mac/iPhone and in Chrome, edit from
   each copy, reconnect after offline edits, Stop and re-share, Save Unshared Copy,
-  and account deletion. Open a `share.hitslop.com/join` link from the browser and
+  and account deletion. Open a `share.tinys.click/join` link from the browser and
   confirm the app receives its complete capability fragment.
 - Update from the previous supported signed release through Sparkle. Confirm publisher,
   resulting version and that its existing documents still work. For the first public

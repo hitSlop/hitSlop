@@ -6,12 +6,12 @@ import { repository, writeIfChanged } from "../lib/artifacts";
 /** ts-rs follows dependencies from the Rust contract roots. Generate into a fresh
  * directory so --check compares bytes without changing the working tree. */
 export async function rustBindings(check: boolean) {
-  const stage = await mkdtemp(join(tmpdir(), "hitslop-bindings-"));
+  const stage = await mkdtemp(join(tmpdir(), "tinys-bindings-"));
   try {
-    const child = Bun.spawn(["cargo", "run", "--quiet", "--locked", "-p", "hitslop-core", "--features", "ts",
+    const child = Bun.spawn(["cargo", "run", "--quiet", "--locked", "-p", "tinys-core", "--features", "ts",
       "--example", "export_bindings", "--", stage], { cwd: repository, stdout: "inherit", stderr: "inherit" });
     if (await child.exited) throw new Error("Rust contract export failed");
-    const destination = join(repository, "packages/hitslop/src/wire");
+    const destination = join(repository, "packages/tinys/src/wire");
     const generated = (await readdir(stage)).sort();
     if (generated.some(name => !name.endsWith(".generated.ts") && name !== "sharing.openapi.json"))
       throw new Error("Rust contracts must export to a .generated.ts module");

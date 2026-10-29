@@ -7,10 +7,10 @@ import { sha256 } from "../../scripts/lib/artifacts";
 import { advancesBuild, appcastBuild, assertQualified, validateApproval, validateCandidate, validatePublication, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "../../scripts/release/record";
 
 test("resumed candidates require their original identity and complete, unchanged artifacts", async () => {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-release-record-"));
+  const folder = await mkdtemp(join(tmpdir(), "tinys-release-record-"));
   const saved: ReleaseRecord = { tag: "v7.2.0", macVersion: "7.2.0", macBuild: "42", commit: "c".repeat(40), run: "123", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", corpus: { file: "compat-corpus-7.2.0.tar.gz", sha256: sha256(Buffer.from("compat-corpus-7.2.0.tar.gz")) }, qualified: {}, artifacts: {} };
   try {
-    for (const name of ["compat-corpus-7.2.0.tar.gz", "hitslop-7.2.0.tgz", "hitSlop.dmg", "hitSlop.zip", "appcast.xml", "hitSlop-7.2.0.md", "release-notes.md"]) {
+    for (const name of ["compat-corpus-7.2.0.tar.gz", "hitslop-tinys-7.2.0.tgz", "tinys.dmg", "tinys.zip", "appcast.xml", "tinys-7.2.0.md", "release-notes.md"]) {
       await writeFile(join(folder, name), name);
       saved.artifacts[name] = sha256(Buffer.from(name));
     }
@@ -18,7 +18,7 @@ test("resumed candidates require their original identity and complete, unchanged
     await verifyArtifacts(saved, folder);
     expect(() => validateRecord(saved, saved.tag, "d".repeat(40))).toThrow("different tag or commit");
     expect(() => validateRecord({ ...saved, artifacts: {} }, saved.tag, saved.commit)).toThrow("missing");
-    for (const name of ["hitSlop-7.2.0.md", "release-notes.md"]) {
+    for (const name of ["tinys-7.2.0.md", "release-notes.md"]) {
       const artifacts = { ...saved.artifacts };
       delete artifacts[name];
       expect(() => validateRecord({ ...saved, artifacts }, saved.tag, saved.commit)).toThrow(`missing ${name}`);
@@ -27,7 +27,7 @@ test("resumed candidates require their original identity and complete, unchanged
       await writeFile(join(folder, name), name);
     }
     expect(() => validateRecord({ ...saved, artifacts: { ...saved.artifacts, "../outside": "a".repeat(64) } }, saved.tag, saved.commit)).toThrow("Invalid artifact");
-    await writeFile(join(folder, "hitSlop.dmg"), "rebuilt");
+    await writeFile(join(folder, "tinys.dmg"), "rebuilt");
     await expect(verifyArtifacts(saved, folder)).rejects.toThrow("Artifact differs");
   } finally { await rm(folder, { recursive: true, force: true }); }
 });

@@ -1,12 +1,15 @@
 # Testing
 
-**Do not create an automated test or test suite for each slop.** Creating, styling,
-animating, or updating a slop does not require new tests. Validate it with existing
+tinys starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not tinys acceptance inputs.
+
+
+**Do not create an automated test or test suite for each tiny.** Creating, styling,
+animating, or updating a tiny does not require new tests. Validate it with existing
 checks/builds and hands-on preview/export review. Shared SDK, storage, or host
 regressions belong in the existing tests at their owning boundary; do not duplicate
 that coverage in example-specific tests. Ordinary tests use deliberate infrastructure
 fixtures, never live examples. Generic shipped-template smoke checks and frozen
-compatibility replay protect artifacts without asserting a slop's workflow or design.
+compatibility replay protect artifacts without asserting a tiny's workflow or design.
 Manual review and temporary diagnostic scripts do not become permanent tests.
 
 Tests live at the boundary that owns the behavior. Delete a test together with the code
@@ -16,16 +19,16 @@ openable, so its frozen entries never change.
 
 | Boundary | Where | Proves |
 |---|---|---|
-| Rust semantics | `crates/hitslop-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
-| Rust storage | `crates/hitslop-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, a history that does not start with a snapshot refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
-| File engine | `crates/slop-engine/tests` | `pack` (with the artwork it renders), `inspect` and `schema` as the CLI runs them; a refused build publishes nothing; a closed export that never replaces a file, and `open` refusals |
-| Shell over WASM | `packages/hitslop/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
-| Author SDK | `packages/hitslop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` browser behavior |
-| Rust owner and commands | `crates/hitslop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
-| Swift integration | `apps/apple/Packages/HitSlopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
+| Rust semantics | `crates/tinys-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
+| Rust storage | `crates/tinys-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, a history that does not start with a snapshot refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
+| File engine | `crates/tiny-engine/tests` | `pack` (with the artwork it renders), `inspect` and `schema` as the CLI runs them; a refused build publishes nothing; a closed export that never replaces a file, and `open` refusals |
+| Shell over WASM | `packages/tinys/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
+| Author SDK | `packages/tinys/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` browser behavior |
+| Rust owner and commands | `crates/tinys-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
+| Swift integration | `apps/apple/Packages/TinysApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | Chrome durable copies and WebKit native-owner preview, without building Swift |
 | Sharing service | `scripts/sharing/check-accounts.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, room creation/open, replaceable uploads, owner recovery, quota release and Stop/upload races; local certificate substitution only |
-| Engine renders | `tests/native/{render,landing}.native.test.ts`, `packages/hitslop/tests/cli/build.native.test.ts`, `bun run verify render` | Engine artwork and PNG/PDF exports on macOS and Linux, without Swift |
+| Engine renders | `tests/native/{render,landing}.native.test.ts`, `packages/tinys/tests/cli/build.native.test.ts`, `bun run verify render` | Engine artwork and PNG/PDF exports on macOS and Linux, without Swift |
 | Native tools | Remaining `tests/native`, `bun run verify native` | Engine or host killed mid-edit and corpus replay on macOS |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
 | App bundle | `bun run verify app` (also in `release:check`) | Builds and checks the complete app, including named commands through the raw Xcode Debug app without an evaluator override; release native tests also exercise host process death |
@@ -37,7 +40,7 @@ openable, so its frozen entries never change.
 
 The core and runner Rust integration tests each build as one binary, `tests/main.rs` (`autotests = false`),
 so a change links once rather than once per file; a new test file is a `mod` there, or it
-never compiles. Test names carry their file as a module (`store::…`). `hitslop-runner`'s
+never compiles. Test names carry their file as a module (`store::…`). `tinys-runner`'s
 `broken_pipe.rs` stays its own binary because it changes the process's SIGPIPE handling.
 
 Capture regressions cover mixed-success batches and unchanged source bytes in Rust, and
@@ -60,7 +63,7 @@ belongs to fixtures, not examples or the landing page.
 
 `bun run verify` is the one runner (`scripts/verify.ts`). Without arguments it runs each
 tier whose inputs changed since that tier last passed on this machine (recorded in
-`.hitslop/verify/`, by content), so a repeated run after a green one does nothing:
+`.tinys/verify/`, by content), so a repeated run after a green one does nothing:
 
 ```sh
 bun run verify                 # the tiers this change touches
@@ -76,7 +79,7 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 
 | Tier | Runs |
 |---|---|
-| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/hitslop/src` (excluding generated files), Oxlint for `packages/hitslop/src` and `scripts`, TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), Svelte types for the templates and the SDK's components, and `scripts/ci/hygiene.ts` (no placeholder invitation link in any tracked file, one iPhone download address in the site, README and Swift links, and a landing template catalog that matches the active templates; regenerate it with `bun run build:templates && bun apps/landing/scripts/templates.ts`). Together, concurrently |
+| `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/tinys/src` (excluding generated files), Oxlint for `packages/tinys/src` and `scripts`, TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), Svelte types for the templates and the SDK's components, and `scripts/ci/hygiene.ts` (no placeholder invitation link in any tracked file, one iPhone download address in the site, README and Swift links, and a landing template catalog that matches the active templates; regenerate it with `bun run build:templates && bun apps/landing/scripts/templates.ts`). Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell and release tests over SDK WASM; up to four isolated file workers |
 | `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |
@@ -86,8 +89,8 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `packed` | Engine/evaluator, shell, durable-browser WASM and skills, then `tests/packed` (120-second default deadline), when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | Swift formatting, native bindings, shell and fixtures, then one serial `swift test` invocation after compilation, with an isolated temporary directory and registry. Requires at least one executed test. Filtered runs (`verify swift --filter X`) pass Swift’s filters through, including `name\(` patterns |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
-| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `HITSLOP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
-| `sharing` | Builds the browser and Rust Worker, then runs the account/room boundary in pinned Miniflare with SQLite DOs and R2. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run. A pull request runs it (the `sharing` job) when it changes any of the tier's own inputs (`apps/sharing`, `scripts/sharing`, any crate or Cargo build input) or `packages/hitslop/src/{sharing,browser}`; `sharing.yml` runs it on master pushes and release tags |
+| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `TINYS_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
+| `sharing` | Builds the browser and Rust Worker, then runs the account/room boundary in pinned Miniflare with SQLite DOs and R2. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run. A pull request runs it (the `sharing` job) when it changes any of the tier's own inputs (`apps/sharing`, `scripts/sharing`, any crate or Cargo build input) or `packages/tinys/src/{sharing,browser}`; `sharing.yml` runs it on master pushes and release tags |
 | `native` | Remaining native tests with engine/evaluator and shell; no Swift preparation |
 
 Oxlint (`.oxlintrc.json`, `bun run lint`) adds type-aware promise rules to its correctness
@@ -101,8 +104,8 @@ shell for `swift`, engine/evaluator and shell for CLI/render/native, and durable
 WASM for browser/package consumers. Actual shared outputs are prepared once per run. A
 build whose inputs did not change rewrites nothing, so nothing downstream recompiles: a
 repeated `bun run build` takes seconds. Each invocation retains commands, logs, inventory, toolchain identity and outcomes in
-`.hitslop/evidence/runs/<run-id>/`. The latest report is also written to
-`.hitslop/evidence/verify.json` (`release-check.json` for a release). Build and test
+`.tinys/evidence/runs/<run-id>/`. The latest report is also written to
+`.tinys/evidence/verify.json` (`release-check.json` for a release). Build and test
 execution durations are reported separately, without fixed speed thresholds.
 A filtered retry never deletes the original full-run report. Filtered and reused-build
 runs are marked and never update the full-tier pass cache.
@@ -120,12 +123,12 @@ documents. Whenever corpus-consuming tiers run, they replay every published entr
 full coverage. Matching markers or embedded apps does not prove saved scenarios behave
 equivalently. Historical-writer randomized differential tests run nightly and for releases.
 
-`HITSLOP_NIGHTLY=1` (set by scheduled/manual CI and hotfix-branch pushes, and implied by
+`TINYS_NIGHTLY=1` (set by scheduled/manual CI and hotfix-branch pushes, and implied by
 `--release`) adds expensive boundary cases and broader qualification:
 
 | Nightly and release only | Where it is selected |
 |---|---|
-| Presentation, pixel and telemetry checks: window shapes, toolbar, glass, theme panel, export size and colour, catalog thumbnails, telemetry wiring | Swift `.nightly` trait (`HitSlopTestSupport/Nightly.swift`) |
+| Presentation, pixel and telemetry checks: window shapes, toolbar, glass, theme panel, export size and colour, catalog thumbnails, telemetry wiring | Swift `.nightly` trait (`TinysTestSupport/Nightly.swift`) |
 | Storage-growth and history-trim budgets, a busy display read, acceptance vectors above 1 MiB of decompressed JSON | `default-filter` in `.config/nextest.toml` (`--ignore-default-filter` adds them) |
 | Full randomized budgets: model 8 seeds (4 otherwise), merge 40 seeds (8), compat writers 2 seeds (1), publications 100 rounds (10) | `scripts/verify.ts` |
 | Large live/closed replies over 48 MiB with near-limit batches | `DocumentOwnerTests.largeDocumentsReadTheSameLiveAndClosed` |
@@ -163,7 +166,7 @@ binary (seconds each under load): run `sudo spctl developer-mode enable-terminal
 enable the terminal app under System Settings › Privacy & Security › Developer Tools and
 restart it.
 
-`crates/hitslop-core/tests/model.rs` is the descriptor-driven model of the single writer:
+`crates/tinys-core/tests/model.rs` is the descriptor-driven model of the single writer:
 one test per fixture (checklist, scalars, collections, nested), 8 seeds × 150 steps by
 default (4 on an ordinary `verify`; see [Every change and nightly](#every-change-and-nightly)), over the edits one owner actually receives. Those are the agent's and the page's
 batches (including boundary and out-of-range values, anchors, whole scalar-list `set`,
@@ -172,14 +175,14 @@ older versions, undo and redo. After every step a refusal has changed nothing,
 publications replay to a fresh snapshot, the maintained state equals a recomputed one, and
 the document reopens the same: reopening checks the saved state against its descriptor,
 so a write that stored invalid state fails the run. `publications.rs` keeps its own budget
-(100 rounds × 100 steps, `HITSLOP_PUBLICATIONS_{ROUNDS,STEPS}`).
+(100 rounds × 100 steps, `TINYS_PUBLICATIONS_{ROUNDS,STEPS}`).
 
 `merge.rs` checks merge closure: three replicas of each fixture edit concurrently with every
 intent kind, refusals, undo and redo, insert rows from a small pool of IDs, and exchange
 whole histories in random order without resetting live undo. Every merge must pass
 acceptance, both merge orders must read the same, and no row may read twice. It runs 40
 seeds of 120 steps by default (8 on an ordinary `verify`, 400 in the extended run;
-`HITSLOP_MERGE_{SEEDS,STEPS}`).
+`TINYS_MERGE_{SEEDS,STEPS}`).
 The deterministic creation-race test checks page publications against fresh snapshots
 after both imports and later edits, including a replaced row's nested list. Storage tests
 check that clean copies discard deleted nested content and close-time trimming bounds
@@ -190,14 +193,14 @@ the real session and codec: dropped connections, relay restarts and crashes that
 from the last save. Every replica must converge, every page view must equal its document,
 nothing saved or held by the relay may be lost, and nothing may pause. It shares the merge
 seeds (300 steps each). The golden frames (`tests/sync-frames.json`) are the wire's
-contract with the relay; `HITSLOP_WRITE_SYNC_FRAMES=1` rewrites them when the wire changes
+contract with the relay; `TINYS_WRITE_SYNC_FRAMES=1` rewrites them when the wire changes
 on purpose. `owner.rs` syncs two owners through their hooks alone.
 
 The default model takes under two seconds in the debug build (M1, 2026-10-05). The
 extended run is sized for CI; the `Core model` workflow runs it weekly and on demand:
 
 ```sh
-bun run core:test:extended   # HITSLOP_MODEL_SEEDS=64 HITSLOP_MODEL_STEPS=500, release build, nextest
+bun run core:test:extended   # TINYS_MODEL_SEEDS=64 TINYS_MODEL_STEPS=500, release build, nextest
 ```
 
 It passed in under three minutes on the same M1 (2026-10-05).
@@ -214,26 +217,26 @@ bun run verify swift --filter Compat    # one process, Swift's own filter
 compiles the engine. `tests/native/crash.native.test.ts` is stress coverage beside the
 deterministic Rust storage cases: it kills a real document engine at points spread across
 an edit's open, apply, save and close, and checks that the document reopens as it was or
-as edited, never torn, and that an acknowledged edit is never lost. With `HITSLOP_APP_BINARY` (a
+as edited, never torn, and that an acknowledged edit is never lost. With `TINYS_APP_BINARY` (a
 release builds one) it also kills a running app after an acknowledged CLI edit.
 `bun run verify render` runs `tests/native/render.native.test.ts` with the engine and
-shell on macOS or Linux; `HITSLOP_RENDER=all`
+shell on macOS or Linux; `TINYS_RENDER=all`
 renders every bundled template (release).
 
-Startup diagnostics: Debug `HITSLOP_STARTUP_TIMINGS=1` logs native preparation, page
-readiness (fonts included), presentation and page-relative `hitslop:*` boot marks, without
-document values or paths. `HITSLOP_STARTUP_BENCH=1 bun run swift:test --filter documentStartupTimings`
+Startup diagnostics: Debug `TINYS_STARTUP_TIMINGS=1` logs native preparation, page
+readiness (fonts included), presentation and page-relative `tinys:*` boot marks, without
+document values or paths. `TINYS_STARTUP_BENCH=1 bun run swift:test --filter documentStartupTimings`
 measures fresh documents. For saved ones, use
-`HITSLOP_STARTUP_BENCH=1 bun run swift:test -c release --filter savedDocumentStartupTimings`:
+`TINYS_STARTUP_BENCH=1 bun run swift:test -c release --filter savedDocumentStartupTimings`:
 it seeds saved edits in a separate engine process, then reopens the document fixture, a
 1,000-row variant and a skinned fixture ten times each, recording
 preparation/readiness/reveal durations and whether progress appeared.
-`HITSLOP_STARTUP_CASE` measures one case first in a fresh process,
-`HITSLOP_STARTUP_SAMPLES` sets the count and `HITSLOP_STARTUP_FOREGROUND=1` activates the
+`TINYS_STARTUP_CASE` measures one case first in a fresh process,
+`TINYS_STARTUP_SAMPLES` sets the count and `TINYS_STARTUP_FOREGROUND=1` activates the
 benchmark app. Report the first sample separately, then the warmed median and p95.
 
 Performance diagnostics are opt-in and not CI gates:
-`cargo run --release -p hitslop-core --example bench_replace` measures whole-list
+`cargo run --release -p tinys-core --example bench_replace` measures whole-list
 replacement at 1k/5k rows: unchanged values, field edits, append, reverse and mixed
 membership/order changes. It prints five samples and a median after one warmup per
 case, with fresh document creation outside the timer. Compare builds sequentially
@@ -243,15 +246,15 @@ row fast path with the original reconciler; shared-machine timing variation limi
 the comparison.
 
 Other performance diagnostics:
-`HITSLOP_BENCH=1 HITSLOP_BENCH_ROWS=1000,5000 HITSLOP_BENCH_WINDOWS=1 bun run bench:windows`.
-`HITSLOP_BENCH_CSS` appends CSS to the measured checklist and
-`HITSLOP_BENCH_LABEL` names the report, for attributing a cost to one rule; the
+`TINYS_BENCH=1 TINYS_BENCH_ROWS=1000,5000 TINYS_BENCH_WINDOWS=1 bun run bench:windows`.
+`TINYS_BENCH_CSS` appends CSS to the measured checklist and
+`TINYS_BENCH_LABEL` names the report, for attributing a cost to one rule; the
 `row_text_split_ms` field separates style from layout. Record a result under
 `docs/evidence/` when a doc cites it. Superseded runs may be kept locally under
 `archive/docs/evidence/`; remove or replace their tracked citations when untracking them.
 
 `bun run bench:growth` runs the checklist conformance fixture through the native owner
-for 30 simulated days by default (1–365 via `HITSLOP_GROWTH_DAYS`). Each day inserts
+for 30 simulated days by default (1–365 via `TINYS_GROWTH_DAYS`). Each day inserts
 100 synthetic strokes, with 2,048 points serialized into each row's text, and removes
 rows in groups of 25; each insert and removal batch is flushed. Two equal workloads
 compare daily close/reopen with one continuously open owner. The Swift runner prepares
@@ -262,20 +265,20 @@ bytes and exact saved-value checks. It makes no lifetime projection. Inspect eac
 result's `completedDays` and optional `stoppedError`; failures also fail the test.
 Temporary documents are removed when the harness finishes.
 
-For a smoke run, use `HITSLOP_GROWTH_DAYS=1` and set `HITSLOP_GROWTH_OUTPUT` to a temporary
+For a smoke run, use `TINYS_GROWTH_DAYS=1` and set `TINYS_GROWTH_OUTPUT` to a temporary
 JSON path. Without an override, the launcher writes
 `docs/evidence/document-growth-<today>.json`. A short run does not establish a year's
 capacity; these synthetic workloads are not forecasts of individual users' behavior.
 
 ## Compatibility corpus
 
-The required compatibility checks answer: can this build open a saved slop, run its
+The required compatibility checks answer: can this build open a saved tiny, run its
 embedded app, edit it, save it, and reopen the result without losing data or attachments?
 Native page replay uses the actual WKWebView host, not Playwright. Keep these checks in
 the required Rust, Swift and native tiers whenever their inputs change.
 
 Capture a separate frozen collection for **each released version**, starting with v1.0.0.
-Its corpus hash is permanently pinned in `scripts/compat/required-history.json`; missing
+Before the first tinys publication, ordinary development permits empty history; release checks require the frozen candidate. After publication, its corpus hash must be permanently pinned in `scripts/compat/tinys-required-history.json`; missing
 or changed public history fails even on a fresh machine. There is no prelaunch fallback.
 Later builds replay every collection; never
 rebuild old samples with current tools. These artifacts are immutable GitHub release assets, downloaded and verified for testing. The format markers can remain at 1 across
@@ -286,8 +289,8 @@ templates, saved documents (with their attachments), expected state, page scenar
 and writer metadata `{version, platform, sha256, buildId}` in `release.json`. The
 darwin-arm64 writer is the engine shipped in that release's npm package; engine binaries
 are not committed in the corpus. Before historical-writer replay, `scripts/compat/writers.ts` resolves
-it into `~/.cache/hitslop/compat-writers/<sha256>` (`HITSLOP_COMPAT_WRITERS` overrides the
-cache). A local `HITSLOP_ENGINE` or checkout engine must match both build ID and SHA-256;
+it into `~/.cache/tinys/compat-writers/<sha256>` (`TINYS_COMPAT_WRITERS` overrides the
+cache). A local `TINYS_ENGINE` or checkout engine must match both build ID and SHA-256;
 otherwise the resolver extracts it from the exact npm tarball attached to the immutable
 GitHub release and verifies the tarball and engine hashes.
 Cached bytes are checked again; a missing or corrupt writer of a published release fails
@@ -295,9 +298,9 @@ replay. Every historical writer must resolve from its exact local bytes or its r
 npm package; unavailable writers are never skipped on darwin-arm64.
 
 Documents are written both ways a release writes them:
-through its CLI, and by its own app's page (`NAME.page.slop`, saved by the page
+through its CLI, and by its own app's page (`NAME.page.tiny`, saved by the page
 scenario, so text splices against older versions and page-minted IDs are replayed too). It
-covers the runtime, not individual slops: the conformance app (every `ctx` member and
+covers the runtime, not individual tinys: the conformance app (every `ctx` member and
 descriptor kind, stored commands covering every intent emitted by the prelude,
 all 26 app asset types and all 16 attachment types, dedicated Preview/Icon/Export/Widget
 views, theme variants and independent content assertions) with its saved, page-saved
@@ -307,7 +310,7 @@ builds create, edit and render documents from. Shipped templates are not in it; 
 template render checks cover what ships now. It is regression evidence, not proof of all
 possible authored apps.
 
-The candidate workflow runs `bun run compat:capture VERSION --writer generated/engines/darwin-arm64/slop-engine --out dist/corpus`. It builds the producing tools, records their
+The candidate workflow runs `bun run compat:capture VERSION --writer generated/engines/darwin-arm64/tiny-engine --out dist/corpus`. It builds the producing tools, records their
 commit and core/writer identities, and captures outside Git. It records
 template file digests, each template and saved document's producing-reader `appDigest`,
 per-file hashes and the required case inventory. Replay pins app identity independently
@@ -333,7 +336,7 @@ rules are free to tighten while recorded acceptance remains unchanged. Only a co
 capture is published and frozen. Capture requires a release version, a candidate writer
 and a new output directory; an existing destination is refused.
 
-- Rust (`crates/hitslop-core/tests/compat.rs`, in every `verify rust`) replays saved
+- Rust (`crates/tinys-core/tests/compat.rs`, in every `verify rust`) replays saved
   values, themes, app digests, edits, save/close and reopen. It also checks every entry’s
   limits ratchet
   and decodes its raw acceptance vectors, comparing typed re-encoding semantically with
@@ -350,14 +353,14 @@ and a new output directory; an existing destination is refused.
   darwin-arm64 and prints a visible skip elsewhere. Requests in older protocols live only in
   this test. Historical-writer differential tests run nightly and for releases, or when
   explicitly selected; ordinary PRs keep deterministic corpus replay. The weekly `Core model` run uses
-  16 × 40 (`HITSLOP_COMPAT_SEEDS`, `HITSLOP_COMPAT_STEPS`).
+  16 × 40 (`TINYS_COMPAT_SEEDS`, `TINYS_COMPAT_STEPS`).
 - Native replay (`tests/native/compat-replay.native.test.ts`) checks original app
   rendering, PNG/PDF content, attachments, theme changes/reset, stored
   Preview/Icon/Widget programs and template creation, through this build's CLI
   (the `compat` tier checks inventory and hashes). It exports every saved document,
   including different values saved with the same app. Stored command programs replay
   twice: deterministically through the evaluator with their recorded clock and seed,
-  and through the owner with `slop call` (argument refusal first, then an edit).
+  and through the owner with `tiny call` (argument refusal first, then an edit).
   Release verification explicitly requires its frozen candidate entry before replay.
 - Swift (`CompatCorpusTests`) runs the old conformance app's own scenario, which includes a
   page edit and a live agent command, requires an actual saved edit and checks reopen.
@@ -371,9 +374,9 @@ older file intact.
 The `compat` tier verifies every resolved corpus's content hashes, immutable storage SQL,
 required case inventory and versioned command prelude. `scripts/compat/corpora.ts` discovers
 all public immutable releases, checks history closure, and verifies each archive.
-It extracts once into `~/.cache/hitslop/compat-corpora/trees/<sha>/`, verifies extracted
+It extracts once into `~/.cache/tinys/compat-corpora/trees/<sha>/`, verifies extracted
 files again on reuse and makes them read-only, then atomically activates a snapshot of version links at
-`.hitslop/compat/current`. Candidate entries live in a separate snapshot. Editing tests explicitly make only
+`.tinys/compat/current`. Candidate entries live in a separate snapshot. Editing tests explicitly make only
 their disposable document copies writable; templates are read directly from the cache. Preparation
 is serialized and a delayed discovery response cannot regress remembered history.
 
@@ -381,11 +384,11 @@ is serialized and a delayed discovery response cannot regress remembered history
 or standalone native tests, run `bun run compat:resolve`; these readers resolve the
 `current` pointer once for their process. They fail with preparation instructions if
 it is missing. Raw tests use the last prepared inventory, so prepare again after new
-releases. Verifier and capture subprocesses receive a fixed `HITSLOP_COMPAT_ROOT` to
+releases. Verifier and capture subprocesses receive a fixed `TINYS_COMPAT_ROOT` to
 keep a run isolated from other preparations. Historical writer tests additionally
 need `bun scripts/compat/writers.ts` when run outside the verifier.
 
-CI requires fresh inventory; explicit local `HITSLOP_COMPAT_OFFLINE=1` replay is visibly
+CI requires fresh inventory; explicit local `TINYS_COMPAT_OFFLINE=1` replay is visibly
 non-certifying. The corpus inventory forms part of verification pass digests, so a new
 public release invalidates relevant passes. Listings and filtered Rust tests that
 exclude compatibility do not resolve history or writers. Cache corruption is an error;
@@ -455,7 +458,7 @@ The required-check policy is `fast`, `native`, `native-rust`, `linux-smoke`, `Gi
 activate it only after the corresponding workflows are installed (see
 [release rules](guides/releasing.md#github-rules-rollout)). The full
 `release:check` runs only in the Release macOS workflow. Reports live in
-`.hitslop/evidence/` and are uploaded even on failure. Linux jobs have 30-minute
+`.tinys/evidence/` and are uploaded even on failure. Linux jobs have 30-minute
 limits; native has 45 minutes. UniFFI-only and WASM/full generator sets have separate versioned caches, with pins
 from `scripts/build/tool-versions.json`,
 separate from Cargo artifacts and dependency downloads. CI does not cache successful
@@ -514,7 +517,7 @@ hit/miss behavior is covered by the template-cache tests.
 The two-build Vite fixture covers imported component CSS, CSS fonts/images, unrendered
 skins, export-only assets and command stripping. Browser integration uses a native Rust
 owner, exercises HMR and command calls, checks attachment URL ranges/types, and kills an
-owner to prove the page fences further edits. The local `slop open --browser` host uses the durable WASM build; `slop dev`
+owner to prove the page fences further edits. The local `tiny open --browser` host uses the durable WASM build; `tiny dev`
 continues to use the native owner. The SDK tests use a separate WASM adapter.
 
 Rust package tests cover the exact table layout, app-row seal and replacement bypasses,
@@ -527,7 +530,7 @@ ranges still work. The owner command tests cover stale-base retry and lifecycle 
 SDK browser tests exercise `EditableText` composition, focus, caret placement and
 autosizing with real document handles. Native export tests use controlled content to
 check saved-state capture, color, selectable text and editor isolation. App acceptance
-launches the actual app with no `HITSLOP_EVALUATOR`, executes the document fixture's
+launches the actual app with no `TINYS_EVALUATOR`, executes the document fixture's
 insert, row-ID and remove commands through its live owner, and checks saved
 state after reopening. `apple:build` runs this against the raw
 Xcode product before copying it to `generated/app`; release artifact acceptance runs
@@ -540,7 +543,7 @@ stored ABI and original embedded programs.
 
 `bun run verify swift --filter fullscreenCapabilityAndLayoutReachTheNativeHost` checks
 the declaration's native projection and fitted/reflowing content coordinates. On an
-interactive desktop run `HITSLOP_FULLSCREEN=1 bun run verify swift --filter
+interactive desktop run `TINYS_FULLSCREEN=1 bun run verify swift --filter
 nativeFullscreenKeepsThePageAndRestoresTheDesktop` to exercise actual macOS Spaces
 transitions, the retained page, painted content, display-resolution zoom, toolbar
 reachability, and restored frame/pinning for
@@ -566,12 +569,12 @@ and source-image scaling ([qualification evidence](evidence/native-fullscreen-20
 - Frozen compatibility cases retain their original artifacts and expectations.
 
 No example test directory is accepted by discovery. Shared component contracts live
-in the SDK fixture; no test quota is associated with a slop.
+in the SDK fixture; no test quota is associated with a tiny.
 
 Performance samples in browser correctness scenarios are opt-in:
-`HITSLOP_BENCH_PREVIEW=1 bun run verify browser large-preview`. Ordinary runs still check
+`TINYS_BENCH_PREVIEW=1 bun run verify browser large-preview`. Ordinary runs still check
 large-list identity without repeated timing samples.
-`HITSLOP_BENCH_EDITS=1` enables repeated page-edit latency samples in
+`TINYS_BENCH_EDITS=1` enables repeated page-edit latency samples in
 `verify browser dev.browser`. Native `cliCommandsPublishToTheNativeWindow` covers
 agent command acceptance, refusal, publication and undo/redo.
 

@@ -1,0 +1,26 @@
+[package]
+name = "tiny-engine"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The file engine `tinys` runs: it builds and reads `.tiny` files on any platform, by
+# the rules the app opens them with.
+[dependencies]
+tinys-core = { path = "../tinys-core", features = ["storage"] }
+serde_json.workspace = true
+tinys-runner = { path = "../tinys-runner" }
+libc = "0.2"
+data-encoding = { version = "=2.11.1" }
+
+[features]
+# SQLite's own amalgamation, for platforms without a system SQLite (release builds only:
+# the app and tests link the platform library).
+bundled-sqlite = ["tinys-core/bundled-sqlite"]
+
+[dev-dependencies]
+tempfile = "3"
+png = "=0.18.1"

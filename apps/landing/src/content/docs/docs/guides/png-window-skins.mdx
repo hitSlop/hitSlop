@@ -1,6 +1,6 @@
 ---
 title: PNG window skins
-description: Give a fixed-size slop a custom native silhouette and click-through transparent areas.
+description: Give a fixed-size tiny a custom native silhouette and click-through transparent areas.
 ---
 
 Start with a radius (`"22px"`, `"50%"`, or `"9999px"`) or SVG path shape and
@@ -12,12 +12,12 @@ A washer with a transparent center is a useful first test.
 
 Add an RGBA PNG under `assets/`. Its pixel dimensions must be exactly 1× or 2× the
 window's logical `width` and `height`. Alpha defines both the native backing and where the
-window accepts pointer input. Import it in `slop.ts` and use the skin window:
+window accepts pointer input. Import it in `tiny.ts` and use the skin window:
 
 ```ts
 import skin from "./assets/window-mask.png";
 
-// Inside defineSlop({ ... })
+// Inside defineTiny({ ... })
 window: { kind: "skin", width: 480, height: 480, image: skin, fullscreenable: true },
 ```
 
@@ -33,12 +33,12 @@ enlarged. See [fullscreen behavior](/docs/guides/manifest-and-windows/#enable-fu
 The host draws the PNG behind the page, supplies window sizing, and overrides
 ordinary `html`/`body` backgrounds with transparency. Avoid overriding that
 transparency with more-specific or `!important` page backgrounds. The generated Svelte entry provides the app root automatically;
-mark a framework-neutral root with `data-slop-root`; its mount ancestors
+mark a framework-neutral root with `data-tiny-root`; its mount ancestors
 fill the window too. No sizing/transparency reset or duplicated pixel constants
-are needed; use `100%` or `--slop-window-width`/`--slop-window-height`. Align controls with opaque areas of the PNG using ordinary CSS.
+are needed; use `100%` or `--tiny-window-width`/`--tiny-window-height`. Align controls with opaque areas of the PNG using ordinary CSS.
 
-The native host exposes initial dimensions as `--slop-window-width` and `--slop-window-height`, and
-sets `data-slop-presentation="skin"`. These layout rules are disabled for capture.
+The native host exposes initial dimensions as `--tiny-window-width` and `--tiny-window-height`, and
+sets `data-tiny-presentation="skin"`. These layout rules are disabled for capture.
 
 Pixels below 10% alpha are click-through. Feathered edge pixels may still
 receive or reject clicks depending on their alpha, so keep important controls
@@ -56,4 +56,4 @@ click the content behind the window.
 Vite includes the imported PNG as an immutable content-addressed asset, even if no
 component renders it. Rust validates the PNG stream and infers its scale; the native
 mask uses that scale for crisp rendering. Document images imported by a user are separate
-attachments served by `attachments.url(id)` from `hitslop/svelte`.
+attachments served by `attachments.url(id)` from `@hitslop/tinys/svelte`.

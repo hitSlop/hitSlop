@@ -1,6 +1,6 @@
-import HitSlopCore
-import HitSlopDocument
 import SwiftUI
+import TinysCore
+import TinysDocument
 import UIKit
 
 struct PhoneTemplate: Identifiable, Hashable {
@@ -23,13 +23,13 @@ struct PhoneArtworkView: View {
     }.task(id: url.path + "|" + revision) {
       let preview = preview
       let data = await Task.detached(priority: .utility) {
-        try? SlopArtwork.first(url, preview ? [.preview] : [.icon, .preview])?.png
+        try? TinyArtwork.first(url, preview ? [.preview] : [.icon, .preview])?.png
       }.value
       image = data.flatMap(UIImage.init(data:))
     }
   }
 }
-struct PhoneSlopRow: View {
+struct PhoneTinyRow: View {
   let url: URL, title: String, subtitle: String
   var revision = ""
   /// A synced row shows a small iCloud mark instead of a status line.
@@ -43,7 +43,7 @@ struct PhoneSlopRow: View {
       .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
       .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
       VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(SlopBrand.heading(16)).foregroundStyle(.primary).lineLimit(1)
+        Text(title).font(TinyBrand.heading(16)).foregroundStyle(.primary).lineLimit(1)
         if !synced { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
       }.frame(maxWidth: .infinity, alignment: .leading)
       if synced {
@@ -75,8 +75,8 @@ struct PhoneTemplateDetail: View {
           PhoneArtworkView(url: template.url).padding(6).frame(width: 92, height: 100)
             .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
           VStack(alignment: .leading, spacing: 6) {
-            Text(template.title).font(SlopBrand.heading(26, relativeTo: .title2)).tracking(-0.4)
-            Text("Included with hitSlop").foregroundStyle(.secondary)
+            Text(template.title).font(TinyBrand.heading(26, relativeTo: .title2)).tracking(-0.4)
+            Text("Included with tinys").foregroundStyle(.secondary)
           }
         }
         Text(template.description).font(.body).lineSpacing(4)
@@ -118,17 +118,17 @@ struct PhoneTemplateDetail: View {
         } label: {
           HStack(spacing: 12) {
             Image(systemName: "plus")
-            Text(creating ? "Creating…" : "Create slop").fontWeight(.semibold)
+            Text(creating ? "Creating…" : "Create tiny").fontWeight(.semibold)
           }
           .font(.title3).frame(maxWidth: .infinity).padding(.vertical, 18)
         }.buttonStyle(.plain).foregroundStyle(.white).background(
           PhoneStyle.accent, in: RoundedRectangle(cornerRadius: 18)
         )
-        .accessibilityIdentifier("create-slop")
+        .accessibilityIdentifier("create-tiny")
         .disabled(creating || !canCreate).opacity(canCreate ? 1 : 0.55)
         Text(
           canCreate
-            ? "Saved on this iPhone. Synced with your Mac." : "Connect to iCloud in Settings to create a synced slop."
+            ? "Saved on this iPhone. Synced with your Mac." : "Connect to iCloud in Settings to create a synced tiny."
         )
         .font(.caption).foregroundStyle(.secondary)
       }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8).background(.regularMaterial)
@@ -136,7 +136,7 @@ struct PhoneTemplateDetail: View {
   }
 }
 
-/// Names a new slop before it is made: the template's icon, the name ready to type over,
+/// Names a new tiny before it is made: the template's icon, the name ready to type over,
 /// and one Create that rides above the keyboard.
 private struct PhoneNameSheet: View {
   let template: PhoneTemplate
@@ -158,7 +158,7 @@ private struct PhoneNameSheet: View {
           .onSubmit { if !trimmed.isEmpty { create(trimmed) } }
           .padding(.horizontal, 16).padding(.vertical, 14)
           .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-          .accessibilityLabel("Slop name").accessibilityIdentifier("slop-name")
+          .accessibilityLabel("Tiny name").accessibilityIdentifier("tiny-name")
         Text("Saved on this iPhone. Synced with your Mac.").font(.caption).foregroundStyle(.secondary)
         Spacer(minLength: 0)
       }
@@ -167,16 +167,16 @@ private struct PhoneNameSheet: View {
         Button {
           create(trimmed)
         } label: {
-          Text(creating ? "Creating…" : "Create slop").fontWeight(.semibold)
+          Text(creating ? "Creating…" : "Create tiny").fontWeight(.semibold)
             .font(.title3).frame(maxWidth: .infinity).padding(.vertical, 8)
         }
         .buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 18))
         .tint(PhoneStyle.accent).controlSize(.large)
         .disabled(creating || trimmed.isEmpty)
-        .accessibilityIdentifier("create-named-slop")
+        .accessibilityIdentifier("create-named-tiny")
         .padding(.horizontal, 20).padding(.bottom, 12)
       }
-      .navigationTitle("New Slop").navigationBarTitleDisplayMode(.inline)
+      .navigationTitle("New Tiny").navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
       }

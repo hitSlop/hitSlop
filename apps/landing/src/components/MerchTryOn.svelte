@@ -277,7 +277,7 @@
       {/key}
       {#if loading}<span class="loading">Opening {selected.name}…</span>{/if}
       {#if loadingError}<p class="load-error" role="alert">{loadingError}</p>{/if}
-      <span class="preview-stamp" aria-hidden="true">hitSlop<br /><span>OFF THE DESKTOP.</span></span>
+      <span class="preview-stamp" aria-hidden="true">tinys<br /><span>OFF THE DESKTOP.</span></span>
       <span class="sticker coming" data-tone="sun" style="--tilt: -8deg" aria-hidden="true">coming soon ✨</span>
       {#if clickers.has(opened.slug)}
         <button type="button" class="clicker" class:pressed onclick={click} aria-label={`Click the ${opened.name}. ${clicks} clicks so far.`}>
@@ -297,7 +297,7 @@
   <p class="dialog-eyebrow">THE FIRST DROP</p>
   {#if !notifyEndpoint}
     <h2 id="signup-title">Signups opening soon<span>.</span></h2>
-    <p>Good software. Weird clothes. The first hitSlop collection is on its way.</p>
+    <p>Good software. Weird clothes. The first tinys collection is on its way.</p>
     <form method="dialog"><button class="signup-button">Back to the wardrobe →</button></form>
   {:else if notifyState === "done"}
     <h2 id="signup-title">You’re on the list<span>.</span></h2>
@@ -319,7 +319,7 @@
   .intro { min-width: 0; align-self: start; }
   .edition { margin: 0 0 8px; display: flex; align-items: center; gap: 9px; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #5b358e; }
   .edition span { font-size: 24px; line-height: 1; }
-  h1 { font-family: "HitSlop Display", sans-serif; font-size: clamp(38px, 4.5vw, 80px); font-weight: 800; line-height: .98; letter-spacing: -.025em; white-space: nowrap; }
+  h1 { font-family: "Tinys Display", sans-serif; font-size: clamp(38px, 4.5vw, 80px); font-weight: 800; line-height: .98; letter-spacing: -.025em; white-space: nowrap; }
   h1 > span { color: #7922e0; }
   .wardrobe { min-height: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
   .groups { min-height: 0; flex: 0 1 480px; display: grid; gap: 8px; }
@@ -336,18 +336,18 @@
   .file-icon:active img { transform: translateY(1px) scale(.96); }
   .intro { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 18px; }
   .intro .edition { flex-basis: 100%; }
-  .surprise { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; border: 2px solid #15152e; border-radius: 16px; color: #15152e; background: #fff; box-shadow: 0 3px 0 #15152e; font-family: "HitSlop Display", sans-serif; font-size: 1rem; font-weight: 800; cursor: pointer; transition: transform 220ms cubic-bezier(.34, 1.56, .64, 1); }
+  .surprise { min-height: 44px; padding: 0 16px; display: inline-flex; align-items: center; gap: 8px; border: 2px solid #15152e; border-radius: 16px; color: #15152e; background: #fff; box-shadow: 0 3px 0 #15152e; font-family: "Tinys Display", sans-serif; font-size: 1rem; font-weight: 800; cursor: pointer; transition: transform 220ms cubic-bezier(.34, 1.56, .64, 1); }
   .surprise:hover { transform: translateY(-2px) rotate(2deg); }
   .surprise:disabled { cursor: progress; }
   .stage .coming { position: absolute; top: 16px; left: 16px; z-index: 2; font-size: .95rem; pointer-events: none; }
   .clicker { position: absolute; inset: 0; z-index: 1; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 18px; border: 0; background: transparent; cursor: pointer; }
-  .click-count { padding: 6px 14px; border: 2px solid #15152e; border-radius: 99px; background: #fff; box-shadow: 0 3px 0 #15152e; font-family: "HitSlop Handwriting", cursive; font-size: 1.1rem; }
+  .click-count { padding: 6px 14px; border: 2px solid #15152e; border-radius: 99px; background: #fff; box-shadow: 0 3px 0 #15152e; font-family: "Tinys Handwriting", cursive; font-size: 1.1rem; }
   .stage:has(.clicker.pressed) .shot img { transform: scale(.94) translateY(4px); transition: transform 90ms ease-out; }
   .shot img { transition: transform 200ms cubic-bezier(.34, 1.56, .64, 1); }
   .file-icon.selected { border-color: #8162c276; background: #ffffff35; }
   .file-icon.selected .filename { color: #fcf9ff; background: #7541c2; }
   button:focus-visible { outline: 3px solid #7138db; outline-offset: 2px; }
-  .desktop-note { margin: 0; color: #644384; font-family: "HitSlop Handwriting", cursive; font-size: clamp(16px, 1.5vw, 23px); transform: rotate(-2deg); padding-left: 12px; }
+  .desktop-note { margin: 0; color: #644384; font-family: "Tinys Handwriting", cursive; font-size: clamp(16px, 1.5vw, 23px); transform: rotate(-2deg); padding-left: 12px; }
   .desktop-note span { margin-right: 6px; }
   .categories { display: flex; gap: 4px; border-bottom: 1px solid #77749c30; }
   .categories button { min-height: 40px; padding: 0 12px; background: transparent; border: 0; border-bottom: 2px solid transparent; color: #56536f; font-size: .83rem; font-weight: 650; cursor: pointer; }
@@ -395,7 +395,7 @@
   .dialog-close { position: absolute; top: 8px; right: 10px; }
   .dialog-close button { width: 36px; height: 36px; border: 0; border-radius: 6px; background: transparent; font-size: 26px; color: #5d5372; cursor: pointer; }
   .dialog-eyebrow { margin: 0 0 16px; font-size: .7rem; font-weight: 700; letter-spacing: .12em; color: #7741b7; }
-  dialog h2 { font-family: "HitSlop Display", sans-serif; font-size: 40px; font-weight: 800; line-height: 1; }
+  dialog h2 { font-family: "Tinys Display", sans-serif; font-size: 40px; font-weight: 800; line-height: 1; }
   dialog h2 span { color: #7922e0; }
   dialog p { font-size: .95rem; color: #5d5372; }
   dialog label { font-size: .8rem; font-weight: 650; }

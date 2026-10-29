@@ -1,6 +1,6 @@
 # Third-party notices
 
-hitSlop depends on open-source packages whose licenses are recorded in the Bun
+tinys depends on open-source packages whose licenses are recorded in the Bun
 and Swift lockfiles and package manifests. Distributions must retain the
 notices required by those licenses.
 

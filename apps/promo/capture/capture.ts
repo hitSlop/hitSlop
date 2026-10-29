@@ -1,13 +1,13 @@
 /**
- * Records real hitSlop example apps (served by `slop dev`) as alpha PNG sequences in public/captures.
+ * Records real tinys example apps (served by `tiny dev`) as alpha PNG sequences in public/captures.
  * Usage: bun capture/capture.ts [scene ...]   (defaults to every scene)
  */
 import type { Locator, Page } from "playwright";
 import { basename } from "node:path";
-import { launch, openSlop, record, still } from "./lib";
+import { launch, openTiny, record, still } from "./lib";
 
-const skin = process.env.PROMO_SKIN ?? `${process.env.HOME}/Desktop/slops/Tenchi Muyo - Aeka.wsz`;
-const pet = process.env.PROMO_PET ?? `${process.env.HOME}/Desktop/slops/akitsuki-airi.codex-pet.zip`;
+const skin = process.env.PROMO_SKIN ?? `${process.env.HOME}/Desktop/tinys/Tenchi Muyo - Aeka.wsz`;
+const pet = process.env.PROMO_PET ?? `${process.env.HOME}/Desktop/tinys/akitsuki-airi.codex-pet.zip`;
 
 /** Drags a real file over the page (showing the app's drop affordance), then drops it. */
 async function dropFile(page: Page, path: string, mime: string, hover = 600) {
@@ -35,7 +35,7 @@ const press = (locator: Locator) => locator.evaluate((el) => (el as HTMLElement)
 
 const scenes: Record<string, () => Promise<void>> = {
   async soma() {
-    const s = await openSlop(browser, "soma-amp");
+    const s = await openTiny(browser, "soma-amp");
     s.page.on("response", (r) => r.status() >= 400 && console.warn("[soma]", r.status(), r.url()));
     await s.page.locator("#play").waitFor();
     await s.page.waitForTimeout(1200);
@@ -56,7 +56,7 @@ const scenes: Record<string, () => Promise<void>> = {
   },
 
   async pet() {
-    const s = await openSlop(browser, "codex-pet");
+    const s = await openTiny(browser, "codex-pet");
     await record(s, "pet", async (mark) => {
       await s.page.waitForTimeout(2200);
       mark("drag");
@@ -69,7 +69,7 @@ const scenes: Record<string, () => Promise<void>> = {
 
   // Mirrors the CLI edits shown in the terminal scene (see terminal.json): same values, applied live.
   async checklist() {
-    const s = await openSlop(browser, "quick-checklist");
+    const s = await openTiny(browser, "quick-checklist");
     await record(s, "checklist", async (mark) => {
       await s.page.waitForTimeout(1500);
       mark("title");
@@ -87,7 +87,7 @@ const scenes: Record<string, () => Promise<void>> = {
   },
 
   async timer() {
-    const s = await openSlop(browser, "focus-timer");
+    const s = await openTiny(browser, "focus-timer");
     await record(s, "timer", async (mark) => {
       await press(s.page.getByRole("button", { name: "Start" }));
       await s.page.mouse.move(0, 0);
@@ -95,7 +95,7 @@ const scenes: Record<string, () => Promise<void>> = {
       mark("theme");
       await s.page.evaluate(() => {
         const theme = { surface: "#3b6fd4", surfaceLight: "#5b8ef0", surfaceDeep: "#284f9e", accent: "#2f5fc0" };
-        for (const [k, v] of Object.entries(theme)) document.documentElement.style.setProperty(`--slop-${k}`, v);
+        for (const [k, v] of Object.entries(theme)) document.documentElement.style.setProperty(`--tiny-${k}`, v);
       });
       await s.page.waitForTimeout(3500);
     });
@@ -103,13 +103,13 @@ const scenes: Record<string, () => Promise<void>> = {
   },
 
   async koi() {
-    const s = await openSlop(browser, "koi-pond", 1);
+    const s = await openTiny(browser, "koi-pond", 1);
     await record(s, "koi", () => s.page.waitForTimeout(4500));
     await s.close();
   },
 
   async doodle() {
-    const s = await openSlop(browser, "doodle-board");
+    const s = await openTiny(browser, "doodle-board");
     await record(s, "doodle", async () => {
       await s.page.waitForTimeout(300);
       // One continuous heart; separate strokes get bridged by the brush smoothing.
@@ -133,7 +133,7 @@ const scenes: Record<string, () => Promise<void>> = {
   },
 
   async flashcards() {
-    const s = await openSlop(browser, "flashcards");
+    const s = await openTiny(browser, "flashcards");
     await record(s, "flashcards", async (mark) => {
       await s.page.waitForTimeout(1200);
       mark("reveal");
@@ -145,10 +145,10 @@ const scenes: Record<string, () => Promise<void>> = {
   },
 
   async wordle() {
-    const s = await openSlop(browser, "wordle");
+    const s = await openTiny(browser, "wordle");
     await record(s, "wordle", async () => {
       await s.page.waitForTimeout(400);
-      for (const word of ["CRANE", "SLOPE"]) {
+      for (const word of ["CRANE", "TINYE"]) {
         for (const letter of word) {
           await s.page.keyboard.press(letter);
           await s.page.waitForTimeout(90);
@@ -162,7 +162,7 @@ const scenes: Record<string, () => Promise<void>> = {
 
   async stills() {
     for (const slug of ["school-schedule", "assignment-tracker", "kanban-board", "side-quest", "pixel-art", "habit-heatmap", "pocket-sheet", "semester-planner"]) {
-      const s = await openSlop(browser, slug);
+      const s = await openTiny(browser, slug);
       await s.page.waitForTimeout(1200);
       await still(s, `still-${slug}`);
       await s.close();

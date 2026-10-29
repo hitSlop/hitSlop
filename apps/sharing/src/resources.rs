@@ -1,8 +1,8 @@
 //! Private resource delivery; the relay still never interprets Loro updates.
 use super::*;
 use crate::resource_types::{self, Manifest, Resource};
-use hitslop_sharing_protocol::policy;
 use policy::{ResourceInfo, ResourceRoute};
+use tinys_sharing_protocol::policy;
 
 #[derive(Deserialize)]
 struct SessionRow {
@@ -15,7 +15,7 @@ fn denied() -> Result<Response> {
 }
 fn cookie(req: &Request) -> Option<(String, String)> {
     let text = req.headers().get("Cookie").ok().flatten()?;
-    let value = text.split(';').filter_map(|c| c.trim().split_once('=')).find(|(k, _)| *k == "__Host-slop-resource")?.1;
+    let value = text.split(';').filter_map(|c| c.trim().split_once('=')).find(|(k, _)| *k == "__Host-tiny-resource")?.1;
     let (room, token) = value.split_once('.')?;
     (room.len() == 32 && room.bytes().all(|c| c.is_ascii_hexdigit()) && resource_types::hash_id(token))
         .then(|| (room.into(), token.into()))
@@ -25,7 +25,7 @@ fn cookie(req: &Request) -> Option<(String, String)> {
 pub(super) async fn entry(mut req: Request, env: Env) -> Result<Response> {
     let host = req.url()?.origin().ascii_serialization();
     let trusted = env.var("BROWSER_ORIGIN")?.to_string();
-    if !hitslop_sharing_protocol::is_authored_origin(&host) {
+    if !tinys_sharing_protocol::is_authored_origin(&host) {
         return denied();
     }
     let origin = req.headers().get("Origin")?;
@@ -66,7 +66,7 @@ pub(super) async fn entry(mut req: Request, env: Env) -> Result<Response> {
             None => return denied(),
         }
     };
-    // A service-bound request keeps its original dotslop URL, including the exact host.
+    // A service-bound request keeps its original dottiny URL, including the exact host.
     req = req.clone_mut()?;
     req.headers_mut()?.set("X-Resource-Request", "1")?;
     let mut response = env.durable_object("ROOMS")?.get_by_name(&room)?.fetch_with_request(req).await?;
@@ -97,7 +97,7 @@ impl SlopRoom {
                 return denied();
             }
             let bytes = bounded_body(&mut req, CONTROL_BYTES).await?;
-            let input: hitslop_sharing_protocol::http::ResourceGrant = serde_json::from_slice(&bytes)?;
+            let input: tinys_sharing_protocol::http::ResourceGrant = serde_json::from_slice(&bytes)?;
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
@@ -108,7 +108,7 @@ impl SlopRoom {
             let mut bytes = [0u8; 32];
             getrandom::getrandom(&mut bytes).map_err(|_| fail("Resource session unavailable"))?;
             let token = hex(&bytes);
-            let expires = js_sys::Date::now() + hitslop_sharing_protocol::RESOURCE_TTL_MS as f64;
+            let expires = js_sys::Date::now() + tinys_sharing_protocol::RESOURCE_TTL_MS as f64;
             self.sql.exec("DELETE FROM resource_sessions WHERE expires<=?", vec![js_sys::Date::now().into()])?;
             if self.sql.exec("SELECT count(*) AS n FROM resource_sessions", None)?.one::<NumberRow>()?.n >= 128 {
                 return Response::error("Too many resource sessions", 429);
@@ -123,7 +123,7 @@ impl SlopRoom {
             }
             let room = req.path().trim_start_matches("/_resources/").to_string();
             let mut response = Response::ok("ready")?;
-            response.headers_mut().set("Set-Cookie", &format!("__Host-slop-resource={room}.{token}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned; Max-Age={}",hitslop_sharing_protocol::RESOURCE_TTL_MS/1000))?;
+            response.headers_mut().set("Set-Cookie", &format!("__Host-tiny-resource={room}.{token}; Path=/; Secure; HttpOnly; SameSite=None; Partitioned; Max-Age={}",tinys_sharing_protocol::RESOURCE_TTL_MS/1000))?;
             return Ok(response);
         }
         let Some((_, token)) = cookie(&req) else {

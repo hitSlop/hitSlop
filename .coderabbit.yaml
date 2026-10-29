@@ -28,7 +28,7 @@ reviews:
     risky change. For changes unrelated to document compatibility, report
     "Document compatibility: not affected" with a brief reason. For relevant
     changes, include "Document compatibility" with the affected boundary,
-    expected impact on existing slops opening, rendering, editing, saving, and
+    expected impact on existing tinys opening, rendering, editing, saving, and
     reopening, and evidence for that assessment. Say "not verified" when evidence
     is missing; unrelated green checks do not prove compatibility.
     Explicitly call out every production
@@ -61,7 +61,7 @@ reviews:
         updates and checkpoints, container layout, serialization, and reopen.
         Check changes to format markers, open-time acceptance and limits,
         package/resource loading, attachments, runtime ABI, and protocol refusal
-        for effects on existing slops. For relevant changes, identify the affected
+        for effects on existing tinys. For relevant changes, identify the affected
         frozen corpus and owning-boundary tests; report missing compatibility or
         save/reopen evidence explicitly. Never suggest updating a frozen fixture
         to make an incompatible change pass. Distinguish public-release compatibility

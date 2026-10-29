@@ -11,7 +11,7 @@ import "../styles/motion.css";
 <!doctype html>
 <html lang="en">
   <head>
-    <SiteHead title="hitSlop Merch · Try on the chaos" description="Tees, toques, caps, totes and clicky little keychains for people who make tiny apps. Coming soon." themeColor="#d5d8f5" image="/assets/merch/17-just-a-file-tee/product.webp" />
+    <SiteHead title="tinys Merch · Try on the chaos" description="Tees, toques, caps, totes and clicky little keychains for people who make tiny apps. Coming soon." themeColor="#d5d8f5" image="/assets/merch/17-just-a-file-tee/product.webp" />
   </head>
   <body class="merch-page">
     <a class="skip-link" href="#main-content">Skip to content</a>
@@ -32,15 +32,15 @@ import "../styles/motion.css";
 </html>
 
 <style is:global>
-  body.merch-page { height: 100svh; height: 100dvh; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr); font-family: "HitSlop Sans", sans-serif; color: #15152e; background: #d6dbf5; }
+  body.merch-page { height: 100svh; height: 100dvh; overflow: hidden; display: grid; grid-template-rows: minmax(0, 1fr); font-family: "Tinys Sans", sans-serif; color: #15152e; background: #d6dbf5; }
   .merch-page main { min-height: 0; position: relative; isolation: isolate; padding-top: 88px; background: radial-gradient(ellipse at 8% 2%, #f2edff 0, transparent 54%), radial-gradient(ellipse at 82% 94%, #edf5f3 0, transparent 48%), linear-gradient(125deg, #d5d8f5, #bec9ef 65%, #d9d4ee); }
   .merch-page main::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: .13; pointer-events: none; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23717ca2' filter='url(%23n)' opacity='.35' d='M0 0h160v160H0z'/%3E%3C/svg%3E"); }
   .masthead.merch-masthead { position: fixed; top: 12px; left: 0; right: 0; }
   .merch-actions { display: flex; align-items: center; gap: 14px; }
-  .merch-actions .soon { display: none; align-items: center; gap: 8px; font-family: "HitSlop Display", sans-serif; font-size: 1rem; font-weight: 700; line-height: 1; }
+  .merch-actions .soon { display: none; align-items: center; gap: 8px; font-family: "Tinys Display", sans-serif; font-size: 1rem; font-weight: 700; line-height: 1; }
   .merch-actions .soon i { width: 9px; height: 9px; border-radius: 50%; background: oklch(70% .17 145); animation: soon-pulse 1.8s ease-in-out infinite; }
   @keyframes soon-pulse { 50% { box-shadow: 0 0 0 6px oklch(70% .17 145 / .2); } }
-  .merch-actions .drop { min-height: 48px; padding: 0 20px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #e6ca45; border-radius: 18px; color: var(--ink); background: #ffe66b; box-shadow: inset 0 2px 0 #fff7bc, 0 3px 0 #d9b92e; font-family: "HitSlop Display", sans-serif; font-size: 1.05rem; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; transition: transform 200ms var(--spring); }
+  .merch-actions .drop { min-height: 48px; padding: 0 20px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #e6ca45; border-radius: 18px; color: var(--ink); background: #ffe66b; box-shadow: inset 0 2px 0 #fff7bc, 0 3px 0 #d9b92e; font-family: "Tinys Display", sans-serif; font-size: 1.05rem; font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; transition: transform 200ms var(--spring); }
   .merch-actions .drop:active { transform: translateY(2px); box-shadow: none; }
   .merch-actions .drop:hover { background: #ffef93; transform: translateY(-2px) rotate(-1.5deg); }
   .merch-page .masthead-social { display: none; }

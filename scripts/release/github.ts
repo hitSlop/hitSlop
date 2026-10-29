@@ -1,4 +1,4 @@
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { releaseRepository, type PublishedRelease } from "../lib/release-assets";
 
 /** The tag endpoint only returns published releases. Authenticated listing also
@@ -23,7 +23,7 @@ export async function ensureDraftRelease(tag: string, notesFile: string, command
   await command(["gh", "api", `repos/${releaseRepository}/git/ref/tags/${tag}`]);
   const created: PublishedRelease = JSON.parse(await command([
     "gh", "api", "--method", "POST", `repos/${releaseRepository}/releases`,
-    "-f", `tag_name=${tag}`, "-f", `name=hitSlop ${tag.slice(1)}`,
+    "-f", `tag_name=${tag}`, "-f", `name=tinys ${tag.slice(1)}`,
     "-F", "draft=true", "-F", `body=@${notesFile}`,
   ]));
   if (!Number.isSafeInteger(created.id) || created.id <= 0 || created.tag_name !== tag || !created.draft)

@@ -16,14 +16,14 @@ const links = [
   { label: "Docs", href: SITE_LINKS.docs },
 ];
 const social = [
-  { label: "hitSlop on GitHub", href: SITE_LINKS.repository, icon: GitHubIcon },
-  { label: "hitSlop on X", href: SITE_LINKS.x, icon: XIcon },
-  { label: "Join hitSlop on Discord", href: SITE_LINKS.discord, icon: DiscordIcon },
+  { label: "tinys on GitHub", href: SITE_LINKS.repository, icon: GitHubIcon },
+  { label: "tinys on X", href: SITE_LINKS.x, icon: XIcon },
+  { label: "Join tinys on Discord", href: SITE_LINKS.discord, icon: DiscordIcon },
 ];
 ---
 
 <header class:list={["masthead", extra]}>
-  <a class="wordmark" href="/" aria-label="hitSlop home"><span class="brand-mark"><img src="/assets/appicon-128.webp" width="40" height="40" alt="" /></span><span>hitSlop</span></a>
+  <a class="wordmark" href="/" aria-label="tinys home"><span class="brand-mark"><img src="/assets/appicon-128.webp" width="40" height="40" alt="" /></span><span>tinys</span></a>
   <nav class="masthead-nav" aria-label="Primary">
     {links.map((link) => <a href={link.href} aria-current={link.current ? "page" : undefined}>{link.label}</a>)}
   </nav>
@@ -32,7 +32,7 @@ const social = [
       {social.map(({ label, href, icon: Icon }) => <a class="icon-link" href={href} target="_blank" rel="noopener noreferrer" aria-label={label} title={label}><Icon /></a>)}
     </div>
     <slot name="actions">
-      <a class="nav-download" href={SITE_LINKS.download} aria-label="Download hitSlop for Mac"><AppleIcon /><span>Download</span></a>
+      <a class="nav-download" href={SITE_LINKS.download} aria-label="Download tinys for Mac"><AppleIcon /><span>Download</span></a>
     </slot>
     <button class="menu-button" type="button" aria-label="Open menu" aria-haspopup="dialog" aria-controls="menu-sheet" data-menu-open>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" /></svg>
@@ -42,7 +42,7 @@ const social = [
 
 <dialog class="menu-sheet" id="menu-sheet" aria-label="Menu">
   <header>
-    <a class="wordmark" href="/"><span class="brand-mark"><img src="/assets/appicon-128.webp" width="40" height="40" alt="" /></span><span>hitSlop</span></a>
+    <a class="wordmark" href="/"><span class="brand-mark"><img src="/assets/appicon-128.webp" width="40" height="40" alt="" /></span><span>tinys</span></a>
     <button class="menu-button" type="button" aria-label="Close menu" data-menu-close style="display:inline-grid">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
     </button>

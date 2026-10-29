@@ -3,7 +3,7 @@ import {
   verifyArtifactCapabilities,
   verifyCapabilityPermissions,
 } from "../../scripts/release/artifact-capabilities";
-import type { exec } from "../../packages/hitslop/src/cli/process";
+import type { exec } from "../../packages/tinys/src/cli/process";
 
 const info = {
   NSCameraUsageDescription: "Use a camera",
@@ -109,3 +109,29 @@ test.each(Object.keys(entitlements))(
     }
   },
 );
+
+
+test("empty compatibility history only permits unsigned pre-release app acceptance", async () => {
+  const { verifyAppCorpus } = await import("../../scripts/release/app-commands");
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "tinys-app-bootstrap-"));
+  const keys = ["TINYS_COMPAT_ROOT", "TINYS_COMPAT_BOOTSTRAP", "TINYS_RELEASE_TAG"] as const;
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    process.env.TINYS_COMPAT_ROOT = root;
+    process.env.TINYS_COMPAT_BOOTSTRAP = "1";
+    delete process.env.TINYS_RELEASE_TAG;
+    await expect(verifyAppCorpus("unused", { allowUnreleased: true })).resolves.toBeUndefined();
+    await expect(verifyAppCorpus("unused")).rejects.toThrow("No corpus");
+    process.env.TINYS_RELEASE_TAG = "v1.0.0";
+    await expect(verifyAppCorpus("unused", { allowUnreleased: true })).rejects.toThrow("No corpus");
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+    await rm(root, { recursive: true, force: true });
+  }
+});

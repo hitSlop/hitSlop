@@ -2,7 +2,7 @@
 import { Database } from "bun:sqlite";
 import { appAsset } from "../lib/artifacts";
 import { documentEngine } from "./corpus";
-import { exec } from "../../packages/hitslop/src/cli/process";
+import { exec } from "../../packages/tinys/src/cli/process";
 export type CommandScenario = { name: string; args: unknown; now: number; seed: number[]; evaluated: unknown; value: unknown };
 /** What a probe expects of the reply; only an explicit `ok: false` admits a refusal. */
 export type CommandExpectation = { ok: boolean; refused?: boolean; code?: string; errorIncludes?: string };

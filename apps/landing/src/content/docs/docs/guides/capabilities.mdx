@@ -3,23 +3,23 @@ title: Capabilities and permissions
 description: Use the camera, microphone, and on-device speech recognition, with clear permission and platform limits.
 ---
 
-A slop can take a photo, record audio, or turn a saved recording into text. Declare
-the devices and host services it needs in `slop.ts`; request them from a button in
+A tiny can take a photo, record audio, or turn a saved recording into text. Declare
+the devices and host services it needs in `tiny.ts`; request them from a button in
 the editor. Declaring a capability lets the app ask. The person's system or browser
 permission still decides whether it can proceed.
 
 The iPhone app supports file selection and HTTPS embeds, but refuses camera and
 microphone capture and returns `unavailable` with `reason: "host"` for speech. See
-[where your slop runs](/docs/guides/where-your-slop-runs/) for hosts,
+[where your tiny runs](/docs/guides/where-your-tiny-runs/) for hosts,
 [make it work on iPhone](/docs/guides/mobile/) for phone layout, and
 [files and the web](/docs/guides/files-and-web/) for imports and embeds.
 
 ## Declare what your app uses
 
-```ts title="slop.ts"
-import { defineSlop } from "hitslop";
+```ts title="tiny.ts"
+import { defineTiny } from "@hitslop/tinys";
 
-export default defineSlop({
+export default defineTiny({
   slug: "capture-notes",
   title: "Capture Notes",
   description: "Keep photos, recordings, and transcripts in one document.",
@@ -37,7 +37,7 @@ Use only the entries your app needs. Omitting `capabilities` declares none.
 | ------------ | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | `camera`     | `navigator.mediaDevices.getUserMedia({ video: true })`         | Camera capture in the interactive editor.                              |
 | `microphone` | `navigator.mediaDevices.getUserMedia({ audio: true })`         | Microphone capture, including recording with `MediaRecorder`.          |
-| `speech`     | `speech.transcribe(attachment, options)` from `hitslop/svelte` | On-device transcription of a recording already stored in the document. |
+| `speech`     | `speech.transcribe(attachment, options)` from `@hitslop/tinys/svelte` | On-device transcription of a recording already stored in the document. |
 
 A combined audio/video request needs both `camera` and `microphone`. Transcribing an
 imported recording needs `speech`, but not `microphone`. Playing music through Web Audio
@@ -46,7 +46,7 @@ or an `<audio>` element needs neither. Start audio playback from a user gesture.
 These are the three supported declaration values. File selection, attachment storage,
 HTTPS data and media, and embedded HTTPS frames do not need an additional capability;
 see [files and the web](/docs/guides/files-and-web/). Browser policies and CORS still apply.
-Haptic feedback is not a capability either: `haptics` from `hitslop/svelte` needs no
+Haptic feedback is not a capability either: `haptics` from `@hitslop/tinys/svelte` needs no
 declaration or permission prompt (see [make it work on iPhone](/docs/guides/mobile/#haptics)).
 
 ## Where they work
@@ -55,7 +55,7 @@ declaration or permission prompt (see [make it work on iPhone](/docs/guides/mobi
 | ---------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | Mac app, interactive document            | Declared devices, subject to macOS permission.               | On-device recognition when this Mac supports the requested language and permission is granted. |
 | iPhone app (TestFlight)           | Refused, even when declared.                                | Unavailable: `reason: "host"`.                                                                 |
-| `slop dev` preview                       | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`. Test in the Mac app.                                            |
+| `tiny dev` preview                       | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`. Test in the Mac app.                                            |
 | Local Chrome browser copy                | Declared devices, subject to browser support and permission. | Unavailable: `reason: "host"`.                                                                 |
 | Native icon, preview, or export renderer | Refused. Render saved content instead.                       | Unavailable.                                                                                   |
 
@@ -63,15 +63,15 @@ In the Mac app, a capture request must come from the current document's main pag
 visible window. Embedded web frames cannot borrow its device access. A document being closed cannot start a new device request. Saved-state rendering
 leaves the live editor's device access available.
 
-macOS permissions belong to **hitSlop**, not to an individual `.slop` file. There is no
-separate per-slop consent dialog or permission manager yet. The declaration is an
-additional restriction on which slops may request a device; it is not a per-document
+macOS permissions belong to **tinys**, not to an individual `.tiny` file. There is no
+separate per-tiny consent dialog or permission manager yet. The declaration is an
+additional restriction on which tinys may request a device; it is not a per-document
 permission grant. To change a system decision, open **System Settings → Privacy &
 Security → Camera, Microphone, or Speech Recognition**.
 
 ## Capture with the web APIs
 
-Camera and microphone capture use normal browser APIs, not a hitSlop wrapper:
+Camera and microphone capture use normal browser APIs, not a tinys wrapper:
 
 ```ts
 // Call from a Start camera button. Use { audio: true } for the microphone,
@@ -105,7 +105,7 @@ size and handle an import refusal without discarding the person's recording.
 This minimal document keeps one recording and an editable transcript:
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s } from "@hitslop/tinys";
 
 export default defineDocument({
   recording: s.optional(s.string()),
@@ -119,7 +119,7 @@ may come from a file picker or a finished `MediaRecorder` recording:
 Put this in the editor component's script so `getDocument` runs during [component initialization](/docs/guides/data-and-schemas/#read-snapshots-write-through-handles):
 
 ```ts
-import { attachments, getDocument, isSpeechError, speech } from "hitslop/svelte";
+import { attachments, getDocument, isSpeechError, speech } from "@hitslop/tinys/svelte";
 import schema from "./schema";
 const doc = getDocument(schema);
 
@@ -154,7 +154,7 @@ reference returned by `attachments.import` instead of its ID.
 Omit `locale` to use the person's default recognition language. The result includes
 `text` and the locale used. Locale separators are normalized from `_` to `-` before
 the host receives the request. Recognition runs on the Mac, with no server fallback. If the
-language cannot be recognized on-device, hitSlop reports it as unavailable before asking
+language cannot be recognized on-device, tinys reports it as unavailable before asking
 for speech permission. Adding a Dictation language in System Settings may help, but
 availability depends on the Mac and its installed language support.
 
@@ -162,7 +162,7 @@ The Mac provider accepts m4a, mp3, wav, flac, mp4, and mov recordings. Other for
 including Ogg and WebM, return `unavailable` with reason `format` without asking for
 speech permission. They can still be stored and played where supported. Let the host
 report format support instead of maintaining a format list in your app. Renaming a
-file does not convert it: hitSlop checks its bytes. A transcript is limited to 1 MiB.
+file does not convert it: tinys checks its bytes. A transcript is limited to 1 MiB.
 
 ### Handle speech outcomes
 
@@ -180,7 +180,7 @@ recording works. An older host without this service returns `unavailable` with `
 
 ## Build a new app version to change capabilities
 
-Capabilities are part of the embedded app, not editable document data. Change `slop.ts`,
+Capabilities are part of the embedded app, not editable document data. Change `tiny.ts`,
 rebuild and register the template, then create a new document to try the new declaration.
 Rebuilding or reinstalling the Mac app does not upgrade the app inside an existing
 document. See [build, register, and share](/docs/guides/build-and-share/#when-a-change-doesnt-appear).
@@ -191,7 +191,7 @@ The current API stops at `camera`, `microphone`, and `speech`. These are directi
 explore, not supported options or release commitments:
 
 - Permissions tied to the app's code, with a new decision after a remix or upgrade,
-  rather than relying only on hitSlop-wide OS consent.
+  rather than relying only on tinys-wide OS consent.
 - Additional devices such as MIDI, after their declaration and permission model is designed.
 - Packaged worker and audio-worklet entry points for libraries that need them. Today,
   blob/data executable code remains blocked; bundle-compatible libraries are required.

@@ -4,7 +4,7 @@
   "declaration": {
     "metadata": {
       "author": {
-        "name": "hitSlop"
+        "name": "@tinys/kit"
       },
       "slug": "scalar-conformance",
       "title": "Scalar conformance",

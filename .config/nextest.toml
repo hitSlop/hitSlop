@@ -2,7 +2,7 @@
 # cores. Ordinary tests still running after two minutes are reported as hangs.
 [profile.default]
 slow-timeout = { period = "20s", terminate-after = 6 }
-# Nightly and release only (`HITSLOP_NIGHTLY=1` or `verify --release` adds
+# Nightly and release only (`TINYS_NIGHTLY=1` or `verify --release` adds
 # `--ignore-default-filter`, as do explicitly filtered runs): storage-growth and
 # history-trim budgets, scheduling latency, large acceptance vectors, and a busy
 # display read that waits out the reader's timeouts. Ordinary runs retain the limits

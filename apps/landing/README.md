@@ -1,8 +1,8 @@
-# hitSlop website and docs
+# tinys website and docs
 
 The Astro landing page and Starlight documentation deploy together as the
 `hitslop-landing` Cloudflare Worker. The landing page is served at
-`https://hitslop.com/` and the documentation at `https://hitslop.com/docs/`.
+`https://tinys.click/` and the documentation at `https://tinys.click/docs/`.
 
 ## Local development
 
@@ -32,7 +32,7 @@ there is no custom link checker.
 
 ## Cloudflare Workers Builds
 
-Use these configuration settings when connecting the `hitSlop/hitslop` repository
+Use these configuration settings when connecting the `hitSlop/tinys` repository
 to the `hitslop-landing` Worker. Confirm the actual dashboard settings before deployment:
 
 | Setting | Value |

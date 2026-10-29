@@ -7,8 +7,8 @@ import { buildShell } from "./shell";
 import { publishFolder, repository } from "../lib/artifacts";
 import { buildTemplates } from "../templates/build";
 import { discoverTemplates } from "../templates/discover";
-import type { AppDeclaration } from "../../packages/hitslop/src/sdk/slop";
-import { exec } from "../../packages/hitslop/src/cli/process";
+import type { AppDeclaration } from "../../packages/tinys/src/sdk/tiny";
+import { exec } from "../../packages/tinys/src/cli/process";
 
 const env = {
   ...process.env,
@@ -25,26 +25,26 @@ export async function buildCoreIOS() {
   await buildCoreNative();
   const targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"];
   for (const target of targets) {
-    await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "hitslop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--target", target]);
+    await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "tinys-core-ffi", "--no-default-features", "--features", "mobile-capture", "--target", target]);
   }
-  const generated = join(repository, "apps/apple/Packages/HitSlopApple/Generated");
-  const temporary = await mkdtemp(join(tmpdir(), "hitslop-ios-framework-"));
+  const generated = join(repository, "apps/apple/Packages/TinysApple/Generated");
+  const temporary = await mkdtemp(join(tmpdir(), "tinys-ios-framework-"));
   try {
-    const framework = join(temporary, "HitSlopCoreFFI.xcframework");
+    const framework = join(temporary, "TinysCoreFFI.xcframework");
     const command = ["xcodebuild", "-create-xcframework"];
-    for (const target of [undefined, ...targets]) command.push("-library", cargoOutput("libhitslop_core_ffi.a", target), "-headers", join(generated, "include"));
+    for (const target of [undefined, ...targets]) command.push("-library", cargoOutput("libtinys_core_ffi.a", target), "-headers", join(generated, "include"));
     await run([...command, "-output", framework]);
-    await publishFolder(join(generated, "HitSlopCoreFFI.xcframework"), stage => cp(framework, stage, { recursive: true }));
+    await publishFolder(join(generated, "TinysCoreFFI.xcframework"), stage => cp(framework, stage, { recursive: true }));
   } finally { await rm(temporary, { recursive: true, force: true }); }
 }
 
 export async function prepareIOSFixtures() {
-  const corpus = process.env.HITSLOP_COMPAT_ROOT || join(repository, ".hitslop/compat/current");
+  const corpus = process.env.TINYS_COMPAT_ROOT || join(repository, ".tinys/compat/current");
   const corpusEntries = await readdir(corpus, { withFileTypes: true }).catch(error => {
     if (error.code !== "ENOENT") throw error;
-    throw new Error(`Compatibility corpus not found at ${corpus}. Run bun run compat:resolve to fetch the published corpora, or set HITSLOP_COMPAT_ROOT to the resolved corpus directory.`);
+    throw new Error(`Compatibility corpus not found at ${corpus}. Run bun run compat:resolve to fetch the published corpora, or set TINYS_COMPAT_ROOT to the resolved corpus directory.`);
   });
-  const temporary = await mkdtemp(join(tmpdir(), "hitslop-ios-fixture-"));
+  const temporary = await mkdtemp(join(tmpdir(), "tinys-ios-fixture-"));
   try {
     const source = join(repository, "tests/fixtures/checklist/document");
     await cp(source, temporary, { recursive: true });
@@ -52,19 +52,19 @@ export async function prepareIOSFixtures() {
     const { writeFile } = await import("node:fs/promises");
     await writeFile(ui, (await readFile(ui, "utf8")).replace("const doc = ctx.document;", `const doc = ctx.document;
       globalThis.iosAttachment = () => ctx.attachments.import(new File(['phone attachment'], 'phone.txt', {type:'text/plain'}), (tx, ref) => tx.fields.title.set(ref.id));`));
-    const protocol = await exec([cargoOutput("slop-engine"), "--protocol"], { cwd: repository, env });
+    const protocol = await exec([cargoOutput("tiny-engine"), "--protocol"], { cwd: repository, env });
     if (protocol.code) throw new Error("Cannot read the engine protocol");
     const version = (JSON.parse(protocol.stdout) as { version: number }).version;
     const app: unknown = JSON.parse(await readFile(join(temporary, "input.json"), "utf8"));
     await publishFolder(join(repository, "generated/ios/Fixtures"), async stage => {
-      const request = { method: "pack", stage: temporary, file: join(stage, "host-probe.slop"), app, renderViews: true };
-      const packed = await exec([cargoOutput("slop-engine"), "--client-protocol", String(version)], { cwd: repository, env, stdin: JSON.stringify(request) });
+      const request = { method: "pack", stage: temporary, file: join(stage, "host-probe.tiny"), app, renderViews: true };
+      const packed = await exec([cargoOutput("tiny-engine"), "--client-protocol", String(version)], { cwd: repository, env, stdin: JSON.stringify(request) });
       if (packed.code || !(JSON.parse(packed.stdout) as {ok?: boolean}).ok) throw new Error(`Cannot pack iOS fixture: ${packed.stdout} ${packed.stderr}`);
       for (const entry of corpusEntries) {
         if (!(await stat(join(corpus, entry.name))).isDirectory()) continue;
         const version = entry.name;
         const documents = join(corpus, version, "documents");
-        for (const name of await readdir(documents)) if (name.endsWith(".slop")) await copyFile(join(documents, name), join(stage, `released-${version}-${name}`));
+        for (const name of await readdir(documents)) if (name.endsWith(".tiny")) await copyFile(join(documents, name), join(stage, `released-${version}-${name}`));
       }
     });
   } finally { await rm(temporary, { recursive: true, force: true }); }
@@ -74,7 +74,7 @@ export async function prepareIOSFixtures() {
 export async function iphoneStarterSlugs(): Promise<string[]> {
   const starters: string[] = [];
   for (const template of await discoverTemplates()) {
-    const metadata = (await import(join(template.source, "slop.ts"))).default as AppDeclaration;
+    const metadata = (await import(join(template.source, "tiny.ts"))).default as AppDeclaration;
     if (!metadata.categories.includes("popular")) continue;
     const unsupported = metadata.capabilities?.filter(capability =>
       ["camera", "microphone", "speech"].includes(capability));

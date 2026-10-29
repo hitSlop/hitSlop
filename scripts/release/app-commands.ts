@@ -1,12 +1,12 @@
-import { buildTemplate } from "../../packages/hitslop/src/cli/template";
+import { buildTemplate } from "../../packages/tinys/src/cli/template";
 import { strict as assert } from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createDocument, debugEngine, engineRequest } from "../lib/native";
 import { testProcess } from "../lib/test-process";
-import { request } from "../../packages/hitslop/src/cli/engine";
-import type { EngineRequestFor } from "../../packages/hitslop/src/wire/engine";
+import { request } from "../../packages/tinys/src/cli/engine";
+import type { EngineRequestFor } from "../../packages/tinys/src/wire/engine";
 import { copyCorpusDocument, documents, releases, readJSON, type Expected, type Scenario, type CommandProbe } from "../compat/corpus";
 
 type Task = { $id: string; text: string; done: boolean; archived: boolean };
@@ -14,19 +14,19 @@ type Task = { $id: string; text: string; done: boolean; archived: boolean };
 /** Exercise the actual app's owner, with no checkout evaluator override. Run on the
  * raw Xcode product before any packaging step can repair its missing dependencies. */
 export async function verifyAppCommands(app: string) {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-app-commands-"));
+  const folder = await mkdtemp(join(tmpdir(), "tinys-app-commands-"));
   const placement = {
     engine: await debugEngine(), cwd: folder,
     // Release hosts ignore test registry overrides; use the account registry on both
     // sides, as an installed app does. Only the core ever manages its lock files.
     env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" },
   };
-  const document = join(folder, "Commands.slop");
+  const document = join(folder, "Commands.tiny");
   let host: ReturnType<typeof testProcess> | undefined;
   try {
-    const template = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.slop"), { renderViews: false });
+    const template = await buildTemplate(resolve("tests/apps/document"), join(folder, "fixture.tiny"), { renderViews: false });
     await createDocument(template, document, placement);
-    host = testProcess([join(app, "Contents/MacOS/hitSlop"), document], { ...placement, timeout: 60_000 });
+    host = testProcess([join(app, "Contents/MacOS/tinys"), document], { ...placement, timeout: 60_000 });
     let exited = false;
     void host.output.finally(() => { exited = true; }).catch(() => {});
     const deadline = Date.now() + 20_000;
@@ -66,25 +66,29 @@ export async function verifyAppCommands(app: string) {
 /** Packaged owner/evaluator acceptance. The old page's contractTest remains the
  * responsibility of CompatCorpusTests; this checks the actual signed application's
  * socket routing, original command responses, refusal semantics and persisted edits. */
-export async function verifyAppCorpus(app: string) {
+export async function verifyAppCorpus(app: string, options: { allowUnreleased?: boolean } = {}) {
   const entries = await releases();
+  if (!entries.length && options.allowUnreleased && process.env.TINYS_COMPAT_BOOTSTRAP === "1" && !process.env.TINYS_RELEASE_TAG) {
+    console.log("No published tinys corpus yet; unsigned development app acceptance uses its live-owner fixture.");
+    return;
+  }
   assert.ok(entries.length, "No corpus for packaged-app acceptance");
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-app-corpus-"));
+  const folder = await mkdtemp(join(tmpdir(), "tinys-app-corpus-"));
   const placement = { engine: await debugEngine(), cwd: folder,
     env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
   let host: ReturnType<typeof testProcess> | undefined;
   try {
     for (const entry of entries) for (const name of await documents(entry.root)) {
-      const source = join(entry.root, "documents", `${name}.slop`);
+      const source = join(entry.root, "documents", `${name}.tiny`);
       const expected = await readJSON<Expected>(join(entry.root, "expected", `${name}.json`));
       const scenario = await readJSON<Scenario>(join(entry.root, "scenarios", `${name}.json`));
       assert.ok(expected && scenario, `${entry.name}/${name}: missing expected state or edit scenario`);
       const probes = (await readJSON<CommandProbe[]>(join(entry.root, "commands", `${name}.json`)) ?? []).filter(probe => probe.channel === "call");
       for (const probe of [undefined, ...probes]) {
-        const document = join(folder, "Historical.slop");
+        const document = join(folder, "Historical.tiny");
         await rm(document, { force: true });
         await copyCorpusDocument(source, document);
-        host = testProcess([join(app, "Contents/MacOS/hitSlop"), document], { ...placement, timeout: 90_000 });
+        host = testProcess([join(app, "Contents/MacOS/tinys"), document], { ...placement, timeout: 90_000 });
         let exited = false;
         void host.output.finally(() => { exited = true; }).catch(() => {});
         const live = async () => !exited && (await engineRequest({ method: "inspect", file: document }, placement)).info.live;
@@ -124,4 +128,4 @@ export async function verifyAppCorpus(app: string) {
   }
 }
 
-if (import.meta.main) await verifyAppCommands(resolve(process.argv[2] ?? "generated/app/hitSlop.app"));
+if (import.meta.main) await verifyAppCommands(resolve(process.argv[2] ?? "generated/app/tinys.app"));

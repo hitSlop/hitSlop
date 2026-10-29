@@ -18,14 +18,14 @@ Expected responses (tool progress omitted; paths vary):
 
 ```text
 svelte-check found 0 errors and 0 warnings
-/Users/you/my-slop/dist/my-slop.slop
+/Users/you/my-tiny/dist/my-tiny.tiny
 ```
 
 `check` runs the project's own `svelte-check` and TypeScript, pinned by the starter; if the checker is missing, the CLI prints an install hint.
 
-Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.slop`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
+Build validates the app declaration and initial values, compiles Svelte and plain CSS, evaluates the schema and theme defaults, and packs everything into one template file, checked the way the Mac app checks it when it opens it. Output goes to `dist/SLUG.tiny`. It contains no source, dependencies, caches, or personal document state. A failed build must not replace an existing successful output, and a build must never overwrite a writable document.
 
-Build runs on macOS and Linux and needs only Bun. It refuses a project whose `hitslop` SDK version differs from the CLI's; use the project's scripts so they match. The build stamps the runtime ABI.
+Build runs on macOS and Linux and needs only Bun. It refuses a project whose `tinys` SDK version differs from the CLI's; use the project's scripts so they match. The build stamps the runtime ABI.
 
 Packing renders every declared view from the staged template: Preview, Icon, Export as PNG and PDF, and all Widget families. Supplied preview or icon PNGs do not bypass this check. A view failure names its role and prevents publication.
 
@@ -33,8 +33,8 @@ Packing renders every declared view from the staged template: Preview, Icon, Exp
 
 A template's Finder preview and icon come from two sources:
 
-- **Your files.** Images you declare as `artwork: { preview, icon }` in `defineSlop` (imported like any asset) are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
-- **Rendered for you.** On macOS and Linux, `bun run build` and `bun run register` render whichever of the two you didn't supply from your `Preview.svelte` and `Icon.svelte` views, in the same step that packs the template. This needs only the CLI: no hitSlop app, Swift or Xcode. If a view can't render, the build fails.
+- **Your files.** Images you declare as `artwork: { preview, icon }` in `defineTiny` (imported like any asset) are packed into the template on any platform. Use PNGs; the icon is 512 × 512.
+- **Rendered for you.** On macOS and Linux, `bun run build` and `bun run register` render whichever of the two you didn't supply from your `Preview.svelte` and `Icon.svelte` views, in the same step that packs the template. This needs only the CLI: no tinys app, Swift or Xcode. If a view can't render, the build fails.
 
 ## Register a local template
 
@@ -45,31 +45,31 @@ bun run register
 Response after a successful build and artwork capture:
 
 ```text
-/Users/you/.hitslop/templates/my-slop.slop
+/Users/you/.tinys/templates/my-tiny.tiny
 ```
 
-Registration builds and installs an immutable master in `~/.hitslop/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering replaces the previous master once the new build is complete; it does not modify documents already created from it.
+Registration builds and installs an immutable master in `~/.tinys/templates`. The Mac catalog lists it alongside built-in starters. Choose **Create** and save a separate writable document. Re-registering replaces the previous master once the new build is complete; it does not modify documents already created from it.
 
 For terminal document creation, see [create and open a writable document](/docs/guides/cli-workflows/#create-and-open-a-writable-document).
 
 ## When a change doesn't appear
 
 A document contains the app version it was created with. Editing source, rebuilding a
-template, or reinstalling hitSlop does not replace the app inside that document. This
+template, or reinstalling tinys does not replace the app inside that document. This
 also applies to fixes in a library, new capability declarations, and changes to defaults.
 
 For your own project, run `bun run register` and create a **new** document from that
-template. A plain `bun run build` updates `dist/SLUG.slop`, not the registered master.
+template. A plain `bun run build` updates `dist/SLUG.tiny`, not the registered master.
 Keep the old document if it contains work you want to preserve; automatic app upgrades
 and schema migration are not available.
 
 ## Share a template or a document
 
-For a reusable app, distribute the freshly built `.slop` template: it is one file, so it travels by Mail, AirDrop or any file service as it is. The recipient needs the hitSlop app. Opening a template asks where to create a writable document from it; to keep it in the catalog, place it in `~/.hitslop/templates` and refresh.
+For a reusable app, distribute the freshly built `.tiny` template: it is one file, so it travels by Mail, AirDrop or any file service as it is. The recipient needs the tinys app. Opening a template asks where to create a writable document from it; to keep it in the catalog, place it in `~/.tinys/templates` and refresh.
 
 For a filled document:
 
-1. Open it and choose **Share a Copy…** in its toolbar. hitSlop saves what you typed and prepares a separate copy.
+1. Open it and choose **Share a Copy…** in its toolbar. tinys saves what you typed and prepares a separate copy.
 2. Choose a destination in the Mac share sheet.
 3. Keep editing your original. The recipient gets an independent document with its attachments and theme overrides.
 
@@ -78,7 +78,7 @@ The copy includes the document’s content; distributing source or a clean templ
 For read-only output, export PNG or PDF:
 
 ```sh
-bunx hitslop export My.slop --format pdf --output My.pdf
+bunx @hitslop/tinys export My.tiny --format pdf --output My.pdf
 ```
 
 ```text
@@ -89,4 +89,4 @@ See [icons and exports](/docs/guides/icons-and-exports/) for layouts and saved-s
 
 ## Release your source
 
-Include the root role files (`slop.ts`, `schema.ts`, `App.svelte`, `Preview.svelte`, `Icon.svelte`, and any `Export.svelte`, `Widget.svelte` and `commands.ts`), the modules, styles and assets they import, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.
+Include the root role files (`tiny.ts`, `schema.ts`, `App.svelte`, `Preview.svelte`, `Icon.svelte`, and any `Export.svelte`, `Widget.svelte` and `commands.ts`), the modules, styles and assets they import, `package.json`, and the Bun lockfile. Keep generated `dist/`, writable documents, and dependencies out of source control. Test a fresh install, the smallest supported window, keyboard interaction, close-after-type, duplicate, theme reset, icon capture, and PNG/PDF output.

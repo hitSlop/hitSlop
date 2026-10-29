@@ -1,0 +1,23 @@
+# Source, templates, and documents
+
+Source has fixed root roles: metadata in `tiny.ts`, shape and initial values in `schema.ts`, the editor in `App.svelte`, required `Preview.svelte` and `Icon.svelte`, plus optional `Export.svelte`, and agent-only `commands.ts`. Separate graphs keep metadata and command implementations out of the page. `schema.ts` exports definition data; editors acquire `getDocument(schema)` during component initialization. Static views type-import the definition and receive `snapshot` and `attachmentURL` props, plus `mode` for Preview/Export/Icon or the Widget viewport. Shared editor/static components take data as props. See [authoring](../SKILL.md) for the access and capture rules. Vite resolves imports, component CSS, CSS fonts/images and exported assets. Build packs one SQLite template with scalar catalog columns, one `definition_json`, `ui.js`, optional `ui.css` and `commands.js`, and content-addressed `media/<sha256>.<ext>`. Artwork is stored separately. The build writes `packageFormat` and `runtimeABI`; authors never specify them.
+
+Rust validates the definition and every listed resource. Assets are sealed by the app row. Templates contain a seed Loro checkpoint but no document identity, edits, source, dependencies, caches or runtime engine. The host supplies the shell; the UI bundles Svelte and the author SDK.
+
+Creating a writable document copies the template and gives it its own identity; its
+saved state, theme changes and attachments then live in the same file. The Rust Loro
+core in the Swift host owns live data and saves it. WebViews apply publications. Initial
+values seed only a new document. Never reconcile JSON files into state or open a .tiny
+file with SQLite. Use typed handles or the native CLI; `flush()` acknowledges
+persistence. `tiny inspect FILE` shows what a file holds.
+
+tiny.ts's `theme` declares the theme's colors; the page shell applies defaults and the
+document's changes before mounting the app. ui.css contains compiled app styling.
+A document also holds the colors it changed, saved with its edits. Use the theme panel
+or tiny theme get/set/reset/export/import. Fonts and layout changes require authoring
+source and a rebuild. Close before moving documents; synced folders are unsupported.
+
+Attachments hold opaque imported bytes, by SHA-256, in the document. Only the host
+attachment API/CLI writes them, under existing ownership. References belong to Loro;
+templates hold none. Duplicate, Share a Copy and export snapshots carry attachments.
+Close/export flush accepted imports before proceeding.

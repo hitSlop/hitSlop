@@ -1,6 +1,6 @@
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 
-export const releaseRepository = "hitSlop/hitSlop";
+export const releaseRepository = "hitSlop/tinys";
 export type Asset = { id: number; name: string; digest?: string };
 export type PublishedRelease = { id: number; tag_name: string; draft: boolean; prerelease: boolean; immutable: boolean; assets: Asset[] };
 export const stableTag = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;

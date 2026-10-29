@@ -1,21 +1,21 @@
 name: Deploy sharing
 
-# The live-sharing relay and its browser host (share.hitslop.com, *.dotslop.com) deploy with
+# The live-sharing relay and its browser host (share.tinys.click, *.dotslop.com) deploy with
 # a release tag or a manual run, so browser guests run the same core as released apps. Master
 # changes are qualified only. The relay's /v1 wire contract is frozen
-# (crates/hitslop-sharing-protocol/tests/fixtures/v1).
+# (crates/tinys-sharing-protocol/tests/fixtures/v1).
 on:
   push:
     branches: [master]
     tags: ["v*"]
     paths:
       - apps/sharing/**
-      - crates/hitslop-sharing-*/**
-      - crates/hitslop-core/**
-      - crates/hitslop-core-wasm/**
-      - packages/hitslop/src/browser/**
-      - packages/hitslop/src/shell/**
-      - packages/hitslop/src/cli/frame-document.ts
+      - crates/tinys-sharing-*/**
+      - crates/tinys-core/**
+      - crates/tinys-core-wasm/**
+      - packages/tinys/src/browser/**
+      - packages/tinys/src/shell/**
+      - packages/tinys/src/cli/frame-document.ts
       - scripts/build/sharing.ts
       - scripts/sharing/**
       - .github/workflows/sharing.yml
@@ -46,19 +46,19 @@ jobs:
       - name: Qualify
         run: bun run verify sharing
       - name: Deploy relay
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy host
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/host.wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke
-        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
         run: |
-          test "$(curl -s -o /dev/null -w '%{http_code}' https://share.hitslop.com/health)" = 200
-          curl -sf https://share.hitslop.com/.well-known/apple-app-site-association | grep -q '"applinks"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' https://share.tinys.click/health)" = 200
+          curl -sf https://share.tinys.click/.well-known/apple-app-site-association | grep -q '"applinks"'

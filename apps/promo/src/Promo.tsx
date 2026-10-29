@@ -1,6 +1,6 @@
 import { AbsoluteFill, Audio, Img, interpolate, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { Clip, clips } from "./Clip";
-import { Cursor, cursorAt, dockPoint, Dock, FileIcon, fontFaces, MenuBar, sans, SlopWindow, Wallpaper, type Key } from "./Desktop";
+import { Cursor, cursorAt, dockPoint, Dock, FileIcon, fontFaces, MenuBar, sans, TinyWindow, Wallpaper, type Key } from "./Desktop";
 import { FINDER, Finder, finderIcon, Terminal, type Command } from "./Windows";
 import { DURATION, MUSIC, popBeats, punchBeats, T, type Point } from "./timeline";
 
@@ -53,13 +53,13 @@ const commands: Command[] = [
   {
     start: T.cmd1Start,
     enter: T.cmd1Enter,
-    text: `slop apply "Finals week.slop" --op '{"type":"insert","path":["tasks"],"value":{"text":"Review bio flashcards","done":false,"archived":false}}'`,
+    text: `tiny apply "Finals week.tiny" --op '{"type":"insert","path":["tasks"],"value":{"text":"Review bio flashcards","done":false,"archived":false}}'`,
     output: [`      "text" : "Review bio flashcards"`, `    }`, `  ],`, `  "title" : "Finals week"`, `}`],
   },
   {
     start: T.cmd2Start,
     enter: T.cmd2Enter,
-    text: `slop theme set focus-timer.slop --values '{"surface":"#3b6fd4","surfaceLight":"#5b8ef0","surfaceDeep":"#284f9e","accent":"#2f5fc0"}'`,
+    text: `tiny theme set focus-timer.tiny --values '{"surface":"#3b6fd4","surfaceLight":"#5b8ef0","surfaceDeep":"#284f9e","accent":"#2f5fc0"}'`,
     output: [`    "surface" : "#3b6fd4",`, `    "surfaceDeep" : "#284f9e",`, `    "surfaceLight" : "#5b8ef0"`, `  }`, `}`],
   },
 ];
@@ -98,12 +98,12 @@ function Outro() {
   const pop = (d: number) => spring({ frame: frame - T.outro - d, fps, config: { damping: 12, mass: 0.7 } });
   return (
     <AbsoluteFill style={{ zIndex: 2000, alignItems: "center", justifyContent: "center", background: `radial-gradient(ellipse at 50% 45%, rgba(255,250,255,${0.93 * veil}) 0, rgba(246,240,255,${0.86 * veil}) 55%, rgba(236,228,255,${0.8 * veil}) 100%)`, backdropFilter: `blur(${veil * 14}px)` }}>
-      <Img src={staticFile("icons/hitslop-app.png")} style={{ width: 190, height: 190, transform: `scale(${pop(15)}) rotate(${(1 - pop(15)) * -20}deg)`, filter: "drop-shadow(0 18px 30px rgba(60,30,140,.3))" }} />
-      <div style={{ fontFamily: `"Lilita One", ${sans}`, fontSize: 150, color: "#10132c", lineHeight: 1, marginTop: 18, transform: `translateY(${(1 - pop(27)) * 40}px)`, opacity: pop(27) }}>hitSlop</div>
+      <Img src={staticFile("icons/tinys-app.png")} style={{ width: 190, height: 190, transform: `scale(${pop(15)}) rotate(${(1 - pop(15)) * -20}deg)`, filter: "drop-shadow(0 18px 30px rgba(60,30,140,.3))" }} />
+      <div style={{ fontFamily: `"Lilita One", ${sans}`, fontSize: 150, color: "#10132c", lineHeight: 1, marginTop: 18, transform: `translateY(${(1 - pop(27)) * 40}px)`, opacity: pop(27) }}>tinys</div>
       <div style={{ fontFamily: sans, fontSize: 46, fontWeight: 600, color: "#3c3960", marginTop: 18, opacity: pop(39), transform: `translateY(${(1 - pop(39)) * 30}px)` }}>
         Tiny apps. <span style={{ color: "#f443a1" }}>Big</span> personality.
       </div>
-      <div style={{ fontFamily: `"Kalam", cursive`, fontSize: 38, color: "#6c3fd6", marginTop: 22, opacity: pop(51), transform: `rotate(-3deg) scale(${0.8 + 0.2 * pop(51)})` }}>hitslop.com · free for Mac</div>
+      <div style={{ fontFamily: `"Kalam", cursive`, fontSize: 38, color: "#6c3fd6", marginTop: 22, opacity: pop(51), transform: `rotate(-3deg) scale(${0.8 + 0.2 * pop(51)})` }}>tinys.click · free for Mac</div>
     </AbsoluteFill>
   );
 }
@@ -116,8 +116,8 @@ export function Promo({ audio = true }: { audio?: boolean }) {
   const punch = punchBeats.reduce((sum, b) => sum + (frame >= b ? (popBeats.includes(b) ? 0.012 : 0.005) * Math.exp(-(frame - b) / 4) : 0), 0);
   const zoom = interpolate(frame, [T.montage, T.outro + 30], [1, 0.94], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) + punch;
   const dockRise = spring({ frame: frame - 4, fps, config: { damping: 16 } });
-  const app = frame >= T.termOpen && frame < T.termClose ? "Terminal" : frame >= OPEN.soma ? "hitSlop" : "Finder";
-  const running = ["finder", ...(frame >= OPEN.soma ? ["hitslop"] : []), ...(frame >= T.termOpen && frame < T.termClose + 6 ? ["terminal"] : [])];
+  const app = frame >= T.termOpen && frame < T.termClose ? "Terminal" : frame >= OPEN.soma ? "tinys" : "Finder";
+  const running = ["finder", ...(frame >= OPEN.soma ? ["tinys"] : []), ...(frame >= T.termOpen && frame < T.termClose + 6 ? ["terminal"] : [])];
   return (
     <AbsoluteFill style={{ overflow: "hidden", background: "#2f2a7d" }}>
       <style>{fontFaces}</style>
@@ -136,30 +136,30 @@ export function Promo({ audio = true }: { audio?: boolean }) {
         <DraggedFile at={WSZ} grab={T.wszGrab} drop={WSZ_DROP} target={center(SOMA)} label="Tenchi Muyo - Aeka.wsz" kind="wsz" />
         <DraggedFile at={ZIP} grab={T.zipGrab} drop={ZIP_DROP} target={center(PET)} label="akitsuki-airi.codex-pet.zip" kind="zip" />
 
-        <SlopWindow x={FINDER.x} y={FINDER.y} width={FINDER.w} height={FINDER.h} at={T.finderOpen} closeAt={TERM_CLICK} origin={dockPoint(0)} z={8}>
+        <TinyWindow x={FINDER.x} y={FINDER.y} width={FINDER.w} height={FINDER.h} at={T.finderOpen} closeAt={TERM_CLICK} origin={dockPoint(0)} z={8}>
           <Finder selected={[0, 1, 3, 2]} selectedAt={[T.somaDouble, T.petDouble, CHECK_DOUBLE, TIMER_DOUBLE]} />
-        </SlopWindow>
+        </TinyWindow>
 
-        <SlopWindow x={SOMA.x} y={SOMA.y} width={SOMA.w} height={SOMA.h} scale={SOMA.scale} at={OPEN.soma} origin={finderIcon(0)} z={12}>
+        <TinyWindow x={SOMA.x} y={SOMA.y} width={SOMA.w} height={SOMA.h} scale={SOMA.scale} at={OPEN.soma} origin={finderIcon(0)} z={12}>
           <Clip name="soma" cues={[[T.somaPlay - m("soma", "play"), 0], [T.skinSwap - 23, m("soma", "drag")]]} />
-        </SlopWindow>
-        <SlopWindow x={PET.x} y={PET.y} width={PET.w} height={PET.h} scale={PET.scale} shape="none" at={OPEN.pet} origin={finderIcon(1)} z={30}>
+        </TinyWindow>
+        <TinyWindow x={PET.x} y={PET.y} width={PET.w} height={PET.h} scale={PET.scale} shape="none" at={OPEN.pet} origin={finderIcon(1)} z={30}>
           <Clip name="pet" cues={[[OPEN.pet, 0], [T.petSwap - 14, m("pet", "drag") + 14], [T.petSwap, m("pet", "pet") + 7]]} />
-        </SlopWindow>
-        <SlopWindow x={CHECK.x} y={CHECK.y} width={CHECK.w} height={CHECK.h} scale={CHECK.scale} at={OPEN.checklist} origin={finderIcon(3)} z={14}>
+        </TinyWindow>
+        <TinyWindow x={CHECK.x} y={CHECK.y} width={CHECK.w} height={CHECK.h} scale={CHECK.scale} at={OPEN.checklist} origin={finderIcon(3)} z={14}>
           <Clip name="checklist" cues={[[OPEN.checklist, m("checklist", "title") + 14, 0], [T.taskAdded - 1, m("checklist", "insert")]]} />
-        </SlopWindow>
-        <SlopWindow x={TIMER.x} y={TIMER.y} width={TIMER.w} height={TIMER.h} scale={TIMER.scale} shape="ellipse" at={OPEN.timer} origin={finderIcon(2)} z={15}>
+        </TinyWindow>
+        <TinyWindow x={TIMER.x} y={TIMER.y} width={TIMER.w} height={TIMER.h} scale={TIMER.scale} shape="ellipse" at={OPEN.timer} origin={finderIcon(2)} z={15}>
           <Clip name="timer" cues={[[OPEN.timer, 0, (m("timer", "theme") - 8) / (T.themeSet - OPEN.timer)], [T.themeSet - 1, m("timer", "theme")]]} />
-        </SlopWindow>
-        <SlopWindow x={TERM.x} y={TERM.y} width={TERM.w} height={TERM.h} shape="rounded" at={T.termOpen} closeAt={T.termClose} origin={dockPoint(2)} z={60}>
+        </TinyWindow>
+        <TinyWindow x={TERM.x} y={TERM.y} width={TERM.w} height={TERM.h} shape="rounded" at={T.termOpen} closeAt={T.termClose} origin={dockPoint(2)} z={60}>
           <Terminal commands={commands} />
-        </SlopWindow>
+        </TinyWindow>
 
         {montage.map((p, i) => (
-          <SlopWindow key={i} x={p.x} y={p.y} width={p.w} height={p.h} scale={p.scale} shape={p.shape ?? "rounded"} at={p.at} origin={{ x: 960, y: 1040 }} z={100 + i}>
+          <TinyWindow key={i} x={p.x} y={p.y} width={p.w} height={p.h} scale={p.scale} shape={p.shape ?? "rounded"} at={p.at} origin={{ x: 960, y: 1040 }} z={100 + i}>
             {"clip" in p ? <Clip name={p.clip} loop={p.loop} cues={[[p.at, 0]]} /> : <Img src={staticFile(`captures/still-${p.still}.png`)} style={{ width: "100%", height: "100%" }} />}
-          </SlopWindow>
+          </TinyWindow>
         ))}
       </AbsoluteFill>
 

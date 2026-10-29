@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { releaseRepository, type PublishedRelease } from "../../scripts/lib/release-assets";
 import { ensureDraftRelease, findRelease } from "../../scripts/release/github";
 

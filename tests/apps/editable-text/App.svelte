@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EditableText, getDocument } from "hitslop/svelte";
+  import { EditableText, getDocument } from "@hitslop/tinys/svelte";
   import schema from "./schema";
   import InteractionProbe from "./InteractionProbe.svelte";
   const doc = getDocument(schema);

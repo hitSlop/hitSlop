@@ -2,8 +2,8 @@
 body {
   font-family: system-ui, "Conformance CJK";
   margin: 0;
-  color: var(--slop-ink);
-  background: var(--slop-paper-tint);
+  color: var(--tiny-ink);
+  background: var(--tiny-paper-tint);
 }
 main {
   padding: 24px;
@@ -21,11 +21,11 @@ h2,
 .accent-patch {
   width: 32px;
   height: 32px;
-  background: var(--slop-accent);
+  background: var(--tiny-accent);
 }
 .icon {
-  background: var(--slop-accent);
-  color: var(--slop-ink);
+  background: var(--tiny-accent);
+  color: var(--tiny-ink);
   display: flex;
   flex-direction: column;
 }

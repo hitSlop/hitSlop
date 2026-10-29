@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { copyFile, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { localImports } from "./imports";
-import { execute } from "../../packages/hitslop/src/cli/engine";
+import { execute } from "../../packages/tinys/src/cli/engine";
 import { fileDigest, publishFolder, sha256 } from "../lib/artifacts";
 
 const ignored = new Set([
@@ -54,25 +54,25 @@ export async function sharedTemplatePaths(repository: string, sources: string[],
     "rust-toolchain.toml",
     "bun.lock",
     "Cargo.lock",
-    "crates/hitslop-core/Cargo.toml",
-    "crates/hitslop-core/src",
-    "crates/slop-engine",
-    "crates/hitslop-runner",
-    "packages/hitslop/package.json",
-    "packages/hitslop/src/sdk",
-    "packages/hitslop/src/shell",
-    "packages/hitslop/src/schema",
-    "packages/hitslop/shell",
+    "crates/tinys-core/Cargo.toml",
+    "crates/tinys-core/src",
+    "crates/tiny-engine",
+    "crates/tinys-runner",
+    "packages/tinys/package.json",
+    "packages/tinys/src/sdk",
+    "packages/tinys/src/shell",
+    "packages/tinys/src/schema",
+    "packages/tinys/shell",
     "scripts/templates/build.ts",
     "scripts/templates/cache.ts",
     ...(await compilerSources(repository, [
-      "packages/hitslop/src/cli/template.ts",
-      "packages/hitslop/src/cli/stage-worker.ts",
+      "packages/tinys/src/cli/template.ts",
+      "packages/tinys/src/cli/stage-worker.ts",
     ])),
   ];
   // Shared authoring configs and directories, but not other templates, docs or local tool state.
-  for (const name of includeExamples ? await readdir(join(repository, "slops")) : []) {
-    const path = join("slops", name);
+  for (const name of includeExamples ? await readdir(join(repository, "tinys")) : []) {
+    const path = join("tinys", name);
     if (
       !ignored.has(name) &&
       !name.startsWith(".") &&
@@ -92,7 +92,7 @@ export async function sharedTemplateInputs(repository: string, sources: string[]
     "@platform": process.platform,
     "@arch": process.arch,
     "@bun": Bun.version,
-    "@debug": String(process.env.HITSLOP_DEBUG_BUILD === "1"),
+    "@debug": String(process.env.TINYS_DEBUG_BUILD === "1"),
   };
 }
 
@@ -146,10 +146,10 @@ export class TemplateCache {
           ...changedInputs(metadata.template, template).map((path) => `template ${path}`),
         ];
       // The entry was validated when it was written: the same bytes are the same template.
-      else if (metadata.checksum !== (await fileDigest(join(entry, "template.slop"))))
+      else if (metadata.checksum !== (await fileDigest(join(entry, "template.tiny"))))
         reason = ["cached template changed"];
       else {
-        await copyFile(join(entry, "template.slop"), destination, constants.COPYFILE_EXCL);
+        await copyFile(join(entry, "template.tiny"), destination, constants.COPYFILE_EXCL);
         return "hit" as const;
       }
     } catch (error) {
@@ -164,7 +164,7 @@ export class TemplateCache {
     await build();
     const checksum = await validateTemplate(destination, slug, artwork);
     await publishFolder(entry, async (stage) => {
-      await copyFile(destination, join(stage, "template.slop"));
+      await copyFile(destination, join(stage, "template.tiny"));
       await writeFile(join(stage, "entry.json"), JSON.stringify({ key, checksum, shared: this.shared, template, artwork }));
     });
     return "built" as const;

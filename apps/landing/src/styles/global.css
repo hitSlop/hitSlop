@@ -1,15 +1,15 @@
 /* Self-hosted fonts only: no third-party CSS blocks rendering. Licenses sit beside the files. */
-@font-face { font-family: "HitSlop Display"; src: url("/assets/hero/fonts/baloo-2-latin.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
-@font-face { font-family: "HitSlop Headline"; src: url("/assets/hero/fonts/omnes-black-latin.woff2") format("woff2"); font-weight: 900; font-display: swap; }
-@font-face { font-family: "HitSlop Sans"; src: url("/assets/hero/fonts/nunito-sans-latin.woff2") format("woff2"); font-weight: 400 900; font-display: swap; }
-@font-face { font-family: "HitSlop Handwriting"; src: url("/assets/hero/fonts/kalam-latin.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Tinys Display"; src: url("/assets/hero/fonts/baloo-2-latin.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+@font-face { font-family: "Tinys Headline"; src: url("/assets/hero/fonts/omnes-black-latin.woff2") format("woff2"); font-weight: 900; font-display: swap; }
+@font-face { font-family: "Tinys Sans"; src: url("/assets/hero/fonts/nunito-sans-latin.woff2") format("woff2"); font-weight: 400 900; font-display: swap; }
+@font-face { font-family: "Tinys Handwriting"; src: url("/assets/hero/fonts/kalam-latin.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Newsreader"; src: url("/assets/hero/fonts/newsreader-latin.woff2") format("woff2"); font-weight: 500 700; font-style: normal; font-display: swap; }
 @font-face { font-family: "Newsreader"; src: url("/assets/hero/fonts/newsreader-italic-latin.woff2") format("woff2"); font-weight: 500; font-style: italic; font-display: swap; }
 @font-face { font-family: "Onest"; src: url("/assets/hero/fonts/onest-latin.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
 
 :root {
   color-scheme: light;
-  font-family: "HitSlop Sans", "Avenir Next", system-ui, sans-serif;
+  font-family: "Tinys Sans", "Avenir Next", system-ui, sans-serif;
   font-synthesis: none;
   font-kerning: normal;
   --paper: #fbfaff;
@@ -67,12 +67,12 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 .skip-link:focus { transform: translateY(0); }
 
 /* ---------- Shared type ---------- */
-.headline { font-family: "HitSlop Headline", "HitSlop Display", sans-serif; font-size: clamp(2.5rem, 6.4vw, 4.6rem); font-weight: 900; line-height: .96; letter-spacing: -.005em; }
+.headline { font-family: "Tinys Headline", "Tinys Display", sans-serif; font-size: clamp(2.5rem, 6.4vw, 4.6rem); font-weight: 900; line-height: .96; letter-spacing: -.005em; }
 .headline em { font-style: normal; color: var(--accent); }
-.kicker { margin: 0 0 14px; display: inline-flex; align-items: center; gap: 9px; color: var(--accent); font-family: "HitSlop Display", sans-serif; font-size: .95rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.kicker { margin: 0 0 14px; display: inline-flex; align-items: center; gap: 9px; color: var(--accent); font-family: "Tinys Display", sans-serif; font-size: .95rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .kicker::before { width: 15px; height: 15px; flex: none; background: currentColor; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); content: ""; }
 .lede { max-width: 38rem; margin: 20px 0 0; color: var(--muted); font-size: clamp(1.05rem, 1.25vw, 1.18rem); line-height: 1.6; }
-.hand { font-family: "HitSlop Handwriting", cursive; font-weight: 400; line-height: 1.12; }
+.hand { font-family: "Tinys Handwriting", cursive; font-weight: 400; line-height: 1.12; }
 .text-link { display: inline-flex; align-items: center; gap: 8px; border-bottom: 2px solid currentColor; font-weight: 800; }
 @media (hover: hover) { .text-link:hover { color: var(--accent); } }
 
@@ -88,12 +88,12 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 
 /* ---------- Masthead ---------- */
 .masthead { position: sticky; top: 12px; z-index: 100; width: var(--page); min-height: 66px; margin: 12px auto 0; padding: 0 10px 0 14px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; border: 1px solid #ffffffb0; border-radius: 30px; background: linear-gradient(rgb(255 255 255 / .82), rgb(255 255 255 / .70)); box-shadow: 0 10px 34px #4a2a9c1a, 0 1px 1px #fffffff2 inset, 0 -1px 1px #4a2a9c14 inset; backdrop-filter: blur(22px) saturate(170%); -webkit-backdrop-filter: blur(22px) saturate(170%); }
-.wordmark { width: max-content; display: inline-flex; align-items: center; gap: 10px; font-family: "HitSlop Display", sans-serif; font-size: 1.65rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+.wordmark { width: max-content; display: inline-flex; align-items: center; gap: 10px; font-family: "Tinys Display", sans-serif; font-size: 1.65rem; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
 .wordmark > span:last-child { padding-top: .1em; }
 .brand-mark { width: 40px; height: 40px; display: grid; place-items: center; overflow: hidden; border-radius: 11px; box-shadow: 0 4px 10px #b8860b38; transition: transform 300ms var(--spring); }
 .brand-mark img { width: 100%; height: 100%; display: block; }
 @media (hover: hover) { .wordmark:hover .brand-mark { transform: rotate(-10deg) scale(1.08); } }
-.masthead-nav { display: none; justify-content: center; gap: 2px; color: var(--muted); font-family: "HitSlop Display", sans-serif; font-size: 1.08rem; font-weight: 700; line-height: 1; }
+.masthead-nav { display: none; justify-content: center; gap: 2px; color: var(--muted); font-family: "Tinys Display", sans-serif; font-size: 1.08rem; font-weight: 700; line-height: 1; }
 .masthead-nav a { min-height: 44px; padding: 3px 15px 0; display: inline-flex; align-items: center; border-radius: 16px; transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out); }
 .masthead-nav a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); }
 @media (hover: hover) { .masthead-nav a:hover { color: var(--accent); background: var(--accent-soft); } }
@@ -102,7 +102,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 .icon-link { width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 14px; color: var(--ink); }
 .icon-link svg { display: block; width: 20px; height: 20px; }
 @media (hover: hover) { .icon-link:hover { color: var(--accent); background: var(--accent-soft); } }
-.nav-download { min-height: 48px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border-radius: 18px; color: #fff; background: linear-gradient(#242537, #101320 60%); box-shadow: inset 0 2px 3px #ffffff20, 0 3px 0 #090c1b; font-family: "HitSlop Display", sans-serif; font-size: 1.05rem; font-weight: 700; line-height: 1; transition: transform 200ms var(--spring); }
+.nav-download { min-height: 48px; padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border-radius: 18px; color: #fff; background: linear-gradient(#242537, #101320 60%); box-shadow: inset 0 2px 3px #ffffff20, 0 3px 0 #090c1b; font-family: "Tinys Display", sans-serif; font-size: 1.05rem; font-weight: 700; line-height: 1; transition: transform 200ms var(--spring); }
 .nav-download:active { transform: translateY(2px); }
 @media (hover: hover) { .nav-download:hover { transform: translateY(-2px) rotate(-1deg); } }
 .menu-button { width: 48px; height: 48px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 16px; color: var(--ink); background: transparent; cursor: pointer; }
@@ -112,7 +112,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 .menu-sheet[open] { animation: sheet-in 320ms var(--spring); }
 .menu-sheet header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .menu-sheet nav { display: grid; }
-.menu-sheet nav a { min-height: 56px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--rule); font-family: "HitSlop Display", sans-serif; font-size: 1.4rem; font-weight: 800; }
+.menu-sheet nav a { min-height: 56px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--rule); font-family: "Tinys Display", sans-serif; font-size: 1.4rem; font-weight: 800; }
 .menu-sheet nav a::after { color: var(--accent); content: "→"; }
 .menu-sheet .menu-social { margin-top: 14px; display: flex; gap: 6px; }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(-12px) scale(.97); } }

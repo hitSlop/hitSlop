@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{title}} preview</title>
+    <style>
+      body {
+        box-sizing: border-box;
+        min-height: 100vh;
+        margin: 0;
+        padding: 72px 48px 48px;
+        display: grid;
+        background: #e4e4e4 repeating-conic-gradient(#d2d2d2 0 25%, #e4e4e4 0 50%) 0 0 / 24px 24px;
+      }
+      .preview-modes {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        z-index: 2;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 12px;
+        max-width: 560px;
+        padding: 10px;
+        background: Canvas;
+        color: CanvasText;
+        border-radius: 8px;
+        font: 14px system-ui;
+      }
+      .preview-modes small {
+        opacity: 0.7;
+      }
+      .preview-modes output {
+        flex-basis: 100%;
+      }
+      /* The editor keeps the window's size, shape and skin; a static view gets a plain
+         rectangle the app frame measures for it. */
+      .stage {
+        position: relative;
+        margin: auto;
+        pointer-events: none;
+      }
+      .window {
+        pointer-events: auto;
+        overflow: hidden;
+        width: var(--editor-width);
+        height: var(--editor-height);
+      }
+      .stage[data-view="editor"] .window {
+        {{surface}}
+      }
+      {{shadow}}
+      .stage[data-view="static"] .window {
+        width: var(--view-width);
+        height: var(--view-height);
+      }
+      .stage[data-view="static"] .resize-preview {
+        display: none;
+      }
+      iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+      .resize-preview {
+        position: absolute;
+        right: -28px;
+        bottom: -28px;
+        width: 28px;
+        height: 28px;
+        pointer-events: auto;
+        cursor: nwse-resize;
+        touch-action: none;
+        border: 1px solid #777;
+        background: white;
+        border-radius: 5px;
+      }
+      .resize-preview:focus-visible {
+        outline: 3px solid #1957bd;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-modes">
+      <label>
+        Preview
+        <select aria-label="Preview composition">
+          <option value="editor">Editor</option>
+          <option value="preview">Preview</option>
+          <option value="icon">Icon</option>
+          <optgroup label="Widget" {{widgets}}>{{families}}</optgroup>
+        </select>
+      </label>
+      <label>
+        Device
+        <select aria-label="Device preset">
+          <option value="browser">Browser</option>
+          <option value="iphone">iPhone</option>
+          <option value="ipad">iPad</option>
+          <option value="mac">Mac</option>
+        </select>
+      </label>
+      <small>Browser layout; <code>tiny build</code> shows the final image.</small>
+      <output role="status"></output>
+    </div>
+    {{clip}}
+    <div
+      class="stage"
+      data-view="editor"
+      data-aspect="{{aspect}}"
+      data-environments="{{environments}}"
+      style="--editor-width: {{width}}px; --editor-height: {{height}}px"
+    >
+      <div class="window"><iframe src="/app.html" title="{{title}}" {{allow}}></iframe></div>
+      {{resize}}
+    </div>
+    <script type="module" src="/__preview__/resize.js"></script>
+  </body>
+</html>

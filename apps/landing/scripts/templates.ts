@@ -4,7 +4,7 @@
 // Outputs are committed: the Cloudflare build installs only apps/landing and never
 // builds templates. Metadata and stored artwork are read through the Rust engine.
 /// <reference types="bun" />
-import { execute } from "../../../packages/hitslop/src/cli/engine";
+import { execute } from "../../../packages/tinys/src/cli/engine";
 import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -132,5 +132,5 @@ export async function generateTemplates(sources: { slug: string; file: string }[
 
 if (import.meta.main) {
   const { templates } = await builtTemplates();
-  await generateTemplates(templates.map(({ slug }) => ({ slug, file: join(repository, "generated/templates", `${slug}.slop`) })));
+  await generateTemplates(templates.map(({ slug }) => ({ slug, file: join(repository, "generated/templates", `${slug}.tiny`) })));
 }

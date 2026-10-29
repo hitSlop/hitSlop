@@ -1,0 +1,76 @@
+---
+name: tinys-native
+description: Work on tinys Apple hosting, the document owner, local storage, template caching, previews, export, window shapes, or live CLI requests.
+---
+
+# Native host
+
+Preserve the real macOS client and its target graph: Core, Document, Runtime, Host,
+Features, Catalog/local templates, Firebase Analytics/Crashlytics and Sparkle.
+Do not replace it with a playground shell. Read docs/architecture.md first.
+
+**Ownership.** A `.tiny` is one SQLite file: the app (its `app` row, assets and artwork)
+and, for a document, its saved state, theme overrides and attachments. `tinys-core`
+(Rust on Loro, linked through UniFFI as `TinysCoreBinding`) owns document semantics,
+validation, window-shape geometry, error codes and durable storage: the file, the writer
+lock, save policy, owner scheduling and Unix socket routing. Attachments are immutable
+rows in the file, stored and read through the core. The shared Rust owner runs one write
+in flight on its persistence worker. Swift `DocumentOwner` forwards typed requests and
+events; `DocumentSession` delivers ordered publications to the page. The private
+`packages/tinys/src/shell` holds immutable snapshots and no CRDT;
+`packages/tinys/src/sdk` contains the author SDK. Never add a second document engine, a JSON
+mirror, a JavaScriptCore evaluator or app-specific Swift schemas.
+
+**One edit path.** The CLI forwards to the live owner's socket or takes the lock and runs
+the shared Rust owner in-process. The bundled `tiny-engine` handles data commands and, on
+macOS, renders a closed document's export and a template's artwork in its restricted
+evaluator; the app owns the documents it has open, and `tiny open` asks LaunchServices to
+open one in it. The writer lock and the live owner's
+discovery live outside the file, in the core's registry (`~/.tinys/live`, keyed by the
+file's device and inode); never remove a lock file there or bypass a busy lock, and never
+lock or open the database file outside the core. Closed edits never start WebKit. Agent commands use the owner's restricted child runner; pages edit through handles. The app embeds and signs `tinys-evaluator`. A
+document is a local regular file: never a link, and never with a second hard link.
+
+**Errors.** Rust classifies command outcomes; `RequestOutcome` maps native UI failures
+onto the same contract: rejected (with a core
+code), replaced, closing, invalidated, save failed, or unknown. Only unknown leaves the
+outcome uncertain; after it, run `tiny get` before another edit. A failed save keeps
+ownership and shows a native retry; close and export flush first.
+
+**Contracts.** Rust serde types own internal wires and package-format acceptance; ts-rs generates TypeScript and UniFFI carries native records/enums. Run `bun run schema:generate`; never edit generated files. Rust parses page requests once and returns opaque replies or typed host actions. Swift never decodes app, theme or page JSON. WebKit correlates replies; Swift checks the sender and supplies its native view token.
+Keep native view fences and the command protocol check when changing the page or socket protocol. Released
+documents stay openable: follow AGENTS.md's Compatibility rules, and keep
+`tests/compat` passing (`CompatCorpusTests`, `bun run verify native compat-replay`).
+
+**Windows and captures.** `TinySilhouette` builds paths from the core's parsed shape and
+is the one mask for window clipping and hit testing; captures are never masked. Flush and
+copy saved state before rendering in an independent read-only renderer. All icons, preview artwork, PNG and vector PDF exports use synchronous Svelte SSR and
+Takumi in the restricted Rust child. `Preview.svelte` and `Icon.svelte` are required for authoring; `Export.svelte` is optional.
+The editor holds `capturing` only while acquiring the copy; rendering can continue
+after it closes. Capture attachment URLs resolve a bounded saved image inventory. Theme overrides live in
+Loro and use the same publication, undo and saving path as data edits.
+
+**Widgets.** The app captures `Widget.svelte` in the Rust child and atomically publishes
+three PNGs outside the document; the extension only reads cached images. Successful
+saves, cached-file watchers, startup/reopen and optional scheduled refresh drive
+captures. Freshness combines saved state, installed evaluator bytes (including fonts),
+and canvas configuration. Renderer upgrades invalidate unchanged cached documents.
+Failed refreshes retain the previous generation; publish before requesting a WidgetKit
+reload. Quitting retains cached images, and WidgetKit controls visible reload timing.
+
+**Checks.** `bun run verify --native` runs what a change touches, building first.
+`bun run verify swift` covers WKWebView, live and closed CLI, save failure, close and
+export; `bun run verify native` runs the CLI against the engine, renders, crashes and the
+corpus replay; `bun run bench:windows` measures window scaling.
+Templates: `bun run build:templates`, then `TINYS_RENDER=all bun run verify native render`.
+
+**iPhone chrome.** The editor runs edge to edge with a floating glass actions menu.
+The page pads by `--tiny-safe-top` and `--tiny-safe-bottom`; headers reserve the corner
+through `--tiny-host-actions-width` and `--tiny-host-actions-height`. The host publishes
+`--tiny-keyboard-inset` while the keyboard covers the page, and the shell reveals focused
+fields inside their scrollers. Only bottom-pinned controls use that keyboard inset;
+do not shrink the page by it. `PhoneWebView` isolates the workaround that removes
+WebKit's keyboard observers; requalify its initialization assumption on each iOS major
+release. Keep native edge-pop scoped to the editor and route completed navigation
+through the existing close path. Done is above the keyboard. Older embedded apps
+without the safe-area styles need separate phone layout qualification.

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile, symlink, realpath, stat, chmod, cp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { exec, run } from "../../packages/hitslop/src/cli/process";
+import { exec, run } from "../../packages/tinys/src/cli/process";
 import { fileDigest, repository, sha256 } from "../../scripts/lib/artifacts";
 import { archiveFiles } from "../../scripts/lib/release-archive";
 import { corpusFiles, verifyCorpus } from "../../scripts/compat/integrity";
@@ -11,7 +11,7 @@ import { copyCorpusDocument, releases, type Release } from "../../scripts/compat
 import { resolveWriter, verifyPackedWriter } from "../../scripts/compat/writers";
 
 test("corpus discovery permits a missing optional directory but surfaces filesystem errors", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-corpus-discovery-"));
+  const root = await mkdtemp(join(tmpdir(), "tinys-corpus-discovery-"));
   try {
     expect(await releases(join(root, "missing"))).toEqual([]);
     const file = join(root, "not-a-directory");
@@ -24,13 +24,13 @@ async function fixture(root: string, version = "1.0.0", id = 1) {
   const directory = join(root, `original-${version}`);
   for (const dir of ["documents", "expected", "scenarios", "pages", "acceptance"]) await mkdir(join(directory, dir), { recursive: true });
   for (const name of ["conformance", "conformance-compacted"]) {
-    await writeFile(join(directory, `documents/${name}.slop`), "minimal archive fixture");
+    await writeFile(join(directory, `documents/${name}.tiny`), "minimal archive fixture");
     await writeFile(join(directory, `expected/${name}.json`), JSON.stringify({ appDigest: "a".repeat(64) }));
     await writeFile(join(directory, `scenarios/${name}.json`), "{}");
     await writeFile(join(directory, `pages/${name}.json`), "{}");
   }
   await writeFile(join(directory, "acceptance/vector.json"), "{}");
-  const schema = "crates/hitslop-core/src/file/storage-1.sql";
+  const schema = "crates/tinys-core/src/file/storage-1.sql";
   const release: Release = { release: version, frozen: true, commit: "c".repeat(40), captured: "2026-10-15",
     markers: { packageFormat: 1, runtimeABI: 1, storage: 1, layout: 1, protocol: 1 },
     producer: { coreBuildID: "core" }, files: await corpusFiles(directory), storageSchemas: { [schema]: await fileDigest(join(repository, schema)) },
@@ -42,18 +42,18 @@ async function fixture(root: string, version = "1.0.0", id = 1) {
   await run(["tar", "--format=ustar", "-czf", archive, "-C", directory, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
   const bytes = await readFile(archive);
   const artifacts: Record<string, string> = {};
-  for (const name of [`hitslop-${version}.tgz`, "hitSlop.dmg", "hitSlop.zip", "appcast.xml", `hitSlop-${version}.md`, "release-notes.md"]) artifacts[name] = "a".repeat(64);
+  for (const name of [`hitslop-tinys-${version}.tgz`, "tinys.dmg", "tinys.zip", "appcast.xml", `tinys-${version}.md`, "release-notes.md"]) artifacts[name] = "a".repeat(64);
   artifacts[`compat-corpus-${version}.tar.gz`] = sha256(bytes);
   const entry: HistoricalRelease = { release: { id, tag_name: `v${version}`, draft: false, prerelease: false, immutable: true,
-    assets: [{ id, name: "release-record.json" }, { id: id + 1, name: `compat-corpus-${version}.tar.gz` }, { id: id + 2, name: `hitslop-${version}.tgz` }] },
+    assets: [{ id, name: "release-record.json" }, { id: id + 1, name: `compat-corpus-${version}.tar.gz` }, { id: id + 2, name: `hitslop-tinys-${version}.tgz` }] },
     record: { commit: release.commit, tag: `v${version}`, macVersion: version, macBuild: "1", run: "1", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", qualified: {},
       corpus: { file: `compat-corpus-${version}.tar.gz`, sha256: sha256(bytes) }, artifacts } };
   return { entry, bytes, directory };
 }
 
 test("published archives are verified, replayed from cache and cannot silently disappear", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-corpora-"));
-  const previous = process.env.HITSLOP_COMPAT_ROOT;
+  const root = await mkdtemp(join(tmpdir(), "tinys-corpora-"));
+  const previous = process.env.TINYS_COMPAT_ROOT;
   try {
     const { entry, bytes } = await fixture(root);
     let downloads = 0;
@@ -66,10 +66,10 @@ test("published archives are verified, replayed from cache and cannot silently d
     const replay = await releases();
     expect(replay.map(entry => entry.name)).toEqual(["1.0.0"]);
     await verifyCorpus(replay[0]!.root, replay[0]!.release);
-    const saved = join(first.root, "1.0.0/documents/conformance.slop");
+    const saved = join(first.root, "1.0.0/documents/conformance.tiny");
     expect((await stat(saved)).mode & 0o222).toBe(0);
     if (process.getuid?.() !== 0) await expect(writeFile(saved, "accidental write")).rejects.toThrow();
-    const editable = join(root, "editable.slop");
+    const editable = join(root, "editable.tiny");
     await copyCorpusDocument(saved, editable);
     await writeFile(editable, "edited copy");
     expect(await readFile(saved, "utf8")).toBe("minimal archive fixture");
@@ -95,13 +95,13 @@ test("published archives are verified, replayed from cache and cannot silently d
     await rm(cached);
     await expect(resolveCorpora({ ...options, download: async id => id === 1 ? Buffer.from(JSON.stringify(entry.record)) : Buffer.from("wrong bytes") })).rejects.toThrow("hash mismatch");
   } finally {
-    if (previous === undefined) delete process.env.HITSLOP_COMPAT_ROOT; else process.env.HITSLOP_COMPAT_ROOT = previous;
+    if (previous === undefined) delete process.env.TINYS_COMPAT_ROOT; else process.env.TINYS_COMPAT_ROOT = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("drafts do not break PR replay; published history must be immutable and transitively complete", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-history-"));
+  const root = await mkdtemp(join(tmpdir(), "tinys-history-"));
   try {
     const { entry } = await fixture(root);
     expect(await publishedHistory({ required: {}, list: async () => [{ ...entry.release, draft: true }], download: async () => { throw new Error("draft downloaded"); } })).toEqual([]);
@@ -111,12 +111,12 @@ test("drafts do not break PR replay; published history must be immutable and tra
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("the repository baseline refuses empty published history on a cold machine", async () => {
-  await expect(publishedHistory({ list: async () => [] })).rejects.toThrow("history missing or changed");
+test("a new product lineage can bootstrap without published history", async () => {
+  expect(await publishedHistory({ required: {}, list: async () => [] })).toEqual([]);
 });
 
 test("a required first release cannot disappear on a cold machine", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-required-history-"));
+  const root = await mkdtemp(join(tmpdir(), "tinys-required-history-"));
   try {
     const { entry } = await fixture(root);
     const options = { required: { "1.0.0": entry.record.corpus.sha256 },
@@ -130,8 +130,8 @@ test("a required first release cannot disappear on a cold machine", async () => 
 });
 
 test.each(["identity", "partial root"])("replay %s includes the candidate and authentic complete history", async (scenario) => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-replay-identity-"));
-  const previous = process.env.HITSLOP_COMPAT_ROOT;
+  const root = await mkdtemp(join(tmpdir(), "tinys-replay-identity-"));
+  const previous = process.env.TINYS_COMPAT_ROOT;
   try {
     const old = await fixture(root);
     const candidate = await fixture(root, "2.0.0", 4);
@@ -170,14 +170,14 @@ test.each(["identity", "partial root"])("replay %s includes the candidate and au
     await expect(verifyResolvedCorpora(published.root, { ...options, list: async () => [old.entry.release, candidate.entry.release],
       download: async id => Buffer.from(JSON.stringify(id === 1 ? old.entry.record : candidate.entry.record)) })).rejects.toThrow("inventory");
   } finally {
-    if (previous === undefined) delete process.env.HITSLOP_COMPAT_ROOT; else process.env.HITSLOP_COMPAT_ROOT = previous;
+    if (previous === undefined) delete process.env.TINYS_COMPAT_ROOT; else process.env.TINYS_COMPAT_ROOT = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("candidate snapshots are isolated and cache corruption cannot replace the current corpus", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-snapshots-"));
-  const previous = process.env.HITSLOP_COMPAT_ROOT;
+  const root = await mkdtemp(join(tmpdir(), "tinys-snapshots-"));
+  const previous = process.env.TINYS_COMPAT_ROOT;
   try {
     const old = await fixture(root);
     const candidate = await fixture(root, "2.0.0", 4);
@@ -190,24 +190,24 @@ test("candidate snapshots are isolated and cache corruption cannot replace the c
     expect(await readFile(join(prepared.root, "2.0.0/release.json"), "utf8")).toBe(await readFile(join(candidate.directory, "release.json"), "utf8"));
     await expect(stat(join(published.root, "2.0.0"))).rejects.toThrow();
 
-    await writeFile(join(candidate.directory, "documents/conformance.slop"), "incomplete capture");
+    await writeFile(join(candidate.directory, "documents/conformance.tiny"), "incomplete capture");
     await expect(resolveCorpora({ ...options, candidate: candidate.directory })).rejects.toThrow();
     expect(await realpath(join(options.output, "current"))).toBe(await realpath(published.root));
 
-    const damaged = join(published.root, "1.0.0/documents/conformance.slop");
+    const damaged = join(published.root, "1.0.0/documents/conformance.tiny");
     await chmod(damaged, 0o600);
     await writeFile(damaged, "damaged cache");
     await expect(resolveCorpora(options)).rejects.toThrow("Corrupt cached corpus tree");
     expect(await realpath(join(options.output, "current"))).toBe(await realpath(published.root));
   } finally {
-    if (previous === undefined) delete process.env.HITSLOP_COMPAT_ROOT; else process.env.HITSLOP_COMPAT_ROOT = previous;
+    if (previous === undefined) delete process.env.TINYS_COMPAT_ROOT; else process.env.TINYS_COMPAT_ROOT = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("concurrent resolution reuses snapshots and a delayed response cannot regress history", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-concurrent-corpora-"));
-  const previous = process.env.HITSLOP_COMPAT_ROOT;
+  const root = await mkdtemp(join(tmpdir(), "tinys-concurrent-corpora-"));
+  const previous = process.env.TINYS_COMPAT_ROOT;
   let releaseOld!: () => void;
   const oldResponse = new Promise<void>(resolve => { releaseOld = resolve; });
   try {
@@ -231,13 +231,13 @@ test("concurrent resolution reuses snapshots and a delayed response cannot regre
     expect((await releases()).map(entry => entry.name)).toEqual(["1.9.0", "1.10.0"]);
   } finally {
     releaseOld();
-    if (previous === undefined) delete process.env.HITSLOP_COMPAT_ROOT; else process.env.HITSLOP_COMPAT_ROOT = previous;
+    if (previous === undefined) delete process.env.TINYS_COMPAT_ROOT; else process.env.TINYS_COMPAT_ROOT = previous;
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test("release archive extraction refuses symlinks before writing files", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-archive-"));
+  const root = await mkdtemp(join(tmpdir(), "tinys-archive-"));
   try {
     await mkdir(join(root, "source"));
     await symlink("../../outside", join(root, "source/link"));
@@ -248,9 +248,9 @@ test("release archive extraction refuses symlinks before writing files", async (
 });
 
 test("historical writers use the exact retained tarball and reject changed cached bytes", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-retained-writer-"));
+  const root = await mkdtemp(join(tmpdir(), "tinys-retained-writer-"));
   try {
-    const binary = join(root, "package/engine/darwin-arm64/slop-engine");
+    const binary = join(root, "package/engine/darwin-arm64/tiny-engine");
     await mkdir(join(root, "package/engine/darwin-arm64"), { recursive: true });
     await writeFile(binary, "#!/bin/sh\necho original-core\n");
     const tarball = join(root, "writer.tgz");
@@ -267,10 +267,10 @@ test("historical writers use the exact retained tarball and reject changed cache
 });
 
 test("capture refuses an existing explicit destination before building or replacing anything", async () => {
-  const root = await mkdtemp(join(tmpdir(), "hitslop-capture-destination-"));
+  const root = await mkdtemp(join(tmpdir(), "tinys-capture-destination-"));
   try {
     await writeFile(join(root, "keep"), "existing output");
-    const result = await exec([process.execPath, "scripts/compat/capture.ts", "2.0.0", "--writer", "unused-engine", "--out", root], { cwd: repository, timeout: 10_000, env: { ...process.env, HITSLOP_ENGINE: undefined } });
+    const result = await exec([process.execPath, "scripts/compat/capture.ts", "2.0.0", "--writer", "unused-engine", "--out", root], { cwd: repository, timeout: 10_000, env: { ...process.env, TINYS_ENGINE: undefined } });
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("Capture destination already exists");
     expect(result.stdout).not.toContain("Capture: scripts/build");

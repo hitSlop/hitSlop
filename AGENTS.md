@@ -1,4 +1,7 @@
-# hitSlop
+# tinys
+
+tinys starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not tinys acceptance inputs.
+
 
 Architecture: [architecture](docs/architecture.md). Status and open work:
 [direction](docs/roadmap.md); proposals in [ideas](docs/ideas.md).
@@ -7,16 +10,16 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 
 ## Non-negotiable
 
-- **Every released slop stays openable.** See [Compatibility](#compatibility).
-- `hitslop-core` (Rust on Loro) owns document semantics and durable storage: the `.slop`
+- **Every released tiny stays openable.** See [Compatibility](#compatibility).
+- `tinys-core` (Rust on Loro) owns document semantics and durable storage: the `.tiny`
   file (one SQLite database holding the app and its saved state), the writer lock and the
   save policy, serial owner, persistence worker and socket routing. Swift `DocumentOwner`
   is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
-  (`packages/hitslop/src/shell`) holds no CRDT; `packages/hitslop/src/sdk` is the author SDK, and slops
+  (`packages/tinys/src/shell`) holds no CRDT; `packages/tinys/src/sdk` is the author SDK, and tinys
   contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or remove a lock file from the registry
-  (`~/.hitslop/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
+  (`~/.tinys/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
 - **Rust owns wire types and shared limits; ts-rs generates TypeScript, and UniFFI
   carries native types to Swift.** Rust also owns app acceptance; authors use `s.*` descriptors. JSON Schema is only a `describe` projection. Run
   `bun run schema:generate`; never edit generated files.
@@ -29,13 +32,13 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core serves SDK tests and local Chrome browser copies using the same Rust owner and SQLite store. `slop dev` uses the native Rust owner; native engine validation owns authoring checks.
+  document engine. The WASM core serves SDK tests and local Chrome browser copies using the same Rust owner and SQLite store. `tiny dev` uses the native Rust owner; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 
 ## Compatibility
 
-Starting with public v1.0.0, a newer hitSlop must open, render, edit, save and reopen
+Starting with public v1.0.0, a newer tinys must open, render, edit, save and reopen
 every document a released build wrote. Downgrades are not supported. The full rules, by
 boundary and marker, are in the [engineering contract](docs/engineering-contract.md#compatibility).
 Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
@@ -44,7 +47,7 @@ Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
   asset. Affected builds replay all published corpora. Never replace, regenerate or delete
   one, its expectations or the command prelude it froze. Capture is part of the candidate
   workflow ([releasing](docs/guides/releasing.md)). Retain the first release's hash pin in
-  `scripts/compat/required-history.json` permanently.
+  `scripts/compat/tinys-required-history.json` permanently.
 - Persisted formats change only additively, or behind the marker that owns the change:
   `packageFormat` (the stored definition), `runtimeABI` (app-facing behavior), the storage
   version (tables, columns, triggers) or the document layout. Markers are requirements,
@@ -52,9 +55,9 @@ Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
   `requires_update` and nothing is written.
 - Opening a file applies only its format's acceptance, which never tightens. Authoring
   rules run at `pack` and `init` and may tighten freely; they never judge a saved file.
-- Installing hitSlop never replaces the app inside an existing document. Only a write
+- Installing tinys never replaces the app inside an existing document. Only a write
   under the writer lock migrates a file; display reads never do.
-- Public boundaries (`ctx`, handles, error codes, `--slop-*`, host markup, the embed relay,
+- Public boundaries (`ctx`, handles, error codes, `--tiny-*`, host markup, the embed relay,
   the command protocol's refusal path, capture program requests and replies) grow additively.
   A change an old app cannot run raises `runtimeABI` and keeps the old behavior through an adapter.
   Stored capture programs are governed by runtimeABI. Requests grow additively; reply readers
@@ -63,15 +66,15 @@ Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
 
 ## Authoring
 
-Directories with a `slop.ts` under `slops` are active; `bundled.json` selects
-shipped templates. Use plain CSS and `slop.ts` theme colors; read
-[product guidance](slops/PRODUCT.md) and [authoring](docs/guides/authoring.md)
+Directories with a `tiny.ts` under `@hitslop/tinys` are active; `bundled.json` selects
+shipped templates. Use plain CSS and `tiny.ts` theme colors; read
+[product guidance](tinys/PRODUCT.md) and [authoring](docs/guides/authoring.md)
 for visual changes. `_vibe` is inspiration only.
 
 ## Testing
 
-- **Do not create an automated test or test suite for each slop.** Creating, styling,
-  animating, or updating a slop does not require new tests. Validate it with existing
+- **Do not create an automated test or test suite for each tiny.** Creating, styling,
+  animating, or updating a tiny does not require new tests. Validate it with existing
   checks/builds and hands-on preview/export review. Shared SDK, storage, or host
   regressions belong in the existing tests at their owning boundary; do not duplicate
   that coverage in example-specific tests. Use minimal infrastructure fixtures, never
@@ -107,6 +110,6 @@ A document history UI, schema evolution, synced folders and hosted catalog/publi
 remain deferred. Live collaboration connects the existing Rust owners through a Durable
 Object byte relay and is available in the Mac app and the iPhone app on TestFlight;
 release qualification remains in the [roadmap](docs/roadmap.md). `archive/`,
-`spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
+`spikes/`, `plans/`, `TINYS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
 local and are not active contracts. Shared decisions belong in the architecture, roadmap
 and ideas pages.

@@ -32,7 +32,7 @@ runs:
     - id: cache-keys
       shell: bash
       env:
-        SWIFT_KEY: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Sources/**', 'apps/apple/Packages/HitSlopApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/hitslop/**', 'bun.lock') }}
+        SWIFT_KEY: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/TinysApple/Package.resolved', 'apps/apple/Packages/TinysApple/Package.swift') }}-${{ hashFiles('apps/apple/Packages/TinysApple/Sources/**', 'apps/apple/Packages/TinysApple/Tests/**', 'crates/**', 'Cargo.lock', 'rust-toolchain.toml', 'packages/tinys/**', 'bun.lock') }}
         TEMPLATE_KEY: ${{ env.CI_CACHE_NAMESPACE }}templates-v3-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
       run: |
         echo "swift=$SWIFT_KEY" >> "$GITHUB_OUTPUT"
@@ -41,28 +41,28 @@ runs:
       if: inputs.swift == 'true' && github.event_name != 'pull_request' && inputs.save-build-cache == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: apps/apple/Packages/HitSlopApple/.build
+        path: apps/apple/Packages/TinysApple/.build
         key: ${{ steps.cache-keys.outputs.swift }}
-        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/TinysApple/Package.resolved', 'apps/apple/Packages/TinysApple/Package.swift') }}-
     - id: swift-cache-restore
       if: inputs.swift == 'true' && (github.event_name == 'pull_request' || inputs.save-build-cache != 'true')
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: apps/apple/Packages/HitSlopApple/.build
+        path: apps/apple/Packages/TinysApple/.build
         key: ${{ steps.cache-keys.outputs.swift }}
-        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/HitSlopApple/Package.resolved', 'apps/apple/Packages/HitSlopApple/Package.swift') }}-
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}swiftpm-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.hash }}-${{ hashFiles('apps/apple/Packages/TinysApple/Package.resolved', 'apps/apple/Packages/TinysApple/Package.swift') }}-
     - id: template-cache
       if: github.event_name != 'pull_request' && inputs.save-build-cache == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: .hitslop/template-cache
+        path: .tinys/template-cache
         key: ${{ steps.cache-keys.outputs.templates }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}templates-v3-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-
     - id: template-cache-restore
       if: github.event_name == 'pull_request' || inputs.save-build-cache != 'true'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: .hitslop/template-cache
+        path: .tinys/template-cache
         key: ${{ steps.cache-keys.outputs.templates }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}templates-v3-${{ inputs.templates }}-${{ runner.os }}-${{ runner.arch }}-
     - name: Native cache summary

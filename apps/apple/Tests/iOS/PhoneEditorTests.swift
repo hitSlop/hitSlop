@@ -1,20 +1,20 @@
 import Darwin
 import Foundation
-import HitSlopCore
-import HitSlopCoreBinding
 import QuickLookThumbnailing
+import TinysCore
+import TinysCoreBinding
 import UIKit
 import WebKit
 import XCTest
 
-@testable import HitSlopDocument
-@testable import hitSlopPhone
+@testable import TinysDocument
+@testable import tinysPhone
 
 final class PhoneEditorTests: XCTestCase {
   @MainActor func testLibraryNavigationRetainsTheDocumentWhenSaveFailsAndCanRetry() async throws {
-    let file = try outputFolder().appendingPathComponent("close-\(UUID().uuidString).slop")
+    let file = try outputFolder().appendingPathComponent("close-\(UUID().uuidString).tiny")
     let moved = file.appendingPathExtension("moved")
-    _ = try SlopFile.importCopy(from: input("host-probe"), to: file)
+    _ = try TinyFile.importCopy(from: input("host-probe"), to: file)
     let (session, window) = try await show(file)
     defer { window.isHidden = true }
     let model = PhoneDocuments()
@@ -47,8 +47,8 @@ final class PhoneEditorTests: XCTestCase {
   }
 
   @MainActor func testHapticsReachOnlyAnEnabledVisibleEditor() async throws {
-    let file = try outputFolder().appendingPathComponent("haptics-\(UUID().uuidString).slop")
-    _ = try SlopFile.importCopy(from: input("host-probe"), to: file)
+    let file = try outputFolder().appendingPathComponent("haptics-\(UUID().uuidString).tiny")
+    _ = try TinyFile.importCopy(from: input("host-probe"), to: file)
     let prior = UserDefaults.standard.object(forKey: HapticPreferences.enabledKey)
     defer { UserDefaults.standard.set(prior, forKey: HapticPreferences.enabledKey) }
     let (session, window) = try await show(file)
@@ -57,7 +57,7 @@ final class PhoneEditorTests: XCTestCase {
     session.hapticFeedback = feedback
     UserDefaults.standard.set(true, forKey: HapticPreferences.enabledKey)
     let result = try await session.webView.callAsyncJavaScript(
-      "return JSON.parse(await webkit.messageHandlers.hitslop.postMessage(JSON.stringify({method:'haptics.play',feedback:{kind:'selection'}}))).ok",
+      "return JSON.parse(await webkit.messageHandlers.tinys.postMessage(JSON.stringify({method:'haptics.play',feedback:{kind:'selection'}}))).ok",
       arguments: [:], in: nil, contentWorld: .page)
     XCTAssertEqual(result as? Bool, true)
     XCTAssertEqual(feedback.events.count, 1)
@@ -74,10 +74,10 @@ final class PhoneEditorTests: XCTestCase {
     XCTAssertEqual(feedback.events.count, 1)
   }
   @MainActor func testSystemThumbnailUsesDocumentArtworkWithoutModifyingTheFile() async throws {
-    let file = try outputFolder().appendingPathComponent("thumbnail-\(UUID().uuidString).slop")
-    _ = try SlopFile.importCopy(from: input("host-probe"), to: file)
+    let file = try outputFolder().appendingPathComponent("thumbnail-\(UUID().uuidString).tiny")
+    _ = try TinyFile.importCopy(from: input("host-probe"), to: file)
     let before = try Data(contentsOf: file)
-    let stored = try XCTUnwrap(SlopArtwork.first(file, [.icon, .preview]))
+    let stored = try XCTUnwrap(TinyArtwork.first(file, [.icon, .preview]))
     XCTAssertEqual(stored.name, .icon)
     let request = QLThumbnailGenerator.Request(
       fileAt: file, size: CGSize(width: 96, height: 96), scale: 2, representationTypes: .thumbnail)
@@ -86,7 +86,7 @@ final class PhoneEditorTests: XCTestCase {
     XCTAssertGreaterThan(thumbnail.cgImage.width, 0)
     XCTAssertEqual(try Data(contentsOf: file), before)
     let image = XCTAttachment(image: thumbnail.uiImage)
-    image.name = "System thumbnail from slop icon artwork"
+    image.name = "System thumbnail from tiny icon artwork"
     image.lifetime = .keepAlways
     add(image)
   }
@@ -130,7 +130,7 @@ final class PhoneEditorTests: XCTestCase {
     return folder
   }
   private func input(_ name: String) throws -> URL {
-    try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: "slop", subdirectory: "Fixtures"))
+    try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: "tiny", subdirectory: "Fixtures"))
   }
   @MainActor private func state(_ owner: DocumentOwner) async throws -> [String: Any] {
     let json = try await owner.state()
@@ -145,8 +145,8 @@ final class PhoneEditorTests: XCTestCase {
 
   @MainActor func testRealPageEditsThemeAttachmentsAndPortableExport() async throws {
     let folder = try outputFolder()
-    let document = folder.appendingPathComponent("working-\(UUID().uuidString).slop")
-    _ = try SlopFile.importCopy(from: input("host-probe"), to: document)
+    let document = folder.appendingPathComponent("working-\(UUID().uuidString).tiny")
+    _ = try TinyFile.importCopy(from: input("host-probe"), to: document)
     let (session, window) = try await show(document)
     defer { window.isHidden = true }
     let contract =
@@ -186,12 +186,12 @@ final class PhoneEditorTests: XCTestCase {
     XCTAssertEqual(attachment.count, 64)
     let bytes = try session.owner.assets.readRange(route: .attachment, key: attachment, offset: 0, length: 16)
     XCTAssertEqual(bytes, Data("phone attachment".utf8))
-    let output = folder.appendingPathComponent("phone-export-\(UUID().uuidString).slop")
+    let output = folder.appendingPathComponent("phone-export-\(UUID().uuidString).tiny")
     _ = try await session.exportFile(to: output)
-    XCTAssertNotNil(try SlopArtwork.first(output, [.icon]), "Files exports must retain the document icon")
-    let imported = folder.appendingPathComponent("phone-reimport-\(UUID().uuidString).slop")
-    _ = try SlopFile.importCopy(from: output, to: imported)
-    XCTAssertNotNil(try SlopArtwork.first(imported, [.icon]), "Files import must preserve saved artwork too")
+    XCTAssertNotNil(try TinyArtwork.first(output, [.icon]), "Files exports must retain the document icon")
+    let imported = folder.appendingPathComponent("phone-reimport-\(UUID().uuidString).tiny")
+    _ = try TinyFile.importCopy(from: output, to: imported)
+    XCTAssertNotNil(try TinyArtwork.first(imported, [.icon]), "Files import must preserve saved artwork too")
     try await session.close()
     let (reopened, reopenedWindow) = try await show(output)
     defer { reopenedWindow.isHidden = true }
@@ -219,17 +219,17 @@ final class PhoneEditorTests: XCTestCase {
     // infrastructure fixture. No fixture or launch argument ships in the preview app.
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("Documents", isDirectory: true)
-    let seed = support.appendingPathComponent("Editor fixture with icon.slop")
+    let seed = support.appendingPathComponent("Editor fixture with icon.tiny")
     if !FileManager.default.fileExists(atPath: seed.path) {
-      _ = try SlopFile.importCopy(from: input("host-probe"), to: seed)
+      _ = try TinyFile.importCopy(from: input("host-probe"), to: seed)
     }
   }
 
   @MainActor func testSavedArtworkRendersOnPhoneAndTracksEditsWithoutEditingState() async throws {
-    _ = SlopBrand.heading(24)
+    _ = TinyBrand.heading(24)
     XCTAssertNotNil(UIFont(name: "Baloo2-Bold", size: 24), "The shared brand font must be bundled on iOS")
-    let document = try outputFolder().appendingPathComponent("artwork-\(UUID().uuidString).slop")
-    _ = try SlopFile.importCopy(from: input("host-probe"), to: document)
+    let document = try outputFolder().appendingPathComponent("artwork-\(UUID().uuidString).tiny")
+    _ = try TinyFile.importCopy(from: input("host-probe"), to: document)
     let (session, window) = try await show(document)
     defer { window.isHidden = true }
     _ = try await session.owner.apply(
@@ -237,20 +237,20 @@ final class PhoneEditorTests: XCTestCase {
     try await session.flush()
     let renderedFirst = try await DocumentArtworkRenderer.refresh(session: session)
     XCTAssertTrue(renderedFirst)
-    let first = try XCTUnwrap(SlopArtwork.first(document, [.icon])?.png)
+    let first = try XCTUnwrap(TinyArtwork.first(document, [.icon])?.png)
     _ = try await session.owner.apply(
       batch: #"{"intents":[{"type":"set","path":["title"],"value":"Updated phone artwork"}]}"#)
     try await setTheme(session, token: "accent", color: "#6633aa")
     let before = try await state(session.owner)
     let renderedSecond = try await DocumentArtworkRenderer.refresh(session: session)
     XCTAssertTrue(renderedSecond)
-    let second = try XCTUnwrap(SlopArtwork.first(document, [.icon])?.png)
+    let second = try XCTUnwrap(TinyArtwork.first(document, [.icon])?.png)
     XCTAssertNotEqual(first, second)
     let after = try await state(session.owner)
     XCTAssertEqual(before["version"] as? String, after["version"] as? String)
     for (name, bytes) in [
       ("Phone-generated icon", second),
-      ("Phone-generated preview", try XCTUnwrap(SlopArtwork.first(document, [.preview])?.png)),
+      ("Phone-generated preview", try XCTUnwrap(TinyArtwork.first(document, [.preview])?.png)),
     ] {
       let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.png")
       attachment.name = name
@@ -262,17 +262,17 @@ final class PhoneEditorTests: XCTestCase {
 
   /// Opt-in shipped-artifact review; ordinary tests depend only on infrastructure fixtures.
   @MainActor func testBundledTemplateArtworkFollowsThemeOnPhone() async throws {
-    guard ProcessInfo.processInfo.environment["HITSLOP_TEMPLATE_ARTWORK_PROOF"] == "1" else {
+    guard ProcessInfo.processInfo.environment["TINYS_TEMPLATE_ARTWORK_PROOF"] == "1" else {
       throw XCTSkip("Enable the signed-device bundled-template artwork review explicitly")
     }
     let root = try XCTUnwrap(Bundle.main.resourceURL?.appendingPathComponent("StarterTemplates"))
     let templates = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-      .filter { $0.pathExtension == "slop" }
+      .filter { $0.pathExtension == "tiny" }
     XCTAssertFalse(templates.isEmpty)
     for template in templates {
-      let destination = try outputFolder().appendingPathComponent("template-artwork-\(UUID().uuidString).slop")
-      _ = try SlopFile.create(from: template, to: destination)
-      let original = try XCTUnwrap(SlopArtwork.first(destination, [.icon])?.png)
+      let destination = try outputFolder().appendingPathComponent("template-artwork-\(UUID().uuidString).tiny")
+      _ = try TinyFile.create(from: template, to: destination)
+      let original = try XCTUnwrap(TinyArtwork.first(destination, [.icon])?.png)
       let (session, window) = try await show(destination)
       let palette = try await session.currentTheme().effective.mapValues { hex in
         "#" + String(hex.dropFirst(3).prefix(4)) + String(hex.dropFirst().prefix(2)) + String(hex.dropFirst(7))
@@ -283,10 +283,10 @@ final class PhoneEditorTests: XCTestCase {
       try await session.flush()
       let refreshed = try await DocumentArtworkRenderer.refresh(session: session)
       XCTAssertTrue(refreshed)
-      let updated = try XCTUnwrap(SlopArtwork.first(destination, [.icon])?.png)
+      let updated = try XCTUnwrap(TinyArtwork.first(destination, [.icon])?.png)
       XCTAssertNotEqual(original, updated)
-      for role in [SlopArtwork.Name.icon, .preview] {
-        let bytes = try XCTUnwrap(SlopArtwork.first(destination, [role])?.png)
+      for role in [TinyArtwork.Name.icon, .preview] {
+        let bytes = try XCTUnwrap(TinyArtwork.first(destination, [role])?.png)
         let attachment = XCTAttachment(data: bytes, uniformTypeIdentifier: "public.png")
         attachment.name = "\(template.deletingPathExtension().lastPathComponent) phone \(role.rawValue)"
         attachment.lifetime = .keepAlways
@@ -301,13 +301,13 @@ final class PhoneEditorTests: XCTestCase {
     let fixtures = try XCTUnwrap(
       Bundle(for: Self.self).resourceURL?.appendingPathComponent("Fixtures", isDirectory: true))
     let sources = try FileManager.default.contentsOfDirectory(at: fixtures, includingPropertiesForKeys: nil).filter {
-      $0.lastPathComponent.hasPrefix("released-") && $0.pathExtension == "slop"
+      $0.lastPathComponent.hasPrefix("released-") && $0.pathExtension == "tiny"
     }
     XCTAssertFalse(sources.isEmpty)
     let folder = try outputFolder()
     for source in sources {
-      let document = folder.appendingPathComponent(UUID().uuidString + ".slop")
-      _ = try SlopFile.importCopy(from: source, to: document)
+      let document = folder.appendingPathComponent(UUID().uuidString + ".tiny")
+      _ = try TinyFile.importCopy(from: source, to: document)
       let (session, window) = try await show(document)
       let theme = try await session.currentTheme()
       let token = try XCTUnwrap(theme.effective.keys.sorted().first)

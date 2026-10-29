@@ -1,5 +1,5 @@
 /** Event policy only; file ownership remains in verification-inputs.ts. */
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { repository } from "../lib/artifacts";
 import { affectedTiers, nativeGateInputs, sharedInputs, sharingGateInputs, touchesCompatibility, type TierName } from "../lib/verification-inputs";
 import { changedPaths } from "../lib/verification";

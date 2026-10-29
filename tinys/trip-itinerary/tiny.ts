@@ -1,0 +1,33 @@
+import { defineTiny } from "@hitslop/tinys";
+
+export default defineTiny({
+  slug: "trip-itinerary",
+  title: "Trip Itinerary",
+  description: "A lilac transit boarding pass for organizing flights, hotels, daily stops, and travel stubs.",
+  author: { name: "tinys", url: "https://tinys.click" },
+  categories: ["productivity", "personal"],
+  window: { kind: "standard", width: 640, height: 580 },
+  theme: {
+    surface: "#fbf9ff",
+    paper: "#ffffff",
+    lilac: "#efe9ff",
+    line: "#c4b5fd",
+    ink: "#1e1b4b",
+    muted: "#5b5778",
+    dim: "#8a86a8",
+    accent: "#5b4fe0",
+    onAccent: "#ffffff",
+    focus: "#4f46e5",
+    danger: "#e11d48",
+    flt: "#4f46e5",
+    fltBg: "#e0e7ff",
+    htl: "#b45309",
+    htlBg: "#fef3c7",
+    dine: "#be123c",
+    dineBg: "#ffe4e6",
+    rail: "#0f766e",
+    railBg: "#ccfbf1",
+    act: "#047857",
+    actBg: "#d1fae5",
+  },
+});

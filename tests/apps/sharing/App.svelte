@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getDocument, attachments } from 'hitslop/svelte';
+  import { getDocument, attachments } from '@hitslop/tinys/svelte';
   import schema from './schema';
   import photo from '../../abi/owner-svelte/media/swatch.png';
   const doc=getDocument(schema);
@@ -22,7 +22,7 @@
 </main>
 <style>
   @font-face{font-family:Fixture;src:url('../../abi/owner-svelte/media/sample.ttf')}
-  :global(body){margin:0;background:var(--slop-surface,#faf8f1);color:#242a2b;font:16px Fixture,system-ui}
+  :global(body){margin:0;background:var(--tiny-surface,#faf8f1);color:#242a2b;font:16px Fixture,system-ui}
   main{padding:24px}h1{font-size:24px}form{display:flex;gap:8px}input{min-width:0;flex:1;padding:10px}
   button{background:#237b63;color:white;border:0;border-radius:6px;padding:10px}li{overflow-wrap:anywhere;margin:8px 0}
 </style>

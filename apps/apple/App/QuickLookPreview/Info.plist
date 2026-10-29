@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>hitSlop Preview</string>
+	<string>tinys Preview</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -28,7 +28,7 @@
 			<true/>
 			<key>QLSupportedContentTypes</key>
 			<array>
-				<string>com.hitslop.slop</string>
+				<string>click.tinys.document</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

@@ -1,11 +1,11 @@
 name: Bug report
-description: Report a reproducible problem in hitSlop
+description: Report a reproducible problem in tinys
 title: "[Bug]: "
 labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Thanks for helping improve hitSlop. Do not include secrets or private documents.
+      value: Thanks for helping improve tinys. Do not include secrets or private documents.
   - type: dropdown
     id: component
     attributes:
@@ -30,7 +30,7 @@ body:
     id: version
     attributes:
       label: Version and environment
-      placeholder: hitSlop version, macOS version, Bun version
+      placeholder: tinys version, macOS version, Bun version
   - type: textarea
     id: logs
     attributes:

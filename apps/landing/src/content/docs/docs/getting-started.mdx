@@ -1,22 +1,22 @@
 ---
-title: Create your first slop
+title: Create your first tiny
 description: Scaffold, style, preview, and install a small local app with Bun.
 ---
 
-A slop is a focused app and its document in one portable `.slop` package. Start with a working Checklist, then make the interface and data your own.
+A tiny is a focused app and its document in one portable `.tiny` package. Start with a working Checklist, then make the interface and data your own.
 
 This guide covers authoring on a computer. [Availability](/docs/availability/) covers the
 iPhone app, Synced Library and live sharing, and
-[make it work on iPhone](/docs/guides/mobile/) shows how to design your own slop for the phone.
+[make it work on iPhone](/docs/guides/mobile/) shows how to design your own tiny for the phone.
 
 ## Install the tools
 
-Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking, building and registering an app, and creating or editing its documents, need only the CLI, which also renders template artwork and exports closed documents as PNG/PDF on both platforms. To open windows and pick your registered templates in the catalog, install the matching hitSlop Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a hitSlop repository checkout.
+Use Bun 1.4.2 or newer, on macOS or Linux. Creating, previewing, checking, building and registering an app, and creating or editing its documents, need only the CLI, which also renders template artwork and exports closed documents as PNG/PDF on both platforms. To open windows and pick your registered templates in the catalog, install the matching tinys Mac app in `/Applications` or `~/Applications`. You do not need Node, Swift, Xcode, or a tinys repository checkout.
 
 The public CLI workflow is:
 
 ```sh
-bunx hitslop init tiny-counter
+bunx @hitslop/tinys init tiny-counter
 cd tiny-counter
 bun install
 bun run dev
@@ -38,27 +38,27 @@ Disposable preview: http://localhost:5173/
 If port 5173 is busy, choose another with `bun run dev --port 5174`.
 Stop the preview before continuing with builds.
 
-Alternatively, install the CLI with `bun install -g hitslop` and run `slop init tiny-counter`. The generated project pins its own `hitslop` version; prefer its `bun run` scripts after creation.
+Alternatively, install the CLI with `bun install -g @hitslop/tinys` and run `tiny init tiny-counter`. The generated project pins its own `tinys` version; prefer its `bun run` scripts after creation.
 
 See [CLI workflows](/docs/guides/cli-workflows/) for command entry points, document creation, editing, moving data between documents, export, and agent skill installation.
 
-`init` asks you to describe your slop and who the author is. It starts from a working Checklist, saves your idea in `BRIEF.md`, and includes `AGENTS.md` and authoring/design skills in `.agents/skills/`.
+`init` asks you to describe your tiny and who the author is. It starts from a working Checklist, saves your idea in `BRIEF.md`, and includes `AGENTS.md` and authoring/design skills in `.agents/skills/`.
 
-The final question asks which agent CLI should build it for you. Choose an installed Codex, Claude Code, Gemini CLI, or OpenCode, or select **Other CLI…** to enter a tool such as Grok and its prompt option. The agent launches in your project with the brief and hitSlop guidance. Choose **Finish without launching** to follow the tutorial below yourself. Add `--yes` for a non-interactive starter; this never launches another agent.
+The final question asks which agent CLI should build it for you. Choose an installed Codex, Claude Code, Gemini CLI, or OpenCode, or select **Other CLI…** to enter a tool such as Grok and its prompt option. The agent launches in your project with the brief and tinys guidance. Choose **Finish without launching** to follow the tutorial below yourself. Add `--yes` for a non-interactive starter; this never launches another agent.
 
 ## Understand the source
 
-Read `slop.ts` first. It declares the app with `defineSlop`: its title, description, author, categories, initial window size, theme colors and optional artwork. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
+Read `tiny.ts` first. It declares the app with `defineTiny`: its title, description, author, categories, initial window size, theme colors and optional artwork. Its explicit `slug` identifies the app. The wizard records your author name, and the agent sets the title, description, and categories to match what it builds; you can edit these and the initial window size anytime.
 
 - `schema.ts` default-exports the document fields and creation-only initial values.
 - `commands.ts` optionally default-exports agent commands; the starter includes `addTask`.
 - `App.svelte` renders and edits the document through typed handles.
 - Required `Preview.svelte` renders a compact saved-state overview for Quick Look and the catalog.
 - Required `Icon.svelte` renders the Finder icon. Optional `Export.svelte` renders complete PNG/PDF output.
-- `slop.ts`'s `theme` declares the colors people can change.
+- `tiny.ts`'s `theme` declares the colors people can change.
 - `styles.css` owns layout and component styling; import it explicitly from `App.svelte`.
 
-The root role filenames are fixed and case-sensitive: `slop.ts`, `schema.ts`, `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state Mac desktop and iPhone Home Screen images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-widget).
+The root role filenames are fixed and case-sensitive: `tiny.ts`, `schema.ts`, `App.svelte`, required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and `commands.ts`. Put helper modules anywhere. `Widget.svelte` supplies saved-state Mac desktop and iPhone Home Screen images; see [widget authoring](/docs/guides/icons-and-exports/#design-a-widget).
 
 The browser preview edits a disposable copy of the document; refreshing starts a fresh one. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to metadata, schema, commands, their dependencies or the role inventory resets the copy. Test native persistence in a writable document copy.
 
@@ -67,19 +67,19 @@ The browser preview edits a disposable copy of the document; refreshing starts a
 Replace the starter's data definition:
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s } from "@hitslop/tinys";
 export default defineDocument(
   { title: s.text(), count: s.counter() },
   { initial: { title: "Tiny Counter" } },
 );
 ```
 
-Then describe the counter in `slop.ts`. Its `theme` declares the colors `styles.css` uses below:
+Then describe the counter in `tiny.ts`. Its `theme` declares the colors `styles.css` uses below:
 
-```ts title="slop.ts"
-import { defineSlop } from "hitslop";
+```ts title="tiny.ts"
+import { defineTiny } from "@hitslop/tinys";
 
-export default defineSlop({
+export default defineTiny({
   slug: "tiny-counter",
   title: "Tiny Counter",
   description: "Count the small things worth counting.",
@@ -97,7 +97,7 @@ See [fullscreen behavior](/docs/guides/manifest-and-windows/#enable-fullscreen).
 Replace the starter's `commands.ts` with a counter action:
 
 ```ts title="commands.ts"
-import { defineCommands } from "hitslop/commands";
+import { defineCommands } from "@hitslop/tinys/commands";
 import schema from "./schema";
 
 export default defineCommands(schema, {
@@ -119,7 +119,7 @@ Replace `App.svelte` with an editor that acquires its document during component 
 
 ```svelte title="App.svelte"
 <script lang="ts">
-  import { EditableText, getDocument } from "hitslop/svelte";
+  import { EditableText, getDocument } from "@hitslop/tinys/svelte";
   import schema from "./schema";
   import "./styles.css";
   const doc = getDocument(schema);
@@ -127,7 +127,7 @@ Replace `App.svelte` with an editor that acquires its document during component 
 <main class="counter">
   <EditableText class="counter-title" field={doc.fields.title} label="Counter title" placeholder="Name it" />
   <p class="counter-value">{doc.current.count}</p>
-  <button data-slop-export="hide" onclick={() => doc.fields.count.increment()}>
+  <button data-tiny-export="hide" onclick={() => doc.fields.count.increment()}>
     Count one
   </button>
 </main>
@@ -138,7 +138,7 @@ It receives the saved snapshot as props and renders independently of the editor 
 
 ```svelte title="Preview.svelte"
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
@@ -152,7 +152,7 @@ This counter's complete export fits the same layout, so replace `Export.svelte` 
 
 ```svelte title="Export.svelte"
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   import Preview from "./Preview.svelte";
   let props: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
@@ -169,7 +169,7 @@ See [icons and exports](/docs/guides/icons-and-exports/) for capture authoring.
 
 ```svelte title="Icon.svelte"
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
@@ -183,8 +183,8 @@ Give it ordinary CSS, using the starter's declared tokens:
   box-sizing: border-box;
 }
 body {
-  background: var(--slop-surface);
-  color: var(--slop-ink);
+  background: var(--tiny-surface);
+  color: var(--tiny-ink);
   font-family: system-ui;
 }
 .counter {
@@ -201,18 +201,18 @@ body {
 }
 .counter button {
   padding: 0.8rem 1.2rem;
-  background: var(--slop-accent);
+  background: var(--tiny-accent);
   color: white;
   border: 0;
   border-radius: 0.5rem;
 }
 .counter button:focus-visible {
-  outline: 3px solid var(--slop-ink);
+  outline: 3px solid var(--tiny-ink);
   outline-offset: 3px;
 }
 .counter-icon {
   font-size: 180px;
-  color: var(--slop-accent);
+  color: var(--tiny-accent);
 }
 ```
 
@@ -228,28 +228,28 @@ Expected responses, respectively (tool progress omitted; paths vary):
 
 ```text
 svelte-check found 0 errors and 0 warnings
-/Users/you/tiny-counter/dist/tiny-counter.slop
-/Users/you/.hitslop/templates/tiny-counter.slop
+/Users/you/tiny-counter/dist/tiny-counter.tiny
+/Users/you/.tinys/templates/tiny-counter.tiny
 ```
 
 Build also renders your [Finder artwork](/docs/guides/build-and-share/#finder-artwork) on macOS and Linux; a failed render fails the build.
 
-Build emits `dist/tiny-counter.slop`. Register builds it the same way and installs an immutable template in `~/.hitslop/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
+Build emits `dist/tiny-counter.tiny`. Register builds it the same way and installs an immutable template in `~/.tinys/templates`. In the Mac app, choose **Templates**, select your app, and **Create** a writable copy.
 
 Edit that copy, close immediately after typing, reopen, duplicate it, and export PNG/PDF. Check keyboard focus and a narrower window. Read [styling](/docs/guides/styling/), [data and schemas](/docs/guides/data-and-schemas/), and [icons and exports](/docs/guides/icons-and-exports/) before expanding the app.
 
 ## Discover and run your action
 
-Save the writable copy as `My Counter.slop`. From the directory containing it:
+Save the writable copy as `My Counter.tiny`. From the directory containing it:
 
 ```sh
-bunx hitslop describe "My Counter.slop"
+bunx @hitslop/tinys describe "My Counter.tiny"
 ```
 
 Response excerpt:
 
 ```text
-Commands (slop call PATH NAME --args JSON)
+Commands (tiny call PATH NAME --args JSON)
   Arguments accept only the listed fields.
 
   countOne — Count one more.
@@ -259,7 +259,7 @@ Commands (slop call PATH NAME --args JSON)
 `describe` also includes the fields, operations, version and current values.
 
 ```sh
-bunx hitslop call "My Counter.slop" countOne
+bunx @hitslop/tinys call "My Counter.tiny" countOne
 ```
 
 ```json
@@ -270,7 +270,7 @@ This action returns no value and inserts no rows, but it increments the saved co
 If you started at zero, read it back:
 
 ```sh
-bunx hitslop get "My Counter.slop"
+bunx @hitslop/tinys get "My Counter.tiny"
 ```
 
 ```json
@@ -280,7 +280,7 @@ bunx hitslop get "My Counter.slop"
 You can also edit the counter directly:
 
 ```sh
-bunx hitslop apply "My Counter.slop" --op '{"type":"increment","path":["count"],"by":1}'
+bunx @hitslop/tinys apply "My Counter.tiny" --op '{"type":"increment","path":["count"],"by":1}'
 ```
 
 ```json

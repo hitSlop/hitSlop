@@ -11,7 +11,7 @@ const payload = Buffer.concat([
 type DownloadResponse = { status?: number; error?: string; body?: string };
 
 async function download(responses: DownloadResponse[], lineEnding = "\r\n") {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-release-download-"));
+  const folder = await mkdtemp(join(tmpdir(), "tinys-release-download-"));
   try {
     const attempts = join(folder, "attempts");
     await writeFile(attempts, "0");
@@ -19,7 +19,7 @@ async function download(responses: DownloadResponse[], lineEnding = "\r\n") {
 import { readFileSync, writeFileSync } from "node:fs";
 const attempt = Number(readFileSync(process.env.RELEASE_DOWNLOAD_ATTEMPTS, "utf8")) + 1;
 writeFileSync(process.env.RELEASE_DOWNLOAD_ATTEMPTS, String(attempt));
-if (process.argv.at(-1) !== "repos/hitSlop/hitSlop/releases/assets/123") process.exit(99);
+if (process.argv.at(-1) !== "repos/hitSlop/tinys/releases/assets/123") process.exit(99);
 const response = ${JSON.stringify(responses)}[attempt - 1] ?? { status: 200 };
 if (process.argv.includes("--include") && response.status !== undefined) {
   process.stdout.write("HTTP/2.0 " + response.status + " Status\\nContent-Type: application/octet-stream" + ${JSON.stringify(lineEnding + lineEnding)});

@@ -1,5 +1,5 @@
 {
-  "extends": "hitslop/tsconfig.json",
+  "extends": "@hitslop/tinys/tsconfig.json",
   "include": ["**/*.ts", "**/*.svelte"],
   "exclude": ["dist", "node_modules"]
 }

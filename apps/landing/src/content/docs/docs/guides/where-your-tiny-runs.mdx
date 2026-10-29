@@ -1,0 +1,48 @@
+---
+title: Where your tiny runs
+description: Design for the Mac and iPhone editors, Chrome copies, and saved-state captures.
+---
+
+The interactive editor and saved-state captures use different renderers. Check both
+when you build a tiny. See [availability](/docs/availability/) for what each host supports.
+
+## Hosts and build baseline
+
+| Surface | Renderer |
+| --- | --- |
+| Mac app, macOS 15.2+ | WebKit |
+| iPhone app, iOS 26+ TestFlight | WebKit |
+| Sharing guests and `tiny open --browser` copies | Chrome; other browsers remain unqualified |
+| Preview, icon, widgets, PNG and PDF | Takumi, rendering saved state rather than the live editor |
+
+JavaScript builds target Safari 17 (`safari17`), including capture programs. CSS is
+processed for the same Safari target, lowering nesting where that target requires it.
+This build baseline does not promise that every browser API or CSS feature works in
+every host. Use [styling](/docs/guides/styling/) for editor layout and shared styles.
+
+`tiny check` runs the project's installed `svelte-check`, then evaluates `tiny.ts` as
+the build does. It checks types, components and the definition; it does not run your
+app through each host or verify capture output. Review the packaged artwork and exports.
+
+## Saved-state rendering
+
+Capture components must render synchronously from their saved props, independently of
+the DOM, browser APIs and editor services. Takumi supports a subset of browser CSS;
+unsupported declarations can be ignored and change the result. Prefer ordinary flexbox,
+grid placement and explicit font properties. Container queries are unsupported. See [icons, widgets, previews, and exports](/docs/guides/icons-and-exports/)
+for the capture contract, supported styling, images and widget refresh behavior.
+
+## Design for the phone
+
+The iPhone app is portrait-only. Its editor runs edge to edge, under the status bar and
+the home indicator, so pad your root by `--tiny-safe-top` and `--tiny-safe-bottom`. The software
+keyboard covers the page without resizing it, and the host scrolls a focused field into
+view, so keep forms in scrollers. Lift bottom-pinned controls with
+`--tiny-keyboard-inset`. Use touch-sized controls and visible
+actions instead of hover-only controls.
+
+[Make it work on iPhone](/docs/guides/mobile/) covers the platform signals, layout
+patterns, safe areas and haptics, so you do not assume a desktop-sized window.
+
+Some device features differ on iPhone; see [capabilities and permissions](/docs/guides/capabilities/)
+and [files and the web](/docs/guides/files-and-web/).

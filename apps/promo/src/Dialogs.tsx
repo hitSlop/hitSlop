@@ -49,7 +49,7 @@ function AlertCard({ a, enter, strike, clear }: { a: Alert; enter: number; strik
   );
 }
 
-/** Parody alerts pile up on the beat, each struck out with what hitSlop does instead; local frame 0 = start of the beat. */
+/** Parody alerts pile up on the beat, each struck out with what tinys does instead; local frame 0 = start of the beat. */
 export function NoBeat({ beats, clearAt }: { beats: number[]; clearAt: number }) {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();

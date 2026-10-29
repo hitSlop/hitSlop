@@ -1,6 +1,6 @@
-import HitSlopCore
 import ImageIO
 import QuickLookThumbnailing
+import TinysCore
 
 #if os(macOS)
   import AppKit
@@ -8,15 +8,15 @@ import QuickLookThumbnailing
   import UIKit
 #endif
 
-/// Files, Finder and the share sheet's icon for a `.slop`: its icon artwork, or its
+/// Files, Finder and the share sheet's icon for a `.tiny`: its icon artwork, or its
 /// preview when it has no icon. A file without artwork, or one mid-recovery, gets the
-/// `.slop` document icon.
+/// `.tiny` document icon.
 final class ThumbnailProvider: QLThumbnailProvider {
   override func provideThumbnail(
     for request: QLFileThumbnailRequest, _ handler: @escaping (QLThumbnailReply?, Error?) -> Void
   ) {
     let artwork: Data?
-    do { artwork = try SlopArtwork.first(request.fileURL, [.icon, .preview])?.png } catch {
+    do { artwork = try TinyArtwork.first(request.fileURL, [.icon, .preview])?.png } catch {
       // Busy or mid-recovery: Quick Look asks again later.
       handler(nil, error)
       return

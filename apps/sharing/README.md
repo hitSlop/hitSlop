@@ -1,9 +1,9 @@
 # Live sharing
 
 The Rust Worker is a Loro-free byte relay with private R2 resources. Contracts and limits
-live in `crates/hitslop-sharing-protocol`; native transport lives in
-`crates/hitslop-sharing-client`. Rust generates TypeScript and `openapi.json` through
-`bun run schema:generate`. The released `.slop` format and binary sync protocol are unchanged.
+live in `crates/tinys-sharing-protocol`; native transport lives in
+`crates/tinys-sharing-client`. Rust generates TypeScript and `openapi.json` through
+`bun run schema:generate`. The released `.tiny` format and binary sync protocol are unchanged.
 
 Each Room owns one phase: **Uploading → Live → Ended**. Its SQLite meta stores the owner
 UID, document UUID, plaintext capability, app digest and seed hash/size; other tables hold
@@ -41,7 +41,7 @@ All HTTP routes use `/v1/`:
 Guest seed/resource/blob reads, blob writes and `/sync` require Live plus the capability.
 WebSockets use the capability subprotocol; hosted app resources use a short-lived,
 host-scoped partitioned HttpOnly cookie. An edit link is
-`https://share.hitslop.com/join#<room>.<capability>`; Join reads seed metadata from the room.
+`https://share.tinys.click/join#<room>.<capability>`; Join reads seed metadata from the room.
 
 Native creation backs up the current owner to a temporary file and retries uploads;
 there is no stable seed journal or original-device requirement. Share preserves UUID,
@@ -51,7 +51,7 @@ CloudKit. Sign-out preserves existing capability sync and cached links; creation
 owner recovery and Stop require Firebase identity. The account panel verifies its session
 through account lookup and displays a short UID hash.
 
-`share.hitslop.com` hosts trusted workers and storage. Authored UI runs on separate
+`share.tinys.click` hosts trusted workers and storage. Authored UI runs on separate
 `<copy UUID>.dotslop.com` origins. One browser host serves local resources through Service
 Worker channels and hosted resources through network requests and cookies. Authored code
 never receives the link. OPFS holds SQLite and IndexedDB holds the copy catalog.
@@ -61,30 +61,30 @@ Mac and iPhone builds enable live collaboration without a launch flag. The v1 wi
 contract is frozen for shipped Mac and TestFlight clients.
 
 The host serves a static, cacheable Apple App Site Association response at
-`https://share.hitslop.com/.well-known/apple-app-site-association` without a redirect.
+`https://share.tinys.click/.well-known/apple-app-site-association` without a redirect.
 It associates `/join` with team `78UAXU8QG8`'s `com.hitslop.app` and reserves the
 `com.hitslop.app.Clip` App Clip ID. iOS and macOS entitlements include
-`applinks:share.hitslop.com`; sharing-enabled apps pass the complete URL (including
+`applinks:share.tinys.click`; sharing-enabled apps pass the complete URL (including
 its fragment) to the existing join flow. Mac Release entitlements also include the sharing
 Keychain group; the Developer ID profile must authorize these capabilities. Mac builds
 use Apple's web sign-in because Developer ID does not support native Sign in with Apple.
 
 `GET /auth/apple` on the trusted host serves a static page that forwards `location.hash`
-unchanged to `hitslop://auth/apple`. It requests no assets or relay resources, has its
+unchanged to `tinys://auth/apple`. It requests no assets or relay resources, has its
 own script-hash CSP, `Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
 The app requests `code id_token` with `response_mode=fragment` and no scopes, so the
 credentials never reach this server. The active Mac authentication session validates
 state and sends the ID token and raw nonce to Firebase. iPhone keeps native sign-in.
 
 Operator setup: Apple Services ID `com.hitslop.app.signin` must use primary App ID
-`com.hitslop` (the same group as `com.hitslop.app`), domain `share.hitslop.com` and return
-URL `https://share.hitslop.com/auth/apple`. Firebase Authentication's Apple provider must
+`com.hitslop` (the same group as `com.hitslop.app`), domain `share.tinys.click` and return
+URL `https://share.tinys.click/auth/apple`. Firebase Authentication's Apple provider must
 have this Services ID plus the Apple team ID, key ID and private key. This grouping
 preserves the Apple subject and Firebase account across Mac and iPhone.
 
 ## Protocol compatibility
 
-The fixtures in `crates/hitslop-sharing-protocol/tests/fixtures/v1` are immutable once
+The fixtures in `crates/tinys-sharing-protocol/tests/fixtures/v1` are immutable once
 committed. Add examples; never replace or regenerate existing ones. The protocol grows
 only through optional fields and new routes. Optional fields must remain readable by
 shipped clients: older strict resource readers still need the original inventory shape,
@@ -200,7 +200,7 @@ only Sign in with Apple.
 
 Use the normal workspace Rust, wasm-bindgen, LLVM and Binaryen setup. The sharing build
 installs `worker-build 0.8.7` into `generated/core-tools` when missing, or set
-`HITSLOP_WORKER_BUILD` to that version:
+`TINYS_WORKER_BUILD` to that version:
 
 ```sh
 bun scripts/build/sharing.ts
@@ -225,22 +225,22 @@ per-IP socket admission, idle expiry, identifier removal and tombstone purge.
 
 The private R2 bucket is `hitslop-sharing`. The `dotslop.com` zone needs a
 proxied wildcard DNS record (`AAAA * → 100::`); the host config declares its wildcard
-route and `share.hitslop.com` custom domain. Deployment is a separate operator action.
+route and `share.tinys.click` custom domain. Deployment is a separate operator action.
 
 The optional deployed campaign uses disposable infrastructure fixtures:
 
 ```sh
-cargo build --locked -p hitslop-sharing-client --example sharing
-HITSLOP_SHARING_INVITATION_FILE=/private/path/to/link bun scripts/sharing/check-live.ts
+cargo build --locked -p tinys-sharing-client --example sharing
+TINYS_SHARING_INVITATION_FILE=/private/path/to/link bun scripts/sharing/check-live.ts
 ```
 
 Create the fixture with the signed owner app and save its edit link in a private file.
 The driver joins as a signed-out native guest and opens signed-out browser profiles.
-When prompted, Stop in the owner app. Alternatively supply `HITSLOP_SHARING_TOKEN_FILE`
+When prompted, Stop in the owner app. Alternatively supply `TINYS_SHARING_TOKEN_FILE`
 with a refreshed Firebase token in an owner-readable file. Never put secrets in arguments
 or reports. The campaign checks edits, offline/reconnect, private resources, attachment
 barriers, download/native reopen and revocation. Ignored reports stay under
-`.hitslop/sharing/check-*`.
+`.tinys/sharing/check-*`.
 
 ## Limits and follow-ups
 
@@ -250,10 +250,10 @@ attachment limits use core acceptance. Automatic CloudKit checkpoints for relay 
 run at most once a minute per process; manual/background saves bypass the interval.
 Reliable offline web reopening remains deferred.
 
-`HITSLOP_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,
+`TINYS_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,
 capabilities, room IDs or payloads. CloudKit run, phase, token and retry diagnostics use
 Unified Logging subsystem `com.hitslop.library`. An isolated Debug
-`HITSLOP_LIBRARY_DIAGNOSTIC_NAMESPACE` supports diagnosis without deleting cursors.
+`TINYS_LIBRARY_DIAGNOSTIC_NAMESPACE` supports diagnosis without deleting cursors.
 
 See the [architecture](../../docs/architecture.md#relay), [roadmap](../../docs/roadmap.md#later),
 and historical [account](../../docs/evidence/live-sharing-accounts-2026-10-19.md),

@@ -1,0 +1,326 @@
+//! The rows a template or document holds beside its app, and every write to them: the saved
+//! state (its history: a snapshot, then the updates saved after it), attachments, artwork,
+//! and what `pack` writes. The store saves and loads through these; the checks every open
+//! runs, `inspect` and the asset reader read the tables directly.
+
+use super::Artwork;
+#[cfg(not(target_arch = "wasm32"))]
+use super::assets::Encoding;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::app::AppDefinition;
+use crate::error::{Result, sqlite};
+use rusqlite::{Connection, OptionalExtension, params};
+
+/// The history's first row, a snapshot, and the updates saved after it, in order: streamed
+/// straight from SQLite's buffers by the store's load.
+pub(crate) const SNAPSHOT: &str = "SELECT bytes FROM history ORDER BY seq LIMIT 1";
+pub(crate) const UPDATES: &str = "SELECT bytes FROM history ORDER BY seq LIMIT -1 OFFSET 1";
+
+/// The saved state's sizes: update rows (after the snapshot), update bytes and snapshot
+/// bytes.
+pub(crate) fn state_sizes(conn: &Connection) -> Result<(i64, i64, i64)> {
+    conn.prepare_cached(
+        "SELECT max(count(*)-1,0), coalesce(sum(length(bytes)),0), (SELECT coalesce(length(bytes),0) FROM history ORDER BY seq LIMIT 1) FROM history",
+    )
+    .and_then(|mut s| {
+        s.query_row([], |r| {
+            let (updates, total, snapshot): (i64, i64, Option<i64>) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            let snapshot = snapshot.unwrap_or(0);
+            Ok((updates, total - snapshot, snapshot))
+        })
+    })
+    .map_err(sqlite("read state sizes"))
+}
+/// Makes `bytes` the whole history: a snapshot that covers everything saved before it.
+pub(crate) fn replace_history(conn: &Connection, bytes: &[u8]) -> Result<()> {
+    conn.execute_batch("DELETE FROM history").map_err(sqlite("write snapshot"))?;
+    conn.prepare_cached("INSERT INTO history(bytes) VALUES(?)")
+        .and_then(|mut s| s.execute([bytes]))
+        .map(|_| ())
+        .map_err(sqlite("write snapshot"))
+}
+/// Appends one saved update to the history.
+pub(crate) fn append_history(conn: &Connection, bytes: &[u8]) -> Result<()> {
+    conn.prepare_cached("INSERT INTO history(bytes) VALUES(?)")
+        .and_then(|mut s| s.execute([bytes]))
+        .map(|_| ())
+        .map_err(sqlite("append update"))
+}
+/// The document row that makes a copy of a template a document.
+pub(crate) fn add_document(conn: &Connection) -> Result<()> {
+    let mut bytes = [0u8; 16];
+    crate::random(&mut bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex = crate::hex(&bytes);
+    let uuid = format!("{}-{}-{}-{}-{}", &hex[..8], &hex[8..12], &hex[12..16], &hex[16..20], &hex[20..]);
+    conn.execute("INSERT INTO document(id,uuid) VALUES(1,?)", [uuid]).map(|_| ()).map_err(sqlite("create the document"))
+}
+/// An independent copy is a new document, shared with no one. Only its unpublished staged
+/// file replaces the singleton; the original file's identity is immutable and never updated.
+pub(crate) fn renew_document(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM share", []).map_err(sqlite("create the copy's identity"))?;
+    conn.execute("DELETE FROM document", []).map_err(sqlite("create the copy's identity"))?;
+    add_document(conn)
+}
+/// The logical document identity, absent on templates. Call after the layout has bounded
+/// the row and its UUID; this identity is unrelated to the inode-based writer lease.
+pub(crate) fn document_uuid(conn: &Connection) -> Result<Option<String>> {
+    conn.query_row("SELECT uuid FROM document WHERE id=1", [], |row| row.get(0))
+        .optional()
+        .map_err(sqlite("read the document identity"))
+}
+
+/// The room a shared document syncs through and its endpoint, absent when it is not shared.
+pub(crate) fn read_share(conn: &Connection) -> Result<Option<(String, String)>> {
+    conn.query_row("SELECT room, endpoint FROM share WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()
+        .map_err(sqlite("read the share"))
+}
+/// Shares the document through `room`, in place of any room before.
+pub(crate) fn put_share(conn: &Connection, room: &str, endpoint: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO share(id, room, endpoint) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET room=excluded.room, endpoint=excluded.endpoint",
+        params![room, endpoint],
+    )
+    .map(|_| ())
+    .map_err(sqlite("write the share"))
+}
+
+/// The stored attachments' count, largest size and total size.
+pub(crate) fn attachment_sizes(conn: &Connection) -> Result<(i64, i64, i64)> {
+    conn.prepare_cached(
+        "SELECT count(*), coalesce(max(length(bytes)),0), coalesce(sum(length(bytes)),0) FROM attachments",
+    )
+    .and_then(|mut s| s.query_row([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))
+    .map_err(sqlite("read attachment sizes"))
+}
+/// Every stored attachment's identity and size, by identity.
+pub(crate) fn attachment_list(conn: &Connection) -> Result<Vec<(String, u64, String)>> {
+    let mut statement = conn
+        .prepare("SELECT id, length(bytes), media_type FROM attachments ORDER BY id")
+        .map_err(sqlite("list attachments"))?;
+    let rows = statement
+        .query_map([], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64, r.get(2)?)))
+        .map_err(sqlite("list attachments"))?;
+    rows.collect::<rusqlite::Result<_>>().map_err(sqlite("list attachments"))
+}
+/// One attachment's stored bytes, when it is stored.
+pub(crate) fn read_attachment(conn: &Connection, id: &str) -> Result<Option<Vec<u8>>> {
+    conn.prepare_cached("SELECT bytes FROM attachments WHERE id=?")
+        .and_then(|mut s| s.query_row([id], |r| r.get(0)).optional())
+        .map_err(sqlite("read attachment"))
+}
+pub(crate) fn put_attachment(conn: &Connection, id: &str, bytes: &[u8]) -> Result<()> {
+    conn.execute(
+        "INSERT INTO attachments(id, media_type, bytes) VALUES(?,?,?)",
+        params![id, crate::media::attachment_type(bytes), bytes],
+    )
+    .map(|_| ())
+    .map_err(sqlite("store attachment"))
+}
+/// Deletes one attachment; returns how many rows went (0 or 1).
+pub(crate) fn delete_attachment(conn: &Connection, id: &str) -> Result<usize> {
+    conn.execute("DELETE FROM attachments WHERE id=?", [id]).map_err(sqlite("delete attachment"))
+}
+
+/// One artwork image hosts can show, when the file holds one. Artwork is replaceable and
+/// cosmetic, and the next capture rewrites it: an oversized image or one that is not a PNG
+/// reads as absent, never as a damaged document. Writes check it fully.
+pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Vec<u8>>> {
+    let length: Option<i64> = conn
+        .prepare_cached("SELECT length(png) FROM artwork WHERE name=?")
+        .and_then(|mut s| s.query_row([name], |r| r.get(0)).optional())
+        .map_err(sqlite("read artwork"))?;
+    if length.is_none_or(|n| n as usize > crate::ASSET_FILE_BYTES) {
+        return Ok(None);
+    }
+    let png: Option<Vec<u8>> = conn
+        .prepare_cached("SELECT png FROM artwork WHERE name=?")
+        .and_then(|mut s| s.query_row([name], |r| r.get(0)).optional())
+        .map_err(sqlite("read artwork"))?;
+    Ok(png.filter(|png| crate::images::header(png).is_ok()))
+}
+/// Writes one artwork image, in place of any by that name.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Result<()> {
+    conn.execute(
+        "INSERT INTO artwork(name, png) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET png=excluded.png",
+        params![name, png],
+    )
+    .map(|_| ())
+    .map_err(sqlite("write artwork"))
+}
+/// Deletes every artwork image.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn clear_artwork(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DELETE FROM artwork").map_err(sqlite("clear artwork"))
+}
+
+/// The `app` row `pack` writes once.
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u64, runtime_abi: u64) -> Result<()> {
+    use crate::app::package_format_1::category_column as column;
+    let m = app.metadata();
+    conn.execute(
+        "INSERT INTO app(id,package_format,runtime_abi,slug,title,description,author_name,author_url,category_primary,category_secondary,definition_json) VALUES(1,?,?,?,?,?,?,?,?,?,?)",
+        params![package_format as i64, runtime_abi as i64, m.slug, m.title, m.description, m.author.name, m.author.url,
+            column(m.categories[0]), m.categories.get(1).map(|c| column(*c)), app.definition_json()],
+    ).map(|_| ()).map_err(sqlite("write app"))
+}
+/// One asset, before the app row seals the inventory.
+#[cfg(not(target_arch = "wasm32"))]
+pub(super) fn put_asset(
+    conn: &Connection,
+    key: &str,
+    media_type: &str,
+    encoding: Encoding,
+    size: usize,
+    stored: &[u8],
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO assets(key,media_type,encoding,size,bytes) VALUES(?,?,?,?,?)",
+        params![key, media_type, encoding, size as i64, stored],
+    )
+    .map(|_| ())
+    .map_err(sqlite("write asset"))
+}
+
+/// SHA-256 encoding: ASCII `tinys-app-1`, then `app` and `assets` in that order.
+/// Each table starts with 0xfe, its ASCII name (u64 big-endian byte length + bytes),
+/// the u64 big-endian field count, and each ASCII field name in the listed order
+/// (length + bytes). Rows ordered by id/key start with 0xff. Each field is a type
+/// tag (null=0, integer=1, real=2, text=3, blob=4), u64 big-endian byte length, then
+/// bytes: empty for null, i64 big-endian for integers, IEEE-754 bits big-endian for
+/// reals, or the stored text/blob bytes. Each table ends with 0xfd. Fetch SQL and
+/// physical column order are not encoded; no document state or metadata is included.
+pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    digest.update(b"tinys-app-1");
+    let app_fields = [
+        "id",
+        "package_format",
+        "runtime_abi",
+        "slug",
+        "title",
+        "description",
+        "author_name",
+        "author_url",
+        "category_primary",
+        "category_secondary",
+        "definition_json",
+    ];
+    let asset_fields = ["key", "media_type", "encoding", "size", "bytes"];
+    for (table, fields, order) in [("app", app_fields.as_slice(), "id"), ("assets", asset_fields.as_slice(), "key")] {
+        digest.update([0xfe]);
+        digest.update((table.len() as u64).to_be_bytes());
+        digest.update(table.as_bytes());
+        digest.update((fields.len() as u64).to_be_bytes());
+        for field in fields {
+            digest.update((field.len() as u64).to_be_bytes());
+            digest.update(field.as_bytes());
+        }
+        let query = format!("SELECT {} FROM {table} ORDER BY {order}", fields.join(","));
+        let mut statement = conn.prepare(&query).map_err(sqlite("read app"))?;
+        let mut rows = statement.query([]).map_err(sqlite("read app"))?;
+        while let Some(row) = rows.next().map_err(sqlite("read app"))? {
+            digest.update([0xff]);
+            for column in 0..fields.len() {
+                use rusqlite::types::ValueRef;
+                let (tag, bytes) = match row.get_ref(column).map_err(sqlite("read app"))? {
+                    ValueRef::Null => (0, vec![]),
+                    ValueRef::Integer(n) => (1, n.to_be_bytes().to_vec()),
+                    ValueRef::Real(n) => (2, n.to_bits().to_be_bytes().to_vec()),
+                    ValueRef::Text(bytes) => (3, bytes.to_vec()),
+                    ValueRef::Blob(bytes) => (4, bytes.to_vec()),
+                };
+                digest.update([tag]);
+                digest.update((bytes.len() as u64).to_be_bytes());
+                digest.update(&bytes);
+            }
+        }
+        digest.update([0xfd]);
+    }
+    Ok(digest.finalize().into())
+}
+
+#[cfg(test)]
+mod digest_tests {
+    use super::*;
+
+    fn fixture() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(super::super::SCHEMA).unwrap();
+        conn.execute_batch(
+            "INSERT INTO assets VALUES('ui.js','text/javascript','identity',1,x'ff');
+             INSERT INTO assets VALUES('ui.css','text/css','identity',0,x'');
+             INSERT INTO app VALUES(1,1,1,'fixture','Fixture','A fixture','Author',NULL,'utilities',NULL,'{}');",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn app_digest_encoding_has_a_stable_vector() {
+        assert_eq!(
+            crate::hex(&app_digest(&fixture()).unwrap()),
+            "4d01e8cc41fafbd401b7d791b83816f882f8d106d78a6c4efd8b1cbbfb388b21"
+        );
+    }
+
+    #[test]
+    fn app_digest_is_independent_of_fetch_column_and_insertion_order() {
+        let conn = fixture();
+        let original = app_digest(&conn).unwrap();
+        conn.execute_batch(
+            "DROP TRIGGER assets_insert;
+             ALTER TABLE app RENAME TO old_app;
+             CREATE TABLE app AS SELECT definition_json,category_secondary,category_primary,author_url,author_name,description,title,slug,runtime_abi,package_format,id FROM old_app;
+             DROP TABLE old_app;
+             ALTER TABLE assets RENAME TO old_assets;
+             CREATE TABLE assets AS SELECT bytes,size,encoding,media_type,key FROM old_assets ORDER BY key DESC;
+             DROP TABLE old_assets;",
+        )
+        .unwrap();
+        assert_eq!(app_digest(&conn).unwrap(), original);
+        conn.execute_batch("ALTER TABLE app ADD COLUMN optional TEXT; ALTER TABLE assets ADD COLUMN optional TEXT;")
+            .unwrap();
+        assert_eq!(app_digest(&conn).unwrap(), original, "unencoded columns cannot change app identity");
+    }
+
+    #[test]
+    fn app_digest_ignores_inert_schema_extensions() {
+        let conn = fixture();
+        let original = app_digest(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE x_inert(key TEXT PRIMARY KEY, value BLOB NOT NULL) STRICT;
+             INSERT INTO x_inert VALUES('future.optional',x'ff00');",
+        )
+        .unwrap();
+        assert_eq!(app_digest(&conn).unwrap(), original);
+    }
+}
+
+/// Streams pages from the caller's read transaction without retaining the file in memory.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn export_pages(conn: &Connection, mut write: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
+    use crate::error::failed;
+    let count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(sqlite("export"))?;
+    let mut statement = conn.prepare("SELECT pgno,data FROM sqlite_dbpage ORDER BY pgno").map_err(sqlite("export"))?;
+    let mut rows = statement.query([]).map_err(sqlite("export"))?;
+    let mut expected = 1;
+    while let Some(row) = rows.next().map_err(sqlite("export"))? {
+        let page: i64 = row.get(0).map_err(sqlite("export"))?;
+        if page != expected {
+            return Err(failed("Missing export page"));
+        }
+        let data = row.get_ref(1).map_err(sqlite("export"))?;
+        write(data.as_blob().map_err(failed)?)?;
+        expected += 1;
+    }
+    if expected != count + 1 {
+        return Err(failed("Incomplete export"));
+    }
+    Ok(())
+}

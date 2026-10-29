@@ -11,35 +11,35 @@ Three things we read point the same way:
 - **Ink & Switch, [*Malleable Software*](https://www.inkandswitch.com/essay/malleable-software/)
   (2025).** AI code generation alone doesn't give people agency over their software. It
   needs an environment where generated tools get persistence, sharing and composition for
-  free ("a kitchen, not a food court"), and a *gentle slope* from using a tool to changing
+  free ("a kitchen, not a food court"), and a *gentle tinye* from using a tool to changing
   it, without cliffs.
 - **The Multiplayer AI manifesto (2026).** Agents belong next to the work, not in a
   separate chat. Nobody should copy and paste between them, and anyone should be able to
   see what an agent did.
-- **The Hacker News discussion of the essay.** Most people will never climb a steep slope.
+- **The Hacker News discussion of the essay.** Most people will never climb a steep tinye.
   They trust tools that keep their data somewhere they can take it.
 
-hitSlop already has the environment. A slop gets merging storage, saving and recovery,
+tinys already has the environment. A tiny gets merging storage, saving and recovery,
 export, Finder icons and theming without its author doing anything. The owner socket lets
-a person and their agent edit the same live document. What's missing is the slope:
+a person and their agent edit the same live document. What's missing is the tinye:
 
 | Rung | Today |
 | --- | --- |
-| Use a slop | The window |
+| Use a tiny | The window |
 | Tweak its look | The theme panel in the window, and shared theme files |
 | Ask for a change to its data | An agent you run in a terminal |
-| Change the app | Only with its source project; a `.slop` you receive has none |
-| Make a new one | `slop init` and an agent |
+| Change the app | Only with its source project; a `.tiny` you receive has none |
+| Make a new one | `tiny init` and an agent |
 
-## Build the slope
+## Build the tinye
 
 ### Ask from the window
 
-- **What:** an "Ask…" field in the toolbar. hitSlop runs the person's agent CLI headless,
-  with the document's path and the `hitslop-document` skill the CLI installs. The agent
+- **What:** an "Ask…" field in the toolbar. tinys runs the person's agent CLI headless,
+  with the document's path and the `tinys-document` skill the CLI installs. The agent
   edits through the owner socket, so the person watches its edits land.
 - **Why:** puts the agent next to the work for people who never open a terminal.
-- **Builds on:** `installedAgents()` in `packages/hitslop/src/cli/agents.ts` (Codex, Claude Code,
+- **Builds on:** `installedAgents()` in `packages/tinys/src/cli/agents.ts` (Codex, Claude Code,
   Gemini CLI, OpenCode) and the one edit path. The agent is just another CLI client.
 - **Open questions:** permissions when an app launches an agent, choosing the agent, and
   showing its cost.
@@ -57,7 +57,7 @@ a person and their agent edit the same live document. What's missing is the slop
   showing them in the window, and undoing an agent's edits made while it was closed,
   which needs the kept history to reach them.
 
-### `slop watch` and `slop mcp`
+### `tiny watch` and `tiny mcp`
 
 - **What:**
   - `watch` streams the owner's publications as JSON lines, so an agent can react to edits
@@ -65,12 +65,12 @@ a person and their agent edit the same live document. What's missing is the slop
   - `mcp` exposes open and recent documents as MCP resources, and get, apply, batch,
     export and theme as tools whose input schemas come from each document's descriptor.
 - **Why:** today an agent learns about a person's edits only by polling `get`. MCP lets
-  clients without a shell work on slops.
-- **Builds on:** the owner socket and its serde types in `crates/hitslop-core/src/wire`. The
+  clients without a shell work on tinys.
+- **Builds on:** the owner socket and its serde types in `crates/tinys-core/src/wire`. The
   socket takes one request per connection today, so streaming needs a new CLI protocol
   with both sides updated, rather than an additive method in the current protocol.
 
-### `slop doctor`
+### `tiny doctor`
 
 - **What:** a read-only diagnostic command that checks installation and PATH conflicts,
   CLI/SDK alignment, engine availability and project skill links, then gives specific
@@ -89,10 +89,10 @@ a person and their agent edit the same live document. What's missing is the slop
 
 - **What:** a template declares gradients beside its colors, and the theme panel's picker
   gains a gradient mode: a few color stops and an angle.
-- **Why:** a background carries much of a slop's look, and one color can't give it the
+- **Why:** a background carries much of a tiny's look, and one color can't give it the
   soft, layered backgrounds people know from Arc.
 - **Builds on:** the palette and the panel's picker. A gradient can't be the value of a
-  color token: templates use `--slop-*` colors in `color`, `border-color` and
+  color token: templates use `--tiny-*` colors in `color`, `border-color` and
   `color-mix()`, where a gradient isn't valid CSS. It needs its own declared kind, usable
   only in `background-image`. That kind is checked in `theme.rs`, typed in `defineTheme`,
   carried in theme files and covered by a fixture.
@@ -107,9 +107,9 @@ a person and their agent edit the same live document. What's missing is the slop
   never serves. "Remix…" writes it out as a project, with a `BRIEF.md` saying where it
   came from, and launches the agent.
 - **Why:** the essay's in-place toolchain: the tool you hold carries what you need to
-  change it. Without it, the slope ends at a cliff.
-- **Builds on:** `slop init`'s agent handoff and the build staging in
-  `packages/hitslop/src/cli/build.ts`.
+  change it. Without it, the tinye ends at a cliff.
+- **Builds on:** `tiny init`'s agent handoff and the build staging in
+  `packages/tinys/src/cli/build.ts`.
 - **Contract change:** templates contain no source today. Shipping source as a new asset class
   raises `packageFormat`: the asset-key set is closed and has no reserved private prefix.
   It also raises questions about licenses and private notes in briefs.
@@ -146,19 +146,19 @@ a person and their agent edit the same live document. What's missing is the slop
   a digest of the app (its `app` row and assets) that Rust computes; lineage comes with
   publishing and signing.
 - **Contract change:** schema evolution is deferred, and documents keep the app version
-  they were created with. An upgrade is always an explicit operation: installing hitSlop
+  they were created with. An upgrade is always an explicit operation: installing tinys
   never replaces the app inside an existing document. This is the one deferral worth
   pulling forward.
 
 ### Permissions bound to the app's code
 
 - **Today:** apps declare camera, microphone and on-device speech use; the host gates
-  requests and macOS consent belongs to hitSlop. There is no per-slop decision or
+  requests and macOS consent belongs to tinys. There is no per-tiny decision or
   code-bound permission store. See [capabilities](reference/runtime.md#security-boundaries).
 - **What:** grant a permission (microphone, camera, MIDI) to one app's code: the hash of
   its `app` row and assets, which in a single file are all the code there is. A remix
   or an upgrade asks again.
-- **Why:** powerful slops need device access without trusting every later version.
+- **Why:** powerful tinys need device access without trusting every later version.
 - **Builds on:** the single file, and the page policy that already refuses code from
   outside it.
 - **Contract change:** a permission store outside the document, keyed by code hash.
@@ -167,8 +167,8 @@ a person and their agent edit the same live document. What's missing is the slop
 
 - **What:** authors ship notes for agents beside the generic skill ("to plan a week, add
   rows to `days`…"). The manifest can declare prompt buttons that run through Ask.
-- **Why:** teach the agent once, and every copy of the slop benefits.
-- **Builds on:** the file's `app` row, which `slop inspect` and `slop schema` already read
+- **Why:** teach the agent once, and every copy of the tiny benefits.
+- **Builds on:** the file's `app` row, which `tiny inspect` and `tiny schema` already read
   for agents.
 - **Contract change:** optional notes and prompt declarations can be added as members of
   `definition_json` without a marker, because readers ignore unknown members. Anything
@@ -178,7 +178,7 @@ a person and their agent edit the same live document. What's missing is the slop
 
 ### Open with another view
 
-- **What:** slops with the same descriptor open each other's documents: a checklist as a
+- **What:** tinys with the same descriptor open each other's documents: a checklist as a
   kanban board, or as a printable sheet. Translating between different schemas (lenses, as
   in Ink & Switch's Cambria) can come later, if ever.
 - **Why:** data should outlive any one interface.
@@ -191,7 +191,7 @@ a person and their agent edit the same live document. What's missing is the slop
 ### Shortcuts and a share sheet
 
 - **What:** App Intents for get, apply and export, plus intents derived from the
-  descriptor: a list of rows becomes "Add to Grocery List". A "Send to slop" share
+  descriptor: a list of rows becomes "Add to Grocery List". A "Send to tiny" share
   extension.
 - **Why:** the no-code rung, on the Mac's own automation, with Siri and Spotlight for free.
 - **Builds on:** closed editing, which runs the owner without WebKit or authored code.
@@ -203,15 +203,15 @@ capture and on-device transcription of saved recordings already work on a suppor
 the [capability guide](../apps/landing/src/content/docs/docs/guides/capabilities.mdx)
 describes today's APIs and platform limits.
 
-- **Calendars and reminders:** let a planner work with your calendar, or a grocery slop
+- **Calendars and reminders:** let a planner work with your calendar, or a grocery tiny
   add a reminder, with explicit permission for the access it needs.
 - **Notifications:** let timers, habits and plans notify you at the right time, with
-  controls for which slops may send them. A completed focus timer could notify you and
+  controls for which tinys may send them. A completed focus timer could notify you and
   reopen its document when clicked. Decide scheduling, cancellation, sleep/wake and
   closed-document behavior explicitly; a notification API does not imply a running
   background page.
 - **Shortcuts, Siri and sharing:** the [App Intents and share extension proposal](#shortcuts-and-a-share-sheet)
-  makes actions such as "Add to Grocery List" and "Send to slop" available outside its window.
+  makes actions such as "Add to Grocery List" and "Send to tiny" available outside its window.
 - **MIDI:** connect music tools to instruments and controllers after designing device
   declarations and permissions.
 - **Workers and audio worklets:** package local entry points for heavier background
@@ -219,7 +219,7 @@ describes today's APIs and platform limits.
   code; this needs explicit build and host support.
 - **Broader transcription:** support transcription in browser copies and investigate a
   newer native speech backend, while retaining a useful path when unavailable.
-- **Permissions for each slop:** build on [code-bound grants](#permissions-bound-to-the-apps-code),
+- **Permissions for each tiny:** build on [code-bound grants](#permissions-bound-to-the-apps-code),
   so a person chooses which app can use an integration and reviews that choice after
   a remix or upgrade.
 
@@ -244,24 +244,24 @@ background execution remain design work; this proposal sets no new API names or 
 
 ### Query a document with SQL
 
-- **What:** `slop query DOC 'SELECT …'`, read-only SQL over a snapshot. The engine
+- **What:** `tiny query DOC 'SELECT …'`, read-only SQL over a snapshot. The engine
   registers virtual tables generated from the descriptor (a list of `$id` rows becomes a
   table, as sqlelf does over ELF), computes them from Loro and stores nothing. Today the
-  same works without new code: `slop get DOC > doc.json`, then
+  same works without new code: `tiny get DOC > doc.json`, then
   `sqlite3 :memory: "SELECT … FROM json_each(CAST(readfile('doc.json') AS TEXT), '$.items')"`.
 - **Why:** Farid Zakaria's [SELF](https://fzakaria.com/2026/08/23/your-executable-is-a-sqlite-database)
-  posts, which inspired the `.slop` file, show how much tooling collapses into SQL once the
-  program and its state are one database. A `.slop` already answers `SELECT` for its app,
+  posts, which inspired the `.tiny` file, show how much tooling collapses into SQL once the
+  program and its state are one database. A `.tiny` already answers `SELECT` for its app,
   assets and artwork, but not for its saved values, which are Loro bytes.
 - **Builds on:** `get`'s snapshot. A stored SQL copy of the data would be a mirror, so
   the tables exist only for the query.
 - **Open questions:** table naming freezes into a public boundary at launch, so wait for
   a request a JSON read can't answer.
-- **Nearby:** a semantic `slop diff` of two files' apps and data, which pairs with
+- **Nearby:** a semantic `tiny diff` of two files' apps and data, which pairs with
   [additive app upgrades](#additive-app-upgrades) and starts from `inspect`'s
   `appDigest`; a Spotlight importer that indexes saved text through the core, as Quick
   Look reads artwork; and registering the `HSLP` application ID in SQLite's `magic.txt`
-  so `file` names a `.slop`.
+  so `file` names a `.tiny`.
 
 ### Export data
 
@@ -284,7 +284,7 @@ background execution remain design work; this proposal sets no new API names or 
 - **Household sharing.** A family's grocery list as home-cooked software, through the
   room described next.
 
-### Menu-bar slops
+### Menu-bar tinys
 
 - **What:** a menu-bar presentation for a timer's remaining time, a player's controls or
   a quick-capture action, with a way to open the document's editor.
@@ -295,7 +295,7 @@ background execution remain design work; this proposal sets no new API names or 
   owner-backed menu-bar item that creates a WebView only when the editor is opened.
 - **Open questions:** which documents stay active, how their status and actions are
   declared, how ownership and save failures appear without an editor, and what closing
-  the editor or quitting hitSlop means. Measure idle cost before choosing a lifecycle.
+  the editor or quitting tinys means. Measure idle cost before choosing a lifecycle.
 - **Constraints:** this is a proposed presentation, not an implemented manifest value.
   It does not introduce an unrestricted JavaScript backend or imply continuous execution
   of authored code. Background scheduling needs its own design; edits keep the one owner
@@ -303,7 +303,7 @@ background execution remain design work; this proposal sets no new API names or 
 
 ### App Clip exploration
 
-An App Clip for opening a shared slop remains a deferred idea. There is no App Clip
+An App Clip for opening a shared tiny remains a deferred idea. There is no App Clip
 host today; its scope, lifecycle and sharing admission need a separate design.
 
 ### Other platforms
@@ -316,7 +316,7 @@ scheduled; the [roadmap](roadmap.md#next) lists the prerequisites.
 
 **What every host owns, and nothing else.**
 - The window: shape, hit testing, pin level, fullscreen, toolbar.
-- `slop:` resources, served from the document through the core's resource reader with the
+- `tiny:` resources, served from the document through the core's resource reader with the
   production CSP and headers.
 - One bridge channel. A message is admitted by the native sender (main frame and security
   origin), never by a URL the page can reproduce. Swift does this in
@@ -355,7 +355,7 @@ platform-driver seam from the roadmap and a port of those drivers. iPhone alread
   p95 with a small race at the edge. Swift's `hitTest` override, ported to the spike, was
   reported by hand not to pass clicks through on macOS 26 (not instrumented); whether the
   Swift host itself does is unchecked. Click-through is not required for a first host.
-- A real third-party slop opened, rendered, saved an edit and reopened with every asset served
+- A real third-party tiny opened, rendered, saved an edit and reopened with every asset served
   from the document. That needs the host to link the core; the preview-owner protocol
   cannot serve app assets.
 
@@ -368,7 +368,7 @@ Windows.
 
 Apple devices use the CloudKit Synced Library ([architecture](architecture.md#synced-library)).
 For platforms without CloudKit, a person's own devices could use the same room model as people
-collaborating. Each keeps a `.slop` replica and its local writer lease, edits offline and
+collaborating. Each keeps a `.tiny` replica and its local writer lease, edits offline and
 merges through the relay when it reconnects. Replicate Loro updates, not SQL rows or a
 second JSON document. Attachments
 travel separately by hash, so installed data and a complete exportable file are distinct
@@ -388,7 +388,7 @@ keep temporary view state in Svelte and document content in fields. A new local-
 kind would need Rust, SDK, fixtures, export semantics and a compatibility decision;
 it is not implied by the relay.
 
-The restored slops supply useful cases: Slide Deck's selected slide; volume
+The restored tinys supply useful cases: Slide Deck's selected slide; volume
 and mute in Alien Radio, Metronome and Pocket Pod; Pocket Pod's playback and repeat;
 Pixel Art's selected color; Morning Pages' current key; and Wordle's mode. Decide each
 field's intended scope before introducing locality.
@@ -408,7 +408,7 @@ does not freeze their API or promise that every future addition is compatible.
 ## What we won't take
 
 The manifesto also argues for cloud sandboxes, organization-wide governance and routing
-between model providers. Those serve an enterprise agent platform. hitSlop takes the
+between model providers. Those serve an enterprise agent platform. tinys takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
 keeps local documents usable without an account. Optional Synced Library uses the
 person's iCloud account; live-link owners sign in with Apple.

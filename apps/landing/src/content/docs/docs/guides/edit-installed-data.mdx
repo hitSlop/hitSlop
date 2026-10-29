@@ -8,7 +8,7 @@ authored actions; `apply` and `batch` edit fields directly. Both go through the 
 owner, save accepted edits, and update an open window. **Edit ▸ Undo** includes agent edits.
 
 This walkthrough uses the bundled **Quick Checklist**, with Bun and the Mac app installed.
-Run `bunx hitslop` as below, or install globally and use `slop`. Responses show example
+Run `bunx @hitslop/tinys` as below, or install globally and use `tiny`. Responses show example
 paths, versions and shortened row IDs; use the values your own CLI prints. JSON is
 compacted in a few places for readability.
 
@@ -17,28 +17,28 @@ compacted in a few places for readability.
 Templates are immutable. Create a writable document at a new path:
 
 ```sh
-bunx hitslop create --from quick-checklist --output Today.slop
+bunx @hitslop/tinys create --from quick-checklist --output Today.tiny
 ```
 
 ```text
-/Users/you/Documents/Today.slop
+/Users/you/Documents/Today.tiny
 ```
 
 ```sh
-bunx hitslop open Today.slop
+bunx @hitslop/tinys open Today.tiny
 ```
 
 ```text
-/Users/you/Documents/Today.slop
+/Users/you/Documents/Today.tiny
 ```
 
-Keep this terminal in the directory containing `Today.slop`, or use its full quoted path.
+Keep this terminal in the directory containing `Today.tiny`, or use its full quoted path.
 Opening the window needs the Mac app; reading and editing a file also work on Linux.
 
 ## 2. Discover fields and actions
 
 ```sh
-bunx hitslop describe Today.slop
+bunx @hitslop/tinys describe Today.tiny
 ```
 
 <details>
@@ -56,7 +56,7 @@ Fields
   ["tasks",{"id":"$id"},"text"]: text (set)
   ["title"]: text (set) — The title shown in the window.
 
-Commands (slop call PATH NAME --args JSON)
+Commands (tiny call PATH NAME --args JSON)
   Arguments accept only the listed fields.
 
   addTask — Add an unfinished task and return its stable row ID.
@@ -105,7 +105,7 @@ structured description for tools. A different app may expose different actions, 
 ## 3. Run the app’s addTask action
 
 ```sh
-bunx hitslop call Today.slop addTask --args '{"text":"Book train"}'
+bunx @hitslop/tinys call Today.tiny addTask --args '{"text":"Book train"}'
 ```
 
 ```json
@@ -119,7 +119,7 @@ nothing. A successful call is one atomic edit and one undo step.
 Read the document to see the new task alongside the starter tasks:
 
 ```sh
-bunx hitslop get Today.slop
+bunx @hitslop/tinys get Today.tiny
 ```
 
 ```json
@@ -159,7 +159,7 @@ bunx hitslop get Today.slop
 Replace `train` with the `$id` returned above. Row IDs stay stable even if a list is reordered.
 
 ```sh
-bunx hitslop apply Today.slop --op '{"type":"set","path":["tasks",{"id":"train"},"done"],"value":true}'
+bunx @hitslop/tinys apply Today.tiny --op '{"type":"set","path":["tasks",{"id":"train"},"done"],"value":true}'
 ```
 
 ```json
@@ -170,7 +170,7 @@ The box checks itself in the open window. An empty `ids` list means no rows were
 it does not mean no edit happened. You can also apply several operations atomically:
 
 ```sh
-bunx hitslop batch Today.slop --ops '[{"type":"set","path":["tasks",{"id":"train"},"done"],"value":false},{"type":"set","path":["tasks",{"id":"train"},"archived"],"value":false}]'
+bunx @hitslop/tinys batch Today.tiny --ops '[{"type":"set","path":["tasks",{"id":"train"},"done"],"value":false},{"type":"set","path":["tasks",{"id":"train"},"archived"],"value":false}]'
 ```
 
 ```json
@@ -182,7 +182,7 @@ This restores the task to unfinished and unfiled. If one operation is invalid, n
 ## 5. Check the result
 
 ```sh
-bunx hitslop get Today.slop
+bunx @hitslop/tinys get Today.tiny
 ```
 
 Response excerpt (the other tasks and title are still present):
@@ -195,7 +195,7 @@ Check `get` before retrying after an uncertain outcome, especially an insertion.
 Errors go to stderr with a nonzero exit status. For example, an empty task is refused:
 
 ```sh
-bunx hitslop call Today.slop addTask --args '{"text":""}'
+bunx @hitslop/tinys call Today.tiny addTask --args '{"text":""}'
 ```
 
 ```text
@@ -212,7 +212,7 @@ in the open window, you can also pass the text you read as `from`: the edit then
 the field from that text and keeps anything typed since.
 
 ```sh
-bunx hitslop apply Today.slop --op '{"type":"set","path":["title"],"value":"Little things, this week","from":"Little things, today"}'
+bunx @hitslop/tinys apply Today.tiny --op '{"type":"set","path":["title"],"value":"Little things, this week","from":"Little things, today"}'
 ```
 
 ## More document commands

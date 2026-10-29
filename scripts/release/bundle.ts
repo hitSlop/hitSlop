@@ -11,10 +11,10 @@ import { verifyPackedWriter } from "../compat/writers";
 import { enginePlatforms } from "../build/core";
 import { projectVersion } from "./preflight";
 import { validateRecord, type ReleaseRecord } from "./record";
-import { exec, run } from "../../packages/hitslop/src/cli/process";
+import { exec, run } from "../../packages/tinys/src/cli/process";
 
 const { version, build, tag } = await projectVersion();
-await verifyResolvedCorpora(process.env.HITSLOP_COMPAT_ROOT!);
+await verifyResolvedCorpora(process.env.TINYS_COMPAT_ROOT!);
 const entry = (await releases()).find(entry => entry.name === version && entry.release.frozen);
 if (!entry) throw new Error("Missing frozen release corpus");
 await verifyCorpus(entry.root, entry.release);
@@ -22,17 +22,17 @@ await verifyShellCopies();
 const output = join(repository, "dist/macos");
 await mkdir(output, { recursive: true });
 const retained: string[] = [];
-const file = `hitslop-${version}.tgz`;
+const file = `hitslop-tinys-${version}.tgz`;
 await cp(join(repository, "generated/npm", file), join(output, file));
 retained.push(file);
 const commit = (await run(["git", "rev-parse", "HEAD"], { cwd: repository, failure: "Cannot identify release commit" })).trim();
 // The published CLI carries the file engine for every supported platform, each built from
 // the producing candidate's commit and core.
-const cliPackage = join(output, `hitslop-${version}.tgz`);
+const cliPackage = join(output, `hitslop-tinys-${version}.tgz`);
 await verifyPackedWriter(cliPackage, entry.release.writer);
 const packed = await run(["/usr/bin/tar", "-tzf", cliPackage], { failure: "Cannot list the CLI package" });
 for (const platform of enginePlatforms) {
-  if (!packed.includes(`package/engine/${platform}/slop-engine`))
+  if (!packed.includes(`package/engine/${platform}/tiny-engine`))
     throw new Error(`The CLI package has no file engine for ${platform}; capture with the engines workflow's artifacts in generated/engines`);
   const read = await exec(["/usr/bin/tar", "-xOzf", cliPackage, `package/engine/${platform}/engine.json`]);
   const recorded = JSON.parse(read.stdout || "{}");
@@ -43,7 +43,7 @@ if (commit !== process.env.GITHUB_SHA || entry.release.commit !== commit) throw 
 const corpusFile = `compat-corpus-${version}.tar.gz`;
 await run(["tar", "--format=ustar", "-czf", join(output, corpusFile), "-C", entry.root, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
 retained.push(corpusFile);
-const receipt = await Bun.file(join(process.env.HITSLOP_COMPAT_ROOT!, ".inventory.json")).json();
+const receipt = await Bun.file(join(process.env.TINYS_COMPAT_ROOT!, ".inventory.json")).json();
 if (receipt.offline) throw new Error("Offline history cannot qualify a release");
 const hashes: Record<string, string> = {};
 for (const line of (await readFile(join(output, "SHA256SUMS"), "utf8")).trim().split("\n")) {

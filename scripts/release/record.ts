@@ -22,7 +22,7 @@ export function validateRecord(record: ReleaseRecord, tag: string, commit: strin
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name) || !/^[a-f0-9]{64}$/.test(hash))
       throw new Error("Invalid artifact record");
   }
-  for (const name of [`hitslop-${record.macVersion}.tgz`, "hitSlop.dmg", "hitSlop.zip", "appcast.xml", `compat-corpus-${record.macVersion}.tar.gz`, ...Object.values(releaseNotesNames(record.macVersion))])
+  for (const name of [`hitslop-tinys-${record.macVersion}.tgz`, "tinys.dmg", "tinys.zip", "appcast.xml", `compat-corpus-${record.macVersion}.tar.gz`, ...Object.values(releaseNotesNames(record.macVersion))])
     if (!record.artifacts[name]) throw new Error(`Release record is missing ${name}`);
   if (record.corpus?.file !== `compat-corpus-${record.macVersion}.tar.gz` || record.artifacts[record.corpus.file] !== record.corpus.sha256)
     throw new Error("Invalid corpus record");

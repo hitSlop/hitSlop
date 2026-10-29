@@ -1,0 +1,437 @@
+import AppKit
+import Foundation
+import Testing
+import TinysCore
+import TinysCoreBinding
+import TinysTestSupport
+
+@testable import TinysDocument
+@testable import TinysHost
+
+extension HostTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["TINYS_STARTUP_BENCH"] == "1"))
+  @MainActor func documentStartupTimings() async throws {
+    _ = NSApplication.shared
+    for name in ["document-fixture"] {
+      for sample in 0..<3 {
+        let root = try fixture(name)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let start = ContinuousClock.now
+        let controller = try await TinyDocumentWindowController.open(url: root)
+        let prepared = start.duration(to: .now)
+        controller.showWindow(nil)
+        try await controller.session.waitUntilReady()
+        let ready = start.duration(to: .now)
+        await controller.waitForPresentation()
+        let visible = start.duration(to: .now)
+        print("[startup benchmark] \(name) sample=\(sample) prepared=\(prepared) ready=\(ready) visible=\(visible)")
+        // Keep this benchmark focused on opening, without background preview refreshes.
+        try await controller.session.close()
+        controller.close()
+      }
+    }
+  }
+
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["TINYS_STARTUP_BENCH"] == "1"))
+  @MainActor func savedDocumentStartupTimings() async throws {
+    _ = NSApplication.shared
+    let environment = ProcessInfo.processInfo.environment
+    if environment["TINYS_STARTUP_FOREGROUND"] == "1" {
+      NSApp.activate()
+    }
+    let samples = max(1, Int(environment["TINYS_STARTUP_SAMPLES"] ?? "10") ?? 10)
+    var names = ["document-fixture", "large-checklist"]
+    var skinSource: String?
+    if let fixtures = environment["TINYS_PRESENTATION_FIXTURES"] {
+      skinSource = try JSONDecoder().decode([String: String].self, from: Data(fixtures.utf8))["washer"]
+      if skinSource != nil { names.append("washer") }
+    }
+    if let name = environment["TINYS_STARTUP_CASE"] { names = names.filter { $0 == name } }
+    #expect(!names.isEmpty)
+    for name in names {
+      let root: URL
+      if name == "washer", let skinSource {
+        root = try Fixtures.document(from: URL(fileURLWithPath: skinSource))
+      } else {
+        root = try fixture(name == "large-checklist" ? "document-fixture" : name)
+      }
+      defer { try? FileManager.default.removeItem(at: root) }
+      var operations: [[String: Any]] =
+        name == "washer"
+        ? [["type": "increment", "path": ["count"], "by": 7]]
+        : [["type": "set", "path": ["title"], "value": "Saved opening benchmark"]]
+      if name == "large-checklist" {
+        // The title and 999 rows fill one batch: the core takes at most 1000 operations.
+        operations += (0..<999).map { index in
+          [
+            "type": "insert", "path": ["tasks"],
+            "value": ["text": "Saved task \(index)", "done": false, "archived": false],
+          ]
+        }
+      }
+      // Seed in a separate engine process so preparing saved bytes cannot warm this WebKit.
+      let json = String(decoding: try JSONSerialization.data(withJSONObject: operations), as: UTF8.self)
+      let seeded = try await request([
+        "method": "batch", "documentPath": root.path,
+        "batch": ["intents": try JSONSerialization.jsonObject(with: Data((json).utf8))],
+      ])
+      try #require(seeded["ok"] as? Bool == true, "\(seeded)")
+      for sample in 0..<samples {
+        let start = ContinuousClock.now
+        let controller = try await TinyDocumentWindowController.open(url: root, presentsWindow: true)
+        let progress = controller.presentation.progress
+        let prepared = start.duration(to: .now)
+        try await controller.session.waitUntilReady()
+        let ready = start.duration(to: .now)
+        await controller.waitForPresentation()
+        let visible = start.duration(to: .now)
+        #expect(controller.isContentReady)
+        print(
+          "[saved startup benchmark] \(name) sample=\(sample) prepared=\(prepared) ready=\(ready) visible=\(visible) progress=\(progress?.wasShown ?? false)"
+        )
+        try await controller.session.close()
+        _ = try await controller.perform(.close)
+      }
+    }
+  }
+
+  @Test @MainActor func openingStaysHiddenUntilReadyAndHandsOffFocus() async throws {
+    _ = NSApplication.shared
+    let before = try Fixtures.png()
+    let root = try contractFixture { stage in
+      try FileManager.default.createDirectory(
+        at: stage.appendingPathComponent("artwork"), withIntermediateDirectories: true)
+      try Fixtures.addArtwork(stage, name: "preview", bytes: before)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let stored = try #require(TinyArtwork.png(root, .preview))
+    #expect(Fixtures.pixels(stored) == Fixtures.pixels(before))
+    let controller = try await TinyDocumentWindowController.open(url: root)
+    controller.showWindow(nil)
+    #expect(controller.presentation.loading)
+    #expect(controller.window?.isVisible == false)
+    controller.revealFromDock()
+    #expect(controller.window?.isVisible == false)
+    await controller.waitForPresentation()
+    #expect(controller.session.isReady)
+    #expect(controller.presentation.progress == nil)
+    #expect(controller.window?.isVisible == true)
+    #expect(controller.isContentReady)
+    #expect(TinyArtwork.png(root, .preview) == stored, "opening never rewrites artwork")
+    try await controller.session.close()
+    controller.close()
+  }
+
+  @Test @MainActor func previewIsNotNeededAndCloseCancelsHiddenOpening() async throws {
+    _ = NSApplication.shared
+    do {
+      let root = try contractFixture()
+      defer { try? FileManager.default.removeItem(at: root) }
+      #expect(TinyArtwork.png(root, .preview) == nil)
+      let controller = try await TinyDocumentWindowController.open(url: root)
+      controller.showWindow(nil)
+      #expect(controller.window?.isVisible == false)
+      weak var webView = controller.session.webView
+      _ = try await controller.perform(.close)
+      await controller.waitForPresentation()
+      #expect(controller.presentation.progress == nil)
+      #expect(controller.window?.isVisible == false)
+      #expect(!controller.session.isReady)
+      // WebKit can finish asynchronous cancellation on the next run-loop turn.
+      await eventually(timeout: .seconds(1)) { webView == nil }
+      #expect(webView == nil)
+    }
+  }
+
+  // An app's own startup failure is shown natively; a retry once its cause is gone (here,
+  // the document's title) opens it.
+  @Test @MainActor func startupFailureRevealsNativeError() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      let probe = try Fixtures.addAsset(
+        stage, bytes: Data(contentsOf: stage.appendingPathComponent("assets/ui.js")), ext: "js",
+        mediaType: "text/javascript")
+      try Fixtures.writeApp(
+        """
+        import probe from "\(probe)";
+        export default { async mount(ctx, target) {
+          if (ctx.document.current.title !== "Recovered") {
+            await webkit.messageHandlers.tinys.postMessage(JSON.stringify({method: "failed", error: "startup fixture failure"}));
+            await new Promise(() => {});
+          }
+          return probe.mount(ctx, target);
+        } };
+        """, to: stage)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await TinyDocumentWindowController.open(url: root)
+    controller.showWindow(nil)
+    await controller.waitForPresentation()
+    #expect(controller.presentation.progress == nil)
+    #expect(controller.window?.isVisible == true)
+    #expect(controller.presentedPageError?.contains("startup fixture failure") == true)
+    #expect(try await command("batch", url: root, setTitle("Recovered")).ok)
+    _ = try await controller.perform(.retry)
+    await controller.waitForPresentation()
+    #expect(controller.isContentReady)
+    #expect(controller.presentedPageError == nil)
+    #expect(controller.window?.isVisible == true)
+    try await controller.session.close()
+    controller.close()
+  }
+
+  @Test @MainActor func aReadyTimeoutShowsOneFailureContextAndReopenRecovers() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture { stage in
+      let script = stage.appendingPathComponent("assets/ui.js")
+      let probe = try Fixtures.addAsset(
+        stage, bytes: Data(contentsOf: script), ext: "js", mediaType: "text/javascript")
+      try Fixtures.writeApp(
+        """
+        import probe from "\(probe)";
+        export default { mount(ctx, target) {
+          if (ctx.document.current.title !== "Recovered fonts") {
+            Object.defineProperty(document, 'fonts', {value: {
+              size: 1, status: 'loading', forEach(){}, ready: new Promise(() => {})
+            }});
+          }
+          return probe.mount(ctx, target);
+        } };
+        """, to: stage)
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    var contexts: [TinyFailureContext] = []
+    let controller = try await TinyDocumentWindowController.open(
+      url: root, telemetry: TinyTelemetry { if case .failed(.renderer, let context) = $0 { contexts.append(context) } })
+    controller.window?.moveOffScreen()
+    defer { controller.window?.orderOut(nil) }
+    await #expect(throws: (any Error).self) { try await controller.session.waitUntilReady(timeout: .seconds(1)) }
+    #expect(controller.session.rendererDead)
+    let notice = try #require(controller.failedOverlay?.rootView.screen.notice)
+    #expect(notice.title == "This tiny stopped responding")
+    #expect(contexts == [.init(reason: .unresponsive)])
+    let context = try #require(contexts.first)
+    #expect(
+      notice.report.contains("Reason: \(context.reason.rawValue)\nClassification: \(context.classification.rawValue)"))
+    // Reopening with the same stalled fonts must return to the screen too.
+    controller.session.readyTimeout = .milliseconds(300)
+    await #expect(throws: (any Error).self) { _ = try await controller.perform(.retry) }
+    #expect(controller.session.rendererDead && controller.failedOverlay != nil)
+    controller.session.readyTimeout = Timeouts.pageReady
+    #expect(try await command("batch", url: root, setTitle("Recovered fonts")).ok)
+    _ = try await controller.perform(.retry)
+    await controller.waitForPresentation()
+    #expect(controller.isContentReady && controller.failedOverlay == nil)
+    #expect(Fixtures.isLocked(root))
+    try await controller.session.close()
+  }
+
+  @Test @MainActor func hiddenOpenDoesNotPresentProgressOrDocument() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let controller = try await TinyDocumentWindowController.open(url: root)
+    await controller.waitForPresentation()
+    #expect(controller.isContentReady)
+    #expect(controller.window?.isVisible == false)
+    #expect(controller.presentation.progress == nil)
+    try await controller.session.close()
+    controller.close()
+  }
+
+  @Test @MainActor func progressCancelClosesPendingDocumentWithoutRevealingIt() async throws {
+    _ = NSApplication.shared
+    // Fonts never finish loading, so the page never reports ready.
+    let root = try contractFixture(edit: neverLoadFonts)
+    defer { try? FileManager.default.removeItem(at: root) }
+    // Fonts never load, so the page never reports ready and the window stays loading.
+    let controller = try await TinyDocumentWindowController.open(url: root, presentsWindow: true)
+    let progress = try #require(controller.presentation.progress)
+    progress.cancelOpening()
+    await eventually(timeout: .seconds(2)) { !controller.presentation.loading }
+    #expect(!controller.presentation.loading)
+    #expect(!controller.isContentReady)
+    #expect(controller.window?.isVisible == false)
+    #expect(controller.presentation.progress == nil)
+    #expect(FileManager.default.fileExists(atPath: root.path))
+    // A cancelled document must release ownership, not merely hide its window.
+    let reopened = try await TinyDocumentWindowController.open(url: root)
+    _ = try await reopened.perform(.close)
+  }
+
+  @Test @MainActor func closeDuringFontLoadingCancelsPresentationAndExport() async throws {
+    _ = NSApplication.shared
+    let root = try contractFixture(edit: neverLoadFonts)
+    let output = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".png")
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: output)
+    }
+    let controller = try await TinyDocumentWindowController.open(url: root)
+    controller.showWindow(nil)
+    await eventually(timeout: .seconds(2)) { controller.presentation.progress?.panel != nil }
+    #expect(controller.presentation.progress?.panel?.isVisible == true)
+    #expect(controller.window?.isVisible == false)
+    weak var view = controller.session.webView
+    let export = Task { try await controller.exportDocument(format: .png, to: output) }
+    await Task.yield()
+    _ = try await controller.perform(.close)
+    await #expect(throws: (any Error).self) { try await export.value }
+    #expect(!FileManager.default.fileExists(atPath: output.path))
+    #expect(controller.presentation.progress == nil)
+    await eventually(timeout: .seconds(1)) { view == nil }
+    #expect(view == nil)
+  }
+}
+
+// Completing the delay releases feedback; completing the open cancels it even if
+// an already-delivered timer callback arrives. No minimum wall-clock duration.
+@Test @MainActor func openingProgressIsDelayedAndFastCompletionNeverShowsIt() async throws {
+  _ = NSApplication.shared
+  let fastDelay = OpeningDelay()
+  let fast = TinyOpeningProgress(wait: { _ in await fastDelay.wait() })
+  await fastDelay.started()
+  #expect(fast.panel == nil)
+  fast.finish()
+  await fastDelay.release()
+  let slowDelay = OpeningDelay()
+  let slow = TinyOpeningProgress(wait: { _ in await slowDelay.wait() })
+  await slowDelay.started()
+  #expect(slow.panel == nil)
+  await slowDelay.release()
+  await eventually(timeout: .seconds(1)) { slow.panel?.isVisible == true }
+  #expect(fast.panel == nil)
+  #expect(slow.panel?.isVisible == true)
+  var cancelled = false
+  slow.onCancel = { cancelled = true }
+  slow.cancelOpening()
+  #expect(cancelled)
+  #expect(slow.panel == nil)
+}
+
+private actor OpeningDelay {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var entered: CheckedContinuation<Void, Never>?
+  func wait() async {
+    await withCheckedContinuation {
+      continuation = $0
+      entered?.resume()
+      entered = nil
+    }
+  }
+  func started() async {
+    if continuation != nil { return }
+    await withCheckedContinuation { entered = $0 }
+  }
+  func release() {
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
+extension HostTests {
+  // Failure: close awaited the app's unmount without a deadline, so a teardown that never
+  // settled blocked closing and exports after the document was released.
+  @Test @MainActor func aHungUnmountDoesNotBlockCloseOrExport() async throws {
+    let root = try contractFixture { stage in
+      try Data(
+        #"""
+        export default { mount() { return { unmount: () => new Promise(r => setTimeout(r, 3_600_000)) }; } };
+        """#.utf8
+      ).write(to: stage.appendingPathComponent("assets/ui.js"))
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    // The timer keeps the promise reachable: WebKit rejects calls on unreachable ones.
+    // Polls instead of awaiting, so a regression fails at the deadline rather than hanging.
+    func finishes(within limit: Duration, _ work: @escaping @MainActor () async throws -> Void) async throws -> Bool {
+      let finished = Locked(false)
+      let task = Task { @MainActor in
+        try await work()
+        finished.modify { $0 = true }
+      }
+      guard await eventually(timeout: limit, { finished.value }) else { return false }
+      try await task.value
+      return true
+    }
+    let controller = try await TinyDocumentWindowController.open(url: root)
+    try await controller.session.waitUntilReady()
+    weak var page = controller.session.webView
+    #expect(try await finishes(within: .seconds(6)) { try await controller.session.close() })
+    controller.close()
+    // An abandoned page is released with its view, ending its scripts.
+    #expect(await eventually(timeout: .seconds(3)) { page == nil })
+    #expect(try await command("get", url: root).ok)
+    #expect(
+      try await finishes(within: .seconds(10)) {
+        _ = try await TinyRenderer.capture(url: root, output: .export(format: .png))
+      })
+  }
+
+  // A subscriber failure must reach native reporting without interrupting the accepted edit.
+  @Test @MainActor func observerFailureIsReportedWithoutPreventingDurability() async throws {
+    let root = try contractFixture { stage in
+      try Data(
+        #"""
+        export default { mount(ctx) {
+          ctx.document.subscribe(() => { throw new Error('observer failure'); });
+          globalThis.observerProbe = async () => {
+            ctx.document.change(tx => tx.fields.title.set('Saved despite observer failure'));
+            await ctx.document.flush();
+            return true;
+          };
+          return {};
+        } };
+        """#.utf8
+      ).write(to: stage.appendingPathComponent("assets/ui.js"))
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (incidents, continuation) = AsyncStream<TinyFailureContext>.makeStream()
+    defer { continuation.finish() }
+    let controller = try await TinyDocumentWindowController.open(
+      url: root,
+      telemetry: TinyTelemetry { if case .failed(_, let context) = $0 { continuation.yield(context) } })
+    try await controller.session.waitUntilReady()
+    let flushed = try await controller.session.webView.callAsyncJavaScript(
+      "return await globalThis.observerProbe()", arguments: [:], in: nil, contentWorld: .page)
+    #expect(flushed as? Bool == true)
+    var iterator = incidents.makeAsyncIterator()
+    let incident = await iterator.next()
+    #expect(incident?.classification == .authored)
+    // WebKit's stack lists frames only; the person must still see what went wrong.
+    #expect(controller.guestIssue?.message.hasPrefix("Error: observer failure\n") == true)
+    try await controller.session.close()
+    #expect(try await savedValue(root)?["title"] as? String == "Saved despite observer failure")
+  }
+
+  // Gap: installing telemetry only after open returns loses early guest startup failures.
+  // A disposable fixture throws before mounting; expect one sanitized authored incident.
+  @Test(.nightly) @MainActor func startupTelemetryIsInstalledBeforeAuthoredCodeRuns() async throws {
+    let root = try contractFixture { stage in
+      try Data("throw new Error('private startup contents');".utf8).write(
+        to: stage.appendingPathComponent("assets/ui.js"))
+    }
+    defer { try? FileManager.default.removeItem(at: root) }
+    var failures: [TinyFailureContext] = []
+    let controller = try await TinyDocumentWindowController.open(
+      url: root,
+      telemetry: TinyTelemetry { if case .failed(_, let context) = $0 { failures.append(context) } })
+    await controller.waitForPresentation()
+    #expect(!controller.isContentReady)
+    #expect(failures.count == 1)
+    #expect(failures.first?.classification == .authored)
+    #expect(failures.first?.reason == .authoredException)
+    // The failure screen owns up: the tiny's own code failed while it started.
+    #expect(controller.failedOverlay?.rootView.screen.notice.title == "This tiny couldn't open")
+    try await controller.session.close()
+  }
+}
+
+/// Makes a stage's app wait forever for its fonts, so its page never reports ready.
+private func neverLoadFonts(_ stage: URL) throws {
+  let script = stage.appendingPathComponent("assets/ui.js")
+  let original = try String(contentsOf: script, encoding: .utf8)
+  try Data(
+    ("Object.defineProperty(document,'fonts',{value:{size:1,status:'loading',forEach(){},ready:new Promise(()=>{})}});\n"
+      + original).utf8
+  ).write(to: script)
+}

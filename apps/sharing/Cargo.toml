@@ -1,12 +1,12 @@
 [package]
-name = "hitslop-sharing-worker"
+name = "tinys-sharing-worker"
 version = "0.0.0"
 edition.workspace = true
 publish.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 [dependencies]
-hitslop-sharing-protocol = { path = "../../crates/hitslop-sharing-protocol" }
+tinys-sharing-protocol = { path = "../../crates/tinys-sharing-protocol" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "=0.11.0"

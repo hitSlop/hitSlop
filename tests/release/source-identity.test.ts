@@ -2,13 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { sourceBlobHash } from "../../scripts/lib/artifacts";
 
 // Staging identical bytes used to change verify's input identity and rerun every
 // affected tier. Git's actual index is the oracle, including Unicode/binary lengths.
 test.each(["sha1", "sha256"] as const)("source identity survives staging in a %s repository", async format => {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-source-identity-"));
+  const folder = await mkdtemp(join(tmpdir(), "tinys-source-identity-"));
   const git = (...args: string[]) => run(["git", ...args], { cwd: folder });
   try {
     await git("init", "--quiet", `--object-format=${format}`);

@@ -1,28 +1,28 @@
 #!/bin/sh
 set -eu
 
-# Archive, Developer ID-sign, notarize, and wrap an Apple-silicon hitSlop DMG.
+# Archive, Developer ID-sign, notarize, and wrap an Apple-silicon tinys DMG.
 # Required env: MACOS_PROVISIONING_PROFILE (base64) or MACOS_PROVISIONING_PROFILE_FILE (path)
 # Optional env:
-#   HITSLOP_CODESIGN_IDENTITY   Developer ID identity (name or hash)
+#   TINYS_CODESIGN_IDENTITY   Developer ID identity (name or hash)
 #   ASC_API_KEY_P8 / ASC_API_KEY_P8_FILE, ASC_API_KEY_ID, ASC_API_ISSUER_ID
 #   SPARKLE_PRIVATE_KEY / SPARKLE_PRIVATE_KEY_FILE
 #   SKIP_NOTARIZE=1             skip notarytool (still signs)
-#   HITSLOP_SKIP_SYMBOL_UPLOAD=1 skip Crashlytics symbol upload for local hand tests
-#   HITSLOP_SKIP_ACCEPTANCE=1   skip host-crash acceptance of the signed app
-#   HITSLOP_OUTPUT_DIR          default: dist/macos
+#   TINYS_SKIP_SYMBOL_UPLOAD=1 skip Crashlytics symbol upload for local hand tests
+#   TINYS_SKIP_ACCEPTANCE=1   skip host-crash acceptance of the signed app
+#   TINYS_OUTPUT_DIR          default: dist/macos
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 project_dir="$repo_root/apps/apple"
-project="$project_dir/hitSlop.xcodeproj"
+project="$project_dir/tinys.xcodeproj"
 project_yml="$project_dir/project.yml"
 export_options="$project_dir/App/macOS/ExportOptions.plist"
-team_id=${HITSLOP_DEVELOPMENT_TEAM:-78UAXU8QG8}
-identity=${HITSLOP_CODESIGN_IDENTITY:-"Developer ID Application: Mushroom DAO Holdings Corp. ($team_id)"}
-output_dir=${HITSLOP_OUTPUT_DIR:-"$repo_root/dist/macos"}
+team_id=${TINYS_DEVELOPMENT_TEAM:-78UAXU8QG8}
+identity=${TINYS_CODESIGN_IDENTITY:-"Developer ID Application: Mushroom DAO Holdings Corp. ($team_id)"}
+output_dir=${TINYS_OUTPUT_DIR:-"$repo_root/dist/macos"}
 sparkle_version=$(bun "$script_dir/notes.ts" --sparkle-version)
-feed_prefix=${HITSLOP_DOWNLOAD_URL_PREFIX:-}
+feed_prefix=${TINYS_DOWNLOAD_URL_PREFIX:-}
 
 # The project-wide build settings own the version the app and its extensions share.
 read_macos_setting() {
@@ -42,27 +42,27 @@ fi
 
 bun "$script_dir/notes.ts" --check
 
-if [ -n "${HITSLOP_RELEASE_TAG:-}" ]; then
+if [ -n "${TINYS_RELEASE_TAG:-}" ]; then
   expected="v$marketing_version"
-  if [ "$HITSLOP_RELEASE_TAG" != "$expected" ]; then
-    echo "Release $HITSLOP_RELEASE_TAG does not match MARKETING_VERSION $marketing_version (expected $expected)" >&2
+  if [ "$TINYS_RELEASE_TAG" != "$expected" ]; then
+    echo "Release $TINYS_RELEASE_TAG does not match MARKETING_VERSION $marketing_version (expected $expected)" >&2
     exit 78
   fi
 fi
 
 if [ -z "$feed_prefix" ]; then
-  feed_prefix="https://github.com/hitSlop/hitslop/releases/download/v${marketing_version}/"
+  feed_prefix="https://github.com/hitSlop/tinys/releases/download/v${marketing_version}/"
 fi
 feed_prefix="${feed_prefix%/}/"
 
-stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hitslop-package.XXXXXX")
+stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/tinys-package.XXXXXX")
 stage_dir=$(CDPATH= cd -- "$stage_dir" && pwd -P)
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # Builds register with Launch Services as they appear; only an installed app should claim
-# .slop, so the exported copy and Xcode's archive copies are unregistered on the way out.
+# .tiny, so the exported copy and Xcode's archive copies are unregistered on the way out.
 cleanup() {
   "$lsregister" -dump 2>/dev/null \
-    | /usr/bin/sed -n 's/^path: *\(.*hitSlop\.app\) (0x[0-9a-f]*)$/\1/p' \
+    | /usr/bin/sed -n 's/^path: *\(.*tinys\.app\) (0x[0-9a-f]*)$/\1/p' \
     | /usr/bin/grep -E "^${stage_dir}/|/ArchiveIntermediates/" \
     | while IFS= read -r app; do "$lsregister" -u "$app" >/dev/null 2>&1 || true; done
   if [ -n "${installed_profile:-}" ]; then /bin/rm -f "$installed_profile"; fi
@@ -84,16 +84,16 @@ else
   profile_error "set MACOS_PROVISIONING_PROFILE (base64) or MACOS_PROVISIONING_PROFILE_FILE (path)"
   exit 65
 fi
-validate_macos_profile "$profile" "$project_dir/App/macOS/hitSlop.Release.entitlements" "$stage_dir"
-HITSLOP_PROVISIONING_PROFILE_UUID=$(/usr/bin/plutil -extract UUID raw -o - "$stage_dir/profile.plist")
-export HITSLOP_PROVISIONING_PROFILE_UUID
-case "$HITSLOP_PROVISIONING_PROFILE_UUID" in
+validate_macos_profile "$profile" "$project_dir/App/macOS/tinys.Release.entitlements" "$stage_dir"
+TINYS_PROVISIONING_PROFILE_UUID=$(/usr/bin/plutil -extract UUID raw -o - "$stage_dir/profile.plist")
+export TINYS_PROVISIONING_PROFILE_UUID
+case "$TINYS_PROVISIONING_PROFILE_UUID" in
   ""|*[!A-Za-z0-9-]*) profile_error "invalid UUID"; exit 65 ;;
 esac
 # Xcode archive/export must be able to resolve the profile too. Preserve existing installations.
 profile_dir="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 /bin/mkdir -p "$profile_dir"
-profile_install="$profile_dir/$HITSLOP_PROVISIONING_PROFILE_UUID.provisionprofile"
+profile_install="$profile_dir/$TINYS_PROVISIONING_PROFILE_UUID.provisionprofile"
 if [ -e "$profile_install" ]; then
   /usr/bin/cmp -s "$profile" "$profile_install" \
     || { profile_error "a different profile with this UUID is already installed"; exit 65; }
@@ -137,9 +137,9 @@ echo "Generating Xcode project…"
 
 # Export must use the same validated profile as the main archive target.
 /bin/cp "$export_options" "$stage_dir/ExportOptions.plist"
-/usr/bin/plutil -insert provisioningProfiles -json "{\"com.hitslop.app\":\"$HITSLOP_PROVISIONING_PROFILE_UUID\"}" "$stage_dir/ExportOptions.plist"
+/usr/bin/plutil -insert provisioningProfiles -json "{\"com.hitslop.app\":\"$TINYS_PROVISIONING_PROFILE_UUID\"}" "$stage_dir/ExportOptions.plist"
 export_options="$stage_dir/ExportOptions.plist"
-archive_path="$stage_dir/hitSlop.xcarchive"
+archive_path="$stage_dir/tinys.xcarchive"
 export_dir="$stage_dir/export"
 /bin/mkdir -p "$export_dir"
 
@@ -148,15 +148,15 @@ echo "Archiving Apple-silicon Release…"
   -skipPackagePluginValidation \
   -quiet \
   -project "$project" \
-  -scheme hitSlop-macOS \
+  -scheme tinys-macOS \
   -configuration Release \
   -destination "generic/platform=macOS" \
   -archivePath "$archive_path" \
   -derivedDataPath "$stage_dir/derived" \
   ARCHS="arm64" \
   ONLY_ACTIVE_ARCH=YES \
-  HITSLOP_SKIP_SYMBOL_UPLOAD="${HITSLOP_SKIP_SYMBOL_UPLOAD:-0}" \
-  HITSLOP_PROVISIONING_PROFILE_UUID="$HITSLOP_PROVISIONING_PROFILE_UUID" \
+  TINYS_SKIP_SYMBOL_UPLOAD="${TINYS_SKIP_SYMBOL_UPLOAD:-0}" \
+  TINYS_PROVISIONING_PROFILE_UUID="$TINYS_PROVISIONING_PROFILE_UUID" \
   DEVELOPMENT_TEAM="$team_id" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="$identity" \
@@ -170,9 +170,9 @@ echo "Exporting Developer ID app…"
   -exportPath "$export_dir" \
   -exportOptionsPlist "$export_options"
 
-app="$export_dir/hitSlop.app"
+app="$export_dir/tinys.app"
 if [ ! -d "$app" ]; then
-  echo "Export did not produce hitSlop.app" >&2
+  echo "Export did not produce tinys.app" >&2
   /usr/bin/find "$export_dir" -maxdepth 2 -print >&2
   exit 70
 fi
@@ -186,22 +186,22 @@ assert_arm64_only() {
   fi
 }
 
-assert_arm64_only "$app/Contents/MacOS/hitSlop"
-assert_arm64_only "$app/Contents/Helpers/hitslop-evaluator"
+assert_arm64_only "$app/Contents/MacOS/tinys"
+assert_arm64_only "$app/Contents/Helpers/tinys-evaluator"
 
 /bin/cp "$profile" "$app/Contents/embedded.provisionprofile"
 
 echo "Signing nested tools and app…"
-/usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/hitslop-evaluator"
+/usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/tinys-evaluator"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Frameworks/Sparkle.framework"
 /usr/bin/codesign --force --timestamp --options runtime \
-  --entitlements "$project_dir/App/macOS/hitSlop.Release.entitlements" \
+  --entitlements "$project_dir/App/macOS/tinys.Release.entitlements" \
   --sign "$identity" "$app"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 /usr/bin/codesign -d --entitlements - --xml "$app" > "$stage_dir/signed-entitlements.plist"
 validate_macos_profile "$app/Contents/embedded.provisionprofile" "$stage_dir/signed-entitlements.plist" "$stage_dir"
 # Assert every requested entitlement survived final signing, including Production CloudKit.
-/usr/bin/plutil -convert json -o "$stage_dir/expected-entitlements.json" "$project_dir/App/macOS/hitSlop.Release.entitlements"
+/usr/bin/plutil -convert json -o "$stage_dir/expected-entitlements.json" "$project_dir/App/macOS/tinys.Release.entitlements"
 bun --eval '
   const [work] = process.argv.slice(1);
   const actual = await Bun.file(`${work}/required-entitlements.json`).json();
@@ -216,18 +216,18 @@ bun --eval '
 
 # Notarize only the candidate that passed installed-app and host-crash acceptance.
 # Requires the engine from `bun run build` for storage probes.
-if [ "${HITSLOP_SKIP_ACCEPTANCE:-}" != "1" ]; then
+if [ "${TINYS_SKIP_ACCEPTANCE:-}" != "1" ]; then
   echo "Accepting signed app before notarization…"
   (
     cd "$repo_root"
-    HITSLOP_APP_BINARY="$app/Contents/MacOS/hitSlop" \
+    TINYS_APP_BINARY="$app/Contents/MacOS/tinys" \
       bun test ./tests/native/crash.native.test.ts
     # Every released document still reads, renders and edits with this build's engine.
     bun test ./tests/native/compat-replay.native.test.ts
   )
 fi
 
-versioned="hitSlop-${marketing_version}"
+versioned="hitslop-tinys-${marketing_version}"
 /bin/mkdir -p "$output_dir"
 app_zip="$output_dir/${versioned}.zip"
 dmg="$output_dir/${versioned}.dmg"
@@ -270,10 +270,10 @@ staple "$app"
 echo "Creating DMG…"
 dmg_root="$stage_dir/dmg"
 /bin/mkdir -p "$dmg_root"
-/usr/bin/ditto "$app" "$dmg_root/hitSlop.app"
+/usr/bin/ditto "$app" "$dmg_root/tinys.app"
 /bin/ln -s /Applications "$dmg_root/Applications"
 /usr/bin/hdiutil create \
-  -volname "hitSlop" \
+  -volname "tinys" \
   -srcfolder "$dmg_root" \
   -ov \
   -format UDZO \
@@ -284,8 +284,8 @@ staple "$dmg"
 
 # Stable aliases power the landing page's direct download link. Versioned
 # artifacts remain available for reproducibility and Sparkle updates.
-/bin/cp "$dmg" "$output_dir/hitSlop.dmg"
-/bin/cp "$app_zip" "$output_dir/hitSlop.zip"
+/bin/cp "$dmg" "$output_dir/tinys.dmg"
+/bin/cp "$app_zip" "$output_dir/tinys.zip"
 
 /bin/cp "$dmg" "$appcast_dir/${versioned}.dmg"
 bun "$script_dir/notes.ts" --write "$output_dir"
@@ -332,7 +332,7 @@ fi
 
 (
   cd "$output_dir"
-  /usr/bin/shasum -a 256 "${versioned}.dmg" "${versioned}.zip" hitSlop.dmg hitSlop.zip appcast.xml "${versioned}.md" release-notes.md > SHA256SUMS
+  /usr/bin/shasum -a 256 "${versioned}.dmg" "${versioned}.zip" tinys.dmg tinys.zip appcast.xml "${versioned}.md" release-notes.md > SHA256SUMS
 )
 
 echo "Packaged $marketing_version ($build_version)"

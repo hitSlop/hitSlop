@@ -1,0 +1,33 @@
+import { defineTiny } from "@hitslop/tinys";
+
+export default defineTiny({
+  slug: "eisenhower-matrix",
+  title: "Eisenhower Matrix",
+  description: "An urgent-versus-important priority desk blotter: four decision quadrants, a triage holding pen, and a live Q2 leverage ratio.",
+  author: { name: "tinys", url: "https://tinys.click" },
+  categories: ["productivity", "business"],
+  window: { kind: "standard", width: 780, height: 780 },
+  theme: {
+    surface: "#efe8db",
+    paper: "#fffdf8",
+    paperSoft: "#f7f1e6",
+    ink: "#231f1c",
+    muted: "#6f6a62",
+    dim: "#a39d93",
+    border: "#ddd6c8",
+    danger: "#b42318",
+    onPaper: "#fffdf8",
+    q1Accent: "#c2410c",
+    q1Bg: "#fff7ed",
+    q1Border: "#fed7aa",
+    q2Accent: "#0f766e",
+    q2Bg: "#f0fdfa",
+    q2Border: "#99f6e4",
+    q3Accent: "#b45309",
+    q3Bg: "#fefce8",
+    q3Border: "#fef08a",
+    q4Accent: "#64748b",
+    q4Bg: "#f8fafc",
+    q4Border: "#e2e8f0",
+  },
+});

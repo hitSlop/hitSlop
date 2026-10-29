@@ -7,7 +7,7 @@
   },
   "routes": [
     {
-      "pattern": "hitslop.com",
+      "pattern": "tinys.click",
       "custom_domain": true
     }
   ]
