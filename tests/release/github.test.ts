@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { releaseRepository, type PublishedRelease } from "../../scripts/lib/release-assets";
 import { ensureDraftRelease, findRelease } from "../../scripts/release/github";
 
-const tag = "v7.2.0";
+const tag = "tinys-v7.2.0";
 const draft = (): PublishedRelease => ({ id: 42, tag_name: tag, draft: true, prerelease: false, immutable: false, assets: [] });
 
 // Model GitHub's public tag lookup separately from its authenticated draft listing.
@@ -26,7 +26,7 @@ function github(releases: PublishedRelease[] = [], hideCreated = false) {
       }
       if (path === `${base}?per_page=100`) {
         if (!args.includes("--paginate") || !args.includes("--slurp")) throw new Error("Listing requires all pages");
-        return JSON.stringify([[{ ...draft(), id: 1, tag_name: "v9.0.0" }], releases.filter(release => !hidden.has(release.id))]);
+        return JSON.stringify([[{ ...draft(), id: 1, tag_name: "tinys-v9.0.0" }], releases.filter(release => !hidden.has(release.id))]);
       }
       const release = path.startsWith(`${base}/tags/`)
         ? releases.find(entry => entry.tag_name === path.slice(`${base}/tags/`.length) && !entry.draft)
@@ -78,7 +78,7 @@ test("staging refuses a missing tag before creating a draft", async () => {
 test("staging refuses a creation response for another release", async () => {
   const remote = github();
   const command: typeof run = async args => {
-    if (args.includes("POST")) return JSON.stringify({ ...draft(), tag_name: "v9.0.0" });
+    if (args.includes("POST")) return JSON.stringify({ ...draft(), tag_name: "tinys-v9.0.0" });
     return remote.command(args);
   };
   await expect(ensureDraftRelease(tag, "notes.md", command)).rejects.toThrow("Created release identity differs");

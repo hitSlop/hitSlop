@@ -3,8 +3,8 @@
 mod runtime {
     use crate::metrics::{Metric, record};
     use crate::room::{bounded_body, hash, identity_response, random_hex};
-    use hitslop_sharing_protocol::http::{AccountRoom, CreateRoom, RoomInit};
     use serde::Deserialize;
+    use tinys_sharing_protocol::http::{AccountRoom, CreateRoom, RoomInit};
     use worker::*;
 
     #[derive(Deserialize)]
@@ -108,7 +108,7 @@ mod runtime {
                 return Response::error("Account deletion pending; retry deletion", 409);
             }
             if let Some(document) = req.path().strip_prefix("/v1/account/rooms/") {
-                if req.method() != Method::Get || !hitslop_sharing_protocol::valid_copy(document) {
+                if req.method() != Method::Get || !tinys_sharing_protocol::valid_copy(document) {
                     return Response::error("Invalid request", 400);
                 }
                 return Response::from_json(&self.current(document)?.map(|room| AccountRoom { room }));
@@ -116,12 +116,12 @@ mod runtime {
             if req.path() != "/v1/rooms" || req.method() != Method::Post {
                 return Response::error("Not found", 404);
             }
-            let body = bounded_body(&mut req, hitslop_sharing_protocol::CONTROL_BYTES).await?;
+            let body = bounded_body(&mut req, tinys_sharing_protocol::CONTROL_BYTES).await?;
             let input: CreateRoom = match serde_json::from_slice(&body) {
                 Ok(v) => v,
                 Err(_) => return Response::error("Invalid request", 400),
             };
-            if !hitslop_sharing_protocol::valid_copy(&input.document) {
+            if !tinys_sharing_protocol::valid_copy(&input.document) {
                 return Response::error("Invalid document", 400);
             }
             // Claim the index before awaiting Room init. Retried or concurrent requests
@@ -148,7 +148,7 @@ mod runtime {
                 room
             } else {
                 let n = self.sql.exec("SELECT count(*) AS n FROM live", None)?.one::<CountRow>()?.n;
-                if n >= hitslop_sharing_protocol::limits::ACCOUNT_ROOMS {
+                if n >= tinys_sharing_protocol::limits::ACCOUNT_ROOMS {
                     return Response::error("Room quota reached", 429);
                 }
                 let room = random_hex(16)?;

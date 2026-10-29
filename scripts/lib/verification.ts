@@ -2,7 +2,7 @@
 import { Database } from "bun:sqlite";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 
 /** Include both sides of renames, deletions and unusual filenames. Missing bases fail closed. */
 export async function changedPaths(cwd: string, ref: string) {
@@ -17,15 +17,15 @@ export type TestTier = "tooling" | "bun" | "cli" | "render" | "browser" | "nativ
 export function testInventory(files: string[]): Record<TestTier, string[]> {
   const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], render: [], browser: [], native: [], packed: [] };
   for (const file of files.sort()) {
-    if (file.startsWith("tests/examples/") || file.startsWith("slops/"))
+    if (file.startsWith("tests/examples/") || file.startsWith("tinys/"))
       throw new Error(`Per-example tests are not allowed: ${file}`);
     const tier = file.startsWith("tests/packed/") ? "packed"
       : file.endsWith(".browser.test.ts") ? "browser"
-      : /^(tests\/native\/(?:render|landing)|packages\/hitslop\/tests\/cli\/build)\.native\.test\.ts$/.test(file) ? "render"
+      : /^(tests\/native\/(?:render|landing)|packages\/tinys\/tests\/cli\/build)\.native\.test\.ts$/.test(file) ? "render"
       : file.endsWith(".native.test.ts") ? "native"
       : file.startsWith("tests/verification/") ? "tooling"
-      : file.startsWith("packages/hitslop/tests/cli/") ? "cli"
-      : /^(packages\/hitslop\/tests\/(sdk|shell)\/|tests\/release\/)/.test(file) ? "bun" : undefined;
+      : file.startsWith("packages/tinys/tests/cli/") ? "cli"
+      : /^(packages\/tinys\/tests\/(sdk|shell)\/|tests\/release\/)/.test(file) ? "bun" : undefined;
     if (!tier) throw new Error(`Unclassified test: ${file}`);
     groups[tier].push(file);
   }

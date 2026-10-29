@@ -3,14 +3,14 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
-project="$repo_root/apps/apple/hitSlop.xcodeproj"
-destination=${HITSLOP_APP_DESTINATION:-/Applications/hitSlop.app}
-team_id=${HITSLOP_DEVELOPMENT_TEAM:-78UAXU8QG8}
-signing_identity=${HITSLOP_DEVELOPMENT_IDENTITY:-Apple Development}
+project="$repo_root/apps/apple/tinys.xcodeproj"
+destination=${TINYS_APP_DESTINATION:-/Applications/tinys.app}
+team_id=${TINYS_DEVELOPMENT_TEAM:-78UAXU8QG8}
+signing_identity=${TINYS_DEVELOPMENT_IDENTITY:-Apple Development}
 build_arch=$(/usr/bin/uname -m)
-stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/hitslop-release.XXXXXX")
-install_stage="$(dirname -- "$destination")/.hitSlop.installing.$$"
-backup="$stage_dir/previous-hitSlop.app"
+stage_dir=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/tinys-release.XXXXXX")
+install_stage="$(dirname -- "$destination")/.tinys.installing.$$"
+backup="$stage_dir/previous-tinys.app"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 # Bundled starter templates are read-only, so each removal restores write access first.
@@ -28,21 +28,21 @@ esac
 
 # This local installer uses automatic development provisioning, not Developer ID.
 # Keep library-only permissions but select the development CloudKit/APNs environments.
-/bin/cp "$repo_root/apps/apple/App/macOS/hitSlop.Release.entitlements" "$stage_dir/development.entitlements"
+/bin/cp "$repo_root/apps/apple/App/macOS/tinys.Release.entitlements" "$stage_dir/development.entitlements"
 /usr/bin/plutil -replace 'com\.apple\.developer\.icloud-container-environment' -string Development "$stage_dir/development.entitlements"
 /usr/bin/plutil -replace 'com\.apple\.developer\.aps-environment' -string development "$stage_dir/development.entitlements"
 
-echo "Building development-signed hitSlop Release for ${build_arch}…"
+echo "Building development-signed tinys Release for ${build_arch}…"
 /usr/bin/env xcodegen generate --spec "$repo_root/apps/apple/project.yml" --quiet
 /usr/bin/xcodebuild \
   -skipPackagePluginValidation \
   -quiet \
   -allowProvisioningUpdates \
   -project "$project" \
-  -scheme hitSlop-macOS \
+  -scheme tinys-macOS \
   -configuration Release \
   -derivedDataPath "$stage_dir/derived" \
-  HITSLOP_RELEASE_ENTITLEMENTS="$stage_dir/development.entitlements" \
+  TINYS_RELEASE_ENTITLEMENTS="$stage_dir/development.entitlements" \
   DEVELOPMENT_TEAM="$team_id" \
   CODE_SIGN_STYLE=Automatic \
   CODE_SIGN_IDENTITY="$signing_identity" \
@@ -50,9 +50,9 @@ echo "Building development-signed hitSlop Release for ${build_arch}…"
   ONLY_ACTIVE_ARCH=YES \
   build
 
-app="$stage_dir/derived/Build/Products/Release/hitSlop.app"
+app="$stage_dir/derived/Build/Products/Release/tinys.app"
 
-for required in "$app" "$app/Contents/Helpers/hitslop-evaluator"; do
+for required in "$app" "$app/Contents/Helpers/tinys-evaluator"; do
   if [ ! -e "$required" ]; then
     echo "Release output is missing: $required" >&2
     exit 70
@@ -80,10 +80,10 @@ fi
 
 "$lsregister" -f "$destination"
 # Launch Services alone leaves the replaced app's Quick Look extensions unregistered, so
-# Finder would show the generic .slop icon until something else registered them.
+# Finder would show the generic .tiny icon until something else registered them.
 for extension in "$destination"/Contents/PlugIns/*.appex; do /usr/bin/pluginkit -a "$extension" || true; done
 /usr/bin/qlmanage -r >/dev/null 2>&1 || true
 /usr/bin/qlmanage -r cache >/dev/null 2>&1 || true
 /usr/bin/killall Finder >/dev/null 2>&1 || true
 
-echo "Installed hitSlop $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$destination/Contents/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$destination/Contents/Info.plist"))"
+echo "Installed tinys $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$destination/Contents/Info.plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$destination/Contents/Info.plist"))"

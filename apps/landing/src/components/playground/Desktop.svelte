@@ -15,12 +15,12 @@
     fx: number; fy: number; tilt: number; open: boolean;
   };
   const layout: Win[] = [
-    { id: "video", title: "hitSlop in action.mp4", emoji: "🎬", kind: "video", width: 520, height: 329, fx: 0, fy: .04, tilt: -1.5, open: true },
-    { id: "picker", title: "Pick One.slop", emoji: "🔮", kind: "shape", width: 330, height: 208, zoom: .55, fx: .04, fy: 1, tilt: 1.5, open: true },
-    { id: "checklist", title: "Today.slop", emoji: "☑️", kind: "window", width: 300, height: 392, fx: .39, fy: .1, tilt: 2, open: true },
+    { id: "video", title: "tinys in action.mp4", emoji: "🎬", kind: "video", width: 520, height: 329, fx: 0, fy: .04, tilt: -1.5, open: true },
+    { id: "picker", title: "Pick One.tiny", emoji: "🔮", kind: "shape", width: 330, height: 208, zoom: .55, fx: .04, fy: 1, tilt: 1.5, open: true },
+    { id: "checklist", title: "Today.tiny", emoji: "☑️", kind: "window", width: 300, height: 392, fx: .39, fy: .1, tilt: 2, open: true },
     { id: "note", title: "Sticky note", emoji: "📝", kind: "note", width: 200, height: 176, fx: .325, fy: 1, tilt: -7, open: true },
-    { id: "timer", title: "Pomodoro.slop", emoji: "🍅", kind: "shape", width: 250, height: 250, zoom: .72, fx: .64, fy: .78, tilt: 0, open: true },
-    { id: "invoice", title: "Invoice.slop", emoji: "💸", kind: "window", width: 344, height: 392, zoom: .555, fx: 1, fy: .02, tilt: -2, open: true },
+    { id: "timer", title: "Pomodoro.tiny", emoji: "🍅", kind: "shape", width: 250, height: 250, zoom: .72, fx: .64, fy: .78, tilt: 0, open: true },
+    { id: "invoice", title: "Invoice.tiny", emoji: "💸", kind: "window", width: 344, height: 392, zoom: .555, fx: 1, fy: .02, tilt: -2, open: true },
   ];
   // Narrower desktops (the hero's right column) keep the video in front; the invoice and picker wait in the dock.
   const medium: Record<string, Partial<Win>> = {
@@ -82,7 +82,7 @@
     order = [...order].sort(() => Math.random() - .5);
   }
   function playVideo(): void {
-    window.dispatchEvent(new CustomEvent("hitslop:play-video"));
+    window.dispatchEvent(new CustomEvent("tinys:play-video"));
   }
 
   function pointerDown(event: PointerEvent, win: Win): void {
@@ -92,7 +92,7 @@
     // Controls inside the title bar (the traffic lights) click; they never start a drag.
     if (target.closest("button")) return;
     const grip = target.closest("[data-grip]");
-    // Titled windows move by their title bar; shaped slops move from anywhere that isn't a control.
+    // Titled windows move by their title bar; shaped tinys move from anywhere that isn't a control.
     if (win.kind === "window" || win.kind === "video" ? !grip : target.closest("button, input, select, textarea, a, label, output")) return;
     const element = event.currentTarget as HTMLElement;
     const box = surface.getBoundingClientRect();
@@ -153,7 +153,7 @@
 
 <div class="desktop" data-drag={canDrag === undefined ? undefined : String(canDrag)}>
   <div class="menubar" aria-hidden="true">
-    <span class="menubar-app"><img src="/assets/appicon-128.webp" width="16" height="16" alt="" /><b>hitSlop</b></span>
+    <span class="menubar-app"><img src="/assets/appicon-128.webp" width="16" height="16" alt="" /><b>tinys</b></span>
     <span class="menubar-menus">File&nbsp;&nbsp;Edit&nbsp;&nbsp;Window&nbsp;&nbsp;Help</span>
     <span class="menubar-right"><span>◐</span><span>✦</span><span class="clock">{clock}</span></span>
   </div>
@@ -196,11 +196,11 @@
 
           <div class="content" style:zoom={win.zoom}>
             {#if win.id === "video"}
-              <button type="button" class="poster" onclick={playVideo} aria-label="Watch hitSlop in action, 30 seconds">
+              <button type="button" class="poster" onclick={playVideo} aria-label="Watch tinys in action, 30 seconds">
                 <picture>
                   <source type="image/avif" srcset="/assets/desktop-hero-poster-960.avif 960w, /assets/desktop-hero-poster.avif 1920w" sizes="520px" />
                   <source type="image/webp" srcset="/assets/desktop-hero-poster-960.webp 960w, /assets/desktop-hero-poster.webp 1920w" sizes="520px" />
-                  <img src="/assets/desktop-hero-poster-960.jpg" width="960" height="540" alt="A Mac desktop full of open slops: a music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle and school planners" fetchpriority="high" />
+                  <img src="/assets/desktop-hero-poster-960.jpg" width="960" height="540" alt="A Mac desktop full of open tinys: a music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle and school planners" fetchpriority="high" />
                 </picture>
                 <span class="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5Z" /></svg></span>
                 <span class="play-label">Watch it in action <small>0:30</small></span>
@@ -267,7 +267,7 @@
   .poster:hover .play, .poster:focus-visible .play { transform: translate(-50%, -50%) scale(1.12); }
   .play-label { position: absolute; left: 12px; bottom: 12px; padding: 6px 12px; border-radius: 999px; color: #10132c; background: #fffffff0; font-size: 14px; font-weight: 800; }
   .play-label small { margin-left: 4px; color: #6b6890; font-size: 13px; font-weight: 600; }
-  .note { width: 100%; min-height: var(--h); padding: 22px 20px; color: #10132c; background: #fff19a; border-radius: 3px 6px 4px 2px; box-shadow: 0 14px 22px #6954222e; font-family: "HitSlop Handwriting", cursive; font-size: 21px; line-height: 1.15; cursor: grab; }
+  .note { width: 100%; min-height: var(--h); padding: 22px 20px; color: #10132c; background: #fff19a; border-radius: 3px 6px 4px 2px; box-shadow: 0 14px 22px #6954222e; font-family: "Tinys Handwriting", cursive; font-size: 21px; line-height: 1.15; cursor: grab; }
   .note p { margin: 0 0 10px; }
   .note span { color: #f443a1; }
   .dock { position: absolute; z-index: 60; left: 50%; bottom: 12px; padding: 8px 10px; display: flex; align-items: flex-end; gap: 6px; border: 1px solid #ffffffcc; border-radius: 24px; background: #ffffff9e; box-shadow: 0 14px 34px #2a1b5c26; backdrop-filter: blur(16px); transform: translateX(-50%); }

@@ -18,8 +18,8 @@ const repository = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 // qualification in Node: Bun's undici shim intermittently resets proxy requests
 // under sustained socket/storage traffic. Bun remains the verification entry point.
 if (process.versions.bun) {
-  const output = join(repository, ".hitslop/sharing/check-accounts.mjs");
-  await mkdir(join(repository, ".hitslop/sharing"), { recursive: true });
+  const output = join(repository, ".tinys/sharing/check-accounts.mjs");
+  await mkdir(join(repository, ".tinys/sharing"), { recursive: true });
   const built = await Bun.build({ entrypoints: [fileURLToPath(import.meta.url)], target: "node",
     external: ["miniflare", "typescript"], define: { "import.meta.url": JSON.stringify(import.meta.url) } });
   if (!built.success) throw new Error(built.logs.join("\n"));
@@ -27,11 +27,11 @@ if (process.versions.bun) {
   const child = Bun.spawn(["node", output], { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
   process.exit(await child.exited);
 }
-import { SharingHost } from "../../packages/hitslop/src/wire/constants.generated";
-import type { AccountRoom, CreatedRoom, RoomInfo } from "../../packages/hitslop/src/wire/sharing.generated";
+import { SharingHost } from "../../packages/tinys/src/wire/constants.generated";
+import type { AccountRoom, CreatedRoom, RoomInfo } from "../../packages/tinys/src/wire/sharing.generated";
 
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-const root = await mkdtemp(join(tmpdir(), "hitslop-account-relay-"));
+const root = await mkdtemp(join(tmpdir(), "tinys-account-relay-"));
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const pem = publicKey.export({ type: "pkcs1", format: "pem" }).toString();
 const uid = (name: string, provider = "apple.com") => {
@@ -55,7 +55,7 @@ function runtime(roomsAvailable = true) {
     workers: [{
       name: "relay", modules: true, scriptPath: harness, modulesRoot: "/",
       compatibilityDate: "2025-11-05", modulesRules: [{ type: "ESModule", include: ["**/*.js"], fallthrough: true }, { type: "CompiledWasm", include: ["**/*.wasm"], fallthrough: true }],
-      bindings: { BROWSER_ORIGIN: "https://share.hitslop.com", FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
+      bindings: { BROWSER_ORIGIN: "https://share.tinys.click", FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
       durableObjects: { ...(roomsAvailable ? { ROOMS: { className: "SlopRoom", useSQLite: true } } : {}), ACCOUNTS: { className: "SharingAccount", useSQLite: true } },
       r2Buckets: ["SEEDS"],
       analyticsEngineDatasets: { METRICS: { dataset: "hitslop_sharing" } },
@@ -73,7 +73,7 @@ function runtime(roomsAvailable = true) {
 let worker = runtime();
 async function call(path: string, token: string | undefined, method = "GET", body?: unknown, headers: Record<string, string> = {}) {
   const binary = body instanceof Uint8Array;
-  const response = await worker.dispatchFetch("https://share.hitslop.com/v1/" + path, {
+  const response = await worker.dispatchFetch("https://share.tinys.click/v1/" + path, {
     method, headers: { ...headers, ...(token ? { Authorization: "Bearer " + token } : {}), ...(body === undefined ? {} : { "Content-Type": binary ? "application/octet-stream" : "application/json" }) },
     ...(body === undefined ? {} : { body: binary ? body : JSON.stringify(body) }),
   });
@@ -92,14 +92,14 @@ const seedHeaders = (bytes: Uint8Array) => ({
 try {
   await checkCompaction(worker, call, uid("compaction-owner"), uid);
   const unused = { async fetch(): Promise<Response> { throw new Error("Static auth/AASA routes must not use assets or relay"); } };
-  const callbackURL = "https://share.hitslop.com/auth/apple";
+  const callbackURL = "https://share.tinys.click/auth/apple";
   const callback = await host.fetch(new Request(callbackURL), { ASSETS: unused, RELAY: unused });
   assert.equal(callback.status, 200);
   assert.equal(callback.headers.get("Content-Type"), "text/html; charset=utf-8");
   assert.equal(callback.headers.get("Cache-Control"), "no-store");
   assert.equal(callback.headers.get("Referrer-Policy"), "no-referrer");
   const callbackPage = await callback.text();
-  assert.ok(callbackPage.includes("hitslop://auth/apple"));
+  assert.ok(callbackPage.includes("tinys://auth/apple"));
   const script = /<script>([\s\S]*?)<\/script>/.exec(callbackPage)![1]!;
   const digest = createHash("sha256").update(script).digest("base64");
   assert.equal(callback.headers.get("Content-Security-Policy"),
@@ -107,7 +107,7 @@ try {
   for (const fragment of ["#state=example&id_token=a.b.c&code=a%2Bb%26c", "#state=example&error=user_cancelled_authorize", ""]) {
     let destination: string | undefined;
     runInNewContext(script, { location: { hash: fragment, replace(url: string) { destination = url; } } });
-    assert.equal(destination, fragment ? "hitslop://auth/apple" + fragment : undefined);
+    assert.equal(destination, fragment ? "tinys://auth/apple" + fragment : undefined);
   }
   const callbackHead = await host.fetch(new Request(callbackURL, { method: "HEAD" }), { ASSETS: unused, RELAY: unused });
   assert.equal(callbackHead.status, 200);
@@ -115,7 +115,7 @@ try {
   assert.equal((await host.fetch(new Request(callbackURL, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
   assert.equal((await host.fetch(new Request(`https://copy.${SharingHost.domain}/auth/apple`), { ASSETS: unused, RELAY: unused })).status, 404);
   assert.equal((await host.fetch(new Request("https://other.example/auth/apple"), { ASSETS: unused, RELAY: unused })).status, 403);
-  const associationURL = "https://share.hitslop.com/.well-known/apple-app-site-association";
+  const associationURL = "https://share.tinys.click/.well-known/apple-app-site-association";
   const association = await host.fetch(new Request(associationURL), { ASSETS: unused, RELAY: unused });
   assert.equal(association.status, 200);
   assert.equal(association.headers.get("Content-Type"), "application/json");
@@ -129,8 +129,8 @@ try {
   assert.equal(head.status, 200);
   assert.equal(await head.text(), "");
   assert.equal((await host.fetch(new Request(associationURL, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
-  assert.equal((await host.fetch(new Request(associationURL.replace("share.hitslop.com", "copy.dotslop.com")), { ASSETS: unused, RELAY: unused })).status, 404);
-  const join = await host.fetch(new Request("https://share.hitslop.com/join"), {
+  assert.equal((await host.fetch(new Request(associationURL.replace("share.tinys.click", "copy.dotslop.com")), { ASSETS: unused, RELAY: unused })).status, 404);
+  const join = await host.fetch(new Request("https://share.tinys.click/join"), {
     ASSETS: { async fetch(request: Request) { assert.equal(new URL(request.url).pathname, "/index.html"); return new Response("join"); } }, RELAY: unused,
   });
   assert.equal(await join.text(), "join");
@@ -184,8 +184,8 @@ try {
   assert.equal((await call("auth/probe", a)).status, 404);
   assert.equal((await call(base + "/stats", r.capability)).status, 404);
   assert.equal((await call("account/reserve", a, "POST", { document })).status, 404);
-  const joined = await worker.dispatchFetch("https://share.hitslop.com/v1/" + base + "/sync", {
-    headers: { Upgrade: "websocket", Origin: "https://share.hitslop.com", "Sec-WebSocket-Protocol": SharingHost.socketProtocol + ", cap." + r.capability },
+  const joined = await worker.dispatchFetch("https://share.tinys.click/v1/" + base + "/sync", {
+    headers: { Upgrade: "websocket", Origin: "https://share.tinys.click", "Sec-WebSocket-Protocol": SharingHost.socketProtocol + ", cap." + r.capability },
   });
   assert.equal(joined.status, 101, "A capability guest can connect to the live room");
   joined.webSocket!.accept();
@@ -218,7 +218,7 @@ try {
   assert.equal((await call(replacementBase + "/open", b, "POST")).status, 200);
   assert.equal((await json<RoomInfo>(replacementBase, replacementRoom.capability)).document,
     "00000000-0000-4000-8000-000000000002");
-  const rejoined = await worker.dispatchFetch("https://share.hitslop.com/v1/" + replacementBase + "/sync", {
+  const rejoined = await worker.dispatchFetch("https://share.tinys.click/v1/" + replacementBase + "/sync", {
     headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol, Authorization: "Bearer " + replacementRoom.capability },
   });
   assert.equal(rejoined.status, 101, "A guest can reconnect with the new room for the same document");
@@ -243,7 +243,7 @@ try {
     }
   } }, { highWaterMark: 0 });
   const lateInit = { method: "PUT", headers: { Authorization: "Bearer " + a, ...seedHeaders(seed) }, body, duplex: "half" as const };
-  const lateUpload = worker.dispatchFetch("https://share.hitslop.com/v1/rooms/" + next.room + "/seed", lateInit);
+  const lateUpload = worker.dispatchFetch("https://share.tinys.click/v1/rooms/" + next.room + "/seed", lateInit);
   await ready;
   try {
     assert.equal((await call("rooms/" + next.room, a, "DELETE")).status, 200);
@@ -270,7 +270,7 @@ try {
   // Uploading rooms can already hold private data and need the same purge as Live.
   assert.equal((await call("rooms/" + quota[1]!.room + "/seed", a, "PUT", seed, seedHeaders(seed))).status, 200);
   const unrelated = await json<CreatedRoom>("rooms", b, "POST", { document });
-  const socket = await worker.dispatchFetch("https://share.hitslop.com/v1/" + liveBase + "/sync", {
+  const socket = await worker.dispatchFetch("https://share.tinys.click/v1/" + liveBase + "/sync", {
     headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol, Authorization: "Bearer " + freed.capability },
   });
   assert.equal(socket.status, 101);

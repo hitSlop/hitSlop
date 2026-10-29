@@ -1,24 +1,24 @@
 {
-  "name": "hitslop-workspace",
+  "name": "tinys-workspace",
   "private": true,
   "license": "MIT",
   "type": "module",
   "packageManager": "bun@1.4.2",
   "workspaces": [
-    "packages/hitslop",
-    "slops"
+    "packages/tinys",
+    "tinys"
   ],
   "scripts": {
-    "slop": "bun packages/hitslop/src/cli/cli.ts",
+    "tiny": "bun packages/tinys/src/cli/cli.ts",
     "schema:generate": "bun scripts/build/generate.ts",
     "build": "bun scripts/build/build.ts",
     "verify": "bun scripts/verify.ts",
     "check": "bun scripts/verify.ts contracts,types",
-    "lint": "oxlint packages/hitslop/src scripts",
+    "lint": "oxlint packages/tinys/src scripts",
     "test": "bun scripts/verify.ts tooling,bun,cli",
     "swift:test": "bun scripts/verify.ts swift",
     "swift:format": "bun scripts/lib/swift-format.ts",
-    "bench:windows": "HITSLOP_BENCH=1 bun run swift:test --filter BenchmarkTests",
+    "bench:windows": "TINYS_BENCH=1 bun run swift:test --filter BenchmarkTests",
     "bench:growth": "bun scripts/dev/bench-document-growth.ts",
     "apple:build": "bun scripts/build/apple.ts",
     "skills:build": "bun scripts/build/skills.ts",
@@ -34,7 +34,7 @@
     "compat:capture": "bun scripts/compat/capture.ts",
     "core:build:wasm": "bun scripts/build/core.ts --wasm",
     "core:test": "bun scripts/verify.ts rust",
-    "core:test:extended": "HITSLOP_MODEL_SEEDS=64 HITSLOP_MODEL_STEPS=500 HITSLOP_MERGE_SEEDS=400 HITSLOP_COMPAT_SEEDS=16 HITSLOP_COMPAT_STEPS=40 cargo nextest run --locked --release --ignore-default-filter --profile extended -p hitslop-core -E 'test(/^model::/) | test(/^merge::/) | test(/^compat_writers::/)'"
+    "core:test:extended": "TINYS_MODEL_SEEDS=64 TINYS_MODEL_STEPS=500 TINYS_MERGE_SEEDS=400 TINYS_COMPAT_SEEDS=16 TINYS_COMPAT_STEPS=40 cargo nextest run --locked --release --ignore-default-filter --profile extended -p tinys-core -E 'test(/^model::/) | test(/^merge::/) | test(/^compat_writers::/)'"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20251106.1",
@@ -42,7 +42,7 @@
     "@types/bun": "1.4.2",
     "@types/pngjs": "6.0.5",
     "bits-ui": "^2.19.5",
-    "hitslop": "workspace:*",
+    "@hitslop/tinys": "workspace:*",
     "miniflare": "4.20251105.0",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2004",
@@ -54,5 +54,5 @@
     "typescript": "6.0.3",
     "vite": "8.3.3"
   },
-  "version": "1.3.1"
+  "version": "1.0.0"
 }

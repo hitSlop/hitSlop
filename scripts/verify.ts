@@ -21,7 +21,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { testInventory, checkoutLease, atomicJson, retainReport, changedPaths, type Preparation } from "./lib/verification";
 import { exec as testExec, verificationAbort } from "./lib/test-process";
-import { run } from "../packages/hitslop/src/cli/process";
+import { run } from "../packages/tinys/src/cli/process";
 import { repository, sha256, sourceBlobHash, useTestRegistry } from "./lib/artifacts";
 import { prepareNativeFixtures, stageNativeFixtures } from "./lib/native-fixtures";
 import { swiftTests } from "./lib/swift-tests";
@@ -64,24 +64,24 @@ const option = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) 
 if (flag("--json") && !flag("--list")) throw new Error("--json requires --list");
 const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
-const releaseTag = process.env.HITSLOP_RELEASE_TAG?.replace(/^v/, "") || undefined;
+const releaseTag = process.env.TINYS_RELEASE_TAG?.replace(/^tinys-v/, "") || undefined;
 // Nightly and release runs add expensive boundary cases, presentation, storage-growth
 // budgets and broader randomized coverage. All compatibility replay is complete.
-const nightly = release || process.env.HITSLOP_NIGHTLY === "1";
-if (nightly) process.env.HITSLOP_NIGHTLY = "1";
+const nightly = release || process.env.TINYS_NIGHTLY === "1";
+if (nightly) process.env.TINYS_NIGHTLY = "1";
 else {
-  process.env.HITSLOP_MODEL_SEEDS ||= "4";
-  process.env.HITSLOP_MERGE_SEEDS ||= "8";
-  process.env.HITSLOP_COMPAT_SEEDS ||= "1";
-  process.env.HITSLOP_PUBLICATIONS_ROUNDS ||= "10";
+  process.env.TINYS_MODEL_SEEDS ||= "4";
+  process.env.TINYS_MERGE_SEEDS ||= "8";
+  process.env.TINYS_COMPAT_SEEDS ||= "1";
+  process.env.TINYS_PUBLICATIONS_ROUNDS ||= "10";
 }
 const nextestFilters = (args: string[]) =>
   (nightly || args.length) && !args.includes("--ignore-default-filter") ? ["--ignore-default-filter"] : [];
 
 // A release builds, and so tests, what ships: the `dist` Cargo profile (scripts/build/core.ts).
-if (release) process.env.HITSLOP_CARGO_PROFILE = "dist";
-const scratch = mkdtempSync(join(tmpdir(), "hitslop-verify-"));
-process.env.HITSLOP_TEST_REGISTRY ||= join(scratch, "registry");
+if (release) process.env.TINYS_CARGO_PROFILE = "dist";
+const scratch = mkdtempSync(join(tmpdir(), "tinys-verify-"));
+process.env.TINYS_TEST_REGISTRY ||= join(scratch, "registry");
 process.env.TMPDIR = scratch;
 process.once("exit", () => rmSync(scratch, { recursive: true, force: true }));
 useTestRegistry();
@@ -117,7 +117,7 @@ async function quiet(command: string[], options: { env?: Record<string, string |
   return output;
 }
 
-const inventory = testInventory(["packages/hitslop/tests/**/*.test.ts", "tests/**/*.test.ts", "slops/**/*.test.ts"]
+const inventory = testInventory(["packages/tinys/tests/**/*.test.ts", "tests/**/*.test.ts", "tinys/**/*.test.ts"]
   .flatMap(pattern => [...new Bun.Glob(pattern).scanSync(repository)]));
 
 /** `bun test` over `files`: positional `args` narrow them by path, options pass through. */
@@ -150,11 +150,11 @@ const tiers: Tier[] = [
     run: async () => {
       const tsc = (project: string) => quiet([process.execPath, "node_modules/typescript/bin/tsc", "-p", project]);
       const output = await Promise.all([
-        quiet([process.execPath, "node_modules/prettier/bin/prettier.cjs", "--check", "packages/hitslop/src"]),
+        quiet([process.execPath, "node_modules/prettier/bin/prettier.cjs", "--check", "packages/tinys/src"]),
         // Type-aware rules from .oxlintrc.json; .svelte templates are not linted.
-        quiet([process.execPath, "node_modules/oxlint/bin/oxlint", "packages/hitslop/src", "scripts"]),
+        quiet([process.execPath, "node_modules/oxlint/bin/oxlint", "packages/tinys/src", "scripts"]),
         // The type tests' own project relaxes only the unused rules: their checks are never read.
-        tsc("tsconfig.json").then(async (root) => [root, await tsc("packages/hitslop/tests/tsconfig.json")]),
+        tsc("tsconfig.json").then(async (root) => [root, await tsc("packages/tinys/tests/tsconfig.json")]),
         quiet([process.execPath, "scripts/templates/check.ts"]),
         // Placeholders, the iPhone download address and the landing catalog's drift from the templates.
         quiet([process.execPath, "scripts/ci/hygiene.ts"]),
@@ -176,8 +176,8 @@ const tiers: Tier[] = [
   {
     name: "render", needs: ["engine", "shell"], inputs: tierInputs.render,
     run: (args) => bunTest(inventory.render, ["--parallel=1", "--timeout=120000", ...args], {
-      HITSLOP_TEST_EVIDENCE: runDirectory,
-      ...(release ? { HITSLOP_RENDER: "all" } : {}),
+      TINYS_TEST_EVIDENCE: runDirectory,
+      ...(release ? { TINYS_RENDER: "all" } : {}),
     }),
   },
   {
@@ -191,12 +191,12 @@ const tiers: Tier[] = [
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
         // Compile the mobile host graph independently: workspace feature unification
         // otherwise hides accidental desktop dependencies and unavailable-service code.
-        await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--", "-D", "warnings"]);
-        await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-sharing-worker", "--target", "wasm32-unknown-unknown", "--", "-D", "warnings"]);
+        await quiet(["cargo", "clippy", "--locked", "-p", "tinys-core-ffi", "--no-default-features", "--features", "mobile-capture", "--", "-D", "warnings"]);
+        await quiet(["cargo", "clippy", "--locked", "-p", "tinys-sharing-worker", "--target", "wasm32-unknown-unknown", "--", "-D", "warnings"]);
         // The WASM adapter's lints do not depend on the host: Linux and release runs check
         // them, so macOS runs skip two builds and Homebrew's clang.
         if (process.platform === "linux" || release) {
-          const wasm = ["-p", "hitslop-core-wasm", "--target", "wasm32-unknown-unknown"];
+          const wasm = ["-p", "tinys-core-wasm", "--target", "wasm32-unknown-unknown"];
           await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
           const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
           await quiet(["cargo", "clippy", "--locked", ...wasm, "--features", "browser", "--", "-D", "warnings"], { env: {
@@ -218,10 +218,10 @@ const tiers: Tier[] = [
       await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {
-          await quiet(["cargo", "clippy", "--locked", "-p", "hitslop-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);
-          await quiet(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", "--no-run"]);
+          await quiet(["cargo", "clippy", "--locked", "-p", "tinys-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);
+          await quiet(["cargo", "nextest", "run", "--locked", "-p", "tiny-engine", "--features", "bundled-sqlite", "--no-run"]);
         });
-        await sh(["cargo", "nextest", "run", "--locked", "-p", "slop-engine", "--features", "bundled-sqlite", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters([])]);
+        await sh(["cargo", "nextest", "run", "--locked", "-p", "tiny-engine", "--features", "bundled-sqlite", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters([])]);
       }
     },
   },
@@ -242,7 +242,7 @@ const tiers: Tier[] = [
     // What the published packages ship: their sources, starter, skills and the page shell.
     inputs: tierInputs.packed,
     // A release also runs the packages' native workflow: register, create, theme and export.
-    run: (args) => bunTest(inventory.packed, ["--timeout=120000", ...args], release ? { HITSLOP_PACKED_NATIVE: "1" } : {}),
+    run: (args) => bunTest(inventory.packed, ["--timeout=120000", ...args], release ? { TINYS_PACKED_NATIVE: "1" } : {}),
   },
   {
     name: "swift",
@@ -255,11 +255,11 @@ const tiers: Tier[] = [
       });
       const fixtures = await prepare("Native fixtures", prepareNativeFixtures);
       // Benchmarks change the trial template's build stage before packing it.
-      if (Object.keys(process.env).some((name) => name.startsWith("HITSLOP_BENCH"))) await stageNativeFixtures();
+      if (Object.keys(process.env).some((name) => name.startsWith("TINYS_BENCH"))) await stageNativeFixtures();
       await swiftTests({
         ...environment,
-        HITSLOP_TEST_EVIDENCE: runDirectory,
-        HITSLOP_PRESENTATION_FIXTURES: JSON.stringify(fixtures),
+        TINYS_TEST_EVIDENCE: runDirectory,
+        TINYS_PRESENTATION_FIXTURES: JSON.stringify(fixtures),
       }, args, prepare);
     },
   },
@@ -272,9 +272,9 @@ const tiers: Tier[] = [
     run: async () => {},
   },
   {
-    // Playwright WebKit and Chrome: `slop dev`, EditableText and the local Chrome browser host.
+    // Playwright WebKit and Chrome: `tiny dev`, EditableText and the local Chrome browser host.
     name: "browser", native: true, nightly: true, needs: ["browser", "engine", "shell"], inputs: tierInputs.browser,
-    run: (args) => bunTest(inventory.browser, args, { HITSLOP_TEST_EVIDENCE: runDirectory }),
+    run: (args) => bunTest(inventory.browser, args, { TINYS_TEST_EVIDENCE: runDirectory }),
   },
   {
     name: "native",
@@ -283,10 +283,10 @@ const tiers: Tier[] = [
     inputs: tierInputs.native,
     run: async (args) => {
       await bunTest(inventory.native, ["--timeout=120000", ...args], {
-        HITSLOP_TEST_EVIDENCE: runDirectory,
+        TINYS_TEST_EVIDENCE: runDirectory,
         // A release renders every bundled template and requires its frozen corpus entry.
-        ...(release ? { HITSLOP_RENDER: "all" } : {}),
-        ...(release && !flag("--skip-app") ? { HITSLOP_APP_BINARY: join(repository, "generated/app/hitSlop.app/Contents/MacOS/hitSlop") } : {}),
+        ...(release ? { TINYS_RENDER: "all" } : {}),
+        ...(release && !flag("--skip-app") ? { TINYS_APP_BINARY: join(repository, "generated/app/tinys.app/Contents/MacOS/tinys") } : {}),
       });
     },
   },
@@ -336,7 +336,7 @@ const toolchains = {
 let corpusIdentity: unknown = null;
 const corpusTiers = new Set(["compat", "rust", "swift", "native", "browser", "app"]);
 const digestOf = (tier: Tier, files: Record<string, string>) =>
-  sha256(JSON.stringify([corpusTiers.has(tier.name) ? corpusIdentity : null, Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.name === "swift" || tier.name === "app" ? toolchains.swift : null }, process.platform, process.arch, process.env.HITSLOP_CARGO_PROFILE || "release", nightly, inputsOf(tier, files).map((path) => [path, files[path]])]));
+  sha256(JSON.stringify([corpusTiers.has(tier.name) ? corpusIdentity : null, Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.name === "swift" || tier.name === "app" ? toolchains.swift : null }, process.platform, process.arch, process.env.TINYS_CARGO_PROFILE || "release", nightly, inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
 const differences = (tier: Tier, before: Record<string, string>, after: Record<string, string>) =>
   [...new Set([...inputsOf(tier, before), ...inputsOf(tier, after)])].filter((path) => before[path] !== after[path]);
@@ -344,8 +344,8 @@ const summary = (paths: string[]) => (paths.length > 3 ? `${paths.slice(0, 3).jo
 
 /** What passed on this machine: each tier's input digest, and the snapshot it passed on. */
 type Passed = { tiers: Record<string, { digest: string; snapshot: string; at: string }>; snapshots: Record<string, Record<string, string>> };
-const passedFile = join(repository, ".hitslop/verify/passed.json");
-const releaseLease = flag("--list") ? undefined : await checkoutLease(join(repository, ".hitslop/verify"));
+const passedFile = join(repository, ".tinys/verify/passed.json");
+const releaseLease = flag("--list") ? undefined : await checkoutLease(join(repository, ".tinys/verify"));
 if (releaseLease) process.once("exit", releaseLease);
 const history: Passed = await Bun.file(passedFile).json().catch(() => ({ tiers: {}, snapshots: {} }));
 const current = await snapshot();
@@ -360,7 +360,7 @@ async function writePass(tier: Tier) {
   history.tiers[tier.name] = { digest: digestOf(tier, current), snapshot: id, at: new Date().toISOString() };
   const used = new Set(Object.values(history.tiers).map(({ snapshot }) => snapshot));
   for (const key of Object.keys(history.snapshots)) if (!used.has(key)) delete history.snapshots[key];
-  await mkdir(join(repository, ".hitslop/verify"), { recursive: true });
+  await mkdir(join(repository, ".tinys/verify"), { recursive: true });
   await atomicJson(passedFile, history);
 }
 
@@ -403,19 +403,21 @@ async function select(): Promise<{ selection: Selection; base?: string }> {
 let corpusPrepared = false;
 async function prepareCorpora() {
   if (corpusPrepared) return;
-  const recording = process.env.HITSLOP_COMPAT_RECORD;
+  const recording = process.env.TINYS_COMPAT_RECORD;
   if (recording) {
     if (release || !flag("--no-build") || named?.length !== 1 || named[0] !== "swift" || !tierArgs.includes("CompatCorpusTests"))
       throw new Error("Corpus recording is only allowed in the dedicated Swift capture pass");
     corpusIdentity = "capture";
   } else {
-    const resolved = process.env.HITSLOP_COMPAT_ROOT ? undefined : await resolveCorpora();
-    corpusIdentity = await verifyResolvedCorpora(process.env.HITSLOP_COMPAT_ROOT!, { history: resolved?.entries });
+    const resolved = process.env.TINYS_COMPAT_ROOT ? undefined : await resolveCorpora();
+    corpusIdentity = await verifyResolvedCorpora(process.env.TINYS_COMPAT_ROOT!, { history: resolved?.entries });
   }
   const entries = await releases();
-  if (!entries.length) throw new Error("No compatibility corpora to replay");
+  if (!entries.length && (release || recording)) throw new Error("Release qualification requires the first tinys candidate corpus");
   if (recording && (entries.length !== 1 || entries[0]!.name !== recording || entries[0]!.release.frozen))
     throw new Error("Capture must select exactly its unfinished corpus entry");
+  if (!entries.length && !release && !recording) process.env.TINYS_COMPAT_BOOTSTRAP = "1";
+  else delete process.env.TINYS_COMPAT_BOOTSTRAP;
   await verifyPreludes(entries);
   if (release && releaseTag && !entries.some(entry => entry.name === releaseTag && entry.release.frozen))
     throw new Error(`The frozen candidate corpus ${releaseTag} must be included in release replay`);
@@ -442,14 +444,14 @@ if (flag("--list") || !selection.length) {
 }
 if (selection.some(({ tier }) => tier.native) && process.platform !== "darwin") throw new Error("Native tiers require macOS");
 
-runDirectory = join(repository, ".hitslop/evidence/runs", runId);
+runDirectory = join(repository, ".tinys/evidence/runs", runId);
 await mkdir(runDirectory, { recursive: true });
 const report = {
   runId, directory: runDirectory, command: process.argv.slice(2),
-  configuration: { profile: process.env.HITSLOP_CARGO_PROFILE || "release", nightly, bunWorkers: Math.min(4, availableParallelism()), cliWorkers: 1 },
+  configuration: { profile: process.env.TINYS_CARGO_PROFILE || "release", nightly, bunWorkers: Math.min(4, availableParallelism()), cliWorkers: 1 },
   partial: tierArgs.length > 0,
   reusedBuild: flag("--no-build") || flag("--built"),
-  certifiesDefaultRun: process.env.HITSLOP_COMPAT_OFFLINE !== "1" && !tierArgs.length && !flag("--no-build") && !flag("--built"),
+  certifiesDefaultRun: process.env.TINYS_COMPAT_OFFLINE !== "1" && !tierArgs.length && !flag("--no-build") && !flag("--built"),
   inventory, commands, toolchains,
   cancelled: false,
   mode: release ? "release" : flag("--all") ? "all" : selection.every(({ reason }) => reason === "named") ? "named" : "affected",
@@ -541,7 +543,7 @@ try {
   passed = false;
 } finally {
   report.cancelled = verificationAbort.signal.aborted;
-  const evidence = join(repository, ".hitslop/evidence");
+  const evidence = join(repository, ".tinys/evidence");
   await mkdir(evidence, { recursive: true });
   const file = join(evidence, release ? "release-check.json" : "verify.json");
   await retainReport(runDirectory, file, report);

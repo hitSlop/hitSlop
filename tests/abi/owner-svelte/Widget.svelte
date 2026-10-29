@@ -1,6 +1,6 @@
 <script lang="ts">
   import "./styles.css";
-  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type { CaptureProps, WidgetProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   let { snapshot, family, width, height }: CaptureProps<typeof schema> & WidgetProps = $props();
 </script>

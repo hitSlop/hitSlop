@@ -1,0 +1,21 @@
+{
+  "phase": "futurePhase",
+  "control": {
+    "type": "futureControl"
+  },
+  "event": {
+    "type": "futureEvent"
+  },
+  "frames": [
+    "ff",
+    "020200",
+    "060000000000000001ff"
+  ],
+  "envelopes": [
+    "7f",
+    "010200",
+    "05017f"
+  ],
+  "unknownErrorFrame": "07ff00",
+  "unknownErrorEnvelope": "06ff00"
+}

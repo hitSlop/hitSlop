@@ -4,13 +4,21 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { sha256 } from "../../scripts/lib/artifacts";
+import { stableTag } from "../../scripts/lib/release-assets";
 import { advancesBuild, appcastBuild, assertQualified, validateApproval, validateCandidate, validatePublication, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "../../scripts/release/record";
 
+test("tinys release tags do not include the preserved hitSlop lineage", () => {
+  expect(stableTag.test("tinys-v1.0.0")).toBe(true);
+  expect(stableTag.test("v1.0.0")).toBe(false);
+  expect(stableTag.test("tinys-v01.0.0")).toBe(false);
+  expect(checkReleaseTags(["v1.0.0", "v1.3.0"], [], "tinys-v1.0.0")).toEqual([]);
+});
+
 test("resumed candidates require their original identity and complete, unchanged artifacts", async () => {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-release-record-"));
-  const saved: ReleaseRecord = { tag: "v7.2.0", macVersion: "7.2.0", macBuild: "42", commit: "c".repeat(40), run: "123", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", corpus: { file: "compat-corpus-7.2.0.tar.gz", sha256: sha256(Buffer.from("compat-corpus-7.2.0.tar.gz")) }, qualified: {}, artifacts: {} };
+  const folder = await mkdtemp(join(tmpdir(), "tinys-release-record-"));
+  const saved: ReleaseRecord = { tag: "tinys-v7.2.0", macVersion: "7.2.0", macBuild: "42", commit: "c".repeat(40), run: "123", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", corpus: { file: "compat-corpus-7.2.0.tar.gz", sha256: sha256(Buffer.from("compat-corpus-7.2.0.tar.gz")) }, qualified: {}, artifacts: {} };
   try {
-    for (const name of ["compat-corpus-7.2.0.tar.gz", "hitslop-7.2.0.tgz", "hitSlop.dmg", "hitSlop.zip", "appcast.xml", "hitSlop-7.2.0.md", "release-notes.md"]) {
+    for (const name of ["compat-corpus-7.2.0.tar.gz", "hitslop-tinys-7.2.0.tgz", "tinys.dmg", "tinys.zip", "appcast.xml", "tinys-7.2.0.md", "release-notes.md"]) {
       await writeFile(join(folder, name), name);
       saved.artifacts[name] = sha256(Buffer.from(name));
     }
@@ -18,7 +26,7 @@ test("resumed candidates require their original identity and complete, unchanged
     await verifyArtifacts(saved, folder);
     expect(() => validateRecord(saved, saved.tag, "d".repeat(40))).toThrow("different tag or commit");
     expect(() => validateRecord({ ...saved, artifacts: {} }, saved.tag, saved.commit)).toThrow("missing");
-    for (const name of ["hitSlop-7.2.0.md", "release-notes.md"]) {
+    for (const name of ["tinys-7.2.0.md", "release-notes.md"]) {
       const artifacts = { ...saved.artifacts };
       delete artifacts[name];
       expect(() => validateRecord({ ...saved, artifacts }, saved.tag, saved.commit)).toThrow(`missing ${name}`);
@@ -27,7 +35,7 @@ test("resumed candidates require their original identity and complete, unchanged
       await writeFile(join(folder, name), name);
     }
     expect(() => validateRecord({ ...saved, artifacts: { ...saved.artifacts, "../outside": "a".repeat(64) } }, saved.tag, saved.commit)).toThrow("Invalid artifact");
-    await writeFile(join(folder, "hitSlop.dmg"), "rebuilt");
+    await writeFile(join(folder, "tinys.dmg"), "rebuilt");
     await expect(verifyArtifacts(saved, folder)).rejects.toThrow("Artifact differs");
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
@@ -81,26 +89,26 @@ test("publication requires this run's approved review for the release environmen
 });
 
 test("unpublished tags are diagnostic except when they collide with the candidate", () => {
-  const tags = ["v9.9.9", "v1.0.0", "macos-v0.1.0"];
-  const published = [{ tag_name: "v1.0.0" }];
-  expect(checkReleaseTags(tags, published, "v1.1.0")).toEqual(["v9.9.9"]);
-  expect(() => checkReleaseTags(tags, published, "v9.9.9")).toThrow("already exists");
-  expect(checkReleaseTags(tags, published, "v1.0.0", true)).toEqual(["v9.9.9"]);
+  const tags = ["tinys-v9.9.9", "tinys-v1.0.0", "macos-v0.1.0"];
+  const published = [{ tag_name: "tinys-v1.0.0" }];
+  expect(checkReleaseTags(tags, published, "tinys-v1.1.0")).toEqual(["tinys-v9.9.9"]);
+  expect(() => checkReleaseTags(tags, published, "tinys-v9.9.9")).toThrow("already exists");
+  expect(checkReleaseTags(tags, published, "tinys-v1.0.0", true)).toEqual(["tinys-v9.9.9"]);
 });
 
 test("ignoring stray tags never allows drafts or mutable publications into a new candidate", async () => {
-  const tags = async () => ["v9.9.9"];
+  const tags = async () => ["tinys-v9.9.9"];
   expect(await checkReleaseHistory("1.1.0", "2", undefined, { list: async () => [], tags })).toBeUndefined();
-  const release = { id: 1, tag_name: "v1.0.0", draft: false, prerelease: false, immutable: true, assets: [] };
+  const release = { id: 1, tag_name: "tinys-v1.0.0", draft: false, prerelease: false, immutable: true, assets: [] };
   for (const changes of [{ draft: true }, { prerelease: true }])
     await expect(checkReleaseHistory("1.1.0", "2", undefined, { list: async () => [{ ...release, ...changes }], tags })).rejects.toThrow("Incomplete publication");
   await expect(checkReleaseHistory("1.1.0", "2", undefined, { list: async () => [{ ...release, immutable: false }], tags })).rejects.toThrow("not immutable");
 });
 
 test("publication is complete when npm and GitHub latest agree independently of the website", () => {
-  const record = { macVersion: "1.0.0", tag: "v1.0.0", macBuild: "31", commit: "candidate", npmIntegrity: "exact-npm-bytes" } as ReleaseRecord;
-  const state = { npm: { version: "1.0.0", dist: { integrity: "exact-npm-bytes" } }, githubTag: "v1.0.0" };
+  const record = { macVersion: "1.0.0", tag: "tinys-v1.0.0", macBuild: "31", commit: "candidate", npmIntegrity: "exact-npm-bytes" } as ReleaseRecord;
+  const state = { npm: { version: "1.0.0", dist: { integrity: "exact-npm-bytes" } }, githubTag: "tinys-v1.0.0" };
   validatePublication(record, state);
-  expect(() => validatePublication(record, { ...state, githubTag: "v0.9.0" })).toThrow("Incomplete publication");
+  expect(() => validatePublication(record, { ...state, githubTag: "tinys-v0.9.0" })).toThrow("Incomplete publication");
   expect(() => validatePublication(record, { ...state, npm: { ...state.npm, dist: { integrity: "different" } } })).toThrow("Incomplete publication");
 });

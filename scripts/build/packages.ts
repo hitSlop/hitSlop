@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { stageEngines } from "./engines";
-import { buildSkills } from "../../packages/hitslop/src/cli/skills-build";
+import { buildSkills } from "../../packages/tinys/src/cli/skills-build";
 import { buildEngine, cargoOutput } from "./core";
 import { buildBrowser } from "./browser";
 import { buildShell } from "./shell";
@@ -17,21 +17,21 @@ export async function packPackages(prepared = false) {
   await mkdir(output, { recursive: true });
 
   /** Removed after packing, so a checkout always runs its fresh build. */
-  const engines = resolve("packages/hitslop/engine");
+  const engines = resolve("packages/tinys/engine");
   try {
     const commit = (await new Response(Bun.spawn(["git", "rev-parse", "HEAD"], { stdout: "pipe" }).stdout).text()).trim();
-    await stageEngines(engines, resolve("generated/engines"), cargoOutput("slop-engine"), commit);
+    await stageEngines(engines, resolve("generated/engines"), cargoOutput("tiny-engine"), commit);
     const notices = join(engines, "font-licenses");
     await mkdir(notices);
-    const fonts = resolve("crates/hitslop-runner/fonts");
+    const fonts = resolve("crates/tinys-runner/fonts");
     for (const name of await readdir(fonts))
       if (name.includes("LICENSE") || name === "README.md") await copyFile(join(fonts, name), join(notices, name));
     const rendererNotices = join(engines, "renderer-licenses");
     await mkdir(rendererNotices);
-    const rendererLicenseSource = resolve("crates/hitslop-runner/renderer-licenses");
+    const rendererLicenseSource = resolve("crates/tinys-runner/renderer-licenses");
     for (const name of await readdir(rendererLicenseSource))
       await copyFile(join(rendererLicenseSource, name), join(rendererNotices, name));
-    const directory = resolve("packages/hitslop");
+    const directory = resolve("packages/tinys");
     const metadata = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
     for (const value of Object.values(metadata.dependencies ?? {}))
       if (String(value).startsWith("workspace:") || String(value).startsWith("file:"))
@@ -41,7 +41,7 @@ export async function packPackages(prepared = false) {
       stdout: "inherit",
       stderr: "inherit",
     });
-    if (await child.exited) throw new Error("Cannot pack hitslop");
+    if (await child.exited) throw new Error("Cannot pack tinys");
   } finally {
     await rm(engines, { recursive: true, force: true });
   }

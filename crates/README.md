@@ -1,23 +1,23 @@
 # Shared document core
 
-The document semantics every host uses: the Swift app and the CLI's engine (`slop dev`
+The document semantics every host uses: the Swift app and the CLI's engine (`tiny dev`
 included) use the native Rust core. Bun SDK tests use the WASM adapter.
 
-- `hitslop-core`: descriptor interpretation, Loro operations, publications and bytes; with
-  `storage`, the `.slop` file, its writer lock and the save policy.
-- `hitslop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
-- `hitslop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
-- `slop-engine`: the document engine the CLI runs on any platform (templates, create,
+- `tinys-core`: descriptor interpretation, Loro operations, publications and bytes; with
+  `storage`, the `.tiny` file, its writer lock and the save policy.
+- `tinys-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
+- `tinys-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
+- `tiny-engine`: the document engine the CLI runs on any platform (templates, create,
   pack, inspect, schema, export and document operations); `pack` also renders the artwork
   a build does not supply when asked. On macOS and Linux the engine exports closed documents in its own
-  restricted evaluator; on macOS it also opens documents in hitSlop.app.
-- `hitslop-sharing-protocol`: the relay's wire types, shared limits and failure table,
+  restricted evaluator; on macOS it also opens documents in tinys.app.
+- `tinys-sharing-protocol`: the relay's wire types, shared limits and failure table,
   free of Loro, used by the owner, the native and web clients and the relay.
-- `hitslop-sharing-client`: the native relay client over the existing owner; Swift
+- `tinys-sharing-client`: the native relay client over the existing owner; Swift
   persists the opaque credentials.
-- `hitslop-runner`: the restricted QuickJS child and its bounded process launcher, with
+- `tinys-runner`: the restricted QuickJS child and its bounded process launcher, with
   no storage dependency. The engine re-executes itself with `--evaluate-command`; the
-  `hitslop-evaluator` binary provides the same child for native-host integration.
+  `tinys-evaluator` binary provides the same child for native-host integration.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt),
 Loro 1.17.1 (the exact crates.io release), UniFFI 0.32.2 and wasm-bindgen 0.2.129.
@@ -41,18 +41,18 @@ change rewrites nothing, so a repeated build recompiles nothing. On a Mac the en
 the app's core library build together, for Apple silicon only (the app ships arm64).
 Development builds use Cargo's `release` profile, in `target/release`: optimized, because
 the core's timeouts and save scheduling assume it. What ships uses `dist`, which adds fat
-LTO (about a fifth smaller, five times slower to rebuild): `HITSLOP_CARGO_PROFILE=dist`
+LTO (about a fifth smaller, five times slower to rebuild): `TINYS_CARGO_PROFILE=dist`
 selects it, and the release gate, compatibility capture, the release workflow and the
 Engines workflow set it. CI caches artifacts by toolchain, lockfile and source; a cache hit
 never substitutes for Cargo's dependency checks.
 Generated XCFramework and Swift bindings are disposable and excluded from Git. Rust owns
-wire types and shared limits in `hitslop-core/src/wire`; ts-rs exports TypeScript and
+wire types and shared limits in `tinys-core/src/wire`; ts-rs exports TypeScript and
 UniFFI carries native types to Swift; the app definition and its format readers live in
-`hitslop-core/src/app`. Run `bun run schema:generate`; never edit generated files manually.
+`tinys-core/src/app`. Run `bun run schema:generate`; never edit generated files manually.
 The Cargo configuration pins macOS 15.0 for Rust and C dependencies, matching the lowest
 native consumer (the Swift package), rather than the locally installed SDK.
 
-The core's `file` owns the `.slop` file (one SQLite database holding the app and its
+The core's `file` owns the `.tiny` file (one SQLite database holding the app and its
 saved state), every statement on its tables (every write in `file::rows`) and the checks
 every open runs; its `store` decides what a save writes (a snapshot or the updates since the last save, in `history`,
 with theme overrides and attachments), its `owner` schedules saves, and its `registry` owns the

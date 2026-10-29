@@ -1,0 +1,30 @@
+import { defineTiny } from "@hitslop/tinys";
+
+export default defineTiny({
+  slug: "school-schedule",
+  title: "School Schedule",
+  description: "Your week in color: classes, rooms, bell times, and after-class plans with a live now and next readout.",
+  author: { name: "tinys", url: "https://tinys.click" },
+  categories: ["education", "popular"],
+  window: { kind: "standard", width: 880, height: 640 },
+  theme: {
+    surface: "#f7faff",
+    panel: "#eaf0fb",
+    paper: "#ffffff",
+    ink: "#172e62",
+    muted: "#657398",
+    rule: "#d8e2f3",
+    cobalt: "#2858db",
+    cobaltDeep: "#1e42b4",
+    onAccent: "#ffffff",
+    accent: "#ff907f",
+    danger: "#ae344b",
+    sage: "#d8f2d5",
+    slate: "#d8eafa",
+    amber: "#ffe0ca",
+    terracotta: "#ffb8aa",
+    indigo: "#e1d9ff",
+    rose: "#f8d8e8",
+    teal: "#c9eeeb",
+  },
+});

@@ -1,17 +1,17 @@
 ---
 title: Make it work on iPhone
-description: Design a slop for a phone-sized window, the keyboard, touch and haptics.
+description: Design a tiny for a phone-sized window, the keyboard, touch and haptics.
 ---
 
-The iPhone app opens the same slops as the Mac. It is in TestFlight on iOS 26+
-(see [availability](/docs/availability/)), so a slop you build for the Mac already opens
+The iPhone app opens the same tinys as the Mac. It is in TestFlight on iOS 26+
+(see [availability](/docs/availability/)), so a tiny you build for the Mac already opens
 on a phone. This guide makes it comfortable there.
 
 ## What the iPhone host gives you
 
 - The app is portrait-only. Plan for widths of about 320 to 430 CSS pixels.
 - The editor runs edge to edge, under the status bar and the home indicator. Paint your
-  background to the edges and pad your root by `--slop-safe-top` and `--slop-safe-bottom`
+  background to the edges and pad your root by `--tiny-safe-top` and `--tiny-safe-bottom`
   (see [fill the screen](#fill-the-screen)).
 - The keyboard covers the page, like Messages or Notes. The page keeps its size, and the
   host brings a focused field above the keyboard with no CSS from you (see
@@ -35,7 +35,7 @@ Call `getEnvironment()` while a component initializes, the same way you call
 
 ```svelte
 <script lang="ts">
-  import { getEnvironment } from "hitslop/svelte";
+  import { getEnvironment } from "@hitslop/tinys/svelte";
   const environment = getEnvironment();
   const compact = $derived(environment.current.layout === "compact");
 </script>
@@ -54,15 +54,15 @@ them as presentation hints, not as permission checks.
 The same values reach CSS as attributes on `<html>`:
 
 ```css
-html[data-slop-layout="compact"] .controls {
+html[data-tiny-layout="compact"] .controls {
   flex-direction: column;
 }
-html[data-slop-platform="ios"] .tip {
+html[data-tiny-platform="ios"] .tip {
   display: none;
 }
 ```
 
-`data-slop-platform`, `data-slop-device` and `data-slop-layout` exist in the live
+`data-tiny-platform`, `data-tiny-device` and `data-tiny-layout` exist in the live
 editor only. Preview, icon, export and widget views never receive them and cannot call
 `getEnvironment()`. Write base styles that work without the attributes; ordinary media
 and container queries work too.
@@ -73,20 +73,20 @@ Reserve the menu's corner in your heading row:
 
 ```css
 .app-header {
-  min-height: var(--slop-host-actions-height, 0px);
-  padding-inline-end: calc(12px + var(--slop-host-actions-width, 0px));
+  min-height: var(--tiny-host-actions-height, 0px);
+  padding-inline-end: calc(12px + var(--tiny-host-actions-width, 0px));
 }
 ```
 
 The reservation is 64px wide and 44px high in the iPhone editor, and zero elsewhere.
 Let long titles wrap.
 Fixed controls and full-height sheets must also leave that corner free. A centered
-dialog can use `max-height: calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-safe-bottom, 0px) - 2 * (var(--slop-host-actions-height, 0px) + 24px))`;
-a bottom sheet can use `calc(100dvh - var(--slop-safe-top, 0px) - var(--slop-host-actions-height, 0px) - 24px)`.
+dialog can use `max-height: calc(100dvh - var(--tiny-safe-top, 0px) - var(--tiny-safe-bottom, 0px) - 2 * (var(--tiny-host-actions-height, 0px) + 24px))`;
+a bottom sheet can use `calc(100dvh - var(--tiny-safe-top, 0px) - var(--tiny-host-actions-height, 0px) - 24px)`.
 
 The iPhone preset exposes the reservation and simulates a notched phone's safe areas
 (47px top, 34px bottom), but native notch, swipe and keyboard behavior still need review
-in the app. The preset has no keyboard, so `--slop-keyboard-inset`
+in the app. The preset has no keyboard, so `--tiny-keyboard-inset`
 stays `0px` there. Preview, export, icon and widget output have no native
 menu reservation.
 
@@ -95,13 +95,13 @@ menu reservation.
 The iPhone editor runs edge to edge: your page extends under the status bar (and notch)
 at the top and the home indicator at the bottom. Paint the background on the element that
 fills the page, or on `html` and `body`, so those strips match your app. Then pad that
-element by `--slop-safe-top` and `--slop-safe-bottom`, the heights of those areas. They are
+element by `--tiny-safe-top` and `--tiny-safe-bottom`, the heights of those areas. They are
 `0px` everywhere except the iPhone editor, and the iPhone preset simulates them.
 
 ```css
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) .app {
-  padding-top: calc(var(--slop-safe-top, 0px) + 12px);
-  padding-bottom: var(--slop-safe-bottom, 0px);
+html[data-tiny-platform="ios"][data-tiny-device="phone"]:not([data-tiny-capture]) .app {
+  padding-top: calc(var(--tiny-safe-top, 0px) + 12px);
+  padding-bottom: var(--tiny-safe-bottom, 0px);
 }
 ```
 
@@ -116,7 +116,7 @@ room around the home indicator, so a bottom bar sits right on it.
   long content its own scrolling pane.
 - **Keep the main action reachable.** Put submit and cancel in a footer that sticks to
   the bottom of its scroller, and lift anything pinned to the page's bottom edge by
-  `--slop-keyboard-inset`.
+  `--tiny-keyboard-inset`.
 - **Bound your sheets.** Cap a dialog with `max-height: calc(100dvh - 24px)` and let
   its content scroll.
 - **Make targets 44px.** The icon can be smaller than the hit area. Prefer visible
@@ -138,7 +138,7 @@ page up just enough. It undoes all of this when the keyboard hides, and never mo
 you are typing in.
 
 What the host cannot know is which of your controls are pinned to the bottom of the
-screen. For those it publishes `--slop-keyboard-inset` on the root: the height, in CSS
+screen. For those it publishes `--tiny-keyboard-inset` on the root: the height, in CSS
 pixels, of the bottom edge the keyboard and its toolbar cover. It is `0px` while the
 keyboard is hidden and in every other presentation, including previews, exports and Mac,
 so always give it a fallback. Lift bottom sheets, fixed bars and centered dialogs that hold
@@ -146,10 +146,10 @@ fields by it. Never add it to the page or a layout container: that shrinks the l
 exactly like a resize. The SDK notice lifts automatically.
 
 ```css
-html[data-slop-platform="ios"][data-slop-device="phone"]:not([data-slop-capture]) {
+html[data-tiny-platform="ios"][data-tiny-device="phone"]:not([data-tiny-capture]) {
   .sheet {
-    bottom: var(--slop-keyboard-inset, 0px);
-    max-height: calc(100dvh - var(--slop-host-actions-height, 0px) - var(--slop-keyboard-inset, 0px) - 24px);
+    bottom: var(--tiny-keyboard-inset, 0px);
+    max-height: calc(100dvh - var(--tiny-host-actions-height, 0px) - var(--tiny-keyboard-inset, 0px) - 24px);
   }
 }
 ```
@@ -165,7 +165,7 @@ A sticky footer inside a scrolling sheet, from Little Days:
   .bj-form-footer {
     position: sticky;
     bottom: -16px;
-    background: var(--slop-surface);
+    background: var(--tiny-surface);
     padding-block: 12px 16px;
     z-index: 2;
   }
@@ -174,7 +174,7 @@ A sticky footer inside a scrolling sheet, from Little Days:
 
 ### Sheets and menus
 
-`surfaceTransition`, `overlayTransition` and `popoverTransition` from `hitslop/svelte`
+`surfaceTransition`, `overlayTransition` and `popoverTransition` from `@hitslop/tinys/svelte`
 are Svelte transitions that honor reduced motion. Use `surfaceTransition` with
 `kind: "sheet"` for a bottom sheet (the default kind is `"dialog"`),
 `overlayTransition` for the dimming layer and `popoverTransition` for menus:
@@ -206,7 +206,7 @@ not raise the keyboard.
 
 ```svelte
 <script lang="ts">
-  import { haptics } from "hitslop/svelte";
+  import { haptics } from "@hitslop/tinys/svelte";
 
   async function save() {
     try {
@@ -236,7 +236,7 @@ framework-neutral app can reach the same service as optional `ctx.haptics`.
 
 ## Test it
 
-Run `slop dev` and choose **iPhone** in the Device menu. That sets a 390 by 844
+Run `tiny dev` and choose **iPhone** in the Device menu. That sets a 390 by 844
 viewport and reports `ios` and `phone`, so you can check your compact layout. Check the
 320 and 430 pixel edges with your browser's responsive design tools. The preview simulates layout and identity only. It has no
 native keyboard, navigation bar or haptics, so check text entry, bottom-pinned controls
@@ -262,5 +262,5 @@ rides above the keyboard, and takes focus without raising it. Haptics confirm a 
 refused one and accompany choices.
 
 See [style an app](/docs/guides/styling/) for themes and CSS,
-[where your slop runs](/docs/guides/where-your-slop-runs/) for the hosts, and
+[where your tiny runs](/docs/guides/where-your-tiny-runs/) for the hosts, and
 [capabilities and permissions](/docs/guides/capabilities/) for what the phone refuses.

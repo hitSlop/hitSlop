@@ -1,12 +1,12 @@
 //! Room lifecycle and opaque relay records; private payloads in R2.
 use crate::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
 use crate::metrics::{Metric, record};
-use hitslop_sharing_protocol::{
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tinys_sharing_protocol::{
     CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL,
     http::{CreatedRoom, RoomInfo, RoomInit, RoomPhase},
 };
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
 use worker::*;
 #[path = "resources.rs"]
@@ -14,7 +14,7 @@ mod resources;
 
 const CHUNK: usize = 1_800_000;
 const BACKFILL: usize = 1 << 20;
-use hitslop_sharing_protocol::limits::*;
+use tinys_sharing_protocol::limits::*;
 const DAY_MS: u64 = 86_400_000;
 fn now() -> u64 {
     js_sys::Date::now() as u64
@@ -76,7 +76,7 @@ pub async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
         record(&env, Metric::Limited);
     }
     let headers = response.headers().clone();
-    let mut response = Response::from_json(&hitslop_sharing_protocol::http::ApiFailure::refused(status))?
+    let mut response = Response::from_json(&tinys_sharing_protocol::http::ApiFailure::refused(status))?
         .with_status(status)
         .with_headers(headers);
     response.headers_mut().set("Content-Type", "application/json")?;
@@ -771,7 +771,7 @@ impl DurableObject for SlopRoom {
             let room = parts[3];
             let body = bounded_body(&mut req, CONTROL_BYTES).await?;
             let input: RoomInit = serde_json::from_slice(&body)?;
-            if !hitslop_sharing_protocol::valid_copy(&input.document) || input.owner_uid.is_empty() {
+            if !tinys_sharing_protocol::valid_copy(&input.document) || input.owner_uid.is_empty() {
                 return Response::error("Invalid metadata", 400);
             }
             if self.phase()? == Some(RoomPhase::Ended) {
@@ -963,7 +963,7 @@ impl DurableObject for SlopRoom {
             return Response::error("Method refused", 405);
         }
         if route == "sync" && req.headers().get("Upgrade")?.as_deref() == Some("websocket") {
-            if self.state.get_websockets().len() >= hitslop_sharing_protocol::limits::ROOM_CONNECTIONS {
+            if self.state.get_websockets().len() >= tinys_sharing_protocol::limits::ROOM_CONNECTIONS {
                 return Response::error("Room connection limit", 429);
             }
             let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "unknown".into());

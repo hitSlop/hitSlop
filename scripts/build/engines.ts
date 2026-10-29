@@ -1,7 +1,7 @@
 import { chmod, copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { publishFolder } from "../lib/artifacts";
 
 
@@ -19,19 +19,19 @@ export async function stageEngines(engines: string, prebuilt: string, fresh: str
   await publishFolder(engines, async (staging) => {
     const stage = async (platform: string, binary: string) => {
       await mkdir(join(staging, platform), { recursive: true });
-      await copyFile(binary, join(staging, platform, "slop-engine"));
-      await chmod(join(staging, platform, "slop-engine"), 0o755);
+      await copyFile(binary, join(staging, platform, "tiny-engine"));
+      await chmod(join(staging, platform, "tiny-engine"), 0o755);
       await writeFile(join(staging, platform, "engine.json"), JSON.stringify(expected) + "\n");
     };
     const host = `${process.platform}-${process.arch}`;
-    const hostBinary = join(prebuilt, host, "slop-engine");
+    const hostBinary = join(prebuilt, host, "tiny-engine");
     const hostRecorded = existsSync(hostBinary)
       ? await Bun.file(join(prebuilt, host, "engine.json")).json().catch(() => ({}))
       : {};
     const hostMatches = hostRecorded.commit === expected.commit && hostRecorded.buildId === expected.buildId;
     await stage(host, hostMatches ? hostBinary : fresh);
     for (const platform of await readdir(prebuilt).catch(() => [] as string[])) {
-      const binary = join(prebuilt, platform, "slop-engine");
+      const binary = join(prebuilt, platform, "tiny-engine");
       if (platform === host || !existsSync(binary)) continue;
       const recorded = await Bun.file(join(prebuilt, platform, "engine.json")).json().catch(() => ({}));
       if (recorded.commit !== expected.commit || recorded.buildId !== expected.buildId)

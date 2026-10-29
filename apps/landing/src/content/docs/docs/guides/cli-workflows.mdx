@@ -3,20 +3,20 @@ title: CLI workflows
 description: Build an app, create a document, edit its data, and export it from the terminal.
 ---
 
-Use the CLI yourself or let your coding agent run it. Start with an authoring project to change an app, or a writable `.slop` document to work with its data.
+Use the CLI yourself or let your coding agent run it. Start with an authoring project to change an app, or a writable `.tiny` document to work with its data.
 
 Responses below use example paths and compact JSON. Versions, timings, generated IDs, installed templates and palettes vary. Larger responses are explicitly marked as excerpts. Shell commands such as `cd` succeed without printing a response.
 
 ## Choose how to run commands
 
-Install Bun 1.4.2 or newer. To open document windows, install the hitSlop Mac app. The examples below use `bunx hitslop`.
+Install Bun 1.4.2 or newer. To open document windows, install the tinys Mac app. The examples below use `bunx @hitslop/tinys`.
 
 | Entry point            | When to use it                                                         |
 | ---------------------- | ---------------------------------------------------------------------- |
-| `bunx hitslop COMMAND` | Run the authoring CLI without a global install.                        |
-| `slop COMMAND`         | After `bun install -g hitslop`, with Bun's bin directory on your PATH. |
+| `bunx @hitslop/tinys COMMAND` | Run the authoring CLI without a global install.                        |
+| `tiny COMMAND`         | After `bun install -g @hitslop/tinys`, with Bun's bin directory on your PATH. |
 
-Use `bunx` or `slop` for the examples below. Authoring builds, registering, browser preview, document creation and document edits run on macOS or Linux. On both platforms the CLI also renders template artwork and exports closed documents as PNG/PDF itself. Opening a window uses the installed Mac app, which need not already be running.
+Use `bunx` or `tiny` for the examples below. Authoring builds, registering, browser preview, document creation and document edits run on macOS or Linux. On both platforms the CLI also renders template artwork and exports closed documents as PNG/PDF itself. Opening a window uses the installed Mac app, which need not already be running.
 
 The npm package includes its document engine, which does that rendering. `open` finds the Mac app automatically in `/Applications` or `~/Applications`.
 
@@ -25,7 +25,7 @@ Append `--help` to any command to see its arguments.
 ## Create, preview, and register an app
 
 ```sh
-bunx hitslop init weekend-kit
+bunx @hitslop/tinys init weekend-kit
 cd weekend-kit
 bun install
 bun run check
@@ -42,16 +42,16 @@ Expected terminal responses (build-tool progress omitted):
 | `bun run check`    | `svelte-check found 0 errors and 0 warnings` for a valid starter.                                                                                  |
 | `bun run dev`      | `Disposable preview: http://localhost:5173/` (port may differ); the process stays running.                                                         |
 
-`init` asks what you want to build and who the author is. The agent you launch next sets the app's title, description, and categories in `slop.ts` to match what it builds; you can edit them there anytime. Your description is saved in `BRIEF.md` alongside the checklist starter and local agent guidance.
+`init` asks what you want to build and who the author is. The agent you launch next sets the app's title, description, and categories in `tiny.ts` to match what it builds; you can edit them there anytime. Your description is saved in `BRIEF.md` alongside the checklist starter and local agent guidance.
 
-At the end, choose which agent CLI should build your slop. The picker offers detected Codex, Claude Code, Gemini CLI, and OpenCode installations. Choose **Other CLI…** for Grok or another installed tool: enter its executable name or path, then its prompt option (leave blank if it accepts a positional prompt). The agent opens in the new project and is asked to read the brief and hitSlop guidance before implementing your app. It uses its existing account, model, and permission settings.
+At the end, choose which agent CLI should build your tiny. The picker offers detected Codex, Claude Code, Gemini CLI, and OpenCode installations. Choose **Other CLI…** for Grok or another installed tool: enter its executable name or path, then its prompt option (leave blank if it accepts a positional prompt). The agent opens in the new project and is asked to read the brief and tinys guidance before implementing your app. It uses its existing account, model, and permission settings.
 
 Choose **Finish without launching** to work manually. If an agent fails or you cancel the launch, your project remains ready to use. No agent is installed automatically.
 
 For an agent or script that is already running, create the project without another interactive session:
 
 ```sh
-bunx hitslop init budget-book --yes \
+bunx @hitslop/tinys init budget-book --yes \
   --brief 'Track spending by category with a monthly summary.' \
   --title 'Budget Book' \
   --category finance --category personal --author Jordan \
@@ -66,9 +66,9 @@ Created /Users/you/budget-book. Run bun install in that directory, then bun run 
 
 This invocation has no interactive questions or agent launch.
 
-Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A hitSlop mini app.`; an omitted brief uses that description. The wizard initializes the explicit `slug` from the directory name: 2–64 lowercase letters or digits, separated by single hyphens. Metadata is validated before files are created, and an existing destination is never overwritten.
+Flags set metadata explicitly; `--brief` and `--author` also skip their questions. `--yes`, CI, and non-interactive terminals never prompt or launch an agent. Missing values default to the directory name, `productivity`, `Anonymous`, and `A tinys mini app.`; an omitted brief uses that description. The wizard initializes the explicit `slug` from the directory name: 2–64 lowercase letters or digits, separated by single hyphens. Metadata is validated before files are created, and an existing destination is never overwritten.
 
-Read `slop.ts`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `slop.ts`, `schema.ts`, `commands.ts`, their dependencies (including skin or artwork), or the role inventory resets disposable state.
+Read `tiny.ts`, `AGENTS.md`, and `BRIEF.md` before editing. Preview data resets on refresh, and an invalid edit shows a diagnostic until you fix it. Vite watches source changes. Component and CSS updates preserve accepted edits; a change to `tiny.ts`, `schema.ts`, `commands.ts`, their dependencies (including skin or artwork), or the role inventory resets disposable state.
 
 Stop the preview, then package the app and add it to your local catalog:
 
@@ -80,36 +80,36 @@ bun run register
 Responses, respectively (additional build progress omitted):
 
 ```text
-/Users/you/weekend-kit/dist/weekend-kit.slop
-/Users/you/.hitslop/templates/weekend-kit.slop
+/Users/you/weekend-kit/dist/weekend-kit.tiny
+/Users/you/.tinys/templates/weekend-kit.tiny
 ```
 
-Build writes `dist/weekend-kit.slop` on macOS or Linux, with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) rendered on either platform. Register builds it the same way and adds it to the Mac app's template catalog. Existing documents keep their app version.
+Build writes `dist/weekend-kit.tiny` on macOS or Linux, with [Finder artwork](/docs/guides/build-and-share/#finder-artwork) rendered on either platform. Register builds it the same way and adds it to the Mac app's template catalog. Existing documents keep their app version.
 
-From outside the project, the equivalent commands take its source directory: `slop check ./weekend-kit`, `slop dev ./weekend-kit --port 5174` (the preview port defaults to 5173), `slop build ./weekend-kit`, and `slop register ./weekend-kit`. See [create your first slop](/docs/getting-started/) for the authoring tutorial.
+From outside the project, the equivalent commands take its source directory: `tiny check ./weekend-kit`, `tiny dev ./weekend-kit --port 5174` (the preview port defaults to 5173), `tiny build ./weekend-kit`, and `tiny register ./weekend-kit`. See [create your first tiny](/docs/getting-started/) for the authoring tutorial.
 
 ## Create and open a writable document
 
 In the Mac app, choose a template and select **Create**. For the terminal equivalent, run these commands from your authoring project:
 
 ```sh
-bunx hitslop create --from dist/weekend-kit.slop --output "$HOME/Documents/Weekend.slop"
-bunx hitslop open "$HOME/Documents/Weekend.slop"
+bunx @hitslop/tinys create --from dist/weekend-kit.tiny --output "$HOME/Documents/Weekend.tiny"
+bunx @hitslop/tinys open "$HOME/Documents/Weekend.tiny"
 ```
 
 Both commands print the same resolved path after success:
 
 ```text
-/Users/you/Documents/Weekend.slop
+/Users/you/Documents/Weekend.tiny
 ```
 
-Create makes a new document with the template's starting data; choose a destination that does not already exist, and `.slop` is added if you leave it off. Open launches it in hitSlop. Both print the document's path. Keep writable documents out of synced folders such as iCloud Drive.
+Create makes a new document with the template's starting data; choose a destination that does not already exist, and `.tiny` is added if you leave it off. Open launches it in tinys. Both print the document's path. Keep writable documents out of synced folders such as iCloud Drive.
 
 To start from a template in the Mac app's catalog instead, list them and pass a slug to `--from`:
 
 ```sh
-bunx hitslop templates
-bunx hitslop create --from weekend-kit --output "$HOME/Documents/Weekend.slop"
+bunx @hitslop/tinys templates
+bunx @hitslop/tinys create --from weekend-kit --output "$HOME/Documents/Weekend.tiny"
 ```
 
 The `templates` response is a catalog object. Example excerpt:
@@ -121,13 +121,13 @@ The `templates` response is a catalog object. Example excerpt:
       "slug": "weekend-kit",
       "title": "Weekend Kit",
       "source": "installed",
-      "path": "/Users/you/.hitslop/templates/weekend-kit.slop"
+      "path": "/Users/you/.tinys/templates/weekend-kit.tiny"
     }
   ]
 }
 ```
 
-The following `create` prints `/Users/you/Documents/Weekend.slop`. Run one of the two creation examples, or choose a different output path for a second copy.
+The following `create` prints `/Users/you/Documents/Weekend.tiny`. Run one of the two creation examples, or choose a different output path for a second copy.
 
 `templates` prints each template's slug, title, description, categories, path and source: `bundled` with the app, or `installed` by register. If you register a template with the same slug as a bundled one, the slug names yours.
 
@@ -135,15 +135,15 @@ The following `create` prints `/Users/you/Documents/Weekend.slop`. Run one of th
 
 For a complete numbered example with every response, follow
 [edit installed documents](/docs/guides/edit-installed-data/). For an existing document,
-replace `My.slop` with its path and quote paths containing spaces:
+replace `My.tiny` with its path and quote paths containing spaces:
 
 ```sh
-bunx hitslop describe My.slop      # fields, commands and current values (add --json for tools)
-bunx hitslop call My.slop addTask --args '{"text":"Buy coffee"}'
-bunx hitslop schema My.slop        # the stored descriptor
-bunx hitslop get My.slop           # saved values
-bunx hitslop apply My.slop --op '{"type":"set","path":["title"],"value":"Ready"}'
-bunx hitslop batch My.slop --ops '[...]'
+bunx @hitslop/tinys describe My.tiny      # fields, commands and current values (add --json for tools)
+bunx @hitslop/tinys call My.tiny addTask --args '{"text":"Buy coffee"}'
+bunx @hitslop/tinys schema My.tiny        # the stored descriptor
+bunx @hitslop/tinys get My.tiny           # saved values
+bunx @hitslop/tinys apply My.tiny --op '{"type":"set","path":["title"],"value":"Ready"}'
+bunx @hitslop/tinys batch My.tiny --ops '[...]'
 ```
 
 `call` runs one of the commands `describe` lists, as one undo step. `apply` takes one
@@ -167,18 +167,18 @@ work on macOS and Linux; opening a window needs the Mac app.
 `import` writes a JSON file's value into a document, changing only what differs. Rows are matched by `$id`, so rows and text that stay keep their identity, and fields the import leaves unchanged are not written at all; an open window keeps working on them. Pass `--path` to replace one part, such as `'["rows"]'`:
 
 ```sh
-bunx hitslop get Old.slop > data.json
-bunx hitslop import New.slop data.json
-bunx hitslop import New.slop rows.json --path '["rows"]'
+bunx @hitslop/tinys get Old.tiny > data.json
+bunx @hitslop/tinys import New.tiny data.json
+bunx @hitslop/tinys import New.tiny rows.json --path '["rows"]'
 ```
 
 Responses:
 
 | Command                                       | Response                                                               |
 | --------------------------------------------- | ---------------------------------------------------------------------- |
-| `get Old.slop > data.json`                    | JSON is written to `data.json`; nothing is printed in the terminal.    |
-| `import New.slop data.json`                   | `{"ids":[]}` when no rows are inserted; inserted rows appear in `ids`. |
-| `import New.slop rows.json --path '["rows"]'` | The same `{"ids":[...]}` shape, with the IDs inserted by this edit.    |
+| `get Old.tiny > data.json`                    | JSON is written to `data.json`; nothing is printed in the terminal.    |
+| `import New.tiny data.json`                   | `{"ids":[]}` when no rows are inserted; inserted rows appear in `ids`. |
+| `import New.tiny rows.json --path '["rows"]'` | The same `{"ids":[...]}` shape, with the IDs inserted by this edit.    |
 
 Both documents must come from the same template, so the data fits its schema; a value that doesn't fit is refused and nothing changes. For a document of another template, map the data to one `batch` of `insert` and `set` operations, giving each insert an `id` so a retried command is refused as a duplicate. Copy attachments with the commands below, then write their references. Edit ▸ Undo in the window reverts an import as one step.
 
@@ -191,12 +191,12 @@ Their commands and example responses are in
 ## Work with attachments
 
 ```sh
-bunx hitslop attachments ref ./photo.png
+bunx @hitslop/tinys attachments ref ./photo.png
 # Store the printed reference where the app expects it, attaching the file in the same edit.
-bunx hitslop apply My.slop --attach ./photo.png \
+bunx @hitslop/tinys apply My.tiny --attach ./photo.png \
   --op '{"type":"set","path":["photo"],"value":{"id":"ATTACHMENT_ID","byteLength":48213,"name":"photo.png","mimeType":"image/png"}}'
-bunx hitslop attachments list My.slop
-bunx hitslop attachments export My.slop ATTACHMENT_ID \
+bunx @hitslop/tinys attachments list My.tiny
+bunx @hitslop/tinys attachments export My.tiny ATTACHMENT_ID \
   --output ./photo-copy.png
 ```
 
@@ -205,9 +205,9 @@ Example responses (`ATTACHMENT_ID` stands for the file’s actual content hash):
 | Command                                                              | Response                                                                              |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `attachments ref ./photo.png`                                        | `{"id":"ATTACHMENT_ID","byteLength":48213,"name":"photo.png","mimeType":"image/png"}` |
-| `apply My.slop --attach ./photo.png …`                               | `{"ids":[]}`                                                                          |
-| `attachments list My.slop`                                           | `[{"id":"ATTACHMENT_ID","byteLength":48213,"mimeType":"image/png"}]`                  |
-| `attachments export My.slop ATTACHMENT_ID --output ./photo-copy.png` | `/Users/you/Documents/photo-copy.png`                                                 |
+| `apply My.tiny --attach ./photo.png …`                               | `{"ids":[]}`                                                                          |
+| `attachments list My.tiny`                                           | `[{"id":"ATTACHMENT_ID","byteLength":48213,"mimeType":"image/png"}]`                  |
+| `attachments export My.tiny ATTACHMENT_ID --output ./photo-copy.png` | `/Users/you/Documents/photo-copy.png`                                                 |
 
 `attachments ref` prints a file's reference (its ID, size, name and type) without reading the document. `--attach` on `apply` or `batch` saves the file in the same edit that stores the reference, so both succeed or neither does; repeat it for more files. Ask your agent to store the reference where the app expects it. A file nothing references any more is removed when the document closes, and a duplicate or shared copy carries only the files its document references. List shows saved attachment IDs and sizes.
 
@@ -216,11 +216,11 @@ Attachment export refuses existing output files and the document itself. After a
 ## Export PNG or PDF
 
 ```sh
-bunx hitslop export My.slop --format png --output My.png
-bunx hitslop export My.slop --format pdf --output My.pdf
+bunx @hitslop/tinys export My.tiny --format png --output My.png
+bunx @hitslop/tinys export My.tiny --format pdf --output My.pdf
 ```
 
-Export saves your edits and prints the output path. Choose a new output path other than the `.slop` itself; an existing destination is refused. Both open and closed documents render saved data independently, using `Export.svelte`. Slops without this optional view refuse PNG/PDF export. PNG and selectable vector PDF use the Rust renderer. On macOS and Linux the CLI exports a closed document itself; an open one is exported by the Mac app that has it open. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
+Export saves your edits and prints the output path. Choose a new output path other than the `.tiny` itself; an existing destination is refused. Both open and closed documents render saved data independently, using `Export.svelte`. Tinys without this optional view refuse PNG/PDF export. PNG and selectable vector PDF use the Rust renderer. On macOS and Linux the CLI exports a closed document itself; an open one is exported by the Mac app that has it open. See [icons and exports](/docs/guides/icons-and-exports/) for capture layouts.
 
 Successful exports print their resolved output paths, respectively:
 
@@ -234,76 +234,76 @@ Successful exports print their resolved output paths, respectively:
 Agent skills link to your global CLI, so they update whenever you upgrade it. Install the CLI globally, then run the interactive installer to choose skills and agents:
 
 ```sh
-bun install -g hitslop
-slop skills install
+bun install -g @hitslop/tinys
+tiny skills install
 ```
 
 Or, from a project directory, install for all detected agents at project scope:
 
 ```sh
-slop skills install --all --scope project
+tiny skills install --all --scope project
 ```
 
 After the skill and agent selections, install prints each installed skill and its agent directories. Example excerpt:
 
 ```text
-Installed "hitslop-authoring"
+Installed "tinys-authoring"
 ```
 
 `--all` prints the same installation results without selection prompts. The preceding
-`bun install -g hitslop` prints Bun’s installation summary, including the `slop` executable.
+`bun install -g @hitslop/tinys` prints Bun’s installation summary, including the `tiny` executable.
 
-Skills install for every project by default (global scope); add `--scope project` to link them into the current project only. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`. Global links require a global install. Project links use the project's pinned `node_modules/hitslop`, including when installed through `bunx`.
+Skills install for every project by default (global scope); add `--scope project` to link them into the current project only. Select skills once, then agents once. Installation only adds or repairs selected links; deselecting an item does not remove it. Bare `skills` is shorthand for `skills install`. Global links require a global install. Project links use the project's pinned `node_modules/@hitslop/tinys`, including when installed through `bunx`.
 
 Upgrading the global CLI updates linked skills in place. If a link breaks or points somewhere else, repair it; add `--scope project` for project links:
 
 ```sh
-slop skills repair
+tiny skills repair
 ```
 
 Example repair response when a link already points to the right place:
 
 ```text
-No repairs needed [hitslop-authoring] (global).
+No repairs needed [tinys-authoring] (global).
 ```
 
-A repaired link instead reports `Repaired "hitslop-authoring" for … (global)`, naming its agents.
+A repaired link instead reports `Repaired "tinys-authoring" for … (global)`, naming its agents.
 
 To install skills for a new agent, run `skills install` again.
 
 Remove installed links explicitly. Any copy of the CLI can do this:
 
 ```sh
-slop skills uninstall --scope project
-# Remove every installed hitSlop skill at this scope without prompts:
-slop skills uninstall --all --scope project
+tiny skills uninstall --scope project
+# Remove every installed tinys skill at this scope without prompts:
+tiny skills uninstall --all --scope project
 ```
 
 Both uninstall forms report each removed skill and its agent directories. Example excerpt:
 
 ```text
-Removed "hitslop-authoring"
+Removed "tinys-authoring"
 ```
 
 With nothing installed, the response is `No installed skills (project).` Use either
 interactive uninstall or `--all`; the second invocation will find no remaining links
 if the first removed everything.
 
-The guides linked by `init` follow the project's pinned `node_modules/hitslop` install. Upgrading that dependency updates the linked guides; upgrading the global CLI leaves them unchanged.
+The guides linked by `init` follow the project's pinned `node_modules/@hitslop/tinys` install. Upgrading that dependency updates the linked guides; upgrading the global CLI leaves them unchanged.
 
 ## Upgrade the CLI
 
-The Mac app and the `hitslop` package share a release version. Within a project, update its one pinned `hitslop` dependency and continue using its `bun run` scripts. A global CLI update does not change project dependencies. If the command protocol differs, the CLI names which installation needs updating before touching a document. Updating either installation preserves the app already saved inside every document.
+The Mac app and the `tinys` package share a release version. Within a project, update its one pinned `tinys` dependency and continue using its `bun run` scripts. A global CLI update does not change project dependencies. If the command protocol differs, the CLI names which installation needs updating before touching a document. Updating either installation preserves the app already saved inside every document.
 
-Update the global CLI with `bun install -g hitslop@VERSION`, replacing `VERSION` with the matching released version. Installed agent skills point at the global CLI, so they update with it.
+Update the global CLI with `bun install -g @hitslop/tinys@VERSION`, replacing `VERSION` with the matching released version. Installed agent skills point at the global CLI, so they update with it.
 
-Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `HITSLOP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
+Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `TINYS_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
 
 ## Local browser copies
 
 ```sh
-slop open --browser ./MyDocument.slop
-slop open --browser
+tiny open --browser ./MyDocument.tiny
+tiny open --browser
 ```
 
 Example responses (copy and import IDs vary):
@@ -320,7 +320,7 @@ The first command opens an independent copy in desktop Google Chrome. The second
 opens your saved browser copies. Keep the host terminal running; Ctrl-C stops it.
 Later invocations reuse the same host. No account or server upload is involved.
 
-Edits autosave in this browser profile on this device. **Download .slop** includes the
+Edits autosave in this browser profile on this device. **Download .tiny** includes the
 current app, data, theme and referenced attachments for opening in the desktop client.
 The original file stays unchanged. Browser storage can be cleared or evicted: download
 copies you want to keep. Reload requires the local host to be running.

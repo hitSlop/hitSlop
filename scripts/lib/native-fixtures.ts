@@ -1,8 +1,8 @@
 import { repository } from "./artifacts";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { stageProject } from "../../packages/hitslop/src/cli/build";
-import { buildTemplate } from "../../packages/hitslop/src/cli/template";
+import { stageProject } from "../../packages/tinys/src/cli/build";
+import { buildTemplate } from "../../packages/tinys/src/cli/template";
 import { templateCache } from "../templates/build";
 import { declaredCapabilities, presentationVariants } from "./presentation-variants";
 
@@ -31,12 +31,12 @@ export async function prepareNativeFixtures() {
   await build(
     join(repository, "tests/apps/document"),
     "document-fixture",
-    join(output, "document-fixture.slop"),
+    join(output, "document-fixture.tiny"),
   );
   await build(
     join(repository, "tests/abi/owner-svelte"),
     "owner-svelte",
-    join(repository, "generated/abi/owner-svelte.slop"),
+    join(repository, "generated/abi/owner-svelte.tiny"),
   );
   const paths = await buildPresentationFixtures(build);
   const source = join(repository, "generated/abi/conformance-capabilities");
@@ -49,7 +49,7 @@ export async function prepareNativeFixtures() {
   paths.capabilities = await build(
     source,
     "conformance-capabilities",
-    join(repository, "generated/presentation/capabilities.slop"),
+    join(repository, "generated/presentation/capabilities.tiny"),
   );
   return paths;
 }
@@ -119,7 +119,7 @@ async function buildPresentationFixtures(build: Builder) {
       title: `Presentation ${kind}`,
       presentation,
     });
-    paths[kind] = await build(source, `presentation-${kind}`, join(parent, kind + ".slop"));
+    paths[kind] = await build(source, `presentation-${kind}`, join(parent, kind + ".tiny"));
   }
   return paths;
 }

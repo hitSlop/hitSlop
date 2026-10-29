@@ -74,7 +74,7 @@
   .pet[data-moving="true"] svg { animation: waddle 420ms steps(2) infinite; }
   .pet[data-hop="true"] svg { animation: hop 480ms cubic-bezier(.34, 1.56, .64, 1); }
   .heart { position: absolute; left: 50%; top: -6px; color: #f443a1; font-size: 20px; animation: heart 1300ms ease-out forwards; pointer-events: none; }
-  .hi { position: absolute; left: 40px; top: -26px; padding: 3px 8px; border: 2px solid #10132c; border-radius: 12px 12px 12px 3px; background: #fff; color: #10132c; font-family: "HitSlop Handwriting", cursive; font-size: 15px; line-height: 1; opacity: 0; transform: scale(.6); transition: opacity 160ms, transform 240ms cubic-bezier(.34, 1.56, .64, 1); pointer-events: none; }
+  .hi { position: absolute; left: 40px; top: -26px; padding: 3px 8px; border: 2px solid #10132c; border-radius: 12px 12px 12px 3px; background: #fff; color: #10132c; font-family: "Tinys Handwriting", cursive; font-size: 15px; line-height: 1; opacity: 0; transform: scale(.6); transition: opacity 160ms, transform 240ms cubic-bezier(.34, 1.56, .64, 1); pointer-events: none; }
   .pet:hover .hi, .pet:focus-visible .hi, .pet[data-hop="true"] .hi { opacity: 1; transform: none; }
   @keyframes waddle { 50% { translate: 0 -2px; rotate: 3deg; } }
   @keyframes hop { 40% { translate: 0 -18px; scale: .95 1.08; } 80% { translate: 0 0; scale: 1.08 .92; } }

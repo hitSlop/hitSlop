@@ -1,21 +1,21 @@
 import Combine
-import HitSlopCore
-import HitSlopDocument
 import SwiftUI
+import TinysCore
+import TinysDocument
 import UIKit
 import WebKit
 
 struct PhoneEditorView: View {
   let session: DocumentSession
   @ObservedObject var model: PhoneDocuments
-  @ObservedObject var library: SlopLibrary
+  @ObservedObject var library: TinyLibrary
   @State private var pageBackground = UIColor.systemBackground
   @State private var showSharing = false
   @State private var keyboardVisible = false
   /// How far the keyboard, with its ⌃ ⌄ ✓ toolbar, covers the bottom of the page.
   @State private var keyboardOverlap: CGFloat = 0
 
-  /// What the page reads as `--slop-keyboard-inset`.
+  /// What the page reads as `--tiny-keyboard-inset`.
   private var keyboardInset: Int {
     keyboardVisible ? Int(keyboardOverlap.rounded(.up)) : 0
   }
@@ -27,7 +27,7 @@ struct PhoneEditorView: View {
           .id(ObjectIdentifier(webView))
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           // Edge to edge: the page runs under the status bar and home indicator and pads
-          // itself with `--slop-safe-top`/`--slop-safe-bottom`; the actions menu stays inside.
+          // itself with `--tiny-safe-top`/`--tiny-safe-bottom`; the actions menu stays inside.
           .ignoresSafeArea()
           .background(Color(uiColor: pageBackground).ignoresSafeArea(.container))
           .onReceive(webView.publisher(for: \.underPageBackgroundColor)) { color in
@@ -80,7 +80,7 @@ struct PhoneEditorView: View {
       if model.opening {
         ZStack {
           Color(uiColor: pageBackground).ignoresSafeArea(.container)
-          ProgressView("Opening slop…").font(.callout)
+          ProgressView("Opening tiny…").font(.callout)
         }
       }
     }
@@ -97,7 +97,7 @@ struct PhoneEditorView: View {
                 model.saveUnsharedCopy()
               },
               onUpdate: {
-                UIApplication.shared.open(SlopLinks.iosDownload)
+                UIApplication.shared.open(TinyLinks.iosDownload)
               })
           }
           .navigationTitle("Share")
@@ -110,9 +110,9 @@ struct PhoneEditorView: View {
       }
     }
   }
-  /// The shell sets `--slop-keyboard-inset` and reveals the focused field.
+  /// The shell sets `--tiny-keyboard-inset` and reveals the focused field.
   private func publish(_ inset: Int, to webView: WKWebView) {
-    webView.evaluateJavaScript("globalThis.__slop?.keyboard?.(\(inset))", in: nil, in: .page) { _ in }
+    webView.evaluateJavaScript("globalThis.__tiny?.keyboard?.(\(inset))", in: nil, in: .page) { _ in }
   }
   /// A menu choice taps before it acts.
   private func tap(_ action: () -> Void) {

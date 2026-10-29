@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: true
 env:
   # Scheduled/manual runs and release pushes add nightly checks; ordinary PRs stay lean.
-  HITSLOP_NIGHTLY: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref_name, 'hotfix/'))) && '1' || '' }}
+  TINYS_NIGHTLY: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref_name, 'hotfix/'))) && '1' || '' }}
   CI_CACHE_NAMESPACE: ${{ github.event_name == 'workflow_dispatch' && inputs.cache_namespace || '' }}
   # What a pull request or push changed: the pull request's target, or the commit a push
   # replaced. Nightly, manual and release-branch runs check all required tiers.
@@ -98,7 +98,7 @@ jobs:
         if: always() && env.TIERS != ''
         with:
           name: fast-evidence
-          path: .hitslop/evidence
+          path: .tinys/evidence
           include-hidden-files: true
   native:
     needs: select
@@ -121,7 +121,7 @@ jobs:
           swift: ${{ contains(env.TIERS, 'swift') }}
       - name: Native tiers
         env:
-          HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          TINYS_TEMPLATE_CACHE_DIR: .tinys/template-cache
         run: bun run verify --ci --keep-going "$TIERS"
       - name: Prune Rust build before caching
         if: github.event_name != 'pull_request'
@@ -130,7 +130,7 @@ jobs:
         if: always()
         with:
           name: native-evidence
-          path: .hitslop/evidence
+          path: .tinys/evidence
           include-hidden-files: true
   app:
     needs: select
@@ -151,7 +151,7 @@ jobs:
       - run: brew install xcodegen
       - name: Build macOS app
         env:
-          HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          TINYS_TEMPLATE_CACHE_DIR: .tinys/template-cache
         run: |
           bun scripts/build/build.ts --prepare native,shell
           bun run apple:build --compile-only
@@ -183,7 +183,7 @@ jobs:
         if: always()
         with:
           name: native-rust-evidence
-          path: .hitslop/evidence
+          path: .tinys/evidence
           include-hidden-files: true
   # Full Rust semantics plus both SQLite configurations, when affected.
   linux-smoke:
@@ -209,7 +209,7 @@ jobs:
         if: always()
         with:
           name: linux-rust-evidence
-          path: .hitslop/evidence
+          path: .tinys/evidence
           include-hidden-files: true
   # Live sharing: the built relay on Miniflare, proven on macOS (it fails before any check on
   # Linux). A pull request runs it only when it changes the relay, its clients, the sync code,
@@ -233,7 +233,7 @@ jobs:
         if: always()
         with:
           name: sharing-evidence
-          path: .hitslop/evidence
+          path: .tinys/evidence
           include-hidden-files: true
   # Browser qualification and the second-platform portable checks run nightly and on demand,
   # outside required PR jobs.
@@ -259,7 +259,7 @@ jobs:
         if: always()
         with:
           name: qualification-evidence
-          path: .hitslop/evidence
+          path: .tinys/evidence
           include-hidden-files: true
   # Nightly runs build and render the default branch's full template corpus on Linux with
   # the engine and shell alone, and keep that Linux cache warm; macOS releases keep their
@@ -284,19 +284,19 @@ jobs:
           swift: "false"
       - name: Build release templates
         env:
-          HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
+          TINYS_TEMPLATE_CACHE_DIR: .tinys/template-cache
         run: |
           bun scripts/build/core.ts --engine
           bun scripts/build/shell.ts
           bun run build:templates
       - name: Profile full render corpus
         env:
-          HITSLOP_TEMPLATE_CACHE_DIR: .hitslop/template-cache
-          HITSLOP_RENDER: all
+          TINYS_TEMPLATE_CACHE_DIR: .tinys/template-cache
+          TINYS_RENDER: all
         run: bun run verify render
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: release-templates-evidence
-          path: .hitslop/evidence
+          path: .tinys/evidence
           include-hidden-files: true

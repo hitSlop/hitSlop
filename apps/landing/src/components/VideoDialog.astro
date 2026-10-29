@@ -6,7 +6,7 @@ const video = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/assets/d
 ---
 
 {video && (
-  <dialog class="video-dialog" id="video-dialog" aria-label="hitSlop in action">
+  <dialog class="video-dialog" id="video-dialog" aria-label="tinys in action">
     <button class="video-close" type="button" aria-label="Close video"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg></button>
     <video controls playsinline preload="none" poster="/assets/desktop-hero-poster.jpg" width="1920" height="1080"><source src={video} type="video/mp4" /></video>
   </dialog>
@@ -23,7 +23,7 @@ const video = existsSync(resolve("public/assets/desktop-hero.mp4")) ? "/assets/d
       video.currentTime = 0;
       void video.play().catch(() => {});
     };
-    window.addEventListener("hitslop:play-video", play);
+    window.addEventListener("tinys:play-video", play);
     document.querySelectorAll("[data-play-video]").forEach((button) => button.addEventListener("click", play));
     dialog.querySelector(".video-close")!.addEventListener("click", () => dialog.close());
     dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });

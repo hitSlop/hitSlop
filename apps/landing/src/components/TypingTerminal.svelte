@@ -1,25 +1,25 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  // The prompts mirror `slop init` (packages/hitslop/src/cli/init.ts, agents.ts).
+  // The prompts mirror `tiny init` (packages/tinys/src/cli/init.ts, agents.ts).
   type Step =
     | { kind: "command"; note?: string; text: string }
     | { kind: "prompt"; question: string; text: string }
     | { kind: "choice"; question: string; options: string[] }
     | { kind: "output"; text: string };
   const steps: Step[] = [
-    { kind: "command", note: "Make a project", text: "bunx hitslop init my-slop" },
-    { kind: "prompt", question: "What should your slop do?", text: "A packing list for short trips. Group items by bag and show how many are left." },
+    { kind: "command", note: "Make a project", text: "bunx @hitslop/tinys init my-tiny" },
+    { kind: "prompt", question: "What should your tiny do?", text: "A packing list for short trips. Group items by bag and show how many are left." },
     { kind: "prompt", question: "Author", text: "You" },
-    { kind: "output", text: "Created /Users/you/my-slop. Run bun install in that directory, then bun run dev." },
-    { kind: "choice", question: "Which agent CLI should build your slop?", options: ["Codex", "Claude Code", "Gemini CLI", "OpenCode"] },
-    { kind: "output", text: "Launching Codex in ~/my-slop" },
+    { kind: "output", text: "Created /Users/you/my-tiny. Run bun install in that directory, then bun run dev." },
+    { kind: "choice", question: "Which agent CLI should build your tiny?", options: ["Codex", "Claude Code", "Gemini CLI", "OpenCode"] },
+    { kind: "output", text: "Launching Codex in ~/my-tiny" },
     { kind: "command", note: "Try it in the browser while you refine it", text: "bun run dev" },
     { kind: "output", text: "Disposable preview: http://localhost:5173/" },
     { kind: "command", note: "Stop the preview, then build the finished app", text: "bun run build" },
-    { kind: "output", text: "/Users/you/my-slop/dist/my-slop.slop" },
-    { kind: "command", note: "Put it in hitSlop’s template catalog", text: "bun run register" },
-    { kind: "output", text: "/Users/you/.hitslop/templates/my-slop.slop" },
+    { kind: "output", text: "/Users/you/my-tiny/dist/my-tiny.tiny" },
+    { kind: "command", note: "Put it in tinys’s template catalog", text: "bun run register" },
+    { kind: "output", text: "/Users/you/.tinys/templates/my-tiny.tiny" },
   ];
   const typable = (step: Step): string => (step.kind === "command" || step.kind === "prompt" ? step.text : "");
   let typed = $state(steps.map(() => ""));
@@ -62,10 +62,10 @@
   });
 </script>
 
-<figure class="terminal" bind:this={root} aria-label="Making a slop in the terminal">
+<figure class="terminal" bind:this={root} aria-label="Making a tiny in the terminal">
   <div class="bar">
     <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
-    <span>Terminal — my-slop</span>
+    <span>Terminal — my-tiny</span>
     <button type="button" onclick={play} aria-label="Replay the terminal">↻ Replay</button>
   </div>
   <div class="screen">
@@ -88,7 +88,7 @@
   </div>
   <figcaption class="result" class:done>
     <span class="file" aria-hidden="true"><img src="/assets/appicon-128.webp" width="44" height="44" alt="" /></span>
-    <span><code>my-slop.slop</code><small>Example session · paths and build progress vary.</small></span>
+    <span><code>my-tiny.tiny</code><small>Example session · paths and build progress vary.</small></span>
   </figcaption>
 </figure>
 

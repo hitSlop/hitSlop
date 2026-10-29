@@ -90,8 +90,8 @@ runs:
       if: inputs.rust == 'true' && github.event_name != 'pull_request'
       with:
         path: |
-          ~/.cache/hitslop/compat-writers
-          ~/.cache/hitslop/compat-corpora
+          ~/.cache/tinys/compat-writers
+          ~/.cache/tinys/compat-corpora
         key: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-
     - id: compat-writers-cache-restore
@@ -99,8 +99,8 @@ runs:
       if: inputs.rust == 'true' && github.event_name == 'pull_request'
       with:
         path: |
-          ~/.cache/hitslop/compat-writers
-          ~/.cache/hitslop/compat-corpora
+          ~/.cache/tinys/compat-writers
+          ~/.cache/tinys/compat-corpora
         key: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-${{ github.run_id }}-${{ github.run_attempt }}
         restore-keys: ${{ env.CI_CACHE_NAMESPACE }}compat-writers-
     - id: tools-cache
@@ -168,7 +168,7 @@ runs:
         fi
         if [ "$WASM_C" = true ]; then
           bash scripts/build/install-binaryen.sh
-          echo "HITSLOP_WASM_BINDGEN=$(command -v wasm-bindgen)" >> "$GITHUB_ENV"
+          echo "TINYS_WASM_BINDGEN=$(command -v wasm-bindgen)" >> "$GITHUB_ENV"
         fi
         if { [ "$BINDINGS" = native ] || [ "$BINDINGS" = full ]; } && [ "$RUNNER_OS" = macOS ]; then
           if [ "$(generated/core-tools/bin/uniffi-bindgen --version 2>/dev/null || true)" != "uniffi-bindgen $UNIFFI" ]; then

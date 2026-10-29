@@ -4,7 +4,7 @@
 <key>SharingKeychainGroup</key><string>$(AppIdentifierPrefix)com.hitslop.sharing</string>
   <key>UIBackgroundModes</key><array><string>remote-notification</string><string>fetch</string></array>
   <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>com.hitslop.app.widgets.refresh</string></array>
-  <key>CFBundleDisplayName</key><string>hitSlop</string>
+  <key>CFBundleDisplayName</key><string>tinys</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
@@ -14,9 +14,9 @@
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>UILaunchScreen</key><dict/>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
-  <key>NSCameraUsageDescription</key><string>A slop you open can use the camera when it declares it, for example to take a photo you keep in the document.</string>
-  <key>NSMicrophoneUsageDescription</key><string>A slop you open can use the microphone when it declares it, for example to record a voice note you keep in the document.</string>
-  <key>NSSpeechRecognitionUsageDescription</key><string>A slop you open can turn a recording in the document into text when it declares speech. Recognition runs on this iPhone; recordings are never sent to Apple.</string>
+  <key>NSCameraUsageDescription</key><string>A tiny you open can use the camera when it declares it, for example to take a photo you keep in the document.</string>
+  <key>NSMicrophoneUsageDescription</key><string>A tiny you open can use the microphone when it declares it, for example to record a voice note you keep in the document.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>A tiny you open can turn a recording in the document into text when it declares speech. Recognition runs on this iPhone; recordings are never sent to Apple.</string>
   <key>UIUserInterfaceStyle</key><string>Light</string>
   <key>UIApplicationSupportsIndirectInputEvents</key><true/>
   <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
@@ -24,21 +24,21 @@
   <key>LSSupportsOpeningDocumentsInPlace</key><true/>
   <key>CFBundleURLTypes</key><array><dict>
     <key>CFBundleURLName</key><string>com.hitslop.widgets</string>
-    <key>CFBundleURLSchemes</key><array><string>hitslop</string></array>
+    <key>CFBundleURLSchemes</key><array><string>tinys</string></array>
   </dict></array>
   <key>CFBundleDocumentTypes</key><array><dict>
-    <key>CFBundleTypeName</key><string>hitSlop document</string>
+    <key>CFBundleTypeName</key><string>tinys document</string>
     <key>CFBundleTypeRole</key><string>Editor</string>
     <key>LSHandlerRank</key><string>Owner</string>
-    <key>LSItemContentTypes</key><array><string>com.hitslop.slop</string></array>
+    <key>LSItemContentTypes</key><array><string>click.tinys.document</string></array>
   </dict></array>
   <key>UISupportedInterfaceOrientations</key><array>
     <string>UIInterfaceOrientationPortrait</string>
   </array>
   <key>UTExportedTypeDeclarations</key><array><dict>
-    <key>UTTypeIdentifier</key><string>com.hitslop.slop</string>
-    <key>UTTypeDescription</key><string>hitSlop document</string>
+    <key>UTTypeIdentifier</key><string>click.tinys.document</string>
+    <key>UTTypeDescription</key><string>tinys document</string>
     <key>UTTypeConformsTo</key><array><string>public.data</string><string>public.content</string></array>
-    <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>slop</string></array></dict>
+    <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>tiny</string></array></dict>
   </dict></array>
 </dict></plist>

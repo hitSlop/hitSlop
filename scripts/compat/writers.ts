@@ -3,17 +3,17 @@ import { chmod, copyFile, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileDigest, sha256 } from "../lib/artifacts";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { historicalPackage } from "./corpora";
 import { documentEngine, releases, type Release } from "./corpus";
 
 export const writerCache = () =>
-  resolve(process.env.HITSLOP_COMPAT_WRITERS ?? join(homedir(), ".cache/hitslop/compat-writers"));
+  resolve(process.env.TINYS_COMPAT_WRITERS ?? join(homedir(), ".cache/tinys/compat-writers"));
 
 /** Read only the packaged writer, without unpacking any archive paths onto disk. */
 async function packedWriter(tarball: string): Promise<Uint8Array> {
   const child = Bun.spawn(
-    ["/usr/bin/tar", "-xOzf", tarball, "package/engine/darwin-arm64/slop-engine"],
+    ["/usr/bin/tar", "-xOzf", tarball, "package/engine/darwin-arm64/tiny-engine"],
     { stdout: "pipe", stderr: "pipe" },
   );
   const [bytes, error, code] = await Promise.all([
@@ -65,7 +65,7 @@ export async function resolveWriter(
   await mkdir(cache, { recursive: true });
   const stage = await mkdtemp(join(cache, ".writer-"));
   try {
-    const binary = join(stage, "slop-engine"),
+    const binary = join(stage, "tiny-engine"),
       local = options.local ?? documentEngine();
     let localID: string | undefined;
     try {

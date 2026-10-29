@@ -1,7 +1,7 @@
 import { publishFolder, repository } from "../lib/artifacts";
 import { chmod, copyFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { exists } from "../../packages/hitslop/src/cli/fs";
+import { exists } from "../../packages/tinys/src/cli/fs";
 import { builtTemplates, type TemplateInventory } from "./discover";
 import { validateTemplate } from "./cache";
 import { buildTemplates } from "./build";
@@ -23,10 +23,10 @@ export async function embedTemplates(
   await publishFolder(destination, async (stage) => {
     for (const { slug, bundled } of inventory.templates) {
       if (!bundled) continue;
-      const template = join(source, slug + ".slop");
+      const template = join(source, slug + ".tiny");
       // A template file the engine opens, for this slug: never a document.
       await validateTemplate(template, slug);
-      await copyFile(template, join(stage, slug + ".slop"));
+      await copyFile(template, join(stage, slug + ".tiny"));
     }
   });
   await setWritable(destination, false);

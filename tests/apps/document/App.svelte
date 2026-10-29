@@ -1,6 +1,6 @@
 <script lang="ts">
 import "./styles.css";
-  import { EditableText, getDocument } from "hitslop/svelte";
+  import { EditableText, getDocument } from "@hitslop/tinys/svelte";
   import schema from "./schema";
   const doc = getDocument(schema);
   let hidden = $state(false);

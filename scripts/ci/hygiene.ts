@@ -3,7 +3,7 @@
  * address everywhere, and a landing template catalog that matches the active templates. */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { run } from "../../packages/tinys/src/cli/process";
 import { repository } from "../lib/artifacts";
 import { discoverTemplates } from "../templates/discover";
 import { SITE_LINKS } from "../../apps/landing/src/constants";
@@ -25,12 +25,12 @@ async function placeholders() {
 }
 
 /** The iPhone download address is one constant for the landing site, mirrored by the README link
- * and the app's links; the site's own relative addresses are served from hitslop.com. */
+ * and the app's links; the site's own relative addresses are served from tinys.click. */
 async function iosDownload() {
-  const expected = SITE_LINKS.iosDownload.startsWith("/") ? `https://hitslop.com${SITE_LINKS.iosDownload}` : SITE_LINKS.iosDownload;
+  const expected = SITE_LINKS.iosDownload.startsWith("/") ? `https://tinys.click${SITE_LINKS.iosDownload}` : SITE_LINKS.iosDownload;
   const mirrors: [string, RegExp][] = [
     ["README.md", /^\[ios-download\]:\s*(\S+)/m],
-    ["apps/apple/Packages/HitSlopApple/Sources/HitSlopCore/SlopLinks.swift", /iosDownload\s*=\s*URL\(string:\s*"([^"]+)"/],
+    ["apps/apple/Packages/TinysApple/Sources/TinysCore/TinyLinks.swift", /iosDownload\s*=\s*URL\(string:\s*"([^"]+)"/],
   ];
   for (const [path, pattern] of mirrors) {
     const found = pattern.exec(await readFile(join(repository, path), "utf8"))?.[1];
@@ -52,12 +52,12 @@ async function catalog() {
   for (const { slug, source } of templates) {
     const categories = bySlug.get(slug);
     if (!categories) continue;
-    const declared = ((await import(join(source, "slop.ts"))).default as { categories: string[] }).categories;
+    const declared = ((await import(join(source, "tiny.ts"))).default as { categories: string[] }).categories;
     if (JSON.stringify(declared) !== JSON.stringify(categories)) moved.push(`${slug} (${categories.join(", ")} -> ${declared.join(", ")})`);
   }
   if (missing.length || stale.length || moved.length)
     problems.push([
-      "apps/landing/src/data/templates.json no longer matches the active templates (slops/bundled.json and each slop.ts).",
+      "apps/landing/src/data/templates.json no longer matches the active templates (tinys/bundled.json and each tiny.ts).",
       ...(missing.length ? [`  missing ${missing.length}: ${missing.join(", ")}`] : []),
       ...(stale.length ? [`  no longer a template ${stale.length}: ${stale.join(", ")}`] : []),
       ...(moved.length ? [`  categories changed ${moved.length}: ${moved.join("; ")}`] : []),

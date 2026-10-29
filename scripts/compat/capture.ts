@@ -1,4 +1,4 @@
-// Captures a compatibility corpus entry from this build: the runtime, not individual slops.
+// Captures a compatibility corpus entry from this build: the runtime, not individual tinys.
 // The conformance app (every ctx member, descriptor kind and a stored command) as built,
 // with documents saved through this build's CLI and by its own page, what they
 // read as and edits to replay on them; a template for each window kind; and the engine
@@ -28,11 +28,11 @@ import {
   EngineProtocol,
   PackageFormat,
   RuntimeABI,
-} from "../../packages/hitslop/src/schema/constants";
+} from "../../packages/tinys/src/schema/constants";
 import {
   documentEngine,
-  slop,
-  slopJSON,
+  tiny,
+  tinyJSON,
   savedState,
   type Expected,
   type ExportGolden,
@@ -49,14 +49,14 @@ import {
   useTestRegistry,
   repository,
 } from "../lib/artifacts";
-import { execute, request } from "../../packages/hitslop/src/cli/engine";
-import { exec } from "../../packages/hitslop/src/cli/process";
+import { execute, request } from "../../packages/tinys/src/cli/engine";
+import { exec } from "../../packages/tinys/src/cli/process";
 import { createDocument } from "../lib/native";
 import { evaluateStored } from "./commands";
 import { resolveWriter } from "./writers";
 // The producing tools are built as they ship (the `dist` Cargo profile), as the release
 // gate builds them: a candidate's packages then match what was captured.
-process.env.HITSLOP_CARGO_PROFILE = "dist";
+process.env.TINYS_CARGO_PROFILE = "dist";
 useTestRegistry();
 
 const [name, ...flags] = process.argv.slice(2);
@@ -81,9 +81,9 @@ if (
 )
   throw new Error("Unknown capture flag");
 if (!suppliedWriter)
-  throw new Error("Release capture requires --writer generated/engines/darwin-arm64/slop-engine");
-if (process.env.HITSLOP_ENGINE)
-  throw new Error("Capture uses the engine it builds; remove HITSLOP_ENGINE for capture");
+  throw new Error("Release capture requires --writer generated/engines/darwin-arm64/tiny-engine");
+if (process.env.TINYS_ENGINE)
+  throw new Error("Capture uses the engine it builds; remove TINYS_ENGINE for capture");
 const destination = resolve(out);
 if (existsSync(destination)) throw new Error("Capture destination already exists; choose a new --out directory");
 if (destination === join(repository, "tests") || destination.startsWith(join(repository, "tests") + "/"))
@@ -113,10 +113,10 @@ const writer: Release["writer"] = {
   sha256: await fileDigest(writerPath),
 };
 // Every CLI write uses the supplied shipped engine, not the checkout's local build.
-process.env.HITSLOP_ENGINE = writerPath;
-const stage = await mkdtemp(join(tmpdir(), "hitslop-corpus-stage-"));
+process.env.TINYS_ENGINE = writerPath;
+const stage = await mkdtemp(join(tmpdir(), "tinys-corpus-stage-"));
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
-const work = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-capture-")));
+const work = await realpath(await mkdtemp(join(tmpdir(), "tinys-compat-capture-")));
 const root = join(stage, name);
 try {
   // Templates: the Svelte conformance app, which exercises every ctx member and descriptor
@@ -139,7 +139,7 @@ try {
   await run([documentEngine(), "--acceptance-vectors", join(root, "acceptance")]);
   const limits: Release["limits"] = JSON.parse(await run([documentEngine(), "--limits"]));
   const templates: Record<string, string> = {
-    conformance: join(repository, "generated/abi/owner-svelte.slop"),
+    conformance: join(repository, "generated/abi/owner-svelte.tiny"),
   };
   for (const kind of [
     "washer",
@@ -155,7 +155,7 @@ try {
   ])
     templates[`presentation-${kind}`] = presentation[kind]!;
   for (const [slug, source] of Object.entries(templates))
-    await copyFile(source, join(root, "templates", slug + ".slop"));
+    await copyFile(source, join(root, "templates", slug + ".tiny"));
 
   // Generic edits derived from a descriptor: one valid write of every kind it declares.
   type Node = { kind: string; [key: string]: any };
@@ -235,17 +235,17 @@ try {
   }
   const schemaOf = async (document: string) =>
     (await execute({ method: "schema", file: document })).schema as Node;
-  const valueOf = async (document: string) => (await slopJSON(["get", document])) as unknown;
+  const valueOf = async (document: string) => (await tinyJSON(["get", document])) as unknown;
   const batch = (document: string, ops: unknown[]) =>
-    slopJSON(["batch", document, "--ops", JSON.stringify(ops)]);
+    tinyJSON(["batch", document, "--ops", JSON.stringify(ops)]);
 
   // Initial values and saved/scenario results below are derived by the captured writer.
   // They freeze its behavior; the app's own check() calls and explicit probes provide
   // independent contract assertions.
   // What a new document of each template holds: its initial snapshot.
   for (const slug of Object.keys(templates)) {
-    const created = join(work, `new-${slug}.slop`);
-    await createDocument(join(root, "templates", slug + ".slop"), created, {
+    const created = join(work, `new-${slug}.tiny`);
+    await createDocument(join(root, "templates", slug + ".tiny"), created, {
       engine: documentEngine(),
     });
     await writeFile(
@@ -258,26 +258,26 @@ try {
   // increments from two writers, a snapshot plus saved updates), theme overrides/reset and
   // referenced attachments of every classified type; and a compacted copy.
   const documents = join(root, "documents");
-  const conformance = join(documents, "conformance.slop");
-  await createDocument(join(root, "templates", "conformance.slop"), conformance, {
+  const conformance = join(documents, "conformance.tiny");
+  await createDocument(join(root, "templates", "conformance.tiny"), conformance, {
     engine: documentEngine(),
   });
   const schema = await schemaOf(conformance);
   for (const round of [1, 2])
     await batch(conformance, edits(schema, await valueOf(conformance), round));
-  const theme = await slopJSON(["theme", "get", conformance]);
+  const theme = await tinyJSON(["theme", "get", conformance]);
   assert.ok(
     Object.keys(theme.defaults).length >= 3,
     "Conformance needs at least three theme tokens",
   );
   const themeScenario: ThemeScenario = { steps: [] };
   for (const edit of [{ values: { accent: "#123456", ink: "#654321" } }, { reset: "ink" }]) {
-    await slopJSON(
+    await tinyJSON(
       edit.values
         ? ["theme", "set", conformance, "--values", JSON.stringify(edit.values)]
         : ["theme", "reset", conformance, "--token", edit.reset!],
     );
-    const { overrides, effective } = await slopJSON(["theme", "get", conformance]);
+    const { overrides, effective } = await tinyJSON(["theme", "get", conformance]);
     themeScenario.steps.push({ ...edit, state: { overrides, effective } });
   }
   assert.deepEqual(themeScenario.steps[0]!.state.overrides, { accent: "#123456", ink: "#654321" });
@@ -285,8 +285,8 @@ try {
   assert.equal(themeScenario.steps[1]!.state.effective.ink, theme.defaults.ink);
   const text = join(work, "attachment.txt");
   await writeFile(text, "Compatibility corpus attachment ✓\n");
-  const ref = await slopJSON(["attachments", "ref", text]);
-  await slopJSON([
+  const ref = await tinyJSON(["attachments", "ref", text]);
+  await tinyJSON([
     "apply",
     conformance,
     "--attach",
@@ -298,8 +298,8 @@ try {
   // A second attachment of a media type the host sniffs from its bytes.
   const image = join(work, "photo.png");
   await copyFile(join(repository, "tests/abi/owner-svelte/media/swatch.png"), image);
-  const photo = await slopJSON(["attachments", "ref", image]);
-  await slopJSON([
+  const photo = await tinyJSON(["attachments", "ref", image]);
+  await tinyJSON([
     "apply",
     conformance,
     "--attach",
@@ -353,10 +353,10 @@ try {
   for (const [label, mime, bytes] of fixtures) {
     const file = join(work, label + ".blob");
     await writeFile(file, bytes);
-    const reference = await slopJSON(["attachments", "ref", file]);
+    const reference = await tinyJSON(["attachments", "ref", file]);
     assert.equal(reference.mimeType, mime, `Attachment classifier changed for ${label}`);
     ids.push(reference.id);
-    await slopJSON([
+    await tinyJSON([
       "apply",
       conformance,
       "--attach",
@@ -366,9 +366,9 @@ try {
     ]);
     await rm(file);
   }
-  const attached = await slopJSON(["attachments", "list", conformance]);
+  const attached = await tinyJSON(["attachments", "list", conformance]);
   assert.equal(attached.length, new Set(ids).size, "Capture lost a referenced attachment");
-  const compacted = join(documents, "conformance-compacted.slop");
+  const compacted = join(documents, "conformance-compacted.tiny");
   await copyFile(conformance, compacted);
   await run([
     "cargo",
@@ -376,7 +376,7 @@ try {
     "-q",
     "--locked",
     "-p",
-    "hitslop-core",
+    "tinys-core",
     "--features",
     "storage",
     "--example",
@@ -387,12 +387,12 @@ try {
 
   // What each document reads as, and an edit to replay on it with its result.
   const names = (await readdir(documents))
-    .filter((n) => n.endsWith(".slop"))
+    .filter((n) => n.endsWith(".tiny"))
     .map((n) => n.slice(0, -5))
     .sort();
-  const scratch = join(work, "Document.slop");
+  const scratch = join(work, "Document.tiny");
   async function record(document: string) {
-    const path = join(documents, document + ".slop");
+    const path = join(documents, document + ".tiny");
     const expected: Expected = await savedState(path);
     await writeFile(
       join(root, "expected", document + ".json"),
@@ -402,7 +402,7 @@ try {
     await rm(scratch, { recursive: true, force: true });
     await copyFile(path, scratch);
     await batch(scratch, ops);
-    const { value } = await slopJSON(["get", scratch, "--snapshot"]);
+    const { value } = await tinyJSON(["get", scratch, "--snapshot"]);
     const scenario: Scenario = { ops, value };
     await writeFile(
       join(root, "scenarios", document + ".json"),
@@ -418,7 +418,7 @@ try {
     // Keep the render bytes as inspectable corpus artifacts as well as their content summary.
     for (const format of ["png", "pdf"]) {
       const output = join(root, "exports", `${document}.${format}`);
-      await slop(["export", path, "--format", format, "--output", output]).then(
+      await tiny(["export", path, "--format", format, "--output", output]).then(
         ({ code, stderr }) => {
           if (code) throw new Error(stderr);
         },
@@ -477,7 +477,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
   // Storage shapes the documents cover.
   const storage: Release["storage"] = {};
   function measure(document: string) {
-    const database = new Database(join(documents, document + ".slop"), { readonly: true });
+    const database = new Database(join(documents, document + ".tiny"), { readonly: true });
     // The history's first row is its snapshot; the rest are updates saved after it.
     const checkpoint = database
       .query("SELECT length(bytes) AS n FROM history ORDER BY seq LIMIT 1")
@@ -502,12 +502,12 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
       packageFormat: PackageFormat,
       runtimeABI: RuntimeABI,
       storage: Number(
-        (await readFile(join(repository, "crates/hitslop-core/src/file/mod.rs"), "utf8")).match(
+        (await readFile(join(repository, "crates/tinys-core/src/file/mod.rs"), "utf8")).match(
           /const STORAGE_VERSION: i64 = (\d+);/,
         )![1],
       ),
       layout: Number(
-        (await readFile(join(repository, "crates/hitslop-core/src/document/mod.rs"), "utf8")).match(
+        (await readFile(join(repository, "crates/tinys-core/src/document/mod.rs"), "utf8")).match(
           /pub const LAYOUT: i64 = (\d+);/,
         )![1],
       ),
@@ -518,7 +518,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
       // The command prelude this release ran; a frozen entry freezes it (scripts/build/runner.ts).
       runner: {
         [RuntimeABI]: await fileDigest(
-          join(repository, `crates/hitslop-runner/src/abi/${RuntimeABI}.generated.js`),
+          join(repository, `crates/tinys-runner/src/abi/${RuntimeABI}.generated.js`),
         ),
       },
     },
@@ -526,7 +526,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
     limits,
     storageSchemas: Object.fromEntries(
       await Promise.all(
-        ["crates/hitslop-core/src/file/storage-1.sql"].map(async (path) => [
+        ["crates/tinys-core/src/file/storage-1.sql"].map(async (path) => [
           path,
           await fileDigest(join(repository, path)),
         ]),
@@ -536,7 +536,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
       await Promise.all(
         Object.keys(templates).map(async (slug) => [
           slug,
-          await fileDigest(join(root, "templates", slug + ".slop")),
+          await fileDigest(join(root, "templates", slug + ".tiny")),
         ]),
       ),
     ),
@@ -544,7 +544,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
       await Promise.all(
         Object.keys(templates).map(async (slug) => [
           slug,
-          (await slopJSON(["inspect", join(root, "templates", slug + ".slop")])).appDigest,
+          (await tinyJSON(["inspect", join(root, "templates", slug + ".tiny")])).appDigest,
         ]),
       ),
     ),
@@ -611,12 +611,12 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
   for (const [slug, probes] of Object.entries(commandProbes)) {
     const scenarios: CommandProbe[] = [];
     for (const probe of probes) {
-      const original = join(documents, slug + ".slop"),
-        copy = join(work, "command.slop");
+      const original = join(documents, slug + ".tiny"),
+        copy = join(work, "command.tiny");
       await rm(copy, { force: true });
       await copyFile(original, copy);
       const input = { name: probe.name, args: probe.args, now: release.clock, seed: [1, 2, 3, 4] };
-      const state = await slopJSON(["get", copy, "--snapshot"]);
+      const state = await tinyJSON(["get", copy, "--snapshot"]);
       // evaluateStored must admit ok:false only when this probe explicitly expects it.
       // The expectation is passed as metadata for replay, outside the authored arguments.
       const evaluationInput = { ...input, expected: probe.expected };
@@ -671,7 +671,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
     {
       cwd: repository,
       inherit: ["stdout", "stderr"],
-      env: { ...process.env, HITSLOP_COMPAT_RECORD: name, HITSLOP_COMPAT_ROOT: stage, TZ: "UTC" },
+      env: { ...process.env, TINYS_COMPAT_RECORD: name, TINYS_COMPAT_ROOT: stage, TZ: "UTC" },
     },
   );
   if (swift.code) throw new Error("Recording page scenarios failed");
@@ -682,7 +682,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
   // The documents the old apps' pages saved, recorded like the CLI-written ones.
   for (const document of names) {
     const saved = `${document}.page`;
-    if (!(await Bun.file(join(documents, saved + ".slop")).exists()))
+    if (!(await Bun.file(join(documents, saved + ".tiny")).exists()))
       throw new Error(`No page-saved document for ${document}`);
     await record(saved);
     measure(saved);

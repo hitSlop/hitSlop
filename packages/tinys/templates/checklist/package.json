@@ -1,0 +1,15 @@
+{
+  "name": "my-tiny",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "svelte": "5.57.2",
+    "bits-ui": "^2.19.5"
+  },
+  "devDependencies": {
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "@hitslop/tinys": "1.0.0"
+  },
+  "version": "1.0.0"
+}

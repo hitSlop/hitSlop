@@ -1,9 +1,9 @@
 // Manual audit reproduction, not a new CI contract. Runs the production page shell
 // against a transport whose edit outcome cannot be confirmed.
 // bun scripts/dev/repro-detached-draft.ts
-import { OwnerDocument, type OwnerTransport } from "../../packages/hitslop/src/shell/owner/document";
-import { defineDocument, s } from "../../packages/hitslop/src/sdk/schema";
-import { DocumentError, isDocumentError } from "../../packages/hitslop/src/sdk/errors";
+import { OwnerDocument, type OwnerTransport } from "../../packages/tinys/src/shell/owner/document";
+import { defineDocument, s } from "../../packages/tinys/src/sdk/schema";
+import { DocumentError, isDocumentError } from "../../packages/tinys/src/sdk/errors";
 
 const before = "before";
 const draft = "important unsaved draft";

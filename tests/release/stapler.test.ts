@@ -7,7 +7,7 @@ import { exec } from "../../scripts/lib/test-process";
 // Exercise the shell entry point with ticket-service failures at its process boundary.
 // The sleep stand-in records backoff without making this test wait for an outage.
 async function stapler(action: "staple" | "validate", responses: number[]) {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-stapler-"));
+  const folder = await mkdtemp(join(tmpdir(), "tinys-stapler-"));
   try {
     await writeFile(join(folder, "xcrun"), `#!/bin/sh
 set -eu

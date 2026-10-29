@@ -1,0 +1,61 @@
+import { defineDocument, s } from "@hitslop/tinys";
+
+export default defineDocument({
+  name: s.text(),
+  initials: s.string({ maxLength: 3 }),
+  role: s.text(),
+  email: s.string(),
+  location: s.text(),
+  website: s.string(),
+  summary: s.text(),
+  skills: s.list(s.object({ label: s.text() })),
+  experience: s.list(s.object({
+    role: s.text(),
+    company: s.text(),
+    period: s.text(),
+    summary: s.text(),
+  })),
+  education: s.list(s.object({
+    school: s.text(),
+    program: s.text(),
+    year: s.string(),
+  })),
+}, { initial: {
+  name: "Avery Quinn",
+  initials: "AQ",
+  role: "Product designer & systems thinker",
+  email: "avery@hello.dev",
+  location: "Brooklyn, NY",
+  website: "hello.dev/avery",
+  summary: "I turn ambiguous ideas into useful, calm digital products. I work from the first sketch through a durable system that gives teams room to move.",
+  skills: [
+    { label: "Product design" },
+    { label: "Design systems" },
+    { label: "Prototyping" },
+    { label: "User research" },
+    { label: "Figma" },
+  ],
+  experience: [
+    {
+      role: "Senior product designer",
+      company: "Mosaic Labs",
+      period: "2022 — now",
+      summary: "Led product direction for a collaborative workspace used by growing teams. Shaped the system, shipped the new editor, and partnered closely with engineering from discovery through launch.",
+    },
+    {
+      role: "Product designer",
+      company: "Scale Studio",
+      period: "2020 — 2022",
+      summary: "Designed end-to-end tools for independent businesses, from first-run onboarding to daily operations. Built a reusable component library that made new work faster and more consistent.",
+    },
+    {
+      role: "Visual designer",
+      company: "North / South",
+      period: "2018 — 2020",
+      summary: "Made identities, websites, and small digital products for people doing interesting work. Learned to make the essential thing feel inevitable.",
+    },
+  ],
+  education: [
+    { school: "Parsons School of Design", program: "BFA, Communication Design", year: "2018" },
+  ],
+} });

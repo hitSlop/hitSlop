@@ -2,7 +2,7 @@
 
 The landing page is a playful desktop: a hero, the draggable desktop playground
 (`playground/`), the template wall, and interactive sections. Its typography does
-not apply to live slop demos or documentation.
+not apply to live tiny demos or documentation.
 
 ## Template wall data
 
@@ -33,7 +33,7 @@ image is static, lazy-loaded, and has empty alt text; the heading carries the me
 
 Generation prompt:
 
-> Use case: illustration-story. Asset type: transparent sticker mascot for the hitSlop landing page beside the headline ‘I’m literally just a file.’ Draw one original cute kawaii anime-style anthropomorphic paper file, full body, centered and tightly framed with a little clear margin. Cream paper body shaped like a softly rounded document with a folded lavender upper-right corner, dark navy ink outlines, closed u-shaped anime eyes and a tiny w-shaped uwu mouth, rosy pink cheek blush, tiny feet, little rounded hands, one hand raised in a shy wave. Slight jaunty tilt and charming hand-drawn linework, simple cel shading, warm approachable personality, crisp readable silhouette at 80–150 pixels wide. A thin cream sticker edge. Keep the face large and clear. The body is paper, not a folder. True transparent background; no backdrop, no ground plane, no checkerboard, no surrounding objects, no text, no watermark, no photorealism, no 3D.
+> Use case: illustration-story. Asset type: transparent sticker mascot for the tinys landing page beside the headline ‘I’m literally just a file.’ Draw one original cute kawaii anime-style anthropomorphic paper file, full body, centered and tightly framed with a little clear margin. Cream paper body shaped like a softly rounded document with a folded lavender upper-right corner, dark navy ink outlines, closed u-shaped anime eyes and a tiny w-shaped uwu mouth, rosy pink cheek blush, tiny feet, little rounded hands, one hand raised in a shy wave. Slight jaunty tilt and charming hand-drawn linework, simple cel shading, warm approachable personality, crisp readable silhouette at 80–150 pixels wide. A thin cream sticker edge. Keep the face large and clear. The body is paper, not a folder. True transparent background; no backdrop, no ground plane, no checkerboard, no surrounding objects, no text, no watermark, no photorealism, no 3D.
 
 ## Fonts
 
@@ -60,15 +60,15 @@ art (`playground/DesktopPet.svelte`).
 `public/assets/desktop-hero.mp4` (30 s, 1920×1080, with music) and
 `desktop-hero-poster.jpg` are rendered in code by `apps/promo`; there is no screen
 recording. The README uses the same poster. On the site the poster lives in the
-playground's "hitSlop in action.mp4" window (AVIF/WebP/JPEG at 960 and 1920 px) and
+playground's "tinys in action.mp4" window (AVIF/WebP/JPEG at 960 and 1920 px) and
 opens the video dialog (`VideoDialog.astro`).
 
-1. `bun run capture` drives the real example apps through `slop dev` in headless
+1. `bun run capture` drives the real example apps through `tiny dev` in headless
    Chromium: it plays SomaAmp and drops in a classic `.wsz` skin, imports a Codex pet
    ZIP, applies the checklist and theme edits that the terminal scene shows, and
    exercises the other montage apps. Each clip is saved as an alpha PNG sequence in
    `public/captures` (gitignored). `PROMO_SKIN` and `PROMO_PET` point at the imported
-   files and default to `~/Desktop/slops`.
+   files and default to `~/Desktop/tinys`.
 2. `bun run render` composes the desktop, Finder, dock, cursor and terminal in Remotion
    (`src/Promo.tsx`, with beat timings in `src/timeline.ts`) and writes the MP4 and
    poster into `out/`. Copy them here with `bun run publish`.

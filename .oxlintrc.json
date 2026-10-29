@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  // The verify `types` tier lints packages/hitslop/src and scripts (docs/testing.md).
+  // The verify `types` tier lints packages/tinys/src and scripts (docs/testing.md).
   // Oxlint's correctness rules, plus the two promise rules that guard unobserved failures:
   // Bun ends the CLI on an unhandled rejection. Svelte templates are not linted.
   "plugins": ["eslint", "typescript", "unicorn", "oxc"],

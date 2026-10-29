@@ -11,7 +11,7 @@ Use `App.svelte` for the editor, required root `Preview.svelte` and `Icon.svelte
 
 ```svelte
 <script lang="ts">
-  import { bindText, getDocument } from "hitslop/svelte";
+  import { bindText, getDocument } from "@hitslop/tinys/svelte";
   import schema from "./schema";
   const doc = getDocument(schema);
   const addItem = () => doc.fields.tasks.insert({ text: "New task" });
@@ -26,7 +26,7 @@ Preview, Export and Icon receive `snapshot`, deeply readonly saved data, `attach
 
 ```svelte
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
@@ -40,7 +40,7 @@ Required `Preview.svelte` can show a bounded selection and an honest total:
 
 ```svelte
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
@@ -57,7 +57,7 @@ Share components between Preview and Export where useful. Avoid generating a lon
 
 ```svelte
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
@@ -78,11 +78,11 @@ CSS can change the result, so review native captures. Browser-dependent capture
 components fail the build with a role/source diagnostic, and so does your own code that
 uses `URL`, `URLSearchParams`, `TextEncoder`, `TextDecoder`, `AbortController`, `Blob` or
 `structuredClone`, which the capture runtime lacks. Editor runtime imports from
-`hitslop/svelte`, such as `getDocument`, `draft`, `motion`, `notify`, `EditableText`,
+`@hitslop/tinys/svelte`, such as `getDocument`, `draft`, `motion`, `notify`, `EditableText`,
 `bindText`, `speech` and `resizeWindow`, and Svelte's `onMount` are refused, including
 through aliases, namespace imports and re-exports, and so is `attachments`: read a stored
-image's URL from the `attachmentURL` prop instead. Everything `hitslop/embed` exports
-is refused too. Static views may import the string helpers in `hitslop/youtube`; see
+image's URL from the `attachmentURL` prop instead. Everything `@hitslop/tinys/embed` exports
+is refused too. Static views may import the string helpers in `@hitslop/tinys/youtube`; see
 [YouTube and saved thumbnails](/docs/guides/files-and-web/#youtube). Use static representations
 for canvas, animation or WebGL content. A rendering failure retains previous artwork;
 there is no automatic fallback or public renderer override.
@@ -110,9 +110,9 @@ the date saved in its plan; Water Tracker shows the saved intake log and does no
 reset it at midnight. The other views refresh with saved edits.
 
 The same widget view serves iPhone Home Screen widgets in the iPhone app on TestFlight.
-On iPhone, add a hitSlop widget and select a library slop whose embedded app includes
+On iPhone, add a tinys widget and select a library tiny whose embedded app includes
 `Widget.svelte`. The phone renders its widget images locally; tap the widget to open
-the slop. The app refreshes placed widgets after saves and library changes, and in the background
+the tiny. The app refreshes placed widgets after saves and library changes, and in the background
 when iCloud changes arrive or iOS schedules a refresh; iOS decides when that runs. See
 [availability](/docs/availability/).
 
@@ -120,7 +120,7 @@ Add an optional root `Widget.svelte` to compose the same saved document for a wi
 
 ```svelte
 <script lang="ts">
-  import type { CaptureProps, WidgetProps } from "hitslop/svelte";
+  import type { CaptureProps, WidgetProps } from "@hitslop/tinys/svelte";
   import type schema from "./schema";
   let { snapshot, family, width, height }: CaptureProps<typeof schema> & WidgetProps = $props();
 </script>
@@ -136,8 +136,8 @@ reuse components, imported assets and theme colors. The host captures a fixed ca
 at 2× through the native renderer. Only the widget component renders. WidgetKit clips its outer
 corners; avoid adding an outer shadow or padding just to simulate the system frame.
 
-Create a document from the rebuilt template and open it in hitSlop to generate
-its widget images. Add a hitSlop widget from macOS's widget gallery and choose the
+Create a document from the rebuilt template and open it in tinys to generate
+its widget images. Add a tinys widget from macOS's widget gallery and choose the
 document under **Edit Widget → Document**. Only documents containing `Widget.svelte` with a
 successful capture appear. Existing documents retain their embedded app, so rebuilding
 a template does not add widget support to them. Clicking the image opens that document.
@@ -155,10 +155,10 @@ Each static role imports its own shared stylesheets (directly or through a compo
 
 ### Preview and refresh
 
-In `slop dev`, use the Preview selector to switch between the editor, the preview, the
+In `tiny dev`, use the Preview selector to switch between the editor, the preview, the
 icon and each widget family. Accepted edits survive switching, and component/CSS changes
 update the view live. Static views still mount inside the editor page and share its CSS cascade. These are browser layouts: review built preview/icon artwork with
-`slop build` and widget images on Mac and, for library slops, the iPhone app. Icon and widget canvases clip overflow; the preview warns when content
+`tiny build` and widget images on Mac and, for library tinys, the iPhone app. Icon and widget canvases clip overflow; the preview warns when content
 extends beyond its canvas.
 
 Successful saves refresh images after a one-second debounce, including edits while
@@ -168,12 +168,12 @@ its bundled fonts also refreshes unchanged cached documents. A failed capture re
 the previous images. The browser preview uses a different renderer; inspect native
 images before relying on its appearance.
 
-To request occasional recaptures while hitSlop is running, add
-`widget: { refreshMinutes: 30 }` to `slop.ts`. Whole-minute intervals from
+To request occasional recaptures while tinys is running, add
+`widget: { refreshMinutes: 30 }` to `tiny.ts`. Whole-minute intervals from
 15 to 1440 are accepted and require `Widget.svelte`. Only documents used by placed
 widgets are scheduled. This requests capture attempts, not an exact visible refresh
 rate: macOS controls scheduling and WidgetKit controls display updates. Quitting
-hitSlop leaves the last images on the desktop. `refreshMinutes` applies on Mac.
+tinys leaves the last images on the desktop. `refreshMinutes` applies on Mac.
 
 ## Design an icon at 512 × 512
 
@@ -187,7 +187,7 @@ The artwork can be rectangular or another shape; only the canvas must be square.
   height: 456px;
   display: grid;
   place-items: center;
-  background: var(--slop-accent);
+  background: var(--tiny-accent);
 }
 ```
 
@@ -197,12 +197,12 @@ The artwork can be rectangular or another shape; only the canvas must be square.
 
 Give export content natural height and normal document flow. Remove selection handles, menus, empty inputs, hover controls, and scroll containers. The optional `Export.svelte` supplies this complete static view; the editor is never captured. Dedicated exports and icons ignore the window's shape mask.
 
-The platform hides elements marked `data-slop-export="hide"` in Preview, Export and Icon, including the Preview and Icon layouts in `slop dev`. Mark shared editing controls with this attribute; you do not need to copy the hide rule into your CSS.
+The platform hides elements marked `data-tiny-export="hide"` in Preview, Export and Icon, including the Preview and Icon layouts in `tiny dev`. Mark shared editing controls with this attribute; you do not need to copy the hide rule into your CSS.
 
-The host sets `html[data-slop-capture="static"]` during capture. Use it for deliberate static layout adjustments:
+The host sets `html[data-tiny-capture="static"]` during capture. Use it for deliberate static layout adjustments:
 
 ```css
-html[data-slop-capture="static"] .note-export {
+html[data-tiny-capture="static"] .note-export {
   height: auto;
   overflow: visible;
 }
@@ -213,8 +213,8 @@ html[data-slop-capture="static"] .note-export {
 Use the native hover toolbar, File menu, or:
 
 ```sh
-bunx hitslop export My.slop --format png --output My.png
-bunx hitslop export My.slop --format pdf --output My.pdf
+bunx @hitslop/tinys export My.tiny --format png --output My.png
+bunx @hitslop/tinys export My.tiny --format pdf --output My.pdf
 ```
 
 Successful responses, respectively (your paths will differ):
@@ -224,7 +224,7 @@ Successful responses, respectively (your paths will differ):
 /Users/you/Documents/My.pdf
 ```
 
-An export never replaces the document it renders. For an open document, hitSlop sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both pass the saved snapshot and theme to the static view. The open editor is not used as the rendering workspace.
+An export never replaces the document it renders. For an open document, tinys sends unsent text, saves and copies the document before rendering that copy independently. Closed documents also render from saved state. Both pass the saved snapshot and theme to the static view. The open editor is not used as the rendering workspace.
 
 The editor barrier lasts through saving and copying; rendering then proceeds independently. Mac capture loads packaged fonts and saved image resources in the restricted child. The live editor's focus, selection and scroll remain unchanged. PNG renders at 2×, up to 16,384 pixels per side and 24 megapixels. PDF export keeps searchable text and vectors on one continuous page, scaled to at most 14,400 points per side; complex layouts and long documents may need further refinement.
 
@@ -232,6 +232,6 @@ Completed captures publish atomically before their deadline. If the acknowledgem
 
 ## Quick Look and Finder artwork
 
-On macOS and Linux, building or registering captures `Preview.svelte` and `Icon.svelte` as the initial preview and icon into the template; PNGs you declare with `artwork: { preview, icon }` in `defineSlop` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document in the Mac app refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows hitSlop's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
+On macOS and Linux, building or registering captures `Preview.svelte` and `Icon.svelte` as the initial preview and icon into the template; PNGs you declare with `artwork: { preview, icon }` in `defineTiny` are used instead (see [Finder artwork](/docs/guides/build-and-share/#finder-artwork)). Closing a writable document in the Mac app refreshes both images from its saved contents and theme and stores them in the document. Quick Look shows the preview when you press Space, and Finder, Mail and the share sheet show the icon, including on a Mac that received the file. A document without artwork shows tinys's document icon. Recents follows the document too. Templates keep their initial artwork. Failed captures retain the previous images. Artwork is a derived preview, not document state.
 
 Test normal and narrow windows, empty and populated data, themed output, default local views, saved view choices, and exports from open and closed documents. Check both PNG and PDF; a good editor screenshot alone does not prove a good exported layout.

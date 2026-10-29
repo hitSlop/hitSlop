@@ -2,8 +2,8 @@
 // template opens natively, renders its authored PNG and PDF, and reads the same afterwards,
 // with its master unchanged. Everyday runs render the native fixtures; nightly runs add the
 // type fixtures (tests/fixtures, whose saved documents the compatibility replay already
-// renders), and a release (HITSLOP_RENDER=all) renders every bundled template.
-// Evidence: .hitslop/evidence/render.
+// renders), and a release (TINYS_RENDER=all) renders every bundled template.
+// Evidence: .tinys/evidence/render.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -14,14 +14,14 @@ import { assertExport, createDocument, documentFromStage, engineRequest } from "
 import { nativeFixtureSlugs, prepareNativeFixtures } from "../../scripts/lib/native-fixtures";
 useTestRegistry();
 
-const evidence = resolve(".hitslop/evidence/render");
-const all = process.env.HITSLOP_RENDER === "all";
+const evidence = resolve(".tinys/evidence/render");
+const all = process.env.TINYS_RENDER === "all";
 const packages = all
   ? (await builtTemplates()).templates
       .filter((template) => template.bundled)
-      .map((template) => ({ name: `bundled-${template.slug}`, source: resolve("generated/templates", `${template.slug}.slop`) }))
-  : nativeFixtureSlugs.map((slug) => ({ name: `fixture-${slug}`, source: resolve("generated/native-fixtures", `${slug}.slop`) }));
-if (all || process.env.HITSLOP_NIGHTLY === "1")
+      .map((template) => ({ name: `bundled-${template.slug}`, source: resolve("generated/templates", `${template.slug}.tiny`) }))
+  : nativeFixtureSlugs.map((slug) => ({ name: `fixture-${slug}`, source: resolve("generated/native-fixtures", `${slug}.tiny`) }));
+if (all || process.env.TINYS_NIGHTLY === "1")
   for (const name of (await readdir("tests/fixtures")).sort())
     packages.push({ name: `fixture-${name}`, source: resolve("tests/fixtures", name, "document") });
 
@@ -33,7 +33,7 @@ const started = performance.now();
 
 beforeAll(async () => {
   if (!all) await prepareNativeFixtures();
-  parent = await mkdtemp(join(tmpdir(), "hitslop-native-smoke-"));
+  parent = await mkdtemp(join(tmpdir(), "tinys-native-smoke-"));
   // This run's evidence only: exports never replace a file.
   await rm(evidence, { recursive: true, force: true });
   await mkdir(evidence, { recursive: true });
@@ -60,7 +60,7 @@ async function timed<T>(result: RenderResult, stage: Stage, work: Promise<T>): P
 for (const { name, source } of packages)
   test(`${name} opens natively, renders PNG and PDF, and reads the same afterwards`, async () => {
     const begun = performance.now();
-    const root = join(parent, `${name}.slop`);
+    const root = join(parent, `${name}.tiny`);
     const before = await checksum(source);
     const result: RenderResult = { name, sha256: before, passed: false, seconds: {} };
     results.push(result);

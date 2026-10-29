@@ -7,8 +7,8 @@ decides:
 - which writes are accepted;
 - which handle methods, bindings and CLI operations exist.
 
-The Rust core (`crates/hitslop-core`) enforces all of it. The SDK
-(`packages/hitslop/src/sdk`) gives authors types and adapters; the private shell implements
+The Rust core (`crates/tinys-core`) enforces all of it. The SDK
+(`packages/tinys/src/sdk`) gives authors types and adapters; the private shell implements
 the handles and immutable snapshots.
 
 `defineDocument(fields, { initial })` returns plain definition data with an object-root `descriptor`.
@@ -22,7 +22,7 @@ and, for a batch, `opIndex`. Uncertain outcomes have distinct error codes: inspe
 state before deciding on a new edit.
 
 ```ts
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s } from "@hitslop/tinys";
 export default defineDocument({
   title: s.text(),
   mood: s.integer({ min: 1, max: 5 }),
@@ -56,12 +56,12 @@ Kinds nest:
 - lists of rows and records can sit inside rows and objects;
 - scalar lists and records can sit inside rows.
 
-Trees and rich text are not implemented; no slop uses them.
+Trees and rich text are not implemented; no tiny uses them.
 
 ## Common behavior
 
 Editor components acquire a `LiveDocument` with `getDocument(schema)` from
-`hitslop/svelte` during initialization; see [document access](../../apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles).
+`@hitslop/tinys/svelte` during initialization; see [document access](../../apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles).
 `Value<typeof schema.descriptor>` is the readonly data type; `Tx<typeof schema>`
 types a shared edit. Static views receive [capture props](../../apps/landing/src/content/docs/docs/guides/icons-and-exports.mdx#declare-capture-views).
 
@@ -123,7 +123,7 @@ what the person sees. They step back through the changes made since the document
 opened, the person's and an agent's (CLI). A typing run in one field, and an agent's
 consecutive edits, are each one step.
 
-**Import.** The CLI's `replace` operation (`slop import`) makes any value, or the whole
+**Import.** The CLI's `replace` operation (`tiny import`) makes any value, or the whole
 document, equal a JSON value by writing only the differences: rows match by `$id`, and
 kept rows and text keep their identity, and unchanged values are not written, so open
 text fields keep their place. The
@@ -177,7 +177,7 @@ neither side's typing is lost.
   the caret stays put, including through IME composition. Retargeting or unmounting a
   binding sends its unsent text first. If that send has an uncertain outcome that cannot
   be resolved, the text is reported and is not kept once the control is gone.
-- **`EditableText`** (from `hitslop/svelte`, `field={handle}`) is that binding for any
+- **`EditableText`** (from `@hitslop/tinys/svelte`, `field={handle}`) is that binding for any
   text, including a field in every row: it shows the text and mounts a textarea only
   while edited, since WebKit form controls are too expensive to mount by the thousand.
   It places the caret where the person clicked, grows with its text, and leaves IME
@@ -423,6 +423,6 @@ function (`identity.rs`), so packing the same app writes the same template.
 ## Not supported
 
 Trees, rich text, `optional(list)`, `optional(record)` and `optional(counter)`, and
-`move` on scalar lists are not implemented; no slop needs them. Schema evolution is
+`move` on scalar lists are not implemented; no tiny needs them. Schema evolution is
 deferred: changing a descriptor makes a new document type. Each new kind lands in the
 core, the SDK and a fixture together, and raises the app format and runtime requirements.

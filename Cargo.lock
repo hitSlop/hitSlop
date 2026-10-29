@@ -1282,128 +1282,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "hitslop-core"
-version = "0.0.0"
-dependencies = [
- "brotli",
- "cc",
- "data-encoding",
- "fluent-uri",
- "getrandom 0.2.17",
- "hitslop-runner",
- "hitslop-sharing-protocol",
- "jsonschema",
- "kurbo",
- "libc",
- "loro",
- "oxipng",
- "png",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "svgtypes",
- "tempfile",
- "thiserror 2.0.21",
- "ts-rs",
-]
-
-[[package]]
-name = "hitslop-core-ffi"
-version = "0.0.0"
-dependencies = [
- "hitslop-core",
- "hitslop-sharing-client",
- "hitslop-sharing-protocol",
- "thiserror 2.0.21",
- "uniffi",
-]
-
-[[package]]
-name = "hitslop-core-wasm"
-version = "0.0.0"
-dependencies = [
- "getrandom 0.2.17",
- "hitslop-core",
- "hitslop-sharing-protocol",
- "js-sys",
- "rsqlite-vfs 0.2.0",
- "serde_json",
- "sha2 0.11.0",
- "sqlite-wasm-vfs",
- "wasm-bindgen",
- "wasm-bindgen-futures",
-]
-
-[[package]]
-name = "hitslop-runner"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "libc",
- "png",
- "rquickjs",
- "rquickjs-sys",
- "seccompiler",
- "serde",
- "serde_json",
- "takumi",
- "takumi-pdf",
- "tempfile",
- "ts-rs",
-]
-
-[[package]]
-name = "hitslop-sharing-client"
-version = "0.0.0"
-dependencies = [
- "getrandom 0.2.17",
- "hitslop-core",
- "hitslop-sharing-protocol",
- "httparse",
- "loro",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tungstenite",
- "ureq",
- "webpki-roots 1.0.9",
-]
-
-[[package]]
-name = "hitslop-sharing-protocol"
-version = "0.0.0"
-dependencies = [
- "postcard",
- "serde",
- "serde_bytes",
- "serde_json",
- "ts-rs",
- "utoipa",
-]
-
-[[package]]
-name = "hitslop-sharing-worker"
-version = "0.0.0"
-dependencies = [
- "futures-util",
- "getrandom 0.2.17",
- "hitslop-sharing-protocol",
- "js-sys",
- "jsonwebtoken",
- "rand 0.8.8",
- "rsa",
- "serde",
- "serde_bytes",
- "serde_json",
- "sha2 0.11.0",
- "wasm-bindgen",
- "worker",
-]
-
-[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3453,19 +3331,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
-name = "slop-engine"
-version = "0.0.0"
-dependencies = [
- "data-encoding",
- "hitslop-core",
- "hitslop-runner",
- "libc",
- "png",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "slotmap"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3913,6 +3778,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tiny-engine"
+version = "0.0.0"
+dependencies = [
+ "data-encoding",
+ "libc",
+ "png",
+ "serde_json",
+ "tempfile",
+ "tinys-core",
+ "tinys-runner",
+]
+
+[[package]]
 name = "tiny-skia"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3935,6 +3813,128 @@ dependencies = [
  "arrayref",
  "bytemuck",
  "strict-num",
+]
+
+[[package]]
+name = "tinys-core"
+version = "0.0.0"
+dependencies = [
+ "brotli",
+ "cc",
+ "data-encoding",
+ "fluent-uri",
+ "getrandom 0.2.17",
+ "jsonschema",
+ "kurbo",
+ "libc",
+ "loro",
+ "oxipng",
+ "png",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "svgtypes",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tinys-runner",
+ "tinys-sharing-protocol",
+ "ts-rs",
+]
+
+[[package]]
+name = "tinys-core-ffi"
+version = "0.0.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "tinys-core",
+ "tinys-sharing-client",
+ "tinys-sharing-protocol",
+ "uniffi",
+]
+
+[[package]]
+name = "tinys-core-wasm"
+version = "0.0.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "js-sys",
+ "rsqlite-vfs 0.2.0",
+ "serde_json",
+ "sha2 0.11.0",
+ "sqlite-wasm-vfs",
+ "tinys-core",
+ "tinys-sharing-protocol",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "tinys-runner"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "png",
+ "rquickjs",
+ "rquickjs-sys",
+ "seccompiler",
+ "serde",
+ "serde_json",
+ "takumi",
+ "takumi-pdf",
+ "tempfile",
+ "ts-rs",
+]
+
+[[package]]
+name = "tinys-sharing-client"
+version = "0.0.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "httparse",
+ "loro",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "tinys-core",
+ "tinys-sharing-protocol",
+ "tungstenite",
+ "ureq",
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "tinys-sharing-protocol"
+version = "0.0.0"
+dependencies = [
+ "postcard",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "ts-rs",
+ "utoipa",
+]
+
+[[package]]
+name = "tinys-sharing-worker"
+version = "0.0.0"
+dependencies = [
+ "futures-util",
+ "getrandom 0.2.17",
+ "js-sys",
+ "jsonwebtoken",
+ "rand 0.8.8",
+ "rsa",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "sha2 0.11.0",
+ "tinys-sharing-protocol",
+ "wasm-bindgen",
+ "worker",
 ]
 
 [[package]]

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { repository } from "../../scripts/lib/artifacts";
 
 async function registry(override?: string) {
-  const { stdout: out, stderr: error, code } = await exec([process.execPath, "-e", `import {useTestRegistry} from ${JSON.stringify(join(repository, "scripts/lib/artifacts.ts"))}; useTestRegistry(); console.log(process.env.HITSLOP_TEST_REGISTRY)`], {
-    env: { ...process.env, HITSLOP_TEST_REGISTRY: override },
+  const { stdout: out, stderr: error, code } = await exec([process.execPath, "-e", `import {useTestRegistry} from ${JSON.stringify(join(repository, "scripts/lib/artifacts.ts"))}; useTestRegistry(); console.log(process.env.TINYS_TEST_REGISTRY)`], {
+    env: { ...process.env, TINYS_TEST_REGISTRY: override },
   });
   expect(error).toBe("");
   expect(code).toBe(0);
@@ -17,5 +17,5 @@ test("independent test runs never share a default writer registry", async () => 
   expect(first).not.toBe(second);
 }, 30_000);
 test("test runs preserve an explicitly supplied writer registry", async () => {
-  expect(await registry("/tmp/hitslop-explicit-registry")).toBe("/tmp/hitslop-explicit-registry");
+  expect(await registry("/tmp/tinys-explicit-registry")).toBe("/tmp/tinys-explicit-registry");
 }, 30_000);

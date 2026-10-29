@@ -1,0 +1,22 @@
+[package]
+name = "tinys-sharing-client"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+[lints]
+workspace = true
+[dependencies]
+tinys-core = { path = "../tinys-core", default-features = false, features = ["storage"] }
+tinys-sharing-protocol = { path = "../tinys-sharing-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+loro.workspace = true
+sha2 = "=0.11.0"
+getrandom = "0.2"
+ureq = { version = "=3.4.2", features = ["json"] }
+tungstenite = { version = "=0.30.0", features = ["rustls-tls-webpki-roots"] }
+rustls = { version = "=0.23.46", default-features = false, features = ["std", "ring", "tls12"] }
+webpki-roots = "=1.0.9"
+httparse = "=1.10.1"
+[dev-dependencies]
+tempfile = "3"

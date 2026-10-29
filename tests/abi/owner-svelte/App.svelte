@@ -1,12 +1,12 @@
 <script lang="ts">
 import "./styles.css";
   import { tick, onMount } from "svelte";
-  import { attachments, bindText, getDocument, resizeWindow, speech, isSpeechError } from "hitslop/svelte";
-  import { isDocumentError, isRejected, refuse } from "hitslop";
+  import { attachments, bindText, getDocument, resizeWindow, speech, isSpeechError } from "@hitslop/tinys/svelte";
+  import { isDocumentError, isRejected, refuse } from "@hitslop/tinys";
   import schema from "./schema";
   // Access the mounted ctx to probe its framework-neutral ABI, beyond the Svelte adapter.
-  import type { SlopDocument } from "../../../packages/hitslop/src/sdk/abi";
-  import { current as mountedContext } from "../../../packages/hitslop/src/sdk/app/context";
+  import type { TinyDocument } from "../../../packages/tinys/src/sdk/abi";
+  import { current as mountedContext } from "../../../packages/tinys/src/sdk/app/context";
   import { mediaURLs } from "./media";
   // App media the corpus must keep serving: an image, audio and a font (styles.css).
   import swatch from "./media/swatch.png";
@@ -225,7 +225,7 @@ import "./styles.css";
       await refused(doc.fields.checkins.put("__proto__", 1), "invalid_key"); await refused(doc.fields.count.set(1.5), "type_mismatch");
       await doc.fields.cells.delete("missing"); await refused(doc.fields.cells.entry("missing").input.set("x"), "path_not_found");
       // Probe the ctx document directly: the Svelte adapter intentionally hides observers.
-      const raw = mountedContext().document as SlopDocument<typeof schema.descriptor>; let callsA = 0, callsB = 0;
+      const raw = mountedContext().document as TinyDocument<typeof schema.descriptor>; let callsA = 0, callsB = 0;
       const stopA = raw.subscribe(() => callsA++), stopB = raw.subscribe(() => callsB++); await doc.fields.label.set("Listeners");
       check(callsA > 0 && callsA === callsB, "Subscribers did not both receive publication"); stopA(); stopA(); const endedA = callsA; await doc.fields.label.set("One listener");
       check(callsA === endedA && callsB > callsA, "Double dispose removed another listener"); stopB(); stopB();
@@ -246,15 +246,15 @@ import "./styles.css";
       check(doc.current.attachment === ref.id && ref.name === "note.txt" && ref.mimeType === "application/octet-stream", "Attachment reference was lost");
       check((await (await attachments.read(ref.id)).text()) === "conformance", "Attachment bytes differ");
       check((await (await fetch(attachments.url(ref.id))).text()) === "conformance", "Attachment URL bytes differ");
-      check(document.querySelector("[data-slop-root]") !== null, "The app root is not marked for the host");
+      check(document.querySelector("[data-tiny-root]") !== null, "The app root is not marked for the host");
       const html = document.documentElement, css = getComputedStyle(html);
-      check(html.getAttribute("data-slop-presentation") === "standard" && html.hasAttribute("data-slop-resizable") && !html.hasAttribute("data-slop-capture"), "Host presentation attributes changed");
-      for (const token of ["accent", "ink", "paper-tint", "window-width", "window-height"]) check(css.getPropertyValue(`--slop-${token}`).trim().length > 0, `Missing --slop-${token}`);
+      check(html.getAttribute("data-tiny-presentation") === "standard" && html.hasAttribute("data-tiny-resizable") && !html.hasAttribute("data-tiny-capture"), "Host presentation attributes changed");
+      for (const token of ["accent", "ink", "paper-tint", "window-width", "window-height"]) check(css.getPropertyValue(`--tiny-${token}`).trim().length > 0, `Missing --tiny-${token}`);
       for (const [options, reason] of [[{}, "notDeclared"], [{ locale: "bad locale!" }, "locale"]] as const) {
         try { await speech.transcribe(ref.id, options); throw new Error("Speech unexpectedly succeeded"); } catch (error) { check(isSpeechError(error) && error.code === "unavailable" && error.reason === reason, `Expected speech ${reason}, got ${String(error)}`); }
       }
       document.querySelector<HTMLButtonElement>("[data-contract-refuse]")!.click(); await new Promise((resolve) => setTimeout(resolve, 0)); await tick();
-      check(document.querySelector("[data-slop-notice] p")?.textContent === "Conformance refusal", "Unhandled refuse did not render a notice");
+      check(document.querySelector("[data-tiny-notice] p")?.textContent === "Conformance refusal", "Unhandled refuse did not render a notice");
       // The app's own media load from its embedded assets.
       for (const url of mediaURLs) check((await fetch(url)).ok, `App media did not load: ${url}`);
       await document.fonts.load('16px "Conformance Hand"');

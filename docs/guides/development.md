@@ -12,14 +12,14 @@ bun run build
 bun run verify --all --native
 ```
 
-`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the Rust document engine. The engine stays in its Cargo output directory; `HITSLOP_ENGINE` selects it, and `HITSLOP_APP` names a development hitSlop.app for `slop open` and bundled-starter discovery. Verification prepares each tier’s prerequisites itself: Swift gets native bindings, the engine/evaluator and shell; SDK/shell tests get SDK WASM; CLI/render/native tests get the engine/evaluator and shell; browser/package consumers get durable-browser WASM. `bun scripts/build/build.ts --prepare OUTPUT[,OUTPUT]` prepares named outputs and their prerequisites (listed in `scripts/build/preparation.ts`). Template artwork is rendered by that engine as each template builds, in a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
+`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the Rust document engine. The engine stays in its Cargo output directory; `TINYS_ENGINE` selects it, and `TINYS_APP` names a development tinys.app for `tiny open` and bundled-starter discovery. Verification prepares each tier’s prerequisites itself: Swift gets native bindings, the engine/evaluator and shell; SDK/shell tests get SDK WASM; CLI/render/native tests get the engine/evaluator and shell; browser/package consumers get durable-browser WASM. `bun scripts/build/build.ts --prepare OUTPUT[,OUTPUT]` prepares named outputs and their prerequisites (listed in `scripts/build/preparation.ts`). Template artwork is rendered by that engine as each template builds, in a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
-To work on the app, generate `apps/apple/hitSlop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`. Both refresh bundled templates through the template cache before embedding them.
+To work on the app, generate `apps/apple/tinys.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`. Both refresh bundled templates through the template cache before embedding them.
 
 ### Build current templates with the app
 
 Xcode's **Embed starter templates** phase refreshes `generated/templates/` from
-`slops/` source, then copies the selected templates into the app. After changing
+`tinys/` source, then copies the selected templates into the app. After changing
 the SDK, the Rust engine or the template compiler, prepare the tools before building:
 
 ```sh
@@ -28,26 +28,26 @@ bun run apple:build
 ```
 
 For Xcode Run, run `bun run build`, then build/run the project in Xcode instead
-of running `apple:build`. Slop-only edits need just another app build. Create a fresh document from the rebuilt starter to verify it.
+of running `apple:build`. Tiny-only edits need just another app build. Create a fresh document from the rebuilt starter to verify it.
 The template cache fingerprints the compiler and shared dependencies as well as each
-slop's source; let it rebuild affected entries rather than deleting the cache.
+tiny's source; let it rebuild affected entries rather than deleting the cache.
 
 | Operation | Output it updates |
 | --- | --- |
-| `bun slop build slops/beat-pad` | That project's `dist/beat-pad.slop`. |
-| `bun slop register slops/beat-pad` | A rebuilt local master in `~/.hitslop/templates`. |
+| `bun tiny build tinys/beat-pad` | That project's `dist/beat-pad.tiny`. |
+| `bun tiny register tinys/beat-pad` | A rebuilt local master in `~/.tinys/templates`. |
 | `bun run build:templates` | `generated/templates/`, its inventory and artwork. |
 | Xcode build / `bun run apple:build` | Refreshes `generated/templates/` through the cache and embeds the selected starters in the app. |
 
 Rebuilding a project's `dist` alone does not update the app's bundled starter.
 A separately registered local template also needs to be
-re-registered. Existing `.slop` documents always keep their embedded app: neither an
+re-registered. Existing `.tiny` documents always keep their embedded app: neither an
 app rebuild nor a template replacement upgrades them. Never replace a document's app
 or saved data by copying a template over it.
 
-Every Xcode app configuration builds, embeds and signs `hitslop-evaluator`, which runs
+Every Xcode app configuration builds, embeds and signs `tinys-evaluator`, which runs
 named commands such as Quick Checklist's add, file, restore and remove actions. Debug
-Run does not require `HITSLOP_EVALUATOR`; that override is for isolated tests.
+Run does not require `TINYS_EVALUATOR`; that override is for isolated tests.
 
 Local optimized Rust builds use the incremental `release` profile. Distribution builds
 use `dist`, which keeps incremental compilation disabled, fat LTO and one codegen unit.
@@ -59,38 +59,38 @@ in a background session, and use filtered verification while iterating.
 | Area | Responsibility |
 | --- | --- |
 | `apps/apple` | Mac and iPhone entry points, widgets, Quick Look extensions, project configuration and signing; Sparkle on Mac |
-| `crates` | `hitslop-core` (Rust on Loro) document semantics and the `.slop` file, its UniFFI and WASM adapters, and the CLI's `slop-engine` |
-| `apps/apple/Packages/HitSlopApple` | Core, the native document owner (HitSlopDocument), Host, the app and catalog models (HitSlopFeatures), Catalog, and telemetry |
-| `packages/hitslop/src/sdk` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter (`getDocument` for editors, `CaptureProps` for static views) |
-| `packages/hitslop/src/shell` | Page shell (private): snapshot store, typed handles, bindings and themes (no CRDT) |
-| `crates/hitslop-core/src/wire`, `src/app` | Serde wire types and package-format acceptance, exported with ts-rs and UniFFI |
-| `packages/hitslop/src/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
-| `slops` | Active authored templates and the bundled selection |
+| `crates` | `tinys-core` (Rust on Loro) document semantics and the `.tiny` file, its UniFFI and WASM adapters, and the CLI's `tiny-engine` |
+| `apps/apple/Packages/TinysApple` | Core, the native document owner (TinysDocument), Host, the app and catalog models (TinysFeatures), Catalog, and telemetry |
+| `packages/tinys/src/sdk` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter (`getDocument` for editors, `CaptureProps` for static views) |
+| `packages/tinys/src/shell` | Page shell (private): snapshot store, typed handles, bindings and themes (no CRDT) |
+| `crates/tinys-core/src/wire`, `src/app` | Serde wire types and package-format acceptance, exported with ts-rs and UniFFI |
+| `packages/tinys/src/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
+| `tinys` | Active authored templates and the bundled selection |
 | `apps/landing` | Website and public author documentation; independently locked dependencies |
 | `scripts` | Build, verification, packaging, and release tooling |
 
-The `hitslop` npm package is publishable. The repository root, slops workspace, and landing application are private. The package exports TypeScript source, consumed by Bun and the supported Vite/Svelte
+The `tinys` npm package is publishable. The repository root, tinys workspace, and landing application are private. The package exports TypeScript source, consumed by Bun and the supported Vite/Svelte
 authoring build; it does not ship a precompiled Node.js entry point. The installed-package
 tests check SDK types outside the workspace. Apple implementation belongs in the app-local Swift package.
 
-`slop dev SOURCE` serves the browser preview on `127.0.0.1` only. Its Preview selector mounts
+`tiny dev SOURCE` serves the browser preview on `127.0.0.1` only. Its Preview selector mounts
 one view at a time from the live document: the editor, or Preview, Icon and each declared
-widget size on its capture canvas. These are browser layouts; `slop build` renders the final
+widget size on its capture canvas. These are browser layouts; `tiny build` renders the final
 images. The page, its app-frame client and the view switcher are TypeScript entries in
-`packages/hitslop/src/cli` (`preview-frame.ts`, `preview-client.ts`,
+`packages/tinys/src/cli` (`preview-frame.ts`, `preview-client.ts`,
 `preview-views.svelte.ts`) that Vite compiles when the preview serves them.
 
 ## Add a template
 
-Add one authored project directly under `slops/`, in a folder named by its slug, including `slop.ts`, `schema.ts`, `App.svelte`, `styles.css`, and `tsconfig.json` (no `main.ts`). Use the current examples and [authoring guide](authoring.md). The slops workspace supplies shared dependencies; add a project package manifest if it needs its own dependencies.
+Add one authored project directly under `tinys/`, in a folder named by its slug, including `tiny.ts`, `schema.ts`, `App.svelte`, `styles.css`, and `tsconfig.json` (no `main.ts`). Use the current examples and [authoring guide](authoring.md). The tinys workspace supplies shared dependencies; add a project package manifest if it needs its own dependencies.
 
-Discovery scans immediate project directories with a `slop.ts`, without running it: a folder's name is its slug. Hidden directories, `archive`, `dist`, and `node_modules` are excluded. A folder name that is not a slug fails; the build checks the rest of `slop.ts`. Each project must pass its own Svelte/TypeScript check. A typical `tsconfig.json` extends `hitslop/tsconfig.json`, includes local TypeScript/Svelte files, and excludes `dist` and `node_modules`.
+Discovery scans immediate project directories with a `tiny.ts`, without running it: a folder's name is its slug. Hidden directories, `archive`, `dist`, and `node_modules` are excluded. A folder name that is not a slug fails; the build checks the rest of `tiny.ts`. Each project must pass its own Svelte/TypeScript check. A typical `tsconfig.json` extends `@hitslop/tinys/tsconfig.json`, includes local TypeScript/Svelte files, and excludes `dist` and `node_modules`.
 
-`bun run build:templates` produces `generated/templates/<slug>.slop` for every discovered project. Add its slug to `slops/bundled.json` only when it should ship with the Mac app. This list is the sole bundled selection; duplicate or unknown selections fail. The generated inventory connects the build to app embedding and release verification. Rebuild after changing sources or selection.
+`bun run build:templates` produces `generated/templates/<slug>.tiny` for every discovered project. Add its slug to `tinys/bundled.json` only when it should ship with the Mac app. This list is the sole bundled selection; duplicate or unknown selections fail. The generated inventory connects the build to app embedding and release verification. Rebuild after changing sources or selection.
 
 Embedding replaces the entire generated StarterTemplates directory, so deselected templates disappear from the next app build. It never edits a user's installed templates or documents. The native catalog already discovers any valid local template and reads its categories from its app metadata.
 
-Quick Checklist is the reference example. Active projects under `slops` declare `slop.ts`; restored-from-archive slops live in `slops` like any other, and the local `archive/` folder is inactive. New templates need no edits to build loops. Do not add a test suite for each slop. Infrastructure tests use deliberate fixtures; generic release checks cannot assume fields such as `title`.
+Quick Checklist is the reference example. Active projects under `tinys` declare `tiny.ts`; restored-from-archive tinys live in `tinys` like any other, and the local `archive/` folder is inactive. New templates need no edits to build loops. Do not add a test suite for each tiny. Infrastructure tests use deliberate fixtures; generic release checks cannot assume fields such as `title`.
 
 ## Focused checks
 
@@ -106,23 +106,23 @@ Quick Checklist is the reference example. Active projects under `slops` declare 
 - `swift` (`bun run swift:test`): native tests with cached document/ABI apps and presentation fixtures.
 - `app`: complete macOS app build and bundle acceptance; included in `release:check`.
 - `browser`: Chrome durable copies and WebKit native-owner preview, without Swift compilation; run explicitly or in nightly/manual qualification, not by `--native`.
-- `render`: portable engine artwork and PNG/PDF rendering of the fixtures (`HITSLOP_RENDER=all` for every bundled template), with no Swift build.
-- `native` (`bun run test:native`): the crash matrix (with host death when `HITSLOP_APP_BINARY` names an app) and the macOS corpus replay.
-- `packed`: exact npm artifact dependency/type/init/check/preview verification, without the Mac app. `HITSLOP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
+- `render`: portable engine artwork and PNG/PDF rendering of the fixtures (`TINYS_RENDER=all` for every bundled template), with no Swift build.
+- `native` (`bun run test:native`): the crash matrix (with host death when `TINYS_APP_BINARY` names an app) and the macOS corpus replay.
+- `packed`: exact npm artifact dependency/type/init/check/preview verification, without the Mac app. `TINYS_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
 - `landing` (`bun run landing:check`, `bun run landing:build`): public documentation and site validation.
 
 Test locations, including `tests/release`, `tests/presentation`, `tests/verification`,
 `tests/native` and `apps/landing`, are listed in [testing](../testing.md).
 
-`bun run release:check` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/HitSlopApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
+`bun run release:check` is the complete macOS gate; see [releasing](releasing.md). Direct `swift test --package-path apps/apple/Packages/TinysApple` is useful for focused work but explicitly skips presentation fixtures when their environment is absent.
 
 `bun run bench:windows` runs the opt-in window matrix. Startup diagnostics are described in [testing](../testing.md#native-macos). Performance measurements are not CI latency thresholds.
 
 ## Change discipline
 
-Read AGENTS and the template's `slop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter historical compatibility fixtures or release hashes to make a check pass.
+Read AGENTS and the template's `tiny.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter historical compatibility fixtures or release hashes to make a check pass.
 
-`archive/`, `spikes/`, `plans/`, `SLOPS.todo`, `apps/promo/inspo/`,
+`archive/`, `spikes/`, `plans/`, `TINYS.todo`, `apps/promo/inspo/`,
 `_docs/`, `_vibe/` and `deferred/` stay local and are ignored by
 Git. They are not active contracts. Keep shared decisions in the architecture, roadmap
 and ideas pages. Restore an old project only after updating its source to the current
@@ -140,7 +140,7 @@ It requires `wasm32-unknown-unknown`, wasm-bindgen CLI 0.2.129, LLVM clang/llvm-
 with the WebAssembly target, and Binaryen 132. Run
 `bash scripts/build/install-binaryen.sh` to install the checksum-verified official
 Binaryen release under `generated/core-tools/binaryen`, as CI does. The build checks
-the optimizer version before compiling: `HITSLOP_WASM_OPT` overrides that local
+the optimizer version before compiling: `TINYS_WASM_OPT` overrides that local
 installation, with PATH used only when neither is provided. Ubuntu's older Binaryen
 package cannot parse the browser module's `table.fill` instruction.
 On macOS install LLVM with `brew install llvm`; Apple's clang cannot compile SQLite
@@ -149,4 +149,4 @@ override the compiler paths. Linux uses `clang` and `llvm-ar` on PATH.
 
 `bun run verify browser local-host` exercises actual Google Chrome with a temporary
 persistent profile. Install Google Chrome first. This checks the durable browser
-host; `slop dev` continues to use the native Rust owner.
+host; `tiny dev` continues to use the native Rust owner.

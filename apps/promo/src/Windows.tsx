@@ -4,18 +4,18 @@ import type { Point } from "./timeline";
 
 export const FINDER = { x: 96, y: 92, w: 820, h: 640, cols: 4, cellW: 190, cellH: 176, top: 104, left: 30 };
 export const finderFiles = [
-  ["soma-amp", "soma-amp.slop"],
-  ["codex-pet", "codex-pet.slop"],
-  ["focus-timer", "focus-timer.slop"],
-  ["quick-checklist-fast", "Finals week.slop"],
-  ["doodle-board", "doodle-board.slop"],
-  ["koi-pond", "koi-pond.slop"],
-  ["flashcards", "flashcards.slop"],
-  ["school-schedule", "school-schedule.slop"],
-  ["wordle", "wordle.slop"],
-  ["kanban-board", "kanban-board.slop"],
-  ["side-quest", "side-quest.slop"],
-  ["pixel-art", "pixel-art.slop"],
+  ["soma-amp", "soma-amp.tiny"],
+  ["codex-pet", "codex-pet.tiny"],
+  ["focus-timer", "focus-timer.tiny"],
+  ["quick-checklist-fast", "Finals week.tiny"],
+  ["doodle-board", "doodle-board.tiny"],
+  ["koi-pond", "koi-pond.tiny"],
+  ["flashcards", "flashcards.tiny"],
+  ["school-schedule", "school-schedule.tiny"],
+  ["wordle", "wordle.tiny"],
+  ["kanban-board", "kanban-board.tiny"],
+  ["side-quest", "side-quest.tiny"],
+  ["pixel-art", "pixel-art.tiny"],
 ] as const;
 
 export function finderIcon(i: number): Point {
@@ -38,7 +38,7 @@ export function Finder({ selected, selectedAt }: { selected: number[]; selectedA
       <div style={{ height: 76, display: "flex", alignItems: "center", gap: 26, padding: "0 22px", borderBottom: "1px solid #0000000f" }}>
         <Lights />
         <span style={{ fontSize: 22, color: "#8c89a3" }}>‹ ›</span>
-        <span style={{ fontSize: 21, fontWeight: 700 }}>slops</span>
+        <span style={{ fontSize: 21, fontWeight: 700 }}>tinys</span>
         <span style={{ marginLeft: "auto", fontSize: 16, color: "#8c89a3" }}>{finderFiles.length} items</span>
       </div>
       <div style={{ position: "relative" }}>
@@ -81,7 +81,7 @@ export function Terminal({ commands }: { commands: Command[] }) {
     <div style={{ width: "100%", height: "100%", background: "rgba(22,20,34,.94)", fontFamily: mono, fontSize: 19, color: "#e8e6f5", display: "flex", flexDirection: "column" }}>
       <div style={{ height: 50, display: "flex", alignItems: "center", padding: "0 18px", gap: 16, borderBottom: "1px solid #ffffff14" }}>
         <Lights />
-        <span style={{ flex: 1, textAlign: "center", fontFamily: sans, fontSize: 16, color: "#a9a5c4", marginRight: 70 }}>~/Desktop/slops — zsh</span>
+        <span style={{ flex: 1, textAlign: "center", fontFamily: sans, fontSize: 16, color: "#a9a5c4", marginRight: 70 }}>~/Desktop/tinys — zsh</span>
       </div>
       <div style={{ padding: "16px 22px", lineHeight: 1.5, display: "flex", flexDirection: "column", justifyContent: "flex-end", flex: 1, overflow: "hidden" }}>
         {lines.map((l, i) => (

@@ -1,14 +1,14 @@
 import Cocoa
-import HitSlopCore
 import ImageIO
 import QuickLookUI
+import TinysCore
 import UniformTypeIdentifiers
 
-/// The spacebar preview of a `.slop`: the document as it last rendered (its preview
+/// The spacebar preview of a `.tiny`: the document as it last rendered (its preview
 /// artwork), or its icon when it has none. Nothing runs the app or opens it for writing.
 final class PreviewProvider: QLPreviewProvider, QLPreviewingController {
   func providePreview(for request: QLFilePreviewRequest) async throws -> QLPreviewReply {
-    guard let png = try SlopArtwork.first(request.fileURL, [.preview, .icon])?.png,
+    guard let png = try TinyArtwork.first(request.fileURL, [.preview, .icon])?.png,
       let source = CGImageSourceCreateWithData(png as CFData, nil),
       let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
       let width = properties[kCGImagePropertyPixelWidth] as? Int,

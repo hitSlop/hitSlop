@@ -21,15 +21,15 @@
   },
   "include": [
     "apps/sharing/http.ts",
-    "packages/hitslop/src/**/*.ts",
-    "packages/hitslop/tests/**/*.ts",
+    "packages/tinys/src/**/*.ts",
+    "packages/tinys/tests/**/*.ts",
     "scripts/**/*.ts",
     "tests/**/*.ts"
   ],
   "exclude": [
     "**/node_modules/**",
     "**/dist/**",
-    "packages/hitslop/.crust/**",
-    "packages/hitslop/tests/**/*.types.ts"
+    "packages/tinys/.crust/**",
+    "packages/tinys/tests/**/*.types.ts"
   ]
 }

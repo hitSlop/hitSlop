@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/hitslop-core", "crates/hitslop-core-ffi", "crates/hitslop-core-wasm", "crates/slop-engine", "crates/hitslop-runner", "crates/hitslop-sharing-protocol", "apps/sharing", "crates/hitslop-sharing-client"]
+members = ["crates/tinys-core", "crates/tinys-core-ffi", "crates/tinys-core-wasm", "crates/tiny-engine", "crates/tinys-runner", "crates/tinys-sharing-protocol", "apps/sharing", "crates/tinys-sharing-client"]
 resolver = "2"
 
 [workspace.package]
@@ -29,7 +29,7 @@ allow_attributes_without_reason = "deny"
 panic = "unwind"
 incremental = true
 
-# What ships (`HITSLOP_CARGO_PROFILE=dist`): the release gate, compatibility capture, the
+# What ships (`TINYS_CARGO_PROFILE=dist`): the release gate, compatibility capture, the
 # Xcode archive and the Engines workflow. Measured: engine 10.4→8.1 MB, app core 9.6→7.4 MB,
 # WASM 4.24→3.83 MB, and a core rebuild 24 s→120 s, so development keeps `release`.
 [profile.dist]

@@ -1,9 +1,9 @@
 ---
 title: App definition and windows
-description: Define a slop's identity, discovery metadata, initial window, and native window behavior.
+description: Define a tiny's identity, discovery metadata, initial window, and native window behavior.
 ---
 
-Read `slop.ts` first. It declares a slop's app: its identity, author, catalog
+Read `tiny.ts` first. It declares a tiny's app: its identity, author, catalog
 metadata, initial native window, theme colors and optional artwork. The build stores catalog fields and a typed definition, with initial values in its
 checkpoint. The embedded app and its defaults are
 immutable in a built template or document, so make changes in the source project and
@@ -13,21 +13,21 @@ The optional `capabilities` field declares `camera`, `microphone`, or `speech` a
 It does not grant system permission. See [capabilities and permissions](/docs/guides/capabilities/)
 for declarations, capture, transcription and platform limits.
 
-## Start with a complete `slop.ts`
+## Start with a complete `tiny.ts`
 
 `schema.ts` default-exports `defineDocument(fields, { initial })`. Initial values may be
 omitted when every field defaults or is optional; a counter starts at zero:
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s } from "@hitslop/tinys";
 
 export default defineDocument({ count: s.counter() });
 ```
 
-```ts title="slop.ts"
-import { defineSlop } from "hitslop";
+```ts title="tiny.ts"
+import { defineTiny } from "@hitslop/tinys";
 
-export default defineSlop({
+export default defineTiny({
   slug: "tiny-counter",
   title: "Tiny Counter",
   description: "A small counter that stays on your desktop.",
@@ -41,7 +41,7 @@ export default defineSlop({
 Define an optional agent action in `commands.ts`:
 
 ```ts title="commands.ts"
-import { defineCommands } from "hitslop/commands";
+import { defineCommands } from "@hitslop/tinys/commands";
 import schema from "./schema";
 
 export default defineCommands(schema, {
@@ -56,14 +56,14 @@ export default defineCommands(schema, {
 ```
 
 An `App.svelte` button writes with `doc.fields.count.increment()`; to share one edit between the page and a command, see [share an edit with agents](/docs/guides/data-and-schemas/#share-an-edit-with-agents). The CLI discovers
-`countOne` through `slop describe` and runs it through `slop call`. Commands accept flat
+`countOne` through `tiny describe` and runs it through `tiny call`. Commands accept flat
 scalar or optional scalar arguments. See the [complete counter tutorial](/docs/getting-started/) and
 [command walkthrough](/docs/guides/edit-installed-data/).
 
 Vite compiles the declaration and its imports. A restricted native evaluator initializes
 it, then Rust checks the resulting definition and resource inventory. Metadata and command bodies do not ship in `ui.js`; the schema module includes its
 creation defaults. The explicit `slug` is independent of the source
-folder's name. Import CSS from components. Root roles are fixed: required `slop.ts`, `schema.ts`, `App.svelte`, `Preview.svelte` and
+folder's name. Import CSS from components. Root roles are fixed: required `tiny.ts`, `schema.ts`, `App.svelte`, `Preview.svelte` and
 `Icon.svelte`, plus optional `Export.svelte`, `Widget.svelte` and `commands.ts`.
 
 ## Identity and discovery fields
@@ -74,7 +74,7 @@ folder's name. Import CSS from components. Root roles are fixed: required `slop.
 | `author.name` | Required, 1–80 characters with at least one non-space character. This attribution travels with the template. |
 | `author.url`  | Optional HTTP or HTTPS URL, up to 2,048 characters.                                                          |
 | `title`       | Required, 1–80 characters.                                                                                   |
-| `description` | Required, 1–240 characters. Explain the slop's specific job.                                                 |
+| `description` | Required, 1–240 characters. Explain the tiny's specific job.                                                 |
 | `categories`  | One or two unique catalog categories.                                                                        |
 
 Categories are `popular`, `productivity`, `utilities`, `finance`, `media`, `games`,
@@ -160,10 +160,10 @@ shape: {
 Add `lockAspect: true` to keep the window at its initial ratio while resizing.
 The build refuses invalid geometry. Dedicated exports and icons remain
 independent of the window silhouette. Radius shapes expose their radius to the
-page as `--slop-window-radius`; path shapes set it to `0`.
+page as `--tiny-window-radius`; path shapes set it to `0`.
 
 The window is the stage in every mode. The host resets the page margins, and
-the automatic app root (or a framework-neutral `data-slop-root` element) and its mount
+the automatic app root (or a framework-neutral `data-tiny-root` element) and its mount
 ancestors fill the window. Prefer `height: 100%`, grid, or flex inside it rather
 than repeating page sizing or using `100vh`; deliberate overrides remain possible.
 For a transparent window, draw the visible surface inside your app: the host
@@ -172,7 +172,7 @@ overrides ordinary `html`/`body` backgrounds with transparency, and a more speci
 
 A glass window puts the system's frosted material behind the page and keeps your page
 background. Give it a translucent theme color, such as `paper: "#f6f3ee99"` used as
-`body { background: var(--slop-paper) }`: the desktop shows through blurred, and
+`body { background: var(--tiny-paper) }`: the desktop shows through blurred, and
 anyone can make the window clearer or more solid from the theme panel. An opaque
 background hides the glass. The frost stays light in dark mode, as your palette does;
 a dark tint makes smoked glass. With Reduce Transparency on, macOS draws the frost as a
@@ -184,13 +184,13 @@ The native host exposes the presentation to your CSS:
 
 | Host value                                    | Meaning                                                   |
 | --------------------------------------------- | --------------------------------------------------------- |
-| `data-slop-presentation`                      | `standard`, `transparent`, `glass`, or `skin`             |
-| `--slop-window-radius`                        | The radius shape; `0` for paths, absent for PNG skins     |
-| `data-slop-resizable`                         | Present when the person can resize the window             |
-| `--slop-window-width`, `--slop-window-height` | Initial dimensions, not live viewport measurements        |
-| `data-slop-controls`                          | `visible` or `hidden`, following the native hover toolbar |
+| `data-tiny-presentation`                      | `standard`, `transparent`, `glass`, or `skin`             |
+| `--tiny-window-radius`                        | The radius shape; `0` for paths, absent for PNG skins     |
+| `data-tiny-resizable`                         | Present when the person can resize the window             |
+| `--tiny-window-width`, `--tiny-window-height` | Initial dimensions, not live viewport measurements        |
+| `data-tiny-controls`                          | `visible` or `hidden`, following the native hover toolbar |
 
-`slop dev` previews the window at its declared `window` size with the same shape or skin, but
+`tiny dev` previews the window at its declared `window` size with the same shape or skin, but
 without these host values; lay out from the actual viewport rather than assuming them.
 
 Keep controls inside the visible shape and test focus, resizing, and dragging
@@ -204,7 +204,7 @@ remains the next launch's initial size. Browser preview has no native window: re
 it with the preview's handle or arrow keys.
 
 ```ts
-import { resizeWindow } from "hitslop/svelte";
+import { resizeWindow } from "@hitslop/tinys/svelte";
 
 // Ignored in browser preview, which has no native window.
 await resizeWindow({ width: 560, height: 680 });
@@ -215,29 +215,29 @@ API; buttons, sliders, and text selection retain their ordinary behavior.
 
 ## Show controls on hover
 
-For actions that should appear only on hover, follow `html[data-slop-controls="visible"]`.
+For actions that should appear only on hover, follow `html[data-tiny-controls="visible"]`.
 The host starts it at `hidden` and updates it with the native toolbar, including the
 toolbar's hit testing and its 0.8-second hide delay. Focus, Tab and disabled controls
 don't reveal these actions. Hide them with `visibility: hidden` and
 `pointer-events: none`, not opacity alone, so they also leave keyboard navigation.
 
 ```css
-.my-slop-actions {
+.my-tiny-actions {
   visibility: hidden;
   pointer-events: none;
 }
-html[data-slop-controls="visible"] .my-slop-actions {
+html[data-tiny-controls="visible"] .my-tiny-actions {
   visibility: visible;
   pointer-events: auto;
 }
 /* Browser preview has no attribute; fall back to :hover there only. */
-html:not([data-slop-controls]) .my-slop-shell:hover .my-slop-actions {
+html:not([data-tiny-controls]) .my-tiny-shell:hover .my-tiny-actions {
   visibility: visible;
   pointer-events: auto;
 }
 ```
 
-Mark these controls `data-slop-export="hide"` too, or leave them out of your export
+Mark these controls `data-tiny-export="hide"` too, or leave them out of your export
 view.
 
 ## Use a PNG skin for a custom silhouette

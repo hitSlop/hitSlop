@@ -64,7 +64,7 @@ function TerminalGlyph({ size }: { size: number }) {
 }
 
 export const DOCK = { y: 1080 - 14, size: 66 * UI };
-export const dockItems = ["finder", "hitslop", "terminal"] as const;
+export const dockItems = ["finder", "tinys", "terminal"] as const;
 export function dockPoint(i: number): Point {
   const gap = 10 * UI;
   const total = dockItems.length * DOCK.size + (dockItems.length - 1) * gap;
@@ -88,7 +88,7 @@ export function Dock({ running, bounce }: { running: string[]; bounce?: { item: 
         return (
           <div key={item} style={{ position: "relative", width: DOCK.size, height: DOCK.size, transform: `translateY(${-lift}px)` }}>
             {item === "finder" && <FolderGlyph size={DOCK.size} />}
-            {item === "hitslop" && <Img src={staticFile("icons/hitslop-app.png")} style={{ width: "100%", height: "100%" }} />}
+            {item === "tinys" && <Img src={staticFile("icons/tinys-app.png")} style={{ width: "100%", height: "100%" }} />}
             {item === "terminal" && <TerminalGlyph size={DOCK.size} />}
             {running.includes(item) && <div style={{ position: "absolute", bottom: -7 * UI, left: "50%", width: 5, height: 5, marginLeft: -2.5, borderRadius: 9, background: "#1d1b2e" }} />}
           </div>
@@ -107,7 +107,7 @@ export function useOpen(at: number, closeAt?: number) {
   return { progress: open, close, visible: frame >= at && close < 1 };
 }
 
-export function SlopWindow({
+export function TinyWindow({
   x, y, width, height, scale = 1, shape = "rounded", at, closeAt, origin, z = 10, children, glow,
 }: {
   x: number; y: number; width: number; height: number; scale?: number; shape?: "rounded" | "ellipse" | "none";

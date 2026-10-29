@@ -1,7 +1,7 @@
 /** The complete development build and individual verification preparations. Outputs
  * retain their timestamps when their content is unchanged. */
 import { buildCoreNative, buildCoreWasm, buildEngine } from "./core";
-import { buildSkills } from "../../packages/hitslop/src/cli/skills-build";
+import { buildSkills } from "../../packages/tinys/src/cli/skills-build";
 import { generateContracts } from "./generate";
 import { buildShell } from "./shell";
 import { buildBrowser } from "./browser";

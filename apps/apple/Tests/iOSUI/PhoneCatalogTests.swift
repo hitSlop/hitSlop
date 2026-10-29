@@ -2,8 +2,8 @@ import XCTest
 
 /// Manual, signed-device artifact proof. Ordinary UI runs never create cloud records.
 final class PhoneCatalogTests: XCTestCase {
-  @MainActor func testBundledTemplateCreatesAnEditableSyncedSlop() throws {
-    guard ProcessInfo.processInfo.environment["HITSLOP_REAL_CLOUD_PROOF"] == "1" else {
+  @MainActor func testBundledTemplateCreatesAnEditableSyncedTiny() throws {
+    guard ProcessInfo.processInfo.environment["TINYS_REAL_CLOUD_PROOF"] == "1" else {
       throw XCTSkip("Requires the explicitly enabled physical-device CloudKit proof")
     }
     continueAfterFailure = false
@@ -14,7 +14,7 @@ final class PhoneCatalogTests: XCTestCase {
     XCTAssertTrue(template.waitForExistence(timeout: 30))
     capture(app, "Templates catalog")
     template.tap()
-    let create = app.buttons["create-slop"]
+    let create = app.buttons["create-tiny"]
     XCTAssertTrue(create.waitForExistence(timeout: 15))
     capture(app, "Template preview")
     let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: create)
@@ -23,13 +23,13 @@ final class PhoneCatalogTests: XCTestCase {
     app.buttons["Cancel"].tap()
     XCTAssertFalse(app.webViews.firstMatch.exists)
     create.tap()
-    let name = app.textFields["slop-name"]
+    let name = app.textFields["tiny-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 10))
     let documentName = "Phone artwork " + UUID().uuidString.prefix(6)
     name.tap()
     name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (name.value as? String)?.count ?? 0))
     name.typeText(String(documentName))
-    app.buttons["create-named-slop"].tap()
+    app.buttons["create-named-tiny"].tap()
     XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 45))
     capture(app, "New synced document")
     let task = app.webViews.textFields["New task"]
@@ -45,7 +45,7 @@ final class PhoneCatalogTests: XCTestCase {
     capture(app, "Live editor with task")
     app.buttons["document-actions"].tap()
     app.buttons["Sync Now"].tap()
-    if ProcessInfo.processInfo.environment["HITSLOP_TWO_DEVICE_EDIT_PROOF"] == "1" {
+    if ProcessInfo.processInfo.environment["TINYS_TWO_DEVICE_EDIT_PROOF"] == "1" {
       task.tap()
       task.typeText("Still typing while Mac updates")
       // Keep the real editor active while the Mac's normal owner path sends a change.
@@ -62,8 +62,8 @@ final class PhoneCatalogTests: XCTestCase {
     }
     app.returnToLibrary()
     XCTAssertTrue(app.buttons[String(documentName)].waitForExistence(timeout: 20))
-    capture(app, "Named slop with refreshed artwork")
-    if let macName = ProcessInfo.processInfo.environment["HITSLOP_MAC_DOCUMENT_NAME"] {
+    capture(app, "Named tiny with refreshed artwork")
+    if let macName = ProcessInfo.processInfo.environment["TINYS_MAC_DOCUMENT_NAME"] {
       let macDocument = app.buttons[macName]
       XCTAssertTrue(macDocument.waitForExistence(timeout: 30))
       macDocument.tap()
@@ -71,22 +71,22 @@ final class PhoneCatalogTests: XCTestCase {
       capture(app, "Mac-created document on iPhone")
       app.returnToLibrary()
     }
-    if ProcessInfo.processInfo.environment["HITSLOP_HOME_ICON_PROOF"] == "1" {
+    if ProcessInfo.processInfo.environment["TINYS_HOME_ICON_PROOF"] == "1" {
       XCUIDevice.shared.press(.home)
       let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
       home.activate()
-      let icon = home.icons["hitSlop"].firstMatch
+      let icon = home.icons["tinys"].firstMatch
       for _ in 0..<6 {
         if icon.exists { break }
         home.swipeLeft()
       }
       let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-      screen.name = "Home Screen with hitSlop"
+      screen.name = "Home Screen with tinys"
       screen.lifetime = .keepAlways
       add(screen)
       XCTAssertTrue(icon.exists, home.debugDescription)
       let image = XCTAttachment(screenshot: icon.screenshot())
-      image.name = "hitSlop Home Screen icon"
+      image.name = "tinys Home Screen icon"
       image.lifetime = .keepAlways
       add(image)
       app.activate()

@@ -1,0 +1,193 @@
+<script lang="ts">
+  import "@hitslop/tinys/base.css";
+  import "./styles.css";
+  import { bindText, getDocument } from "@hitslop/tinys/svelte";
+  import { prefersReducedMotion } from "svelte/motion";
+  import { flip } from "svelte/animate";
+  import { Tabs, Toggle, Select, Button, Tooltip } from "bits-ui";
+  import Plus from "@lucide/svelte/icons/plus";
+  import Trash2 from "@lucide/svelte/icons/trash-2";
+  import Star from "@lucide/svelte/icons/star";
+  import Check from "@lucide/svelte/icons/check";
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
+  import List from "@lucide/svelte/icons/list";
+  import Calendar from "@lucide/svelte/icons/calendar";
+  import schema from "./schema";
+  import { SIGNIFIERS, signifierItems, isSignifier, symbolFor, labelFor, type Signifier } from "./signifiers";
+  import { addEntry, addMonthDay, cycleSignifier, isDayOfMonth, journalView, removeEntry, removeMonthDay, setDay, setPriority } from "./journal";
+  import type { Spread } from "./shared";
+
+  const doc = getDocument(schema);
+
+  // The spread is view state, not saved: the export always shows both spreads.
+  let spread = $state<Spread>("daily");
+  let draftText = $state("");
+  let draftType = $state<Signifier>("task");
+  let draftStar = $state(false);
+  let composer = $state<HTMLInputElement>();
+
+  const { entries, openCount } = $derived(journalView(doc.current));
+  const flipMs = $derived(prefersReducedMotion.current ? 0 : 220);
+
+  function isSpread(value: string): value is Spread {
+    return value === "daily" || value === "monthly";
+  }
+  async function addNewEntry(event: SubmitEvent) {
+    event.preventDefault();
+    if (!draftText.trim()) return;
+    await doc.change((tx) => addEntry(tx, { text: draftText, type: draftType, star: draftStar }));
+    draftText = "";
+    draftStar = false;
+    composer?.focus();
+  }
+</script>
+
+  <Tooltip.Provider>
+    <main class="page" aria-label="Bullet journal">
+      <span class="ribbon" aria-hidden="true"></span>
+
+      <header class="header">
+        <Tabs.Root value={spread} onValueChange={(value) => { if (isSpread(value)) spread = value; }}>
+          <Tabs.List class="tabs" data-tiny-export="hide" aria-label="Journal views">
+            <Tabs.Trigger value="daily" class="tab"><List size={12} strokeWidth={2.2} /> Daily Rapid Log</Tabs.Trigger>
+            <Tabs.Trigger value="monthly" class="tab"><Calendar size={12} strokeWidth={2.2} /> Monthly Index</Tabs.Trigger>
+          </Tabs.List>
+        </Tabs.Root>
+        <div class="legend" data-tiny-export="hide">
+          {#each SIGNIFIERS as item}
+            <span class="legendItem" title={item.label}><strong class="legendSym">{item.symbol}</strong>{item.label}</span>
+          {/each}
+          <span class="legendItem" title="Priority"><strong class="legendSym">*</strong>Priority</span>
+        </div>
+      </header>
+
+      <article class="spread" aria-label={spread === "daily" ? "Daily rapid log" : "Monthly index"}>
+        {#if spread === "daily"}
+          <div class="titleRow">
+            <input class="title" aria-label="Log date" use:bindText={doc.fields.date} placeholder="Today" />
+            <label class="pageNumWrap"><span class="srOnly">Daily page number</span><span aria-hidden="true">pg.</span> <input class="pageNum" use:bindText={doc.fields.dailyPage} /></label>
+          </div>
+
+          <ul class="list">
+            {#each entries as item (item.$id)}
+              <li class="row" data-complete={item.type === "complete"} animate:flip={{ duration: flipMs }}>
+                <Toggle.Root
+                  type="button"
+                  pressed={item.star}
+                  onPressedChange={(pressed) => doc.change((tx) => setPriority(tx, item.$id, pressed))}
+                  class="starBtn"
+                  aria-label={item.star ? "Remove priority" : "Mark as priority"}
+                >
+                  {#if item.star}
+                    <Star size={11} fill="currentColor" />
+                  {:else}
+                    <span aria-hidden="true">·</span>
+                  {/if}
+                </Toggle.Root>
+                <Tooltip.Root>
+                  <Tooltip.Trigger
+                    class="signifier"
+                    data-type={item.type}
+                    type="button"
+                    aria-label="{labelFor(item.type)} signifier. Cycle to the next mark."
+                    onclick={() => doc.change((tx) => cycleSignifier(tx, doc.current, item.$id))}
+                  >{symbolFor(item.type)}</Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content class="tooltip" sideOffset={6}>Click to cycle • × › ‹ ○ —</Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+                <input class="entryText" aria-label="Rapid log entry" use:bindText={doc.at(item).text} placeholder="Task, event, or note" />
+                <Tooltip.Root>
+                  <Tooltip.Trigger class="remove" data-tiny-export="hide" type="button" aria-label="Delete {item.text || 'entry'}" onclick={() => doc.change((tx) => removeEntry(tx, item.$id))}>
+                    <Trash2 size={12} />
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content class="tooltip" sideOffset={6}>Remove this line</Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+              </li>
+            {:else}
+              <li class="empty">
+                <h2>A blank page.</h2>
+                <p>Rapid log a task, event, or note. Click the bullet to cycle its signifier.</p>
+              </li>
+            {/each}
+          </ul>
+
+          <form class="composer" data-tiny-export="hide" onsubmit={addNewEntry}>
+            <Toggle.Root
+              type="button"
+              pressed={draftStar}
+              onPressedChange={(pressed) => { draftStar = pressed; }}
+              class="starToggle"
+              aria-label="Mark new entry as priority"
+            >
+              <Star size={12} fill={draftStar ? "currentColor" : "none"} />
+            </Toggle.Root>
+            <Select.Root type="single" value={draftType} items={signifierItems} onValueChange={(value) => { if (isSignifier(value)) draftType = value; }}>
+              <Select.Trigger class="selectTrigger" type="button" aria-label="Signifier for new entry">
+                <Select.Value placeholder="Signifier" />
+                <ChevronDown size={12} strokeWidth={2.2} />
+              </Select.Trigger>
+              <Select.Portal>
+                <Select.Content class="selectContent" sideOffset={6}>
+                  <Select.Viewport>
+                    {#each signifierItems as item (item.value)}
+                      <Select.Item value={item.value} label={item.label}>
+                        {#snippet children({ selected })}
+                          {item.label}{#if selected}<Check size={12} strokeWidth={2.4} />{/if}
+                        {/snippet}
+                      </Select.Item>
+                    {/each}
+                  </Select.Viewport>
+                </Select.Content>
+              </Select.Portal>
+            </Select.Root>
+            <input bind:this={composer} class="addInput" aria-label="New rapid log entry" placeholder="Rapid log an item…" bind:value={draftText} />
+            <Button.Root class="add" type="submit" aria-label="Add entry" disabled={!draftText.trim()}><Plus size={14} /></Button.Root>
+          </form>
+        {:else}
+          <div class="titleRow">
+            <input class="title" aria-label="Month title" use:bindText={doc.fields.monthTitle} placeholder="Month" />
+            <label class="pageNumWrap"><span class="srOnly">Monthly page number</span><span aria-hidden="true">pg.</span> <input class="pageNum" use:bindText={doc.fields.monthlyPage} /></label>
+          </div>
+
+          <ul class="list">
+            {#each doc.current.monthlyLog as item (item.$id)}
+              <li class="monthRow" animate:flip={{ duration: flipMs }}>
+                <input
+                  class="monthDay"
+                  type="number"
+                  min="1"
+                  max="31"
+                  aria-label="Day of month"
+                  bind:value={() => item.day, (next) => { if (isDayOfMonth(next)) doc.change((tx) => setDay(tx, item.$id, next)); }}
+                />
+                <input class="monthWeekday" aria-label="Weekday" maxlength="3" placeholder="—" use:bindText={doc.at(item).weekday} />
+                <input class="monthText" aria-label="Monthly event for day {item.day}" placeholder="Key event or milestone…" use:bindText={doc.at(item).text} />
+                <button class="remove" data-tiny-export="hide" type="button" aria-label="Delete day {item.day}" onclick={() => doc.change((tx) => removeMonthDay(tx, item.$id))}><Trash2 size={12} /></button>
+              </li>
+            {:else}
+              <li class="empty">
+                <h2>No days indexed.</h2>
+                <p>Add the dates that matter this month.</p>
+              </li>
+            {/each}
+          </ul>
+          <div class="monthComposer" data-tiny-export="hide">
+            <Button.Root class="addDay" type="button" onclick={() => doc.change((tx) => addMonthDay(tx, doc.current))}>+ Add day</Button.Root>
+          </div>
+        {/if}
+      </article>
+
+      <footer class="foot">
+        {#if spread === "daily"}
+          <span>{doc.current.entries.length} bullets · {openCount} open</span>
+          <span>Rapid log</span>
+        {:else}
+          <span>{doc.current.monthlyLog.length} days indexed</span>
+          <span>Monthly log</span>
+        {/if}
+      </footer>
+    </main>
+  </Tooltip.Provider>

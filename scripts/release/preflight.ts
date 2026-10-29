@@ -1,5 +1,5 @@
 import { readFile, appendFile } from "node:fs/promises";
-import { run, exec } from "../../packages/hitslop/src/cli/process";
+import { run, exec } from "../../packages/tinys/src/cli/process";
 import { assetBytes, releaseInventory, releaseRepository, stableTag, requiredAsset } from "../lib/release-assets";
 import { advancesBuild, preservesLatest, validatePublication, validateRecord, type ReleaseRecord } from "./record";
 
@@ -7,11 +7,11 @@ export async function projectVersion() {
   const project = await readFile("apps/apple/project.yml", "utf8");
   const version = project.match(/MARKETING_VERSION: "([^"]+)"/)?.[1];
   const build = project.match(/CURRENT_PROJECT_VERSION: "([^"]+)"/)?.[1];
-  if (!version || !build || !stableTag.test(`v${version}`)) throw new Error("Invalid release version");
-  const pkg = await Bun.file("packages/hitslop/package.json").json();
+  if (!version || !build || !stableTag.test(`tinys-v${version}`)) throw new Error("Invalid release version");
+  const pkg = await Bun.file("packages/tinys/package.json").json();
   const workspace = await Bun.file("package.json").json();
   if (pkg.version !== version || workspace.version !== version) throw new Error("Mac, npm and workspace versions must agree");
-  return { version, build, tag: `v${version}` };
+  return { version, build, tag: `tinys-v${version}` };
 }
 
 export function validatePublicationSettings(environment: { protection_rules: { type: string; reviewers?: unknown[] }[] }) {
@@ -35,7 +35,7 @@ export async function checkReleaseHistory(version: string, build: string, own?: 
 } = {}) {
   const all = await (source.list ?? releaseInventory)();
   const tags = source.tags ? await source.tags() : (JSON.parse(await run(["gh", "api", "--paginate", "--slurp", `repos/${releaseRepository}/tags?per_page=100`])) as { name: string }[][]).flat().map(tag => tag.name);
-  const stray = checkReleaseTags(tags, all, `v${version}`, !!own);
+  const stray = checkReleaseTags(tags, all, `tinys-v${version}`, !!own);
   if (stray.length) console.warn(`Unpublished tags (not release history): ${stray.join(", ")}`);
   let latest: ReleaseRecord | undefined;
   for (const release of all) {
@@ -51,7 +51,7 @@ export async function checkReleaseHistory(version: string, build: string, own?: 
   if (latest && !own) {
     // Remote outputs, rather than the lifetime of an Actions run, establish completion.
     // This also permits manual recovery of the original artifacts after reruns expire.
-    const npm = await fetch("https://registry.npmjs.org/hitslop/latest", { cache: "no-store" });
+    const npm = await fetch("https://registry.npmjs.org/@hitslop%2ftinys/latest", { cache: "no-store" });
     if (!npm.ok) throw new Error(`Incomplete publication ${latest.tag}: npm unavailable`);
     const github = JSON.parse(await run(["gh", "api", `repos/${releaseRepository}/releases/latest`]));
     validatePublication(latest, { npm: await npm.json() as Parameters<typeof validatePublication>[1]["npm"],

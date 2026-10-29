@@ -1,7 +1,7 @@
 //! Guest entry point budgets are independent and shared across rooms per IP.
 pub(crate) fn guest_limit(method: &str, path: &str) -> Option<&'static str> {
     let parts: Vec<_> = path.strip_prefix("/v1/rooms/")?.split('/').collect();
-    if !hitslop_sharing_protocol::valid_room(parts[0]) {
+    if !tinys_sharing_protocol::valid_room(parts[0]) {
         return None;
     }
     match (method, parts.as_slice()) {
@@ -9,7 +9,7 @@ pub(crate) fn guest_limit(method: &str, path: &str) -> Option<&'static str> {
         ("GET", [_]) => Some("GUEST_METADATA_LIMIT"),
         ("GET", [_, "seed"]) => Some("GUEST_SEED_LIMIT"),
         ("GET", [_, "sync"]) => Some("GUEST_CONNECT_LIMIT"),
-        ("PUT", [_, "blob", hash]) if hitslop_sharing_protocol::resources::hash_id(hash) => Some("GUEST_BLOB_LIMIT"),
+        ("PUT", [_, "blob", hash]) if tinys_sharing_protocol::resources::hash_id(hash) => Some("GUEST_BLOB_LIMIT"),
         _ => None,
     }
 }

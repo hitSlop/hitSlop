@@ -3,12 +3,12 @@ title: Data and schemas
 description: Typed document fields chosen by merge behavior, snapshot handles, changes, previews and persistence.
 ---
 
-The Rust document owner, shared by the hitSlop app and CLI, merges and validates every edit and stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
+The Rust document owner, shared by the tinys app and CLI, merges and validates every edit and stores the bytes locally. Your app reads immutable snapshots and writes through typed handles; it never touches storage.
 
 ## Define the shape
 
 ```ts title="schema.ts"
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s } from "@hitslop/tinys";
 export default defineDocument({
   title: s.text(),
   archived: s.boolean({ default: false }),
@@ -45,7 +45,7 @@ Scalar lists are addressed by position: `insert(value, index?)`, `set(index, val
 A new document starts from the `initial` option of `defineDocument` in `schema.ts`.
 It must fit the schema; fields with defaults or optional fields may be left out.
 
-The builder validates initial values and stores the schema's descriptor and the initial values in the template. The descriptor is not JSON Schema, and `slop schema` prints it. Initial values seed a new document only; rebuilding a template does not rewrite an existing document. Schema evolution is deferred.
+The builder validates initial values and stores the schema's descriptor and the initial values in the template. The descriptor is not JSON Schema, and `tiny schema` prints it. Initial values seed a new document only; rebuilding a template does not rewrite an existing document. Schema evolution is deferred.
 
 ## Read snapshots; write through handles
 
@@ -53,7 +53,7 @@ The builder validates initial values and stores the schema's descriptor and the 
 
 ```svelte
 <script lang="ts">
-  import { EditableText, getDocument } from "hitslop/svelte";
+  import { EditableText, getDocument } from "@hitslop/tinys/svelte";
   import schema from "./schema";
   const doc = getDocument(schema);
 </script>
@@ -71,7 +71,7 @@ The builder validates initial values and stores the schema's descriptor and the 
   {/each}
 ```
 
-Use `Value<typeof schema.descriptor>` from `hitslop` for the saved data type and `LiveDocument<typeof schema.descriptor>` for an acquired document's type. Static views receive [capture props](/docs/guides/icons-and-exports/#declare-capture-views).
+Use `Value<typeof schema.descriptor>` from `tinys` for the saved data type and `LiveDocument<typeof schema.descriptor>` for an acquired document's type. Static views receive [capture props](/docs/guides/icons-and-exports/#declare-capture-views).
 
 `doc.current` is a read-only snapshot, and unchanged rows keep their object identity between edits. `doc.at(value)` returns the typed write handle for the root, a row or a nested object taken directly from `doc.current`; do not pass clones.
 
@@ -81,15 +81,15 @@ Scalar fields (booleans, strings, numbers, integers and enums) have a `value` fo
 
 Writes are asynchronous. `set` on a scalar shows the new value in `doc.current` at once; every write's promise resolves once the app has accepted it and `doc.current` shows it, so read row inserts and moves after awaiting. To react to a change (play a sound, show a celebration), watch the state in a `$derived` or `$effect` rather than reading `doc.current` again in the handler; that also fires for edits that come from an agent or an undo. A resolved write is not yet on disk or rendered: use `await doc.flush()` when it must be saved and Svelte's `tick()` when the next step depends on the DOM.
 
-A refused write leaves the saved value in `doc.current`, and hitSlop shows the person what went wrong. You don't need to catch it: `await doc.fields.tasks.insert(...)` followed by clearing a composer keeps the composer's text when the insert is refused. Catch a rejection only to show your own message; one you catch is not reported again.
+A refused write leaves the saved value in `doc.current`, and tinys shows the person what went wrong. You don't need to catch it: `await doc.fields.tasks.insert(...)` followed by clearing a composer keeps the composer's text when the insert is refused. Catch a rejection only to show your own message; one you catch is not reported again.
 
 ## Composers, motion and notices
 
-`hitslop/svelte` handles behavior most slops repeat, and leaves the markup to you:
+`@hitslop/tinys/svelte` handles behavior most tinys repeat, and leaves the markup to you:
 
 ```svelte
 <script lang="ts">
-  import { draft, motion, notify, getDocument } from "hitslop/svelte";
+  import { draft, motion, notify, getDocument } from "@hitslop/tinys/svelte";
   import schema from "./schema";
   const doc = getDocument(schema);
   const task = draft(text => doc.fields.tasks.insert({ text }));
@@ -112,7 +112,7 @@ A refused write leaves the saved value in `doc.current`, and hitSlop shows the p
 <button onclick={finishAll}>Finish all</button>
 ```
 
-`draft` trims the text, ignores a second submit while one runs, and clears the input once the write is accepted, unless the person typed more meanwhile. `motion` eases a number toward its target, jumps when the person prefers reduced motion, and starts at its target. `notify` shows a message in the window's notice region, `[data-slop-notice]`, which holds the current message as a `<p>`; restyle it from your CSS. A page handler can call `refuse("Enter a task.")` to show a refusal there too.
+`draft` trims the text, ignores a second submit while one runs, and clears the input once the write is accepted, unless the person typed more meanwhile. `motion` eases a number toward its target, jumps when the person prefers reduced motion, and starts at its target. `notify` shows a message in the window's notice region, `[data-tiny-notice]`, which holds the current message as a `<p>`; restyle it from your CSS. A page handler can call `refuse("Enter a task.")` to show a refusal there too.
 
 ## Previews for drags and drawing
 
@@ -152,7 +152,7 @@ Prefer a change, or `increment` on a counter, over reading a value and writing i
 Commands in `commands.ts` are for agents, and the page cannot import that file. When a button and an agent should do the same thing, write the edit once as a plain function over `Tx<typeof schema>`, the `tx` that both `doc.change` and a command's `run` receive:
 
 ```ts title="schema.ts"
-import { defineDocument, refuse, s, type Tx } from "hitslop";
+import { defineDocument, refuse, s, type Tx } from "@hitslop/tinys";
 const schema = defineDocument({ tasks: s.list(s.object({ text: s.text() })) });
 export default schema;
 
@@ -165,8 +165,8 @@ export function addTask(tx: Tx<typeof schema>, text: string) {
 The page runs it with `doc.change(tx => addTask(tx, text))`, and the command wraps the same function:
 
 ```ts title="commands.ts"
-import { defineCommands } from "hitslop/commands";
-import { s } from "hitslop";
+import { defineCommands } from "@hitslop/tinys/commands";
+import { s } from "@hitslop/tinys";
 import schema, { addTask } from "./schema";
 
 export default defineCommands(schema, {
@@ -178,7 +178,7 @@ export default defineCommands(schema, {
 });
 ```
 
-Both are one atomic edit and one undo step, and a `refuse` reaches the person in the window or the agent in `slop call`. Pass time and randomness in as arguments: the page has `Date.now()`, while a command must use `ctx.now` and `ctx.random()`. Helpers can live in `schema.ts` or any plain module.
+Both are one atomic edit and one undo step, and a `refuse` reaches the person in the window or the agent in `tiny call`. Pass time and randomness in as arguments: the page has `Date.now()`, while a command must use `ctx.now` and `ctx.random()`. Helpers can live in `schema.ts` or any plain module.
 
 ## Save and recover
 
@@ -189,18 +189,18 @@ The host autosaves, and `await doc.flush()` sends any unsent text, waits for pen
 CLI reads and edits go through the same app-owned core:
 
 ```sh
-bunx hitslop schema My.slop
-bunx hitslop get My.slop
-bunx hitslop apply My.slop --op '{"type":"set","path":["title"],"value":"Ready"}'
-bunx hitslop apply My.slop --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
+bunx @hitslop/tinys schema My.tiny
+bunx @hitslop/tinys get My.tiny
+bunx @hitslop/tinys apply My.tiny --op '{"type":"set","path":["title"],"value":"Ready"}'
+bunx @hitslop/tinys apply My.tiny --op '{"type":"set","path":["tasks",{"id":"<$id>"},"done"],"value":true}'
 ```
 
 Example responses (schema and value excerpts; other fields are omitted):
 
 | Command | Response |
 | --- | --- |
-| `schema My.slop` | The title descriptor: `{"kind":"text"}`. |
-| `get My.slop` | A task row: `{"$id":"example-task-id","text":"Book train","done":false}`. |
+| `schema My.tiny` | The title descriptor: `{"kind":"text"}`. |
+| `get My.tiny` | A task row: `{"$id":"example-task-id","text":"Book train","done":false}`. |
 | Either `apply` above | `{"ids":[]}` — no rows inserted. Use the real row ID in place of `<$id>`. |
 
 Edits are saved when the command succeeds; `get` prints the data. After an unknown outcome, inspect with `get` before another edit; edits are never replayed automatically. Theme overrides are separate host metadata; see [styling](/docs/guides/styling/). The [numbered command walkthrough](/docs/guides/edit-installed-data/) includes full discovery and read responses.
@@ -209,7 +209,7 @@ Each kind's merge behavior is in the table above, and the [operation shapes](/do
 
 ### Handling refused edits
 
-Use `isRejected(error)` from `hitslop` when catching a semantic refusal;
+Use `isRejected(error)` from `tinys` when catching a semantic refusal;
 its `reason` and `opIndex` identify the core rule and operation. `isRefused(error)`
 recognizes a command's `refuse(message)`. Use
 `isDocumentError(error)` to distinguish other document outcomes from application

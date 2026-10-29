@@ -5,16 +5,16 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { repository, sha256, fileDigest } from "../lib/artifacts";
 import { archiveFiles, extractArchive } from "../lib/release-archive";
-import { assetBytes, releaseInventory, requiredAsset, type PublishedRelease } from "../lib/release-assets";
+import { assetBytes, releaseInventory, requiredAsset, stableTag, type PublishedRelease } from "../lib/release-assets";
 import { validateRecord, type ReleaseRecord } from "../release/record";
 import { verifyCorpus } from "./integrity";
 import { atomicJson } from "../lib/verification";
 import { corpusRoot, readJSON, releases, type Release } from "./corpus";
-import requiredHistory from "./required-history.json";
+import requiredHistory from "./tinys-required-history.json";
 
 export type HistoricalRelease = { release: PublishedRelease; record: ReleaseRecord };
 export type CorpusInventory = Record<string, string>;
-export const corpusCache = () => resolve(process.env.HITSLOP_CORPUS_CACHE ?? join(homedir(), ".cache/hitslop/compat-corpora"));
+export const corpusCache = () => resolve(process.env.TINYS_CORPUS_CACHE ?? join(homedir(), ".cache/tinys/compat-corpora"));
 
 /** Remembered inventory, the checked-in launch baseline and each release's closure
  * detect disappearing history. Never recapture evidence. */
@@ -26,7 +26,7 @@ export function verifyHistory(entries: HistoricalRelease[], known: CorpusInvento
     assert.ok(!inventory[record.macVersion], `Duplicate release: ${record.macVersion}`);
     inventory[record.macVersion] = record.corpus.sha256;
     requiredAsset(release, record.corpus.file);
-    requiredAsset(release, `hitslop-${record.macVersion}.tgz`);
+    requiredAsset(release, `hitslop-tinys-${record.macVersion}.tgz`);
   }
   for (const requirements of [known, ...entries.map(entry => entry.record.qualified)])
     for (const [version, hash] of Object.entries(requirements))
@@ -39,7 +39,7 @@ export async function publishedHistory(options: {
 } = {}): Promise<HistoricalRelease[]> {
   const all = await (options.list ?? releaseInventory)();
   const entries: HistoricalRelease[] = [];
-  for (const release of all.filter(entry => !entry.draft && !entry.prerelease)) {
+  for (const release of all.filter(entry => stableTag.test(entry.tag_name) && !entry.draft && !entry.prerelease)) {
     const bytes = await (options.download ?? assetBytes)(requiredAsset(release, "release-record.json").id);
     entries.push({ release, record: JSON.parse(bytes.toString()) });
   }
@@ -56,7 +56,7 @@ export async function cachedAsset(entry: HistoricalRelease, name: string, cache 
     assert.equal(sha256(existing), hash, `Corrupt cached release asset: ${file}`);
     return file;
   }
-  if (process.env.HITSLOP_COMPAT_OFFLINE === "1") throw new Error(`Offline asset not cached: ${name}`);
+  if (process.env.TINYS_COMPAT_OFFLINE === "1") throw new Error(`Offline asset not cached: ${name}`);
   const bytes = await download(requiredAsset(entry.release, name).id);
   assert.equal(sha256(bytes), hash, `Release asset hash mismatch: ${name}`);
   await mkdir(join(cache, "assets"), { recursive: true });
@@ -98,8 +98,8 @@ export async function verifyResolvedCorpora(root: string, options: {
 } = {}) {
   const receipt = await readJSON<Receipt>(join(root, ".inventory.json"));
   assert.ok(receipt, "Compatibility root has no verified inventory; resolve corpora first");
-  const offline = receipt.offline || process.env.HITSLOP_COMPAT_OFFLINE === "1";
-  if (offline && (process.env.CI || process.env.HITSLOP_RELEASE_TAG)) throw new Error("CI and release checks require fresh published history");
+  const offline = receipt.offline || process.env.TINYS_COMPAT_OFFLINE === "1";
+  if (offline && (process.env.CI || process.env.TINYS_RELEASE_TAG)) throw new Error("CI and release checks require fresh published history");
   const history = options.history ?? (offline ? receipt.entries : await publishedHistory(options));
   const inventory = verifyHistory(history, options.required ?? requiredHistory);
   const cache = options.cache ?? corpusCache();
@@ -108,7 +108,7 @@ export async function verifyResolvedCorpora(root: string, options: {
   assert.deepEqual(receipt.inventory, inventory, "Compatibility inventory changed; resolve corpora again");
   assert.deepEqual(verifyHistory(receipt.entries), inventory, "Compatibility receipt inventory mismatch");
   const entries = await releases(root);
-  assert.ok(entries.length, "No compatibility corpora to replay");
+  assert.ok(entries.length || !history.length, "No compatibility corpora to replay");
   assert.deepEqual((await readdir(root)).sort(), [".inventory.json", ...entries.map(entry => entry.name)].sort(), "Unexpected compatibility root entries");
   for (const version of Object.keys(inventory))
     assert.ok(entries.some(entry => entry.name === version), `Published corpus missing from replay: ${version}`);
@@ -195,8 +195,8 @@ export async function resolveCorpora(options: {
   list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>; required?: CorpusInventory;
 } = {}) {
   const cache = resolve(options.cache ?? corpusCache());
-  const offline = options.offline ?? process.env.HITSLOP_COMPAT_OFFLINE === "1";
-  if (offline && (process.env.CI || process.env.HITSLOP_RELEASE_TAG)) throw new Error("CI and release checks require fresh published history");
+  const offline = options.offline ?? process.env.TINYS_COMPAT_OFFLINE === "1";
+  if (offline && (process.env.CI || process.env.TINYS_RELEASE_TAG)) throw new Error("CI and release checks require fresh published history");
   // Discovery may overlap another resolver. Recheck remembered history inside the lock,
   // so a slow older response can never regress a newer activated inventory.
   const discovered = offline ? undefined : await publishedHistory(options);
@@ -208,7 +208,7 @@ export async function resolveCorpora(options: {
     const inventory = verifyHistory(entries, prior?.inventory);
     verifyHistory(entries, options.required ?? requiredHistory);
     if (offline) console.log("! OFFLINE compatibility replay: cached history only; does not certify a release");
-    const output = resolve(options.output ?? join(repository, ".hitslop/compat"));
+    const output = resolve(options.output ?? join(repository, ".tinys/compat"));
     const roots: Record<string, string> = {};
     for (const entry of entries) {
       const archive = await cachedAsset(entry, entry.record.corpus.file, cache, offline ? async () => { throw new Error("Offline asset not cached"); } : options.download);
@@ -229,7 +229,7 @@ export async function resolveCorpora(options: {
     const receipt = { entries, inventory, offline };
     const published = await preparedSnapshot(output, roots, receipt);
     let root = published;
-    const candidate = options.candidate ?? process.env.HITSLOP_COMPAT_CANDIDATE;
+    const candidate = options.candidate ?? process.env.TINYS_COMPAT_CANDIDATE;
     if (candidate) {
       const tree = await localTree(candidate);
       assert.ok(tree.release.frozen && /^\d+\.\d+\.\d+$/.test(tree.release.release), "Invalid candidate corpus");
@@ -242,7 +242,7 @@ export async function resolveCorpora(options: {
       await symlink(published, pointer, "dir");
       await rename(pointer, join(output, "current"));
     } finally { await rm(pointer, { force: true }); }
-    process.env.HITSLOP_COMPAT_ROOT = root;
+    process.env.TINYS_COMPAT_ROOT = root;
     return { root, inventory, offline, entries };
   } finally { unlock(); }
 }
@@ -252,19 +252,19 @@ export async function historicalPackage(version: string): Promise<string> {
   const inventory = await readJSON<{ entries: HistoricalRelease[] }>(join(corpusRoot(), ".inventory.json"));
   const entry = inventory && inventory.entries.find(entry => entry.record.macVersion === version);
   assert.ok(entry, `Resolve published corpora before fetching writer ${version}`);
-  return cachedAsset(entry, `hitslop-${version}.tgz`);
+  return cachedAsset(entry, `hitslop-tinys-${version}.tgz`);
 }
 
 export async function verifyPreludes(entries: { release: Release }[]) {
   for (const { release } of entries) if (release.frozen)
     for (const [abi, hash] of Object.entries(release.producer.runner ?? {})) {
       assert.match(abi, /^[1-9]\d*$/);
-      assert.equal(await fileDigest(join(repository, `crates/hitslop-runner/src/abi/${abi}.generated.js`)), hash, `${release.release}: changed ABI ${abi} command prelude`);
+      assert.equal(await fileDigest(join(repository, `crates/tinys-runner/src/abi/${abi}.generated.js`)), hash, `${release.release}: changed ABI ${abi} command prelude`);
     }
 }
 
 if (import.meta.main) {
   const resolved = await resolveCorpora();
   console.log(`Compatibility corpus: ${Object.keys(resolved.inventory).length} published releases (${resolved.root})`);
-  if (process.env.GITHUB_ENV) await appendFile(process.env.GITHUB_ENV, `HITSLOP_COMPAT_ROOT=${resolved.root}\n`);
+  if (process.env.GITHUB_ENV) await appendFile(process.env.GITHUB_ENV, `TINYS_COMPAT_ROOT=${resolved.root}\n`);
 }

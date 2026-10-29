@@ -3,7 +3,7 @@
  * Run explicitly with `bun run swift:format`; verification uses `--check`. */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { exec } from "../../packages/hitslop/src/cli/process";
+import { exec } from "../../packages/tinys/src/cli/process";
 import { repository } from "./artifacts";
 
 async function swiftSources(): Promise<string[]> {

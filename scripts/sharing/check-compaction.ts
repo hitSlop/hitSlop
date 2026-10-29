@@ -195,7 +195,7 @@ export async function checkCompaction(
   async function socket(ip = "203.0.113.1") {
     const response = await call(base + "/sync", room.capability, "GET", undefined, {
       Upgrade: "websocket",
-      "Sec-WebSocket-Protocol": "hitslop.sync.v1",
+      "Sec-WebSocket-Protocol": "tinys.sync.v1",
       "CF-Connecting-IP": ip,
     });
     assert.equal(response.status, 101);
@@ -418,7 +418,7 @@ export async function checkCompaction(
     (
       await call(base + "/sync", room.capability, "GET", undefined, {
         Upgrade: "websocket",
-        "Sec-WebSocket-Protocol": "hitslop.sync.v1",
+        "Sec-WebSocket-Protocol": "tinys.sync.v1",
         "CF-Connecting-IP": "203.0.113.20",
       })
     ).status,

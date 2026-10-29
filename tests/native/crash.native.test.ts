@@ -1,6 +1,6 @@
 // Crash contract for native storage: a document engine killed at any point of an edit leaves
 // the document as it was or as edited, never torn, and its lock dies with it. An acknowledged
-// edit survives the death of the host that acknowledged it (with HITSLOP_APP_BINARY, the
+// edit survives the death of the host that acknowledged it (with TINYS_APP_BINARY, the
 // app to kill: `verify --release` builds one, release packaging names the signed app).
 // Stress coverage beside the deterministic storage faults in the Rust suite.
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -8,18 +8,18 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { documentFromStage, engineRequest } from "../../scripts/lib/native";
-import { negotiate } from "../../packages/hitslop/src/cli/engine";
-import { run } from "../../packages/hitslop/src/cli/process";
+import { negotiate } from "../../packages/tinys/src/cli/engine";
+import { run } from "../../packages/tinys/src/cli/process";
 import { useTestRegistry } from "../../scripts/lib/artifacts";
 useTestRegistry();
 
 const fixture = "tests/fixtures/checklist/document";
 const rounds = 24;
-const documentEngine = await (await import("../../packages/hitslop/src/cli/engine")).findEngine();
-const app = process.env.HITSLOP_APP_BINARY;
+const documentEngine = await (await import("../../packages/tinys/src/cli/engine")).findEngine();
+const app = process.env.TINYS_APP_BINARY;
 let folder: string;
 beforeAll(async () => {
-  folder = await mkdtemp(join(tmpdir(), "hitslop-crash-"));
+  folder = await mkdtemp(join(tmpdir(), "tinys-crash-"));
 });
 afterAll(() => rm(folder, { recursive: true, force: true }));
 
@@ -41,12 +41,12 @@ async function title(root: string) {
   return String((value as { title: unknown }).title);
 }
 async function evidence(name: string, cases: string[]) {
-  await mkdir(".hitslop/evidence", { recursive: true });
-  await writeFile(`.hitslop/evidence/${name}.json`, JSON.stringify({ passed: true, cases }, null, 2) + "\n");
+  await mkdir(".tinys/evidence", { recursive: true });
+  await writeFile(`.tinys/evidence/${name}.json`, JSON.stringify({ passed: true, cases }, null, 2) + "\n");
 }
 
 test("an engine killed at any point of an edit leaves the document as it was or as edited", async () => {
-  const root = await documentFromStage(fixture, join(folder, "Killed.slop"), { engine: documentEngine });
+  const root = await documentFromStage(fixture, join(folder, "Killed.tiny"), { engine: documentEngine });
   let saved = await title(root);
   let interrupted = 0;
   for (let round = 0; round < rounds; round++) {
@@ -70,12 +70,12 @@ test("an engine killed at any point of an edit leaves the document as it was or 
 
 test.if(!!app)("an acknowledged edit survives the death of the host that acknowledged it", async () => {
   // The real host owns a WebView and socket; acknowledge through the CLI, then kill it.
-  // Release hosts ignore HITSLOP_TEST_REGISTRY. Keep the app and every probe in the
+  // Release hosts ignore TINYS_TEST_REGISTRY. Keep the app and every probe in the
   // account registry, just as installed-app acceptance does, even under `verify`.
   const env = { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" };
   const placement = { engine: documentEngine, env };
-  const root = await documentFromStage(fixture, join(folder, "Host.slop"), placement);
-  await mkdir(".hitslop/evidence", { recursive: true });
+  const root = await documentFromStage(fixture, join(folder, "Host.tiny"), placement);
+  await mkdir(".tinys/evidence", { recursive: true });
   const host = Bun.spawn([app!, root], { env, stdout: "pipe", stderr: "pipe" });
   const stdout = new Response(host.stdout).text();
   const stderr = new Response(host.stderr).text();
@@ -84,17 +84,17 @@ test.if(!!app)("an acknowledged edit survives the death of the host that acknowl
     // The host is ready once it names its socket for commands.
     while (!(await engineRequest({ method: "inspect", file: root }, placement)).info.live) {
       if (Date.now() > deadline || host.exitCode !== null)
-        throw new Error(`Native host startup failed (pid ${host.pid}, exit ${host.exitCode ?? "still running"}); see .hitslop/evidence/crash-native-host.log`);
+        throw new Error(`Native host startup failed (pid ${host.pid}, exit ${host.exitCode ?? "still running"}); see .tinys/evidence/crash-native-host.log`);
       await Bun.sleep(30);
     }
-    await run([process.execPath, "packages/hitslop/src/cli/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
-      { env: { ...env, HITSLOP_ENGINE: documentEngine } });
+    await run([process.execPath, "packages/tinys/src/cli/cli.ts", "apply", root, "--op", JSON.stringify({ type: "set", path: ["title"], value: "Native acknowledged" })],
+      { env: { ...env, TINYS_ENGINE: documentEngine } });
     expect(host.exitCode).toBeNull();
     expect((await engineRequest({ method: "inspect", file: root }, placement)).info.live).toBe(true);
   } finally {
     host.kill("SIGKILL");
     await host.exited;
-    await writeFile(".hitslop/evidence/crash-native-host.log", `${app}\n${root}\n${await stdout}${await stderr}`);
+    await writeFile(".tinys/evidence/crash-native-host.log", `${app}\n${root}\n${await stdout}${await stderr}`);
   }
   expect((await engineRequest({ method: "get", documentPath: root }, placement)).state.value)
     .toMatchObject({ title: "Native acknowledged" });

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { fileURLToPath } from "node:url";
-import { exec } from "../../packages/hitslop/src/cli/process";
-import type { Capability } from "../../packages/hitslop/src/wire/app.generated";
+import { exec } from "../../packages/tinys/src/cli/process";
+import type { Capability } from "../../packages/tinys/src/wire/app.generated";
 
 const capabilityPermissions = {
   camera: {
@@ -45,7 +45,7 @@ export async function verifyArtifactCapabilities(
 ): Promise<void> {
   const convert = ["/usr/bin/plutil", "-convert", "json", "-o", "-"];
   const source = fileURLToPath(
-    new URL("../../apps/apple/App/macOS/hitSlop.entitlements", import.meta.url),
+    new URL("../../apps/apple/App/macOS/tinys.entitlements", import.meta.url),
   );
   const signed = unsigned
     ? undefined

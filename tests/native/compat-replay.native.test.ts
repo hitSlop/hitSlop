@@ -3,7 +3,7 @@
 // app, keeps its attachments, takes a CLI edit and reopens to the recorded result; every
 // template master still creates documents. Old files are checked, not old programs. The Rust
 // and Swift corpus tests cover the rest (docs/testing.md).
-import { EngineProtocol } from "../../packages/hitslop/src/schema/constants";
+import { EngineProtocol } from "../../packages/tinys/src/schema/constants";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { strict as assert } from "node:assert";
 import { mkdtemp, readdir, realpath, rm } from "node:fs/promises";
@@ -24,8 +24,8 @@ import {
   readJSON,
   releases,
   savedState,
-  slop,
-  slopJSON,
+  tiny,
+  tinyJSON,
   type Expected,
   type Scenario,
   type CommandProbe,
@@ -34,8 +34,8 @@ import {
 } from "../../scripts/compat/corpus";
 import { sha256, useTestRegistry } from "../../scripts/lib/artifacts";
 import { evaluateStored } from "../../scripts/compat/commands";
-import { exec } from "../../packages/hitslop/src/cli/process";
-import { request } from "../../packages/hitslop/src/cli/engine";
+import { exec } from "../../packages/tinys/src/cli/process";
+import { request } from "../../packages/tinys/src/cli/engine";
 useTestRegistry();
 
 const entries = await Promise.all((await releases()).map(async entry => ({
@@ -46,21 +46,21 @@ const entries = await Promise.all((await releases()).map(async entry => ({
 // Resolved, as the CLI prints the paths it writes (/var is a link on macOS).
 let scratch: string;
 beforeAll(async () => {
-  scratch = await realpath(await mkdtemp(join(tmpdir(), "hitslop-compat-")));
+  scratch = await realpath(await mkdtemp(join(tmpdir(), "tinys-compat-")));
 });
 afterAll(() => rm(scratch, { recursive: true, force: true }));
 
 test("the corpus has entries to replay", () => {
-  expect(entries.length).toBeGreaterThan(0);
+  if (process.env.TINYS_COMPAT_BOOTSTRAP !== "1") expect(entries.length).toBeGreaterThan(0);
 });
 for (const { name, root, release, documents: saved, templates } of entries)
   describe(`corpus/${name} (${release.frozen ? "frozen" : "replaceable"})`, () => {
     for (const document of saved)
       test(`${document} reads as recorded, renders its saved scenario, keeps its attachments and reopens edited`, async () => {
-        const copy = join(scratch, `${name}-${document}.slop`);
+        const copy = join(scratch, `${name}-${document}.tiny`);
         const fresh = async () => {
           await rm(copy, { force: true });
-          await copyCorpusDocument(join(root, "documents", document + ".slop"), copy);
+          await copyCorpusDocument(join(root, "documents", document + ".tiny"), copy);
         };
         await fresh();
         const expected = await readJSON<Expected>(join(root, "expected", document + ".json"));
@@ -87,7 +87,7 @@ for (const { name, root, release, documents: saved, templates } of entries)
         expect(await savedState(copy)).toEqual(expected);
         for (const { id, byteLength } of expected.attachments) {
           const output = join(scratch, id);
-          const exported = await slop(["attachments", "export", copy, id, "--output", output]);
+          const exported = await tiny(["attachments", "export", copy, id, "--output", output]);
           assert.equal(exported.code, 0, `attachment ${id}: ${exported.stderr.trim()}`);
           const bytes = await Bun.file(output).bytes();
           expect(bytes.length).toBe(byteLength);
@@ -96,12 +96,12 @@ for (const { name, root, release, documents: saved, templates } of entries)
         }
         const golden = await readJSON<ExportGolden>(join(root, "exports", document + ".json"));
         assert.ok(golden, `${document}: missing export goldens`);
-        const info = await slopJSON(["inspect", copy]);
+        const info = await tinyJSON(["inspect", copy]);
         const window = info.window;
         assert.ok(window?.width > 0 && window?.height > 0, "Missing saved window");
         for (const format of ["png", "pdf"] as const) {
           const output = join(scratch, `${name}-${document}.${format}`);
-          const { code, stderr } = await slop([
+          const { code, stderr } = await tiny([
             "export",
             copy,
             "--format",
@@ -195,8 +195,8 @@ for (const { name, root, release, documents: saved, templates } of entries)
         const scenario = await readJSON<Scenario>(join(root, "scenarios", document + ".json"));
         assert.ok(scenario, `${document}: missing CLI scenario`);
         await fresh();
-        await slopJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
-        expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(scenario.value);
+        await tinyJSON(["batch", copy, "--ops", JSON.stringify(scenario.ops)]);
+        expect((await tinyJSON(["get", copy, "--snapshot"])).value).toEqual(scenario.value);
         expect((await savedState(copy)).attachments).toEqual(expected.attachments);
 
         const themes = await readJSON<ThemeScenario>(join(root, "themes", document + ".json"));
@@ -206,8 +206,8 @@ for (const { name, root, release, documents: saved, templates } of entries)
           const args = step.values
             ? ["theme", "set", copy, "--values", JSON.stringify(step.values)]
             : ["theme", "reset", copy, "--token", step.reset!];
-          await slopJSON(args);
-          const theme = await slopJSON(["theme", "get", copy]);
+          await tinyJSON(args);
+          const theme = await tinyJSON(["theme", "get", copy]);
           expect({ overrides: theme.overrides, effective: theme.effective }).toEqual(step.state);
         }
 
@@ -230,15 +230,15 @@ for (const { name, root, release, documents: saved, templates } of entries)
               "Missing command probe channel",
             );
             await fresh();
-            const state = await slopJSON(["get", copy, "--snapshot"]);
+            const state = await tinyJSON(["get", copy, "--snapshot"]);
             if (probe.channel === "evaluate") {
               const evaluated = await evaluateStored(copy, state, probe);
               expect(evaluated).toEqual(probe.evaluated);
               if (evaluated.ok && evaluated.intents.length)
-                await slopJSON(["batch", copy, "--ops", JSON.stringify(evaluated.intents)]);
-              expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(probe.value);
+                await tinyJSON(["batch", copy, "--ops", JSON.stringify(evaluated.intents)]);
+              expect((await tinyJSON(["get", copy, "--snapshot"])).value).toEqual(probe.value);
               if (!evaluated.ok)
-                expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
+                expect((await tinyJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
             }
             // The actual owner prepares defaults, rejects bad args and admits intents.
             await fresh();
@@ -252,9 +252,9 @@ for (const { name, root, release, documents: saved, templates } of entries)
               if (probe.expected.refused) expect(called.reason).toBe("refused");
               if (probe.expected.errorIncludes)
                 expect(called.error).toContain(probe.expected.errorIncludes);
-              expect((await slopJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
+              expect((await tinyJSON(["get", copy, "--snapshot"])).value).toEqual(state.value);
             } else {
-              const value = (await slopJSON(["get", copy, "--snapshot"])).value;
+              const value = (await tinyJSON(["get", copy, "--snapshot"])).value;
               if (probe.name === "bump") {
                 expect(value.hits).toBe(state.value.hits + 2);
                 expect(value.lastHit).toBe(state.value.hits + 2);
@@ -287,9 +287,9 @@ for (const { name, root, release, documents: saved, templates } of entries)
         await rm(output, { force: true });
         await createDocument(join(root, "templates", file), output, { engine: documentEngine() });
         const initial = await readJSON(
-          join(root, "expected", `new-${file.slice(0, -".slop".length)}.json`),
+          join(root, "expected", `new-${file.slice(0, -".tiny".length)}.json`),
         );
         assert.notEqual(initial, undefined, `${file}: missing initial state`);
-        expect((await slopJSON(["get", output, "--snapshot"])).value).toEqual(initial);
+        expect((await tinyJSON(["get", output, "--snapshot"])).value).toEqual(initial);
       }, 120_000);
   });

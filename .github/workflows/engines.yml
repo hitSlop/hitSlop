@@ -1,5 +1,5 @@
 name: Engines
-# The file engine (`crates/slop-engine`) for every platform the published CLI supports. A
+# The file engine (`crates/tiny-engine`) for every platform the published CLI supports. A
 # release downloads these artifacts into `generated/engines/` before capturing its
 # compatibility entry, which packs the npm packages (docs/guides/releasing.md).
 # Run it on the release candidate's commit, before the capture.
@@ -46,14 +46,14 @@ jobs:
           key: engine-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ matrix.features || 'default' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'Cargo.toml', 'scripts/build/core.ts') }}-${{ hashFiles('crates/**') }}
           restore-keys: engine-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ matrix.features || 'default' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'Cargo.toml', 'scripts/build/core.ts') }}-
       # The engine's own tests run on the binary this runner built, in the profile that ships.
-      - run: cargo test --locked --profile dist -p slop-engine --target ${{ matrix.target }} $FEATURES
-      - run: cargo build --locked --profile dist -p slop-engine --target ${{ matrix.target }} $FEATURES
+      - run: cargo test --locked --profile dist -p tiny-engine --target ${{ matrix.target }} $FEATURES
+      - run: cargo build --locked --profile dist -p tiny-engine --target ${{ matrix.target }} $FEATURES
       # engine.json records what the binary was built from; packing refuses an engine
       # from another commit or core (scripts/build/packages.ts).
       - run: |
           mkdir -p engines/${{ matrix.platform }}
-          cp target/${{ matrix.target }}/dist/slop-engine engines/${{ matrix.platform }}/
-          build_id=$(engines/${{ matrix.platform }}/slop-engine --build-id)
+          cp target/${{ matrix.target }}/dist/tiny-engine engines/${{ matrix.platform }}/
+          build_id=$(engines/${{ matrix.platform }}/tiny-engine --build-id)
           printf '{"commit":"%s","buildId":"%s"}\n' "$GITHUB_SHA" "$build_id" > engines/${{ matrix.platform }}/engine.json
           cat engines/${{ matrix.platform }}/engine.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

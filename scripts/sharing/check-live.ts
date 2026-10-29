@@ -8,20 +8,20 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type BrowserContext, type Page } from "playwright";
 import { Database } from "bun:sqlite";
-import { buildTemplate } from "../../packages/hitslop/src/cli/template";
-import { execute } from "../../packages/hitslop/src/cli/engine";
+import { buildTemplate } from "../../packages/tinys/src/cli/template";
+import { execute } from "../../packages/tinys/src/cli/engine";
 import { repository } from "../lib/artifacts";
-import { SharingHost } from "../../packages/hitslop/src/wire/constants.generated";
-import type { Batch } from "../../packages/hitslop/src/wire/core.generated";
+import { SharingHost } from "../../packages/tinys/src/wire/constants.generated";
+import type { Batch } from "../../packages/tinys/src/wire/core.generated";
 
-const root=join(repository,".hitslop/sharing",`check-${crypto.randomUUID()}`);
+const root=join(repository,".tinys/sharing",`check-${crypto.randomUUID()}`);
 await mkdir(root,{recursive:true,mode:0o700});
 const checks:string[]=[];
 const note=(value:string)=>{checks.push(value);console.log(value);};
 const report=join(root,"report.json");
-const template=await buildTemplate(join(repository,"tests/apps/sharing"),join(root,"fixture.slop"),{renderViews:false});
-const invitationFile=process.env.HITSLOP_SHARING_INVITATION_FILE;
-const child=spawn(join(repository,"target/debug/examples/sharing"),[template,root,invitationFile ?? process.env.HITSLOP_SHARING_TOKEN_FILE ?? join(repository,".hitslop/sharing/identity-token"),...(invitationFile?["--guest"]:[])],{stdio:["pipe","pipe","pipe"]});
+const template=await buildTemplate(join(repository,"tests/apps/sharing"),join(root,"fixture.tiny"),{renderViews:false});
+const invitationFile=process.env.TINYS_SHARING_INVITATION_FILE;
+const child=spawn(join(repository,"target/debug/examples/sharing"),[template,root,invitationFile ?? process.env.TINYS_SHARING_TOKEN_FILE ?? join(repository,".tinys/sharing/identity-token"),...(invitationFile?["--guest"]:[])],{stdio:["pipe","pipe","pipe"]});
 let failure="";child.stderr.on("data",bytes=>{failure+=String(bytes);});
 const messages:any[]=[];let waiting:((value:any)=>void)|undefined;
 createInterface({input:child.stdout}).on("line",line=>{const value=JSON.parse(line);if(waiting){const next=waiting;waiting=undefined;next(value);}else messages.push(value);});
@@ -51,8 +51,8 @@ async function restrict(page:Page,context:BrowserContext){
 let contexts:BrowserContext[]=[];
 let stopped=false;
 try {
-  const lookup="https://share.hitslop.com/v1/account/rooms/00000000-0000-4000-8000-000000000000";
-  const unknownKey=[{alg:"RS256",kid:"hitslop-deliberately-unknown-test-key"},{sub:"test-user"}].map(part=>Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")+"."+Buffer.alloc(256).toString("base64url");
+  const lookup="https://share.tinys.click/v1/account/rooms/00000000-0000-4000-8000-000000000000";
+  const unknownKey=[{alg:"RS256",kid:"tinys-deliberately-unknown-test-key"},{sub:"test-user"}].map(part=>Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")+"."+Buffer.alloc(256).toString("base64url");
   for(const token of [undefined,"malformed",unknownKey]) {
     const response=await fetch(lookup,{headers:token?{Authorization:"Bearer "+token}:{}});
     assert.equal(response.status,401,"Account lookup must refuse absent or untrusted identities");
@@ -100,7 +100,7 @@ try {
   const second=await openProfile("chrome-b");contexts.push(second);const late=await second.newPage();await restrict(late,second);await late.goto(invitation);
   await late.frameLocator("iframe").getByText(native,{exact:true}).waitFor({timeout:45_000});
   const otherFrame=late.frames().find(frame=>frame.url().includes("."+SharingHost.domain))!;
-  const cookie=await first.cookies(frame.url());const resourceCookie=cookie.find(cookie=>cookie.name==="__Host-slop-resource");assert(resourceCookie);
+  const cookie=await first.cookies(frame.url());const resourceCookie=cookie.find(cookie=>cookie.name==="__Host-tiny-resource");assert(resourceCookie);
   assert.equal((await fetch(otherFrame.url()+"assets/ui.js",{headers:{Cookie:`${resourceCookie.name}=${resourceCookie.value}`}})).status,403);
   note("A late browser joins the canonical document; a sibling host cannot reuse its resource cookie");
   await page.reload();
@@ -128,13 +128,13 @@ try {
   await first.unroute("**/rooms/*/blob/*");
   note("An interrupted receive fences queued CaughtUp; reconnect installs the verified image before publishing its reference");
   await page.evaluate(async()=>{
-    const root=await navigator.storage.getDirectory();const file=await root.getFileHandle("sharing-download.slop",{create:true});
+    const root=await navigator.storage.getDirectory();const file=await root.getFileHandle("sharing-download.tiny",{create:true});
     (window as any).__download=file;(window as any).showSaveFilePicker=async()=>file;
   });
-  await page.getByRole("button",{name:"Download .slop",exact:true}).click();
-  await until(async()=>page.getByRole("button",{name:"Download .slop",exact:true}).isEnabled(),"Download did not finish");
+  await page.getByRole("button",{name:"Download .tiny",exact:true}).click();
+  await until(async()=>page.getByRole("button",{name:"Download .tiny",exact:true}).isEnabled(),"Download did not finish");
   const bytes=await page.evaluate(async()=>Array.from(new Uint8Array(await (await (window as any).__download.getFile()).arrayBuffer())));
-  const download=join(root,"browser-download.slop");await writeFile(download,Buffer.from(bytes));
+  const download=join(root,"browser-download.tiny");await writeFile(download,Buffer.from(bytes));
   const db=new Database(download,{readonly:true});
   try{assert.equal((db.query("SELECT uuid FROM document").get() as {uuid:string}).uuid,ready.document);}finally{db.close();}
   const opened=await execute({method:"get",documentPath:download});assert(opened.ok);
@@ -172,13 +172,13 @@ try {
   await reopened.frameLocator("iframe").getByRole("button",{name:"Add row",exact:true}).click();
   await reopened.frameLocator("iframe").getByText("Local after stop",{exact:true}).waitFor();
   await reopened.evaluate(async()=>{
-    const storage=await navigator.storage.getDirectory();const file=await storage.getFileHandle("ended-download.slop",{create:true});
+    const storage=await navigator.storage.getDirectory();const file=await storage.getFileHandle("ended-download.tiny",{create:true});
     (window as any).__download=file;(window as any).showSaveFilePicker=async()=>file;
   });
-  await reopened.getByRole("button",{name:"Download .slop",exact:true}).click();
-  await until(async()=>reopened.getByRole("button",{name:"Download .slop",exact:true}).isEnabled(),"Ended copy download did not finish");
+  await reopened.getByRole("button",{name:"Download .tiny",exact:true}).click();
+  await until(async()=>reopened.getByRole("button",{name:"Download .tiny",exact:true}).isEnabled(),"Ended copy download did not finish");
   const endedBytes=await reopened.evaluate(async()=>Array.from(new Uint8Array(await (await (window as any).__download.getFile()).arrayBuffer())));
-  const endedDownload=join(root,"ended-download.slop");await writeFile(endedDownload,Buffer.from(endedBytes));
+  const endedDownload=join(root,"ended-download.tiny");await writeFile(endedDownload,Buffer.from(endedBytes));
   const endedCopy=await execute({method:"get",documentPath:endedDownload});assert(endedCopy.ok);
   assert((endedCopy.state.value as {rows:{text:string}[]}).rows.some(row=>row.text==="Local after stop"));
   assert.equal(stoppedSessions,0);assert.equal(stoppedSockets,0);
@@ -187,13 +187,13 @@ try {
   const refused=await refusedContext.newPage();await refused.goto(invitation);
   await refused.locator('#status[role="alert"]').waitFor();
   assert((await refused.locator("#status").textContent())?.includes("410"));
-  assert(await refused.getByRole("button",{name:"Download .slop",exact:true}).isDisabled());
+  assert(await refused.getByRole("button",{name:"Download .tiny",exact:true}).isDisabled());
   assert.equal(await refused.locator("iframe").count(),0);
   note("A fresh browser still refuses an ended invitation");
   await writeFile(report,JSON.stringify({passed:true,checks,document:ready.document,copy,chrome:restored.browser()?.version()},null,2));
   console.log("Sharing checks passed; report: "+report);
 } catch(error) {
-  const message=String(error).replace(/https:\/\/share\.hitslop\.com\/join#[a-f0-9]+\.[a-f0-9]+/g,"[private invitation]");
+  const message=String(error).replace(/https:\/\/share\.tinys\.com\/join#[a-f0-9]+\.[a-f0-9]+/g,"[private invitation]");
   await writeFile(report,JSON.stringify({passed:false,checks,error:message},null,2));
   console.error(message);process.exitCode=1;
 } finally {

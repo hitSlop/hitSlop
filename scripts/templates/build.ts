@@ -1,17 +1,17 @@
 import { repository } from "../lib/artifacts";
-import { buildTemplate } from "../../packages/hitslop/src/cli/template";
+import { buildTemplate } from "../../packages/tinys/src/cli/template";
 import { join, resolve, relative } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { discoverTemplates, templateInventory } from "./discover";
 import { sharedTemplateInputs, TemplateCache } from "./cache";
 import { publishFolder } from "../lib/artifacts";
 
-/** The template cache (`HITSLOP_TEMPLATE_CACHE_DIR`, or `.hitslop/template-cache`), keyed by
+/** The template cache (`TINYS_TEMPLATE_CACHE_DIR`, or `.tinys/template-cache`), keyed by
  * what every build reads; `folder` keeps a separate set of entries there. */
 export async function templateCache(folder = "", includeExamples = true) {
   const discovered = includeExamples ? await discoverTemplates() : [];
   return new TemplateCache(
-    join(resolve(process.env.HITSLOP_TEMPLATE_CACHE_DIR ?? join(repository, ".hitslop/template-cache")), folder),
+    join(resolve(process.env.TINYS_TEMPLATE_CACHE_DIR ?? join(repository, ".tinys/template-cache")), folder),
     await sharedTemplateInputs(
       repository,
       discovered.map((template) => relative(repository, template.source)),
@@ -37,10 +37,10 @@ export async function buildTemplates(output = join(repository, "generated/templa
   await publishFolder(output, async (stage) => {
     for (const [index, template] of templates.entries()) {
       const start = performance.now();
-      const destination = join(stage, template.slug + ".slop");
+      const destination = join(stage, template.slug + ".tiny");
       // Discovery names a repository template by its folder; the app declares its own slug.
       const named = (slug: string) => {
-        if (slug !== template.slug) throw new Error(`slops/${template.slug} declares slug "${slug}"; rename the folder or the slug`);
+        if (slug !== template.slug) throw new Error(`tinys/${template.slug} declares slug "${slug}"; rename the folder or the slug`);
         return destination;
       };
       const build = () => buildTemplate(template.source, named);
@@ -64,7 +64,7 @@ export async function buildTemplates(output = join(repository, "generated/templa
     `Templates: ${hits} cache hits, ${templates.length - hits} built in ${seconds.toFixed(1)}s`,
   );
   // Cross-run reuse is only proven by recorded hits, so retain the report with CI evidence.
-  const evidence = join(repository, ".hitslop/evidence");
+  const evidence = join(repository, ".tinys/evidence");
   await mkdir(evidence, { recursive: true });
   await writeFile(
     join(evidence, `template-cache-${slugs ? "fixtures" : "templates"}.json`),

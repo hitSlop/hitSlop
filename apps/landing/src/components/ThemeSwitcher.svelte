@@ -20,9 +20,9 @@
 
   const presets: ThemePreset[] = [
     {
-      label: "Grape Soda", description: "hitSlop’s own purple", surface: "#b99cff", paper: "#fbf9ff",
+      label: "Grape Soda", description: "tinys’s own purple", surface: "#b99cff", paper: "#fbf9ff",
       ink: "#1d1340", muted: "#6b5f8f", accent: "#6c16ed", onAccent: "#ffffff", rule: "#e6dcfb",
-      control: "#ede4ff", highlight: "#ffd84a", heading: '"HitSlop Display", "Avenir Next", sans-serif', site: ["#6c16ed", "#f443a1"],
+      control: "#ede4ff", highlight: "#ffd84a", heading: '"Tinys Display", "Avenir Next", sans-serif', site: ["#6c16ed", "#f443a1"],
     },
     {
       label: "Peach Paper", description: "Warm and softly printed", surface: "#e98996", paper: "#fff9f3",
@@ -50,11 +50,11 @@
     root.setProperty("--accent", accent);
     root.setProperty("--accent-2", accent2);
     root.setProperty("--accent-soft", `color-mix(in oklch, ${accent}, white 88%)`);
-    try { index ? localStorage.setItem("hitslop:palette", String(index)) : localStorage.removeItem("hitslop:palette"); } catch {}
+    try { index ? localStorage.setItem("tinys:palette", String(index)) : localStorage.removeItem("tinys:palette"); } catch {}
   }
   onMount(() => {
     let stored = 0;
-    try { stored = Number(localStorage.getItem("hitslop:palette") ?? 0); } catch {}
+    try { stored = Number(localStorage.getItem("tinys:palette") ?? 0); } catch {}
     if (stored > 0 && stored < presets.length) pick(stored);
   });
   const active = $derived(presets[selected] ?? presets[0]!);
@@ -111,7 +111,7 @@
 
   <div class="theme-file">
     <small>Example: change Checklist’s accent</small>
-    <code>{`slop theme set Today.slop --values '{"accent":"${active.accent}"}'`}</code>
+    <code>{`tiny theme set Today.tiny --values '{"accent":"${active.accent}"}'`}</code>
     <details><summary>Response · accent excerpt</summary><pre><code>{accentResponse}</code></pre></details>
   </div>
   <p class="sr-only" aria-live="polite">{active.label} theme selected.</p>

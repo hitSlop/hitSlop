@@ -3,14 +3,14 @@
  * repository's own TypeScript is checked with. Discovery keeps archived examples out. */
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { exec } from "../../packages/hitslop/src/cli/process";
+import { exec } from "../../packages/tinys/src/cli/process";
 import { repository } from "../lib/artifacts";
 import { discoverTemplates } from "./discover";
 
 const templates = await discoverTemplates();
-const fixtureSources = [...new Bun.Glob("tests/apps/*/slop.ts").scanSync(repository)].map(file => join(repository, dirname(file)));
-const standard = await Bun.file(join(repository, "packages/hitslop/tsconfig.slop.json")).json();
-const sdk = join(repository, "packages/hitslop/src/sdk");
+const fixtureSources = [...new Bun.Glob("tests/apps/*/tiny.ts").scanSync(repository)].map(file => join(repository, dirname(file)));
+const standard = await Bun.file(join(repository, "packages/tinys/tsconfig.tiny.json")).json();
+const sdk = join(repository, "packages/tinys/src/sdk");
 const temporary = await mkdtemp(join(repository, ".build-test-check-"));
 /** svelte-check over `workspace`, with `config` written beside the checkout's node_modules. */
 async function svelteCheck(workspace: string, name: string, config: object) {
@@ -22,7 +22,7 @@ async function svelteCheck(workspace: string, name: string, config: object) {
 }
 try {
   if (templates.length || fixtureSources.length)
-    await svelteCheck(join(repository, "slops"), "tsconfig.json", {
+    await svelteCheck(join(repository, "tinys"), "tsconfig.json", {
       compilerOptions: standard.compilerOptions,
       include: [...templates.map(({ source }) => source), ...fixtureSources].flatMap(source => [join(source, "**/*.svelte"), join(source, "**/*.ts")]),
       exclude: [join(repository, "**/node_modules/**"), join(repository, "**/dist/**")],

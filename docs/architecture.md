@@ -1,7 +1,7 @@
 # Architecture
 
-hitSlop documents are local files (`.slop`): one SQLite database that pairs an immutable
-authored app with a structured document. One Rust core, `hitslop-core` on Loro, owns
+tinys documents are local files (`.tiny`): one SQLite database that pairs an immutable
+authored app with a structured document. One Rust core, `tinys-core` on Loro, owns
 document semantics, durable storage and the live owner: the file, writer lock, edit queue
 and save scheduler, and it answers the page's document requests. Swift `DocumentOwner`
 passes them through, answers the window's own, and delivers owner events to the page;
@@ -11,12 +11,12 @@ Loro bytes never reach Swift. The WebView renders immutable snapshots and holds 
 page (WebKit) ── requests ──▶ Swift DocumentOwner façade ──▶ Rust owner (edit worker)
               ◀──────────── ordered publications ─────────────────────┤
                                                                      ▼
-                                                        persistence worker ──▶ .slop
+                                                        persistence worker ──▶ .tiny
 
-slop ── slop-engine ── Rust command router ──▶ same Rust owner
+tiny ── tiny-engine ── Rust command router ──▶ same Rust owner
                          live: owner's socket; closed: acquire writer lock
                      ├── closed export, a build's artwork ──▶ restricted evaluator renders
-                     └── open ──▶ LaunchServices ──▶ hitSlop.app
+                     └── open ──▶ LaunchServices ──▶ tinys.app
 ```
 
 Descriptor kinds: text (merging); boolean, string, number, integer and enum (last
@@ -26,7 +26,7 @@ by key; and counter. [Document types](reference/document-types.md) describes eac
 kind's snapshot, merge, write rules, handles and CLI paths.
 
 The same core compiles to WASM for SDK tests and the local Chrome browser beta.
-`slop open --browser file.slop` asks the native owner for a clean snapshot, then imports
+`tiny open --browser file.tiny` asks the native owner for a clean snapshot, then imports
 it into an independent OPFS copy. A dedicated worker runs the shared Rust owner, Loro
 and SQLite; disposable QuickJS workers evaluate named commands and return intents.
 The trusted host stays on `127.0.0.1:41238`; authored apps run in per-copy
@@ -38,35 +38,35 @@ uses bounded chunks, incremental attachment verification and a bounded decoded c
 Safari and mobile browser support are deferred. Hosted sharing uses the live
 collaboration service described under [Sync](#sync).
 
-`slop dev` uses a temporary `.slop`
+`tiny dev` uses a temporary `.tiny`
 document and a native owner per page; Vite supplies modules and HMR. UI edits retain that
 owner, while a changed declaration invalidates it and creates a fresh preview. Linux
 preview qualification is deferred.
 
 Here "native owner" means the compiled Rust engine, not a native window. The browser
 renders the development page; Vite forwards its WebSocket messages as newline JSON to
-`slop-engine --preview-owner` over pipes. The Rust transport never blocks an owner
+`tiny-engine --preview-owner` over pipes. The Rust transport never blocks an owner
 callback on its output. A full output queue or a stalled reader fails the disposable
 session, fences the page and attempts a bounded close; the browser must reload rather
 than replay an edit with an unknown outcome.
 
-The typed TypeScript CLI invokes `slop-engine` as a separate process, once per request,
+The typed TypeScript CLI invokes `tiny-engine` as a separate process, once per request,
 and gets structured JSON back. On macOS and Linux, a closed document's export and the artwork a
 build packs render inside the engine, in its restricted evaluator, with no app involved;
 an open document's export routes through the Rust command router to its live owner.
-`open` is the one request that starts hitSlop.app: the engine asks LaunchServices to open
+`open` is the one request that starts tinys.app: the engine asks LaunchServices to open
 the document in it. `open` refuses a template, a link and any file that is not a regular file;
 a linked parent folder is fine. The restricted command evaluator's short execution budget is
 separate from capture budgets.
 
-Authors put metadata in `slop.ts`, shape and initial values in `schema.ts`, and the editor
+Authors put metadata in `tiny.ts`, shape and initial values in `schema.ts`, and the editor
 in `App.svelte`. Required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte`, `Widget.svelte` and agent-only `commands.ts` have
 fixed root roles. The UI and definition graphs share resolution: the page imports the
 schema and components, while the definition imports metadata, schema and commands.
 A private capture graph compiles synchronous Svelte SSR for every Preview.svelte,
 Icon.svelte, declared Export.svelte and Widget.svelte role. A capture's CSS is exactly what its own
 Preview/Export/Icon/Widget role imports, in import order, including component CSS.
-Captures no longer inherit the editor's stylesheets; `slop dev` still mounts static
+Captures no longer inherit the editor's stylesheets; `tiny dev` still mounts static
 views inside the editor page. Takumi uses tolerant CSS
 parsing, so unsupported declarations do not refuse a whole shared stylesheet.
 The graphs do not rewrite command bodies or substitute component tokens. The restricted
@@ -104,7 +104,7 @@ native host action. The development preview supplies an already typed request th
 Document JSON remains opaque text through the bridge. TypeBox,
 quicktype, handwritten contract generators and production JSON Schema validators are gone.
 
-Agent commands through `slop call` send a name and arguments to the owner. Rust
+Agent commands through `tiny call` send a name and arguments to the owner. Rust
 validates the argument descriptor, evaluates the private program in a fresh restricted
 child, validates its intents and applies one batch. Evaluation runs off the serial owner.
 A definite stale base retries once with the original clock and seed; an unknown outcome
@@ -129,28 +129,28 @@ remain independent; [compatibility](engineering-contract.md#compatibility) and t
 
 | Layer | Where | Owns |
 |---|---|---|
-| Core | `crates/hitslop-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
-| File | `crates/hitslop-core/src/file/` (feature `storage`, native and browser) | The `.slop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
-| Storage | `crates/hitslop-core/src/store/`, `registry.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
-| Engine | `crates/slop-engine` | Authoring validation and packing, including artwork rendering on macOS and Linux; document creation, inspection and requests; closed PNG/PDF export on both platforms and macOS app opening through `/usr/bin/open -a` |
-| Runner | `crates/hitslop-runner` | Restricted child evaluation of build declarations, stored commands and native image capture; ABI-specific preludes, sandbox and execution limits |
-| Commands and socket | `crates/hitslop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
-| Adapters | `crates/hitslop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
-| Sync | `crates/hitslop-core/src/sync/`, `owner/actor/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
-| Owner | `crates/hitslop-core/src/owner/` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
-| Session | `HitSlopDocument/DocumentSession.swift` | WebView, the `hitslop` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
-| Window | `HitSlopHost/SlopWindow.swift`, `SlopDocumentAttention.swift`, `PageFailureNotice.swift` | How a document looks: shape, toolbar, pin level, theme panel, failure screen (Reopen, Copy details, Get help) and the save-failure sheet (from the owner's save status); its document operations go to the app |
+| Core | `crates/tinys-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
+| File | `crates/tinys-core/src/file/` (feature `storage`, native and browser) | The `.tiny` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
+| Storage | `crates/tinys-core/src/store/`, `registry.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
+| Engine | `crates/tiny-engine` | Authoring validation and packing, including artwork rendering on macOS and Linux; document creation, inspection and requests; closed PNG/PDF export on both platforms and macOS app opening through `/usr/bin/open -a` |
+| Runner | `crates/tinys-runner` | Restricted child evaluation of build declarations, stored commands and native image capture; ABI-specific preludes, sandbox and execution limits |
+| Commands and socket | `crates/tinys-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
+| Adapters | `crates/tinys-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
+| Sync | `crates/tinys-core/src/sync/`, `owner/actor/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
+| Owner | `crates/tinys-core/src/owner/` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
+| Session | `TinysDocument/DocumentSession.swift` | WebView, the `tinys` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
+| Window | `TinysHost/TinyWindow.swift`, `TinyDocumentAttention.swift`, `PageFailureNotice.swift` | How a document looks: shape, toolbar, pin level, theme panel, failure screen (Reopen, Copy details, Get help) and the save-failure sheet (from the owner's save status); its document operations go to the app |
 | Quick Look | `apps/apple/App/QuickLook{Thumbnail,Preview}` | Finder, Mail and share-sheet thumbnails and previews from the file's artwork, read through the core in a sandbox |
-| App | `HitSlopFeatures` (`AppModel`, `CommandQueue`, `CatalogModel`), `HitSlopCatalog/SlopApplicationCoordinator.swift` | Opening, one document operation at a time per document (a close or a save recovery requested meanwhile runs next), quit, the catalog, and alerts for failures that are not save failures |
-| Author SDK | `packages/hitslop/src/sdk` | Descriptors, public types, errors, Svelte adapter; no host runtime |
-| Page shell | `packages/hitslop/src/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
-| Contracts | `crates/hitslop-core/src/wire` and `packages/hitslop/src/schema` | Rust owns wire and app types and shared limits; ts-rs exports TypeScript and UniFFI carries native types |
+| App | `TinysFeatures` (`AppModel`, `CommandQueue`, `CatalogModel`), `TinysCatalog/TinyApplicationCoordinator.swift` | Opening, one document operation at a time per document (a close or a save recovery requested meanwhile runs next), quit, the catalog, and alerts for failures that are not save failures |
+| Author SDK | `packages/tinys/src/sdk` | Descriptors, public types, errors, Svelte adapter; no host runtime |
+| Page shell | `packages/tinys/src/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
+| Contracts | `crates/tinys-core/src/wire` and `packages/tinys/src/schema` | Rust owns wire and app types and shared limits; ts-rs exports TypeScript and UniFFI carries native types |
 
 The window's failure screen (Reopen, Copy details, Get help) and the save-failure sheet
-are presented by `SlopDocumentAttention.swift` and `PageFailureNotice.swift`. Native
+are presented by `TinyDocumentAttention.swift` and `PageFailureNotice.swift`. Native
 host-to-page calls (publish, reload, flush, undo/redo, prepareClose, cancelClose and every
 capture's acquisition) have a 15 s deadline. On expiry the session takes the renderer-death
-path with its own unresponsive reason and ends the page's process: the screen says the slop
+path with its own unresponsive reason and ends the page's process: the screen says the tiny
 stopped responding, accepted edits are kept, and the save sheet stays. Reopen recovers the
 interface.
 
@@ -265,10 +265,10 @@ its operations from the live Loro document.
   other. Nothing to undo publishes nothing.
 - **Window.** The document window's `NSUndoManager` (`DocumentUndoManager`) reports
   whether undo and redo are available and sends them to the page, which first sends
-  unsent text, queued writes and previews (`__slop.undo`, `doc.undo()`), then asks the
+  unsent text, queued writes and previews (`__tiny.undo`, `doc.undo()`), then asks the
   owner. WebKit's own text-editing undo still registers there, as AppKit's grouping
   requires, but is never performed. Without a live page the owner undoes directly.
-- **Browser.** In `slop dev`, a text field's own undo (`beforeinput` `historyUndo`) is
+- **Browser.** In `tiny dev`, a text field's own undo (`beforeinput` `historyUndo`) is
   replaced by the document's.
 
 ## Saving
@@ -314,7 +314,7 @@ The SQLite schema has seven tables:
 
 The schema check is exact. A new table or column requires a storage version bump and a
 lazy migration under the writer lock. An older build refuses that file with
-`requires_update` (“update hitSlop”) before comparing its tables. Optional additions
+`requires_update` (“update tinys”) before comparing its tables. Optional additions
 that need no bump live in open surfaces: definition JSON members, Loro containers and
 artwork rows. [App identity](engineering-contract.md#app-identity) uses a fixed encoding
 of the sealed app and assets.
@@ -331,9 +331,9 @@ A history that does not start with a snapshot is refused and preserved for recov
 Saving prefers a checkpoint (one snapshot replacing the saved log) once the log reaches
 256 saved updates or 4 MiB of update bytes. A regular snapshot retains history; a shallow
 snapshot discards history before its starting version. The limits are 4,096 saved updates
-and 32 MiB of saved Loro checkpoint and update bytes, not the whole `.slop` file: the app,
+and 32 MiB of saved Loro checkpoint and update bytes, not the whole `.tiny` file: the app,
 attachments and artwork are separate. Shared storage limits are defined in
-[`wire/limits.rs`](../crates/hitslop-core/src/wire/limits.rs) and projected into host types.
+[`wire/limits.rs`](../crates/tinys-core/src/wire/limits.rs) and projected into host types.
 
 Unshared documents need no lifetime edit history: undo covers the open session only.
 After its final save, a session that saved an edit or stored an attachment to an unshared
@@ -352,7 +352,7 @@ compaction is separate), and there is no public live-compaction command. Only
 the checkpoint may start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
-loads, and the core is the only code that opens a `.slop` file.
+loads, and the core is the only code that opens a `.tiny` file.
 
 Live commits record timestamps and the messages `page`, `agent`, `command:{name}`,
 `window`, `undo`, `redo` and `create`. Template
@@ -364,13 +364,13 @@ describe origins; they are neither unique request IDs nor a durable audit log.
 A template holds an app; a document holds an app and its saved state. Creating a
 document copies a template and adds its identity and initial Loro checkpoint in one
 transaction; nothing is ever unpacked. The core decides where a document may live, for
-the app and the engine alike: opening one for writing needs a `.slop` name outside iCloud
+the app and the engine alike: opening one for writing needs a `.tiny` name outside iCloud
 Drive, and creating or copying one also refuses the installed and bundled templates
 (`file::document_location`, `file::document_destination`). The regular-file, no-link-leaf
 rule has one owner in the core (`file::existing` / `registry::regular`), used by every
 document request, `open` included. Swift adds only what
 Foundation alone can tell, a folder iCloud syncs such as Desktop and Documents. The writer
-lock is an `flock` on a registry file outside the document (`~/.hitslop/live`, named by
+lock is an `flock` on a registry file outside the document (`~/.tinys/live`, named by
 the file's device and inode), never on the database: closing any second descriptor on a
 SQLite file drops SQLite's own locks. The lock holder publishes discovery beside it and
 removes a crashed owner's. A rename stops the writer (`Moved`): SQLite names its journal
@@ -378,20 +378,20 @@ after the path, and Apple's SQLite never writes again through a connection whose
 was renamed. When the file is back where it was opened, the store reconnects and saves.
 
 Native save panels default to the last usable local folder, else Desktop when it is
-local, else `~/hitSlop`. Opening a document that lives in iCloud offers "Move to ~/hitSlop
+local, else `~/tinys`. Opening a document that lives in iCloud offers "Move to ~/tinys
 and Open": the core copies it through coordinated access into a fresh name with the same
 identity and retained history, validates the copy, and only then moves the original to the
 Trash. If cleanup fails, both files are kept and the app says where the local one is.
 Devices share a person's own documents through the [Apple library](#synced-library),
 not through synced folders.
 
-The native Share popover offers PDF, PNG image and editable slop-file copies before
+The native Share popover offers PDF, PNG image and editable tiny-file copies before
 opening the macOS sharing picker. Opening the chooser creates no output; selecting a
 format runs through the document command queue. PDF and PNG use the saved-state export
 renderer. **Live collaboration** in that popover creates an edit link through the
 service described under [Sync](#sync).
 
-Duplicate and Share Slop File drain page edits and acquire a temporary clean copy of
+Duplicate and Share Tiny File drain page edits and acquire a temporary clean copy of
 accepted live state through the owner, even if saving the source history returns Full.
 Both artwork and the new document come from that source, so
 edits accepted while rendering cannot make the preview disagree with the copy. After
@@ -406,7 +406,7 @@ once and deleted. Share staging lives until the sharing picker is cancelled or t
 selected service finishes, independently of the originating window. A window writes the file's
 artwork as it closes ([close](#close-export-and-capture)). Finder, Mail and the share sheet
 show it through the app's Quick Look extensions, which read the file's artwork read-only;
-a file without artwork shows the `.slop` document icon.
+a file without artwork shows the `.tiny` document icon.
 
 ## Close, export and capture
 
@@ -422,7 +422,7 @@ SQLite after the page drain (within the page-call deadline) and save; a page tha
 not answer counts as a dead renderer. The temporary copy owns its app, attachments,
 data and theme independently of the editor's lifetime. No read transaction spans
 rendering. Icons, preview artwork, widgets, PNG exports and vector PDFs use synchronous Svelte SSR
-and Takumi in the restricted Rust child; there is no renderer choice, fallback or `slop.ts`
+and Takumi in the restricted Rust child; there is no renderer choice, fallback or `tiny.ts`
 override. The interactive editor continues to use WebKit.
 `Preview.svelte` and `Icon.svelte` are required when authoring; `Export.svelte` is optional.
 Preview supplies a compact overview for Quick Look and the catalog. Export supplies complete
@@ -453,7 +453,7 @@ PNG and PDF share layout, fonts and resources. PDF is one content-sized vector p
 with selectable text and uniform scaling to 14,400 points per side through upstream viewport DPR.
 Takumi and its experimental PDF crate use one pinned Git revision; no local source fork
 or spike supplies production code. Distribution notices live in
-`crates/hitslop-runner/renderer-licenses`. Capture never changes the open
+`crates/tinys-runner/renderer-licenses`. Capture never changes the open
 editor's focus, selection, scroll, frame or selected tab.
 Source acquisition preserves speech, media access, file selection, downloads and resize
 eligibility. Its native queue still coordinates close, discard, reload and reopen.
@@ -469,7 +469,7 @@ or opened. Artwork and final close continue with the same owner and writer lock.
 catalog initially shows existing artwork and refreshes when new artwork is written.
 Opening that document meanwhile queues one reopen after ownership is released; a failed
 close restores the retained window. Quit waits for these closes and cancels queued reopens.
-Local Instruments signposts in `com.hitslop` / `DocumentClose` separate the barrier,
+Local Instruments signposts in `click.tinys` / `DocumentClose` separate the barrier,
 browser handoff, snapshot, rendering, owner close and artwork announcement, without
 recording document content or paths.
 
@@ -530,7 +530,7 @@ resolution. Renames and same-volume moves refresh the choice's title, source loc
 without replacing its images or capture time, and request a WidgetKit reload even when
 the content fingerprint is unchanged. A cross-volume move drops the choice by design.
 Copies get different choices even when their content matches. A
-`hitslop://widget/<id>` URL resolves the source and routes through the existing document
+`tinys://widget/<id>` URL resolves the source and routes through the existing document
 coordinator, which focuses an open document. Unavailable files report a native error.
 
 `widget.refreshMinutes` requests approximate capture intervals of 15–1440 minutes.
@@ -539,7 +539,7 @@ and serializes due captures using a tolerant background activity. Close captures
 that queue and do not rewrite document artwork when only widget images are missing. It skips missed
 intervals after sleep. Open documents use the owner save/copy barrier; closed ones use
 the read-only snapshot path. Quitting stops captures and file watchers and leaves cached images. WidgetKit
-controls visible reload timing. The `slop dev` composition selector previews all three families with HMR. iOS
+controls visible reload timing. The `tiny dev` composition selector previews all three families with HMR. iOS
 Home Screen widgets use the shared image cache and canvases, keyed by library document id. The phone
 publishes an atomic library index with stored icons for the picker and renders only placed ids,
 on saves, close, library version changes and foreground freshness checks. Taps open the library
@@ -552,10 +552,10 @@ historical [platform spike evidence](evidence/widget-images-2026-10-11.md).
 
 ## CLI
 
-`slop` is the user-facing CLI. Its private engine accepts one Rust-owned `EngineRequest`
+`tiny` is the user-facing CLI. Its private engine accepts one Rust-owned `EngineRequest`
 on bounded standard input and returns one method-specific `EngineReply`. Authoring,
 catalog, inspection, named commands and owner operations share this JSON boundary.
-`crates/hitslop-core/src/wire/engine.rs` defines the serde types and explicit checks;
+`crates/tinys-core/src/wire/engine.rs` defines the serde types and explicit checks;
 ts-rs exports the CLI's TypeScript. The engine renders for itself. `export` of a closed
 document on macOS or Linux draws a read-only snapshot of its saved state in the
 engine's restricted evaluator, without the app or a lock. It refuses a template and an
@@ -566,9 +566,9 @@ macOS and Linux, `pack` renders every declared view from the staged template: Pr
 Icon, Export as PNG and PDF, and all Widget families, even when preview/icon artwork
 is supplied. It stores only the Preview and Icon artwork a project does not supply;
 a failed view render publishes nothing. Only `open` starts
-hitSlop.app (macOS only). `open` refuses a template, a link and any file that is not a regular
+tinys.app (macOS only). `open` refuses a template, a link and any file that is not a regular
 file; a linked parent folder is fine. LaunchServices (`open -a`) opens
-the document in the app that contains the running engine, else the one `HITSLOP_APP`
+the document in the app that contains the running engine, else the one `TINYS_APP`
 names, else `/Applications` or `~/Applications`.
 
 The engine checks the frozen first-position `--client-protocol N` before other
@@ -598,7 +598,7 @@ are detailed in the [CLI reference](guides/cli.md#engine-discovery-and-identity)
 
 ## Themes and attachments
 
-A theme is a palette: the app's theme defaults (`slop.ts`'s `theme`, stored in its `app` row)
+A theme is a palette: the app's theme defaults (`tiny.ts`'s `theme`, stored in its `app` row)
 declare the colors a person may change, as lowercase `#rrggbb` or `#rrggbbaa` (one
 spelling per color), and fonts and derived values stay in the app's CSS. The overrides
 live in Loro's root `theme` map, separate from the authored data tree. JSON replacement
@@ -624,7 +624,7 @@ There is no separate host-to-page theme delivery loop.
 Attachments are content-addressed immutable blobs in the file's `attachments` table,
 stored on the owner's persistence queue through its own connection, before the edit
 that references one is accepted. An agent's blobs arrive in the `batch` that references
-them (`slop apply --attach`), so no close falls between a blob and its reference. A blob
+them (`tiny apply --attach`), so no close falls between a blob and its reference. A blob
 is referenced while its ID appears in a string, text or map key of the state
 (`Document::attachment_references`). A close after a session that saved an edit or stored
 a blob deletes the rest, after the final save; undo covers the open session only, so
@@ -637,11 +637,11 @@ history keeps nothing alive.
 The Synced Library keeps managed documents in sync between Mac and iPhone through the
 person's iCloud account. The Mac app includes the library on CloudKit Production. The
 iPhone app supports iOS 26+ in TestFlight; its App Store release remains open. The phone
-opens, edits and creates slops, includes the Popular templates and imports from Files.
+opens, edits and creates tinys, includes the Popular templates and imports from Files.
 
 Managed documents live in account-scoped Application Support. One Swift `LibrarySync`
 actor uses direct CloudKit zone-change, record-fetch and conflict-checked modify operations
-on complete `.slop` assets in the fixed `Library` zone of the private database in
+on complete `.tiny` assets in the fixed `Library` zone of the private database in
 `iCloud.com.hitslop.app`. Debug uses Development; TestFlight, App Store and the Developer ID
 Mac release use Production ([Apple's distribution rule](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitQuickStart/TestingYourApp/TestingYourApp.html)).
 These environments do not share records, and Debug keeps its library state in a separate
@@ -663,7 +663,7 @@ Rust owns library metadata, retained history, writer admission, staging, merging
 the existing owner, and receipts; a receipt requires the incoming history to be present.
 Swift carries file paths and opaque version tokens, never Loro bytes. Both catalogs show
 sync progress, errors and last success; a clean row says synced only after a successful
-check since foregrounding. Unified logs use subsystem `com.hitslop.library` without content.
+check since foregrounding. Unified logs use subsystem `click.tinys.library` without content.
 Ordinary Mac files retain their existing path.
 On iPhone, Recents interleaves local and library documents by their latest opening or
 file change. Opening times are device preferences, never edits to a document. Swipe
@@ -681,11 +681,11 @@ Library sync requires iCloud sign-in, separately from the sharing account. A dif
 account fences the active library and retains the previous account's local files without
 uploading them to the new account. Rust checks the library's stored account identity before
 opening it. Active loose files in iCloud Drive or detected synced folders remain refused;
-the Mac open flow offers **Move to ~/hitSlop and Open**, saving a verified local copy before
+the Mac open flow offers **Move to ~/tinys and Open**, saving a verified local copy before
 trashing the original. If removing the original fails, the local copy opens and the original
 is retained with a warning.
 
-On Mac, creation asks where to keep a slop when the library is ready: iCloud asks for
+On Mac, creation asks where to keep a tiny when the library is ready: iCloud asks for
 its catalog name, independent of fields inside the authored app; On this Mac opens the
 existing folder picker. Without iCloud, creation uses the local picker.
 **Move to iCloud** flushes and closes a local document through its normal close path.
@@ -699,8 +699,8 @@ includes Little Days (`baby-journal`), and leaves out templates that declare cam
 microphone or speech capabilities, which the iPhone host refuses.
 Both catalogs share the app icon and bundled Baloo 2 headings; controls and
 body copy use native fonts. The iPhone editor runs edge to edge: the page extends under
-the status bar and home indicator and pads itself with `--slop-safe-top` and
-`--slop-safe-bottom`, and the keyboard covers the page while the shell reveals fields.
+the status bar and home indicator and pads itself with `--tiny-safe-top` and
+`--tiny-safe-bottom`, and the keyboard covers the page while the shell reveals fields.
 Every iPhone document has a floating native glass actions menu beside its header.
 The shell exposes the corner reservation as live-editor CSS variables. Native edge
 swipes and Back to Library use the normal close path; failed saves retain ownership.
@@ -780,14 +780,14 @@ slot and current-room index, purges payloads and identifiers, and keeps only an 
 tombstone for 30 days (410), then deletes all storage (404). Account deletion need not
 revisit cleaned Ended rooms. Owner routes require an Apple-provider Firebase identity.
 
-An edit link is `https://share.hitslop.com/join#<room>.<capability>`.
+An edit link is `https://share.tinys.click/join#<room>.<capability>`.
 Join fetches document and seed metadata from the room. Owner recovery looks up
 `GET /v1/account/rooms/{document}`, then reads the room with Firebase identity. Guests
 use the capability and need no account. Device-local credentials contain only the link
 and an ended flag; CloudKit never distributes them. Signing out preserves existing
 capability sync, while creation, recovery and Stop require sign-in.
 
-The trusted browser host/storage is `share.hitslop.com`; authored apps run on isolated
+The trusted browser host/storage is `share.tinys.click`; authored apps run on isolated
 UUID subdomains of `dotslop.com`. One browser host uses Service Worker channels for local
 resources and network delivery with host-scoped, partitioned HttpOnly cookies for hosted
 resources. SQLite uses OPFS in the trusted worker; IndexedDB stores the copy catalog.
@@ -798,19 +798,19 @@ Automatic CloudKit checkpoints of relay documents run at most once a minute per 
 manual/background saves bypass the interval.
 
 Mac and iPhone builds enable live collaboration without a launch flag. Mac Release
-entitlements include the sharing Keychain group and the `share.hitslop.com` associated
+entitlements include the sharing Keychain group and the `share.tinys.click` associated
 domain. Developer ID apps cannot use native Sign in with Apple, so Mac sign-in uses
 `ASWebAuthenticationSession` with Services ID `com.hitslop.app.signin`, grouped under
 primary App ID `com.hitslop` alongside the iPhone app. iPhone retains native
 `ASAuthorizationController`; both paths sign in to the same Firebase account. The Mac
-requests no scopes and uses a fragment response at `https://share.hitslop.com/auth/apple`.
-A static page forwards the unchanged fragment to `hitslop://auth/apple`; tokens never
+requests no scopes and uses a fragment response at `https://share.tinys.click/auth/apple`.
+A static page forwards the unchanged fragment to `tinys://auth/apple`; tokens never
 reach the host. Only the active session consumes it, checks its random state and supplies
 the ID token and raw nonce to Firebase. The callback page has a script-hash CSP,
 `no-store` and `no-referrer`.
 The owner signs in with Apple; anyone holding the link can edit in the Mac/iPhone app
 or Chrome. Stop ends the link and every participant keeps a local copy. Browser copies
-are saved in that browser and downloadable as `.slop` files.
+are saved in that browser and downloadable as `.tiny` files.
 
 On Mac, the Share popover contains the **Live collaboration** toggle and **Copy Link**;
 on iPhone, **Collaborate** in document actions opens the shared section. Turning the
@@ -825,7 +825,7 @@ refuses the replacement.
 all indexed rooms and purges their relay resources, deletes the Firebase user, attempts
 Apple token revocation and clears owned link credentials on this device. Failed Apple
 revocation directs the person to Apple Account settings. Participant copies remain.
-Universal links route `/join` on `share.hitslop.com` to installed Mac apps and phone apps;
+Universal links route `/join` on `share.tinys.click` to installed Mac apps and phone apps;
 without the app, the web host offers the browser path, qualified in Chrome. The associated
 domain entitlements and the host's AASA response define that route. The sharing CI workflow
 builds and qualifies the relay and host on `master` and deploys them, checking health and
@@ -851,7 +851,7 @@ AASA, for a release tag or a manual run.
   sending changes the relay has not acknowledged); synced (caught up, and the relay holds
   every change this copy made); or paused, with a reason a person can act on. The
   document's own listener hears only the changes.
-- **Session** (`hitslop_core::sync`, without IO, in memory). A Hello carries the
+- **Session** (`tinys_core::sync`, without IO, in memory). A Hello carries the
   document's version and its app digest (`Store::app_digest`: the whole app row and its
   assets); the relay welcomes with its own version, sends what the copy lacks, then says
   it caught up. After every commit the owner pushes what the relay lacks, one push at a
@@ -861,9 +861,9 @@ AASA, for a release tag or a manual run.
   like an edit; undo keeps them. A change the app refuses pauses sync and leaves the
   document as it was. Changes whose history never arrives wait inside Loro, and pause sync
   once the relay has caught the copy up. Frames wait while a command evaluates.
-- **Wire.** Binary frames (`sync::Frame`). The shipped TestFlight v1 relay contract is
+- **Wire.** Binary frames (`sync::Frame`). The tinys v1 relay contract is
   grow-only: immutable HTTP, link and both binary codec fixtures (frames and socket
-  envelopes in `frames.json`) live in `crates/hitslop-sharing-protocol/tests/fixtures/v1`.
+  envelopes in `frames.json`) live in `crates/tinys-sharing-protocol/tests/fixtures/v1`. Historical hitSlop fixtures remain preserved separately and are not tinys acceptance inputs.
   Breaking changes require `/v2` while `/v1` keeps serving old clients.
 
 Accepted limits, chosen for mini apps over heavier machinery:

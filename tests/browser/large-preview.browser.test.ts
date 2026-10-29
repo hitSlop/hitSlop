@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { webkit } from "playwright";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createFixture } from "../../packages/hitslop/tests/cli/dev-fixture";
-import { startDev } from "../../packages/hitslop/src/cli/dev";
-import { overrideSchema } from "../../packages/hitslop/tests/cli/source-fixture";
+import { createFixture } from "../../packages/tinys/tests/cli/dev-fixture";
+import { startDev } from "../../packages/tinys/src/cli/dev";
+import { overrideSchema } from "../../packages/tinys/tests/cli/source-fixture";
 
 test("4000 rendered rows retain identity through command publications", async () => {
   const root = await mkdtemp(join(process.cwd(), ".large-preview-test-"));
@@ -31,7 +31,7 @@ onMount(() => { requestAnimationFrame(() => requestAnimationFrame(() => {
     await page.frameLocator("iframe").locator("[data-rows] li").last().waitFor();
     const frame = page.frames().find(frame => frame.url().includes("/app.html"))!;
     await frame.waitForFunction(() => typeof (globalThis as any).__firstFrame === "number");
-    const benchmark = process.env.HITSLOP_BENCH_PREVIEW === "1";
+    const benchmark = process.env.TINYS_BENCH_PREVIEW === "1";
     const measured = await frame.evaluate(async benchmark => {
       const probe = (globalThis as any).__devProbe;
       const first = document.querySelector("[data-id='row-0']");
@@ -52,7 +52,7 @@ onMount(() => { requestAnimationFrame(() => requestAnimationFrame(() => {
     expect(measured.rows).toBe(benchmark ? 4006 : 4001);
     expect(measured.firstRowPreserved).toBe(true);
     if (benchmark) console.log("Large preview", JSON.stringify(measured));
-    if (benchmark && process.env.HITSLOP_TEST_EVIDENCE) await writeFile(join(process.env.HITSLOP_TEST_EVIDENCE, "large-preview-timings.json"), JSON.stringify(measured, null, 2) + "\n");
+    if (benchmark && process.env.TINYS_TEST_EVIDENCE) await writeFile(join(process.env.TINYS_TEST_EVIDENCE, "large-preview-timings.json"), JSON.stringify(measured, null, 2) + "\n");
   } finally {
     await browser.close(); await dev?.close(); await rm(root, { recursive: true, force: true });
   }

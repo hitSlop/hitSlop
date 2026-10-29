@@ -9,13 +9,13 @@ interface Props {
   preloadHeadline?: boolean;
 }
 const { title, description, themeColor = "#f4efff", image = "/og.jpg", preloadHeadline = false } = Astro.props;
-const site = Astro.site ?? new URL("https://hitslop.com");
+const site = Astro.site ?? new URL("https://tinys.click");
 const canonical = new URL(Astro.url.pathname, site).href;
 const imageUrl = new URL(image, site).href;
 const app = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "hitSlop",
+  name: "tinys",
   applicationCategory: "ProductivityApplication",
   operatingSystem: "macOS 15.2 or later (Apple silicon)",
   description,
@@ -37,14 +37,14 @@ const app = {
 <link rel="apple-touch-icon" href="/assets/appicon-256.png" />
 <link rel="sitemap" href="/sitemap-index.xml" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="hitSlop" />
+<meta property="og:site_name" content="tinys" />
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
 <meta property="og:url" content={canonical} />
 <meta property="og:image" content={imageUrl} />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="hitSlop: tiny apps with big personality on a Mac desktop" />
+<meta property="og:image:alt" content="tinys: tiny apps with big personality on a Mac desktop" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:site" content="@hitslop" />
 <meta name="twitter:title" content={title} />

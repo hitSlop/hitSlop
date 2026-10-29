@@ -31,7 +31,7 @@ export async function verifyCorpus(root: string, release: Release) {
     for (const [path, hash] of Object.entries(release.storageSchemas)) {
       assert.match(
         path,
-        /^crates\/hitslop-core\/src\/file\/storage-\d+\.sql$/,
+        /^crates\/tinys-core\/src\/file\/storage-\d+\.sql$/,
         `Not a storage schema: ${path}`,
       );
       assert.equal(
@@ -72,7 +72,7 @@ export async function verifyCorpus(root: string, release: Release) {
   assert.ok(Object.keys(release.storage).length > 0, "No saved documents");
   for (const name of Object.keys(release.storage)) {
     for (const path of [
-      `documents/${name}.slop`,
+      `documents/${name}.tiny`,
       `expected/${name}.json`,
       `scenarios/${name}.json`,
     ])
@@ -110,7 +110,7 @@ export async function verifyCorpus(root: string, release: Release) {
       `Invalid template appDigest: ${slug}`,
     );
     assert.equal(
-      await fileDigest(join(root, "templates", `${slug}.slop`)),
+      await fileDigest(join(root, "templates", `${slug}.tiny`)),
       hash,
       `Changed template: ${slug}`,
     );

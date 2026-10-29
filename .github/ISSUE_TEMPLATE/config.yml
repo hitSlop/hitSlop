@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/hitslop/hitslop/security/advisories/new
+    url: https://github.com/hitSlop/tinys/security/advisories/new
     about: Report vulnerabilities privately.

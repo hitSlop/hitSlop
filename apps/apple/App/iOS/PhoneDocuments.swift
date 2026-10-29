@@ -1,14 +1,14 @@
-import HitSlopCore
-import HitSlopCoreBinding
-import HitSlopDocument
 import SwiftUI
+import TinysCore
+import TinysCoreBinding
+import TinysDocument
 import UIKit
 import WebKit
 
 struct PhoneRecent: Identifiable, Sendable {
   let url: URL
   let title: String
-  let entry: SyncedSlop?
+  let entry: SyncedTiny?
   var id: String { url.standardizedFileURL.path }
 }
 
@@ -31,7 +31,7 @@ struct PhoneRecent: Identifiable, Sendable {
   }
   @Published var successFeedback = 0
   @Published var deletionFeedback = 0
-  /// A light tap for a deliberate host action: opening a slop, a menu choice.
+  /// A light tap for a deliberate host action: opening a tiny, a menu choice.
   @Published var tapFeedback = 0
   func tapped() { tapFeedback += 1 }
   private var manualSync = false
@@ -51,7 +51,7 @@ struct PhoneRecent: Identifiable, Sendable {
   init() {
     openedAt = UserDefaults.standard.dictionary(forKey: Self.recentsKey) as? [String: Double] ?? [:]
     _ = widgets
-    SlopRegistry.sweep()
+    TinyRegistry.sweep()
     do {
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       refresh()
@@ -61,10 +61,10 @@ struct PhoneRecent: Identifiable, Sendable {
     let root = Bundle.main.resourceURL?.appendingPathComponent("StarterTemplates", isDirectory: true)
     guard let root else { return }
     do {
-      templates = try await SlopPreparation.run {
+      templates = try await TinyPreparation.run {
         try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-          .filter { $0.pathExtension == "slop" }.map { url in
-            let summary = try SlopSummary(url: url, template: true)
+          .filter { $0.pathExtension == "tiny" }.map { url in
+            let summary = try TinySummary(url: url, template: true)
             return PhoneTemplate(
               url: url, title: summary.metadata.title, description: summary.metadata.description,
               categories: summary.metadata.categories.map { $0.rawValue.capitalized })
@@ -74,12 +74,12 @@ struct PhoneRecent: Identifiable, Sendable {
   }
   func create(_ template: PhoneTemplate, name: String) {
     perform {
-      let entry = try await SlopLibrary.shared.create(template: template.url, title: name)
+      let entry = try await TinyLibrary.shared.create(template: template.url, title: name)
       try await self.show(URL(fileURLWithPath: entry.path))
       self.successFeedback += 1
     }
   }
-  func recents(in entries: [SyncedSlop]) -> [PhoneRecent] {
+  func recents(in entries: [SyncedTiny]) -> [PhoneRecent] {
     let synced = entries.map { PhoneRecent(url: URL(fileURLWithPath: $0.path), title: $0.title, entry: $0) }
     let managed = Set(synced.map(\.id))
     let local = documents.compactMap { url -> PhoneRecent? in
@@ -105,16 +105,16 @@ struct PhoneRecent: Identifiable, Sendable {
         let drafts = try await session.prepareClose()
         guard drafts.isEmpty else {
           await session.cancelClose()
-          throw SlopFailure("Save your pending text before deleting.")
+          throw TinyFailure("Save your pending text before deleting.")
         }
         try await session.close()
         self.session = nil
         self.opening = false
       }
       if let entry = recent.entry {
-        try await SlopLibrary.shared.delete(entry)
+        try await TinyLibrary.shared.delete(entry)
       } else {
-        try await SlopPreparation.run { try SlopFile.delete(recent.url) }
+        try await TinyPreparation.run { try TinyFile.delete(recent.url) }
       }
       self.openedAt.removeValue(forKey: recent.id)
       UserDefaults.standard.set(self.openedAt, forKey: Self.recentsKey)
@@ -122,9 +122,9 @@ struct PhoneRecent: Identifiable, Sendable {
       self.deletionFeedback += 1
     }
   }
-  func removeDownload(_ entry: SyncedSlop) {
+  func removeDownload(_ entry: SyncedTiny) {
     perform {
-      try await SlopLibrary.shared.removeDownload(entry)
+      try await TinyLibrary.shared.removeDownload(entry)
       self.refresh()
       self.deletionFeedback += 1
     }
@@ -134,7 +134,7 @@ struct PhoneRecent: Identifiable, Sendable {
     guard !manualSync else { return }
     manualSync = true
     defer { manualSync = false }
-    let library = SlopLibrary.shared
+    let library = TinyLibrary.shared
     let previousSuccess = library.lastSuccess
     await library.syncNow()
     if !library.isReady || library.lastError != nil || !library.issues.isEmpty {
@@ -145,21 +145,21 @@ struct PhoneRecent: Identifiable, Sendable {
   }
   func libraryChanged() {
     refresh()
-    if SlopLibrary.shared.hasLoaded, let id = pendingLibraryID {
+    if TinyLibrary.shared.hasLoaded, let id = pendingLibraryID {
       pendingLibraryID = nil
       open(libraryID: id)
     }
-    guard let session, SlopLibrary.shared.entry(at: session.file.url)?.deleted == true, !busy else { return }
+    guard let session, TinyLibrary.shared.entry(at: session.file.url)?.deleted == true, !busy else { return }
     perform {
       let drafts = try await session.prepareClose()
       guard drafts.isEmpty else {
         await session.cancelClose()
-        throw SlopFailure("This slop was deleted on another device. Keep it open until your text is saved.")
+        throw TinyFailure("This tiny was deleted on another device. Keep it open until your text is saved.")
       }
       try await session.close()
       self.session = nil
       self.opening = false
-      self.message = "Deleted on another device. Any unsynced edits are kept as a local slop."
+      self.message = "Deleted on another device. Any unsynced edits are kept as a local tiny."
     }
   }
   func saveOnInactive() {
@@ -168,13 +168,13 @@ struct PhoneRecent: Identifiable, Sendable {
   }
   private func refresh() {
     let shared = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("hitSlop/SharedDocuments", isDirectory: true)
+      .appendingPathComponent("tinys/SharedDocuments", isDirectory: true)
     let local = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     documents = [folder, shared, local].flatMap {
       (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
     }
-    .filter { $0.pathExtension == "slop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-    let paths = Set(documents + SlopLibrary.shared.visibleEntries.map { URL(fileURLWithPath: $0.path) })
+    .filter { $0.pathExtension == "tiny" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    let paths = Set(documents + TinyLibrary.shared.visibleEntries.map { URL(fileURLWithPath: $0.path) })
     refreshTask?.cancel()
     refreshTask = Task {
       let metadata = await Task.detached(priority: .utility) {
@@ -226,17 +226,17 @@ struct PhoneRecent: Identifiable, Sendable {
     }
     perform {
       let target = self.folder.appendingPathComponent(
-        source.deletingPathExtension().lastPathComponent + "-" + UUID().uuidString.prefix(8) + ".slop")
-      let imported = try await SlopPreparation.run { () throws -> URL in
+        source.deletingPathExtension().lastPathComponent + "-" + UUID().uuidString.prefix(8) + ".tiny")
+      let imported = try await TinyPreparation.run { () throws -> URL in
         let scoped = source.startAccessingSecurityScopedResource()
         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
         var outcome: Result<URL, Error>?
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &coordinationError) { resolved in
-          outcome = Result { try SlopFile.importCopy(from: resolved, to: target) }
+          outcome = Result { try TinyFile.importCopy(from: resolved, to: target) }
         }
         if let coordinationError { throw coordinationError }
-        guard let outcome else { throw SlopFailure("Files did not provide this document. Try downloading it first.") }
+        guard let outcome else { throw TinyFailure("Files did not provide this document. Try downloading it first.") }
         return try outcome.get()
       }
       self.refresh()
@@ -248,13 +248,13 @@ struct PhoneRecent: Identifiable, Sendable {
     perform { try await self.show(url) }
   }
   func open(libraryID: String) {
-    guard SlopLibrary.shared.hasLoaded else {
+    guard TinyLibrary.shared.hasLoaded else {
       pendingLibraryID = libraryID
-      SlopLibrary.shared.start()
+      TinyLibrary.shared.start()
       return
     }
     // Resolve before closing, so a stale widget never costs the open document.
-    guard let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else {
+    guard let entry = TinyLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else {
       message = "This document is no longer in your library."
       return
     }
@@ -262,15 +262,15 @@ struct PhoneRecent: Identifiable, Sendable {
     guard session?.file.url != url else { return }
     close { [self] closed in
       // Sync may have removed it while the current document closed.
-      guard closed, let entry = SlopLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else { return }
+      guard closed, let entry = TinyLibrary.shared.visibleEntries.first(where: { $0.id == libraryID }) else { return }
       open(URL(fileURLWithPath: entry.path))
     }
   }
   func join(_ link: String) async throws {
     if let session {
-      let incoming = try await SlopPreparation.run { try sharingDocument(link: link) }
+      let incoming = try await TinyPreparation.run { try sharingDocument(link: link) }
       guard incoming == session.documentID else {
-        throw SlopFailure("Close your current document before joining another.")
+        throw TinyFailure("Close your current document before joining another.")
       }
     }
     let url = try await DocumentSharing.join(link, candidates: documents)
@@ -281,8 +281,8 @@ struct PhoneRecent: Identifiable, Sendable {
   private func show(_ url: URL) async throws {
     opening = true
     do {
-      if let entry = SlopLibrary.shared.entry(at: url), !entry.downloaded {
-        try await SlopLibrary.shared.download(entry)
+      if let entry = TinyLibrary.shared.entry(at: url), !entry.downloaded {
+        try await TinyLibrary.shared.download(entry)
       }
       let opened = try await DocumentSession.open(url: url)
       opened.delegate = self
@@ -305,18 +305,18 @@ struct PhoneRecent: Identifiable, Sendable {
       let drafts = try await session.prepareClose()
       guard drafts.isEmpty else {
         await session.cancelClose()
-        throw SlopFailure("Some text could not be saved. Keep this document open and copy that text before closing.")
+        throw TinyFailure("Some text could not be saved. Keep this document open and copy that text before closing.")
       }
       await self.widgets.closing(session)
       do { _ = try await DocumentArtworkRenderer.refresh(session: session) } catch {
-        NSLog("hitSlop artwork refresh failed: %@", error.localizedDescription)
+        NSLog("tinys artwork refresh failed: %@", error.localizedDescription)
       }
       try await session.close()
       self.session = nil
       self.opening = false
       self.refresh()
-      await SlopLibrary.shared.refresh()
-      Task { await SlopLibrary.shared.saveToCloud() }
+      await TinyLibrary.shared.refresh()
+      Task { await TinyLibrary.shared.saveToCloud() }
     }
   }
   func undo(redo: Bool = false) {
@@ -349,14 +349,14 @@ struct PhoneRecent: Identifiable, Sendable {
       let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       let name = session.file.url.deletingPathExtension().lastPathComponent
-      let target = directory.appendingPathComponent("\(name) copy \(UUID().uuidString.prefix(8)).slop")
+      let target = directory.appendingPathComponent("\(name) copy \(UUID().uuidString.prefix(8)).tiny")
       let copied = try await session.handOff(to: target)
       self.session = nil
       self.opening = false
       self.refresh()
       self.successFeedback += 1
-      await SlopLibrary.shared.refresh()
-      Task { await SlopLibrary.shared.saveToCloud() }
+      await TinyLibrary.shared.refresh()
+      Task { await TinyLibrary.shared.saveToCloud() }
       try await self.show(copied)
     }
   }
@@ -383,7 +383,7 @@ struct PhoneRecent: Identifiable, Sendable {
       do {
         try await session.pauseForBackground()
         try Task.checkCancellation()
-        await SlopLibrary.shared.saveToCloud()
+        await TinyLibrary.shared.saveToCloud()
         try Task.checkCancellation()
         await widgets.refreshPlaced()
       } catch {
@@ -416,7 +416,7 @@ struct PhoneRecent: Identifiable, Sendable {
       let webView = session.currentWebView
     else { return }
     let (top, bottom) = (Int(window.safeAreaInsets.top.rounded()), Int(window.safeAreaInsets.bottom.rounded()))
-    webView.evaluateJavaScript("globalThis.__slop?.safeArea?.(\(top), \(bottom))", in: nil, in: .page) { _ in }
+    webView.evaluateJavaScript("globalThis.__tiny?.safeArea?.(\(top), \(bottom))", in: nil, in: .page) { _ in }
   }
   func pageSession(_ session: DocumentSession, saveStatus: DocumentSaveStatus) {
     self.saveStatus = saveStatus
@@ -425,11 +425,11 @@ struct PhoneRecent: Identifiable, Sendable {
     }
     if case .saved = saveStatus { widgets.saved(session) }
   }
-  func pageSession(_ session: DocumentSession, storageFailure: SlopFailureContext) {
+  func pageSession(_ session: DocumentSession, storageFailure: TinyFailureContext) {
     message = "Document storage needs attention."
   }
-  func pageSession(_ session: DocumentSession, themeChanged theme: SlopThemeState) {}
-  func pageSession(_ session: DocumentSession, didReport issue: SlopPageIssue) { message = issue.message }
+  func pageSession(_ session: DocumentSession, themeChanged theme: TinyThemeState) {}
+  func pageSession(_ session: DocumentSession, didReport issue: TinyPageIssue) { message = issue.message }
   func pageSession(_ session: DocumentSession, didFail error: Error) {
     if self.session === session { opening = false }
     message = error.localizedDescription

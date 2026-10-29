@@ -80,7 +80,7 @@
   <section class="board" aria-label="Interactive collaboration demo with simulated participants">
     <header class="bar">
       <i></i><i></i><i></i>
-      <span>Team Notes.slop</span>
+      <span>Team Notes.tiny</span>
       <div class="live" aria-label={`${live} people live`}>
         <div class="faces" aria-hidden="true">
           {#each people as person}

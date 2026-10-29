@@ -4,7 +4,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
-const TOKEN_BYTES: usize = hitslop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES;
+const TOKEN_BYTES: usize = tinys_sharing_protocol::limits::IDENTITY_TOKEN_BYTES;
 #[derive(Clone, Deserialize)]
 pub(crate) struct Claims {
     pub sub: String,
