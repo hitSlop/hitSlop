@@ -7,7 +7,7 @@ name: Deploy sharing
 on:
   push:
     branches: [master]
-    tags: ["v*"]
+    tags: ["tinys-v*"]
     paths:
       - apps/sharing/**
       - crates/tinys-sharing-*/**
@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/tinys-v')
     # Miniflare qualification is proven on macOS; it fails before any check on the Linux runner.
     runs-on: macos-15
     timeout-minutes: 60
@@ -46,19 +46,19 @@ jobs:
       - name: Qualify
         run: bun run verify sharing
       - name: Deploy relay
-        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/tinys-v') || github.event_name == 'workflow_dispatch')
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy host
-        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/tinys-v') || github.event_name == 'workflow_dispatch')
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/host.wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke
-        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        if: vars.TINYS_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/tinys-v') || github.event_name == 'workflow_dispatch')
         run: |
           test "$(curl -s -o /dev/null -w '%{http_code}' https://share.tinys.click/health)" = 200
           curl -sf https://share.tinys.click/.well-known/apple-app-site-association | grep -q '"applinks"'

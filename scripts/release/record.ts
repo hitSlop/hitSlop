@@ -12,8 +12,8 @@ export type ReleaseRecord = {
 };
 
 export function validateRecord(record: ReleaseRecord, tag: string, commit: string) {
-  if (!/^v\d+\.\d+\.\d+$/.test(tag) || !/^[a-f0-9]{40}$/.test(commit)) throw new Error("Invalid release tag or commit");
-  if (record.tag !== tag || record.macVersion !== tag.slice(1) || record.commit !== commit)
+  if (!/^tinys-v\d+\.\d+\.\d+$/.test(tag) || !/^[a-f0-9]{40}$/.test(commit)) throw new Error("Invalid release tag or commit");
+  if (record.tag !== tag || record.macVersion !== tag.slice("tinys-v".length) || record.commit !== commit)
     throw new Error("Recorded release is from a different tag or commit");
   if (!/^\d+$/.test(record.macBuild) || !/^\d+$/.test(record.run) || !/^[1-9]\d*$/.test(record.attempt))
     throw new Error("Invalid build number or candidate workflow run");

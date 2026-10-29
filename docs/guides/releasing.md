@@ -83,9 +83,9 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-tinys starts a separate release history in `hitSlop/tinys`. Before its first publication,
+tinys starts a separate release lineage in the original repository, renamed to `hitSlop/tinys`. Release tags use `tinys-vX.Y.Z`; legacy `vX.Y.Z` tags and assets remain unchanged and are excluded from tinys discovery. Before its first publication,
 ordinary development permits empty history; release qualification still requires a frozen
-candidate corpus. After publishing v1.0.0, permanently pin its `corpus.sha256` from the
+candidate corpus. After publishing tinys-v1.0.0, permanently pin its `corpus.sha256` from the
 retained release record in `scripts/compat/tinys-required-history.json` before another
 release. Missing or changed published history must then fail on a cold machine.
 The original hitSlop pin in `scripts/compat/required-history.json` and its release assets
@@ -232,7 +232,7 @@ Replace `X.Y.Z` with the published version:
 
 ```sh
 bun run compat:resolve
-gh release download vX.Y.Z --repo hitSlop/tinys --skip-existing \
+gh release download tinys-vX.Y.Z --repo hitSlop/tinys --skip-existing \
   --dir "$HOME/.cache/tinys/compat-corpora/releases/vX.Y.Z"
 (cd "$HOME/.cache/tinys/compat-corpora/releases/vX.Y.Z" && shasum -a 256 -c SHA256SUMS)
 tmutil isexcluded "$HOME/.cache/tinys/compat-corpora/releases/vX.Y.Z"
@@ -252,7 +252,7 @@ Draft locally with your coding agent; CI publishes reviewed text and never calls
 provider. After the code changes are committed, collect the release's evidence:
 
 ```sh
-bun run release:notes --from v1.0.0 --to HEAD
+bun run release:notes --from tinys-v1.0.0 --to HEAD
 # First supported release: summarize current capabilities, not prelaunch history.
 bun run release:notes --initial --to HEAD
 ```

@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exec } from "../../scripts/lib/test-process";
+import { releaseRepository } from "../../scripts/lib/release-assets";
 
 const payload = Buffer.concat([
   Buffer.from([0, 255, 10, 13, 128, 65]),
@@ -19,7 +20,7 @@ async function download(responses: DownloadResponse[], lineEnding = "\r\n") {
 import { readFileSync, writeFileSync } from "node:fs";
 const attempt = Number(readFileSync(process.env.RELEASE_DOWNLOAD_ATTEMPTS, "utf8")) + 1;
 writeFileSync(process.env.RELEASE_DOWNLOAD_ATTEMPTS, String(attempt));
-if (process.argv.at(-1) !== "repos/hitSlop/tinys/releases/assets/123") process.exit(99);
+if (process.argv.at(-1) !== ${JSON.stringify(`repos/${releaseRepository}/releases/assets/123`)}) process.exit(99);
 const response = ${JSON.stringify(responses)}[attempt - 1] ?? { status: 200 };
 if (process.argv.includes("--include") && response.status !== undefined) {
   process.stdout.write("HTTP/2.0 " + response.status + " Status\\nContent-Type: application/octet-stream" + ${JSON.stringify(lineEnding + lineEnding)});

@@ -96,7 +96,7 @@ jobs:
       - name: Check the command prelude before capture
         run: bun run compat:runner --check
       - name: Capture this candidate outside Git
-        run: bun run compat:capture "${TINYS_RELEASE_TAG#v}" --writer generated/engines/darwin-arm64/tiny-engine --out dist/corpus
+        run: bun run compat:capture "${TINYS_RELEASE_TAG#tinys-v}" --writer generated/engines/darwin-arm64/tiny-engine --out dist/corpus
       - name: Resolve all released corpora and the candidate
         run: bun scripts/compat/corpora.ts
         env:
@@ -169,7 +169,7 @@ jobs:
       - name: Verify Gatekeeper
         run: |
           set -euo pipefail
-          VERSION="${TINYS_RELEASE_TAG#v}"
+          VERSION="${TINYS_RELEASE_TAG#tinys-v}"
           APP="$RUNNER_TEMP/verify/tinys.app"
           mkdir -p "$RUNNER_TEMP/verify"
           hdiutil attach "dist/macos/tinys-${VERSION}.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/dmg"

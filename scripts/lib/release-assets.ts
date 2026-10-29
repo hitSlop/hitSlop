@@ -1,9 +1,11 @@
 import { run } from "../../packages/tinys/src/cli/process";
 
-export const releaseRepository = "hitSlop/tinys";
+// The original repository is renamed in place; its old URL remains a redirect.
+export const releaseRepository = process.env.GITHUB_REPOSITORY?.toLowerCase() === "hitslop/tinys"
+  ? "hitSlop/tinys" : "hitSlop/hitSlop";
 export type Asset = { id: number; name: string; digest?: string };
 export type PublishedRelease = { id: number; tag_name: string; draft: boolean; prerelease: boolean; immutable: boolean; assets: Asset[] };
-export const stableTag = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+export const stableTag = /^tinys-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export async function releaseInventory(): Promise<PublishedRelease[]> {
   const pages = JSON.parse(await run(["gh", "api", "--paginate", "--slurp", `repos/${releaseRepository}/releases?per_page=100`]));

@@ -44,9 +44,9 @@ async function fixture(root: string, version = "1.0.0", id = 1) {
   const artifacts: Record<string, string> = {};
   for (const name of [`hitslop-tinys-${version}.tgz`, "tinys.dmg", "tinys.zip", "appcast.xml", `tinys-${version}.md`, "release-notes.md"]) artifacts[name] = "a".repeat(64);
   artifacts[`compat-corpus-${version}.tar.gz`] = sha256(bytes);
-  const entry: HistoricalRelease = { release: { id, tag_name: `v${version}`, draft: false, prerelease: false, immutable: true,
+  const entry: HistoricalRelease = { release: { id, tag_name: `tinys-v${version}`, draft: false, prerelease: false, immutable: true,
     assets: [{ id, name: "release-record.json" }, { id: id + 1, name: `compat-corpus-${version}.tar.gz` }, { id: id + 2, name: `hitslop-tinys-${version}.tgz` }] },
-    record: { commit: release.commit, tag: `v${version}`, macVersion: version, macBuild: "1", run: "1", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", qualified: {},
+    record: { commit: release.commit, tag: `tinys-v${version}`, macVersion: version, macBuild: "1", run: "1", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", qualified: {},
       corpus: { file: `compat-corpus-${version}.tar.gz`, sha256: sha256(bytes) }, artifacts } };
   return { entry, bytes, directory };
 }
@@ -111,8 +111,18 @@ test("drafts do not break PR replay; published history must be immutable and tra
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("a new product lineage can bootstrap without published history", async () => {
-  expect(await publishedHistory({ required: {}, list: async () => [] })).toEqual([]);
+test("a new product lineage ignores preserved hitSlop releases without downloading their evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tinys-lineage-"));
+  try {
+    const { entry } = await fixture(root);
+    const legacy = { ...entry.release, id: 99, tag_name: "v1.0.0", assets: [] };
+    const download = async (id: number) => {
+      expect(id).toBe(1);
+      return Buffer.from(JSON.stringify(entry.record));
+    };
+    expect(await publishedHistory({ required: {}, list: async () => [legacy], download })).toEqual([]);
+    expect(await publishedHistory({ required: {}, list: async () => [legacy, entry.release], download })).toEqual([entry]);
+  } finally { await rm(root, { recursive: true, force: true }); }
 });
 
 test("a required first release cannot disappear on a cold machine", async () => {

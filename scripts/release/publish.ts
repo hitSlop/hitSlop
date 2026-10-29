@@ -15,9 +15,9 @@ import { ensureDraftRelease, findRelease } from "./github";
 const directory = "dist/macos";
 const tag = process.env.TINYS_RELEASE_TAG!;
 const commit = process.env.GITHUB_SHA!;
-if (!/^v\d+\.\d+\.\d+$/.test(tag ?? "") || !commit) throw new Error("Expected TINYS_RELEASE_TAG and GITHUB_SHA");
+if (!/^tinys-v\d+\.\d+\.\d+$/.test(tag ?? "") || !commit) throw new Error("Expected TINYS_RELEASE_TAG and GITHUB_SHA");
 if (process.env.GITHUB_REPOSITORY?.toLowerCase() !== releaseRepository.toLowerCase()) throw new Error("Unexpected release repository");
-const version = tag.slice(1);
+const version = tag.slice("tinys-v".length);
 const gh = (args: string[]) => run(["gh", ...args]);
 const api = (path: string) => gh(["api", `repos/${releaseRepository}/${path}`]).then(text => JSON.parse(text));
 const remoteRelease = () => findRelease(tag);
@@ -125,7 +125,7 @@ if (action === "restore") {
   const response = await fetch("https://registry.npmjs.org/@hitslop%2ftinys/latest");
   if (response.ok && !preservesLatest(version, (await response.json() as { version: string }).version)) throw new Error("Cannot move npm latest backwards");
   if (!response.ok && response.status !== 404) throw new Error(`Cannot check npm latest: ${response.status}`);
-  await run(["npm", "dist-tag", "add", `tinys@${version}`, "latest"]);
+  await run(["npm", "dist-tag", "add", `@hitslop/tinys@${version}`, "latest"]);
   await gh(["release", "edit", tag, "--latest"]);
   if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, "promoted=true\n");
 } else if (action === "check") {

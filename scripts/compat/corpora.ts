@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { repository, sha256, fileDigest } from "../lib/artifacts";
 import { archiveFiles, extractArchive } from "../lib/release-archive";
-import { assetBytes, releaseInventory, requiredAsset, type PublishedRelease } from "../lib/release-assets";
+import { assetBytes, releaseInventory, requiredAsset, stableTag, type PublishedRelease } from "../lib/release-assets";
 import { validateRecord, type ReleaseRecord } from "../release/record";
 import { verifyCorpus } from "./integrity";
 import { atomicJson } from "../lib/verification";
@@ -39,7 +39,7 @@ export async function publishedHistory(options: {
 } = {}): Promise<HistoricalRelease[]> {
   const all = await (options.list ?? releaseInventory)();
   const entries: HistoricalRelease[] = [];
-  for (const release of all.filter(entry => !entry.draft && !entry.prerelease)) {
+  for (const release of all.filter(entry => stableTag.test(entry.tag_name) && !entry.draft && !entry.prerelease)) {
     const bytes = await (options.download ?? assetBytes)(requiredAsset(release, "release-record.json").id);
     entries.push({ release, record: JSON.parse(bytes.toString()) });
   }

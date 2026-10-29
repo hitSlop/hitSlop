@@ -125,7 +125,7 @@ test("empty compatibility history only permits unsigned pre-release app acceptan
     delete process.env.TINYS_RELEASE_TAG;
     await expect(verifyAppCorpus("unused", { allowUnreleased: true })).resolves.toBeUndefined();
     await expect(verifyAppCorpus("unused")).rejects.toThrow("No corpus");
-    process.env.TINYS_RELEASE_TAG = "v1.0.0";
+    process.env.TINYS_RELEASE_TAG = "tinys-v1.0.0";
     await expect(verifyAppCorpus("unused", { allowUnreleased: true })).rejects.toThrow("No corpus");
   } finally {
     for (const key of keys) {

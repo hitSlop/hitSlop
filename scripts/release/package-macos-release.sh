@@ -43,7 +43,7 @@ fi
 bun "$script_dir/notes.ts" --check
 
 if [ -n "${TINYS_RELEASE_TAG:-}" ]; then
-  expected="v$marketing_version"
+  expected="tinys-v$marketing_version"
   if [ "$TINYS_RELEASE_TAG" != "$expected" ]; then
     echo "Release $TINYS_RELEASE_TAG does not match MARKETING_VERSION $marketing_version (expected $expected)" >&2
     exit 78
@@ -51,7 +51,7 @@ if [ -n "${TINYS_RELEASE_TAG:-}" ]; then
 fi
 
 if [ -z "$feed_prefix" ]; then
-  feed_prefix="https://github.com/hitSlop/tinys/releases/download/v${marketing_version}/"
+  feed_prefix="https://github.com/hitSlop/tinys/releases/download/tinys-v${marketing_version}/"
 fi
 feed_prefix="${feed_prefix%/}/"
 

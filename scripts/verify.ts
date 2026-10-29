@@ -64,7 +64,7 @@ const option = (name: string) => (argv.includes(name) ? argv[argv.indexOf(name) 
 if (flag("--json") && !flag("--list")) throw new Error("--json requires --list");
 const release = flag("--release");
 const ci = flag("--ci") || !!process.env.CI;
-const releaseTag = process.env.TINYS_RELEASE_TAG?.replace(/^v/, "") || undefined;
+const releaseTag = process.env.TINYS_RELEASE_TAG?.replace(/^tinys-v/, "") || undefined;
 // Nightly and release runs add expensive boundary cases, presentation, storage-growth
 // budgets and broader randomized coverage. All compatibility replay is complete.
 const nightly = release || process.env.TINYS_NIGHTLY === "1";
