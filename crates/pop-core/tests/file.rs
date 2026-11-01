@@ -825,7 +825,7 @@ fn a_file_whose_app_is_a_view_is_refused_promptly_and_unchanged() {
     let hostile = dir.path().join("Hostile.pop");
     let conn = Connection::open(&hostile).unwrap();
     conn.execute_batch(
-        "PRAGMA application_id=1213418576; PRAGMA user_version=1;
+        "PRAGMA application_id=1347375104; PRAGMA user_version=1;
          CREATE VIEW app AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n)
          SELECT 1 id, 1 package_format, (SELECT max(x) FROM n) runtime_abi;",
     )

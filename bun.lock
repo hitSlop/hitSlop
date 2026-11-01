@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "hitslop",
+      "name": "pop-workspace",
       "devDependencies": {
         "@cloudflare/workers-types": "4.20251106.1",
         "@hitslop/pop": "workspace:*",

@@ -202,7 +202,7 @@ def main():
             }.items():
                 path = root / (name + ".pop")
                 with sqlite3.connect(path) as db:
-                    db.executescript("PRAGMA application_id=1213418576;PRAGMA user_version=1;" + sql)
+                    db.executescript("PRAGMA application_id=1347375104;PRAGMA user_version=1;" + sql)
                 before = digest(path)
                 outcomes[name] = invoke({"method": "inspect", "file": str(path)}, timeout=2)
                 outcomes[name]["fileBytes"] = path.stat().st_size
