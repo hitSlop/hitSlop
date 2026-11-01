@@ -15,7 +15,7 @@
     fx: number; fy: number; tilt: number; open: boolean;
   };
   const layout: Win[] = [
-    { id: "video", title: "pop in action.mp4", emoji: "🎬", kind: "video", width: 520, height: 329, fx: 0, fy: .04, tilt: -1.5, open: true },
+    { id: "video", title: "dotpop in action.mp4", emoji: "🎬", kind: "video", width: 520, height: 329, fx: 0, fy: .04, tilt: -1.5, open: true },
     { id: "picker", title: "Pick One.pop", emoji: "🔮", kind: "shape", width: 330, height: 208, zoom: .55, fx: .04, fy: 1, tilt: 1.5, open: true },
     { id: "checklist", title: "Today.pop", emoji: "☑️", kind: "window", width: 300, height: 392, fx: .39, fy: .1, tilt: 2, open: true },
     { id: "note", title: "Sticky note", emoji: "📝", kind: "note", width: 200, height: 176, fx: .325, fy: 1, tilt: -7, open: true },

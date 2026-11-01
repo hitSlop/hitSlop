@@ -161,7 +161,7 @@
       var file = file
       var values = URLResourceValues()
       values.quarantineProperties = [
-        kLSQuarantineAgentNameKey as String: "pop",
+        kLSQuarantineAgentNameKey as String: "dotpop",
         kLSQuarantineTypeKey as String: kLSQuarantineTypeOtherDownload,
         kLSQuarantineTimeStampKey as String: Date(),
       ]

@@ -15,7 +15,7 @@ export function scratch(canvas: HTMLCanvasElement, options: ScratchOptions) {
   let height = 0;
   const dpr = Math.min(2, window.devicePixelRatio || 1);
 
-  const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(`--dotpop-${name}`).trim() || "#c8ccd4";
+  const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(`--pop-${name}`).trim() || "#c8ccd4";
 
   function paint() {
     const box = canvas.getBoundingClientRect();

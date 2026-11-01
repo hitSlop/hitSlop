@@ -249,7 +249,7 @@ import "./styles.css";
       check(document.querySelector("[data-pop-root]") !== null, "The app root is not marked for the host");
       const html = document.documentElement, css = getComputedStyle(html);
       check(html.getAttribute("data-pop-presentation") === "standard" && html.hasAttribute("data-pop-resizable") && !html.hasAttribute("data-pop-capture"), "Host presentation attributes changed");
-      for (const token of ["accent", "ink", "paper-tint", "window-width", "window-height"]) check(css.getPropertyValue(`--dotpop-${token}`).trim().length > 0, `Missing --dotpop-${token}`);
+      for (const token of ["accent", "ink", "paper-tint", "window-width", "window-height"]) check(css.getPropertyValue(`--pop-${token}`).trim().length > 0, `Missing --pop-${token}`);
       for (const [options, reason] of [[{}, "notDeclared"], [{ locale: "bad locale!" }, "locale"]] as const) {
         try { await speech.transcribe(ref.id, options); throw new Error("Speech unexpectedly succeeded"); } catch (error) { check(isSpeechError(error) && error.code === "unavailable" && error.reason === reason, `Expected speech ${reason}, got ${String(error)}`); }
       }

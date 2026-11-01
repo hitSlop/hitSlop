@@ -26,8 +26,8 @@
   <circle cx="84" cy="84" r="68" class="wheel-track" fill="var(--pop-paper)" stroke="var(--pop-rule)" stroke-width="1" />
   {#each segments as segment (segment.id)}
     <g data-tone={segment.tone}>
-      <path d={segment.outer} class="wheel-assigned" fill={`var(--dotpop-${segment.tone})`} fill-opacity="0.3" />
-      {#if segment.inner}<path d={segment.inner} class="wheel-done" fill={`var(--dotpop-${segment.tone})`} />{/if}
+      <path d={segment.outer} class="wheel-assigned" fill={`var(--pop-${segment.tone})`} fill-opacity="0.3" />
+      {#if segment.inner}<path d={segment.inner} class="wheel-done" fill={`var(--pop-${segment.tone})`} />{/if}
     </g>
   {/each}
   <text x="84" y="80" class="wheel-count" text-anchor="middle" dominant-baseline="central" fill="var(--pop-ink)" font-family="sans-serif" font-size="30" font-weight="800">{doneTotal}<tspan class="wheel-of" font-size="16" fill="var(--pop-muted)">/{total}</tspan></text>

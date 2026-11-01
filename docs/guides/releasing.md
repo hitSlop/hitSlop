@@ -83,7 +83,7 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-pop starts a separate release lineage in the original repository, renamed to `hitSlop/dotpop`. Release tags use `pop-vX.Y.Z`; legacy `vX.Y.Z` tags and assets remain unchanged and are excluded from pop discovery. Before its first publication,
+dotpop starts a separate release lineage in the original repository, renamed to `hitSlop/dotpop`. Release tags use `pop-vX.Y.Z`; legacy `vX.Y.Z` tags and assets remain unchanged and are excluded from pop discovery. Before its first publication,
 ordinary development permits empty history; release qualification still requires a frozen
 candidate corpus. After publishing pop-v1.0.0, permanently pin its `corpus.sha256` from the
 retained release record in `scripts/compat/pop-required-history.json` before another

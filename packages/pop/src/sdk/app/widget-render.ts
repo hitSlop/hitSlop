@@ -15,7 +15,7 @@ export function widgetRenderer(
     const request: WidgetRenderRequest = JSON.parse(json);
     const props = captureProps(request.snapshot, request.attachments);
     const theme = Object.entries(request.theme)
-      .map(([key, value]) => `--dotpop-${key}:${value}`)
+      .map(([key, value]) => `--pop-${key}:${value}`)
       .join(";");
     return JSON.stringify(
       request.viewports.map((viewport) => {

@@ -117,7 +117,7 @@ test("engine staging refuses a prebuilt engine from another build and leaves not
     await writeFile(join(prebuilt, other, "engine.json"), JSON.stringify({ commit: "c1", buildId: "build-b" }));
     const engines = join(root, "engine");
     await expect(stageEngines(engines, prebuilt, fresh, "c1")).rejects.toThrow("was built from c1 (core build-b)");
-    expect((await readdir(root)).sort()).toEqual(["prebuilt", "pop-engine"]);
+    expect((await readdir(root)).sort()).toEqual(["pop-engine", "prebuilt"]);
     // A matching engine stages beside this machine's, each with its provenance.
     await writeFile(join(prebuilt, other, "engine.json"), JSON.stringify({ commit: "c1", buildId: "build-a" }));
     await stageEngines(engines, prebuilt, fresh, "c1");

@@ -75,7 +75,7 @@ final class PhoneCatalogTests: XCTestCase {
       XCUIDevice.shared.press(.home)
       let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
       home.activate()
-      let icon = home.icons["pop"].firstMatch
+      let icon = home.icons["dotpop"].firstMatch
       for _ in 0..<6 {
         if icon.exists { break }
         home.swipeLeft()

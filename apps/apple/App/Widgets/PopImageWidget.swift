@@ -69,7 +69,7 @@ private struct ImageView: View {
             Text(
               entry.id == nil
                 ? "Touch and hold, then choose Edit Widget."
-                : "Open pop to update this widget."
+                : "Open dotpop to update this widget."
             )
             .font(.caption).multilineTextAlignment(.center)
           #endif

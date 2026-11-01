@@ -57,7 +57,7 @@ export async function buildCapture(
   if (!component) return;
   const functionName = role === "widget" ? "__popWidget" : "__popCapture";
   const renderer = role === "widget" ? "widgetRenderer" : "viewRenderer";
-  const entry = `\0dotpop-${role}-entry`;
+  const entry = `\0pop-${role}-entry`;
   const styles = new Map<string, string>();
   const dependencies = new Set<string>();
   const reasons = new Set<string>();

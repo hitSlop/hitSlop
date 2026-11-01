@@ -95,7 +95,7 @@ const scenes: Record<string, () => Promise<void>> = {
       mark("theme");
       await s.page.evaluate(() => {
         const theme = { surface: "#3b6fd4", surfaceLight: "#5b8ef0", surfaceDeep: "#284f9e", accent: "#2f5fc0" };
-        for (const [k, v] of Object.entries(theme)) document.documentElement.style.setProperty(`--dotpop-${k}`, v);
+        for (const [k, v] of Object.entries(theme)) document.documentElement.style.setProperty(`--pop-${k}`, v);
       });
       await s.page.waitForTimeout(3500);
     });

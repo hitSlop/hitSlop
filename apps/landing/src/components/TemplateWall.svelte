@@ -107,7 +107,7 @@
         <h3 id="template-detail-title">{chosen.title}</h3>
         <p>{chosen.description}</p>
         <p class="meta">{chosen.categories.map((category) => labels[category] ?? category).join("  ·  ")}  ·  {chosen.shape === "ellipse" ? "a round little window" : `${chosen.width} × ${chosen.height}`}</p>
-        <p class="hint">Open pop, pick <strong>{chosen.title}</strong> from Templates, and make a copy. It’s yours to keep, change, or send.</p>
+        <p class="hint">Open dotpop, pick <strong>{chosen.title}</strong> from Templates, and make a copy. It’s yours to keep, change, or send.</p>
       </div>
     </div>
   {/if}

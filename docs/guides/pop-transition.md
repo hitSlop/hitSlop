@@ -1,6 +1,6 @@
 # pop transition
 
-dotpop is a new product lineage, starting at 1.0.0 in https://github.com/hitSlop/dotpop. The CLI is `pop`; the combined SDK/CLI package is `@hitslop/pop`. Documents use `.pop`. Old `.slop` files and authoring APIs are unsupported; existing files and cloud records must not be deleted or silently converted.
+dotpop is a new product lineage, starting at 1.0.0 in https://github.com/hitSlop/dotpop. The CLI is `pop`; the combined SDK/CLI package is `@hitslop/pop`. Documents use `.pop`. Legacy `.slop` files and experimental `.tiny` files and authoring APIs are unsupported; existing files and cloud records must not be deleted or silently converted.
 
 ## Retained identities
 

@@ -14,7 +14,7 @@ export function viewRenderer(
   return (json: string) => {
     const request: ViewRenderRequest = JSON.parse(json);
     const theme = Object.entries(request.theme)
-      .map(([key, value]) => `--dotpop-${key}:${value}`)
+      .map(([key, value]) => `--pop-${key}:${value}`)
       .join(";");
     const icon = request.kind === "icon";
     const props = { ...captureProps(request.snapshot, request.attachments), mode: request.kind };

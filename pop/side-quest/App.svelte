@@ -144,7 +144,7 @@
     <div class="sq-labels">
       {#each doc.current.courses as course (course.$id)}
         <div class="sq-label">
-          <div class="sq-tape" style={`--tape: var(--dotpop-${course.tape})`}>
+          <div class="sq-tape" style={`--tape: var(--pop-${course.tape})`}>
             {#if live}
               <input class="sq-tape-code" aria-label="Course code" use:bindText={doc.at(course).code} />
               <input class="sq-tape-name" aria-label="{courseLabel(course)} name" placeholder="course name" use:bindText={doc.at(course).name} />
@@ -156,7 +156,7 @@
             <div class="sq-label-tools" data-pop-export="hide">
               <button type="button" aria-label="Add quest to {courseLabel(course)}" title="Add quest" onclick={() => addQuest(course)}><Plus size={12} /></button>
               <button type="button" aria-label="Add boss to {courseLabel(course)}" title="Add exam boss" onclick={() => addQuest(course, "boss")}><Swords size={12} /></button>
-              <button type="button" aria-label="Change {courseLabel(course)} tape colour" title="Change tape" class="sq-tape-swatch" style={`--tape: var(--dotpop-${course.tape})`} onclick={() => cycleTape(course)}></button>
+              <button type="button" aria-label="Change {courseLabel(course)} tape colour" title="Change tape" class="sq-tape-swatch" style={`--tape: var(--pop-${course.tape})`} onclick={() => cycleTape(course)}></button>
               <button type="button" aria-label="Remove {courseLabel(course)}" title="Remove course" onclick={() => removeCourse(course)}><Trash2 size={11} /></button>
             </div>
           {/if}
@@ -184,7 +184,7 @@
           {@const label = `${courseLabel(course)} ${questLabel(quest)}, ${quest.kind}, due ${shortDate(quest.due)}${done ? ", cleared" : quest.kind === "boss" ? (hpLeft === null ? ", HP unavailable" : `, ${hpLeft} of ${quest.maxHp} HP`) : overdue(quest) ? ", overdue" : ""}`}
           {#snippet face()}
             {#if quest.kind === "boss"}
-              <Monster color={`var(--dotpop-${course.tape})`} ko={done} seed={row + quest.maxHp} />
+              <Monster color={`var(--pop-${course.tape})`} ko={done} seed={row + quest.maxHp} />
               {#if done}<span class="sq-ko">K.O.</span>{:else if hpLeft === null}<span>HP unavailable</span>{:else}<span class="sq-hpbar"><i style={`width:${(hpLeft / quest.maxHp) * 100}%`}></i></span>{/if}
             {:else if done}
               <span class="sq-node-sticker"><StickerFace kind={quest.sticker ?? lootFor(quest.$id)} /></span>
@@ -196,12 +196,12 @@
           {#if live}
             <button type="button" class="sq-node" data-up={up} data-kind={quest.kind} data-done={done} data-overdue={overdue(quest)} data-selected={selectedId === quest.$id}
             data-pulse={quest.kind === "boss" && selectedId === quest.$id ? pulse % 2 : undefined}
-            style={`left:${x / 10}%; top:${y / 10}%; --tape: var(--dotpop-${course.tape})`}
+            style={`left:${x / 10}%; top:${y / 10}%; --tape: var(--pop-${course.tape})`}
               aria-label={label} aria-pressed={selectedId === quest.$id} onclick={() => (selectedId = selectedId === quest.$id ? null : quest.$id)}>{@render face()}</button>
           {:else}
             <div class="sq-node" data-up={up} data-kind={quest.kind} data-done={done} data-overdue={overdue(quest)} data-selected={selectedId === quest.$id}
             data-pulse={quest.kind === "boss" && selectedId === quest.$id ? pulse % 2 : undefined}
-            style={`left:${x / 10}%; top:${y / 10}%; --tape: var(--dotpop-${course.tape})`}>{@render face()}</div>
+            style={`left:${x / 10}%; top:${y / 10}%; --tape: var(--pop-${course.tape})`}>{@render face()}</div>
           {/if}
         {/each}
       {/each}
@@ -257,7 +257,7 @@
           {@const { course, quest } = selected}
           {@const hpLeft = hp(quest)}
           <div class="sq-panel-head">
-            <span class="sq-tape sq-tape-mini" style={`--tape: var(--dotpop-${course.tape})`}>{courseLabel(course)}</span>
+            <span class="sq-tape sq-tape-mini" style={`--tape: var(--pop-${course.tape})`}>{courseLabel(course)}</span>
             <button type="button" class="sq-icon-btn" aria-label="Close details" onclick={() => (selectedId = null)}><X size={14} /></button>
           </div>
           <textarea class="sq-quest-title" rows="2" aria-label="Quest title" use:bindText={doc.at(quest).title}></textarea>

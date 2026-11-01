@@ -38,7 +38,7 @@
     <div class="sq-labels">
       {#each snapshot.courses as course (course.$id)}
         <div class="sq-label">
-          <div class="sq-tape" style={`--tape: var(--dotpop-${course.tape})`}>
+          <div class="sq-tape" style={`--tape: var(--pop-${course.tape})`}>
               <strong class="sq-tape-code">{course.code}</strong><span class="sq-tape-name">{course.name}</span>
           </div>
         </div>
@@ -62,7 +62,7 @@
           {@const label = `${courseLabel(course)} ${questLabel(quest)}, ${quest.kind}, due ${shortDate(quest.due)}${done ? ", cleared" : quest.kind === "boss" ? (hpLeft === null ? ", HP unavailable" : `, ${hpLeft} of ${quest.maxHp} HP`) : overdue(quest) ? ", overdue" : ""}`}
           {#snippet face()}
             {#if quest.kind === "boss"}
-              <Monster color={`var(--dotpop-${course.tape})`} ko={done} seed={row + quest.maxHp} />
+              <Monster color={`var(--pop-${course.tape})`} ko={done} seed={row + quest.maxHp} />
               {#if done}<span class="sq-ko">K.O.</span>{:else if hpLeft === null}<span>HP unavailable</span>{:else}<span class="sq-hpbar"><i style={`width:${(hpLeft / quest.maxHp) * 100}%`}></i></span>{/if}
             {:else if done}
               <span class="sq-node-sticker"><StickerFace kind={quest.sticker ?? lootFor(quest.$id)} /></span>
@@ -72,7 +72,7 @@
             <span class="sq-node-label"><b>{questLabel(quest)}</b><small>{shortDate(quest.due)}</small></span>
           {/snippet}
             <div class="sq-node" data-up={up} data-kind={quest.kind} data-done={done} data-overdue={overdue(quest)}
-            style={`left:${x / 10}%; top:${y / 10}%; --tape: var(--dotpop-${course.tape})`}>{@render face()}</div>
+            style={`left:${x / 10}%; top:${y / 10}%; --tape: var(--pop-${course.tape})`}>{@render face()}</div>
         {/each}
       {/each}
       <div class="sq-player" style={`left:${xOf(today)}%`}>

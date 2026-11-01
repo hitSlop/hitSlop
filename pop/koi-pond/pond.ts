@@ -22,7 +22,7 @@ const tokens = ["water", "deep", "shallow", "stone", "moss", "lily", "lotus", "p
 /** The canvases read the theme as hex colors from the `--pop-*` variables. */
 export function readPalette(element: Element): Palette {
   const style = getComputedStyle(element);
-  return Object.fromEntries(tokens.map((token) => [token, style.getPropertyValue(`--dotpop-${token}`).trim() || "#888888"])) as Palette;
+  return Object.fromEntries(tokens.map((token) => [token, style.getPropertyValue(`--pop-${token}`).trim() || "#888888"])) as Palette;
 }
 export type KoiSpec ={ id: string; name: string; pattern: KoiPattern; size: number };
 type Spot = { u: number; v: number; r: number; color: string };

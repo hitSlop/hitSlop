@@ -48,7 +48,7 @@ export function buildFlow(plan: Pick<Plan, "sources" | "buckets">, width: number
   nodes.push(hub);
   buckets.forEach((bucket, index) => {
     const id = `out${index}`;
-    const color = `var(--dotpop-${bucket.tone})`;
+    const color = `var(--pop-${bucket.tone})`;
     nodes.push({ id, name: bucket.name || "Spending", color, value: bucket.amountMinor });
     links.push({ source: "hub", target: id, value: bucket.amountMinor, id: `l-${id}`, color });
   });

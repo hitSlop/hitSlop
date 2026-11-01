@@ -155,7 +155,7 @@
     drawing = true; hovered = false;
     if (!pinned) { trayOpen = false; (document.activeElement as HTMLElement | null)?.blur(); }
     const samples = new StrokeSamples(); samples.add(p);
-    const color = tool === "pen" ? getComputedStyle(svg).getPropertyValue(`--dotpop-${marker}`).trim() : "";
+    const color = tool === "pen" ? getComputedStyle(svg).getPropertyValue(`--pop-${marker}`).trim() : "";
     active = { pointer: event.pointerId, draw: tool === "pen", color, samples, brush: { ...brush }, pen: event.pointerType === "pen", last: p, erased: new Set(), eraserPaths: [] };
     if (tool === "pen") preview();
     else {
@@ -246,13 +246,13 @@
       <div class="doodle-tray-heading"><span>Your little toolkit</span><button class="doodle-pin" aria-label="Pin tools" aria-pressed={pinned} onclick={() => { pinned = !pinned; if (pinned) { trayOpen = true; keepTray(); } else scheduleDismiss(); }}><Pin size={15} />{pinned ? "Pinned" : "Pin tools"}</button></div>
       <div class="doodle-tools">
         <ToggleGroup.Root type="single" value={tool === "pen" ? marker : ""} onValueChange={chooseMarker} class="doodle-markers" aria-label="Marker color">
-          {#each markers as color}<ToggleGroup.Item value={color} class="doodle-marker" style={`--marker: var(--dotpop-${color})`} aria-label={`${color[0]!.toUpperCase() + color.slice(1)} marker`}><span class="doodle-marker-tip"></span><span class="doodle-marker-body"><i></i><span>DOODLE</span><b></b></span><span class="doodle-marker-dot"></span></ToggleGroup.Item>{/each}
+          {#each markers as color}<ToggleGroup.Item value={color} class="doodle-marker" style={`--marker: var(--pop-${color})`} aria-label={`${color[0]!.toUpperCase() + color.slice(1)} marker`}><span class="doodle-marker-tip"></span><span class="doodle-marker-body"><i></i><span>DOODLE</span><b></b></span><span class="doodle-marker-dot"></span></ToggleGroup.Item>{/each}
         </ToggleGroup.Root>
         <div class="doodle-tool-divider"></div>
         <div class="doodle-widths"><span class="doodle-label">LINE WEIGHT</span><RadioGroup.Root value={String(brush.size)} onValueChange={(value) => changeBrush({ ...brush, size: Number(value) })} aria-label="Line weight"><div class="doodle-width-options">{#each widths as weight}<RadioGroup.Item value={String(weight.size)} aria-label={weight.label} class="doodle-width"><span style:width={`${weight.size / 1.4 + 3}px`} style:height={`${weight.size / 1.4 + 3}px`}></span></RadioGroup.Item>{/each}</div></RadioGroup.Root></div>
         <Popover.Root bind:open={brushMenu}>
           <Popover.Trigger class="doodle-brush-trigger" onclick={finish}><SlidersHorizontal size={18} /><span>Brush</span></Popover.Trigger>
-          <Popover.Portal><Popover.Content class="doodle-popover doodle-brush-popover" collisionPadding={12} sticky="always" side="top" sideOffset={12} align="end" onEscapeKeydown={(event) => event.stopPropagation()}><BrushControls {brush} color={`var(--dotpop-${marker})`} onchange={changeBrush} /></Popover.Content></Popover.Portal>
+          <Popover.Portal><Popover.Content class="doodle-popover doodle-brush-popover" collisionPadding={12} sticky="always" side="top" sideOffset={12} align="end" onEscapeKeydown={(event) => event.stopPropagation()}><BrushControls {brush} color={`var(--pop-${marker})`} onchange={changeBrush} /></Popover.Content></Popover.Portal>
         </Popover.Root>
         <button class="doodle-eraser" aria-label="Eraser" aria-pressed={tool === "eraser"} onclick={() => { finish(); tool = tool === "eraser" ? "pen" : "eraser"; }}><span><Eraser size={23} strokeWidth={1.8} /></span><small>Eraser</small></button>
         <AlertDialog.Root bind:open={clearDialog}>
@@ -262,7 +262,7 @@
       </div>
       <div class="doodle-tray-foot"><span>{tool === "eraser" ? "Touch a line to erase the whole stroke." : "A color, a line, a little possibility."}</span><span class="doodle-key-hint">P <i>pen</i> · E <i>eraser</i> · T <i>tools</i></span></div>
     </Collapsible.Content>
-    <Collapsible.Trigger bind:ref={toolsTab} onclick={clickTools} class="doodle-tools-tab" disabled={drawing || pinned} aria-label={pinned ? "Tools pinned open" : "Tools"}><span class="doodle-active-color" style:background={`var(--dotpop-${marker})`}></span>Tools <ChevronDown size={14} /></Collapsible.Trigger>
+    <Collapsible.Trigger bind:ref={toolsTab} onclick={clickTools} class="doodle-tools-tab" disabled={drawing || pinned} aria-label={pinned ? "Tools pinned open" : "Tools"}><span class="doodle-active-color" style:background={`var(--pop-${marker})`}></span>Tools <ChevronDown size={14} /></Collapsible.Trigger>
     </div>
     </Collapsible.Root>
     </footer>
