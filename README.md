@@ -13,38 +13,38 @@
 [![Local use needs no account](https://img.shields.io/badge/Local_use-no_account-487B41?style=flat)](#keep-the-app-keep-the-work)
 [![Tiny apps. Big personality.](https://img.shields.io/badge/Tiny_apps-Big_personality-7050ad?style=flat)](#small-enough-to-be-yours)
 
-Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a pop pond to stare at between meetings.
+Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
-**Install pop once. Make and share little apps as files.** Each `.pop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with pop, without packaging and signing a separate Mac app.
+**Install dotpop once. Make and share little apps as files.** Each `.pop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with dotpop, without packaging and signing a separate Mac app.
 
-You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings pop to your phone, with a Synced Library through your iCloud account. The Mac app includes the Synced Library.
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings dotpop to your phone, with a Synced Library through your iCloud account. The Mac app includes the Synced Library.
 
-[Download for Mac](https://github.com/hitSlop/dotpop/releases/latest/download/hitSlop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://dotpop.click) · [Make your first pop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
+[Download for Mac](https://github.com/hitSlop/dotpop/releases/latest/download/dotpop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://dotpop.click) · [Make your first pop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
 [ios-download]: https://testflight.apple.com/join/F4qfCkgg
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates pop, includes the Popular templates, and imports from Files. [Availability](https://dotpop.click/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
+iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates pops, includes the Popular templates, and imports from Files. [Availability](https://dotpop.click/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
 
 <p align="center">
-  <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open pop: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
+  <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open dotpop: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
   <br><sub>▶ <a href="apps/landing/public/assets/desktop-hero.mp4">Watch the 30-second tour</a></sub>
 </p>
 
 ## On your iPhone
 
-The iPhone app (iOS 26+, TestFlight) opens, edits and creates pop. Start from the Popular templates and keep your library in sync with your Mac through iCloud.
+The iPhone app (iOS 26+, TestFlight) opens, edits and creates pops. Start from the Popular templates and keep your library in sync with your Mac through iCloud.
 
 [Download for iPhone][ios-download] · iOS 26+ · TestFlight
 
 <p align="center">
   <img src="docs/assets/iphone-little-days.png" width="260" alt="Little Days, a baby journal pop on iPhone, with Feeding, Diaper, Sleep and Note buttons above today's timeline.">
   &nbsp;&nbsp;
-  <img src="docs/assets/iphone-templates.png" width="260" alt="The Templates tab in pop on iPhone, listing Popular pop such as Invoice, Weekly Planner and Quick Checklist.">
+  <img src="docs/assets/iphone-templates.png" width="260" alt="The Templates tab in dotpop on iPhone, listing Popular dotpop such as Invoice, Weekly Planner and Quick Checklist.">
 </p>
 
-Pop can adapt to the phone with responsive layouts and play native haptics for deliberate actions. [Make yours work on iPhone](https://dotpop.click/docs/guides/mobile/).
+Pops can adapt to the phone with responsive layouts and play native haptics for deliberate actions. [Make yours work on iPhone](https://dotpop.click/docs/guides/mobile/).
 
 ## You and your agent, one document
 
@@ -93,7 +93,7 @@ The [Pop Wins tutorial below](#a-whole-pop-from-scratch) defines `countOne`. Eac
 
 Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. Those are good reasons to make software.
 
-pop is built for tools with one clear job and a little character. Its templates include planners, music tools, photo and voice notebooks, games, and desktop companions. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
+dotpop is built for tools with one clear job and a little character. Its templates include planners, music tools, photo and voice notebooks, games, and desktop companions. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
 
 Apps can declare camera and microphone capture and transcribe stored recordings on-device
 on a supported Mac. [Capabilities and permissions](apps/landing/src/content/docs/docs/guides/capabilities.mdx)
@@ -104,20 +104,20 @@ so the catalog uses their latest changes.
 ## Keep the app. Keep the work.
 
 - Local documents need no account or server. Choose iCloud when creating a pop to keep it in sync with your iPhone through your private iCloud storage, or choose On this Mac and pick a folder. Move an existing local pop with **File ▸ Move to iCloud…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders.
-- A `.pop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through pop or the CLI. Close a document before moving it in Finder.
-- Send a freshly built template so someone can start their own document. They need pop; opening the template asks where to save their writable copy. [How to share a pop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
+- A `.pop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through dotpop or the CLI. Close a document before moving it in Finder.
+- Send a freshly built template so someone can start their own document. They need dotpop; opening the template asks where to save their writable copy. [How to share a pop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
-- Add a widget for a pop with a widget view: on your Mac desktop, or for library pop on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
-- Choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in pop on Mac/iPhone or in Chrome at share.dotpop.click. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://dotpop.click/docs/guides/live-sharing/) explains how it works.
-- Design for the phone as well as the desktop: pop can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac and in browsers. [Make it work on iPhone](https://dotpop.click/docs/guides/mobile/).
+- Add a widget for a pop with a widget view: on your Mac desktop, or for library pops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
+- Choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in dotpop on Mac/iPhone or in Chrome at share.dotpop.click. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://dotpop.click/docs/guides/live-sharing/) explains how it works.
+- Design for the phone as well as the desktop: pops can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac and in browsers. [Make it work on iPhone](https://dotpop.click/docs/guides/mobile/).
 - Pin a pop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
 - Finder icons can show what's inside, such as a counter's total.
 - Change a document's colors without touching its code, or edit the source to make a different tool.
 
 ## Make your own with an agent
 
-Use Bun 1.4.2 or newer on macOS or Linux. Install the pop Mac app to open windows and pick your registered templates in its catalog; on both platforms the CLI renders template artwork and exports closed documents as PNG/PDF itself.
+Use Bun 1.4.2 or newer on macOS or Linux. Install the dotpop Mac app to open windows and pick your registered templates in its catalog; on both platforms the CLI renders template artwork and exports closed documents as PNG/PDF itself.
 
 ```sh
 bunx @hitslop/pop@1.0.0 init weekend-kit
@@ -125,7 +125,7 @@ cd weekend-kit
 bun install
 ```
 
-Setup asks what your pop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter already works: it includes a checklist, its icon and export views, your brief, and pop's guidance for agents. Try it before changing anything:
+Setup asks what your pop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter already works: it includes a checklist, its icon and export views, your brief, and dotpop's guidance for agents. Try it before changing anything:
 
 ```sh
 bun run dev       # Open the browser preview; preview data resets on refresh
@@ -133,19 +133,19 @@ bun run dev       # Open the browser preview; preview data resets on refresh
 
 Ask your agent to customize it, or open the folder in your agent yourself and try:
 
-> Read AGENTS.md, pop.ts, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use pop's document APIs for saved data, and run the project checks when you're done.
+> Read AGENTS.md, pop.ts, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use dotpop's document APIs for saved data, and run the project checks when you're done.
 
 Ask for changes as you go ("Make the checkboxes bigger") and see them in the preview. When it feels right, stop the preview, then:
 
 ```sh
 bun run check     # Check types and components
 bun run build     # Package it as dist/weekend-kit.pop
-bun run register  # Optional: add it to your pop templates
+bun run register  # Optional: add it to your dotpop templates
 ```
 
-Send `dist/weekend-kit.pop` to someone with pop. They can open it and create their own packing list; the template contains no personal document state.
+Send `dist/weekend-kit.pop` to someone with dotpop. They can open it and create their own packing list; the template contains no personal document state.
 
-If you registered it, open pop, choose Weekend Kit under **Templates**, and select **Create**. Existing documents keep the app version they were made with, so make another version whenever you like.
+If you registered it, open dotpop, choose Weekend Kit under **Templates**, and select **Create**. Existing documents keep the app version they were made with, so make another version whenever you like.
 
 [A whole pop, from scratch](#a-whole-pop-from-scratch) below builds a complete app with its export view and Finder icon · [Full tutorial](apps/landing/src/content/docs/docs/getting-started.mdx) · [Edit a document with your agent](apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
 
@@ -171,14 +171,14 @@ Document creation and editing run on macOS and Linux. The CLI carries its own en
 
 Here’s where we’re heading:
 
-- [x] **iPhone app.** Open, edit and create pop, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
-- [x] **Synced Library.** Keep pop in sync between Mac and iPhone through iCloud.
+- [x] **iPhone app.** Open, edit and create pops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
+- [x] **Synced Library.** Keep pops in sync between Mac and iPhone through iCloud.
 - [x] **Live collaboration.** Edit together through a link on Mac, iPhone or Chrome.
 - [ ] **Release the iPhone app.** Bring iPhone to the App Store and qualify sharing on release devices.
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
 - [ ] **Remix something you love.** Make someone else’s pop your own, and keep your saved data as the app evolves.
-- [ ] **A store for tiny apps.** Discover, publish and install community pop through an app-store-style catalog.
+- [ ] **A store for tiny apps.** Discover, publish and install community pops through an app-store-style catalog.
 - [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to pop,” MIDI, and richer audio and transcription—with permissions for each pop.
 
 See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. Remaining directions have no release dates yet.
@@ -276,7 +276,7 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 
 ### 4. Build the app, icon, and export together
 
-`App.svelte` is the whole interface. Import the definition from `schema.ts` and acquire the document with `getDocument(schema)` while the component initializes. Read `doc.current`, write through `doc.fields`, and let pop handle saving. See [document access](apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles) for child components and helpers.
+`App.svelte` is the whole interface. Import the definition from `schema.ts` and acquire the document with `getDocument(schema)` while the component initializes. Read `doc.current`, write through `doc.fields`, and let dotpop handle saving. See [document access](apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles) for child components and helpers.
 
 ```svelte
 <script lang="ts">
@@ -335,9 +335,9 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 - Required `Preview.svelte` supplies a compact overview for Quick Look and in-app previews.
 - Optional `Export.svelte` supplies complete PNG/PDF output. Use normal document flow so long content can expand. Without it, export actions are hidden.
 - Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
-- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and for library pop on iPhone in TestFlight. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while pop runs; WidgetKit controls when the new image appears.
+- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and for library pops on iPhone in TestFlight. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while dotpop runs; WidgetKit controls when the new image appears.
 
-pop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
+dotpop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
 
 Capture views use Takumi: restricted rendering on Mac and Linux, and in-process rendering on iPhone. Mac and Linux support selectable vector PDF. Capture components must be synchronous. Quick Look reads the saved artwork.
 
@@ -393,7 +393,7 @@ bun run build     # Create dist/pop-wins.pop (works on Linux too)
 bun run register  # Render its preview and icon, then add Pop Wins to your catalog
 ```
 
-In pop, choose **Pop Wins → Create**, then save your document as `My Wins.pop`. Change its title, add some wins, export a PNG/PDF, and close and reopen it to see the saved values. Check its refreshed icon in Finder, too.
+In dotpop, choose **Pop Wins → Create**, then save your document as `My Wins.pop`. Change its title, add some wins, export a PNG/PDF, and close and reopen it to see the saved values. Check its refreshed icon in Finder, too.
 
 Try the commands from [You and your agent, one document](#you-and-your-agent-one-document) on your saved document. `pop theme reset "My Wins.pop"` restores the template's colors.
 
@@ -405,7 +405,7 @@ Try the commands from [You and your agent, one document](#you-and-your-agent-one
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![Bun](https://img.shields.io/badge/Bun-282522?style=flat&logo=bun&logoColor=white)](https://bun.sh/)
-[![pop on npm](https://img.shields.io/badge/npm-pop-CB3837?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/pop)
+[![dotpop on npm](https://img.shields.io/badge/npm-pop-CB3837?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@hitslop/pop)
 
 A pop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. Loro's CRDTs (conflict-free replicated data types) merge edits to text, lists and counters. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a pop the same way.
 
@@ -440,11 +440,11 @@ share        room, endpoint                                             room and
 attachments  id (SHA-256), media_type, bytes                           files you import
 ```
 
-Any SQLite tool shows these tables. `history` holds Loro bytes rather than rows, so change a pop's data through pop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro snapshot; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
+Any SQLite tool shows these tables. `history` holds Loro bytes rather than rows, so change a pop's data through dotpop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro snapshot; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
 
 [Architecture](docs/architecture.md) · [Engineering contract](docs/engineering-contract.md) · [Compatibility](docs/engineering-contract.md#compatibility)
 
-## Work on pop
+## Work on dotpop
 
 Use the Bun version pinned in `package.json`, Xcode, and XcodeGen on macOS:
 
@@ -462,12 +462,12 @@ bun pop dev pop/quick-checklist
 
 Made something wonderfully specific? Show us your pop. Share a screenshot, swap ideas, or help someone make their first pop app.
 
-[![Join pop on Discord](https://img.shields.io/badge/Discord-come_hang_out-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
-[![Follow pop on X](https://img.shields.io/badge/X-%40hitslop-181717?style=flat&logo=x&logoColor=white)](https://x.com/hitslop)
+[![Join dotpop on Discord](https://img.shields.io/badge/Discord-come_hang_out-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
+[![Follow dotpop on X](https://img.shields.io/badge/X-%40hitslop-181717?style=flat&logo=x&logoColor=white)](https://x.com/hitslop)
 
 ### Little things add up
 
-[![pop repository activity and contributor insights](https://repobeats.axiom.co/api/embed/7fa6efb86563307a3adfcfd775c1f4ece1e346de.svg "Repobeats analytics image")](https://github.com/hitSlop/dotpop/graphs/contributors)
+[![dotpop repository activity and contributor insights](https://repobeats.axiom.co/api/embed/7fa6efb86563307a3adfcfd775c1f4ece1e346de.svg "Repobeats analytics image")](https://github.com/hitSlop/dotpop/graphs/contributors)
 
 ### Star history
 
@@ -475,7 +475,7 @@ Made something wonderfully specific? Show us your pop. Share a screenshot, swap 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=hitSlop/dotpop&amp;type=Date&amp;theme=dark" />
     <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=hitSlop/dotpop&amp;type=Date" />
-    <img alt="pop GitHub star history chart" src="https://api.star-history.com/svg?repos=hitSlop/dotpop&amp;type=Date" width="800" />
+    <img alt="dotpop GitHub star history chart" src="https://api.star-history.com/svg?repos=hitSlop/dotpop&amp;type=Date" width="800" />
   </picture>
 </a>
 
@@ -491,7 +491,7 @@ Other projects exploring personal software and interactive documents:
 - [TiddlyWiki](https://tiddlywiki.com/): a personal wiki that lives in one HTML file.
 - [uapp](https://thederf.com/uapp/demo)
 
-Older inspirations: [HyperCard](https://www.computerhistory.org/revolution/the-web/20/373/2081) and [Smalltalk](https://squeak.org/) put making your own tools within reach. [Winamp's skin system](https://skins.webamp.org/) was a major inspiration for pop's look and feel.
+Older inspirations: [HyperCard](https://www.computerhistory.org/revolution/the-web/20/373/2081) and [Smalltalk](https://squeak.org/) put making your own tools within reach. [Winamp's skin system](https://skins.webamp.org/) was a major inspiration for dotpop's look and feel.
 
 ## Privacy
 
@@ -509,4 +509,4 @@ See [Privacy](https://dotpop.click/docs/privacy/) for the public disclosure.
 
 ## License
 
-MIT © 2026 pop contributors. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
+MIT © 2026 dotpop contributors. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
