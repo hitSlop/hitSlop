@@ -5,27 +5,26 @@ import XIcon from "./XIcon.astro";
 import DiscordIcon from "./DiscordIcon.astro";
 import { SITE_LINKS } from "../constants";
 
-interface Props { current?: "home" | "merch"; class?: string }
+interface Props { current?: "home"; class?: string }
 const { current = "home", class: extra } = Astro.props;
 const onHome = current === "home";
 const links = [
   { label: "Play", href: onHome ? "#playground" : "/#playground" },
   { label: "Browse", href: onHome ? "#templates" : "/#templates" },
   { label: "Make one", href: onHome ? "#make" : "/#make" },
-  { label: "Merch", href: "/merch", current: current === "merch" },
   { label: "Docs", href: SITE_LINKS.docs },
 ];
 const social = [
-  { label: "pop on GitHub", href: SITE_LINKS.repository, icon: GitHubIcon },
-  { label: "pop on X", href: SITE_LINKS.x, icon: XIcon },
-  { label: "Join pop on Discord", href: SITE_LINKS.discord, icon: DiscordIcon },
+  { label: "dotpop on GitHub", href: SITE_LINKS.repository, icon: GitHubIcon },
+  { label: "dotpop on X", href: SITE_LINKS.x, icon: XIcon },
+  { label: "Join dotpop on Discord", href: SITE_LINKS.discord, icon: DiscordIcon },
 ];
 ---
 
 <header class:list={["masthead", extra]}>
   <a class="wordmark" href="/" aria-label="dotpop home"><span class="brand-mark"><img src="/assets/appicon-128.webp" width="40" height="40" alt="" /></span><span>dotpop</span></a>
   <nav class="masthead-nav" aria-label="Primary">
-    {links.map((link) => <a href={link.href} aria-current={link.current ? "page" : undefined}>{link.label}</a>)}
+    {links.map((link) => <a href={link.href}>{link.label}</a>)}
   </nav>
   <div class="masthead-actions">
     <div class="masthead-social">
@@ -48,7 +47,7 @@ const social = [
     </button>
   </header>
   <nav aria-label="Menu">
-    {links.map((link) => <a href={link.href} aria-current={link.current ? "page" : undefined} data-menu-link>{link.label}</a>)}
+    {links.map((link) => <a href={link.href} data-menu-link>{link.label}</a>)}
   </nav>
   <div class="menu-social">
     {social.map(({ label, href, icon: Icon }) => <a class="icon-link" href={href} target="_blank" rel="noopener noreferrer" aria-label={label}><Icon /></a>)}

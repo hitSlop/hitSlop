@@ -145,7 +145,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-v
 @media (hover: hover) { .site-footer nav a:hover { color: var(--accent); } }
 @media (min-width: 780px) { .site-footer { grid-template-columns: auto 1fr auto; } .site-footer p { text-align: center; } }
 
-/* The home page has a compact phone layout; merch and docs keep their own rhythm. */
+/* The home page has a compact phone layout; docs keep their own rhythm. */
 @media (max-width: 779px) {
   .landing-home { --radius: 22px; }
   .landing-home .masthead { top: 8px; min-height: 56px; margin-top: 8px; padding: 0 6px 0 12px; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; border-radius: 22px; }

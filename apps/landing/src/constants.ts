@@ -8,7 +8,3 @@ export const SITE_LINKS = {
   discord: "https://discord.gg/cqKRZjAWv3",
   x: "https://x.com/hitslop",
 } as const;
-
-// TODO: set to a form endpoint (e.g. a Worker route) to collect merch drop signups.
-// While undefined, /merch links directly to Discord and collects no email.
-export const NOTIFY_ENDPOINT: string | undefined = undefined;

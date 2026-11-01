@@ -41,7 +41,7 @@ Self-hosted Latin WOFF2 files in `public/assets/hero/fonts/`, downloaded from Go
 Fonts. Each family includes its SIL Open Font License in the same directory.
 
 - Omnes Black (`omnes-black-latin.woff2`, latin subset of a licensed font supplied by the owner): hero H1 only.
-- Baloo 2, variable 400–800: floating header wordmark/nav, sticker badge, merch headings.
+- Baloo 2, variable 400–800: floating header wordmark/nav, sticker badge.
 - Nunito Sans, variable 400–900 (opsz 6–12): hero interface/copy.
 - Kalam, regular: handwritten annotations.
 - Newsreader (500–700, italic 500) and Onest (400–800): the invoice, export paper and theme demo.
