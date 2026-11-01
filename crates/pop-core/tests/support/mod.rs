@@ -1,9 +1,9 @@
 #![allow(dead_code, reason = "a build without `storage` uses a subset of these fixtures")]
 pub mod generate;
 pub mod relay;
-use serde_json::{Value, json};
 use pop_core::Origin;
 use pop_core::{AppSpec, Applied, Document, Error};
+use serde_json::{Value, json};
 /// Pin the prepared snapshot for this test process. Standalone tests use the last
 /// resolved inventory; `verify` passes a freshly resolved, fixed snapshot explicitly.
 pub fn compat_root() -> std::path::PathBuf {

@@ -1,15 +1,15 @@
 #![cfg(feature = "storage")]
 use crate::support;
+use pop_core::{
+    Origin, file,
+    owner::{Event, Failure, FailureKind, Owner, Reply, Request},
+    store::{Mode, Store},
+};
 use serde_json::{Value, json};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, mpsc},
     time::{Duration, Instant},
-};
-use pop_core::{
-    Origin, file,
-    owner::{Event, Failure, FailureKind, Owner, Reply, Request},
-    store::{Mode, Store},
 };
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {

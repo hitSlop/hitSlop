@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 import PopCore
+import Testing
 
 /// An unsigned JWT-shaped fixture, built at runtime so it never reads as a stored credential.
 private func fixtureToken(_ claims: String) -> String {

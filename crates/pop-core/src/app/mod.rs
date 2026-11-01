@@ -310,10 +310,7 @@ pub(crate) fn requirements(package_format: i128, runtime_abi: i128) -> Result<()
     let markers =
         [("package format", package_format, crate::PACKAGE_FORMAT), ("runtime ABI", runtime_abi, crate::RUNTIME_ABI)];
     if let Some((name, level, supported)) = markers.iter().find(|(_, level, supported)| *level > *supported as i128) {
-        return Err(err(
-            Code::RequiresUpdate,
-            format!("This pop needs {name} {level}; this pop supports {supported}"),
-        ));
+        return Err(err(Code::RequiresUpdate, format!("This pop needs {name} {level}; this pop supports {supported}")));
     }
     if let Some((name, ..)) = markers.iter().find(|(_, level, _)| *level < 1) {
         return Err(err(Code::InvalidRequest, format!("Invalid {name}")));

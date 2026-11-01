@@ -4,10 +4,10 @@
 // changed the document. Oracle: literal merged strings and UTF-16 carets, and an unchanged
 // snapshot on refusal.
 use crate::support;
+use pop_core::{Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;
 use support::{Edit, app, fixture, snapshot, trimmed, type_text, typed};
-use pop_core::{Document, Origin};
 
 const ROW: &str = "00000000000000000000000000000001";
 fn schema() -> String {

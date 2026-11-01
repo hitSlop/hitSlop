@@ -1,6 +1,6 @@
 //! Produces a history-trimmed corpus fixture without exposing live compaction to clients.
-use std::path::PathBuf;
 use pop_core::store::{Mode, Store};
+use std::path::PathBuf;
 
 fn main() {
     let path = PathBuf::from(std::env::args_os().nth(1).expect("document path"));

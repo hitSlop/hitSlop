@@ -3,14 +3,14 @@
 //! Durable Object's rules over memory. The relay's own codec is tested against `sync-frames.json`.
 use crate::support;
 use loro::{ExportMode, LoroDoc, VersionVector};
+use pop_core::Document;
+use pop_core::Origin;
+use pop_core::sync::{Ack, Frame, Permission, Record, Session, Span, Status, Version};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
 use support::generate::intent;
 use support::relay::Relay;
 use support::{ApplyJson, View, app, fixture, next, workload};
-use pop_core::Document;
-use pop_core::Origin;
-use pop_core::sync::{Ack, Frame, Permission, Record, Session, Span, Status, Version};
 
 const APP: [u8; 32] = [7; 32];
 

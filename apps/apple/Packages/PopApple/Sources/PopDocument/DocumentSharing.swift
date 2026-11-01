@@ -1,9 +1,9 @@
 import Combine
 import Foundation
-import SwiftUI
 import PopAccount
 import PopCore
 import PopCoreBinding
+import SwiftUI
 
 public func sharingMessage(_ error: Error) -> String {
   if case SharingError.Failed(let message) = error { return message }

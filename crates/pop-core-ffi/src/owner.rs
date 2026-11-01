@@ -1,9 +1,9 @@
 //! Typed native adapter; sequencing and persistence remain in pop-core::owner.
 use super::*;
-use std::path::PathBuf;
 use pop_core::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
 use pop_core::store::Pressure;
 use pop_core::{Batch, Code};
+use std::path::PathBuf;
 #[uniffi::remote(Enum)]
 pub enum ThemeChange {
     Set { values: std::collections::HashMap<String, String> },

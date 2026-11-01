@@ -1,15 +1,15 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
 use crate::support;
+use pop_core::file::{self, Artwork, Kind, TemplateSource};
+use pop_core::registry::{self, Lease};
+use pop_core::store::{Error, Mode, Store};
+use pop_core::{Code, Origin};
 use rusqlite::{Connection, config::DbConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 use support::ApplyJson;
 use support::{App, isolate_registry, registry_folder, write_app};
-use pop_core::file::{self, Artwork, Kind, TemplateSource};
-use pop_core::registry::{self, Lease};
-use pop_core::store::{Error, Mode, Store};
-use pop_core::{Code, Origin};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial"}"#;
@@ -475,7 +475,7 @@ fn document_copy_accepts_long_destination_names_without_leaving_staging_files() 
     for length in [240, 255] {
         let folder = dir.path().join(length.to_string());
         fs::create_dir(&folder).unwrap();
-        let output = folder.join(format!("{}.pop", "d".repeat(length - 5)));
+        let output = folder.join(format!("{}.pop", "d".repeat(length - ".pop".len())));
         file::create_document(&source, &output).unwrap();
         assert_eq!(file::kind(&output).unwrap(), Kind::Document);
         assert_eq!(fs::read_dir(&folder).unwrap().count(), 1);
@@ -631,8 +631,7 @@ fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_
         vec!["-c".into(), format!("/bin/ln -sf /bin/sh '{}'; {program}", executable.display())],
     )
     .unwrap();
-    let error =
-        pop_core::widgets::render_saved(&document, &evaluator).err().expect("replacement must refuse capture");
+    let error = pop_core::widgets::render_saved(&document, &evaluator).err().expect("replacement must refuse capture");
     assert!(error.to_string().contains("renderer changed during capture"), "{error}");
     assert_eq!(fs::read(&document).unwrap(), saved, "capture must never modify the document");
 }
@@ -1614,10 +1613,7 @@ fn attachments_are_content_addressed_bounded_and_verified() {
     assert_eq!(store.put_attachment(b"hello").unwrap(), first, "storing the same bytes again is a no-op");
     assert_eq!(store.attachment(&first.id).unwrap(), b"hello");
     assert_eq!(store.attachments().unwrap(), vec![first.clone()]);
-    assert_eq!(
-        code(store.put_attachment(&vec![0; pop_core::ATTACHMENT_FILE_BYTES + 1]).unwrap_err()),
-        Code::TooLarge
-    );
+    assert_eq!(code(store.put_attachment(&vec![0; pop_core::ATTACHMENT_FILE_BYTES + 1]).unwrap_err()), Code::TooLarge);
     assert_eq!(code(store.attachment(&"0".repeat(64)).unwrap_err()), Code::PathNotFound);
     assert_eq!(code(store.attachment("../x").unwrap_err()), Code::InvalidId);
     // A document holds a bounded number of attachments; bytes it already holds still store.
@@ -2082,10 +2078,9 @@ fn taking_the_writer_lock_never_drops_this_process_sqlite_locks() {
     reader.execute_batch("BEGIN").unwrap();
     reader.query_row("SELECT count(*) FROM app", [], |r| r.get::<_, i64>(0)).unwrap();
     let lease = Lease::acquire(&doc).unwrap();
-    let status =
-        support::child("file::exclusive_sqlite_writer", &[("POP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
-            .status()
-            .unwrap();
+    let status = support::child("file::exclusive_sqlite_writer", &[("POP_EXCLUSIVE_DOCUMENT", doc.to_str().unwrap())])
+        .status()
+        .unwrap();
     assert_eq!(status.code(), Some(0), "another writer must find the file busy while this process reads it");
     reader.execute_batch("COMMIT").unwrap();
     drop(lease);

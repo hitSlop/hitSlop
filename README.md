@@ -1,6 +1,6 @@
 # dotpop
 
-**Pop apps. Big personality.**
+**Tiny apps. Big personality.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/hitSlop/dotpop/ci.yml?branch=master&style=flat&label=CI)](https://github.com/hitSlop/dotpop/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-7050ad?style=flat)](LICENSE)
@@ -11,7 +11,7 @@
 
 [![Local-first](https://img.shields.io/badge/Local--first-487B41?style=flat)](#keep-the-app-keep-the-work)
 [![Local use needs no account](https://img.shields.io/badge/Local_use-no_account-487B41?style=flat)](#keep-the-app-keep-the-work)
-[![Pop apps. Big personality.](https://img.shields.io/badge/Pop_apps-Big_personality-7050ad?style=flat)](#small-enough-to-be-yours)
+[![Tiny apps. Big personality.](https://img.shields.io/badge/Tiny_apps-Big_personality-7050ad?style=flat)](#small-enough-to-be-yours)
 
 Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a pop pond to stare at between meetings.
 
@@ -178,7 +178,7 @@ Here’s where we’re heading:
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
 - [ ] **Remix something you love.** Make someone else’s pop your own, and keep your saved data as the app evolves.
-- [ ] **A store for pop apps.** Discover, publish and install community pop through an app-store-style catalog.
+- [ ] **A store for tiny apps.** Discover, publish and install community pop through an app-store-style catalog.
 - [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to pop,” MIDI, and richer audio and transcription—with permissions for each pop.
 
 See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. Remaining directions have no release dates yet.

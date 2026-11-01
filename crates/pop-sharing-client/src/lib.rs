@@ -3,6 +3,12 @@ mod resources;
 #[cfg(test)]
 mod tests;
 mod transport;
+use pop_core::{
+    library::snapshot,
+    owner::{Owner, Reply, Request},
+    store::{Mode, Share, Store},
+};
+use pop_sharing_protocol::http::{AccountRoom, CreateRoom, CreatedRoom, Invitation, RoomInfo, RoomPhase};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -10,12 +16,6 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
-use pop_core::{
-    library::snapshot,
-    owner::{Owner, Reply, Request},
-    store::{Mode, Share, Store},
-};
-use pop_sharing_protocol::http::{AccountRoom, CreateRoom, CreatedRoom, Invitation, RoomInfo, RoomPhase};
 type Result<T> = std::result::Result<T, String>;
 type Notice = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
 fn fail(e: impl std::fmt::Display) -> String {
@@ -206,8 +206,7 @@ fn stage(owner: &Owner) -> Result<SeedBackup> {
         let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
         let checkpoint = store.document().map_err(fail)?.checkpoint().map_err(fail)?;
         let meta = loro::LoroDoc::decode_import_blob_meta(&checkpoint, true).map_err(|_| "Invalid seed history")?;
-        let seed =
-            pop_sharing_protocol::frame::version_pairs(meta.partial_end_vv.iter().map(|(&p, &n)| (p, n as u32)));
+        let seed = pop_sharing_protocol::frame::version_pairs(meta.partial_end_vv.iter().map(|(&p, &n)| (p, n as u32)));
         Ok(SeedBackup {
             path: path.clone(),
             version: seed,

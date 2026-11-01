@@ -1,7 +1,7 @@
 use crate::support;
+use pop_core::{AppSpec, Document};
 use serde_json::{Value, json};
 use support::ApplyJson;
-use pop_core::{AppSpec, Document};
 
 /// Whether authoring accepts the descriptor, with initial values that fit it, so only the
 /// descriptor can refuse.

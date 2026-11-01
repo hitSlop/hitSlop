@@ -1,12 +1,6 @@
 //! Shared live/closed command routing and bounded Unix transport. Fault peers exercise
 //! real socket loss and identity checks, not private call ordering.
 use crate::support;
-use serde_json::{Value, json};
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, mpsc};
-use std::time::{Duration, Instant};
 use pop_core::{
     command::{self, ExportCompletion, ExportHandler, ExportRequest},
     file,
@@ -15,6 +9,12 @@ use pop_core::{
     socket::{self, Server},
     store::{Mode, Store},
 };
+use serde_json::{Value, json};
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::{Duration, Instant};
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
 fn document() -> (tempfile::TempDir, PathBuf) {
     document_declaring(&[])

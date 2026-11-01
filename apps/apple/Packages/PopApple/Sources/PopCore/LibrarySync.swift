@@ -1,7 +1,7 @@
 @preconcurrency import CloudKit
 import Foundation
-import Synchronization
 import PopCoreBinding
+import Synchronization
 import os
 
 struct CloudFailure: Error, CustomStringConvertible {

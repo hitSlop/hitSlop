@@ -1,7 +1,7 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopDocument
+import SwiftUI
 
 /// A real AppKit button gives both share surfaces a stable anchor in the hover panel.
 struct PopShareButton: NSViewRepresentable {

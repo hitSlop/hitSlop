@@ -1,7 +1,7 @@
 #![cfg(feature = "storage")]
 //! The Rust boundary owns request shapes and limits; Swift carries only typed host actions.
-use serde_json::json;
 use pop_core::page_wire::{HostReply, HostRequest, PageRequest};
+use serde_json::json;
 
 #[test]
 fn close_recovery_preserves_full_text_and_paths_without_putting_values_in_decode_errors() {

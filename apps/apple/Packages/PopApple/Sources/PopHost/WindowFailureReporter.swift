@@ -44,8 +44,7 @@ import PopDocument
     case .saving: break
     }
   }
-  func lifecycle(_ operation: PopTelemetryEvent.Failure, error: Error, format: ExportFormat?, telemetry: PopTelemetry)
-  {
+  func lifecycle(_ operation: PopTelemetryEvent.Failure, error: Error, format: ExportFormat?, telemetry: PopTelemetry) {
     if PopFailureContext.isCancellation(error) {
       telemetry.send(.breadcrumb(operation, .cancelled))
     } else if saveFailed || rendererFailed {

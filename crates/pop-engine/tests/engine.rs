@@ -1,10 +1,10 @@
 //! The private process boundary: typed JSON, frozen preflight, and classified outcomes.
+use pop_core::EngineReply;
 use serde_json::{Value, json};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
-use pop_core::EngineReply;
 fn protocol() -> String {
     pop_core::command::protocol().parse::<Value>().unwrap()["version"].to_string()
 }
@@ -21,7 +21,7 @@ fn the_engine_does_not_expose_development_rooms() {
     }
 }
 fn invoke(args: &[&str], input: &[u8], app: Option<&Path>) -> std::process::Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_tiny-engine"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_pop-engine"));
     command.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     if let Some(app) = app {
         command.env("POP_APP", app);
@@ -198,7 +198,7 @@ fn protocol_refusal_precedes_even_unparseable_arguments() {
     use std::os::unix::ffi::OsStrExt;
     let current: u64 = protocol().parse().unwrap();
     for version in [current - 1, current + 1].map(|v| v.to_string()) {
-        let output = Command::new(env!("CARGO_BIN_EXE_tiny-engine"))
+        let output = Command::new(env!("CARGO_BIN_EXE_pop-engine"))
             .args([OsStr::new("--client-protocol"), OsStr::new(&version), OsStr::from_bytes(b"\xff")])
             .output()
             .unwrap();
@@ -396,7 +396,7 @@ fn stalled_preview(close_input: bool) {
     request(json!({"method":"pack","stage":stage(dir.path()),"file":template,"app":app(json!({"title":"Before"}))}));
     request(json!({"method":"create","from":template,"output":document}));
     let mut child = Reap(
-        Command::new(env!("CARGO_BIN_EXE_tiny-engine"))
+        Command::new(env!("CARGO_BIN_EXE_pop-engine"))
             .args(["--client-protocol", &protocol(), "--preview-owner", document.to_str().unwrap()])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -575,10 +575,7 @@ fn pack_checks_all_views_and_stores_only_unsupplied_artwork() {
     assert_eq!(packed["artwork"], json!({"preview":"rendered","icon":"supplied"}), "{packed}");
     let (_, stored) = pop_core::file::artwork(&template, &[pop_core::file::Artwork::Icon]).unwrap().unwrap();
     // Supplied artwork is optimized by pack, retaining its pixels.
-    assert_eq!(
-        stored,
-        pop_core::file::artwork(&supplied_only, &[pop_core::file::Artwork::Icon]).unwrap().unwrap().1
-    );
+    assert_eq!(stored, pop_core::file::artwork(&supplied_only, &[pop_core::file::Artwork::Icon]).unwrap().unwrap().1);
     assert!(pop_core::file::artwork(&template, &[pop_core::file::Artwork::Preview]).unwrap().is_some());
 }
 

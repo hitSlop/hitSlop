@@ -1,6 +1,6 @@
-import SwiftUI
 import PopCore
 import PopDocument
+import SwiftUI
 
 struct PhoneCatalogView: View {
   @ObservedObject var model: PhoneDocuments

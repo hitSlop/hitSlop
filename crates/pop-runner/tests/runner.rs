@@ -1,7 +1,7 @@
 //! Authored code has no host APIs and cannot exhaust the parent. No file is involved:
 //! this tests the restricted child's boundary independently of mutation routing.
-use serde_json::{Value, json};
 use pop_runner::Evaluator;
+use serde_json::{Value, json};
 fn evaluate(code: &str) -> Value {
     run(code).unwrap()
 }

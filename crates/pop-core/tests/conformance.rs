@@ -4,9 +4,9 @@ use support::{Edit, View, app, apply_patches, fixture, snapshot, type_text, upda
 // Failure: the core accepts a wrong edit or publishes part of a rejected batch.
 // Oracle: literal fixtures for identity and atomicity cases, with Unicode results
 // spelled out independently.
-use serde_json::{Value, json};
 use pop_core::Document;
 use pop_core::Origin;
+use serde_json::{Value, json};
 
 fn batch(case: &Value) -> String {
     json!({"intents":case["intents"]}).to_string()

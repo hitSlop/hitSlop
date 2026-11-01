@@ -4,10 +4,10 @@
 // document. Oracle: literal values, and every publication applied to the page's view
 // equals a fresh snapshot.
 use crate::support;
+use pop_core::{Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;
 use support::{View, app, fixture, type_text, value};
-use pop_core::{Document, Origin};
 
 const ROW: &str = "00000000000000000000000000000001";
 fn schema() -> String {

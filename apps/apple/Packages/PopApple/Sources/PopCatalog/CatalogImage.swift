@@ -1,7 +1,7 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopFeatures
+import SwiftUI
 
 /// Rounded white tile holding a template or document icon.
 struct IconTile: View {

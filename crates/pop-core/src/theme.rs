@@ -199,8 +199,7 @@ fn read_file(template: &str, file: &str) -> Result<Values> {
     if file.len() > THEME_FILE_LIMIT {
         return Err(err(Code::TooLarge, "Theme file is too large"));
     }
-    let file: ThemeFile =
-        serde_json::from_str(file).map_err(|_| err(Code::InvalidRequest, "Not a pop theme file"))?;
+    let file: ThemeFile = serde_json::from_str(file).map_err(|_| err(Code::InvalidRequest, "Not a pop theme file"))?;
     if file.template != template {
         return Err(err(Code::InvalidRequest, format!("This theme is for {}", file.template)));
     }

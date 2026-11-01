@@ -1,7 +1,7 @@
 #![cfg(feature = "storage")]
-use serde_json::{Value, json};
 use pop_core::app::{AppDefinition, Capability, StandardFrame, WindowFrame};
 use pop_core::{Code, Document, build::BuildDeclaration};
+use serde_json::{Value, json};
 
 fn metadata() -> Value {
     json!({"slug":"fixture","title":"Fixture","description":"A document","author":{"name":"Author","url":"https://example.com"},"categories":["utilities"]})
@@ -121,9 +121,7 @@ fn newer_markers_win_before_unknown_fields_or_unrepresentable_numbers() {
         assert_eq!(pop_core::build::BuildInput::decode(&future).unwrap_err().code, Code::RequiresUpdate);
     }
     assert_eq!(
-        pop_core::build::BuildInput::decode(r#"{"packageFormat":1,"runtimeABI":1,"unknown":1e999}"#)
-            .unwrap_err()
-            .code,
+        pop_core::build::BuildInput::decode(r#"{"packageFormat":1,"runtimeABI":1,"unknown":1e999}"#).unwrap_err().code,
         Code::InvalidRequest
     );
 }

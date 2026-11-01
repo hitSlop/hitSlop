@@ -1,6 +1,6 @@
 //! Engine acceptance belongs to Rust; no generated JSON Schema runs beside it.
-use serde_json::{Value, json};
 use pop_core::{EngineReply, EngineRequest};
+use serde_json::{Value, json};
 
 fn accepts(value: Value) -> bool {
     EngineRequest::parse(&value.to_string()).is_ok()

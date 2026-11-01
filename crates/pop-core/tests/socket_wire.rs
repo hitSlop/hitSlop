@@ -1,10 +1,10 @@
 #![cfg(feature = "storage")]
 //! Routing checks live beside the serde types, not in a second JSON Schema decoder.
-use serde_json::{Value, json};
 use pop_core::{
     Code, EngineReply,
     socket_wire::{Discovery, SocketRequest},
 };
+use serde_json::{Value, json};
 
 fn decode(mut value: Value) -> Result<SocketRequest, pop_core::Error> {
     let protocol = value.as_object_mut().unwrap().remove("protocol");
@@ -30,8 +30,7 @@ fn requests_check_routing_but_leave_intents_to_the_owner() {
     }
     for method in ["get", "attachments.list", "theme.export"] {
         assert!(
-            decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":method,"documentPath":"/tmp/doc.pop"}))
-                .is_ok()
+            decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":method,"documentPath":"/tmp/doc.pop"})).is_ok()
         );
     }
     assert!(decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"export","documentPath":"/tmp/doc.pop","format":"pdf","output":"/tmp/doc.pdf"})).is_ok());

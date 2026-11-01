@@ -1,9 +1,9 @@
 #![cfg(feature = "storage")]
+use pop_core::{Code, Document, file::build};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
-use pop_core::{Code, Document, file::build};
 
 fn input(root: &Path) -> Value {
     fs::create_dir_all(root.join("resources")).unwrap();

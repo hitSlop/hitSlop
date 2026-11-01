@@ -2,9 +2,9 @@
 // nested edit and removal of its containing row in one batch. Oracle: independent patch
 // consumer + fresh snapshots. Random nested workloads run in `model.rs`.
 use crate::support;
+use pop_core::Document;
 use serde_json::{Value, json};
 use support::{Edit, View, app};
-use pop_core::Document;
 #[test]
 fn nested_edit_and_removal_of_its_row_in_one_batch() {
     let f: Value = serde_json::from_str(include_str!("../fixtures/nested.json")).unwrap();

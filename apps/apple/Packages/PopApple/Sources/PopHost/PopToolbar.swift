@@ -1,6 +1,6 @@
 import AppKit
-import SwiftUI
 import PopCore
+import SwiftUI
 
 func popToolbarFrame(document: NSRect, visible: NSRect?) -> NSRect {
   let width = min(max(document.width, 360), 560, max(0, (visible?.width ?? 576) - 16))

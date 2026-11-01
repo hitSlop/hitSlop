@@ -1,8 +1,8 @@
 import Foundation
-import Testing
 import PopCore
 import PopCoreBinding
 import PopTestSupport
+import Testing
 import WebKit
 
 @testable import PopDocument

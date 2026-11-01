@@ -1,9 +1,9 @@
 import AppKit
 import Foundation
-import Testing
 import PopCore
 import PopTestSupport
 import PopWidgets
+import Testing
 
 @testable import PopDocument
 @testable import PopHost

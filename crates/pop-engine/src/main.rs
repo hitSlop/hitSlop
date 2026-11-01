@@ -4,12 +4,12 @@
 //! renders a closed document's export in this executable's restricted evaluator. Only
 //! opening a window needs dotpop.app. Only build/protocol queries and the exact restricted
 //! evaluator entry point are outside the JSON wire.
+use pop_core::owner::{Failure, FailureKind};
+use pop_core::{Code, EngineRequest, EngineSuccess, command, engine::True, file, registry, store};
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use pop_core::owner::{Failure, FailureKind};
-use pop_core::{Code, EngineRequest, EngineSuccess, command, engine::True, file, registry, store};
 
 mod attachments;
 mod open;

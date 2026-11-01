@@ -1,7 +1,7 @@
 //! Opt-in replacement timings: `cargo run --release -p pop-core --example bench_replace`.
+use pop_core::{AppSpec, Document, Origin};
 use serde_json::{Value, json};
 use std::time::Instant;
-use pop_core::{AppSpec, Document, Origin};
 
 fn main() {
     let app = AppSpec::data(r#"{"kind":"object","properties":{"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"},"done":{"kind":"boolean"}}}}}}"#).unwrap();

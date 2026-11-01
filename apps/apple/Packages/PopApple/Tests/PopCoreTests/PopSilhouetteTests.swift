@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
-import Testing
 import PopTestSupport
+import Testing
 
 @testable import PopCore
 

@@ -1,7 +1,7 @@
 import Foundation
-import Speech
 import PopCore
 import PopCoreBinding
+import Speech
 
 /// Where this Mac would recognize a locale. Only `onDevice` is ever used: a locale the Mac
 /// recognizes only through Apple's servers is unavailable, never a silent upload.

@@ -1,10 +1,10 @@
 import AppKit
 import CryptoKit
 import Foundation
-import Testing
 import PopCore
 import PopCoreBinding
 import PopTestSupport
+import Testing
 
 @testable import PopDocument
 

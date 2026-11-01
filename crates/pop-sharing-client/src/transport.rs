@@ -1,14 +1,5 @@
 //! Single native Rust socket supervisor. Swift only starts/stops it and reads status.
 use super::*;
-use std::{
-    cell::RefCell,
-    collections::VecDeque,
-    io::{self, BufRead, BufReader, Read, Write},
-    net::{TcpStream, ToSocketAddrs},
-    sync::atomic::{AtomicBool, Ordering},
-    thread,
-    time::Duration,
-};
 use pop_core::{
     owner::SyncEvent,
     sync::{MAX_FRAME, PauseKind},
@@ -18,6 +9,15 @@ use pop_sharing_protocol::{
     failure::{self, Outcome, Route},
     frame::Frame,
     limits,
+};
+use std::{
+    cell::RefCell,
+    collections::VecDeque,
+    io::{self, BufRead, BufReader, Read, Write},
+    net::{TcpStream, ToSocketAddrs},
+    sync::atomic::{AtomicBool, Ordering},
+    thread,
+    time::Duration,
 };
 use tungstenite::{Message, client::IntoClientRequest, stream::MaybeTlsStream};
 
@@ -922,10 +922,9 @@ mod tests {
                         )
                         .unwrap();
                         assert!(matches!(ws.read().unwrap(), Message::Binary(_)));
-                        for frame in [
-                            Frame::Welcome { permission: pop_core::sync::Permission::Write, version },
-                            Frame::CaughtUp,
-                        ] {
+                        for frame in
+                            [Frame::Welcome { permission: pop_core::sync::Permission::Write, version }, Frame::CaughtUp]
+                        {
                             ws.send(Message::Binary(envelope::encode(frame).unwrap().into())).unwrap();
                         }
                         ws.send(Message::Text("pong".into())).unwrap();

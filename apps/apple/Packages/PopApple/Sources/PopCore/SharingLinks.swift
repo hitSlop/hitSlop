@@ -1,6 +1,6 @@
 import Foundation
-import Security
 import PopCoreBinding
+import Security
 
 extension Notification.Name {
   public static let popSharingAccountChanged = Notification.Name("pop.sharingAccountChanged")

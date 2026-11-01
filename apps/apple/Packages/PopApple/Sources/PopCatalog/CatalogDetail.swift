@@ -1,7 +1,7 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopFeatures
+import SwiftUI
 
 struct CatalogDetail: View {
   let section: String

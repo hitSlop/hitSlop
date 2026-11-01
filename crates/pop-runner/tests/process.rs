@@ -1,6 +1,6 @@
 //! The parent supervises real processes even when they do not behave like QuickJS.
-use std::time::{Duration, Instant};
 use pop_runner::{Batch, Evaluator, JobKind};
+use std::time::{Duration, Instant};
 
 fn run(script: &str) -> Result<String, String> {
     Evaluator::new("/bin/sh".into(), vec!["-c".into(), script.into()]).unwrap().run(1, "", "{}")

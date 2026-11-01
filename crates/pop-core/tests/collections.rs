@@ -2,9 +2,9 @@
 // create it, or an edit from cleared text resurrects it. Random workloads run in
 // `model.rs`. Oracle: literal values.
 use crate::support;
+use pop_core::Document;
 use serde_json::json;
 use support::{Edit, app, fixture, snapshot, type_text};
-use pop_core::Document;
 
 #[test]
 fn page_typing_into_an_unset_optional_text_creates_it() {

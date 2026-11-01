@@ -1,6 +1,6 @@
 import ImageIO
-import QuickLookThumbnailing
 import PopCore
+import QuickLookThumbnailing
 
 #if os(macOS)
   import AppKit

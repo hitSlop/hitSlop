@@ -1,5 +1,5 @@
-import Testing
 import PopCore
+import Testing
 
 @testable import PopHost
 

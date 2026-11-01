@@ -1,8 +1,8 @@
 import Foundation
-import Testing
 import PopCore
 import PopFeatures
 import PopTestSupport
+import Testing
 
 @testable import PopCatalog
 

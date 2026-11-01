@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
-import QuickLookThumbnailing
 import PopCore
 import PopCoreBinding
+import QuickLookThumbnailing
 import UIKit
 import WebKit
 import XCTest

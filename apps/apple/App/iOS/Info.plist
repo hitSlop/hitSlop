@@ -27,7 +27,7 @@
     <key>CFBundleURLSchemes</key><array><string>dotpop</string></array>
   </dict></array>
   <key>CFBundleDocumentTypes</key><array><dict>
-    <key>CFBundleTypeName</key><string>pop document</string>
+    <key>CFBundleTypeName</key><string>dotpop document</string>
     <key>CFBundleTypeRole</key><string>Editor</string>
     <key>LSHandlerRank</key><string>Owner</string>
     <key>LSItemContentTypes</key><array><string>click.dotpop.document</string></array>
@@ -37,7 +37,7 @@
   </array>
   <key>UTExportedTypeDeclarations</key><array><dict>
     <key>UTTypeIdentifier</key><string>click.dotpop.document</string>
-    <key>UTTypeDescription</key><string>pop document</string>
+    <key>UTTypeDescription</key><string>dotpop document</string>
     <key>UTTypeConformsTo</key><array><string>public.data</string><string>public.content</string></array>
     <key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key><array><string>pop</string></array></dict>
   </dict></array>

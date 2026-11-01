@@ -10,14 +10,14 @@ pub use actor::BrowserDriver;
 use actor::Message;
 pub use actor::{SyncConnection, SyncEvent, SyncSink};
 pub use failure::{Failure, FailureKind};
+#[cfg(not(target_arch = "wasm32"))]
+pub use pop_runner::Evaluator;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
-#[cfg(not(target_arch = "wasm32"))]
-pub use pop_runner::Evaluator;
 
 type Result<T> = std::result::Result<T, Failure>;
 /// Native theme controls use this typed adapter to the same batch path as page edits.

@@ -1,8 +1,8 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopDocument
 import PopWidgets
+import SwiftUI
 import UniformTypeIdentifiers
 import WebKit
 

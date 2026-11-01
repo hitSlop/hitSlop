@@ -1,8 +1,8 @@
 //! Opening a document in a window: the one request that needs dotpop.app, so macOS only.
 use super::refusal;
+use pop_core::{Code, file, store};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use pop_core::{Code, file, store};
 
 /// Opens the document at `path` in dotpop.app and returns its canonical path. A template
 /// is refused: the app opens one by creating a document from it.
@@ -84,8 +84,8 @@ mod tests {
         };
         let (inside, named) = (app("Inside.app"), app("Development/dotpop.app"));
         let installed = [app("Applications/dotpop.app"), app("Home/Applications/dotpop.app")];
-        let engine = inside.join("Contents/MacOS/dottiny-engine");
-        let outside = dir.path().join("bin/tiny-engine");
+        let engine = inside.join("Contents/MacOS/pop-engine");
+        let outside = dir.path().join("bin/pop-engine");
         assert_eq!(application(Some(&engine), Some(&named), &installed), Ok(inside));
         assert_eq!(application(Some(&outside), Some(&named), &installed), Ok(named.clone()));
         let missing = dir.path().join("Missing.app");

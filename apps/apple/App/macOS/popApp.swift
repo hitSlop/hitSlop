@@ -1,8 +1,6 @@
 import AppKit
 import CloudKit
 import Combine
-import Sparkle
-import SwiftUI
 import PopAccount
 import PopCatalog
 import PopCore
@@ -10,6 +8,8 @@ import PopDocument
 import PopFirebase
 import PopHost
 import PopWidgets
+import Sparkle
+import SwiftUI
 import UniformTypeIdentifiers
 import WidgetKit
 

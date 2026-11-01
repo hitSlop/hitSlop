@@ -1,9 +1,9 @@
 @preconcurrency import CloudKit
 import Foundation
-import Synchronization
-import Testing
 import PopCoreBinding
 import PopTestSupport
+import Synchronization
+import Testing
 
 @testable import PopCore
 @testable import PopDocument

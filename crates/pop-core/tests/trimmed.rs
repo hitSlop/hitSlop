@@ -3,11 +3,11 @@
 //! that is itself trimmed was accepted. Oracle: literal values and the full document.
 use crate::support;
 use loro::{ExportMode, LoroDoc};
+use pop_core::Origin;
+use pop_core::{Code, Document};
 use serde_json::json;
 use support::ApplyJson;
 use support::{Edit, View, app, trimmed, value};
-use pop_core::Origin;
-use pop_core::{Code, Document};
 
 /// A document's full checkpoint and the same document trimmed to its latest version.
 fn trimmed_document() -> (String, Vec<u8>, Vec<u8>) {

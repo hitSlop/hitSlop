@@ -1,7 +1,7 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopDocument
+import SwiftUI
 import WebKit
 
 /// The hover toolbar above a document window: its panel, when it shows, and the controls

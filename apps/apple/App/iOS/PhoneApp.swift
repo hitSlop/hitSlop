@@ -1,7 +1,7 @@
 import BackgroundTasks
 import CloudKit
-import SwiftUI
 import PopCore
+import SwiftUI
 import UIKit
 
 @MainActor final class PhoneAppDelegate: NSObject, UIApplicationDelegate {

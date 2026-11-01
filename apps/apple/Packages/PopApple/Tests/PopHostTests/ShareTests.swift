@@ -1,8 +1,8 @@
 import AppKit
 import PDFKit
-import Testing
 import PopCore
 import PopTestSupport
+import Testing
 
 @testable import PopHost
 

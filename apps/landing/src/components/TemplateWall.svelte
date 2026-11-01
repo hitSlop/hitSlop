@@ -88,7 +88,7 @@
     {/each}
   </ul>
   {#if !expanded && !filter && templates.length > PREVIEW}
-    <div class="more"><button type="button" onclick={() => (expanded = true)}>See all {templates.length} pop apps <span aria-hidden="true">↓</span></button></div>
+    <div class="more"><button type="button" onclick={() => (expanded = true)}>See all {templates.length} tiny apps <span aria-hidden="true">↓</span></button></div>
   {/if}
 </div>
 

@@ -3,8 +3,8 @@
 mod runtime {
     use crate::metrics::{Metric, record};
     use crate::room::{bounded_body, hash, identity_response, random_hex};
-    use serde::Deserialize;
     use pop_sharing_protocol::http::{AccountRoom, CreateRoom, RoomInit};
+    use serde::Deserialize;
     use worker::*;
 
     #[derive(Deserialize)]

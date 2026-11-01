@@ -1,9 +1,9 @@
 import CoreGraphics
 import Foundation
 import ImageIO
-import Testing
 import PopCoreBinding
 import PopTestSupport
+import Testing
 
 @testable import PopCore
 @testable import PopDocument

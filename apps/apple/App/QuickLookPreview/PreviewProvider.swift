@@ -1,7 +1,7 @@
 import Cocoa
 import ImageIO
-import QuickLookUI
 import PopCore
+import QuickLookUI
 import UniformTypeIdentifiers
 
 /// The spacebar preview of a `.pop`: the document as it last rendered (its preview

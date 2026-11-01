@@ -1,7 +1,7 @@
 import Foundation
-import Synchronization
 import PopCore
 import PopCoreBinding
+import Synchronization
 
 /// Whether Edit ▸ Undo and Redo have anything to do.
 public struct UndoState: Sendable, Equatable {

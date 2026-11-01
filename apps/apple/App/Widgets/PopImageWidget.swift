@@ -1,6 +1,6 @@
 import AppIntents
-import SwiftUI
 import PopWidgets
+import SwiftUI
 import WidgetKit
 
 #if os(macOS)

@@ -1,7 +1,7 @@
 //! Native sharing façade: no network frames or Loro bytes cross this boundary.
 use crate::owner::NativeOwner;
-use std::{path::Path, sync::Arc};
 use pop_sharing_client::{AccountAccess, Client, ClientStatus, PauseKind, Phase};
+use std::{path::Path, sync::Arc};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum SharingError {

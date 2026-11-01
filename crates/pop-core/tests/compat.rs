@@ -2,6 +2,12 @@
 //! this core and reads as that release recorded, takes the release's recorded edit, saves,
 //! trims its history on close and reopens to the recorded result. See docs/testing.md.
 use crate::support;
+use pop_core::store::{Mode, Store};
+use pop_core::{
+    Origin,
+    file::{ResourceRoute, resource_response},
+    owner::{Failure, Owner, Reply, Request},
+};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::os::unix::fs::PermissionsExt;
@@ -9,12 +15,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
 use support::ApplyJson;
-use pop_core::store::{Mode, Store};
-use pop_core::{
-    Origin,
-    file::{ResourceRoute, resource_response},
-    owner::{Failure, Owner, Reply, Request},
-};
 
 fn entries(path: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> =
@@ -155,8 +155,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
     support::isolate_registry();
     let mut cases = 0;
     for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
-        for saved in
-            entries(&entry.join("documents")).into_iter().filter(|p| p.extension().is_some_and(|e| e == "pop"))
+        for saved in entries(&entry.join("documents")).into_iter().filter(|p| p.extension().is_some_and(|e| e == "pop"))
         {
             let name = saved.file_stem().unwrap().to_string_lossy().into_owned();
             let label = format!("{}/{name}", entry.file_name().unwrap().to_string_lossy());
@@ -288,14 +287,14 @@ fn evaluate(input: &Value) -> String {
     use std::process::{Command, Stdio};
     let engine = std::env::var_os("POP_ENGINE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tiny-engine"));
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/pop-engine"));
     let mut child = Command::new(&engine)
         .arg("--evaluate-command")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .unwrap_or_else(|e| panic!("build tiny-engine or set POP_ENGINE ({}): {e}", engine.display()));
+        .unwrap_or_else(|e| panic!("build pop-engine or set POP_ENGINE ({}): {e}", engine.display()));
     child.stdin.take().unwrap().write_all(input.to_string().as_bytes()).unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(output.status.success(), "evaluator failed: {}", String::from_utf8_lossy(&output.stderr));
@@ -309,8 +308,7 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
     support::isolate_registry();
     let mut cases = 0;
     for entry in entries(&support::compat_root()).into_iter().filter(|p| p.join("release.json").exists()) {
-        for saved in
-            entries(&entry.join("documents")).into_iter().filter(|p| p.extension().is_some_and(|e| e == "pop"))
+        for saved in entries(&entry.join("documents")).into_iter().filter(|p| p.extension().is_some_and(|e| e == "pop"))
         {
             let name = saved.file_stem().unwrap().to_string_lossy();
             let probes = json_file(&entry.join(format!("commands/{name}.json")));

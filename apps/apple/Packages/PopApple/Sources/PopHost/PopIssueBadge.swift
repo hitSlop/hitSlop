@@ -1,6 +1,6 @@
 import AppKit
-import SwiftUI
 import PopDocument
+import SwiftUI
 
 /// The badge's frame: just past the hover toolbar's trailing end, so it sits outside the
 /// pop's own content and shape, kept on screen.

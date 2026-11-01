@@ -46,8 +46,8 @@ pub struct CaptureRuntime {
 impl CaptureRuntime {
     #[uniffi::constructor]
     pub fn new(evaluator_path: String) -> Result<std::sync::Arc<Self>, crate::CoreError> {
-        let evaluator = pop_core::owner::Evaluator::new(evaluator_path.into(), vec![])
-            .map_err(pop_core::store::Error::Failed)?;
+        let evaluator =
+            pop_core::owner::Evaluator::new(evaluator_path.into(), vec![]).map_err(pop_core::store::Error::Failed)?;
         Ok(std::sync::Arc::new(Self { evaluator }))
     }
 

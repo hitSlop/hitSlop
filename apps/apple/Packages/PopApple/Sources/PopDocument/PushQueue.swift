@@ -1,7 +1,7 @@
 import Foundation
-import Synchronization
 import PopCore
 import PopCoreBinding
+import Synchronization
 
 /// Delivery retains its batch until acknowledgement. Overflow and view replacement
 /// invalidate old acknowledgements, so they can never consume a new resync marker.

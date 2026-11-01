@@ -1,12 +1,12 @@
+use pop_core::{
+    browser_wire::{BrowserEvent as Event, BrowserRequest, BrowserSaveStatus as Status, ResourceRoute},
+    owner, page_wire,
+};
 use rsqlite_vfs::transfer::{DbImport, DbTransfer};
 use sha2::{Digest, Sha256};
 use sqlite_wasm_vfs::sahpool::{OpfsSAHImportTarget, OpfsSAHPoolCfgBuilder, OpfsSAHPoolUtil, install};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use pop_core::{
-    browser_wire::{BrowserEvent as Event, BrowserRequest, BrowserSaveStatus as Status, ResourceRoute},
-    owner, page_wire,
-};
 use wasm_bindgen::prelude::*;
 
 use pop_sharing_protocol::{
@@ -125,8 +125,7 @@ impl BrowserCopy {
     }
     #[wasm_bindgen(js_name = importWrite)]
     pub fn import_write(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
-        if bytes.len() > pop_core::browser_wire::TRANSFER_BYTES || self.imported + bytes.len() as u64 > self.expected
-        {
+        if bytes.len() > pop_core::browser_wire::TRANSFER_BYTES || self.imported + bytes.len() as u64 > self.expected {
             return Err(error("Import exceeds its declared size"));
         }
         if self.imported == 0

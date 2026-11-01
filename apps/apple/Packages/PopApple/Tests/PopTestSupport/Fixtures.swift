@@ -1,8 +1,8 @@
 import AppKit
 import CryptoKit
-import SQLite3
 import PopCore
 import PopCoreBinding
+import SQLite3
 
 /// Test files built the way `pop build` builds them: explicit BuildInput and staged
 /// resource bytes (with optional artwork), packed by the core into a

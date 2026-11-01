@@ -1,11 +1,11 @@
 //! Descriptor-driven edits to one owner: atomic refusals, publication replay and reopen
 //! are independent observations of every step.
 use crate::support;
+use pop_core::Document;
 use serde_json::{Value, json};
 use support::ApplyJson;
 use support::generate::{intent, targets, value};
 use support::{View, app, next, snapshot, type_text};
-use pop_core::Document;
 
 /// One page text client: the field it types in, and the text it last saw or sent.
 struct Typist {

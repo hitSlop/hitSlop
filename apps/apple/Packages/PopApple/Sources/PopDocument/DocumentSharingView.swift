@@ -1,8 +1,8 @@
 import AuthenticationServices
-import SwiftUI
 import PopAccount
 import PopCore
 import PopCoreBinding
+import SwiftUI
 
 #if os(macOS)
   import AppKit

@@ -1,9 +1,9 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopDocument
 import PopFeatures
 import PopHost
+import SwiftUI
 
 /// The macOS composition root. The models own decisions; `DocumentWindows` owns the native
 /// documents.

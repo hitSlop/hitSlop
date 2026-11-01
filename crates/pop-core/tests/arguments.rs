@@ -1,5 +1,5 @@
-use serde_json::{Value, json};
 use pop_core::arguments::Arguments;
+use serde_json::{Value, json};
 
 fn args(properties: Value) -> Arguments {
     Arguments::parse(&json!({"kind":"object","properties":properties}).to_string()).unwrap()

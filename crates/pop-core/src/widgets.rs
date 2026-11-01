@@ -91,10 +91,7 @@ pub fn saved_version(path: &std::path::Path, evaluator: &pop_runner::Evaluator) 
 /// The caller acquires a saved source through the owner before calling this function.
 /// Only immutable state and the private program leave the core, into a restricted child.
 #[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub fn render_saved(
-    path: &std::path::Path,
-    evaluator: &pop_runner::Evaluator,
-) -> crate::store::Result<WidgetCapture> {
+pub fn render_saved(path: &std::path::Path, evaluator: &pop_runner::Evaluator) -> crate::store::Result<WidgetCapture> {
     use crate::store::{Mode, Store};
     let store = Store::open(path, Mode::Snapshot)?;
     render_source(&crate::capture::RenderSource::new(&store, &store.document()?), evaluator)

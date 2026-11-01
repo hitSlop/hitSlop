@@ -1,10 +1,10 @@
 import CloudKit
 import CryptoKit
 import Foundation
+import PopCoreBinding
 import Security
 import SwiftUI
 import Synchronization
-import PopCoreBinding
 
 func libraryMessage(_ error: Error) -> String {
   if let error = error as? CKError {

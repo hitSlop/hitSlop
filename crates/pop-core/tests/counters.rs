@@ -1,9 +1,9 @@
 // Failure: counter values differ between live use, replay or reopen, or leave the safe
 // integer range. Oracles: literal values, the patch consumer and fresh snapshots.
 use crate::support;
+use pop_core::Document;
 use serde_json::{Value, json};
 use support::{Edit, app, snapshot, updates_since};
-use pop_core::Document;
 
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn schema() -> String {

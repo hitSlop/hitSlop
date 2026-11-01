@@ -1,7 +1,7 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopFeatures
+import SwiftUI
 
 struct CatalogSidebar: View {
   let filter: CatalogFilter

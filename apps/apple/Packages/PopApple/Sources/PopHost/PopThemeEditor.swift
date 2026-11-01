@@ -1,6 +1,6 @@
 import CoreGraphics
-import SwiftUI
 import PopDocument
+import SwiftUI
 
 /// Palette colors as the core spells them: lowercase `#rrggbb`, or `#rrggbbaa` below full
 /// opacity, in sRGB.

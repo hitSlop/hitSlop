@@ -1,9 +1,9 @@
 //! Palette edits use the document's history, sequence, publications and saved bytes.
 use crate::support;
+use pop_core::{AppSpec, Applied, Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;
 use support::{View, snapshot};
-use pop_core::{AppSpec, Applied, Document, Origin};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"hits":{"kind":"counter"}}}"#;
 const INITIAL: &str = r#"{"title":"Initial","hits":0}"#;

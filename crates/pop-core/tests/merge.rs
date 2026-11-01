@@ -5,11 +5,11 @@
 //! differently after holding the same edits. Inserted rows draw their IDs from a small
 //! pool, so replicas also create, remove and restore the same row concurrently.
 use crate::support;
+use pop_core::{Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;
 use support::generate::intent;
 use support::{app, fixture, next, snapshot, workload};
-use pop_core::{Document, Origin};
 
 /// Every row list in `value` names each row once.
 fn rows_are_unique(value: &Value) -> bool {

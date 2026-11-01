@@ -1,7 +1,7 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopDocument
+import SwiftUI
 
 /// Renderer failures, authored issues and save failures: what the window shows and reports.
 extension PopDocumentWindowController {

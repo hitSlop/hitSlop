@@ -1,7 +1,7 @@
 import Foundation
-import Synchronization
 import PopCore
 import PopCoreBinding
+import Synchronization
 import WebKit
 
 /// Serves `pop://app`: the page the shell owns, the bundled shell, and the document's app

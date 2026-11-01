@@ -1,8 +1,8 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopCoreBinding
 import PopDocument
+import SwiftUI
 
 /// The theme panel's frame: beside the document, on the right unless the screen ends
 /// first, exactly as tall as the document (within the visible screen); its colors scroll.

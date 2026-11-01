@@ -2,18 +2,18 @@
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
 use crate::support;
-use rusqlite::Connection;
-use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use support::ApplyJson;
-use support::{App, isolate_registry, type_text, write_app};
 use pop_core::Document;
 use pop_core::Origin;
 use pop_core::file;
 use pop_core::registry::Lease;
 use pop_core::store::{Error, Mode, Share, Store};
 use pop_core::{STORAGE_BYTES, STORAGE_ROWS};
+use rusqlite::Connection;
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use support::ApplyJson;
+use support::{App, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;

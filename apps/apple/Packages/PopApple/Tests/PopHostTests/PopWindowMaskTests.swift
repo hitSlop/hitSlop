@@ -2,11 +2,11 @@ import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
-import QuartzCore
-import Testing
 import PopCore
 import PopDocument
 import PopTestSupport
+import QuartzCore
+import Testing
 import WebKit
 
 @testable import PopHost

@@ -1,9 +1,9 @@
 // Version tokens: opaque, compared for equality by a command's `ifVersion`, and stable
 // across reopen and replay.
 use crate::support;
+use pop_core::Document;
 use serde_json::json;
 use support::{Edit, app, fixture, snapshot, updates_since};
-use pop_core::Document;
 fn create() -> Document {
     let f = fixture("checklist");
     Document::create(&app(f["schema"].to_string()), &f["initial"].to_string()).unwrap()

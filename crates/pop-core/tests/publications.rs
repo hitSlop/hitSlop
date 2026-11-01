@@ -2,11 +2,11 @@
 // changes combined in one batch. Oracle: independent patch consumer + fresh snapshots,
 // with literal outcomes covered by conformance.rs.
 use crate::support;
+use pop_core::Document;
+use pop_core::Origin;
 use serde_json::{Value, json};
 use support::ApplyJson;
 use support::{Edit, View, app, fixture, next};
-use pop_core::Document;
-use pop_core::Origin;
 fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
     let view: Value = serde_json::from_str(&d.state().unwrap()).unwrap();
     let rows = view["value"]["rows"].as_array().unwrap();

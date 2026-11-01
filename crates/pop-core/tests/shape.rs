@@ -1,7 +1,7 @@
 //! Window silhouettes: one parser for native and authoring. Oracle: independently
 //! computed geometry and the SVG/CSS grammar, not another implementation.
-use serde_json::json;
 use pop_core::shape::{Length, Segment, Silhouette, silhouette};
+use serde_json::json;
 
 fn path(source: &str) -> Result<Vec<Segment>, String> {
     match silhouette(Some(&json!({"path": source})), 100.0, 100.0) {

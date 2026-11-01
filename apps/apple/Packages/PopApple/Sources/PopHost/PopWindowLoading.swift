@@ -1,7 +1,7 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopDocument
+import SwiftUI
 import WebKit
 
 /// Opening a document window: waiting for the page, progress, and the first reveal.

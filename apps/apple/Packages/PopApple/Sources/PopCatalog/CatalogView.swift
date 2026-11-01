@@ -1,9 +1,9 @@
 import AppKit
-import SwiftUI
 import PopCore
 import PopDocument
 import PopFeatures
 import PopHost
+import SwiftUI
 
 public struct CatalogView: View {
   @Bindable var model: CatalogModel

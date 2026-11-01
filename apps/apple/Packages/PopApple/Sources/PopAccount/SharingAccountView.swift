@@ -2,10 +2,10 @@ import AuthenticationServices
 import CryptoKit
 @preconcurrency import FirebaseAuth
 import FirebaseCore
-import Security
-import SwiftUI
 import PopCore
 import PopCoreBinding
+import Security
+import SwiftUI
 
 #if os(macOS)
   import AppKit

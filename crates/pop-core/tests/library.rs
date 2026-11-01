@@ -1,13 +1,13 @@
 //! Library storage/owner boundary, independent of authored templates and CloudKit.
 use crate::support;
-use serde_json::json;
-use std::{path::PathBuf, sync::Arc};
 use pop_core::{
     Origin, file,
     library::{Issue, Library, snapshot},
     owner::{Owner, Reply, Request},
     store::Mode,
 };
+use serde_json::json;
+use std::{path::PathBuf, sync::Arc};
 
 fn fixture() -> (tempfile::TempDir, PathBuf) {
     support::isolate_registry();
@@ -675,10 +675,7 @@ fn adopt_refuses_busy_shared_invalid_and_template_files_without_writing() {
     snapshot::request(
         &owner,
         Request::Share {
-            share: pop_core::store::Share {
-                room: "relay-room".into(),
-                endpoint: "https://relay.example.test".into(),
-            },
+            share: pop_core::store::Share { room: "relay-room".into(), endpoint: "https://relay.example.test".into() },
         },
     )
     .unwrap();

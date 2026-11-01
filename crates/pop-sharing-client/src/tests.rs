@@ -1,9 +1,8 @@
 use super::*;
 pub(super) fn fixture() -> (tempfile::TempDir, Arc<Owner>) {
     static REGISTRY: std::sync::Once = std::sync::Once::new();
-    REGISTRY.call_once(|| {
-        pop_core::registry::use_folder(&std::env::temp_dir().join("pop-sharing-test-registry")).unwrap()
-    });
+    REGISTRY
+        .call_once(|| pop_core::registry::use_folder(&std::env::temp_dir().join("pop-sharing-test-registry")).unwrap());
     let dir = tempfile::tempdir().unwrap();
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/checklist/document");
     let template = dir.path().join("template.pop");
@@ -65,9 +64,7 @@ fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry()
     let baseline = dir.path().join("remote.pop");
     request(
         &owner,
-        Request::Share {
-            share: Share { room: "a".repeat(32), endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() },
-        },
+        Request::Share { share: Share { room: "a".repeat(32), endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() } },
     )
     .unwrap();
     request(&owner, Request::Backup { destination: baseline.clone() }).unwrap();

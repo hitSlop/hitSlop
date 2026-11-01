@@ -1,7 +1,7 @@
 #![cfg(feature = "capture")]
 use base64::{Engine, engine::general_purpose::STANDARD};
-use serde_json::{Value, json};
 use pop_runner::{Evaluator, JobKind};
+use serde_json::{Value, json};
 
 fn render(evaluator: &Evaluator, bundle: &str, mode: JobKind) -> Result<String, String> {
     match evaluator.markup(1, bundle, "{}", matches!(mode, JobKind::Widget)) {
@@ -94,8 +94,7 @@ fn saved_view_capture_measures_exports_crops_previews_and_bounds_rasters() {
         let batch = json!({"fonts":[],"frames":[{"kind":kind,"width":width,"height":if kind == "icon" {512} else {100},
             "html":"<html><body><div></div></body></html>",
             "css":format!("html,body{{margin:0;padding:0;width:{width}px;height:auto}}div{{width:{content_width}px;height:{height}px;background:#123456}}")}]});
-        let bundle =
-            format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
+        let bundle = format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
         let reply: Value = serde_json::from_str(&render(&evaluator, &bundle, JobKind::Capture).unwrap()).unwrap();
         if let Some(dimensions) = expected {
             assert_eq!(reply["ok"], true, "{kind}: {reply}");
@@ -137,8 +136,7 @@ fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
         let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
             "html":"<html><body><div>Selectable text 🌿<a href='#end'>Jump</a></div><div id='end'>Last line</div></body></html>",
             "css":format!("html,body{{margin:0;padding:0;width:200px;height:80px;font-family:sans-serif}}@media print{{html,body{{height:{height}px}}}}")}]});
-        let bundle =
-            format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
+        let bundle = format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
         let reply: Value = serde_json::from_str(&render(&evaluator, &bundle, JobKind::Pdf).unwrap()).unwrap();
         assert_eq!(reply["ok"], true, "{reply}");
         let bytes = STANDARD.decode(reply["images"][0].as_str().unwrap()).unwrap();
@@ -238,7 +236,5 @@ fn markup_runs_without_image_bytes_and_raster_refuses_javascript() {
         assert!(error.contains("cannot carry JavaScript"), "{error}");
     }
     let job = json!({"runtimeABI":1,"bundle":"","request":"","mode":"capture","raster":{"batch":markup,"images":{},"javascript":"throw Error('executed')"}});
-    assert!(
-        pop_runner::evaluate(&serde_json::to_vec(&job).unwrap(), || false).unwrap_err().contains("unknown field")
-    );
+    assert!(pop_runner::evaluate(&serde_json::to_vec(&job).unwrap(), || false).unwrap_err().contains("unknown field"));
 }

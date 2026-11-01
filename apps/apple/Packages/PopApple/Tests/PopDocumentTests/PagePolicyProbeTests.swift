@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
-import Testing
 import PopTestSupport
+import Testing
 import WebKit
 
 @testable import PopDocument

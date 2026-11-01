@@ -1,11 +1,5 @@
 //! Disposable fixture driver for the deployed sharing check. Never ships in the app.
 //! Invitations and credentials are written only to owner-readable files, never stdout.
-use serde::Deserialize;
-use std::{
-    io::{BufRead, Write},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
 use pop_core::{
     file,
     library::snapshot,
@@ -13,6 +7,12 @@ use pop_core::{
     store::Mode,
 };
 use pop_sharing_client::Client;
+use serde::Deserialize;
+use std::{
+    io::{BufRead, Write},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 #[derive(Deserialize)]
 #[serde(tag = "method", rename_all = "camelCase")]
 enum Control {

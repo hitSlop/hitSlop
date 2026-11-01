@@ -1,7 +1,7 @@
 use crate::support;
+use pop_core::{AppSpec, Code, Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;
-use pop_core::{AppSpec, Code, Document, Origin};
 
 fn schema() -> Value {
     json!({"kind":"object","properties":{

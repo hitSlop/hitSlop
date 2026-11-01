@@ -2,6 +2,12 @@
 //! runtime is tested in pop-runner; here the oracle is state and lifecycle fencing.
 #![cfg(feature = "storage")]
 use crate::support;
+use pop_core::{
+    Code, Origin, file,
+    owner::{Failure, FailureKind, Owner, Reply, Request},
+    store::Mode,
+};
+use pop_runner::Evaluator;
 use serde_json::{Value, json};
 use std::{
     fs,
@@ -9,12 +15,6 @@ use std::{
     sync::{Arc, mpsc},
     time::{Duration, Instant},
 };
-use pop_core::{
-    Code, Origin, file,
-    owner::{Failure, FailureKind, Owner, Reply, Request},
-    store::Mode,
-};
-use pop_runner::Evaluator;
 
 struct Fixture {
     dir: tempfile::TempDir,
