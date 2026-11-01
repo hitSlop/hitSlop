@@ -2,7 +2,7 @@
 """Manual, isolated release stress experiment; never edits the supplied corpus.
 
 Run against an extracted release engine and its original compatibility corpus:
-  python3 scripts/dev/stress-release.py --engine /path/tiny-engine \
+  python3 scripts/dev/stress-release.py --engine /path/pop-engine \
     --corpus /path/corpus --output /tmp/stress.json
 
 This records observed failures rather than treating known findings as passing CI.
@@ -148,9 +148,9 @@ def main():
     report = {"engineSha256": digest(Path(engine)), "seed": 20261016,
               "platform": os.uname().sysname + " " + os.uname().machine,
               "sections": {}, "scope": "released engine; no macOS/WebKit execution"}
-    with tempfile.TemporaryDirectory(prefix="tinys-stress-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="pop-stress-") as temporary:
         root = Path(temporary)
-        env = os.environ | {"TINYS_TEST_REGISTRY": str(root / "registry")}
+        env = os.environ | {"POP_TEST_REGISTRY": str(root / "registry")}
         def invoke(request, timeout=8):
             return run_process([engine, "--client-protocol", "1"], json.dumps(request).encode(), timeout, env)
         def good(request, timeout=15):
@@ -158,8 +158,8 @@ def main():
             assert result.get("reply", {}).get("ok") is True, result
             return result["reply"]
         def document(name):
-            path = root / (name + ".tiny")
-            shutil.copyfile(corpus / "documents/conformance.tiny", path)
+            path = root / (name + ".pop")
+            shutil.copyfile(corpus / "documents/conformance.pop", path)
             return path
         def get(path):
             return good({"method": "get", "documentPath": str(path)})["state"]["value"]
@@ -176,11 +176,11 @@ def main():
             manifest = json.loads((corpus / "release.json").read_text())
             for path, expected in manifest["files"].items():
                 assert digest(corpus / path) == expected, path
-            for path in (corpus / "templates").glob("*.tiny"):
+            for path in (corpus / "templates").glob("*.pop"):
                 target = root / ("new-" + path.name)
                 good({"method": "create", "from": str(path), "output": str(target)})
                 assert get(target) == json.loads((corpus / "expected" / ("new-" + path.stem + ".json")).read_text())
-            for source in (corpus / "documents").glob("*.tiny"):
+            for source in (corpus / "documents").glob("*.pop"):
                 target = root / ("saved-" + source.name)
                 shutil.copyfile(source, target)
                 expected = json.loads((corpus / "expected" / (source.stem + ".json")).read_text())
@@ -200,7 +200,7 @@ def main():
                 "ordinary-wrong-table": "CREATE TABLE app(id INTEGER,package_format INTEGER,runtime_abi INTEGER);INSERT INTO app VALUES(1,1,1);",
                 "recursive-app-view": "CREATE VIEW app AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n) SELECT 1 id,1 package_format,(SELECT max(x) FROM n) runtime_abi;",
             }.items():
-                path = root / (name + ".tiny")
+                path = root / (name + ".pop")
                 with sqlite3.connect(path) as db:
                     db.executescript("PRAGMA application_id=1213418576;PRAGMA user_version=1;" + sql)
                 before = digest(path)
@@ -219,11 +219,11 @@ def main():
             finish("files", outcomes)
 
         if "fuzz" in sections:
-            source = (corpus / "documents/conformance.tiny").read_bytes()
+            source = (corpus / "documents/conformance.pop").read_bytes()
             rng = random.Random(report["seed"])
             cases = []
             for i in range(args.mutations):
-                path = root / f"mutation-{i}.tiny"
+                path = root / f"mutation-{i}.pop"
                 if i % 2:
                     path.write_bytes(source)
                     with sqlite3.connect(path) as db:
@@ -254,13 +254,13 @@ def main():
         if "evaluator" in sections:
             outcomes = {}
             programs = {
-                "no-host-io": "globalThis.__tinyDescribe=()=>JSON.stringify({std:typeof std,os:typeof os,fetch:typeof fetch,process:typeof process,require:typeof require});",
+                "no-host-io": "globalThis.__popDescribe=()=>JSON.stringify({std:typeof std,os:typeof os,fetch:typeof fetch,process:typeof process,require:typeof require});",
                 "infinite-loop": "while(true){}",
                 "stack-overflow": "function f(){return f()}f();",
                 "heap-exhaustion": "let a=[];while(true){a.push(new Uint8Array(1024*1024))}",
-                "oversized-result": "globalThis.__tinyDescribe=()=> 'x'.repeat(4194305);",
-                "prototype-tamper": "Object.prototype.polluted=true;globalThis.__tinyDescribe=()=>JSON.stringify({ok:true});",
-                "fresh-realm": "globalThis.__tinyDescribe=()=>JSON.stringify({polluted:Object.prototype.polluted===true});",
+                "oversized-result": "globalThis.__popDescribe=()=> 'x'.repeat(4194305);",
+                "prototype-tamper": "Object.prototype.polluted=true;globalThis.__popDescribe=()=>JSON.stringify({ok:true});",
+                "fresh-realm": "globalThis.__popDescribe=()=>JSON.stringify({polluted:Object.prototype.polluted===true});",
             }
             for name, bundle in programs.items():
                 job = {"runtimeABI": 1, "mode": "definition", "bundle": bundle, "request": "{}"}
@@ -291,7 +291,7 @@ def main():
                     busy = owner.call({"method": "flush"})
                     lock.rollback()
                 retried = owner.call({"method": "flush"})
-                moved = path.with_name("moved.tiny")
+                moved = path.with_name("moved.pop")
                 path.rename(moved)
                 owner.call({"method": "apply", "batch": {"intents": [{"type": "set", "path": ["title"], "value": "retained through move"}]}})
                 missing = owner.call({"method": "flush"})
@@ -303,7 +303,7 @@ def main():
             assert get(path)["title"] == "retained through move"
 
         if "crash" in sections:
-            baseline = get(corpus / "documents/conformance.tiny")
+            baseline = get(corpus / "documents/conformance.pop")
             outcomes = Counter()
             for i in range(40):
                 path = document("crash-" + str(i))
@@ -380,9 +380,9 @@ def main():
 
         if "paths" in sections:
             source = document("path-source")
-            linked = root / "linked.tiny"
+            linked = root / "linked.pop"
             linked.symlink_to(source)
-            hard = root / "hard.tiny"
+            hard = root / "hard.pop"
             os.link(source, hard)
             checks = {
                 "symlink-leaf-get": {"method": "get", "documentPath": str(linked)},
@@ -392,10 +392,10 @@ def main():
             }
             results = {name: invoke(request) for name, request in checks.items()}
             hard.unlink()
-            sentinel = root / "must-not-replace.tiny"
+            sentinel = root / "must-not-replace.pop"
             sentinel.write_text("ORIGINAL SENTINEL")
             checks = {
-                "create-must-not-overwrite": {"method": "create", "from": str(corpus / "templates/conformance.tiny"), "output": str(sentinel)},
+                "create-must-not-overwrite": {"method": "create", "from": str(corpus / "templates/conformance.pop"), "output": str(sentinel)},
                 "copy-must-not-overwrite": {"method": "copy", "documentPath": str(source), "output": str(sentinel)},
                 "export-must-not-overwrite": {"method": "export", "documentPath": str(source), "format": "png", "output": str(sentinel)},
             }
@@ -432,7 +432,7 @@ def main():
 
         if "captures" in sections:
             outputs = []
-            for source in sorted((corpus / "documents").glob("*.tiny")):
+            for source in sorted((corpus / "documents").glob("*.pop")):
                 for extension in ["png", "pdf"]:
                     target = root / (source.stem + "." + extension)
                     result = invoke({"method": "export", "documentPath": str(source),

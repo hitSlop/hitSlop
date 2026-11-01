@@ -5,7 +5,7 @@ export default {
   mount(ctx, target) {
     const doc = ctx.document;
     const root = document.createElement("main");
-    root.dataset.tinyRoot = "";
+    root.dataset.popRoot = "";
     root.style.cssText = "font:18px sans-serif;padding:12px";
     const input = document.createElement("input");
     input.id = "draft";

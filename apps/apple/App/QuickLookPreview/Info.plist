@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>tinys Preview</string>
+	<string>pop Preview</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -28,7 +28,7 @@
 			<true/>
 			<key>QLSupportedContentTypes</key>
 			<array>
-				<string>click.tinys.document</string>
+				<string>click.dotpop.document</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

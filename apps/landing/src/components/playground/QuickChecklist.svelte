@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A browser-only preview in Quick Checklist's real colors (tinys/quick-checklist/tiny.ts).
+  // A browser-only preview in Quick Checklist's real colors (pop/quick-checklist/pop.ts).
   type Task = { id: number; text: string; done: boolean };
   let tasks = $state<Task[]>([
     { id: 1, text: "Water the plants", done: true },

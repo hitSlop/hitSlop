@@ -1,10 +1,10 @@
-# tinys website and docs
+# dotpop website and docs
 
 The Astro landing page and Starlight documentation deploy together as the
-`tinys-landing` Cloudflare Worker. The landing page targets
-`https://tinys.click/` and the documentation targets `https://tinys.click/docs/`.
+`dotpop-landing` Cloudflare Worker. The landing page targets
+`https://dotpop.click/` and the documentation targets `https://dotpop.click/docs/`.
 
-The new Worker is separate from the existing hitSlop landing Worker. `TINYS_DEPLOY_ENABLED` is false in the original GitHub repository, which will be renamed to `hitSlop/tinys`; the source is ready for a deliberate launch after release downloads and domain configuration are checked.
+The new Worker is separate from the existing hitSlop landing Worker. `POP_DEPLOY_ENABLED` is false in the original GitHub repository, which will be renamed to `hitSlop/dotpop`; the source is ready for a deliberate launch after release downloads and domain configuration are checked.
 
 ## Local development
 
@@ -34,8 +34,8 @@ there is no custom link checker.
 
 ## Cloudflare Workers Builds
 
-Use these configuration settings when connecting the `hitSlop/tinys` repository
-to the `tinys-landing` Worker. Confirm the actual dashboard settings before deployment:
+Use these configuration settings when connecting the `hitSlop/dotpop` repository
+to the `dotpop-landing` Worker. Confirm the actual dashboard settings before deployment:
 
 | Setting | Value |
 | --- | --- |

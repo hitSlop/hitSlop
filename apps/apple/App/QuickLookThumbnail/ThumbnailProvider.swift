@@ -1,6 +1,6 @@
 import ImageIO
 import QuickLookThumbnailing
-import TinysCore
+import PopCore
 
 #if os(macOS)
   import AppKit
@@ -8,15 +8,15 @@ import TinysCore
   import UIKit
 #endif
 
-/// Files, Finder and the share sheet's icon for a `.tiny`: its icon artwork, or its
+/// Files, Finder and the share sheet's icon for a `.pop`: its icon artwork, or its
 /// preview when it has no icon. A file without artwork, or one mid-recovery, gets the
-/// `.tiny` document icon.
+/// `.pop` document icon.
 final class ThumbnailProvider: QLThumbnailProvider {
   override func provideThumbnail(
     for request: QLFileThumbnailRequest, _ handler: @escaping (QLThumbnailReply?, Error?) -> Void
   ) {
     let artwork: Data?
-    do { artwork = try TinyArtwork.first(request.fileURL, [.icon, .preview])?.png } catch {
+    do { artwork = try PopArtwork.first(request.fileURL, [.icon, .preview])?.png } catch {
       // Busy or mid-recovery: Quick Look asks again later.
       handler(nil, error)
       return

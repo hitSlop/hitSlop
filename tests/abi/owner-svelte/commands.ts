@@ -1,5 +1,5 @@
-import { defineCommands } from "@hitslop/tinys/commands";
-import { refuse, s } from "@hitslop/tinys";
+import { defineCommands } from "@hitslop/pop/commands";
+import { refuse, s } from "@hitslop/pop";
 import schema from "./schema";
 
 export default defineCommands(schema, {

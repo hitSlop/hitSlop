@@ -6,8 +6,8 @@
     { $id: "invoice", text: "Send invoice", done: false, archived: false },
   ];
   let tasks = $state(initialTasks());
-  const command = `tiny call Today.tiny addTask --args '{"text":"Book train"}'`;
-  const editCommand = `tiny apply Today.tiny --op '{"type":"set","path":["tasks",{"id":"train"},"done"],"value":true}'`;
+  const command = `pop call Today.pop addTask --args '{"text":"Book train"}'`;
+  const editCommand = `pop apply Today.pop --op '{"type":"set","path":["tasks",{"id":"train"},"done"],"value":true}'`;
   let direction = $state<"idle" | "ui" | "agent">("idle");
   let settleTimer: ReturnType<typeof setTimeout> | undefined;
   const completed = $derived(tasks.filter(task => task.done).length);
@@ -17,7 +17,7 @@
   ["tasks"]: list (insert, remove, move, replace)
   ["tasks",{"id":"$id"},"done"]: boolean (set)
 
-Commands (tiny call PATH NAME --args JSON)
+Commands (pop call PATH NAME --args JSON)
   Arguments accept only the listed fields.
 
   addTask — Add an unfinished task and return its stable row ID.
@@ -87,7 +87,7 @@ Commands (tiny call PATH NAME --args JSON)
 
 <div class="sync-demo" data-direction={direction} bind:this={root}>
   <section class="sync-window" aria-label="Editable checklist interface">
-    <div class="window-bar"><i></i><i></i><i></i><span>Today.tiny</span></div>
+    <div class="window-bar"><i></i><i></i><i></i><span>Today.pop</span></div>
     <div class="checklist">
       {#each tasks as task (task.$id)}
         <label><input type="checkbox" checked={task.done} onchange={event => updateFromUI(task.$id, event.currentTarget.checked)} /><span>{task.text}</span></label>
@@ -101,7 +101,7 @@ Commands (tiny call PATH NAME --args JSON)
     <ol class="command-example">
       <li>
         <p>Discover the app’s actions</p>
-        <pre><code>tiny describe Today.tiny</code></pre>
+        <pre><code>pop describe Today.pop</code></pre>
         <details><summary>Response · excerpt</summary><pre><code>{describeResponse}</code></pre></details>
       </li>
       <li>
@@ -113,7 +113,7 @@ Commands (tiny call PATH NAME --args JSON)
       </li>
       <li>
         <p>Read its ID, then edit a field</p>
-        <pre><code>tiny get Today.tiny</code></pre>
+        <pre><code>pop get Today.pop</code></pre>
         <details><summary>Response · current document</summary><pre><code>{snapshot}</code></pre></details>
         <pre><code>{editCommand}</code></pre>
         <small>Use the task’s $id from get; this illustration uses “train”.</small>

@@ -1,4 +1,4 @@
-import { defineDocument, s } from "@hitslop/tinys";
+import { defineDocument, s } from "@hitslop/pop";
 
 // Deliberate integration data, independent of any shipped template or its workflow.
 export default defineDocument({

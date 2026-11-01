@@ -1,8 +1,8 @@
 import SwiftUI
-import TinysAccount
-import TinysCore
-import TinysDocument
-import TinysWidgets
+import PopAccount
+import PopCore
+import PopDocument
+import PopWidgets
 import UniformTypeIdentifiers
 
 enum PhoneRoute: Hashable {
@@ -17,7 +17,7 @@ enum PhoneRoute: Hashable {
 
 struct PhoneRootView: View {
   @ObservedObject var model: PhoneDocuments
-  @ObservedObject private var library = TinyLibrary.shared
+  @ObservedObject private var library = PopLibrary.shared
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var tab = PhoneTab.recents
@@ -55,7 +55,7 @@ struct PhoneRootView: View {
       }
     }
     .tint(PhoneStyle.accent)
-    .fileImporter(isPresented: $model.showImporter, allowedContentTypes: [UTType(filenameExtension: "tiny") ?? .data]) {
+    .fileImporter(isPresented: $model.showImporter, allowedContentTypes: [UTType(filenameExtension: "pop") ?? .data]) {
       result in
       switch result {
       case .success(let url): model.importDocument(url)
@@ -123,7 +123,7 @@ struct PhoneRootView: View {
         PhoneExportView(url: exported) { model.finishExport(completed: $0) }
       }
     }
-    .alert("tinys", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+    .alert("dotpop", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
       if case .failed = model.saveStatus {
         Button("Retry Save") { model.save() }
         if model.saveStatus == .failed(.full), model.session?.retainsHistory == true {

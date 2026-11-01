@@ -1,4 +1,4 @@
-name: tinys
+name: pop
 options:
   bundleIdPrefix: com.hitslop
   deploymentTarget:
@@ -14,19 +14,19 @@ settings:
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "47"
 packages:
-  TinysApple:
-    path: Packages/TinysApple
+  PopApple:
+    path: Packages/PopApple
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
 targets:
-  tinys-iOS:
+  pop-iOS:
     type: application
-    productName: tinysPhone
+    productName: dotpopPhone
     platform: iOS
     sources:
       - path: App/iOS
-        excludes: [Info.plist, tinys.entitlements]
+        excludes: [Info.plist, pop.entitlements]
       - path: App/Shared/WidgetIntent.swift
       - path: App/macOS/GoogleService-Info.plist
         buildPhase: resources
@@ -37,42 +37,42 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
-      - package: TinysApple
-        product: TinysCore
-      - package: TinysApple
-        product: TinysDocument
-      - package: TinysApple
-        product: TinysAccount
-      - package: TinysApple
-        product: TinysWidgets
-      - target: tinys-iOS-Widgets
-      - target: tinys-iOS-Thumbnail
+      - package: PopApple
+        product: PopCore
+      - package: PopApple
+        product: PopDocument
+      - package: PopApple
+        product: PopAccount
+      - package: PopApple
+        product: PopWidgets
+      - target: pop-iOS-Widgets
+      - target: pop-iOS-Thumbnail
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app
-        PRODUCT_NAME: tinysPhone
+        PRODUCT_NAME: dotpopPhone
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: App/iOS/Info.plist
-        CODE_SIGN_ENTITLEMENTS: App/iOS/tinys.entitlements
+        CODE_SIGN_ENTITLEMENTS: App/iOS/pop.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         SKIP_INSTALL: NO
-  tinys-iOS-Widgets:
+  pop-iOS-Widgets:
     type: app-extension
     platform: iOS
     sources:
-      - App/Widgets/TinyImageWidget.swift
+      - App/Widgets/PopImageWidget.swift
       - App/Shared/WidgetIntent.swift
       - path: App/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
-      - package: TinysApple
-        product: TinysWidgets
+      - package: PopApple
+        product: PopWidgets
       - sdk: WidgetKit.framework
     info:
       path: App/iOSWidgets/Info.plist
       properties:
-        CFBundleDisplayName: tinys
+        CFBundleDisplayName: dotpop
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -83,7 +83,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: App/iOSWidgets/Widgets.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
-  tinys-iOS-Thumbnail:
+  pop-iOS-Thumbnail:
     type: app-extension
     platform: iOS
     sources:
@@ -92,27 +92,27 @@ targets:
       - path: App/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
-      - package: TinysApple
-        product: TinysCore
+      - package: PopApple
+        product: PopCore
       - sdk: QuickLookThumbnailing.framework
     info:
       path: App/iOSThumbnail/Info.plist
       properties:
-        CFBundleDisplayName: tinys Thumbnail
+        CFBundleDisplayName: dotpop Thumbnail
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.quicklook.thumbnail
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ThumbnailProvider
           NSExtensionAttributes:
-            QLSupportedContentTypes: [click.tinys.document]
+            QLSupportedContentTypes: [click.dotpop.document]
             QLThumbnailMinimumDimension: 0
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.quicklook-thumbnail
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
-  tinys-iOS-Tests:
+  pop-iOS-Tests:
     type: bundle.unit-test
     platform: iOS
     sources:
@@ -121,33 +121,33 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
-      - target: tinys-iOS
-      - package: TinysApple
-        product: TinysCore
-      - package: TinysApple
-        product: TinysDocument
+      - target: pop-iOS
+      - package: PopApple
+        product: PopCore
+      - package: PopApple
+        product: PopDocument
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.tests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/tinysPhone.app/tinysPhone
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/dotpopPhone.app/dotpopPhone
         BUNDLE_LOADER: $(TEST_HOST)
-  tinys-iOS-UITests:
+  pop-iOS-UITests:
     type: bundle.ui-testing
     platform: iOS
     sources: [Tests/iOSUI]
     dependencies:
-      - target: tinys-iOS
+      - target: pop-iOS
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.uitests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
-        TEST_TARGET_NAME: tinys-iOS
-  tinys-macOS:
+        TEST_TARGET_NAME: pop-iOS
+  pop-macOS:
     type: application
-    productName: tinys
+    productName: dotpop
     platform: macOS
     sources:
       - path: App/Shared/Assets.xcassets
@@ -160,29 +160,29 @@ targets:
       - path: App/macOS/GoogleService-Info.plist
         buildPhase: resources
     dependencies:
-      - package: TinysApple
-        product: TinysHost
-      - package: TinysApple
-        product: TinysCatalog
-      - package: TinysApple
-        product: TinysDocument
-      - package: TinysApple
-        product: TinysCore
-      - package: TinysApple
-        product: TinysFirebase
-      - package: TinysApple
-        product: TinysAccount
+      - package: PopApple
+        product: PopHost
+      - package: PopApple
+        product: PopCatalog
+      - package: PopApple
+        product: PopDocument
+      - package: PopApple
+        product: PopCore
+      - package: PopApple
+        product: PopFirebase
+      - package: PopApple
+        product: PopAccount
       - package: Sparkle
         product: Sparkle
-      - target: tinys-QuickLookThumbnail
-      - target: tinys-QuickLookPreview
-      - target: tinys-Widgets
-      - package: TinysApple
-        product: TinysWidgets
+      - target: pop-QuickLookThumbnail
+      - target: pop-QuickLookPreview
+      - target: pop-Widgets
+      - package: PopApple
+        product: PopWidgets
     postCompileScripts:
       - name: Embed command evaluator
         basedOnDependencyAnalysis: false
-        script: '/bin/sh "${SRCROOT}/../../scripts/build/embed-tinys-evaluator.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
+        script: '/bin/sh "${SRCROOT}/../../scripts/build/embed-pop-evaluator.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
       - name: Embed starter templates
         basedOnDependencyAnalysis: false
         script: '"${SRCROOT}/../../scripts/templates/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
@@ -201,14 +201,14 @@ targets:
             Release) ;;
             *) exit 0 ;;
           esac
-          if [ "${TINYS_SKIP_SYMBOL_UPLOAD:-0}" = "1" ] || [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
+          if [ "${POP_SKIP_SYMBOL_UPLOAD:-0}" = "1" ] || [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
             exit 0
           fi
           "${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app
-        PRODUCT_NAME: tinys
+        PRODUCT_NAME: dotpop
         INFOPLIST_FILE: App/macOS/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MACOSX_DEPLOYMENT_TARGET: "15.2"
@@ -217,14 +217,14 @@ targets:
         SKIP_INSTALL: NO
       configs:
         Debug:
-          CODE_SIGN_ENTITLEMENTS: App/macOS/tinys.entitlements
+          CODE_SIGN_ENTITLEMENTS: App/macOS/pop.entitlements
         Release:
-          TINYS_RELEASE_ENTITLEMENTS: App/macOS/tinys.Release.entitlements
-          CODE_SIGN_ENTITLEMENTS: $(TINYS_RELEASE_ENTITLEMENTS)
-          PROVISIONING_PROFILE_SPECIFIER: $(TINYS_PROVISIONING_PROFILE_UUID)
+          POP_RELEASE_ENTITLEMENTS: App/macOS/pop.Release.entitlements
+          CODE_SIGN_ENTITLEMENTS: $(POP_RELEASE_ENTITLEMENTS)
+          PROVISIONING_PROFILE_SPECIFIER: $(POP_PROVISIONING_PROFILE_UUID)
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
           ENABLE_DEBUG_DYLIB: NO
-  tinys-Widgets:
+  pop-Widgets:
     type: app-extension
     platform: macOS
     sources:
@@ -232,13 +232,13 @@ targets:
       # Intent types must belong to each bundle, not a static Swift package.
       - App/Shared/WidgetIntent.swift
     dependencies:
-      - package: TinysApple
-        product: TinysWidgets
+      - package: PopApple
+        product: PopWidgets
       - sdk: WidgetKit.framework
     info:
       path: App/Widgets/Info.plist
       properties:
-        CFBundleDisplayName: tinys
+        CFBundleDisplayName: dotpop
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -250,26 +250,26 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
   # Quick Look reads a document's artwork through the core, read-only, in a sandbox: what
-  # Finder, Mail and the share sheet show for a `.tiny` that left this Mac.
-  tinys-QuickLookThumbnail:
+  # Finder, Mail and the share sheet show for a `.pop` that left this Mac.
+  pop-QuickLookThumbnail:
     type: app-extension
     platform: macOS
     sources: [App/QuickLookThumbnail]
     dependencies:
-      - package: TinysApple
-        product: TinysCore
+      - package: PopApple
+        product: PopCore
       - sdk: QuickLookThumbnailing.framework
     info:
       path: App/QuickLookThumbnail/Info.plist
       properties:
-        CFBundleDisplayName: tinys Thumbnail
+        CFBundleDisplayName: dotpop Thumbnail
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.quicklook.thumbnail
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ThumbnailProvider
           NSExtensionAttributes:
-            QLSupportedContentTypes: [click.tinys.document]
+            QLSupportedContentTypes: [click.dotpop.document]
             QLThumbnailMinimumDimension: 0
     settings:
       base:
@@ -277,18 +277,18 @@ targets:
         CODE_SIGN_ENTITLEMENTS: App/QuickLookThumbnail/QuickLookThumbnail.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
-  tinys-QuickLookPreview:
+  pop-QuickLookPreview:
     type: app-extension
     platform: macOS
     sources: [App/QuickLookPreview]
     dependencies:
-      - package: TinysApple
-        product: TinysCore
+      - package: PopApple
+        product: PopCore
       - sdk: QuickLookUI.framework
     info:
       path: App/QuickLookPreview/Info.plist
       properties:
-        CFBundleDisplayName: tinys Preview
+        CFBundleDisplayName: dotpop Preview
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -296,7 +296,7 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
           NSExtensionAttributes:
             QLIsDataBasedPreview: true
-            QLSupportedContentTypes: [click.tinys.document]
+            QLSupportedContentTypes: [click.dotpop.document]
             QLSupportsSearchableItems: false
     settings:
       base:
@@ -305,24 +305,24 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
 schemes:
-  tinys-iOS:
+  pop-iOS:
     build:
       targets:
-        tinys-iOS: all
+        pop-iOS: all
     test:
       targets:
-        - name: tinys-iOS-Tests
+        - name: pop-iOS-Tests
           parallelizable: false
-        - name: tinys-iOS-UITests
+        - name: pop-iOS-UITests
           parallelizable: false
       gatherCoverageData: false
-  tinys-macOS:
+  pop-macOS:
     build:
       targets:
-        tinys-macOS: all
+        pop-macOS: all
     run:
       config: Debug
-      executable: tinys-macOS
+      executable: pop-macOS
     profile:
       config: Release
-      executable: tinys-macOS
+      executable: pop-macOS

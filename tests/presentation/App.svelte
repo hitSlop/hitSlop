@@ -1,6 +1,6 @@
 <script lang="ts">
 import "./styles.css";
-  import { getDocument } from "@hitslop/tinys/svelte";
+  import { getDocument } from "@hitslop/pop/svelte";
   import schema from "./schema";
   const doc = getDocument(schema);
   // Native tests inject failures and refused writes without changing the shipped examples.

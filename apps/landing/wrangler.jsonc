@@ -1,13 +1,13 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "tinys-landing",
+  "name": "dotpop-landing",
   "compatibility_date": "2026-10-29",
   "assets": {
     "directory": "./dist"
   },
   "routes": [
     {
-      "pattern": "tinys.click",
+      "pattern": "dotpop.click",
       "custom_domain": true
     }
   ]

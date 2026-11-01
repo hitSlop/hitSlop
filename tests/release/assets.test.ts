@@ -12,7 +12,7 @@ const payload = Buffer.concat([
 type DownloadResponse = { status?: number; error?: string; body?: string };
 
 async function download(responses: DownloadResponse[], lineEnding = "\r\n") {
-  const folder = await mkdtemp(join(tmpdir(), "tinys-release-download-"));
+  const folder = await mkdtemp(join(tmpdir(), "pop-release-download-"));
   try {
     const attempts = join(folder, "attempts");
     await writeFile(attempts, "0");

@@ -1,7 +1,7 @@
 import BackgroundTasks
 import CloudKit
 import SwiftUI
-import TinysCore
+import PopCore
 import UIKit
 
 @MainActor final class PhoneAppDelegate: NSObject, UIApplicationDelegate {
@@ -33,7 +33,7 @@ import UIKit
         }
       }
     }
-    TinyLibrary.shared.activated(application.applicationState == .active)
+    PopLibrary.shared.activated(application.applicationState == .active)
     application.registerForRemoteNotifications()
     return true
   }
@@ -42,7 +42,7 @@ import UIKit
     let request = BGAppRefreshTaskRequest(identifier: Self.refreshIdentifier)
     request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
     do { try BGTaskScheduler.shared.submit(request) } catch {
-      NSLog("tinys background refresh scheduling failed: %@", error.localizedDescription)
+      NSLog("pop background refresh scheduling failed: %@", error.localizedDescription)
     }
   }
 
@@ -70,21 +70,21 @@ import UIKit
     let operation = Task { @MainActor [self] in
       model.widgets.beginBackgroundRefresh()
       defer { model.widgets.endBackgroundRefresh() }
-      let before = TinyLibrary.shared.entries
+      let before = PopLibrary.shared.entries
       do {
         try Task.checkCancellation()
         if background {
-          try await TinyLibrary.shared.fetchInBackground()
+          try await PopLibrary.shared.fetchInBackground()
         } else {
-          await TinyLibrary.shared.receivedPush()
+          await PopLibrary.shared.receivedPush()
         }
-        if TinyLibrary.shared.lastError != nil || !TinyLibrary.shared.isReady { return UIBackgroundFetchResult.failed }
+        if PopLibrary.shared.lastError != nil || !PopLibrary.shared.isReady { return UIBackgroundFetchResult.failed }
         try Task.checkCancellation()
         await model.widgets.refreshPlaced()
         try Task.checkCancellation()
-        return TinyLibrary.shared.entries == before ? UIBackgroundFetchResult.noData : .newData
+        return PopLibrary.shared.entries == before ? UIBackgroundFetchResult.noData : .newData
       } catch {
-        if !Task.isCancelled { NSLog("tinys background refresh failed: %@", error.localizedDescription) }
+        if !Task.isCancelled { NSLog("pop background refresh failed: %@", error.localizedDescription) }
         return .failed
       }
     }
@@ -129,7 +129,7 @@ import UIKit
   }
 }
 
-@main struct TinysPhoneApp: App {
+@main struct PopPhoneApp: App {
   @UIApplicationDelegateAdaptor(PhoneAppDelegate.self) var delegate
 
   var body: some Scene {

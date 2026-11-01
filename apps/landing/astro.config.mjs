@@ -4,12 +4,12 @@ import starlight from "@astrojs/starlight";
 import sitemap from "@astrojs/sitemap";
 
 export default defineConfig({
-  site: "https://tinys.click",
+  site: "https://dotpop.click",
   integrations: [
     svelte(),
     sitemap(),
     starlight({
-      title: "tinys Docs",
+      title: "dotpop Docs",
       description: "Build small local-first apps and documents that live on your desktop.",
       favicon: "/favicon-32.png",
       disable404Route: true,
@@ -20,27 +20,27 @@ export default defineConfig({
         ThemeSelect: "./src/components/DocsThemeSelect.astro",
       },
       editLink: {
-        baseUrl: "https://github.com/hitSlop/tinys/edit/master/apps/landing/",
+        baseUrl: "https://github.com/hitSlop/dotpop/edit/master/apps/landing/",
       },
       lastUpdated: true,
-      social: [{ icon: "github", label: "GitHub", href: "https://github.com/hitSlop/tinys" }],
+      social: [{ icon: "github", label: "GitHub", href: "https://github.com/hitSlop/dotpop" }],
       sidebar: [
         {
           label: "Start here",
           items: [
-            { label: "tinys documentation", slug: "docs" },
-            { label: "Create your first tiny", slug: "docs/getting-started" },
+            { label: "dotpop documentation", slug: "docs" },
+            { label: "Create your first pop", slug: "docs/getting-started" },
           ],
         },
         {
-          label: "Build a tiny",
+          label: "Build a pop",
           items: [
             { label: "Data and schemas", slug: "docs/guides/data-and-schemas" },
             { label: "Files and the web", slug: "docs/guides/files-and-web" },
             { label: "Capabilities and permissions", slug: "docs/guides/capabilities" },
             { label: "App definition and windows", slug: "docs/guides/manifest-and-windows" },
-            { label: "Style a tiny", slug: "docs/guides/styling" },
-            { label: "Where your tiny runs", slug: "docs/guides/where-your-tiny-runs" },
+            { label: "Style a pop", slug: "docs/guides/styling" },
+            { label: "Where your pop runs", slug: "docs/guides/where-your-pop-runs" },
             { label: "Make it work on iPhone", slug: "docs/guides/mobile" },
             { label: "PNG window skins", slug: "docs/guides/png-window-skins" },
             { label: "Icons, widgets, previews, and exports", slug: "docs/guides/icons-and-exports" },
@@ -50,7 +50,7 @@ export default defineConfig({
         {
           label: "Work with a document",
           items: [
-            { label: "How .tiny files work", slug: "docs/concepts/how-tiny-files-work" },
+            { label: "How .pop files work", slug: "docs/concepts/how-pop-files-work" },
             { label: "Edit installed documents", slug: "docs/guides/edit-installed-data" },
           ],
         },

@@ -1,6 +1,6 @@
-# tinys
+# dotpop
 
-tinys starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not tinys acceptance inputs.
+dotpop starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not pop acceptance inputs.
 
 
 Architecture: [architecture](docs/architecture.md). Status and open work:
@@ -10,16 +10,16 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 
 ## Non-negotiable
 
-- **Every released tiny stays openable.** See [Compatibility](#compatibility).
-- `tinys-core` (Rust on Loro) owns document semantics and durable storage: the `.tiny`
+- **Every released pop stays openable.** See [Compatibility](#compatibility).
+- `pop-core` (Rust on Loro) owns document semantics and durable storage: the `.pop`
   file (one SQLite database holding the app and its saved state), the writer lock and the
   save policy, serial owner, persistence worker and socket routing. Swift `DocumentOwner`
   is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
-  (`packages/tinys/src/shell`) holds no CRDT; `packages/tinys/src/sdk` is the author SDK, and tinys
+  (`packages/pop/src/shell`) holds no CRDT; `packages/pop/src/sdk` is the author SDK, and pop
   contain only their app.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or remove a lock file from the registry
-  (`~/.tinys/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
+  (`~/.pop/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
 - **Rust owns wire types and shared limits; ts-rs generates TypeScript, and UniFFI
   carries native types to Swift.** Rust also owns app acceptance; authors use `s.*` descriptors. JSON Schema is only a `describe` projection. Run
   `bun run schema:generate`; never edit generated files.
@@ -32,13 +32,13 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core serves SDK tests and local Chrome browser copies using the same Rust owner and SQLite store. `tiny dev` uses the native Rust owner; native engine validation owns authoring checks.
+  document engine. The WASM core serves SDK tests and local Chrome browser copies using the same Rust owner and SQLite store. `pop dev` uses the native Rust owner; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 
 ## Compatibility
 
-Starting with public v1.0.0, a newer tinys must open, render, edit, save and reopen
+Starting with public v1.0.0, a newer pop must open, render, edit, save and reopen
 every document a released build wrote. Downgrades are not supported. The full rules, by
 boundary and marker, are in the [engineering contract](docs/engineering-contract.md#compatibility).
 Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
@@ -47,7 +47,7 @@ Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
   asset. Affected builds replay all published corpora. Never replace, regenerate or delete
   one, its expectations or the command prelude it froze. Capture is part of the candidate
   workflow ([releasing](docs/guides/releasing.md)). Retain the first release's hash pin in
-  `scripts/compat/tinys-required-history.json` permanently.
+  `scripts/compat/pop-required-history.json` permanently.
 - Persisted formats change only additively, or behind the marker that owns the change:
   `packageFormat` (the stored definition), `runtimeABI` (app-facing behavior), the storage
   version (tables, columns, triggers) or the document layout. Markers are requirements,
@@ -55,9 +55,9 @@ Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
   `requires_update` and nothing is written.
 - Opening a file applies only its format's acceptance, which never tightens. Authoring
   rules run at `pack` and `init` and may tighten freely; they never judge a saved file.
-- Installing tinys never replaces the app inside an existing document. Only a write
+- Installing pop never replaces the app inside an existing document. Only a write
   under the writer lock migrates a file; display reads never do.
-- Public boundaries (`ctx`, handles, error codes, `--tiny-*`, host markup, the embed relay,
+- Public boundaries (`ctx`, handles, error codes, `--pop-*`, host markup, the embed relay,
   the command protocol's refusal path, capture program requests and replies) grow additively.
   A change an old app cannot run raises `runtimeABI` and keeps the old behavior through an adapter.
   Stored capture programs are governed by runtimeABI. Requests grow additively; reply readers
@@ -66,15 +66,15 @@ Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
 
 ## Authoring
 
-Directories with a `tiny.ts` under `@hitslop/tinys` are active; `bundled.json` selects
-shipped templates. Use plain CSS and `tiny.ts` theme colors; read
-[product guidance](tinys/PRODUCT.md) and [authoring](docs/guides/authoring.md)
+Directories with a `pop.ts` under `@hitslop/pop` are active; `bundled.json` selects
+shipped templates. Use plain CSS and `pop.ts` theme colors; read
+[product guidance](pop/PRODUCT.md) and [authoring](docs/guides/authoring.md)
 for visual changes. `_vibe` is inspiration only.
 
 ## Testing
 
-- **Do not create an automated test or test suite for each tiny.** Creating, styling,
-  animating, or updating a tiny does not require new tests. Validate it with existing
+- **Do not create an automated test or test suite for each pop.** Creating, styling,
+  animating, or updating a pop does not require new tests. Validate it with existing
   checks/builds and hands-on preview/export review. Shared SDK, storage, or host
   regressions belong in the existing tests at their owning boundary; do not duplicate
   that coverage in example-specific tests. Use minimal infrastructure fixtures, never
@@ -110,6 +110,6 @@ A document history UI, schema evolution, synced folders and hosted catalog/publi
 remain deferred. Live collaboration connects the existing Rust owners through a Durable
 Object byte relay and is available in the Mac app and the iPhone app on TestFlight;
 release qualification remains in the [roadmap](docs/roadmap.md). `archive/`,
-`spikes/`, `plans/`, `TINYS.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
+`spikes/`, `plans/`, `POP.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
 local and are not active contracts. Shared decisions belong in the architecture, roadmap
 and ideas pages.

@@ -1,4 +1,4 @@
-name: Release tinys
+name: Release pop
 
 on:
   workflow_dispatch:
@@ -41,10 +41,10 @@ jobs:
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
       record-sha: ${{ steps.bundle.outputs.record-sha }}
     env:
-      TINYS_CARGO_PROFILE: dist
-      TINYS_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
-      TINYS_DEVELOPMENT_TEAM: "78UAXU8QG8"
-      TINYS_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
+      POP_CARGO_PROFILE: dist
+      POP_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      POP_DEVELOPMENT_TEAM: "78UAXU8QG8"
+      POP_CODESIGN_IDENTITY: "Developer ID Application: Mushroom DAO Holdings Corp. (78UAXU8QG8)"
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Require a new dispatch for candidate builds
@@ -91,23 +91,23 @@ jobs:
           gh run download "$GITHUB_RUN_ID" --pattern 'engine-*' --dir generated/engine-artifacts
           mkdir -p generated/engines
           for folder in generated/engine-artifacts/engine-*; do cp -R "$folder/" generated/engines/; done
-          chmod +x generated/engines/*/tiny-engine
+          chmod +x generated/engines/*/pop-engine
       - run: brew install xcodegen
       - name: Check the command prelude before capture
         run: bun run compat:runner --check
       - name: Capture this candidate outside Git
-        run: bun run compat:capture "${TINYS_RELEASE_TAG#tinys-v}" --writer generated/engines/darwin-arm64/tiny-engine --out dist/corpus
+        run: bun run compat:capture "${POP_RELEASE_TAG#pop-v}" --writer generated/engines/darwin-arm64/pop-engine --out dist/corpus
       - name: Resolve all released corpora and the candidate
         run: bun scripts/compat/corpora.ts
         env:
-          TINYS_COMPAT_CANDIDATE: ${{ github.workspace }}/dist/corpus
+          POP_COMPAT_CANDIDATE: ${{ github.workspace }}/dist/corpus
       - name: Validate release artifacts
         run: |
           bun run release:check --skip-app
           test -z "$(git status --porcelain)"
         env:
-          TINYS_TEMPLATE_CACHE_DIR: .tinys/template-cache
-          TINYS_ENGINE: ${{ github.workspace }}/generated/engines/darwin-arm64/tiny-engine
+          POP_TEMPLATE_CACHE_DIR: .pop/template-cache
+          POP_ENGINE: ${{ github.workspace }}/generated/engines/darwin-arm64/pop-engine
       # actions/cache's automatic save runs only after a successful job. Preserve
       # completed compilation now, so a later Apple service failure cannot discard it.
       - name: Trim Rust cache before checkpointing
@@ -132,12 +132,12 @@ jobs:
         if: steps.native-cache.outputs.swift-cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: apps/apple/Packages/TinysApple/.build
+          path: apps/apple/Packages/PopApple/.build
           key: ${{ steps.native-cache.outputs.swift-cache-key }}
       - name: Checkpoint completed templates
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
-          path: .tinys/template-cache
+          path: .pop/template-cache
           key: ${{ steps.native-cache.outputs.template-cache-key }}
       - name: Import Developer ID certificate
         env:
@@ -146,8 +146,8 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
-          CERTIFICATE_PATH="$RUNNER_TEMP/tinys-certificate.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/tinys-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/pop-certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/pop-signing.keychain-db"
           printf '%s' "$MACOS_CERTIFICATE" | base64 -D > "$CERTIFICATE_PATH"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -164,33 +164,33 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          mkdir -p .tinys/evidence
-          scripts/release/package-macos-release.sh 2>&1 | tee .tinys/evidence/packaging.log
+          mkdir -p .pop/evidence
+          scripts/release/package-macos-release.sh 2>&1 | tee .pop/evidence/packaging.log
       - name: Verify Gatekeeper
         run: |
           set -euo pipefail
-          VERSION="${TINYS_RELEASE_TAG#tinys-v}"
-          APP="$RUNNER_TEMP/verify/tinys.app"
+          VERSION="${POP_RELEASE_TAG#pop-v}"
+          APP="$RUNNER_TEMP/verify/dotpop.app"
           mkdir -p "$RUNNER_TEMP/verify"
-          hdiutil attach "dist/macos/tinys-${VERSION}.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/dmg"
-          ditto "$RUNNER_TEMP/dmg/tinys.app" "$APP"
+          hdiutil attach "dist/macos/dotpop-${VERSION}.dmg" -nobrowse -mountpoint "$RUNNER_TEMP/dmg"
+          ditto "$RUNNER_TEMP/dmg/dotpop.app" "$APP"
           hdiutil detach "$RUNNER_TEMP/dmg"
-          test "$(lipo -archs "$APP/Contents/MacOS/tinys")" = "arm64"
-          test "$(lipo -archs "$APP/Contents/Helpers/tinys-evaluator")" = "arm64"
+          test "$(lipo -archs "$APP/Contents/MacOS/dotpop")" = "arm64"
+          test "$(lipo -archs "$APP/Contents/Helpers/pop-evaluator")" = "arm64"
           codesign --verify --deep --strict --verbose=2 "$APP"
           spctl --assess --type execute --verbose=2 "$APP"
-          sh scripts/release/stapler.sh validate "dist/macos/tinys-${VERSION}.dmg"
+          sh scripts/release/stapler.sh validate "dist/macos/dotpop-${VERSION}.dmg"
           bun scripts/release/artifact.ts "$APP"
           mkdir -p "$RUNNER_TEMP/verify-zip"
-          ditto -x -k "dist/macos/tinys-${VERSION}.zip" "$RUNNER_TEMP/verify-zip"
-          codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/tinys.app"
-          spctl --assess --type execute "$RUNNER_TEMP/verify-zip/tinys.app"
+          ditto -x -k "dist/macos/dotpop-${VERSION}.zip" "$RUNNER_TEMP/verify-zip"
+          codesign --verify --deep --strict "$RUNNER_TEMP/verify-zip/dotpop.app"
+          spctl --assess --type execute "$RUNNER_TEMP/verify-zip/dotpop.app"
           (cd dist/macos && shasum -a 256 -c SHA256SUMS)
       # Xcode rewrites its lockfile during archive. Restore that known rewrite, then
       # require every tracked source to remain clean.
       - name: Restore tracked files Xcode rewrote
         run: |
-          git restore apps/apple/Packages/TinysApple/Package.resolved
+          git restore apps/apple/Packages/PopApple/Package.resolved
           test -z "$(git status --porcelain)"
       - name: Retain tested packages and corpus
         id: bundle
@@ -216,8 +216,8 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          trap 'rm -f "$RUNNER_TEMP/tinys-certificate.p12"' EXIT
-          KEYCHAIN_PATH="$RUNNER_TEMP/tinys-signing.keychain-db"
+          trap 'rm -f "$RUNNER_TEMP/pop-certificate.p12"' EXIT
+          KEYCHAIN_PATH="$RUNNER_TEMP/pop-signing.keychain-db"
           if [ -f "$KEYCHAIN_PATH" ]; then
             security delete-keychain "$KEYCHAIN_PATH"
           fi
@@ -226,7 +226,7 @@ jobs:
         with:
           name: release-evidence-${{ github.run_attempt }}
           path: |
-            .tinys/evidence
+            .pop/evidence
             dist/macos/release-record.json
             dist/macos/SHA256SUMS
           include-hidden-files: true
@@ -239,7 +239,7 @@ jobs:
     # do not lock publication; stale candidates fail after approval, before tagging.
     environment: release
     concurrency:
-      group: tinys-publication
+      group: pop-publication
       cancel-in-progress: false
     permissions:
       contents: write
@@ -247,9 +247,9 @@ jobs:
       id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
-      TINYS_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
-      TINYS_CANDIDATE_ID: ${{ needs.candidate.outputs.artifact-id }}
-      TINYS_CANDIDATE_SHA: ${{ needs.candidate.outputs.record-sha }}
+      POP_RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      POP_CANDIDATE_ID: ${{ needs.candidate.outputs.artifact-id }}
+      POP_CANDIDATE_SHA: ${{ needs.candidate.outputs.record-sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
@@ -272,4 +272,4 @@ jobs:
         run: bun scripts/release/publish.ts promote
       # Tags created with GITHUB_TOKEN do not start tag-push workflows.
       - name: Deploy sharing from the released tag
-        run: gh workflow run sharing.yml --ref "$TINYS_RELEASE_TAG"
+        run: gh workflow run sharing.yml --ref "$POP_RELEASE_TAG"
