@@ -8,6 +8,70 @@ import Testing
 @testable import PopCore
 @testable import PopDocument
 
+@Test func dotpopSyncLeavesLegacyCloudRecordsAndCachedDocumentsAlone() async throws {
+  let base = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: base) }
+  let template = try Fixtures.template(stage: Fixtures.stage())
+  defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+  let account = "fixture"
+  let legacy = try NativeLibrary.open(
+    root: base.appendingPathComponent(account, isDirectory: true).path, account: account)
+  let old = try legacy.create(template: template.path, title: "Legacy cached document")
+  let original = try Data(contentsOf: URL(fileURLWithPath: old.path))
+  let staged = try legacy.stage(id: old.id)
+  try legacy.acknowledge(
+    id: old.id, version: staged.entry.version, assetRevision: staged.entry.assetRevision,
+    fields: Data(), deleted: false)
+  if let asset = staged.assetPath { try legacy.releaseUpload(path: asset) }
+
+  let legacyZone = CKRecordZone.ID(zoneName: "Library")
+  let legacyRecord = CKRecord(
+    recordType: "SlopDocument",
+    recordID: CKRecord.ID(recordName: UUID().uuidString.lowercased(), zoneID: legacyZone))
+  legacyRecord["format"] = 0
+  legacyRecord["title"] = "Legacy cloud document"
+  let location = try LibraryLocation(base: base, account: account, development: false)
+  let current = try NativeLibrary.open(root: location.root.path, account: account)
+  let uploaded = Mutex<[CKRecord.ID]>([])
+  let sync = LibrarySync(library: current, zone: location.zone) { operation in
+    if let operation = operation as? CKModifyRecordZonesOperation {
+      operation.modifyRecordZonesResultBlock?(.success(()))
+    } else if let operation = operation as? CKModifySubscriptionsOperation {
+      operation.modifySubscriptionsResultBlock?(.success(()))
+    } else if let operation = operation as? CKFetchRecordZoneChangesOperation {
+      if operation.recordZoneIDs?.contains(legacyZone) == true {
+        operation.recordWasChangedBlock?(legacyRecord.recordID, .success(legacyRecord))
+      }
+      // A deterministic transport failure avoids inventing an opaque server token.
+      // Per-record failures and accepted uploads are still observable independently.
+      operation.fetchRecordZoneChangesResultBlock?(.failure(CKError(.networkUnavailable)))
+    } else if let operation = operation as? CKModifyRecordsOperation {
+      for record in operation.recordsToSave ?? [] {
+        uploaded.withLock { $0.append(record.recordID) }
+        operation.perRecordSaveBlock?(record.recordID, .success(record))
+      }
+      operation.modifyRecordsResultBlock?(.success(()))
+    }
+  }
+  let first = await sync.sync(.full)
+  #expect(first.issues.isEmpty)
+  try #require(try current.entries().isEmpty)
+
+  let fresh = try current.create(template: template.path, title: "New pop")
+  let saved = await sync.sync(.full, explicit: true)
+  #expect(saved.issues.isEmpty)
+  #expect(saved.pending == 0)
+  #expect(try current.entries().map(\.id) == [fresh.id])
+  let uploads = uploaded.withLock { $0 }
+  #expect(uploads.count == 1)
+  #expect(uploads.first?.recordName == fresh.id)
+  #expect(uploads.first?.zoneID != legacyZone)
+  #expect(try legacy.entries().map(\.id) == [old.id])
+  #expect(try Data(contentsOf: URL(fileURLWithPath: old.path)) == original)
+  #expect(legacyRecord["title"] as? String == "Legacy cloud document")
+  await sync.stop()
+}
+
 // A cold file-open can beat the asynchronous iCloud connection. A checkpoint must
 // still merge through that live writer, retaining its local edit and writer lease.
 @Test func aDocumentOpenedBeforeTheLibraryAcceptsCloudCheckpoints() async throws {

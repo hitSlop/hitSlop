@@ -641,11 +641,14 @@ opens, edits and creates pop, includes the Popular templates and imports from Fi
 
 Managed documents live in account-scoped Application Support. One Swift `LibrarySync`
 actor uses direct CloudKit zone-change, record-fetch and conflict-checked modify operations
-on complete `.pop` assets in the fixed `Library` zone of the private database in
+on complete `.pop` assets in the fixed `PopLibrary` zone of the private database in
 `iCloud.com.hitslop.app`. Debug uses Development; TestFlight, App Store and the Developer ID
 Mac release use Production ([Apple's distribution rule](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitQuickStart/TestingYourApp/TestingYourApp.html)).
-These environments do not share records, and Debug keeps its library state in a separate
-`Development` folder. All callers await one coalesced run, with one queued rerun and full
+These environments do not share records. Each account's local index and managed files
+live in a matching `PopLibrary` folder; Debug adds a separate `Development` folder.
+The legacy `Library` zone and earlier local indexes remain untouched and are not read
+by dotpop.
+All callers await one coalesced run, with one queued rerun and full
 reconciliation taking precedence. Foreground, Sync Now, push and background refresh
 enumerate from a nil token: metadata first, then assets whose confirmed revisions differ.
 Debounced edits and editor polling fetch metadata changes from the saved token, then

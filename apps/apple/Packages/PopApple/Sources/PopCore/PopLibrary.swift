@@ -215,24 +215,17 @@ public struct LibrarySyncAttention {
         return
       }
       account = fingerprint
-      var root = Self.managedFolder.appendingPathComponent(fingerprint, isDirectory: true)
-      var zoneName = "Library"
       #if DEBUG
         // Debug builds sync with CloudKit Development. The same account maps to the same
         // folder in both environments, so keep Development's library state and files apart
         // from the Production state that TestFlight, App Store and Developer ID builds use.
-        root = root.appendingPathComponent("Development", isDirectory: true)
-        if let namespace = ProcessInfo.processInfo.environment["POP_LIBRARY_DIAGNOSTIC_NAMESPACE"] {
-          guard !namespace.isEmpty, namespace.utf8.count <= 64,
-            namespace.utf8.allSatisfy({
-              (48...57).contains($0) || (65...90).contains($0) || (97...122).contains($0) || $0 == 45
-            })
-          else { throw CloudFailure("Invalid diagnostic library namespace") }
-          root = root.appendingPathComponent("Diagnostics/\(namespace)", isDirectory: true)
-          zoneName = "Diagnostic-" + namespace
-        }
+        let location = try LibraryLocation(
+          base: Self.managedFolder, account: fingerprint, development: true,
+          diagnosticNamespace: ProcessInfo.processInfo.environment["POP_LIBRARY_DIAGNOSTIC_NAMESPACE"])
+      #else
+        let location = try LibraryLocation(base: Self.managedFolder, account: fingerprint, development: false)
       #endif
-      let libraryRoot = root
+      let libraryRoot = location.root
       let native = try await Task.detached(priority: .utility) {
         try NativeLibrary.open(root: libraryRoot.path, account: fingerprint)
       }.value
@@ -241,7 +234,7 @@ public struct LibrarySyncAttention {
       try Self.active.activate(native)
       sync = LibrarySync(
         library: native, database: container.privateCloudDatabase,
-        zone: CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName))
+        zone: location.zone)
       isReady = true
       accountIdentity = account
       await refresh()
