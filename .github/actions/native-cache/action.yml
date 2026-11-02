@@ -27,7 +27,8 @@ runs:
       if: inputs.swift == 'true'
       shell: bash
       run: |
-        TOOLCHAIN_HASH=$( (xcodebuild -version; swift --version) | shasum -a 256 | cut -d ' ' -f 1)
+        # SwiftPM caches absolute artifact paths, including the checkout path after a repo rename.
+        TOOLCHAIN_HASH=$( (printf '%s\n' "$GITHUB_WORKSPACE"; xcodebuild -version; swift --version) | shasum -a 256 | cut -d ' ' -f 1)
         echo "hash=$TOOLCHAIN_HASH" >> "$GITHUB_OUTPUT"
     - id: cache-keys
       shell: bash
