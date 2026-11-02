@@ -112,7 +112,7 @@ test.if(nightly)("agent skills link to the global CLI and follow its upgrades", 
     const link = join(home, ".agents/skills/pop-cli");
     expect((await run(cli, "skills", "--all", "--scope", "global")).code).toBe(0);
     expect(await readlink(link)).toBe(join(packaged, "pop-cli"));
-    await mkdir(join(project, "node_modules"));
+    await mkdir(join(project, "node_modules/@hitslop"), { recursive: true });
     await symlink(cli, join(project, "node_modules/@hitslop/pop"));
     expect((await run(cli, "skill", "install", "--all", "--scope", "project")).code).toBe(0);
     for (const name of skillNames)
