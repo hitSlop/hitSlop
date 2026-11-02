@@ -208,6 +208,8 @@ public enum CatalogStorageChoice: Sendable {
   }
 
   @ObservationIgnored private let client: CatalogClient
+  public private(set) var hasLoadedLocal = false
+  public private(set) var hasLoadedRecents = false
   @ObservationIgnored private var hasSelectedFilter = false
   @ObservationIgnored private var localTask: Task<Void, Never>?
   @ObservationIgnored private var recentsTask: Task<Void, Never>?
@@ -245,7 +247,11 @@ public enum CatalogStorageChoice: Sendable {
   public func start() {
     guard localTask == nil else { return }
     localTask = Task { [weak self, client] in
-      for await snapshot in await client.local() { self?.receive(snapshot) }
+      for await snapshot in await client.local() {
+        self?.receive(snapshot)
+        self?.hasLoadedLocal = true
+      }
+      self?.hasLoadedLocal = true
     }
     refreshRecents()
   }
@@ -263,6 +269,7 @@ public enum CatalogStorageChoice: Sendable {
       let entries = await self.client.recents()
       guard !Task.isCancelled else { return }
       self.recentFiles = entries
+      self.hasLoadedRecents = true
       self.recentsIssue = self.client.recentsIssue()
       self.synchronizeSelection()
     }

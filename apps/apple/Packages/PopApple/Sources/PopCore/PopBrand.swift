@@ -75,7 +75,7 @@ public struct PopBrandMark: View {
   private let size: CGFloat
   public init(size: CGFloat = 34) { self.size = size }
   public var body: some View {
-    Image("BrandIcon", bundle: .module).resizable().scaledToFit()
+    Image("BrandCharacter", bundle: .module).resizable().scaledToFit()
       .frame(width: size, height: size).accessibilityHidden(true)
   }
 }

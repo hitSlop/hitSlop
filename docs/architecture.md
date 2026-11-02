@@ -713,8 +713,19 @@ cleanup keeps both files and reports their locations. No document format changes
 The iPhone starter build reads Popular membership from repository metadata, which
 includes Little Days (`baby-journal`), and leaves out templates that declare camera,
 microphone or speech capabilities, which the iPhone host refuses.
-Both catalogs share the app icon and bundled Baloo 2 headings; controls and
-body copy use native fonts. The iPhone editor runs edge to edge: the page extends under
+Both catalogs share the Corner Hello file character and bundled Baloo 2 headings;
+controls and body copy use native fonts. The app icon remains the gradient tile;
+documents retain their own captured artwork. The vector master and Rive project live in
+`artwork/brand/corner-hello`. `PopLaunch` owns the decorative, roughly one-second
+foreground greeting, separate from document loading: it runs once per process when
+opening the catalog, exits on local listing readiness, and never waits for iCloud or a
+server. Incoming iPhone links dismiss it; Reduce Motion skips it, a tap dismisses it,
+and inactivity or a renderer failure cancels it. Rive's timeline reports the landing
+and fold cues to native iPhone haptics, respecting the existing device preference;
+desktop remains silent. The page shell and document formats do not participate.
+Catalog columns accept the window's available height and scroll their contents;
+the category list cannot impose a larger minimum height that clips the header.
+The iPhone editor runs edge to edge: the page extends under
 the status bar and home indicator and pads itself with `--pop-safe-top` and
 `--pop-safe-bottom`, and the keyboard covers the page while the shell reveals fields.
 Every iPhone document has a floating native glass actions menu beside its header.

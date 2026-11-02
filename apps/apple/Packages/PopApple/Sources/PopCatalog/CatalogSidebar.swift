@@ -12,6 +12,7 @@ struct CatalogSidebar: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(alignment: .lastTextBaseline, spacing: 1) {
+        PopBrandMark(size: 30).padding(.trailing, 7)
         Circle().fill(PopBrand.accent).frame(width: 9, height: 9)
         Text("pop").font(PopBrand.heading(30, relativeTo: .title))
       }

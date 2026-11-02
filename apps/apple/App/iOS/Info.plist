@@ -12,7 +12,7 @@
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
-  <key>UILaunchScreen</key><dict/>
+  <key>UILaunchScreen</key><dict><key>UIColorName</key><string>LaunchBackground</string></dict>
   <key>ITSAppUsesNonExemptEncryption</key><false/>
   <key>NSCameraUsageDescription</key><string>A pop you open can use the camera when it declares it, for example to take a photo you keep in the document.</string>
   <key>NSMicrophoneUsageDescription</key><string>A pop you open can use the microphone when it declares it, for example to record a voice note you keep in the document.</string>

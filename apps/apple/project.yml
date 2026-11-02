@@ -45,6 +45,8 @@ targets:
         product: PopAccount
       - package: PopApple
         product: PopWidgets
+      - package: PopApple
+        product: PopLaunch
       - target: pop-iOS-Widgets
       - target: pop-iOS-Thumbnail
     settings:

@@ -3,6 +3,7 @@ import PopCore
 import PopDocument
 import PopFeatures
 import PopHost
+import PopLaunch
 import SwiftUI
 
 /// The macOS composition root. The models own decisions; `DocumentWindows` owns the native
@@ -54,16 +55,16 @@ import SwiftUI
     return windows.controllers.first { $0.value.owns(candidate) }?.key
   }
 
-  public func showCatalog() {
+  public func showCatalog(launchGreeting: Bool = false) {
     guard presentsWindows, model.quitPhase == .running else { return }
-    let catalogWindow = preparedCatalog()
+    let catalogWindow = preparedCatalog(launchGreeting: launchGreeting)
     catalogWindow.showWindow(nil)
     if catalogWindow.window?.isMiniaturized == true { catalogWindow.window?.deminiaturize(nil) }
     catalogWindow.window?.makeKeyAndOrderFront(nil)
     NSApp.activate()
   }
   /// The catalog window, built once and reused.
-  private func preparedCatalog() -> NSWindowController {
+  private func preparedCatalog(launchGreeting: Bool = false) -> NSWindowController {
     if let catalogWindow { return catalogWindow }
     let host = NSHostingController(rootView: CatalogView(model: model.catalog))
     // The window owns its size. The sidebar's full category list must scroll rather
@@ -81,6 +82,15 @@ import SwiftUI
     window.minSize = NSSize(width: 900, height: 560)
     window.contentViewController = host
     window.setContentSize(size)
+    if launchGreeting {
+      // A removable native sibling keeps the greeting out of the catalog's size negotiation.
+      let cover = NSHostingView(rootView: CatalogLaunchCover(model: model.catalog))
+      cover.sizingOptions = []
+      cover.rootView.onFinished = { [weak cover] in cover?.removeFromSuperview() }
+      cover.frame = host.view.bounds
+      cover.autoresizingMask = [.width, .height]
+      host.view.addSubview(cover)
+    }
     window.center()
     let controller = NSWindowController(window: window)
     catalogWindow = controller
@@ -186,6 +196,15 @@ import SwiftUI
     guard presentsWindows else { return }
     let window = id.flatMap { windows.controllers[$0]?.window } ?? NSApp.keyWindow ?? catalogWindow?.window
     NativeAlertPresenter.present(alert, on: window) { [weak self] in self?.checkForUpdates() }
+  }
+}
+
+private struct CatalogLaunchCover: View {
+  @Bindable var model: CatalogModel
+  var onFinished: @MainActor () -> Void = {}
+  var body: some View {
+    Color.clear.popLaunchGreeting(
+      ready: model.hasLoadedLocal && model.hasLoadedRecents, onFinished: onFinished)
   }
 }
 

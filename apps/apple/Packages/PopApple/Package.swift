@@ -12,9 +12,11 @@ let package = Package(
     .library(name: "PopHost", targets: ["PopHost"]),
     .library(name: "PopCatalog", targets: ["PopCatalog"]),
     .library(name: "PopWidgets", targets: ["PopWidgets"]),
+    .library(name: "PopLaunch", targets: ["PopLaunch"]),
   ],
   dependencies: [
-    .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.19.2")
+    .package(url: "https://github.com/firebase/firebase-ios-sdk.git", exact: "12.19.2"),
+    .package(url: "https://github.com/rive-app/rive-ios", exact: "6.29.0"),
   ],
   targets: [
     .binaryTarget(name: "PopCoreFFI", path: "Generated/PopCoreFFI.xcframework"),
@@ -62,11 +64,15 @@ let package = Package(
     ),
     .target(name: "PopFeatures", dependencies: ["PopCore"]),
     .target(name: "PopWidgets"),
+    .target(
+      name: "PopLaunch",
+      dependencies: ["PopCore", "PopDocument", .product(name: "RiveRuntime", package: "rive-ios")],
+      resources: [.process("Resources")]),
     .testTarget(name: "PopFeaturesTests", dependencies: ["PopFeatures"]),
     .target(
       name: "PopCatalog",
       dependencies: [
-        "PopHost", "PopCore", "PopDocument", "PopFeatures",
+        "PopHost", "PopCore", "PopDocument", "PopFeatures", "PopLaunch",
       ],
       resources: [.process("Resources")],
       linkerSettings: [.linkedFramework("AppKit")]

@@ -26,6 +26,14 @@ server running (`bun run --cwd apps/landing dev`), then screenshotted in a brows
 
 ## Brand art
 
+The current Corner Hello file character is a hand-authored vector with its editable
+Rive project in `artwork/brand/corner-hello`. That source exports `mark.svg`, `hello.svg`,
+`mark.webp`, the main `logo.webp` paired with the existing lettering, and the live
+`mascot-wave` and `mascot-party` images. The app keeps its gradient icon and documents
+keep their captured artwork. Run the source folder's `export.mjs` to rebuild those
+outputs; its README describes the CLI requirement. The remaining artwork below is
+retained from the earlier sticker treatment.
+
 `public/assets/brand/` holds the `.pop` logo and its parts (`logo`, `mark`, `wordmark`, favicons and
 `apple-touch.png`), cut from the supplied sticker. The hero's cup, the mascot poses (`mascot-wave`,
 `mascot-phone`, `mascot-party`), the washi tape and watercolor strips, and the three collaborator

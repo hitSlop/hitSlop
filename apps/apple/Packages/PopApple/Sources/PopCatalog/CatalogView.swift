@@ -29,6 +29,7 @@ public struct CatalogView: View {
       CatalogSidebar(filter: model.filter, categories: model.categories, recentCount: model.recents.count) {
         model.select($0)
       }
+      .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
       .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
     } content: {
       CatalogRail(
@@ -45,6 +46,7 @@ public struct CatalogView: View {
           Task { do { try await library.delete(document) } catch { libraryError = error.localizedDescription } }
         }
       )
+      .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
       .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 320)
       .ignoresSafeArea(.container, edges: .top)
     } detail: {
@@ -64,6 +66,7 @@ public struct CatalogView: View {
         LibrarySyncStatusView(library: library).padding()
       }
       .frame(minWidth: 460)
+      .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
       .ignoresSafeArea(.container, edges: .top)
     }
     .navigationSplitViewStyle(.balanced)

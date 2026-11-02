@@ -1,6 +1,7 @@
 import PopAccount
 import PopCore
 import PopDocument
+import PopLaunch
 import PopWidgets
 import SwiftUI
 import UniformTypeIdentifiers
@@ -29,6 +30,8 @@ struct PhoneRootView: View {
   @State private var importAfterSettings = false
   @State private var showJoin = false
   @State private var showSharingAccount = false
+  @State private var launchReady = false
+  @State private var launchGreeting = true
 
   var body: some View {
     NavigationStack(path: navigationPath) {
@@ -55,6 +58,7 @@ struct PhoneRootView: View {
       }
     }
     .tint(PopBrand.accent)
+    .popLaunchGreeting(ready: launchReady, enabled: launchGreeting)
     .fileImporter(isPresented: $model.showImporter, allowedContentTypes: [UTType(filenameExtension: "pop") ?? .data]) {
       result in
       switch result {
@@ -147,6 +151,7 @@ struct PhoneRootView: View {
       library.activated(scenePhase == .active)
       library.start()
       await model.loadTemplates()
+      launchReady = true
     }
     .onChange(of: model.session?.file.url) { _, url in
       library.editorOpen = url != nil
@@ -172,9 +177,11 @@ struct PhoneRootView: View {
       }
     }
     .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+      launchGreeting = false
       if let url = activity.webpageURL { openSharingLink(url) }
     }
     .onOpenURL { url in
+      launchGreeting = false
       if openSharingLink(url) { return }
       if let id = WidgetCache.selectionID(from: url) {
         path = path.filter(\.isDocument)

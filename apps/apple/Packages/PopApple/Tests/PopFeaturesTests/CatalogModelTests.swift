@@ -4,6 +4,21 @@ import Testing
 
 @testable import PopFeatures
 
+@Test @MainActor func catalogGreetingReadinessAcceptsEmptyLocalListings() async {
+  let catalog = Catalog()
+  let local = AsyncStream<CatalogSnapshot>.makeStream()
+  catalog.local = { local.stream }
+  let model = CatalogModel(client: catalog.client)
+  #expect(!model.hasLoadedLocal && !model.hasLoadedRecents)
+  model.start()
+  await until { model.hasLoadedRecents }
+  #expect(!model.hasLoadedLocal)
+  local.continuation.yield(CatalogSnapshot())
+  await until { model.hasLoadedLocal }
+  #expect(model.local.isEmpty && model.hasLoadedRecents)
+  local.continuation.finish()
+}
+
 /// A started catalog fed by `local`, with its first listings in.
 @MainActor private func started(_ catalog: Catalog, local: AsyncStream<CatalogSnapshot>) async -> CatalogModel {
   catalog.local = { local }

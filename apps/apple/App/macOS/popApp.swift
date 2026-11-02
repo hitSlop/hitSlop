@@ -104,7 +104,7 @@ private struct UpdateSettingsView: View {
     Task.detached(priority: .utility) { PopRegistry.sweep() }
     let urls = CommandLine.arguments.dropFirst().filter { $0.hasSuffix(".pop") }.map(URL.init(fileURLWithPath:))
     if urls.isEmpty {
-      showCatalog()
+      coordinator.showCatalog(launchGreeting: true)
       // A launch that opens documents warms WebKit itself.
     } else {
       urls.forEach(openDocument)

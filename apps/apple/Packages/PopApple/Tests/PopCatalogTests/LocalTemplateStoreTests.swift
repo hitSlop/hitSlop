@@ -11,6 +11,56 @@ import Testing
 
 @testable import PopCatalog
 
+@Test(arguments: [false, true]) @MainActor func catalogColumnsFitNativeWindowWithAllCategories(
+  minimumSize: Bool
+) async throws {
+  _ = NSApplication.shared
+  let entries = PopCategory.allCases.map { category in
+    var entry = CatalogEntry(
+      id: category.rawValue, source: .local(URL(fileURLWithPath: "/unused/\(category.rawValue).pop")),
+      title: category.label)
+    entry.categories = [category]
+    return entry
+  }
+  var client = CatalogClient.empty
+  client.local = {
+    AsyncStream {
+      $0.yield(CatalogSnapshot(entries: entries))
+      $0.finish()
+    }
+  }
+  let model = CatalogModel(client: client)
+  model.select(.all)
+  model.start()
+  #expect(try await eventually { model.hasLoadedLocal })
+  let host = NSHostingController(rootView: CatalogView(model: model))
+  host.sizingOptions = []
+  let size = minimumSize ? NSSize(width: 900, height: 560) : NSSize(width: 1040, height: 680)
+  let window = NSWindow(
+    contentRect: NSRect(origin: .zero, size: size),
+    styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+  window.moveOffScreen()
+  window.isReleasedWhenClosed = false
+  window.titlebarAppearsTransparent = true
+  window.contentViewController = host
+  window.setContentSize(size)
+  window.orderFront(nil)
+  defer { window.close() }
+  func splitViews(in view: NSView) -> [NSSplitView] {
+    (view as? NSSplitView).map { [$0] } ?? view.subviews.flatMap { splitViews(in: $0) }
+  }
+  #expect(
+    try await eventually {
+      host.view.layoutSubtreeIfNeeded()
+      return host.view.bounds.height == size.height && !splitViews(in: host.view).isEmpty
+    })
+  for split in splitViews(in: host.view) {
+    #expect(
+      split.frame.height <= host.view.bounds.height + 1,
+      "Catalog columns must fit the window instead of centering an oversized layout above it")
+  }
+}
+
 // Same-path artwork replacement must update an already mounted catalog, without reselection.
 @Test(.nightly, arguments: [false, true]) @MainActor func displayedCatalogArtworkRefreshesAfterSamePathReplacement(
   icon: Bool
