@@ -96,14 +96,21 @@ jobs:
       - name: Check the command prelude before capture
         run: bun run compat:runner --check
       - name: Capture this candidate outside Git
-        run: bun run compat:capture "${POP_RELEASE_TAG#pop-v}" --writer generated/engines/darwin-arm64/pop-engine --out dist/corpus
+        run: |
+          set -euo pipefail
+          # SwiftPM omits Xcode's app-only Sparkle pin when compiling the capture harness.
+          git restore apps/apple/Packages/PopApple/Package.resolved
+          bun run compat:capture "${POP_RELEASE_TAG#pop-v}" --writer generated/engines/darwin-arm64/pop-engine --out dist/corpus
+          git restore apps/apple/Packages/PopApple/Package.resolved
       - name: Resolve all released corpora and the candidate
         run: bun scripts/compat/corpora.ts
         env:
           POP_COMPAT_CANDIDATE: ${{ github.workspace }}/dist/corpus
       - name: Validate release artifacts
         run: |
+          set -euo pipefail
           bun run release:check --skip-app
+          git restore apps/apple/Packages/PopApple/Package.resolved
           test -z "$(git status --porcelain)"
         env:
           POP_TEMPLATE_CACHE_DIR: .pop/template-cache
