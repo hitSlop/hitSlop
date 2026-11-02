@@ -1,13 +1,13 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "hitslop-landing",
-  "compatibility_date": "2026-08-29",
+  "name": "dotpop-landing",
+  "compatibility_date": "2026-10-29",
   "assets": {
     "directory": "./dist"
   },
   "routes": [
     {
-      "pattern": "hitslop.com",
+      "pattern": "dotpop.click",
       "custom_domain": true
     }
   ]

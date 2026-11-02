@@ -1,4 +1,4 @@
-import type { AppDeclaration } from "../../packages/hitslop/src/sdk/slop";
+import type { AppDeclaration } from "../../packages/pop/src/sdk/pop";
 
 /** Source variants consumed by the native fixture builder. */
 export const presentationVariants = {

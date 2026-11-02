@@ -1,10 +1,10 @@
 import AppIntents
 import Foundation
-import HitSlopWidgets
+import PopWidgets
 
-public struct SlopWidgetEntity: AppEntity {
+public struct PopWidgetEntity: AppEntity {
   public static let typeDisplayRepresentation: TypeDisplayRepresentation = "Document"
-  public static let defaultQuery = SlopWidgetQuery()
+  public static let defaultQuery = PopWidgetQuery()
   public let id: String
   public let title: String
   public var displayRepresentation: DisplayRepresentation {
@@ -32,9 +32,9 @@ public struct SlopWidgetEntity: AppEntity {
   }
 }
 
-public struct SlopWidgetQuery: EntityQuery {
+public struct PopWidgetQuery: EntityQuery {
   public init() {}
-  public func entities(for identifiers: [String]) async throws -> [SlopWidgetEntity] {
+  public func entities(for identifiers: [String]) async throws -> [PopWidgetEntity] {
     let cache = try WidgetCache.shared()
     #if os(iOS)
       let index = cache.libraryIndex()
@@ -43,7 +43,7 @@ public struct SlopWidgetQuery: EntityQuery {
       return identifiers.compactMap { cache.record(id: $0) }.map { .init(id: $0.id, title: $0.title) }
     #endif
   }
-  public func suggestedEntities() async throws -> [SlopWidgetEntity] {
+  public func suggestedEntities() async throws -> [PopWidgetEntity] {
     #if os(iOS)
       try WidgetCache.shared().libraryIndex().map { .init(id: $0.id, title: $0.title) }
     #else
@@ -53,13 +53,13 @@ public struct SlopWidgetQuery: EntityQuery {
   // No implicit default: a new placement asks the person which document it represents.
 }
 
-public struct SlopWidgetIntent: WidgetConfigurationIntent {
+public struct PopWidgetIntent: WidgetConfigurationIntent {
   public static let title: LocalizedStringResource = "Choose a Document"
   #if os(iOS)
     public static let description = IntentDescription("Choose the document to show on your Home Screen.")
   #else
     public static let description = IntentDescription("Choose the document to show on your desktop.")
   #endif
-  @Parameter(title: "Document") public var slop: SlopWidgetEntity?
+  @Parameter(title: "Document") public var pop: PopWidgetEntity?
   public init() {}
 }

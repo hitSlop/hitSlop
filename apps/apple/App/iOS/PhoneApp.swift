@@ -1,6 +1,6 @@
 import BackgroundTasks
 import CloudKit
-import HitSlopCore
+import PopCore
 import SwiftUI
 import UIKit
 
@@ -33,7 +33,7 @@ import UIKit
         }
       }
     }
-    SlopLibrary.shared.activated(application.applicationState == .active)
+    PopLibrary.shared.activated(application.applicationState == .active)
     application.registerForRemoteNotifications()
     return true
   }
@@ -42,7 +42,7 @@ import UIKit
     let request = BGAppRefreshTaskRequest(identifier: Self.refreshIdentifier)
     request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
     do { try BGTaskScheduler.shared.submit(request) } catch {
-      NSLog("hitSlop background refresh scheduling failed: %@", error.localizedDescription)
+      NSLog("pop background refresh scheduling failed: %@", error.localizedDescription)
     }
   }
 
@@ -70,21 +70,21 @@ import UIKit
     let operation = Task { @MainActor [self] in
       model.widgets.beginBackgroundRefresh()
       defer { model.widgets.endBackgroundRefresh() }
-      let before = SlopLibrary.shared.entries
+      let before = PopLibrary.shared.entries
       do {
         try Task.checkCancellation()
         if background {
-          try await SlopLibrary.shared.fetchInBackground()
+          try await PopLibrary.shared.fetchInBackground()
         } else {
-          await SlopLibrary.shared.receivedPush()
+          await PopLibrary.shared.receivedPush()
         }
-        if SlopLibrary.shared.lastError != nil || !SlopLibrary.shared.isReady { return UIBackgroundFetchResult.failed }
+        if PopLibrary.shared.lastError != nil || !PopLibrary.shared.isReady { return UIBackgroundFetchResult.failed }
         try Task.checkCancellation()
         await model.widgets.refreshPlaced()
         try Task.checkCancellation()
-        return SlopLibrary.shared.entries == before ? UIBackgroundFetchResult.noData : .newData
+        return PopLibrary.shared.entries == before ? UIBackgroundFetchResult.noData : .newData
       } catch {
-        if !Task.isCancelled { NSLog("hitSlop background refresh failed: %@", error.localizedDescription) }
+        if !Task.isCancelled { NSLog("pop background refresh failed: %@", error.localizedDescription) }
         return .failed
       }
     }
@@ -129,7 +129,7 @@ import UIKit
   }
 }
 
-@main struct HitSlopPhoneApp: App {
+@main struct PopPhoneApp: App {
   @UIApplicationDelegateAdaptor(PhoneAppDelegate.self) var delegate
 
   var body: some Scene {

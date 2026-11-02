@@ -8,14 +8,14 @@ interface Props {
   image?: string;
   preloadHeadline?: boolean;
 }
-const { title, description, themeColor = "#f4efff", image = "/og.jpg", preloadHeadline = false } = Astro.props;
-const site = Astro.site ?? new URL("https://hitslop.com");
+const { title, description, themeColor = "#fdf8ef", image = "/og.jpg", preloadHeadline = false } = Astro.props;
+const site = Astro.site ?? new URL("https://dotpop.click");
 const canonical = new URL(Astro.url.pathname, site).href;
 const imageUrl = new URL(image, site).href;
 const app = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "hitSlop",
+  name: "dotpop",
   applicationCategory: "ProductivityApplication",
   operatingSystem: "macOS 15.2 or later (Apple silicon)",
   description,
@@ -34,17 +34,17 @@ const app = {
 <link rel="canonical" href={canonical} />
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-<link rel="apple-touch-icon" href="/assets/appicon-256.png" />
+<link rel="apple-touch-icon" href="/assets/brand/apple-touch.png" />
 <link rel="sitemap" href="/sitemap-index.xml" />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="hitSlop" />
+<meta property="og:site_name" content="dotpop" />
 <meta property="og:title" content={title} />
 <meta property="og:description" content={description} />
 <meta property="og:url" content={canonical} />
 <meta property="og:image" content={imageUrl} />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="hitSlop: tiny apps with big personality on a Mac desktop" />
+<meta property="og:image:alt" content="pop: tiny apps with big personality on a Mac desktop" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:site" content="@hitslop" />
 <meta name="twitter:title" content={title} />

@@ -1,10 +1,10 @@
-import HitSlopCore
-import HitSlopDocument
+import PopCore
+import PopDocument
 import SwiftUI
 
 struct PhoneCatalogView: View {
   @ObservedObject var model: PhoneDocuments
-  @ObservedObject var library: SlopLibrary
+  @ObservedObject var library: PopLibrary
   @Binding var tab: PhoneTab
   @Binding var showSettings: Bool
   @Binding var query: String
@@ -21,8 +21,8 @@ struct PhoneCatalogView: View {
   }
   private var header: some View {
     HStack(spacing: 12) {
-      SlopBrandMark(size: 30)
-      Text("hitSlop").font(SlopBrand.heading(24, relativeTo: .title)).tracking(-0.6)
+      PopBrandMark(size: 30)
+      Text("dotpop").font(PopBrand.heading(24, relativeTo: .title)).tracking(-0.6)
       Spacer()
       Button {
         model.tapped()
@@ -38,7 +38,7 @@ struct PhoneCatalogView: View {
       header
       search
       HStack {
-        Text("Recents").font(SlopBrand.heading(20, relativeTo: .title2))
+        Text("Recents").font(PopBrand.heading(20, relativeTo: .title2))
         Spacer()
         Button {
           model.tapped()
@@ -61,11 +61,11 @@ struct PhoneCatalogView: View {
         }
         if library.visibleEntries.isEmpty && model.documents.isEmpty {
           VStack(spacing: 14) {
-            Image(systemName: "sparkles").font(.system(size: 34)).foregroundStyle(PhoneStyle.accent)
+            Image(systemName: "sparkles").font(.system(size: 34)).foregroundStyle(PopBrand.accent)
             Text("A little app for your next thing.").font(.title3.bold())
             Text("Start a checklist here. Pick it up on your Mac.").foregroundStyle(.secondary).multilineTextAlignment(
               .center)
-            Button("Explore templates") { tab = .templates }.buttonStyle(.borderedProminent).tint(PhoneStyle.accent)
+            Button("Explore templates") { tab = .templates }.buttonStyle(.borderedProminent).tint(PopBrand.accent)
           }.padding(.horizontal, 14).padding(.top, 66)
             .listRowSeparator(.hidden).listRowBackground(Color.clear)
         }
@@ -74,7 +74,7 @@ struct PhoneCatalogView: View {
       .contentMargins(.top, 0, for: .scrollContent)
       .refreshable { await model.syncNow() }
       LibrarySyncStatusView(library: library)
-    }.background(Color(.systemBackground))
+    }.background(PopBrand.cream)
   }
   private func recentRow(_ recent: PhoneRecent) -> some View {
     let subtitle = recent.entry.map { library.state(for: $0) } ?? "On this iPhone"
@@ -86,7 +86,7 @@ struct PhoneCatalogView: View {
     return Button {
       model.open(recent.url)
     } label: {
-      PhoneSlopRow(
+      PhonePopRow(
         url: recent.url, title: recent.title, subtitle: subtitle,
         revision: recent.entry?.assetRevision ?? "", synced: recent.entry.map { library.isSynced($0) } ?? false,
         downloaded: recent.entry?.downloaded ?? true)
@@ -114,7 +114,7 @@ struct PhoneCatalogView: View {
   private var search: some View {
     HStack(spacing: 10) {
       Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-      TextField("Search slops", text: $query).autocorrectionDisabled()
+      TextField("Search pop", text: $query).autocorrectionDisabled()
     }.padding(.horizontal, 13).padding(.vertical, 9).background(
       Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12)
     )
@@ -139,16 +139,16 @@ struct PhoneCatalogView: View {
             } label: {
               Label(name, systemImage: name == "Popular" ? "flame.fill" : "bolt.fill")
                 .font(.subheadline.weight(category == name ? .semibold : .medium))
-                .foregroundStyle(category == name ? PhoneStyle.accent : .primary)
+                .foregroundStyle(category == name ? PopBrand.accent : .primary)
                 .padding(.horizontal, 16).padding(.vertical, 11)
                 .background(
-                  category == name ? PhoneStyle.accent.opacity(0.1) : Color(.secondarySystemBackground), in: Capsule())
+                  category == name ? PopBrand.accent.opacity(0.1) : PopBrand.creamDeep, in: Capsule())
             }.buttonStyle(.plain)
           }
         }.padding(.horizontal, 22)
       }.padding(.top, 18)
       HStack {
-        Text(category).font(SlopBrand.heading(24, relativeTo: .title2))
+        Text(category).font(PopBrand.heading(24, relativeTo: .title2))
         Spacer()
       }
       .padding(.horizontal, 24).padding(.top, 25).padding(.bottom, 12)
@@ -161,13 +161,13 @@ struct PhoneCatalogView: View {
           ) {
             template in
             NavigationLink(value: PhoneRoute.template(template)) {
-              PhoneSlopRow(
+              PhonePopRow(
                 url: template.url, title: template.title, subtitle: template.categories.joined(separator: " · "))
             }.buttonStyle(.plain).accessibilityLabel(template.title)
           }
         }.padding(.horizontal, 14)
         Text("More little apps are on their way.").font(.footnote).foregroundStyle(.secondary).padding(28)
       }
-    }.background(Color(.systemBackground))
+    }.background(PopBrand.cream)
   }
 }

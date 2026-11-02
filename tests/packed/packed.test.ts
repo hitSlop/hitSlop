@@ -1,6 +1,6 @@
 // The published npm packages (generated/npm), installed outside the checkout with Node
 // absent: the SDK alone, then the CLI through init, check, build, preview and the
-// getting-started tutorial. With HITSLOP_PACKED_NATIVE=1 (a release), also the native
+// getting-started tutorial. With POP_PACKED_NATIVE=1 (a release), also the native
 // workflow: register, global skills, create, theme and export. Each test continues the
 // one before it.
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -11,29 +11,29 @@ import { join, resolve } from "node:path";
 import { appAsset, repository } from "../../scripts/lib/artifacts";
 import { exec, testProcess } from "../../scripts/lib/test-process";
 
-// Nightly and release only (`HITSLOP_NIGHTLY=1`): website, documentation, onboarding and
+// Nightly and release only (`POP_NIGHTLY=1`): website, documentation, onboarding and
 // wording checks that never guard opening, editing or saving a document (docs/testing.md).
-const nightly = process.env.HITSLOP_NIGHTLY === "1";
+const nightly = process.env.POP_NIGHTLY === "1";
 
-const native = process.env.HITSLOP_PACKED_NATIVE === "1";
+const native = process.env.POP_PACKED_NATIVE === "1";
 const minutes = (n: number) => n * 60_000;
 let root: string, coreRoot: string, noNode: Record<string, string>, env: Record<string, string | undefined>;
 const tarballs: Record<string, string> = {};
 const versions: Record<string, string> = {};
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "hitslop packed "));
-  coreRoot = await mkdtemp(join(tmpdir(), "hitslop framework neutral "));
+  root = await mkdtemp(join(tmpdir(), "pop packed "));
+  coreRoot = await mkdtemp(join(tmpdir(), "pop framework neutral "));
   // The installed CLI must find the file engine it ships, never this checkout's.
-  const { HITSLOP_ENGINE: _engine, ...inherited } = process.env;
-  env = { ...inherited, HITSLOP_TEMPLATES_ROOT: join(root, "templates") };
+  const { POP_ENGINE: _engine, ...inherited } = process.env;
+  env = { ...inherited, POP_TEMPLATES_ROOT: join(root, "templates") };
   const bin = join(root, "bin");
   await mkdir(bin);
   await symlink(process.execPath, join(bin, "bun"));
   noNode = { PATH: bin + ":/usr/bin:/bin:/usr/sbin:/sbin" };
-  const metadata = JSON.parse(await readFile(join(repository, "packages/hitslop/package.json"), "utf8"));
-  versions.hitslop = metadata.version;
-  tarballs.hitslop = resolve(repository, `generated/npm/hitslop-${metadata.version}.tgz`);
+  const metadata = JSON.parse(await readFile(join(repository, "packages/pop/package.json"), "utf8"));
+  versions["@hitslop/pop"] = metadata.version;
+  tarballs["@hitslop/pop"] = resolve(repository, `generated/npm/hitslop-pop-${metadata.version}.tgz`);
 });
 afterAll(async () => {
   await rm(root, { recursive: true, force: true });
@@ -46,14 +46,14 @@ async function run(args: string[], cwd: string, overrides: Record<string, string
   assert.equal(code, 0, `${args[1] === "-e" ? "SDK import probe" : args.slice(1).join(" ")}: ${stdout}${stderr}`);
   return stdout;
 }
-const project = () => join(root, "my-slop");
-const cli = () => join(root, "node_modules/hitslop/src/cli/cli.ts");
-const built = () => join(project(), "dist/my-slop.slop");
+const project = () => join(root, "my-pop");
+const cli = () => join(root, "node_modules/@hitslop/pop/src/cli/cli.ts");
+const built = () => join(project(), "dist/my-pop.pop");
 
 test("the public SDK imports and type-checks outside the workspace", async () => {
   await writeFile(
     join(coreRoot, "package.json"),
-    JSON.stringify({ private: true, dependencies: { "hitslop": tarballs["hitslop"] } }),
+    JSON.stringify({ private: true, dependencies: { "@hitslop/pop": tarballs["@hitslop/pop"] } }),
   );
   await run([process.execPath, "install"], coreRoot, noNode);
   await run(
@@ -62,12 +62,12 @@ test("the public SDK imports and type-checks outside the workspace", async () =>
       "-e",
       `
     import {strict as assert} from "node:assert";
-    import {defineDocument, defineSlop, s} from "hitslop";
+    import {defineDocument, definePop, s} from "@hitslop/pop";
     const schema = defineDocument({title: s.text()});
     assert.ok(schema.descriptor);
-    assert.equal(defineSlop({slug: "probe", title: "Probe", description: "Probe", author: {name: "Probe"}, categories: ["utilities"], window: {kind: "standard", width: 320, height: 240}, theme: {accent: "#123456"}, document: schema, view: () => {}, initial: {title: ""}}).document, schema);
+    assert.equal(definePop({slug: "probe", title: "Probe", description: "Probe", author: {name: "Probe"}, categories: ["utilities"], window: {kind: "standard", width: 320, height: 240}, theme: {accent: "#123456"}, document: schema, view: () => {}, initial: {title: ""}}).document, schema);
     assert.throws(() => Bun.resolveSync("loro-crdt", process.cwd()));
-    for (const name of ["abi", "internal", "schema", "shell"]) assert.throws(() => Bun.resolveSync("hitslop/" + name, process.cwd()));
+    for (const name of ["abi", "internal", "schema", "shell"]) assert.throws(() => Bun.resolveSync("@hitslop/pop/" + name, process.cwd()));
   `,
     ],
     coreRoot,
@@ -77,9 +77,9 @@ test("the public SDK imports and type-checks outside the workspace", async () =>
   await writeFile(
     join(coreRoot, "consumer.ts"),
     `
-    import {defineDocument, s} from "hitslop";
+    import {defineDocument, s} from "@hitslop/pop";
     const definition = defineDocument({title: s.text()});
-    const value: import("hitslop").Input<typeof definition.descriptor> = {title: "Hello"};
+    const value: import("@hitslop/pop").Input<typeof definition.descriptor> = {title: "Hello"};
     void value;
   `,
   );
@@ -91,12 +91,12 @@ test("the public SDK imports and type-checks outside the workspace", async () =>
 }, minutes(5));
 
 test("the installed CLI creates, checks and builds a project with the engine it ships", async () => {
-  await writeFile(join(root, "package.json"), JSON.stringify({ private: true, dependencies: { "hitslop": tarballs["hitslop"] }, overrides: tarballs }));
+  await writeFile(join(root, "package.json"), JSON.stringify({ private: true, dependencies: { "@hitslop/pop": tarballs["@hitslop/pop"] }, overrides: tarballs }));
   await run([process.execPath, "install"], root, noNode);
   // The folder's name is the slug; the path above it holds spaces.
-  await run([process.execPath, "x", "--no-install", "hitslop", "init", project()], root, noNode);
+  await run([process.execPath, "x", "--no-install", "@hitslop/pop", "init", project()], root, noNode);
   const metadata = JSON.parse(await readFile(join(project(), "package.json"), "utf8"));
-  expect(metadata.devDependencies["hitslop"]).toBe(versions.hitslop);
+  expect(metadata.devDependencies["@hitslop/pop"]).toBe(versions["@hitslop/pop"]);
   metadata.overrides = tarballs;
   await writeFile(join(project(), "package.json"), JSON.stringify(metadata));
   await run([process.execPath, "install"], project(), noNode);
@@ -106,11 +106,11 @@ test("the installed CLI creates, checks and builds a project with the engine it 
   await run([process.execPath, "run", "build"], project(), noNode);
   const inspected = JSON.parse(await run([process.execPath, cli(), "inspect", built()], root, noNode));
   expect(inspected.kind).toBe("template");
-  expect(inspected.metadata.slug).toBe("my-slop");
+  expect(inspected.metadata.slug).toBe("my-pop");
   expect(JSON.parse(await run([process.execPath, cli(), "schema", built()], root, noNode)).kind).toBe("object");
-  expect(appAsset(built(), "ui.css")).toContain(".slop-paper");
+  expect(appAsset(built(), "ui.css")).toContain(".pop-paper");
   expect(appAsset(built(), "ui.js")).not.toContain(repository);
-  const document = join(root, "Command example.slop");
+  const document = join(root, "Command example.pop");
   await run([process.execPath, cli(), "create", "--from", built(), "--output", document], root, noNode);
   const described = JSON.parse(await run([process.execPath, cli(), "describe", document, "--json"], root, noNode));
   expect(described.commands.addTask.args.properties.text.type).toBe("string");
@@ -128,38 +128,38 @@ test.if(native)("the global CLI registers, links agent skills, follows upgrades 
   const globalDir = join(bunHome, "install/global");
   await mkdir(globalDir, { recursive: true });
   // Unreleased SDK packages resolve to their tarballs; the CLI itself is installed below.
-  const { "hitslop": _, ...sdkTarballs } = tarballs;
+  const { "@hitslop/pop": _, ...sdkTarballs } = tarballs;
   await writeFile(join(globalDir, "package.json"), JSON.stringify({ overrides: sdkTarballs }));
   const globalEnv = { ...noNode, HOME: home, BUN_INSTALL: bunHome };
-  const slop = join(bunHome, "bin/slop");
-  await run([process.execPath, "install", "-g", tarballs["hitslop"]!], root, globalEnv);
-  await run([slop, "skills", "--all", "--scope", "global"], root, globalEnv);
-  const packagedSkills = await realpath(join(globalDir, "node_modules/hitslop/.crust/root/skills"));
+  const pop = join(bunHome, "bin/pop");
+  await run([process.execPath, "install", "-g", tarballs["@hitslop/pop"]!], root, globalEnv);
+  await run([pop, "skills", "--all", "--scope", "global"], root, globalEnv);
+  const packagedSkills = await realpath(join(globalDir, "node_modules/@hitslop/pop/.crust/root/skills"));
   const agentSkill = (name: string) => join(home, ".agents/skills", name);
-  for (const name of ["hitslop", "hitslop-authoring", "hitslop-design", "hitslop-document", "hitslop-cli"])
+  for (const name of ["pop", "pop-authoring", "pop-design", "pop-document", "pop-cli"])
     expect(await realpath(agentSkill(name))).toBe(join(packagedSkills, name));
   // A later global install serves its skills through the same links.
   const next = join(root, "next");
   await mkdir(next);
-  await run(["/usr/bin/tar", "-xzf", tarballs["hitslop"]!, "-C", next], root, noNode);
-  const nextVersion = versions.hitslop + "-next";
+  await run(["/usr/bin/tar", "-xzf", tarballs["@hitslop/pop"]!, "-C", next], root, noNode);
+  const nextVersion = versions["@hitslop/pop"] + "-next";
   const nextPackage = join(next, "package");
   const manifestPath = join(nextPackage, "package.json");
   await writeFile(manifestPath, JSON.stringify({ ...JSON.parse(await readFile(manifestPath, "utf8")), version: nextVersion }));
-  const cliSkill = join(nextPackage, ".crust/root/skills/hitslop-cli/SKILL.md");
+  const cliSkill = join(nextPackage, ".crust/root/skills/pop-cli/SKILL.md");
   await writeFile(cliSkill, (await readFile(cliSkill, "utf8")).replace(/version: ".*"/, `version: "${nextVersion}"`));
   await run([process.execPath, "pm", "pack", "--destination", next], nextPackage, noNode);
-  await run([process.execPath, "install", "-g", join(next, `hitslop-${nextVersion}.tgz`)], root, globalEnv);
-  expect(await readFile(join(agentSkill("hitslop-cli"), "SKILL.md"), "utf8")).toContain(`version: "${nextVersion}"`);
-  const document = join(root, "Document.slop");
+  await run([process.execPath, "install", "-g", join(next, `hitslop-pop-${nextVersion}.tgz`)], root, globalEnv);
+  expect(await readFile(join(agentSkill("pop-cli"), "SKILL.md"), "utf8")).toContain(`version: "${nextVersion}"`);
+  const document = join(root, "Document.pop");
   await run([process.execPath, cli(), "create", "--from", built(), "--output", document], root, noNode);
-  // The global CLI repairs a hitSlop skill link that names another copy.
-  const stray = join(root, "stray/skills/hitslop-cli");
-  await cp(join(packagedSkills, "hitslop-cli"), stray, { recursive: true });
-  await rm(agentSkill("hitslop-cli"));
-  await symlink(stray, agentSkill("hitslop-cli"));
-  await run([slop, "skills", "repair", "--scope", "global"], root, globalEnv);
-  expect(await realpath(agentSkill("hitslop-cli"))).toBe(join(packagedSkills, "hitslop-cli"));
+  // The global CLI repairs a pop skill link that names another copy.
+  const stray = join(root, "stray/skills/pop-cli");
+  await cp(join(packagedSkills, "pop-cli"), stray, { recursive: true });
+  await rm(agentSkill("pop-cli"));
+  await symlink(stray, agentSkill("pop-cli"));
+  await run([pop, "skills", "repair", "--scope", "global"], root, globalEnv);
+  expect(await realpath(agentSkill("pop-cli"))).toBe(join(packagedSkills, "pop-cli"));
   await run([process.execPath, cli(), "theme", "set", document, "--values", '{"accent":"#123456"}'], root, noNode);
   expect(JSON.parse(await run([process.execPath, cli(), "theme", "get", document], root, noNode)).effective.accent).toBe("#123456");
   for (const format of ["png", "pdf"])
@@ -197,7 +197,7 @@ test("the installed CLI previews the project with its own page shell and core", 
     expect(await app.text()).toContain("/__preview__/native.js?token=");
     expect(await (await fetch(origin + "/__preview__/native.js")).text()).toContain("/__shell__/boot.js");
     expect((await fetch(origin + "/__shell__/index.js")).status).toBe(200);
-    expect(await Bun.file(join(root, "node_modules/hitslop/shell/core/hitslop_core_wasm_bg.wasm")).exists()).toBe(false);
+    expect(await Bun.file(join(root, "node_modules/@hitslop/pop/shell/core/pop_core_wasm_bg.wasm")).exists()).toBe(false);
     if (native) {
       const { webkit } = await import("playwright");
       const browser = await webkit.launch();
@@ -218,11 +218,11 @@ test("the installed CLI previews the project with its own page shell and core", 
         await title.click();
         await title.fill("Installed SDK works");
         await title.press("Tab");
-        expect(await frame.locator("[data-slop-root]").count()).toBe(1);
+        expect(await frame.locator("[data-pop-root]").count()).toBe(1);
         const styles = join(project(), "styles.css");
-        await writeFile(styles, (await readFile(styles, "utf8")) + "\n.slop-eyebrow { color: rgb(11, 22, 33); }\n");
+        await writeFile(styles, (await readFile(styles, "utf8")) + "\n.pop-eyebrow { color: rgb(11, 22, 33); }\n");
         await page.frames().find((frame) => frame.url().includes("/app.html"))!.waitForFunction(
-          () => getComputedStyle(document.querySelector(".slop-eyebrow")!).color === "rgb(11, 22, 33)",
+          () => getComputedStyle(document.querySelector(".pop-eyebrow")!).color === "rgb(11, 22, 33)",
         );
         expect(await frame.getByRole("textbox", { name: "List title", exact: true }).textContent()).toBe("Installed SDK works");
         await frame.getByRole("textbox", { name: "New task", exact: true }).fill("From the page command");

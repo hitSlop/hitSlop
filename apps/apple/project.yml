@@ -1,4 +1,4 @@
-name: hitSlop
+name: pop
 options:
   bundleIdPrefix: com.hitslop
   deploymentTarget:
@@ -11,22 +11,22 @@ settings:
     DEVELOPMENT_TEAM: 78UAXU8QG8
     CODE_SIGN_STYLE: Automatic
     # The app and its extensions ship as one version.
-    MARKETING_VERSION: "1.3.1"
-    CURRENT_PROJECT_VERSION: "46"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "47"
 packages:
-  HitSlopApple:
-    path: Packages/HitSlopApple
+  PopApple:
+    path: Packages/PopApple
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     exactVersion: 2.10.0
 targets:
-  hitSlop-iOS:
+  pop-iOS:
     type: application
-    productName: hitSlopPhone
+    productName: dotpopPhone
     platform: iOS
     sources:
       - path: App/iOS
-        excludes: [Info.plist, hitSlop.entitlements]
+        excludes: [Info.plist, pop.entitlements]
       - path: App/Shared/WidgetIntent.swift
       - path: App/macOS/GoogleService-Info.plist
         buildPhase: resources
@@ -37,42 +37,42 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
-      - package: HitSlopApple
-        product: HitSlopCore
-      - package: HitSlopApple
-        product: HitSlopDocument
-      - package: HitSlopApple
-        product: HitSlopAccount
-      - package: HitSlopApple
-        product: HitSlopWidgets
-      - target: hitSlop-iOS-Widgets
-      - target: hitSlop-iOS-Thumbnail
+      - package: PopApple
+        product: PopCore
+      - package: PopApple
+        product: PopDocument
+      - package: PopApple
+        product: PopAccount
+      - package: PopApple
+        product: PopWidgets
+      - target: pop-iOS-Widgets
+      - target: pop-iOS-Thumbnail
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app
-        PRODUCT_NAME: hitSlopPhone
+        PRODUCT_NAME: dotpopPhone
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: App/iOS/Info.plist
-        CODE_SIGN_ENTITLEMENTS: App/iOS/hitSlop.entitlements
+        CODE_SIGN_ENTITLEMENTS: App/iOS/pop.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         SKIP_INSTALL: NO
-  hitSlop-iOS-Widgets:
+  pop-iOS-Widgets:
     type: app-extension
     platform: iOS
     sources:
-      - App/Widgets/SlopImageWidget.swift
+      - App/Widgets/PopImageWidget.swift
       - App/Shared/WidgetIntent.swift
       - path: App/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
-      - package: HitSlopApple
-        product: HitSlopWidgets
+      - package: PopApple
+        product: PopWidgets
       - sdk: WidgetKit.framework
     info:
       path: App/iOSWidgets/Info.plist
       properties:
-        CFBundleDisplayName: hitSlop
+        CFBundleDisplayName: dotpop
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -83,7 +83,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: App/iOSWidgets/Widgets.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
-  hitSlop-iOS-Thumbnail:
+  pop-iOS-Thumbnail:
     type: app-extension
     platform: iOS
     sources:
@@ -92,27 +92,27 @@ targets:
       - path: App/Shared/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
-      - package: HitSlopApple
-        product: HitSlopCore
+      - package: PopApple
+        product: PopCore
       - sdk: QuickLookThumbnailing.framework
     info:
       path: App/iOSThumbnail/Info.plist
       properties:
-        CFBundleDisplayName: hitSlop Thumbnail
+        CFBundleDisplayName: dotpop Thumbnail
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.quicklook.thumbnail
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ThumbnailProvider
           NSExtensionAttributes:
-            QLSupportedContentTypes: [com.hitslop.slop]
+            QLSupportedContentTypes: [click.dotpop.document]
             QLThumbnailMinimumDimension: 0
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.quicklook-thumbnail
         TARGETED_DEVICE_FAMILY: "1"
         SKIP_INSTALL: YES
-  hitSlop-iOS-Tests:
+  pop-iOS-Tests:
     type: bundle.unit-test
     platform: iOS
     sources:
@@ -121,33 +121,33 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
-      - target: hitSlop-iOS
-      - package: HitSlopApple
-        product: HitSlopCore
-      - package: HitSlopApple
-        product: HitSlopDocument
+      - target: pop-iOS
+      - package: PopApple
+        product: PopCore
+      - package: PopApple
+        product: PopDocument
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.tests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/hitSlopPhone.app/hitSlopPhone
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/dotpopPhone.app/dotpopPhone
         BUNDLE_LOADER: $(TEST_HOST)
-  hitSlop-iOS-UITests:
+  pop-iOS-UITests:
     type: bundle.ui-testing
     platform: iOS
     sources: [Tests/iOSUI]
     dependencies:
-      - target: hitSlop-iOS
+      - target: pop-iOS
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app.uitests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
-        TEST_TARGET_NAME: hitSlop-iOS
-  hitSlop-macOS:
+        TEST_TARGET_NAME: pop-iOS
+  pop-macOS:
     type: application
-    productName: hitSlop
+    productName: dotpop
     platform: macOS
     sources:
       - path: App/Shared/Assets.xcassets
@@ -160,29 +160,29 @@ targets:
       - path: App/macOS/GoogleService-Info.plist
         buildPhase: resources
     dependencies:
-      - package: HitSlopApple
-        product: HitSlopHost
-      - package: HitSlopApple
-        product: HitSlopCatalog
-      - package: HitSlopApple
-        product: HitSlopDocument
-      - package: HitSlopApple
-        product: HitSlopCore
-      - package: HitSlopApple
-        product: HitSlopFirebase
-      - package: HitSlopApple
-        product: HitSlopAccount
+      - package: PopApple
+        product: PopHost
+      - package: PopApple
+        product: PopCatalog
+      - package: PopApple
+        product: PopDocument
+      - package: PopApple
+        product: PopCore
+      - package: PopApple
+        product: PopFirebase
+      - package: PopApple
+        product: PopAccount
       - package: Sparkle
         product: Sparkle
-      - target: hitSlop-QuickLookThumbnail
-      - target: hitSlop-QuickLookPreview
-      - target: hitSlop-Widgets
-      - package: HitSlopApple
-        product: HitSlopWidgets
+      - target: pop-QuickLookThumbnail
+      - target: pop-QuickLookPreview
+      - target: pop-Widgets
+      - package: PopApple
+        product: PopWidgets
     postCompileScripts:
       - name: Embed command evaluator
         basedOnDependencyAnalysis: false
-        script: '/bin/sh "${SRCROOT}/../../scripts/build/embed-hitslop-evaluator.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
+        script: '/bin/sh "${SRCROOT}/../../scripts/build/embed-pop-evaluator.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
       - name: Embed starter templates
         basedOnDependencyAnalysis: false
         script: '"${SRCROOT}/../../scripts/templates/embed-starter-templates.sh" "${TARGET_BUILD_DIR}/${WRAPPER_NAME}"'
@@ -201,14 +201,14 @@ targets:
             Release) ;;
             *) exit 0 ;;
           esac
-          if [ "${HITSLOP_SKIP_SYMBOL_UPLOAD:-0}" = "1" ] || [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
+          if [ "${POP_SKIP_SYMBOL_UPLOAD:-0}" = "1" ] || [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
             exit 0
           fi
           "${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app
-        PRODUCT_NAME: hitSlop
+        PRODUCT_NAME: dotpop
         INFOPLIST_FILE: App/macOS/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MACOSX_DEPLOYMENT_TARGET: "15.2"
@@ -217,14 +217,14 @@ targets:
         SKIP_INSTALL: NO
       configs:
         Debug:
-          CODE_SIGN_ENTITLEMENTS: App/macOS/hitSlop.entitlements
+          CODE_SIGN_ENTITLEMENTS: App/macOS/pop.entitlements
         Release:
-          HITSLOP_RELEASE_ENTITLEMENTS: App/macOS/hitSlop.Release.entitlements
-          CODE_SIGN_ENTITLEMENTS: $(HITSLOP_RELEASE_ENTITLEMENTS)
-          PROVISIONING_PROFILE_SPECIFIER: $(HITSLOP_PROVISIONING_PROFILE_UUID)
+          POP_RELEASE_ENTITLEMENTS: App/macOS/pop.Release.entitlements
+          CODE_SIGN_ENTITLEMENTS: $(POP_RELEASE_ENTITLEMENTS)
+          PROVISIONING_PROFILE_SPECIFIER: $(POP_PROVISIONING_PROFILE_UUID)
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
           ENABLE_DEBUG_DYLIB: NO
-  hitSlop-Widgets:
+  pop-Widgets:
     type: app-extension
     platform: macOS
     sources:
@@ -232,13 +232,13 @@ targets:
       # Intent types must belong to each bundle, not a static Swift package.
       - App/Shared/WidgetIntent.swift
     dependencies:
-      - package: HitSlopApple
-        product: HitSlopWidgets
+      - package: PopApple
+        product: PopWidgets
       - sdk: WidgetKit.framework
     info:
       path: App/Widgets/Info.plist
       properties:
-        CFBundleDisplayName: hitSlop
+        CFBundleDisplayName: dotpop
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -250,26 +250,26 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
   # Quick Look reads a document's artwork through the core, read-only, in a sandbox: what
-  # Finder, Mail and the share sheet show for a `.slop` that left this Mac.
-  hitSlop-QuickLookThumbnail:
+  # Finder, Mail and the share sheet show for a `.pop` that left this Mac.
+  pop-QuickLookThumbnail:
     type: app-extension
     platform: macOS
     sources: [App/QuickLookThumbnail]
     dependencies:
-      - package: HitSlopApple
-        product: HitSlopCore
+      - package: PopApple
+        product: PopCore
       - sdk: QuickLookThumbnailing.framework
     info:
       path: App/QuickLookThumbnail/Info.plist
       properties:
-        CFBundleDisplayName: hitSlop Thumbnail
+        CFBundleDisplayName: dotpop Thumbnail
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.quicklook.thumbnail
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ThumbnailProvider
           NSExtensionAttributes:
-            QLSupportedContentTypes: [com.hitslop.slop]
+            QLSupportedContentTypes: [click.dotpop.document]
             QLThumbnailMinimumDimension: 0
     settings:
       base:
@@ -277,18 +277,18 @@ targets:
         CODE_SIGN_ENTITLEMENTS: App/QuickLookThumbnail/QuickLookThumbnail.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
-  hitSlop-QuickLookPreview:
+  pop-QuickLookPreview:
     type: app-extension
     platform: macOS
     sources: [App/QuickLookPreview]
     dependencies:
-      - package: HitSlopApple
-        product: HitSlopCore
+      - package: PopApple
+        product: PopCore
       - sdk: QuickLookUI.framework
     info:
       path: App/QuickLookPreview/Info.plist
       properties:
-        CFBundleDisplayName: hitSlop Preview
+        CFBundleDisplayName: dotpop Preview
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -296,7 +296,7 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewProvider
           NSExtensionAttributes:
             QLIsDataBasedPreview: true
-            QLSupportedContentTypes: [com.hitslop.slop]
+            QLSupportedContentTypes: [click.dotpop.document]
             QLSupportsSearchableItems: false
     settings:
       base:
@@ -305,24 +305,24 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
 schemes:
-  hitSlop-iOS:
+  pop-iOS:
     build:
       targets:
-        hitSlop-iOS: all
+        pop-iOS: all
     test:
       targets:
-        - name: hitSlop-iOS-Tests
+        - name: pop-iOS-Tests
           parallelizable: false
-        - name: hitSlop-iOS-UITests
+        - name: pop-iOS-UITests
           parallelizable: false
       gatherCoverageData: false
-  hitSlop-macOS:
+  pop-macOS:
     build:
       targets:
-        hitSlop-macOS: all
+        pop-macOS: all
     run:
       config: Debug
-      executable: hitSlop-macOS
+      executable: pop-macOS
     profile:
       config: Release
-      executable: hitSlop-macOS
+      executable: pop-macOS

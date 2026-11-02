@@ -8,19 +8,19 @@ import { brotliDecompressSync } from "node:zlib";
 
 export const repository = resolve(import.meta.dir, "../..");
 /** Test runs keep their own writer-lock registry, so they never fill a person's
- * `~/.hitslop/live`. Debug hosts and the file engine honor it; release builds never do. */
+ * `~/.pop/live`. Debug hosts and the file engine honor it; release builds never do. */
 export function useTestRegistry() {
-  process.env.HITSLOP_EVALUATOR ||= join(repository, "target", process.env.HITSLOP_CARGO_PROFILE || "release", "hitslop-evaluator");
-  if (!process.env.HITSLOP_TEST_REGISTRY) {
-    const registry = mkdtempSync(join(tmpdir(), "hitslop-test-registry-"));
-    process.env.HITSLOP_TEST_REGISTRY = registry;
+  process.env.POP_EVALUATOR ||= join(repository, "target", process.env.POP_CARGO_PROFILE || "release", "pop-evaluator");
+  if (!process.env.POP_TEST_REGISTRY) {
+    const registry = mkdtempSync(join(tmpdir(), "pop-test-registry-"));
+    process.env.POP_TEST_REGISTRY = registry;
     process.once("exit", () => rmSync(registry, { recursive: true, force: true }));
   }
 }
 /** The page shell the host injects: the app bundles it; the CLI serves the same shell over its native preview bridge. */
 export const shellDestinations = {
-  app: join(repository, "apps/apple/Packages/HitSlopApple/Sources/HitSlopDocument/Resources/shell"),
-  cli: join(repository, "packages/hitslop/shell"),
+  app: join(repository, "apps/apple/Packages/PopApple/Sources/PopDocument/Resources/shell"),
+  cli: join(repository, "packages/pop/shell"),
 };
 export const shellFiles = ["boot.js", "index.js"] as const;
 /** An app asset's text as the build wrote it, read from the file outside the core, which

@@ -1,13 +1,13 @@
-# hitSlop
+# dotpop
 
 **Tiny apps. Big personality.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/hitSlop/hitSlop/ci.yml?branch=master&style=flat&label=CI)](https://github.com/hitSlop/hitSlop/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/hitSlop/dotpop/ci.yml?branch=master&style=flat&label=CI)](https://github.com/hitSlop/dotpop/actions/workflows/ci.yml)
 [![MIT License](https://img.shields.io/badge/license-MIT-7050ad?style=flat)](LICENSE)
-[![macOS 15.2+](https://img.shields.io/badge/macOS-15.2%2B-555555?style=flat&logo=apple&logoColor=white)](https://hitslop.com)
-[![Apple silicon](https://img.shields.io/badge/Apple-silicon-555555?style=flat&logo=apple&logoColor=white)](https://hitslop.com)
-[![Discord — show us your slop](https://img.shields.io/badge/Discord-show_us_your_slop-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
-[![GitHub stars](https://img.shields.io/github/stars/hitSlop/hitSlop?style=flat&color=e6a23c)](https://github.com/hitSlop/hitSlop/stargazers)
+[![macOS 15.2+](https://img.shields.io/badge/macOS-15.2%2B-555555?style=flat&logo=apple&logoColor=white)](https://dotpop.click)
+[![Apple silicon](https://img.shields.io/badge/Apple-silicon-555555?style=flat&logo=apple&logoColor=white)](https://dotpop.click)
+[![Discord — show us your pop](https://img.shields.io/badge/Discord-show_us_your_pop-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
+[![GitHub stars](https://img.shields.io/github/stars/hitSlop/dotpop?style=flat&color=e6a23c)](https://github.com/hitSlop/dotpop/stargazers)
 
 [![Local-first](https://img.shields.io/badge/Local--first-487B41?style=flat)](#keep-the-app-keep-the-work)
 [![Local use needs no account](https://img.shields.io/badge/Local_use-no_account-487B41?style=flat)](#keep-the-app-keep-the-work)
@@ -15,85 +15,85 @@
 
 Make little apps for your Mac with Svelte & your AI coding agent: a planner that fits your week, a recipe card covered in your notes, a tiny pond to stare at between meetings.
 
-**Install hitSlop once. Make and share little apps as files.** Each `.slop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with hitSlop, without packaging and signing a separate Mac app.
+**Install dotpop once. Make and share little apps as files.** Each `.pop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with dotpop, without packaging and signing a separate Mac app.
 
-You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings slops to your phone, with a Synced Library through your iCloud account. The Mac app includes the Synced Library.
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings dotpop to your phone, with a Synced Library through your iCloud account. The Mac app includes the Synced Library.
 
-[Download for Mac](https://github.com/hitslop/hitslop/releases/latest/download/hitSlop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://hitslop.com) · [Make your first slop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
+[Download for Mac](https://github.com/hitSlop/dotpop/releases/latest/download/dotpop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://dotpop.click) · [Make your first pop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
 [ios-download]: https://testflight.apple.com/join/F4qfCkgg
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates slops, includes the Popular templates, and imports from Files. [Availability](https://hitslop.com/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
+iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates pops, includes the Popular templates, and imports from Files. [Availability](https://dotpop.click/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
 
 <p align="center">
-  <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open slops: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
+  <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open dotpop: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
   <br><sub>▶ <a href="apps/landing/public/assets/desktop-hero.mp4">Watch the 30-second tour</a></sub>
 </p>
 
 ## On your iPhone
 
-The iPhone app (iOS 26+, TestFlight) opens, edits and creates slops. Start from the Popular templates and keep your library in sync with your Mac through iCloud.
+The iPhone app (iOS 26+, TestFlight) opens, edits and creates pops. Start from the Popular templates and keep your library in sync with your Mac through iCloud.
 
 [Download for iPhone][ios-download] · iOS 26+ · TestFlight
 
 <p align="center">
-  <img src="docs/assets/iphone-little-days.png" width="260" alt="Little Days, a baby journal slop on iPhone, with Feeding, Diaper, Sleep and Note buttons above today's timeline.">
+  <img src="docs/assets/iphone-little-days.png" width="260" alt="Little Days, a baby journal pop on iPhone, with Feeding, Diaper, Sleep and Note buttons above today's timeline.">
   &nbsp;&nbsp;
-  <img src="docs/assets/iphone-templates.png" width="260" alt="The Templates tab in hitSlop on iPhone, listing Popular slops such as Invoice, Weekly Planner and Quick Checklist.">
+  <img src="docs/assets/iphone-templates.png" width="260" alt="The Templates tab in dotpop on iPhone, listing Popular dotpop such as Invoice, Weekly Planner and Quick Checklist.">
 </p>
 
-Slops can adapt to the phone with responsive layouts and play native haptics for deliberate actions. [Make yours work on iPhone](https://hitslop.com/docs/guides/mobile/).
+Pops can adapt to the phone with responsive layouts and play native haptics for deliberate actions. [Make yours work on iPhone](https://dotpop.click/docs/guides/mobile/).
 
 ## You and your agent, one document
 
-A slop is a live document with its own small interface. Your agent works on the same document through the hitSlop CLI. Here's a fresh Tiny Wins counter:
+A pop is a live document with its own small interface. Your agent works on the same document through the pop CLI. Here's a fresh Pop Wins counter:
 
 ```sh
-slop describe "My Wins.slop"
+pop describe "My Wins.pop"
 ```
 
 ```text
-Tiny Wins: A little credit for the things you get done.
+Pop Wins: A little credit for the things you get done.
 Version: 000000000000000100000011
 
 Fields
   ["title"]: text (set)
   ["wins"]: counter (increment)
 
-Commands (slop call PATH NAME --args JSON)
+Commands (pop call PATH NAME --args JSON)
   countOne — Give yourself credit for one little win.
     args: {"additionalProperties":false,"properties":{},"type":"object"}
 
 Value (rows retain their $id)
 {
-  "title": "Tiny wins today",
+  "title": "Pop wins today",
   "wins": 0
 }
 ```
 
 ```sh
-slop call "My Wins.slop" countOne
-slop get "My Wins.slop"
+pop call "My Wins.pop" countOne
+pop get "My Wins.pop"
 ```
 
 ```json
-{"title": "Tiny wins today", "wins": 1}
+{"title": "Pop wins today", "wins": 1}
 ```
 
 ```sh
-slop apply "My Wins.slop" --op '{"type":"increment","path":["wins"],"by":1}'
-slop theme set "My Wins.slop" --values '{"accent":"#7050ad"}'
+pop apply "My Wins.pop" --op '{"type":"increment","path":["wins"],"by":1}'
+pop theme set "My Wins.pop" --values '{"accent":"#7050ad"}'
 ```
 
-The [Tiny Wins tutorial below](#a-whole-slop-from-scratch) defines `countOne`. Each app exposes its own actions through `describe`; `apply` and `batch` also let agents edit individual fields directly. With the window open, each increment appears immediately and the theme command turns the accent purple. **Edit ▸ Undo** can undo agent edits too. Text edits supplied with the version the agent read merge with what you typed since. The agent edits your local document through the hitSlop CLI, including when the file is closed. Sync and live sharing are optional.
+The [Pop Wins tutorial below](#a-whole-pop-from-scratch) defines `countOne`. Each app exposes its own actions through `describe`; `apply` and `batch` also let agents edit individual fields directly. With the window open, each increment appears immediately and the theme command turns the accent purple. **Edit ▸ Undo** can undo agent edits too. Text edits supplied with the version the agent read merge with what you typed since. The agent edits your local document through the pop CLI, including when the file is closed. Sync and live sharing are optional.
 
 ## Small enough to be yours
 
 Sometimes you just want a packing list for one trip. A timer that looks like a tomato. A recipe card covered in your own notes. Those are good reasons to make software.
 
-hitSlop is built for tools with one clear job and a little character. Its templates include planners, music tools, photo and voice notebooks, games, and desktop companions. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
+dotpop is built for tools with one clear job and a little character. Its templates include planners, music tools, photo and voice notebooks, games, and desktop companions. Or ask your agent for the thing you keep wishing existed. It can feel like a sheet of paper, a pocket calculator, or something you found in an old arcade.
 
 Apps can declare camera and microphone capture and transcribe stored recordings on-device
 on a supported Mac. [Capabilities and permissions](apps/landing/src/content/docs/docs/guides/capabilities.mdx)
@@ -103,29 +103,29 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Local documents need no account or server. Choose iCloud when creating a slop to keep it in sync with your iPhone through your private iCloud storage, or choose On this Mac and pick a folder. Move an existing local slop with **File ▸ Move to iCloud…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders.
-- A `.slop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through hitSlop or the CLI. Close a document before moving it in Finder.
-- Send a freshly built template so someone can start their own document. They need hitSlop; opening the template asks where to save their writable copy. [How to share a slop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
+- Local documents need no account or server. Choose iCloud when creating a pop to keep it in sync with your iPhone through your private iCloud storage, or choose On this Mac and pick a folder. Move an existing local pop with **File ▸ Move to iCloud…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders.
+- A `.pop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through dotpop or the CLI. Close a document before moving it in Finder.
+- Send a freshly built template so someone can start their own document. They need dotpop; opening the template asks where to save their writable copy. [How to share a pop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
-- Add a widget for a slop with a widget view: on your Mac desktop, or for library slops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
-- Choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in hitSlop on Mac/iPhone or in Chrome at share.hitslop.com. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://hitslop.com/docs/guides/live-sharing/) explains how it works.
-- Design for the phone as well as the desktop: slops can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac and in browsers. [Make it work on iPhone](https://hitslop.com/docs/guides/mobile/).
-- Pin a slop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
+- Add a widget for a pop with a widget view: on your Mac desktop, or for library pops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
+- Choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in dotpop on Mac/iPhone or in Chrome at share.dotpop.click. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://dotpop.click/docs/guides/live-sharing/) explains how it works.
+- Design for the phone as well as the desktop: pops can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac and in browsers. [Make it work on iPhone](https://dotpop.click/docs/guides/mobile/).
+- Pin a pop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
 - Finder icons can show what's inside, such as a counter's total.
 - Change a document's colors without touching its code, or edit the source to make a different tool.
 
 ## Make your own with an agent
 
-Use Bun 1.4.2 or newer on macOS or Linux. Install the hitSlop Mac app to open windows and pick your registered templates in its catalog; on both platforms the CLI renders template artwork and exports closed documents as PNG/PDF itself.
+Use Bun 1.4.2 or newer on macOS or Linux. Install the dotpop Mac app to open windows and pick your registered templates in its catalog; on both platforms the CLI renders template artwork and exports closed documents as PNG/PDF itself.
 
 ```sh
-bunx hitslop@1.0.0 init weekend-kit
+bunx @hitslop/pop@1.0.0 init weekend-kit
 cd weekend-kit
 bun install
 ```
 
-Setup asks what your slop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter already works: it includes a checklist, its icon and export views, your brief, and hitSlop's guidance for agents. Try it before changing anything:
+Setup asks what your pop should do, then offers to launch your agent: Codex, Claude Code, Gemini CLI, OpenCode, or another CLI. The starter already works: it includes a checklist, its icon and export views, your brief, and dotpop's guidance for agents. Try it before changing anything:
 
 ```sh
 bun run dev       # Open the browser preview; preview data resets on refresh
@@ -133,25 +133,25 @@ bun run dev       # Open the browser preview; preview data resets on refresh
 
 Ask your agent to customize it, or open the folder in your agent yourself and try:
 
-> Read AGENTS.md, slop.ts, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use hitSlop's document APIs for saved data, and run the project checks when you're done.
+> Read AGENTS.md, pop.ts, and the authoring/design skills in .agents/skills first. Turn this starter into "Weekend Kit," a packing list for short trips. Let me add items, group them by bag, check them off, and see how many are left. Make it feel like a pocket field notebook: warm paper, forest-green ink, and comfortable checkboxes. Include a clean printable packing list for PNG/PDF export. Keep it small, use dotpop's document APIs for saved data, and run the project checks when you're done.
 
 Ask for changes as you go ("Make the checkboxes bigger") and see them in the preview. When it feels right, stop the preview, then:
 
 ```sh
 bun run check     # Check types and components
-bun run build     # Package it as dist/weekend-kit.slop
-bun run register  # Optional: add it to your hitSlop templates
+bun run build     # Package it as dist/weekend-kit.pop
+bun run register  # Optional: add it to your dotpop templates
 ```
 
-Send `dist/weekend-kit.slop` to someone with hitSlop. They can open it and create their own packing list; the template contains no personal document state.
+Send `dist/weekend-kit.pop` to someone with dotpop. They can open it and create their own packing list; the template contains no personal document state.
 
-If you registered it, open hitSlop, choose Weekend Kit under **Templates**, and select **Create**. Existing documents keep the app version they were made with, so make another version whenever you like.
+If you registered it, open dotpop, choose Weekend Kit under **Templates**, and select **Create**. Existing documents keep the app version they were made with, so make another version whenever you like.
 
-[A whole slop, from scratch](#a-whole-slop-from-scratch) below builds a complete app with its export view and Finder icon · [Full tutorial](apps/landing/src/content/docs/docs/getting-started.mdx) · [Edit a document with your agent](apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
+[A whole pop, from scratch](#a-whole-pop-from-scratch) below builds a complete app with its export view and Finder icon · [Full tutorial](apps/landing/src/content/docs/docs/getting-started.mdx) · [Edit a document with your agent](apps/landing/src/content/docs/docs/guides/edit-installed-data.mdx)
 
 ## Use the CLI
 
-Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitslop@1.0.0` and use `slop`. Generated projects have their own pinned `bun run` scripts.
+Run commands with `bunx @hitslop/pop@1.0.0`, or install it with `bun install -g @hitslop/pop@1.0.0` and use `pop`. Generated projects have their own pinned `bun run` scripts.
 
 | Task | Commands |
 | --- | --- |
@@ -163,7 +163,7 @@ Run commands with `bunx hitslop@1.0.0`, or install it with `bun install -g hitsl
 | Move data between documents | `get`, then one `batch` of `insert` operations |
 | Customize and share colors, manage files | `theme get/set/reset/export/import`, `attachments list/import/export` |
 | Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
-| Install agent guidance | `bun install -g hitslop`, then `slop skills install`; skills update with the global CLI |
+| Install agent guidance | `bun install -g @hitslop/pop`, then `pop skills install`; skills update with the global CLI |
 
 Document creation and editing run on macOS and Linux. The CLI carries its own engine, which also exports a closed document as PNG/PDF and renders template artwork on both platforms; opening a window needs the Mac app. If you're unsure whether an edit happened, check with `get` before trying again. [CLI workflows](apps/landing/src/content/docs/docs/guides/cli-workflows.mdx) has complete examples.
 
@@ -171,15 +171,15 @@ Document creation and editing run on macOS and Linux. The CLI carries its own en
 
 Here’s where we’re heading:
 
-- [x] **iPhone app.** Open, edit and create slops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
-- [x] **Synced Library.** Keep slops in sync between Mac and iPhone through iCloud.
+- [x] **iPhone app.** Open, edit and create pops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
+- [x] **Synced Library.** Keep pops in sync between Mac and iPhone through iCloud.
 - [x] **Live collaboration.** Edit together through a link on Mac, iPhone or Chrome.
 - [ ] **Release the iPhone app.** Bring iPhone to the App Store and qualify sharing on release devices.
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.
-- [ ] **Remix something you love.** Make someone else’s slop your own, and keep your saved data as the app evolves.
-- [ ] **A store for tiny apps.** Discover, publish and install community slops through an app-store-style catalog.
-- [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to slop,” MIDI, and richer audio and transcription—with permissions for each slop.
+- [ ] **Remix something you love.** Make someone else’s pop your own, and keep your saved data as the app evolves.
+- [ ] **A store for tiny apps.** Discover, publish and install community pops through an app-store-style catalog.
+- [ ] **More native capabilities.** Calendars, reminders, notifications, Shortcuts and Siri, “Send to pop,” MIDI, and richer audio and transcription—with permissions for each pop.
 
 See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for the proposals. Remaining directions have no release dates yet.
 
@@ -187,24 +187,24 @@ See [direction](docs/roadmap.md) for priorities and [ideas](docs/ideas.md) for t
 
 ## Why Svelte?
 
-A `.svelte` file looks like a small web page: a `<script>`, some HTML and a `<style>`. That's the shape of a slop. You write `class`, `onclick` and `{doc.current.wins}` in ordinary markup, with no JSX or hooks, and the page updates when the document does.
+A `.svelte` file looks like a small web page: a `<script>`, some HTML and a `<style>`. That's the shape of a pop. You write `class`, `onclick` and `{doc.current.wins}` in ordinary markup, with no JSX or hooks, and the page updates when the document does.
 
-- Styles are [scoped](https://svelte.dev/docs/svelte/scoped-styles) to their component, so a slop can be all personality in plain CSS.
+- Styles are [scoped](https://svelte.dev/docs/svelte/scoped-styles) to their component, so a pop can be all personality in plain CSS.
 - Reactivity is part of the language. Read `doc.current` in markup and Svelte keeps it current, with no dependency arrays to get subtly wrong.
 - Transitions and [motion](https://svelte.dev/docs/svelte/svelte-motion) are built in, for the hourglass that tips and the koi that drift.
 - Mistakes are loud: `bun run check` catches type and template errors before you build.
 
-Svelte is compiled into the `.slop` with the app, so a document keeps the Svelte it was built with; the Mac app supplies the document engine and native services, not Svelte. Svelte is the supported integration today; other frameworks would need an adapter.
+Svelte is compiled into the `.pop` with the app, so a document keeps the Svelte it was built with; the Mac app supplies the document engine and native services, not Svelte. Svelte is the supported integration today; other frameworks would need an adapter.
 
-## A whole slop, from scratch
+## A whole pop, from scratch
 
-**Tiny Wins** is a complete example: a name, a counter, and a button for giving yourself a little credit. Its window, Finder icon, and export all read the same document.
+**Pop Wins** is a complete example: a name, a counter, and a button for giving yourself a little credit. Its window, Finder icon, and export all read the same document.
 
 With the same Bun and Mac app setup above, create a fresh starter:
 
 ```sh
-bunx hitslop@1.0.0 init tiny-wins
-cd tiny-wins
+bunx @hitslop/pop@1.0.0 init pop-wins
+cd pop-wins
 bun install
 ```
 
@@ -215,12 +215,12 @@ Replace the following starter files. Keep the generated `package.json` and `tsco
 `schema.ts` defines the saved fields and what a new document starts with. Text is editable; a counter supports increments. It also holds the one action the button and your agent share:
 
 ```ts
-import { defineDocument, s, type Tx } from "hitslop";
+import { defineDocument, s, type Tx } from "@hitslop/pop";
 
 const schema = defineDocument({
   title: s.text(),
   wins: s.counter(),
-}, { initial: { title: "Tiny wins today" } });
+}, { initial: { title: "Pop wins today" } });
 export default schema;
 
 /** Give yourself credit for one little win. */
@@ -231,14 +231,14 @@ Changing `initial` later doesn't overwrite saved wins.
 
 ### 2. Give it a name, a window and colors
 
-`slop.ts` describes the app: its name, its starting window size and the colors people can change. The explicit `slug` identifies the app.
+`pop.ts` describes the app: its name, its starting window size and the colors people can change. The explicit `slug` identifies the app.
 
 ```ts
-import { defineSlop } from "hitslop";
+import { definePop } from "@hitslop/pop";
 
-export default defineSlop({
-  slug: "tiny-wins",
-  title: "Tiny Wins",
+export default definePop({
+  slug: "pop-wins",
+  title: "Pop Wins",
   description: "A little credit for the things you get done.",
   author: { name: "You" },
   categories: ["personal"],
@@ -260,7 +260,7 @@ Theme colors are CSS variables shared by the window, icon, and export. Change th
 Replace the starter's `commands.ts` with:
 
 ```ts
-import { defineCommands } from "hitslop/commands";
+import { defineCommands } from "@hitslop/pop/commands";
 import schema, { countOne } from "./schema";
 
 export default defineCommands(schema, {
@@ -272,15 +272,15 @@ export default defineCommands(schema, {
 });
 ```
 
-The button runs `countOne` with `doc.change(countOne)`; an agent discovers the command with `slop describe` and runs it with `slop call`. Both apply the same action atomically, as one undo step. Commands are for agents, and their arguments are flat `s.*` scalars. Ordinary field handles remain useful for typing and other direct edits.
+The button runs `countOne` with `doc.change(countOne)`; an agent discovers the command with `pop describe` and runs it with `pop call`. Both apply the same action atomically, as one undo step. Commands are for agents, and their arguments are flat `s.*` scalars. Ordinary field handles remain useful for typing and other direct edits.
 
 ### 4. Build the app, icon, and export together
 
-`App.svelte` is the whole interface. Import the definition from `schema.ts` and acquire the document with `getDocument(schema)` while the component initializes. Read `doc.current`, write through `doc.fields`, and let hitSlop handle saving. See [document access](apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles) for child components and helpers.
+`App.svelte` is the whole interface. Import the definition from `schema.ts` and acquire the document with `getDocument(schema)` while the component initializes. Read `doc.current`, write through `doc.fields`, and let dotpop handle saving. See [document access](apps/landing/src/content/docs/docs/guides/data-and-schemas.mdx#read-snapshots-write-through-handles) for child components and helpers.
 
 ```svelte
 <script lang="ts">
-  import { bindText, getDocument } from "hitslop/svelte";
+  import { bindText, getDocument } from "@hitslop/pop/svelte";
   import schema, { countOne } from "./schema";
   import "./styles.css";
   const doc = getDocument(schema);
@@ -296,7 +296,7 @@ The button runs `countOne` with `doc.change(countOne)`; an agent discovers the c
 
 ```svelte
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/pop/svelte";
   import type schema from "./schema";
   let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
@@ -311,7 +311,7 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 
 ```svelte
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/pop/svelte";
   import type schema from "./schema";
   import Preview from "./Preview.svelte";
   let props: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
@@ -323,7 +323,7 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 
 ```svelte
 <script lang="ts">
-  import type { CaptureMode, CaptureProps } from "hitslop/svelte";
+  import type { CaptureMode, CaptureProps } from "@hitslop/pop/svelte";
   import type schema from "./schema";
   let { snapshot }: CaptureProps<typeof schema> & { mode: CaptureMode } = $props();
 </script>
@@ -335,9 +335,9 @@ For this small counter, optional `Export.svelte` can reuse the complete preview:
 - Required `Preview.svelte` supplies a compact overview for Quick Look and in-app previews.
 - Optional `Export.svelte` supplies complete PNG/PDF output. Use normal document flow so long content can expand. Without it, export actions are hidden.
 - Required `Icon.svelte` supplies the document's dynamic Finder icon, centered on a transparent 512 × 512 canvas. Missing or failed artwork can still fall back to the preview or generic document icon.
-- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and for library slops on iPhone in TestFlight. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while hitSlop runs; WidgetKit controls when the new image appears.
+- `Widget.svelte` supplies small, medium and large widget images from saved data for Mac and for library pops on iPhone in TestFlight. The phone renders its own images, including in the background when iOS allows. Saves, watched file changes and startup freshness checks refresh them while dotpop runs; WidgetKit controls when the new image appears.
 
-hitSlop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
+dotpop refreshes the Finder preview and icon when you close the document. On macOS and Linux, build and register render the template's initial artwork from starting values.
 
 Capture views use Takumi: restricted rendering on Mac and Linux, and in-process rendering on iPhone. Mac and Linux support selectable vector PDF. Capture components must be synchronous. Quick Look reads the saved artwork.
 
@@ -347,12 +347,12 @@ Style the views in `styles.css`:
 
 ```css
 * { box-sizing: border-box; }
-body { font-family: system-ui, sans-serif; color: var(--slop-ink); }
+body { font-family: system-ui, sans-serif; color: var(--pop-ink); }
 .wins-card {
   padding: 28px;
   text-align: center;
   overflow-wrap: anywhere;
-  background: var(--slop-surface);
+  background: var(--pop-surface);
 }
 main.wins-card { min-height: 100%; }
 .wins-card input {
@@ -363,18 +363,18 @@ main.wins-card { min-height: 100%; }
 .wins-number { margin: 20px 0; font-size: 72px; font-weight: 800; }
 .wins-card button {
   min-height: 44px; padding: 12px 20px; border: 0; border-radius: 12px;
-  font: inherit; color: var(--slop-surface); background: var(--slop-accent);
+  font: inherit; color: var(--pop-surface); background: var(--pop-accent);
   cursor: pointer;
 }
-.wins-card :focus-visible { outline: 3px solid var(--slop-accent); outline-offset: 4px; }
+.wins-card :focus-visible { outline: 3px solid var(--pop-accent); outline-offset: 4px; }
 .wins-icon {
   width: 440px; height: 440px; border-radius: 100px;
   display: grid; place-items: center; font-size: 150px; font-weight: 800;
-  color: var(--slop-accent); background: var(--slop-surface);
+  color: var(--pop-accent); background: var(--pop-surface);
 }
 ```
 
-The builder finds each part by its filename: `slop.ts`, `schema.ts` and `App.svelte`, plus
+The builder finds each part by its filename: `pop.ts`, `schema.ts` and `App.svelte`, plus
 required `Preview.svelte` and `Icon.svelte`, optional `Export.svelte` and `commands.ts`. Stylesheets are imported from
 components, as `App.svelte` does above. See the
 [runtime reference](docs/reference/runtime.md#page-shell-and-ctx) for the app interface.
@@ -389,13 +389,13 @@ bun run dev       # Try it in the browser; preview data resets on refresh
 The preview reloads as you edit. Stop it before continuing.
 
 ```sh
-bun run build     # Create dist/tiny-wins.slop (works on Linux too)
-bun run register  # Render its preview and icon, then add Tiny Wins to your catalog
+bun run build     # Create dist/pop-wins.pop (works on Linux too)
+bun run register  # Render its preview and icon, then add Pop Wins to your catalog
 ```
 
-In hitSlop, choose **Tiny Wins → Create**, then save your document as `My Wins.slop`. Change its title, add some wins, export a PNG/PDF, and close and reopen it to see the saved values. Check its refreshed icon in Finder, too.
+In dotpop, choose **Pop Wins → Create**, then save your document as `My Wins.pop`. Change its title, add some wins, export a PNG/PDF, and close and reopen it to see the saved values. Check its refreshed icon in Finder, too.
 
-Try the commands from [You and your agent, one document](#you-and-your-agent-one-document) on your saved document. `slop theme reset "My Wins.slop"` restores the template's colors.
+Try the commands from [You and your agent, one document](#you-and-your-agent-one-document) on your saved document. `pop theme reset "My Wins.pop"` restores the template's colors.
 
 ## How it's built
 
@@ -405,29 +405,29 @@ Try the commands from [You and your agent, one document](#you-and-your-agent-one
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
 [![Bun](https://img.shields.io/badge/Bun-282522?style=flat&logo=bun&logoColor=white)](https://bun.sh/)
-[![hitslop on npm](https://img.shields.io/badge/npm-hitslop-CB3837?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/hitslop)
+[![dotpop on npm](https://img.shields.io/badge/npm-pop-CB3837?style=flat&logo=npm&logoColor=white)](https://www.npmjs.com/package/@hitslop/pop)
 
-A slop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. Loro's CRDTs (conflict-free replicated data types) merge edits to text, lists and counters. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a slop the same way.
+A pop is a SQLite file holding a Svelte app and a [Loro](https://loro.dev/) document. Loro's CRDTs (conflict-free replicated data types) merge edits to text, lists and counters. One Rust core owns the document, the file and every edit, so the Mac app and the CLI change a pop the same way.
 
 | Layer | Built with | Role |
 | --- | --- | --- |
 | Document engine | Rust, Loro | Merging text, lists and counters; atomic edits; the single owner of the document |
-| File | SQLite | The `.slop`: app, assets, artwork and saved state in one database |
+| File | SQLite | The `.pop`: app, assets, artwork and saved state in one database |
 | Mac app | Swift, SwiftUI, AppKit, WebKit | Windows, catalog, Quick Look and PNG/PDF export; a thin native layer over the Rust core via UniFFI |
-| Slop interface | Svelte 5, TypeScript | The authored app, rendered from document snapshots; the page holds no CRDT |
-| Author SDK and CLI | `hitslop`, Bun | Schemas, `slop dev` (Vite with a native Rust owner), build, edit and export |
+| Pop interface | Svelte 5, TypeScript | The authored app, rendered from document snapshots; the page holds no CRDT |
+| Author SDK and CLI | `@hitslop/pop`, Bun | Schemas, `pop dev` (Vite with a native Rust owner), build, edit and export |
 | Contracts | Rust serde, ts-rs, UniFFI | Rust owns internal wires and app acceptance; generated TypeScript and typed Swift |
 
 ```text
-page (WebKit) ──▶ Swift façade ──▶ Rust owner ──▶ .slop
-slop CLI ───────────────────────▶ Rust owner      (the open window's, or the closed file's lock)
+page (WebKit) ──▶ Swift façade ──▶ Rust owner ──▶ .pop
+pop CLI ───────────────────────▶ Rust owner      (the open window's, or the closed file's lock)
 ```
 
 - App and agent edits take one path, so an open window updates live and a closed file is edited without starting WebKit.
 - Text merges character by character.
 - A failed save keeps the document open and shows a retry.
 
-### Inside a .slop
+### Inside a .pop
 
 ```text
 app          markers, catalog columns, definition_json               one immutable declaration
@@ -440,11 +440,11 @@ share        room, endpoint                                             room and
 attachments  id (SHA-256), media_type, bytes                           files you import
 ```
 
-Any SQLite tool shows these tables. `history` holds Loro bytes rather than rows, so change a slop's data through hitSlop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro snapshot; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
+Any SQLite tool shows these tables. `history` holds Loro bytes rather than rows, so change a pop's data through dotpop or the CLI, not SQL. All seven tables exist in templates and documents. A template has app assets, optional artwork and a seed Loro snapshot; creating a document copies it and adds its own identity. The file's SQLite `application_id` and `user_version` mark its format, so a newer file is refused rather than rewritten.
 
 [Architecture](docs/architecture.md) · [Engineering contract](docs/engineering-contract.md) · [Compatibility](docs/engineering-contract.md#compatibility)
 
-## Work on hitSlop
+## Work on dotpop
 
 Use the Bun version pinned in `package.json`, Xcode, and XcodeGen on macOS:
 
@@ -453,29 +453,29 @@ bun install --frozen-lockfile
 bun install --cwd apps/landing --frozen-lockfile
 bun run build
 bun run verify --all --native
-bun slop dev slops/quick-checklist
+bun pop dev pop/quick-checklist
 ```
 
 [Development](docs/guides/development.md) covers setup and adding templates, and the [documentation index](docs/README.md) covers how the platform works.
 
-## Show us your slop
+## Show us your pop
 
-Made something wonderfully specific? Show us your slop. Share a screenshot, swap ideas, or help someone make their first tiny app.
+Made something wonderfully specific? Show us your pop. Share a screenshot, swap ideas, or help someone make their first pop app.
 
-[![Join hitSlop on Discord](https://img.shields.io/badge/Discord-come_hang_out-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
-[![Follow hitSlop on X](https://img.shields.io/badge/X-%40hitslop-181717?style=flat&logo=x&logoColor=white)](https://x.com/hitslop)
+[![Join dotpop on Discord](https://img.shields.io/badge/Discord-come_hang_out-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/cqKRZjAWv3)
+[![Follow dotpop on X](https://img.shields.io/badge/X-%40hitslop-181717?style=flat&logo=x&logoColor=white)](https://x.com/hitslop)
 
 ### Little things add up
 
-[![hitSlop repository activity and contributor insights](https://repobeats.axiom.co/api/embed/7fa6efb86563307a3adfcfd775c1f4ece1e346de.svg "Repobeats analytics image")](https://github.com/hitSlop/hitSlop/graphs/contributors)
+[![dotpop repository activity and contributor insights](https://repobeats.axiom.co/api/embed/7fa6efb86563307a3adfcfd775c1f4ece1e346de.svg "Repobeats analytics image")](https://github.com/hitSlop/dotpop/graphs/contributors)
 
 ### Star history
 
-<a href="https://www.star-history.com/#hitSlop/hitSlop&Date">
+<a href="https://www.star-history.com/#hitSlop/dotpop&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=hitSlop/hitSlop&amp;type=Date&amp;theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=hitSlop/hitSlop&amp;type=Date" />
-    <img alt="hitSlop GitHub star history chart" src="https://api.star-history.com/svg?repos=hitSlop/hitSlop&amp;type=Date" width="800" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=hitSlop/dotpop&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=hitSlop/dotpop&amp;type=Date" />
+    <img alt="dotpop GitHub star history chart" src="https://api.star-history.com/svg?repos=hitSlop/dotpop&amp;type=Date" width="800" />
   </picture>
 </a>
 
@@ -483,7 +483,7 @@ Made something wonderfully specific? Show us your slop. Share a screenshot, swap
 
 Other projects exploring personal software and interactive documents:
 
-- [Your executable is a SQLite database](https://fzakaria.com/2026/08/23/your-executable-is-a-sqlite-database) and [Actually Queryable Executables](https://fzakaria.com/2026/08/24/actually-queryable-executables): Farid Zakaria's SELF, a program and its state in one SQLite file. It inspired the `.slop` file.
+- [Your executable is a SQLite database](https://fzakaria.com/2026/08/23/your-executable-is-a-sqlite-database) and [Actually Queryable Executables](https://fzakaria.com/2026/08/24/actually-queryable-executables): Farid Zakaria's SELF, a program and its state in one SQLite file. It inspired the `.pop` file.
 - [Hyperclay](https://hyperclay.com/): HTML files you can reshape in place, where the live document is the source of truth.
 - [Capsule](https://withcapsule.app/): documents that run like apps, shared as single SQLite files.
 - [bento](https://bento.page/): an office suite that fits in one self-contained HTML file.
@@ -491,7 +491,7 @@ Other projects exploring personal software and interactive documents:
 - [TiddlyWiki](https://tiddlywiki.com/): a personal wiki that lives in one HTML file.
 - [uapp](https://thederf.com/uapp/demo)
 
-Older inspirations: [HyperCard](https://www.computerhistory.org/revolution/the-web/20/373/2081) and [Smalltalk](https://squeak.org/) put making your own tools within reach. [Winamp's skin system](https://skins.webamp.org/) was a major inspiration for hitSlop's look and feel.
+Older inspirations: [HyperCard](https://www.computerhistory.org/revolution/the-web/20/373/2081) and [Smalltalk](https://squeak.org/) put making your own tools within reach. [Winamp's skin system](https://skins.webamp.org/) was a major inspiration for dotpop's look and feel.
 
 ## Privacy
 
@@ -505,8 +505,8 @@ file paths. Automatic crash reports contain diagnostic information collected by 
 Firebase SDK. Collection is enabled in release builds with no in-app toggle; Debug
 builds and tests do not upload telemetry.
 
-See [Privacy](https://hitslop.com/docs/privacy/) for the public disclosure.
+See [Privacy](https://dotpop.click/docs/privacy/) for the public disclosure.
 
 ## License
 
-MIT © 2026 hitSlop contributors. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
+MIT © 2026 dotpop contributors. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).

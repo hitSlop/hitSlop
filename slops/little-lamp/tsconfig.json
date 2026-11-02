@@ -1,5 +1,0 @@
-{
-  "extends": "hitslop/tsconfig.json",
-  "include": ["**/*.ts", "**/*.svelte"],
-  "exclude": ["dist", "node_modules", "rive/build"]
-}

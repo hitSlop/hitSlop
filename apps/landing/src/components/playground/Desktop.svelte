@@ -3,46 +3,24 @@
   import { scale } from "svelte/transition";
   import { backOut, cubicIn } from "svelte/easing";
   import FocusTimer from "../FocusTimer.svelte";
-  import Invoice from "../Invoice.svelte";
-  import RandomPicker from "../RandomPicker.svelte";
-  import QuickChecklist from "./QuickChecklist.svelte";
+  import LittleDays from "./LittleDays.svelte";
+  import PocketPod from "./PocketPod.svelte";
   import DesktopPet from "./DesktopPet.svelte";
 
-  type Kind = "window" | "shape" | "note" | "video";
+  type Kind = "window" | "shape";
   type Win = {
-    id: string; title: string; emoji: string; kind: Kind;
+    id: string; title: string; emoji: string; icon?: string; kind: Kind;
     width: number; height: number; zoom?: number;
     fx: number; fy: number; tilt: number; open: boolean;
   };
+  // Sizes are design pixels; `k` scales them to the room the desktop has.
   const layout: Win[] = [
-    { id: "video", title: "hitSlop in action.mp4", emoji: "🎬", kind: "video", width: 520, height: 329, fx: 0, fy: .04, tilt: -1.5, open: true },
-    { id: "picker", title: "Pick One.slop", emoji: "🔮", kind: "shape", width: 330, height: 208, zoom: .55, fx: .04, fy: 1, tilt: 1.5, open: true },
-    { id: "checklist", title: "Today.slop", emoji: "☑️", kind: "window", width: 300, height: 392, fx: .39, fy: .1, tilt: 2, open: true },
-    { id: "note", title: "Sticky note", emoji: "📝", kind: "note", width: 200, height: 176, fx: .325, fy: 1, tilt: -7, open: true },
-    { id: "timer", title: "Pomodoro.slop", emoji: "🍅", kind: "shape", width: 250, height: 250, zoom: .72, fx: .64, fy: .78, tilt: 0, open: true },
-    { id: "invoice", title: "Invoice.slop", emoji: "💸", kind: "window", width: 344, height: 392, zoom: .555, fx: 1, fy: .02, tilt: -2, open: true },
+    { id: "timer", title: "Focus Timer.pop", emoji: "🍅", kind: "shape", width: 260, height: 260, zoom: .667, fx: .12, fy: .68, tilt: -5, open: true },
+    { id: "journal", title: "Little Days.pop", emoji: "🍼", icon: "/assets/templates/baby-journal/icon.png", kind: "window", width: 540, height: 398, zoom: .6, fx: .43, fy: .04, tilt: 1, open: true },
+    { id: "pod", title: "Pocket Pod.pop", emoji: "🎵", icon: "/assets/templates/pocket-pod/icon.png", kind: "shape", width: 223, height: 374, zoom: .62, fx: .83, fy: .12, tilt: 3, open: true },
   ];
-  // Narrower desktops (the hero's right column) keep the video in front; the invoice and picker wait in the dock.
-  const medium: Record<string, Partial<Win>> = {
-    video: { fx: 0, fy: 0 },
-    checklist: { fx: 1, fy: 0 },
-    timer: { fx: .42, fy: 1 },
-    note: { fx: 1, fy: 1, tilt: -6 },
-    invoice: { open: false, fx: .5, fy: .15 },
-    picker: { open: false, fx: .45, fy: .55 },
-  };
-  // Narrower still (k = 1 at 690px wide): everything shrinks so two windows fit side by side.
-  const compact = (k: number): Record<string, Partial<Win>> => ({
-    video: { width: Math.round(400 * k), height: Math.round(36 + 225 * k) },
-    checklist: { width: Math.round(270 * k), height: Math.round(353 * k), zoom: .9 * k },
-    timer: { width: Math.round(200 * k), height: Math.round(200 * k), zoom: .576 * k, fx: .4 },
-    note: { width: Math.round(170 * k), height: Math.round(150 * k), fx: .7 },
-  });
-  let tier: "roomy" | "medium" | "compact" = "roomy";
-  let shrink = 1;
-  const clone = () => layout.map((win) => ({ ...win, ...(tier === "roomy" ? {} : medium[win.id]), ...(tier === "compact" ? compact(shrink)[win.id] : {}) }));
-  // The video sits above the checklist but under the timer and note, so nothing ever covers its play button.
-  const stack = () => ["invoice", "picker", "checklist", "video", "timer", "note"];
+  const clone = () => layout.map((win) => ({ ...win }));
+  const stack = () => ["journal", "pod", "timer"];
 
   let windows = $state<Win[]>(clone());
   let order = $state<string[]>(stack());
@@ -50,14 +28,16 @@
   let dragTilt = $state(0);
   // Unknown until mounted, so server markup shows the desktop layout and small screens rely on CSS.
   let canDrag = $state<boolean | undefined>(undefined);
+  let k = $state(1);
   let clock = $state("");
   let surface: HTMLDivElement;
   let drag: { id: string; x: number; y: number; left: number; top: number; spanX: number; spanY: number; lastX: number; lastT: number } | null = null;
 
   const PAD = 16;
-  const DOCK = 88;
+  const DOCK = 72;
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
   const z = (id: string) => order.indexOf(id) + 1;
+  const size = (win: Win) => ({ w: Math.round(win.width * k), h: Math.round(win.height * k), zoom: win.zoom ? win.zoom * k : undefined });
 
   function front(id: string): void {
     if (order.at(-1) !== id) order = [...order.filter((other) => other !== id), id];
@@ -81,9 +61,6 @@
     }
     order = [...order].sort(() => Math.random() - .5);
   }
-  function playVideo(): void {
-    window.dispatchEvent(new CustomEvent("hitslop:play-video"));
-  }
 
   function pointerDown(event: PointerEvent, win: Win): void {
     front(win.id);
@@ -92,8 +69,8 @@
     // Controls inside the title bar (the traffic lights) click; they never start a drag.
     if (target.closest("button")) return;
     const grip = target.closest("[data-grip]");
-    // Titled windows move by their title bar; shaped slops move from anywhere that isn't a control.
-    if (win.kind === "window" || win.kind === "video" ? !grip : target.closest("button, input, select, textarea, a, label, output")) return;
+    // Titled windows move by their title bar; shaped pop move from anywhere that isn't a control.
+    if (win.kind === "window" ? !grip : target.closest("button, input, select, textarea, a, label, output")) return;
     const element = event.currentTarget as HTMLElement;
     const box = surface.getBoundingClientRect();
     const rect = element.getBoundingClientRect();
@@ -137,23 +114,28 @@
 
   onMount(() => {
     const query = matchMedia("(min-width: 780px) and (pointer: fine)");
-    const sync = () => { canDrag = query.matches; };
-    sync();
-    tier = surface.clientWidth >= 1100 ? "roomy" : surface.clientWidth >= 780 || !canDrag ? "medium" : "compact";
-    shrink = clamp(surface.clientWidth / 690, .8, 1);
-    if (tier !== "roomy") windows = clone();
-    query.addEventListener("change", sync);
+    const fit = () => {
+      canDrag = query.matches;
+      const width = surface.clientWidth;
+      // Desktop: shrink gently with the room. Strip: the widest window must fit a phone screen.
+      // Fit the room both ways: a short desktop shrinks the windows instead of clipping them.
+      k = canDrag ? clamp(Math.min(width / 1380, (surface.clientHeight - PAD - DOCK) / 400), .55, 1) : clamp((width - 24) / 540, .5, 1);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(surface);
+    query.addEventListener("change", fit);
     const format = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
     const tick = () => { clock = format.format(new Date()); };
     tick();
     const timer = setInterval(tick, 15_000);
-    return () => { query.removeEventListener("change", sync); clearInterval(timer); };
+    return () => { observer.disconnect(); query.removeEventListener("change", fit); clearInterval(timer); };
   });
 </script>
 
 <div class="desktop" data-drag={canDrag === undefined ? undefined : String(canDrag)}>
   <div class="menubar" aria-hidden="true">
-    <span class="menubar-app"><img src="/assets/appicon-128.webp" width="16" height="16" alt="" /><b>hitSlop</b></span>
+    <span class="menubar-app"><img src="/assets/brand/mark.webp" width="18" height="18" alt="" /><b>dotpop</b></span>
     <span class="menubar-menus">File&nbsp;&nbsp;Edit&nbsp;&nbsp;Window&nbsp;&nbsp;Help</span>
     <span class="menubar-right"><span>◐</span><span>✦</span><span class="clock">{clock}</span></span>
   </div>
@@ -161,14 +143,15 @@
   <div class="surface" bind:this={surface}>
     {#each windows as win (win.id)}
       {#if win.open}
+        {@const dims = size(win)}
         <section
           class="win"
           data-win={win.id}
           data-kind={win.kind}
           data-dragging={dragging === win.id}
           aria-label={win.title}
-          style:--w={`${win.width}px`}
-          style:--h={`${win.height}px`}
+          style:--w={`${dims.w}px`}
+          style:--h={`${dims.h}px`}
           style:--fx={win.fx}
           style:--fy={win.fy}
           style:--tilt={`${win.tilt + (dragging === win.id ? dragTilt : 0)}deg`}
@@ -181,7 +164,7 @@
           in:scale={{ start: .4, duration: 420, easing: backOut }}
           out:scale={{ start: .4, duration: 200, easing: cubicIn }}
         >
-          {#if win.kind === "window" || win.kind === "video"}
+          {#if win.kind === "window"}
             <div class="bar" data-grip role="button" tabindex="0" aria-label={`Move ${win.title}. Use the arrow keys.`} onkeydown={(event) => nudge(event, win)}>
               <span class="lights">
                 <button type="button" class="light close" aria-label={`Close ${win.title}`} onclick={() => (win.open = false)}></button>
@@ -194,27 +177,13 @@
             <span class="grip-hint" data-grip role="button" tabindex="0" aria-label={`Move ${win.title}. Use the arrow keys.`} onkeydown={(event) => nudge(event, win)}>{win.title}</span>
           {/if}
 
-          <div class="content" style:zoom={win.zoom}>
-            {#if win.id === "video"}
-              <button type="button" class="poster" onclick={playVideo} aria-label="Watch hitSlop in action, 30 seconds">
-                <picture>
-                  <source type="image/avif" srcset="/assets/desktop-hero-poster-960.avif 960w, /assets/desktop-hero-poster.avif 1920w" sizes="520px" />
-                  <source type="image/webp" srcset="/assets/desktop-hero-poster-960.webp 960w, /assets/desktop-hero-poster.webp 1920w" sizes="520px" />
-                  <img src="/assets/desktop-hero-poster-960.jpg" width="960" height="540" alt="A Mac desktop full of open slops: a music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle and school planners" fetchpriority="high" />
-                </picture>
-                <span class="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5Z" /></svg></span>
-                <span class="play-label">Watch it in action <small>0:30</small></span>
-              </button>
-            {:else if win.id === "checklist"}
-              <QuickChecklist />
+          <div class="content" style:zoom={dims.zoom}>
+            {#if win.id === "journal"}
+              <LittleDays />
             {:else if win.id === "timer"}
               <FocusTimer />
-            {:else if win.id === "invoice"}
-              <Invoice />
-            {:else if win.id === "picker"}
-              <RandomPicker />
-            {:else if win.id === "note"}
-              <div class="note"><p>Drag us around!</p><p>Every window here is a tiny app. <span>♥</span></p></div>
+            {:else if win.id === "pod"}
+              <PocketPod />
             {/if}
           </div>
         </section>
@@ -226,7 +195,7 @@
   <nav class="dock" aria-label="Playground dock">
     {#each windows as win (win.id)}
       <button type="button" class="dock-app" data-open={win.open} onclick={() => open(win)} aria-label={win.open ? `Bring ${win.title} to front` : `Open ${win.title}`}>
-        <span aria-hidden="true">{win.emoji}</span><span class="tip">{win.title}</span>
+        {#if win.icon}<img src={win.icon} width="52" height="52" alt="" loading="lazy" />{:else}<span aria-hidden="true">{win.emoji}</span>{/if}<span class="tip">{win.title}</span>
       </button>
     {/each}
     <span class="dock-divider dock-tools" aria-hidden="true"></span>
@@ -236,48 +205,37 @@
 </div>
 
 <style>
-  .desktop { --pad: 16px; --dock: 88px; position: relative; overflow: hidden; border: 2px solid #ffffffdd; border-radius: 30px; background: radial-gradient(ellipse at 18% 20%, #ffe3f4 0, transparent 42%), radial-gradient(ellipse at 85% 18%, #ddd3ff 0, transparent 48%), radial-gradient(ellipse at 70% 95%, #cff5ee 0, transparent 46%), linear-gradient(160deg, #f6f0ff, #eef4ff 60%, #fff4ea); box-shadow: 0 30px 70px #414d8230, 0 8px 0 #ffffff99; }
-  .menubar { height: 34px; padding: 0 16px; display: flex; align-items: center; gap: 18px; color: #10132c; background: #ffffff8c; backdrop-filter: blur(12px); font-size: 13px; font-weight: 600; }
+  .desktop { --pad: 16px; --dock: 88px; position: relative; z-index: 1; overflow: hidden; border: 2px solid #ffffffdd; border-radius: 26px; background: radial-gradient(ellipse at 12% 100%, #ffe4ef 0, transparent 52%), radial-gradient(ellipse at 100% 80%, #dff3f8 0, transparent 48%), #fffaf1; box-shadow: 0 24px 50px #6b4a2a24, 0 6px 0 #ffffff99; }
+  .menubar { height: 34px; padding: 0 16px; display: flex; align-items: center; gap: 18px; color: #14102a; background: #ffffff8c; backdrop-filter: blur(12px); font-size: 13px; font-weight: 600; }
   .menubar-app { display: inline-flex; align-items: center; gap: 7px; }
   .menubar-app img { border-radius: 4px; }
-  .menubar-menus { color: #10132cb3; }
+  .menubar-menus { color: #14102ab3; }
   .menubar-right { margin-left: auto; display: inline-flex; gap: 14px; font-variant-numeric: tabular-nums; }
-  .surface { position: relative; height: clamp(520px, 34vw, 600px); }
+  .surface { position: relative; height: clamp(330px, calc(100svh - 470px), 460px); }
   .win { position: absolute; left: calc(var(--pad) + (100% - var(--pad) * 2 - var(--w)) * var(--fx)); top: calc(var(--pad) + (100% - var(--pad) - var(--dock) - var(--h)) * var(--fy)); width: var(--w); rotate: var(--tilt); transition: left 650ms var(--spring), top 650ms var(--spring), rotate 450ms var(--spring), box-shadow 200ms, scale 200ms var(--spring); touch-action: none; }
   .win[data-dragging="true"] { transition: rotate 120ms linear, box-shadow 200ms, scale 200ms var(--spring); scale: 1.03; cursor: grabbing; }
-  .win[data-kind="window"], .win[data-kind="video"] { overflow: hidden; border: 1px solid #10132c1f; border-radius: 16px; background: #fff; box-shadow: 0 22px 44px #2a1b5c2e, 0 2px 6px #2a1b5c14; }
-  .win[data-kind="window"][data-dragging="true"], .win[data-kind="video"][data-dragging="true"] { box-shadow: 0 40px 70px #2a1b5c40; }
-  .bar { height: 36px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #10132c14; background: #f7f5fb; cursor: grab; user-select: none; }
-  .bar .title { flex: 1; overflow: hidden; color: #10132c; font-size: 13px; font-weight: 800; text-align: center; text-overflow: ellipsis; white-space: nowrap; padding-right: 54px; }
+  .win[data-kind="window"] { overflow: hidden; border: 1px solid #14102a1f; border-radius: 16px; background: #fff; box-shadow: 0 22px 44px #3a24142e, 0 2px 6px #3a241414; }
+  .win[data-kind="window"][data-dragging="true"] { box-shadow: 0 40px 70px #3a241440; }
+  .bar { height: 36px; padding: 0 12px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #14102a14; background: #fbf6ea; cursor: grab; user-select: none; }
+  .bar .title { flex: 1; overflow: hidden; color: #14102a; font-size: 13px; font-weight: 800; text-align: center; text-overflow: ellipsis; white-space: nowrap; padding-right: 54px; }
   .lights { display: flex; gap: 7px; }
   .light { width: 13px; height: 13px; padding: 0; border: 0; border-radius: 50%; cursor: pointer; }
   .close { background: #ff5f57; } .min { background: #febc2e; } .zoom { background: #28c840; }
   .light:hover { filter: brightness(.9); scale: 1.15; }
-  .grip-hint { position: absolute; z-index: 2; left: 50%; top: -30px; padding: 4px 10px; border-radius: 999px; color: #fff; background: #10132ccc; font-size: 12px; font-weight: 800; white-space: nowrap; opacity: 0; transform: translate(-50%, 6px); transition: opacity 160ms, transform 200ms var(--spring); cursor: grab; }
+  .grip-hint { position: absolute; z-index: 2; left: 50%; top: -30px; padding: 4px 10px; border-radius: 999px; color: #fff; background: #14102acc; font-size: 12px; font-weight: 800; white-space: nowrap; opacity: 0; transform: translate(-50%, 6px); transition: opacity 160ms, transform 200ms var(--spring); cursor: grab; }
   .win:hover .grip-hint, .grip-hint:focus-visible { opacity: 1; transform: translate(-50%, 0); }
-  .win[data-kind="shape"] { cursor: grab; filter: drop-shadow(0 18px 24px #2a1b5c30); }
+  .win[data-kind="shape"] { cursor: grab; filter: drop-shadow(0 18px 24px #3a241430); }
   .content { display: grid; place-items: center; }
   .win[data-kind="window"] .content { display: block; }
-  .poster { position: relative; display: block; width: 100%; padding: 0; border: 0; background: #10132c; cursor: pointer; }
-  .poster img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; }
-  .play { position: absolute; left: 50%; top: 50%; width: 72px; height: 72px; display: grid; place-items: center; border-radius: 50%; background: #fffffff2; box-shadow: 0 12px 34px #2a1b6a66, 0 0 0 8px #ffffff55; transform: translate(-50%, -50%); transition: transform 240ms var(--spring); }
-  .play svg { width: 30px; margin-left: 5px; fill: #6c3fd6; }
-  @media (prefers-reduced-motion: no-preference) { .play::after { position: absolute; inset: -8px; border-radius: 50%; box-shadow: 0 0 0 3px #ffffffcc; opacity: 0; animation: play-pulse 2.6s ease-out infinite; content: ""; } }
-  @keyframes play-pulse { 0% { opacity: .9; scale: 1; } 70%, 100% { opacity: 0; scale: 1.5; } }
-  .poster:hover .play, .poster:focus-visible .play { transform: translate(-50%, -50%) scale(1.12); }
-  .play-label { position: absolute; left: 12px; bottom: 12px; padding: 6px 12px; border-radius: 999px; color: #10132c; background: #fffffff0; font-size: 14px; font-weight: 800; }
-  .play-label small { margin-left: 4px; color: #6b6890; font-size: 13px; font-weight: 600; }
-  .note { width: 100%; min-height: var(--h); padding: 22px 20px; color: #10132c; background: #fff19a; border-radius: 3px 6px 4px 2px; box-shadow: 0 14px 22px #6954222e; font-family: "HitSlop Handwriting", cursive; font-size: 21px; line-height: 1.15; cursor: grab; }
-  .note p { margin: 0 0 10px; }
-  .note span { color: #f443a1; }
-  .dock { position: absolute; z-index: 60; left: 50%; bottom: 12px; padding: 8px 10px; display: flex; align-items: flex-end; gap: 6px; border: 1px solid #ffffffcc; border-radius: 24px; background: #ffffff9e; box-shadow: 0 14px 34px #2a1b5c26; backdrop-filter: blur(16px); transform: translateX(-50%); }
-  .dock-app { position: relative; width: 52px; height: 52px; display: grid; place-items: center; padding: 0; border: 1px solid #10132c14; border-radius: 15px; background: #fff; font-size: 26px; cursor: pointer; transition: transform 260ms var(--spring); }
-  .dock-app[data-open="true"]::after { position: absolute; bottom: -7px; width: 4px; height: 4px; border-radius: 50%; background: #10132c; content: ""; }
+  .dock { position: absolute; z-index: 60; left: 50%; bottom: 12px; padding: 8px 10px; display: flex; align-items: flex-end; gap: 6px; border: 1px solid #ffffffcc; border-radius: 24px; background: #ffffff9e; box-shadow: 0 14px 34px #3a241426; backdrop-filter: blur(16px); transform: translateX(-50%); }
+  .dock-app { position: relative; width: 52px; height: 52px; display: grid; place-items: center; padding: 0; overflow: visible; border: 1px solid #14102a14; border-radius: 15px; background: #fffdf8; font-size: 26px; cursor: pointer; transition: transform 260ms var(--spring); }
+  .dock-app[data-open="true"]::after { position: absolute; bottom: -7px; width: 4px; height: 4px; border-radius: 50%; background: #14102a; content: ""; }
   .dock-app:hover, .dock-app:focus-visible { transform: translateY(-10px) scale(1.18); }
   .dock-app:active { transform: translateY(-4px) scale(1.05); }
-  .tip { position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 4px 9px; border-radius: 8px; color: #fff; background: #10132ce6; font-size: 12px; font-weight: 700; white-space: nowrap; opacity: 0; transform: translateX(-50%); pointer-events: none; transition: opacity 120ms; }
+  .tip { position: absolute; bottom: calc(100% + 10px); left: 50%; padding: 4px 9px; border-radius: 8px; color: #fff; background: #14102ae6; font-size: 12px; font-weight: 700; white-space: nowrap; opacity: 0; transform: translateX(-50%); pointer-events: none; transition: opacity 120ms; }
   .dock-app:hover .tip, .dock-app:focus-visible .tip { opacity: 1; }
-  .dock-divider { width: 1px; height: 40px; margin: 0 4px 6px; background: #10132c26; }
+  .dock-app img { width: 100%; height: 100%; border-radius: inherit; object-fit: cover; }
+  .dock-divider { width: 1px; height: 40px; margin: 0 4px 6px; background: #14102a26; }
 
   /* Touch and small screens: a swipeable strip of the same little apps, no dragging. */
   .desktop[data-drag="false"] .dock-tools { display: none; }
@@ -286,19 +244,14 @@
   .desktop[data-drag="false"] .grip-hint { display: none; }
   .desktop[data-drag="false"] .bar { cursor: default; }
   @media (max-width: 779px) {
-    .desktop { border-radius: 20px; box-shadow: 0 14px 30px #414d8220, 0 4px 0 #ffffff99; }
+    .desktop { border-radius: 20px; box-shadow: 0 14px 30px #6b4a2a20, 0 4px 0 #ffffff99; }
     .menubar { padding-inline: 12px; gap: 8px; font-size: 12px; }
     .menubar-right { gap: 8px; }
     .dock-tools { display: none; }
     .surface, .desktop[data-drag="false"] .surface { height: auto !important; padding: 12px 12px 88px; display: flex; align-items: flex-start; gap: 16px; overflow-x: auto; scroll-padding-inline: 12px; scroll-snap-type: x mandatory; scrollbar-width: none; }
     .win { position: relative !important; left: auto !important; top: auto !important; flex: none; rotate: 0deg !important; scroll-snap-align: start; max-width: 100%; touch-action: auto; }
-    .win[data-kind="video"] { width: 100%; }
-    .bar { padding-inline: 8px; gap: 6px; }
+      .bar { padding-inline: 8px; gap: 6px; }
     .bar .title { padding-right: 0; font-size: 11px; }
-    .play { width: 48px; height: 48px; }
-    .play svg { width: 24px; }
-    .play-label { left: 8px; bottom: 8px; padding: 4px 8px; font-size: 11px; }
-    .play-label small { font-size: 11px; }
     .grip-hint, .menubar-menus { display: none; }
     .dock { max-width: calc(100% - 16px); padding: 8px 6px 12px; gap: 4px; overflow-x: auto; border-radius: 18px; }
     .dock-app { width: 44px; height: 44px; flex: 0 0 44px; font-size: 22px; }

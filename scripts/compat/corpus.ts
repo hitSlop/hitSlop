@@ -5,20 +5,20 @@ import { repository } from "../lib/artifacts";
 import { realpathSync } from "node:fs";
 import { readdir, readFile, realpath, stat, copyFile, chmod } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { exec } from "../../packages/hitslop/src/cli/process";
-import type { AttachmentInfo } from "../../packages/hitslop/src/wire/engine.generated";
+import { exec } from "../../packages/pop/src/cli/process";
+import type { AttachmentInfo } from "../../packages/pop/src/wire/engine.generated";
 
 let preparedRoot: string | undefined;
 export function corpusRoot() {
-  if (process.env.HITSLOP_COMPAT_ROOT) return realpathSync(resolve(process.env.HITSLOP_COMPAT_ROOT));
-  try { return preparedRoot ??= realpathSync(join(repository, ".hitslop/compat/current")); }
+  if (process.env.POP_COMPAT_ROOT) return realpathSync(resolve(process.env.POP_COMPAT_ROOT));
+  try { return preparedRoot ??= realpathSync(join(repository, ".pop/compat/current")); }
   catch (error) { throw new Error("No prepared compatibility corpus; run bun run compat:resolve before standalone tests", { cause: error }); }
 }
 /** The checkout engine. */
 export const documentEngine = () =>
   resolve(
-    process.env.HITSLOP_ENGINE ??
-      `target/${process.env.HITSLOP_CARGO_PROFILE || "release"}/slop-engine`,
+    process.env.POP_ENGINE ??
+      `target/${process.env.POP_CARGO_PROFILE || "release"}/pop-engine`,
   );
 
 /** `release.json`: producing inputs, saved artifacts, storage-schema hashes and open-limit
@@ -114,8 +114,8 @@ export async function copyCorpusDocument(source: string, destination: string) {
 
 export async function documents(root: string): Promise<string[]> {
   return (await readdir(join(root, "documents")))
-    .filter((name) => name.endsWith(".slop"))
-    .map((name) => name.slice(0, -".slop".length))
+    .filter((name) => name.endsWith(".pop"))
+    .map((name) => name.slice(0, -".pop".length))
     .sort();
 }
 
@@ -129,24 +129,24 @@ export async function readJSON<T>(path: string): Promise<T | undefined> {
   );
 }
 
-/** Runs a `slop` command through this build's CLI and engine, returning its exit code and output. */
-export function slop(args: string[]) {
-  return exec([process.execPath, join(repository, "packages/hitslop/src/cli/cli.ts"), ...args], {
+/** Runs a `pop` command through this build's CLI and engine, returning its exit code and output. */
+export function pop(args: string[]) {
+  return exec([process.execPath, join(repository, "packages/pop/src/cli/cli.ts"), ...args], {
     timeout: 120_000,
   });
 }
-export async function slopJSON(args: string[]): Promise<any> {
-  const { stdout, stderr, code } = await slop(args);
-  if (code) throw new Error(`slop ${args.join(" ")} failed (${code}): ${stderr.trim()}`);
+export async function popJSON(args: string[]): Promise<any> {
+  const { stdout, stderr, code } = await pop(args);
+  if (code) throw new Error(`pop ${args.join(" ")} failed (${code}): ${stderr.trim()}`);
   return JSON.parse(stdout);
 }
 
 /** What a later build must reproduce: the value, not the version. */
 export async function savedState(document: string): Promise<Expected> {
-  const { appDigest } = await slopJSON(["inspect", document]);
-  const state = await slopJSON(["get", document, "--snapshot"]);
-  const theme: ThemeState = await slopJSON(["theme", "get", document]);
-  const attachments: AttachmentInfo[] = await slopJSON(["attachments", "list", document]);
+  const { appDigest } = await popJSON(["inspect", document]);
+  const state = await popJSON(["get", document, "--snapshot"]);
+  const theme: ThemeState = await popJSON(["theme", "get", document]);
+  const attachments: AttachmentInfo[] = await popJSON(["attachments", "list", document]);
   return {
     appDigest,
     value: state.value,

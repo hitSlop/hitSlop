@@ -7,7 +7,7 @@
 **/.wrangler/
 archive/
 _vibe/
-.hitslop/
+.pop/
 **/generated/
 **/*.generated.*
-packages/hitslop/skills/
+packages/pop/skills/

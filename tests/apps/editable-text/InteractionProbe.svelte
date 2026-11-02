@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Dialog } from "bits-ui";
-  import { surfaceTransition, overlayTransition } from "hitslop/svelte";
+  import { surfaceTransition, overlayTransition } from "@hitslop/pop/svelte";
   let open = $state(false);
   let value = $state("");
   let opener = $state<HTMLButtonElement | null>(null);

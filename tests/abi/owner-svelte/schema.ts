@@ -1,4 +1,4 @@
-import { defineDocument, s } from "hitslop";
+import { defineDocument, s } from "@hitslop/pop";
 // Covers all descriptor kinds, scalar defaults/bounds, container positions and populated seeds.
 export default defineDocument(
   {

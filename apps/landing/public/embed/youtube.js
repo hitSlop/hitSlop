@@ -1,14 +1,14 @@
-// hitSlop YouTube relay.
+// tinys YouTube relay.
 //
-// YouTube refuses to play for a page that doesn't send an HTTP(S) referrer, and a slop's own
-// page (slop://app) has none. A slop embeds this page instead; this page embeds the player, so
-// YouTube sees https://hitslop.com as the embedding site. Nothing here is specific to one slop:
+// YouTube refuses to play for a page that doesn't send an HTTP(S) referrer, and a tiny's own
+// page (tiny://app) has none. A tiny embeds this page instead; this page embeds the player, so
+// YouTube sees https://tinys.click as the embedding site. Nothing here is specific to one tiny:
 // the video comes from the URL fragment (never sent to our server), and messages are relayed
-// between the slop and the player. The player's own postMessage API is the only thing exposed.
+// between the tiny and the player. The player's own postMessage API is the only thing exposed.
 //
-//   https://hitslop.com/embed/youtube.html#v=<11-character id>[&controls=1][&autoplay=0][&start=<seconds>][&cc=1]
+//   https://tinys.click/embed/youtube.html#v=<11-character id>[&controls=1][&autoplay=0][&start=<seconds>][&cc=1]
 //
-// Use the SDK helper (`src` from `hitslop/youtube`) instead of writing this URL by hand.
+// Use the SDK helper (`src` from `@hitslop/tinys/youtube`) instead of writing this URL by hand.
 const playerOrigin = "https://www.youtube-nocookie.com";
 const commands = new Set(["playVideo", "pauseVideo", "seekTo", "setVolume", "mute", "unMute"]);
 
@@ -50,7 +50,7 @@ if (/^[A-Za-z0-9_-]{11}$/.test(id)) {
   };
 
   // Captions are the player's own track and it can load after the player is ready, so keep
-  // turning it off until it has played for a moment, unless the slop asked to see it.
+  // turning it off until it has played for a moment, unless the tiny asked to see it.
   const hideCaptions = () => {
     toPlayer({ event: "command", func: "unloadModule", args: ["captions"] });
     toPlayer({ event: "command", func: "setOption", args: ["captions", "track", {}] });

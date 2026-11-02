@@ -2,6 +2,7 @@
 import AppleIcon from "./AppleIcon.astro";
 import IPhoneIcon from "./IPhoneIcon.astro";
 import Desktop from "./playground/Desktop.svelte";
+import PhoneDays from "./playground/PhoneDays.svelte";
 import { SITE_LINKS } from "../constants";
 
 const shelf = [
@@ -33,51 +34,57 @@ const shelf = [
 ---
 
 <section class="hero" aria-labelledby="hero-title">
-  <div class="hero-grid">
+  <svg class="hero-doodles" viewBox="0 0 1500 840" fill="none" aria-hidden="true"><g stroke="#ffca15" stroke-width="5" stroke-linecap="round"><path d="m103 188-12-18m-6 42-22-10m39 38-22 3M997 81l10-25m9 35 19-18" /><path d="m101 69 4 13 9 4-9 4-4 13-4-13-9-4 9-4Z" stroke-width="3" /></g><g stroke="#ff37a6" stroke-width="4" stroke-linecap="round"><path d="m1418 296 14-15m-7 36 22-6M1234 244c33-33 88-18 112 20m-2-15 2 15-17-5" /></g><path d="m88 620 3 10 8 3-8 3-3 10-3-10-8-3 8-3Z" stroke="#b660ee" stroke-width="3" /></svg>
+  <div class="hero-top">
     <div class="hero-copy">
-      <p class="kicker"><svg class="doodle rays wide" viewBox="0 0 48 46" aria-hidden="true"><path d="m11 7 14 16M5 32l13 4M40 4l-3 15" /></svg>Local-first mini apps for Mac + iPhone app</p>
-      <h1 class="hero-title" id="hero-title">
-        <span class="line">Tiny apps.<svg class="smiley wiggle" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20" /><path d="M16 29c5 6 12 6 17-1" /><path class="dot" d="M17 18v2M31 18v2" /></svg><svg class="doodle title-star wiggle wide" viewBox="0 0 40 40" aria-hidden="true"><path d="m20 3 5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1Z" /></svg></span>
-        <span class="line"><span class="big">Big</span> <span class="underlined">personality.<svg class="underline draw" viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden="true" style="--len: 330"><path d="M4 12C70 4 170 3 296 9" /></svg></span></span>
-      </h1>
-      <p class="hero-sub">A packing list for one trip. A timer shaped like a tomato. A weird little desktop experiment you’ve been meaning to try. Each <span class="slop-format">.slop</span> is <strong>a single file that lives on your desktop</strong>, and your AI can edit it too.</p>
-      <div class="hero-actions">
-        <div class="platform-download">
-          <a class="button button-primary" href={SITE_LINKS.download} aria-describedby="mac-requirements"><AppleIcon /> Download for Mac</a>
-          <p id="mac-requirements">macOS 15.2+ · Apple silicon</p>
-        </div>
-        <div class="platform-download">
-          <a class="button button-secondary" href={SITE_LINKS.iosDownload} aria-describedby="iphone-requirements"><IPhoneIcon /> Download for iPhone</a>
-          <p id="iphone-requirements">iOS 26+ · TestFlight</p>
-        </div>
-      </div>
-      <button class="text-link hero-make" type="button" data-make-slop aria-haspopup="dialog" aria-controls="make-slop-modal">Make your own slop <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12" /></svg></button>
-      <ul class="hero-trust" aria-label="Why people like hitSlop">
-        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-7 7 7 7m8-14 7 7-7 7" /></svg>Free &amp; open source</li>
-        <li><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="4" /><path d="M4 22v-3a8 8 0 0 1 16 0v3Z" /></svg>Local use needs no account</li>
-        <li><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-11 4a6 6 0 0 1 8 0" /><circle cx="12" cy="20" r="1" /></svg>Works offline</li>
-      </ul>
+      <h1 class="hero-title" id="hero-title"><span class="l1">Little apps.</span> <span class="l2">Better together.</span></h1>
+      <p class="hero-sub">Make something in a minute. Share a link. Make it yours, together.</p>
     </div>
 
-    <div class="hero-stage" id="playground">
-      <p class="badge wide" aria-hidden="true"><span>Your files</span><span>to keep</span><svg viewBox="0 0 24 22"><path d="M12 20S2 14 2 7.5A5 5 0 0 1 12 5a5 5 0 0 1 10 2.5C22 14 12 20 12 20Z" /></svg></p>
-      <p class="annotation callout wide" aria-hidden="true">Your desktop.<br />But more you.<svg viewBox="0 0 70 50"><path d="M64 6C40 2 16 14 10 42m-8-12 8 13 12-9" /></svg></p>
-      <Desktop client:idle />
-      <p class="bubble wide" aria-hidden="true">Local first.<br />Always <span>♥</span><svg viewBox="0 0 30 24"><path d="M4 2c6 10 14 16 24 20C16 22 8 18 2 10" /></svg></p>
-      <svg class="doodle stars-top wide" viewBox="0 0 36 75" aria-hidden="true"><path d="M21 3c0 18 4 23 12 25-8 2-12 8-12 23-1-15-5-21-13-23C16 25 20 20 21 3Z" /><path stroke="#f443a1" d="M8 48c0 8 2 11 7 12-5 2-7 4-7 12-1-8-3-10-7-12 4-1 6-4 7-12Z" /></svg>
-      <svg class="doodle stars-bottom wide" viewBox="0 0 26 38" aria-hidden="true"><path d="M13 2c0 11 3 15 11 17-8 2-11 6-11 17C12 25 9 21 2 19 9 17 12 13 13 2Z" /></svg>
-      <p class="playground-caption">Interactive previews in your browser. Use the real ones on Mac, or on iPhone in TestFlight.</p>
+    <div class="hero-cta" id="get-it">
+      <a class="button button-primary dl" href={SITE_LINKS.download} aria-describedby="mac-requirements">
+        <AppleIcon />
+        <span class="dl-text"><strong>Download for Mac</strong><small id="mac-requirements">Free · macOS 15.2+ · Apple silicon</small></span>
+        <svg class="dl-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14" /></svg>
+      </a>
+      <a class="button button-secondary dl" href={SITE_LINKS.iosDownload} aria-describedby="iphone-requirements">
+        <IPhoneIcon />
+        <span class="dl-text"><strong>Get it on iPhone</strong><small id="iphone-requirements">TestFlight · iOS 26+</small></span>
+        <svg class="dl-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m0 0-5-5m5 5-5 5" /></svg>
+      </a>
+      <ul class="hero-trust" aria-label="Why people like dotpop"><li>Free &amp; open source</li><li>Works offline</li></ul>
+      <div class="hero-links">
+        <button class="text-link" type="button" data-make-pop aria-haspopup="dialog" aria-controls="make-pop-modal">Make your own <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12" /></svg></button>
+        <button class="text-link" type="button" data-play-video aria-label="Watch the 30-second tour">30-second tour <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5Z" /></svg></button>
+      </div>
     </div>
+    <p class="sticky yellow xwide" aria-hidden="true"><img class="tape t1" src="/assets/brand/tape-1.webp" width="300" height="104" alt="" />Your next group chat deserves a <b>tiny app.</b><svg viewBox="0 0 24 22"><path d="M12 20S2 14 2 7.5A5 5 0 0 1 12 5a5 5 0 0 1 10 2.5C22 14 12 20 12 20Z" /></svg></p>
   </div>
 
-  <div class="shelf" data-shelf aria-label="Things you can make with hitSlop">
+  <div class="hero-stage" id="playground">
+    <div class="cup-wrap wide" aria-hidden="true">
+      <img class="cup" src="/assets/brand/cup-v2.webp" width="640" height="1352" alt="" decoding="async" />
+    </div>
+    <Desktop client:idle />
+    <figure class="phone-out wide" aria-label="Little Days on iPhone, in sync with the Mac window">
+      <div class="phone-zoom"><PhoneDays client:idle /></div>
+    </figure>
+    <p class="playground-caption">Go on, drag them around. These are interactive previews; the real ones live on your Mac and iPhone.</p>
+  </div>
+
+  <ol class="steps" aria-label="How it works">
+    <li><span class="num" data-tone="pink">01</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 1.2 2.8L18 8l-2.8 1.2L14 12l-1.2-2.8L10 8l2.8-1.2ZM5 13l1 2.2L8.2 16 6 17l-1 2.2L4 17l-2.2-1L4 15.2ZM21 4l-9 9" /></svg><div><b>Make it</b><span>Turn an idea into a .pop in a minute.</span></div></li>
+    <li><span class="num" data-tone="sun">02</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></svg><div><b>Send a link</b><span>Share it with friends.</span></div></li>
+    <li><span class="num" data-tone="sky">03</span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.4" /><circle cx="17" cy="9" r="2.6" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0ZM15 14.4a5 5 0 0 1 6.5 4.6H17" /></svg><div><b>Use it together</b><span>Make it yours, together.</span></div></li>
+  </ol>
+
+  <div class="shelf" data-shelf aria-label="Things you can make with pop">
     <div class="shelf-window">
       <ul class="shelf-track">
         {shelf.map((item) => <li class="chip"><span aria-hidden="true">{item.emoji}</span>{item.label}</li>)}
         {shelf.map((item) => <li class="chip" aria-hidden="true"><span>{item.emoji}</span>{item.label}</li>)}
       </ul>
     </div>
-    <p class="annotation shelf-note wide" aria-hidden="true">More tiny apps<br />this way<svg viewBox="0 0 40 16"><path d="M2 9c12-3 22-3 34-1m-7-6 7 6-7 6" /></svg></p>
     <button class="shelf-pause" type="button" data-shelf-pause aria-pressed="false" aria-label="Pause scrolling categories">
       <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14" /></svg>
       <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z" /></svg>
@@ -96,59 +103,69 @@ const shelf = [
 </script>
 
 <style>
-  .hero { position: relative; isolation: isolate; width: min(1680px, calc(100% - 24px)); margin: 0 auto; padding: clamp(28px, 4vw, 56px) clamp(8px, 2vw, 24px) 40px; }
-  .hero::before { position: absolute; z-index: -1; inset: -80px calc((100% - 100vw) / 2) 0; pointer-events: none; mask-image: linear-gradient(#000 calc(100% - 140px), transparent); background: radial-gradient(ellipse at 73% 14%, #ddd3ff 0, transparent 55%), radial-gradient(ellipse at 22% 70%, #ffe3f4 0, transparent 50%), radial-gradient(ellipse at 90% 90%, #d6f7f4 0, transparent 46%), radial-gradient(ellipse at 8% 8%, #fff5d6 0, transparent 34%); content: ""; }
-  .hero-grid { display: grid; gap: 40px; align-items: center; padding: 0 clamp(12px, 3vw, 48px); }
-  .hero-grid > * { min-width: 0; }
+  .hero { position: relative; isolation: isolate; width: min(1600px, calc(100% - 48px)); margin: 0 auto; padding: 14px 8px 32px; }
+  .hero::before { position: absolute; z-index: -2; inset: -100px calc((100% - 100vw) / 2) 0; pointer-events: none; background: url("/assets/brand/hero-paper.webp") center top / 100% 100% no-repeat, var(--paper); mask-image: linear-gradient(#000 calc(100% - 150px), transparent); content: ""; }
+  .hero-doodles { display: none; position: absolute; z-index: -1; inset: 0; width: 100%; height: auto; pointer-events: none; }
+  .hero-top { position: relative; z-index: 2; display: grid; gap: 22px; align-items: start; padding: 0 clamp(12px, 3vw, 48px); }
+  .hero-top > * { min-width: 0; }
   .hero-copy { container-type: inline-size; }
-  .hero-title { width: max-content; max-width: 100%; font-family: "HitSlop Headline", "HitSlop Display", sans-serif; font-size: clamp(3rem, 8.4vw, 6.6rem); font-weight: 900; line-height: .92; letter-spacing: .005em; }
-  .line { position: relative; display: block; width: max-content; max-width: 100%; }
-  .line + .line { margin-top: .06em; }
-  .smiley { display: inline-block; vertical-align: top; width: .6em; height: .6em; margin: .04em 0 0 .28em; fill: #ffd84a; stroke: var(--ink); stroke-width: 3.4; stroke-linecap: round; rotate: 12deg; }
-  .smiley path { fill: none; }
-  .smiley .dot { stroke-width: 5; }
-  .big { position: relative; z-index: 0; display: inline-block; color: var(--accent); rotate: -3deg; transition: color 400ms var(--ease-out); }
-  .big::before { position: absolute; z-index: -1; left: -7%; right: -4%; bottom: 2%; height: .28em; border-radius: 48% 35% 43% 28%; background: #ffe56f; rotate: -5deg; content: ""; }
-  .underlined { position: relative; display: inline-block; }
-  .underline { position: absolute; z-index: -1; left: 2%; bottom: -.2em; width: 94%; height: .2em; fill: none; stroke: var(--accent-2); stroke-width: 6; stroke-linecap: round; }
-  .hero-sub { max-width: 40rem; margin: 26px 0 0; color: var(--muted); font-size: clamp(1.1rem, 1.45vw, 1.35rem); font-weight: 600; line-height: 1.5; }
-  .hero-sub strong { color: var(--ink); }
-  .slop-format { display: inline-block; padding: .04em .35em .08em; border: 2px solid transparent; border-radius: .45em; color: var(--ink); background: linear-gradient(var(--raised), var(--raised)) padding-box, linear-gradient(120deg, var(--accent), var(--accent-2), var(--sun), var(--sky)) border-box; font-family: "HitSlop Display", sans-serif; font-size: 1.12em; font-weight: 800; line-height: 1; white-space: nowrap; }
-  .hero-actions { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 18px 12px; }
-  .platform-download { display: grid; gap: 12px; flex: 1 1 230px; }
-  .platform-download p { margin: 0; color: var(--faint); font-size: .85rem; font-weight: 600; text-align: center; }
-  .hero-make { margin-top: 26px; padding: 0; border: 0; border-bottom: 2px solid currentColor; color: var(--accent); background: none; font: inherit; font-weight: 800; cursor: pointer; }
-  .hero-make svg { width: 20px; height: 20px; }
-  .hero-trust { margin: 28px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px 20px; list-style: none; font-size: .85rem; font-weight: 600; }
-  .hero-trust li { display: flex; align-items: center; gap: 8px; }
-  .hero-trust svg { width: 23px; height: 23px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .hero-title { width: max-content; max-width: 100%; font-family: "Pop Headline", "Pop Display", sans-serif; font-size: clamp(2.7rem, 11.7cqw, 8.2rem); font-weight: 900; line-height: .9; letter-spacing: -.025em; rotate: -1.5deg; transform-origin: 0 100%; }
+  .l1 { display: block; color: #0b0918; }
+  .l2 { display: block; width: max-content; padding: 0 .04em .06em 0; color: var(--accent); background: linear-gradient(108deg, color-mix(in srgb, var(--accent), #ee00ef 85%) 3%, var(--accent) 54%, #ff304e 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; white-space: nowrap; }
+  .hero-sub { max-width: 46rem; margin: 10px 0 0; color: var(--ink); font-size: clamp(1.05rem, 1.42vw, 1.35rem); font-weight: 600; line-height: 1.4; }
+  .hero-trust { margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 14px; list-style: none; color: var(--faint); font-size: .82rem; font-weight: 700; }
+  .hero-trust li + li::before { margin-right: 14px; content: "·"; }
 
-  .hero-stage { position: relative; }
+  .hero-cta { display: grid; gap: 10px; align-content: start; }
+  .dl { width: 100%; min-height: 62px; padding: 10px 16px; justify-content: flex-start; gap: 12px; border-radius: 20px; white-space: normal; text-align: left; }
+  .dl > svg:first-child { width: 24px; height: 24px; }
+  .dl-text { display: grid; gap: 2px; flex: 1; }
+  .dl-text strong { font-size: 1.15rem; font-weight: 900; line-height: 1.1; letter-spacing: -.01em; }
+  .dl-text small { font-size: .73rem; font-weight: 600; opacity: .72; }
+  .dl .dl-arrow { width: 24px; height: 24px; flex: none; opacity: .9; }
+  .button-primary.dl { background: #0b0918; box-shadow: 0 6px 16px #14102a18; }
+  .button-primary.dl:hover { box-shadow: inset 0 2px 3px #ffffff20, 0 4px 0 #07050f, 0 18px 30px #f0127e40; }
+  .hero-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; }
+  .hero-links .text-link { min-height: 32px; padding: 0; border: 0; border-bottom: 1px solid currentColor; color: var(--ink); background: none; font: inherit; font-size: .8rem; font-weight: 800; cursor: pointer; }
+  .hero-links .text-link svg { width: 17px; height: 17px; }
+  @media (hover: hover) { .hero-links .text-link:hover { color: var(--accent); } }
+
+  .hero-stage { position: relative; max-width: 1160px; margin: 22px auto 0; }
   .hero .wide { display: none; }
-  .playground-caption { margin: 14px 0 0; color: var(--faint); font-size: .9rem; text-align: center; }
+  .playground-caption { margin: 10px 0 0; color: var(--faint); font-size: .9rem; text-align: center; }
   @media (min-width: 1200px) { .playground-caption { padding-left: 8px; text-align: left; } }
 
-  .doodle { position: absolute; pointer-events: none; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
-  .kicker { position: relative; }
-  .rays { left: -43px; top: -12px; width: 34px; height: 38px; color: var(--accent); stroke-width: 7; rotate: -8deg; }
-  .title-star { right: -.55em; top: -.08em; width: .4em; height: .4em; color: var(--accent-2); stroke-width: 3; }
-  .stars-top { right: -30px; top: 8%; width: 36px; height: 75px; color: #ffa92a; stroke-width: 2.5; }
-  .stars-bottom { right: -26px; bottom: 26%; width: 26px; height: 38px; color: var(--sky); stroke-width: 2; }
-  .badge { position: absolute; z-index: 6; left: -40px; top: -34px; margin: 0; padding: 12px 18px 12px 16px; display: grid; border: 3px solid var(--ink); border-radius: 18px 22px 16px 24px; color: var(--ink); background: #fff; box-shadow: 0 0 0 5px #fff, 0 10px 22px #40247a30; font-family: "HitSlop Display", sans-serif; font-size: clamp(1.05rem, 1.4vw, 1.45rem); font-weight: 800; line-height: .98; letter-spacing: -.02em; text-transform: uppercase; rotate: -12deg; pointer-events: none; user-select: none; }
-  .badge span:last-of-type { color: var(--accent); }
-  .badge svg { position: absolute; right: -12px; top: -12px; width: 26px; height: 24px; fill: var(--accent-2); stroke: var(--ink); stroke-width: 2; rotate: 14deg; }
-  .callout { position: absolute; z-index: 6; right: 4%; top: -40px; color: #3a4fd6; --tilt: -6deg; }
-  .callout svg { position: absolute; left: -64px; top: 14px; }
-  .bubble { position: absolute; z-index: 6; left: -44px; bottom: 16%; margin: 0; padding: 14px 20px; border: 2.5px solid var(--ink); border-radius: 50% 46% 48% 52% / 56% 50% 50% 44%; color: var(--ink); background: #fff; box-shadow: 0 8px 18px #40247a24; font-family: "HitSlop Handwriting", cursive; font-size: clamp(1.1rem, 1.4vw, 1.4rem); line-height: 1.1; text-align: center; rotate: -8deg; pointer-events: none; user-select: none; }
-  .bubble span { color: var(--accent-2); }
-  .bubble svg { position: absolute; right: 6px; bottom: -16px; width: 30px; height: 24px; fill: #fff; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; }
+  .sticky { position: absolute; z-index: 7; margin: 0; padding: 26px 22px 20px; color: var(--ink); font-family: "Pop Handwriting", cursive; font-size: clamp(1.15rem, 1.6vw, 1.6rem); line-height: 1.15; pointer-events: none; user-select: none; box-shadow: 0 14px 22px #5a3a2026, 0 2px 0 #00000008; }
+  .sticky b { font-weight: 400; color: var(--accent); }
+  .sticky svg { position: absolute; right: 14px; bottom: 10px; width: 26px; fill: var(--accent); }
+  .sticky.yellow { position: absolute; z-index: 1; top: 222px; right: 0; width: 184px; padding: 22px 20px 26px; background: #fff27a; rotate: 7deg; font-size: 1.25rem; }
+  .tape { position: absolute; left: 50%; top: -14px; width: 96px; height: auto; translate: -50% 0; rotate: -3deg; opacity: .95; }
+  .tape.t2 { rotate: 4deg; }
+  .cup-wrap { position: absolute; z-index: 0; left: -150px; top: -80px; width: clamp(240px, 17vw, 280px); rotate: -10deg; pointer-events: none; }
+  .cup { display: block; width: 100%; height: auto; filter: drop-shadow(0 18px 14px #5a3a202b); }
+  .phone-out { position: absolute; z-index: 9; right: -58px; bottom: 10px; width: 176px; margin: 0; rotate: 5deg; border: 5px solid #1b1630; border-radius: 34px; overflow: hidden; background: #fffaf0; filter: drop-shadow(0 22px 18px #3a241430); }
+  .phone-zoom { zoom: .426; }
+  @media (min-width: 1500px) { .phone-out { width: 213px; } .phone-zoom { zoom: .52; } }
+  @media (prefers-reduced-motion: no-preference) { .phone-out { animation: phone-float 6s ease-in-out infinite; } }
+  @keyframes phone-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -8px; } }
 
-  .shelf { position: relative; margin: clamp(28px, 3vw, 44px) clamp(12px, 3vw, 48px) 0; padding: 9px 10px 9px 14px; display: flex; align-items: center; gap: 6px; border: 1px solid #fff; border-radius: 40px; background: #ffffffb8; box-shadow: 0 10px 30px #61478a12; }
+  .steps { margin: clamp(14px, 1.6vw, 22px) clamp(12px, 3vw, 48px) 0; padding: 0; display: grid; gap: 12px; list-style: none; }
+  .steps li { display: flex; align-items: center; gap: 14px; }
+  .num { width: 58px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 62% 38% 54% 46% / 53% 64% 36% 47%; font-family: "Pop Handwriting", cursive; font-size: 1.9rem; font-weight: 400; line-height: 1; rotate: -9deg; }
+  .num[data-tone="pink"] { color: var(--accent); background: #ffd6ea; }
+  .num[data-tone="sun"] { color: #7a5200; background: #ffe66b; }
+  .num[data-tone="sky"] { color: #0b64c9; background: #cfe6ff; }
+  .steps svg { width: 30px; height: 30px; flex: none; fill: none; stroke: var(--ink); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .steps b { display: block; font-family: "Pop Headline", "Pop Display", sans-serif; font-size: 1.3rem; font-weight: 900; line-height: 1.15; }
+  .steps span:not(.num) { color: var(--muted); font-size: .98rem; font-weight: 600; }
+  @media (min-width: 900px) { .steps { grid-template-columns: repeat(3, 1fr); gap: 28px; } }
+
+  .shelf { position: relative; margin: clamp(14px, 1.6vw, 22px) clamp(12px, 3vw, 48px) 0; padding: 9px 10px 9px 14px; display: flex; align-items: center; gap: 6px; border: 1px solid #fff; border-radius: 40px; background: #fffdf8c0; box-shadow: 0 10px 30px #6b4a2a14; }
   .shelf-window { flex: 1; min-width: 0; overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 22px, #000 calc(100% - 22px), transparent); }
   .shelf-track { width: max-content; margin: 0; padding: 4px 0; display: flex; list-style: none; animation: shelf 90s linear infinite; }
   .shelf:hover .shelf-track, .shelf[data-paused="true"] .shelf-track { animation-play-state: paused; }
   @keyframes shelf { to { translate: -50% 0; } }
-  .chip { flex: none; min-height: 42px; margin-right: 10px; padding: 0 15px; display: flex; align-items: center; gap: 8px; border: 1px solid #e2def1; border-radius: 24px; background: #ffffffed; box-shadow: 0 3px 5px #31226309; font-size: .9rem; font-weight: 600; white-space: nowrap; }
+  .chip { flex: none; min-height: 42px; margin-right: 10px; padding: 0 15px; display: flex; align-items: center; gap: 8px; border: 1px solid #eadfcb; border-radius: 24px; background: #fffffff0; box-shadow: 0 3px 5px #5a3a2009; font-size: .9rem; font-weight: 600; white-space: nowrap; }
   .chip span { font-size: 1.15rem; }
   .shelf-pause { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--ink); background: transparent; cursor: pointer; transition: background-color 160ms; }
   .shelf-pause:hover { background: var(--accent-soft); }
@@ -161,30 +178,41 @@ const shelf = [
     .shelf-track > [aria-hidden="true"], .shelf-pause { display: none; }
   }
 
-  @media (min-width: 1200px) {
-    .hero-grid { grid-template-columns: minmax(0, 44fr) minmax(0, 56fr); gap: 22px 40px; padding: 0 clamp(28px, 4vw, 64px); }
-    .hero-title { font-size: clamp(3.2rem, 12.4cqw, 6.2rem); }
-    .hero-stage { padding-top: 22px; }
-    .hero .wide { display: block; }
-    .hero .annotation.wide { display: inline-flex; }
-    .hero .badge.wide { display: grid; }
-    .shelf { margin-inline: clamp(28px, 4vw, 64px); }
-    .shelf-note { position: absolute; right: 60px; bottom: calc(100% + 2px); font-size: 1.05rem; text-align: right; --tilt: -4deg; }
+  @media (min-width: 780px) and (max-width: 1099px) {
+    .hero-cta { grid-template-columns: 1fr 1fr; }
+    .hero-links, .hero-trust { grid-column: 1 / -1; }
   }
-  @media (min-width: 1200px) and (max-height: 850px) {
-    .hero-sub { margin-top: 18px; }
-    .hero-actions { margin-top: 20px; }
+  @media (min-width: 1100px) {
+    .hero-top { grid-template-columns: minmax(0, 1fr) 310px; gap: 38px; padding: 0 14px 0 clamp(40px, 7vw, 112px); }
+    .hero-cta { padding-top: 8px; }
+  }
+  .hero .xwide { display: none; }
+  @media (min-width: 1400px) {
+    .hero .xwide { display: block; }
+    .hero-doodles { display: block; }
+  }
+  @media (min-width: 1200px) {
+    .hero .wide { display: block; }
+    .hero-stage { width: calc(100% - 220px); }
+    .shelf, .steps { margin-inline: clamp(28px, 4vw, 64px); }
+  }
+  @media (min-width: 1200px) and (max-width: 1399px) {
+    .cup-wrap { left: -120px; top: -70px; width: 220px; }
+    .phone-out { right: -50px; }
+    .steps span:not(.num) { font-size: .9rem; }
   }
   @media (max-width: 779px) {
-    .hero { padding: 28px 16px 24px; }
-    .hero-grid { padding: 0; gap: 24px; }
-    .hero-title { font-size: clamp(1.9rem, 12cqw, 4.2rem); }
-    .hero-sub { margin-top: 18px; font-size: 1rem; line-height: 1.5; }
-    .hero-actions { margin-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
-    .platform-download { gap: 10px; }
-    .hero-make { margin-top: 22px; }
-    .hero-trust { margin-top: 22px; gap: 12px 18px; font-size: .8rem; }
+    .hero { width: calc(100% - 32px); padding: 20px 0 24px; }
+    .hero::before { background-size: auto 100%; opacity: .7; }
+    .hero-top { padding: 0; gap: 22px; }
+    .hero-title { font-size: clamp(2.25rem, 11.7cqw, 5.5rem); }
+    .hero-sub { margin-top: 14px; font-size: 1.1rem; }
+    .hero-trust { margin-top: 16px; gap: 8px 16px; font-size: .8rem; }
+    .dl { min-height: 70px; padding: 10px 18px; }
+    .dl-text strong { font-size: 1.2rem; }
+    .hero-stage { margin-top: 24px; }
     .playground-caption { margin-top: 12px; font-size: .8rem; text-align: left; }
     .shelf { margin: 24px 0 0; }
+    .steps { margin: 28px 0 0; }
   }
 </style>
