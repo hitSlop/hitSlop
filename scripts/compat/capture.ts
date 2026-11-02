@@ -31,6 +31,7 @@ import {
 } from "../../packages/pop/src/schema/constants";
 import {
   documentEngine,
+  documents as corpusDocuments,
   pop,
   popJSON,
   savedState,
@@ -386,10 +387,7 @@ try {
   ]);
 
   // What each document reads as, and an edit to replay on it with its result.
-  const names = (await readdir(documents))
-    .filter((n) => n.endsWith(".pop"))
-    .map((n) => n.slice(0, -5))
-    .sort();
+  const names = await corpusDocuments(root);
   const scratch = join(work, "Document.pop");
   async function record(document: string) {
     const path = join(documents, document + ".pop");
