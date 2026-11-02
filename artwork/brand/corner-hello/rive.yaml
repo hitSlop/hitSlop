@@ -1,0 +1,5 @@
+name: corner-hello
+main: Corner Hello
+logs:
+  file: build/rive.log
+  problems: build/problems.log

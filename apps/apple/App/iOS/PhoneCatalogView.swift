@@ -66,8 +66,12 @@ struct PhoneCatalogView: View {
             Text("Start a checklist here. Pick it up on your Mac.").foregroundStyle(.secondary).multilineTextAlignment(
               .center)
             Button("Explore templates") { tab = .templates }.buttonStyle(.borderedProminent).tint(PopBrand.accent)
-          }.padding(.horizontal, 14).padding(.top, 66)
-            .listRowSeparator(.hidden).listRowBackground(Color.clear)
+          }
+          .frame(maxWidth: .infinity)
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, 14).padding(.top, 66)
+          .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
+          .listRowSeparator(.hidden).listRowBackground(Color.clear)
         }
       }
       .listStyle(.plain).scrollContentBackground(.hidden)
