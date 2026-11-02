@@ -8,7 +8,7 @@ interface Props {
   image?: string;
   preloadHeadline?: boolean;
 }
-const { title, description, themeColor = "#f4efff", image = "/og.jpg", preloadHeadline = false } = Astro.props;
+const { title, description, themeColor = "#fdf8ef", image = "/og.jpg", preloadHeadline = false } = Astro.props;
 const site = Astro.site ?? new URL("https://dotpop.click");
 const canonical = new URL(Astro.url.pathname, site).href;
 const imageUrl = new URL(image, site).href;
@@ -34,7 +34,7 @@ const app = {
 <link rel="canonical" href={canonical} />
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-<link rel="apple-touch-icon" href="/assets/appicon-256.png" />
+<link rel="apple-touch-icon" href="/assets/brand/apple-touch.png" />
 <link rel="sitemap" href="/sitemap-index.xml" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="dotpop" />

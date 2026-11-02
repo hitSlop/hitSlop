@@ -20,7 +20,12 @@
 
   const presets: ThemePreset[] = [
     {
-      label: "Grape Soda", description: "pop’s own purple", surface: "#b99cff", paper: "#fbf9ff",
+      label: "Bubblegum", description: "dotpop’s own pink", surface: "#ffb3d6", paper: "#fffaf3",
+      ink: "#2a1020", muted: "#7a5568", accent: "#f0127e", onAccent: "#ffffff", rule: "#f3dccb",
+      control: "#ffe3f1", highlight: "#ffd84a", heading: '"Pop Display", "Avenir Next", sans-serif', site: ["#f0127e", "#ff5cae"],
+    },
+    {
+      label: "Grape Soda", description: "Fizzy and purple", surface: "#b99cff", paper: "#fbf9ff",
       ink: "#1d1340", muted: "#6b5f8f", accent: "#6c16ed", onAccent: "#ffffff", rule: "#e6dcfb",
       control: "#ede4ff", highlight: "#ffd84a", heading: '"Pop Display", "Avenir Next", sans-serif', site: ["#6c16ed", "#f443a1"],
     },

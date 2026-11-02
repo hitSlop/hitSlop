@@ -1,14 +1,14 @@
 /* Shared motion vocabulary. Everything here switches off under reduced motion. */
-@property --accent { syntax: "<color>"; inherits: true; initial-value: #6c16ed; }
-@property --accent-2 { syntax: "<color>"; inherits: true; initial-value: #f443a1; }
+@property --accent { syntax: "<color>"; inherits: true; initial-value: #f0127e; }
+@property --accent-2 { syntax: "<color>"; inherits: true; initial-value: #ff5cae; }
 
 /* Stickers: tilted, springy badges that wobble when touched. */
-.sticker { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border: 3px solid var(--ink); border-radius: 18px 22px 16px 24px; color: var(--ink); background: #fff; box-shadow: 0 0 0 5px #fff, 0 10px 22px #40247a26; font-family: "Pop Display", sans-serif; font-size: 1.05rem; font-weight: 800; line-height: 1; letter-spacing: -.01em; rotate: var(--tilt, -4deg); transition: rotate 380ms var(--spring), scale 380ms var(--spring); }
+.sticker { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border: 3px solid var(--ink); border-radius: 18px 22px 16px 24px; color: var(--ink); background: #fffdf8; box-shadow: 0 0 0 5px #fffdf8, 0 10px 22px #5a3a2022; font-family: "Pop Display", sans-serif; font-size: 1.05rem; font-weight: 800; line-height: 1; letter-spacing: -.01em; rotate: var(--tilt, -4deg); transition: rotate 380ms var(--spring), scale 380ms var(--spring); }
 .sticker[data-tone="sun"] { background: #ffe56f; }
 .sticker[data-tone="pink"] { background: #ffd1ea; }
 .sticker[data-tone="mint"] { background: #c7f3dc; }
-.sticker[data-tone="sky"] { background: #d6e6ff; }
-.sticker[data-tone="ink"] { color: #fff; background: var(--ink); box-shadow: 0 0 0 5px #fff, 0 10px 22px #10132c40; }
+.sticker[data-tone="sky"] { background: #d2e8ff; }
+.sticker[data-tone="ink"] { color: #fff; background: var(--ink); box-shadow: 0 0 0 5px #fff, 0 10px 22px #14102a40; }
 @media (hover: hover) { .sticker:hover { rotate: calc(var(--tilt, -4deg) * -1); scale: 1.06; } }
 
 /* Handwritten notes with a drawn arrow, always pointing at something to try. */

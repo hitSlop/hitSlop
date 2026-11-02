@@ -4,8 +4,8 @@
 :root[data-theme="light"],
 :root[data-theme="dark"] {
   color-scheme: light;
-  --paper: oklch(98.8% .004 250);
-  --raised: oklch(99.8% .002 250);
+  --paper: oklch(98.4% .012 85);
+  --raised: oklch(99.4% .006 85);
   --ink: oklch(20% .018 255);
   --muted: oklch(46% .02 255);
   --faint: oklch(62% .016 255);

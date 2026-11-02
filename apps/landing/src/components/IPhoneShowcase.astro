@@ -10,15 +10,17 @@
       <img src="/iphone/templates.webp" width="560" height="1212" sizes="(max-width: 480px) 40vw, 260px" alt="The Templates tab in pop on iPhone, listing Popular pop such as Invoice, Weekly Planner and Quick Checklist." loading="lazy" decoding="async" />
     </div>
   </div>
+  <img class="peek" src="/assets/brand/mascot-phone.webp" width="560" height="560" alt="" loading="lazy" decoding="async" />
   <figcaption>Little Days and the Templates tab on iPhone.</figcaption>
 </figure>
 
 <style>
-  .phone-scene { margin: 0; min-width: 0; padding: clamp(18px, 3vw, 32px); border: 1px solid #fff; border-radius: 30px; background: radial-gradient(ellipse at 0 100%, #f4ccba 0, transparent 65%), radial-gradient(ellipse at 100% 0, #d3c7f0, transparent 70%), #e5e9f2; box-shadow: inset 0 1px 0 #fff8, 0 24px 60px #3b24551a; }
+  .phone-scene { position: relative; margin: 0; min-width: 0; padding: clamp(18px, 3vw, 32px); border: 1px solid #fff; border-radius: 30px; background: radial-gradient(ellipse at 0 100%, #ffd5e6 0, transparent 65%), radial-gradient(ellipse at 100% 0, #fff0a8, transparent 70%), #f4ecdf; box-shadow: inset 0 1px 0 #fff8, 0 24px 60px #3b24551a; }
   .phones { display: flex; justify-content: center; align-items: flex-start; gap: clamp(14px, 3vw, 28px); }
   .phone { flex: 0 1 260px; min-width: 0; }
   .phone:nth-child(2) { margin-top: clamp(20px, 5vw, 48px); }
   .phone img { display: block; width: 100%; height: auto; border: 4px solid #1b1630; border-radius: clamp(22px, 4vw, 34px); background: #fff; box-shadow: 0 14px 34px #3b245540, 0 2px 4px #3b24551f; }
+  .peek { position: absolute; z-index: 2; left: -22px; bottom: -34px; width: clamp(96px, 18vw, 150px); height: auto; rotate: -6deg; filter: drop-shadow(0 10px 10px #5a3a2026); pointer-events: none; }
   figcaption { margin-top: 24px; color: #463955; font-size: .88rem; text-align: center; }
   @media (max-width: 480px) {
     .phone-scene { border-radius: 22px; }
