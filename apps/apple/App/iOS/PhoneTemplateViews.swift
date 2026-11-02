@@ -17,7 +17,7 @@ struct PhoneArtworkView: View {
       if let image {
         Image(uiImage: image).resizable().scaledToFit()
       } else {
-        Image(systemName: "doc.text").resizable().scaledToFit().foregroundStyle(PhoneStyle.accent.opacity(0.6)).padding(
+        Image(systemName: "doc.text").resizable().scaledToFit().foregroundStyle(PopBrand.accent.opacity(0.6)).padding(
           12)
       }
     }.task(id: url.path + "|" + revision) {
@@ -40,8 +40,8 @@ struct PhonePopRow: View {
       PhoneArtworkView(url: url, revision: revision + (downloaded ? "|local" : "|cloud")).padding(3).frame(
         width: 44, height: 46
       )
-      .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 10))
-      .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+      .background(PopBrand.card, in: RoundedRectangle(cornerRadius: 12))
+      .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
       VStack(alignment: .leading, spacing: 2) {
         Text(title).font(PopBrand.heading(16)).foregroundStyle(.primary).lineLimit(1)
         if !synced { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
@@ -82,8 +82,8 @@ struct PhoneTemplateDetail: View {
         Text(template.description).font(.body).lineSpacing(4)
         HStack {
           ForEach(template.categories, id: \.self) { name in
-            Text(name).font(.subheadline.weight(.medium)).foregroundStyle(PhoneStyle.accent)
-              .padding(.horizontal, 17).padding(.vertical, 9).background(PhoneStyle.accent.opacity(0.09), in: Capsule())
+            Text(name).font(.subheadline.weight(.medium)).foregroundStyle(PopBrand.accent)
+              .padding(.horizontal, 17).padding(.vertical, 9).background(PopBrand.accent.opacity(0.09), in: Capsule())
           }
         }
         VStack(alignment: .leading, spacing: 16) {
@@ -122,7 +122,7 @@ struct PhoneTemplateDetail: View {
           }
           .font(.title3).frame(maxWidth: .infinity).padding(.vertical, 18)
         }.buttonStyle(.plain).foregroundStyle(.white).background(
-          PhoneStyle.accent, in: RoundedRectangle(cornerRadius: 18)
+          PopBrand.accent, in: RoundedRectangle(cornerRadius: 18)
         )
         .accessibilityIdentifier("create-pop")
         .disabled(creating || !canCreate).opacity(canCreate ? 1 : 0.55)
@@ -171,7 +171,7 @@ private struct PhoneNameSheet: View {
             .font(.title3).frame(maxWidth: .infinity).padding(.vertical, 8)
         }
         .buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 18))
-        .tint(PhoneStyle.accent).controlSize(.large)
+        .tint(PopBrand.accent).controlSize(.large)
         .disabled(creating || trimmed.isEmpty)
         .accessibilityIdentifier("create-named-pop")
         .padding(.horizontal, 20).padding(.bottom, 12)

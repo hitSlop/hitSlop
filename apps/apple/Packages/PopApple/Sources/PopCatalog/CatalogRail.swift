@@ -10,6 +10,7 @@ struct CatalogRail: View {
   @Binding var query: String
   var searchFocused: FocusState<Bool>.Binding
   let localIssues: [String]
+  var recentsIssue: String? = nil
   let onRefresh: () -> Void
   var onDelete: (CatalogEntry) -> Void = { _ in }
 
@@ -27,6 +28,17 @@ struct CatalogRail: View {
       .padding(.leading, 16).padding(.trailing, 12).padding(.top, 16).padding(.bottom, 10)
       .overlay(alignment: .bottom) { Rectangle().fill(CatalogStyle.hairline).frame(height: 1).padding(.horizontal, 14) }
 
+      if let recentsIssue {
+        VStack(alignment: .leading, spacing: 6) {
+          Label(recentsIssue, systemImage: "exclamationmark.triangle")
+          Button("Retry", action: onRefresh)
+        }
+        .font(.caption).foregroundStyle(.secondary)
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(PopBrand.notice, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 14).padding(.top, 10)
+      }
+
       if !localIssues.isEmpty {
         Label(
           "\(localIssues.count) local template \(localIssues.count == 1 ? "needs" : "need") attention",
@@ -34,16 +46,19 @@ struct CatalogRail: View {
         )
         .font(.caption).foregroundStyle(Color.orange)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(Color.orange.opacity(0.09), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(PopBrand.notice, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(.horizontal, 14).padding(.top, 10)
         .help(localIssues.joined(separator: "\n"))
       }
 
       if entries.isEmpty {
-        ContentUnavailableView(
-          "Nothing here", systemImage: "sparkles.rectangle.stack", description: Text("Try another search or category.")
-        )
+        ContentUnavailableView {
+          Label("Nothing here", systemImage: "sparkles.rectangle.stack")
+            .symbolRenderingMode(.hierarchical).foregroundStyle(PopBrand.accent)
+        } description: {
+          Text("Try another search or category.")
+        }
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
@@ -137,12 +152,13 @@ private struct CatalogSearchBar: View {
     }
     .padding(.horizontal, 10).frame(height: 34)
     .background(
-      focused.wrappedValue ? Color.white : CatalogStyle.fill, in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+      focused.wrappedValue ? CatalogStyle.card : CatalogStyle.fill,
+      in: RoundedRectangle(cornerRadius: 12, style: .continuous)
     )
     .overlay(
-      RoundedRectangle(cornerRadius: 9, style: .continuous)
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
         .strokeBorder(
-          focused.wrappedValue ? CatalogStyle.brand.opacity(0.6) : CatalogStyle.hairline,
+          focused.wrappedValue ? PopBrand.accent.opacity(0.6) : CatalogStyle.hairline,
           lineWidth: focused.wrappedValue ? 1.5 : 1)
     )
     .animation(.easeOut(duration: 0.12), value: focused.wrappedValue)
@@ -157,7 +173,7 @@ private struct CatalogRow: View {
 
   var body: some View {
     HStack(spacing: 11) {
-      IconTile(artwork: entry.icons, size: 40, radius: 9)
+      IconTile(artwork: entry.icons, size: 40, radius: 11)
       VStack(alignment: .leading, spacing: 2) {
         Text(entry.displayTitle).font(PopBrand.heading(15, relativeTo: .body)).lineLimit(1)
           .truncationMode(entry.isRecent ? .middle : .tail)
@@ -169,7 +185,11 @@ private struct CatalogRow: View {
     .padding(.horizontal, 8).padding(.vertical, 7)
     .background(
       selected ? CatalogStyle.selection : isHovering ? CatalogStyle.hover : .clear,
-      in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+      in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: 12, style: .continuous)
+        .strokeBorder(selected ? CatalogStyle.selectionStroke : .clear)
     )
     .contentShape(Rectangle())
     .onTapGesture(perform: select)
@@ -183,6 +203,7 @@ private struct CatalogRow: View {
   private var subtitle: String {
     if let identity = entry.documentIdentity {
       let folder = entry.inCloud ? "iCloud" : folderName(identity.folderPath)
+      if entry.isUnavailable { return "\(folder) · Unavailable" }
       guard let date = entry.updatedAt else { return folder }
       return "\(folder) · \(relativeDate(date))"
     }

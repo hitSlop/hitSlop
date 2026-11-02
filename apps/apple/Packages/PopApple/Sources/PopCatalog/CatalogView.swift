@@ -35,8 +35,10 @@ public struct CatalogView: View {
         title: model.filter.title, entries: model.visibleEntries,
         selectedID: $model.selectedID, query: $model.query, searchFocused: $searchFocused,
         localIssues: model.filter != .recents ? model.localIssues : [],
+        recentsIssue: model.recentsIssue,
         onRefresh: {
-          if model.filter == .synced { Task { await library.syncNow() } } else { model.refreshSources() }
+          model.refreshSources()
+          if model.filter == .synced { Task { await library.syncNow() } }
         },
         onDelete: { entry in
           guard let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) else { return }
@@ -65,7 +67,7 @@ public struct CatalogView: View {
       .ignoresSafeArea(.container, edges: .top)
     }
     .navigationSplitViewStyle(.balanced)
-    .tint(CatalogStyle.brand)
+    .tint(PopBrand.accent)
     .background {
       Button("Focus template search") { searchFocused = true }
         .keyboardShortcut("k", modifiers: .command)

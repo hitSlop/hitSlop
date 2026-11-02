@@ -53,6 +53,7 @@ private struct UpdateSettingsView: View {
   private var libraryChanges: AnyCancellable?
   private var libraryWindows: AnyCancellable?
   private var recentMenu: NSMenu?
+  private var recentMenuRefresh: Task<Void, Never>?
   private var exportMenuItem: NSMenuItem?
   private var unsharedCopyMenuItem: NSMenuItem?
   private var settingsWindow: NSWindow?
@@ -267,7 +268,7 @@ private struct UpdateSettingsView: View {
   }
   @objc private func openWebsite() { NSWorkspace.shared.open(URL(string: "https://dotpop.click")!) }
   @objc private func openRecent(_ sender: NSMenuItem) {
-    if let url = sender.representedObject as? URL { openDocument(url) }
+    if let id = sender.representedObject as? String { coordinator.openRecentDocument(id: id) }
   }
   @objc private func clearRecent() { coordinator.clearRecentDocuments() }
 
@@ -382,22 +383,34 @@ private struct UpdateSettingsView: View {
       return
     }
     guard menu === recentMenu else { return }
+    populateRecentMenu(menu)
+    recentMenuRefresh?.cancel()
+    recentMenuRefresh = Task { [weak self, weak menu] in
+      guard let self, let menu else { return }
+      await self.coordinator.refreshRecentDocuments()
+      guard !Task.isCancelled else { return }
+      self.populateRecentMenu(menu)
+    }
+  }
+  private func populateRecentMenu(_ menu: NSMenu) {
     menu.removeAllItems()
-    let urls = NSDocumentController.shared.recentDocumentURLs
-    if urls.isEmpty {
+    let documents = coordinator.recentDocuments
+    if documents.isEmpty {
       let empty = menu.addItem(withTitle: "No Recent Documents", action: nil, keyEquivalent: "")
       empty.isEnabled = false
     } else {
-      for url in urls {
+      for entry in documents {
         let recent = menu.addItem(
-          withTitle: url.lastPathComponent, action: #selector(openRecent(_:)), keyEquivalent: "")
-        recent.representedObject = url
+          withTitle: entry.displayTitle + (entry.isUnavailable ? " — Unavailable" : ""),
+          action: #selector(openRecent(_:)), keyEquivalent: "")
+        recent.representedObject = entry.id
+        recent.toolTip = entry.documentIdentity?.path
         recent.target = self
       }
-      menu.addItem(.separator())
-      let clear = menu.addItem(withTitle: "Clear Menu", action: #selector(clearRecent), keyEquivalent: "")
-      clear.target = self
     }
+    menu.addItem(.separator())
+    let clear = menu.addItem(withTitle: "Clear Menu", action: #selector(clearRecent), keyEquivalent: "")
+    clear.target = self
   }
   @discardableResult private func item(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String) -> NSMenuItem
   {

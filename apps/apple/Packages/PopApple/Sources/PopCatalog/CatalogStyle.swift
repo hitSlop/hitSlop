@@ -1,15 +1,19 @@
 import AppKit
+import PopCore
 import SwiftUI
 
 enum CatalogStyle {
-  static let brand = Color(red: 0.45, green: 0.16, blue: 0.96)
-  static let brandHover = Color(red: 0.53, green: 0.24, blue: 0.98)
-  static let selection = brand.opacity(0.10)
-  static let hover = Color.primary.opacity(0.04)
-  static let hairline = Color.primary.opacity(0.07)
-  static let fill = Color.primary.opacity(0.045)
-  static let sidebar = Color(nsColor: .windowBackgroundColor)
-  static let content = Color(nsColor: .textBackgroundColor)
+  // Colors come from `PopBrand`; these are the catalog's derived roles.
+  /// Soft tint behind the selected row.
+  static let selection = PopBrand.accent.opacity(0.10)
+  /// Thin accent outline for the selected row.
+  static let selectionStroke = PopBrand.accent.opacity(0.30)
+  static let hover = PopBrand.ink.opacity(0.05)
+  static let hairline = PopBrand.ink.opacity(0.09)
+  static let fill = PopBrand.ink.opacity(0.05)
+  static let sidebar = PopBrand.creamDeep
+  static let content = PopBrand.cream
+  static let card = PopBrand.card
   /// Height of the titlebar strip the traffic lights sit in.
   static let titlebar: CGFloat = 52
 }

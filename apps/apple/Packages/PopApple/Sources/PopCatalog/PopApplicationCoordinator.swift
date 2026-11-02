@@ -25,15 +25,20 @@ import SwiftUI
   /// they may supply the catalog's client and receive the alerts.
   init(
     templatesURL: URL?, presentsWindows: Bool, telemetry: PopTelemetry = .disabled,
-    catalogClient: CatalogClient? = nil, alert: (@MainActor (AppAlert, UUID?) -> Void)? = nil
+    catalogClient: CatalogClient? = nil, historyURL: URL? = nil,
+    alert: (@MainActor (AppAlert, UUID?) -> Void)? = nil
   ) {
     self.presentsWindows = presentsWindows
     alertOverride = alert
     let windows = DocumentWindows(presentsWindows: presentsWindows, telemetry: telemetry)
-    let catalogServices = CatalogServices(templatesURL: templatesURL, telemetry: telemetry)
+    let catalogServices = CatalogServices(
+      templatesURL: templatesURL, telemetry: telemetry,
+      historyURL: historyURL ?? (presentsWindows ? RecentDocumentHistory.defaultURL : nil),
+      systemRecents: { presentsWindows ? CatalogServices.systemRecentDocuments() : [] })
     self.windows = windows
     self.catalogServices = catalogServices
-    let catalog = CatalogModel(client: catalogClient ?? (presentsWindows ? catalogServices.client : .empty))
+    let catalog = CatalogModel(
+      client: catalogClient ?? (presentsWindows || historyURL != nil ? catalogServices.client : .empty))
     model = AppModel(client: windows.client, catalog: catalog)
     windows.coordinator = self
   }
@@ -61,16 +66,21 @@ import SwiftUI
   private func preparedCatalog() -> NSWindowController {
     if let catalogWindow { return catalogWindow }
     let host = NSHostingController(rootView: CatalogView(model: model.catalog))
+    // The window owns its size. The sidebar's full category list must scroll rather
+    // than become the hosting controller's minimum window height.
+    host.sizingOptions = []
+    let size = NSSize(width: 1040, height: 680)
     let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 1040, height: 720),
+      contentRect: NSRect(origin: .zero, size: size),
       styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered,
       defer: false)
     window.title = ""
     window.titleVisibility = .hidden
     window.titlebarAppearsTransparent = true
     window.isReleasedWhenClosed = false
-    window.minSize = NSSize(width: 900, height: 600)
+    window.minSize = NSSize(width: 900, height: 560)
     window.contentViewController = host
+    window.setContentSize(size)
     window.center()
     let controller = NSWindowController(window: window)
     catalogWindow = controller
@@ -149,9 +159,22 @@ import SwiftUI
     model.send(command, to: id)
   }
   public func clearRecentDocuments() {
-    NSDocumentController.shared.clearRecentDocuments(nil)
-    model.catalog.refreshRecents()
+    Task {
+      await catalogServices.clearRecents()
+      if presentsWindows, RecentDocumentHistory.usesSystemRecents {
+        NSDocumentController.shared.clearRecentDocuments(nil)
+      }
+      await model.catalog.reloadRecents()
+    }
   }
+  /// The menu uses the catalog's history and the same active-account filtering.
+  public var recentDocuments: [CatalogEntry] { model.catalog.recents }
+  public func refreshRecentDocuments() async { await model.catalog.reloadRecents() }
+  public func openRecentDocument(id: String) {
+    guard let entry = recentDocuments.first(where: { $0.id == id }) else { return }
+    model.catalog.primaryAction(entry)
+  }
+  fileprivate func recordRecentDocument(_ url: URL) async { await catalogServices.recordOpened(url) }
   public func requestQuit() { model.requestQuit() }
 
   /// Runs the app's update check. The app installs it; Sparkle lives in the app target.
@@ -247,9 +270,10 @@ import SwiftUI
       }
     }
     if presentsWindows {
-      NSDocumentController.shared.noteNewRecentDocumentURL(url)
+      if RecentDocumentHistory.usesSystemRecents { NSDocumentController.shared.noteNewRecentDocumentURL(url) }
       NSApp.activate()
     }
+    await coordinator?.recordRecentDocument(url)
     telemetry.send(.breadcrumb(.open, .completed))
     telemetry.send(.opened)
   }
@@ -269,7 +293,16 @@ import SwiftUI
   }
   func focus(_ id: UUID) {
     if presentsWindows {
-      if let controller = controllers[id] { controller.revealFromDock() } else { openings[id]?.focus() }
+      if let controller = controllers[id] {
+        controller.revealFromDock()
+        let url = controller.session.file.url
+        Task { [weak coordinator] in
+          await coordinator?.recordRecentDocument(url)
+          await coordinator?.refreshRecentDocuments()
+        }
+      } else {
+        openings[id]?.focus()
+      }
       NSApp.activate()
     }
   }

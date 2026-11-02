@@ -19,7 +19,8 @@ export async function verifyAppCommands(app: string) {
     engine: await debugEngine(), cwd: folder,
     // Release hosts ignore test registry overrides; use the account registry on both
     // sides, as an installed app does. Only the core ever manages its lock files.
-    env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" },
+    env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin",
+      POP_TEST_RECENTS_FILE: join(folder, "recents.json") },
   };
   const document = join(folder, "Commands.pop");
   let host: ReturnType<typeof testProcess> | undefined;
@@ -75,7 +76,8 @@ export async function verifyAppCorpus(app: string, options: { allowUnreleased?: 
   assert.ok(entries.length, "No corpus for packaged-app acceptance");
   const folder = await mkdtemp(join(tmpdir(), "pop-app-corpus-"));
   const placement = { engine: await debugEngine(), cwd: folder,
-    env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" } };
+    env: { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin",
+      POP_TEST_RECENTS_FILE: join(folder, "recents.json") } };
   let host: ReturnType<typeof testProcess> | undefined;
   try {
     for (const entry of entries) for (const name of await documents(entry.root)) {

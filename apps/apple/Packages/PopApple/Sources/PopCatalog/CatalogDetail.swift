@@ -41,7 +41,7 @@ struct CatalogDetail: View {
               HStack(spacing: 7) {
                 ForEach(entry.categories, id: \.self) { category in
                   Text(category.label).font(.callout)
-                    .foregroundStyle(CatalogStyle.brand)
+                    .foregroundStyle(PopBrand.accent)
                     .padding(.horizontal, 11).padding(.vertical, 4)
                     .background(CatalogStyle.selection, in: Capsule())
                 }
@@ -51,6 +51,14 @@ struct CatalogDetail: View {
             PreviewCard(artwork: entry.previews)
 
             details(entry)
+
+            if entry.isUnavailable {
+              Label(
+                "This file can’t be reached. Reconnect its drive or restore the file, then try opening it again.",
+                systemImage: "exclamationmark.triangle"
+              )
+              .font(.callout).foregroundStyle(.secondary)
+            }
 
             if let authorName = entry.authorName {
               footer(authorName: authorName, url: entry.authorURL)
@@ -64,7 +72,7 @@ struct CatalogDetail: View {
         }
         .overlay(alignment: .bottomTrailing) {
           PrimaryButton(
-            title: entry.isRecent ? "Open" : "Create",
+            title: entry.isUnavailable ? "Try Again" : entry.isRecent ? "Open" : "Create",
             icon: entry.isRecent ? "arrow.up.forward.square" : "plus",
             isBusy: isCreating, isWorking: isCopying
           ) { primaryAction(entry) }
@@ -72,10 +80,12 @@ struct CatalogDetail: View {
           .padding(24)
         }
       } else {
-        ContentUnavailableView(
-          "Select a pop", systemImage: "square.stack.3d.up",
-          description: Text("Choose an item from the list to see its preview and details.")
-        )
+        ContentUnavailableView {
+          Label("Select a pop", systemImage: "square.stack.3d.up")
+            .symbolRenderingMode(.hierarchical).foregroundStyle(PopBrand.accent)
+        } description: {
+          Text("Choose an item from the list to see its preview and details.")
+        }
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -85,7 +95,7 @@ struct CatalogDetail: View {
 
   private func hero(_ entry: CatalogEntry) -> some View {
     HStack(alignment: .top, spacing: 16) {
-      IconTile(artwork: entry.icons, size: 64, radius: 14)
+      IconTile(artwork: entry.icons, size: 64, radius: 16)
       VStack(alignment: .leading, spacing: 3) {
         Text(entry.displayTitle)
           .font(PopBrand.heading(28, relativeTo: .title))
@@ -135,7 +145,7 @@ struct CatalogDetail: View {
             Image(systemName: "arrow.up.right.square")
           }
         }
-        .foregroundStyle(CatalogStyle.brand)
+        .foregroundStyle(PopBrand.accent)
       }
       Spacer()
     }
@@ -180,8 +190,8 @@ private struct PreviewCard: View {
         .frame(maxWidth: .infinity)
     }
     .padding(14).padding(.bottom, 6)
-    .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(CatalogStyle.hairline))
+    .background(CatalogStyle.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(CatalogStyle.hairline))
   }
 }
 
@@ -214,10 +224,10 @@ private struct PrimaryButton: View {
       .padding(.horizontal, 16)
       .frame(height: 38)
       .background(
-        isHovering ? CatalogStyle.brandHover : CatalogStyle.brand,
-        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        isHovering ? PopBrand.accentHover : PopBrand.accent,
+        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
       )
-      .shadow(color: CatalogStyle.brand.opacity(isHovering ? 0.32 : 0.22), radius: isHovering ? 10 : 6, y: 3)
+      .shadow(color: PopBrand.accent.opacity(isHovering ? 0.28 : 0.18), radius: isHovering ? 10 : 6, y: 3)
       .fixedSize()
     }
     .buttonStyle(.plain)

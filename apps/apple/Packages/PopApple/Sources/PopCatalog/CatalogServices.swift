@@ -10,26 +10,40 @@ import PopHost
   private let telemetry: PopTelemetry
   private let bundledRoot: URL?
   private let chooseDestination: (String) async throws -> URL?
+  private let systemRecents: @MainActor () -> [URL]
+  private let history: RecentDocumentHistory
+  private var importCandidates: [URL]?
+  private(set) var recentsIssue: String?
+  private var lastHistoryFailure: PopFailureContext?
   private let scanner = CatalogScanner()
   private weak var localStore: LocalTemplateStore?
   init(
     templatesURL: URL?,
     bundledRoot: URL? = PopTemplateLocation.bundledRoot,
     telemetry: PopTelemetry = .disabled,
+    historyURL: URL? = RecentDocumentHistory.defaultURL,
+    systemRecents: @escaping @MainActor () -> [URL] = CatalogServices.systemRecentDocuments,
     chooseDestination: @escaping (String) async throws -> URL? = CatalogServices.chooseDestination
   ) {
     self.templatesURL = templatesURL
     self.bundledRoot = bundledRoot
     self.telemetry = telemetry
     self.chooseDestination = chooseDestination
+    self.systemRecents = systemRecents
+    history = RecentDocumentHistory(fileURL: historyURL)
   }
 
   var client: CatalogClient {
-    CatalogClient(
+    var client = CatalogClient(
       local: { [self] in await local() },
       refreshLocal: { [self] force in await localStore?.refresh(force: force) },
       recents: { [self] in await recents() },
-      recent: { [self] url in try? await scanner.recent(url) },
+      recent: { [self] url in
+        let snapshot = await history.snapshot(importing: seedURLs())
+        receive(snapshot)
+        guard let document = snapshot.documents.first(where: { $0.url == url }) else { return nil }
+        return await entry(document)
+      },
       chooseDestination: { [self] entry in
         do { return try await destination(for: entry) } catch {
           telemetry.failure(.create, error: error)
@@ -44,6 +58,13 @@ import PopHost
         }
       }
     )
+    client.recentsIssue = { [self] in recentsIssue }
+    client.resolveRecent = { [self] entry in
+      guard case .recent(let url) = entry.source else { throw CocoaError(.fileNoSuchFile) }
+      guard let id = entry.recentHistoryID else { return url }
+      return try await history.resolve(id)
+    }
+    return client
   }
 
   private func local() async -> AsyncStream<CatalogSnapshot> {
@@ -85,11 +106,60 @@ import PopHost
   }
 
   func recents() async -> [CatalogEntry] {
-    let urls = NSDocumentController.shared.recentDocumentURLs
-    do { return try await scanner.recents(urls) } catch {
-      telemetry.failure(.catalog, error: error)
-      return []
+    let snapshot = await history.snapshot(importing: seedURLs())
+    receive(snapshot)
+    var entries: [CatalogEntry] = []
+    for document in snapshot.documents {
+      entries.append(await entry(document))
     }
+    return entries
+  }
+
+  private func entry(_ document: RecentDocumentHistory.Document) async -> CatalogEntry {
+    let scanned = document.isUnavailable ? nil : try? await scanner.recent(document.url)
+    var entry =
+      scanned
+      ?? CatalogEntry(
+        id: "recent:\(document.id)", source: .recent(document.url),
+        title: document.url.deletingPathExtension().lastPathComponent)
+    entry.id = "recent:\(document.id)"
+    entry.recentHistoryID = document.id
+    entry.isUnavailable = document.isUnavailable || scanned == nil
+    return entry
+  }
+
+  private func seedURLs() -> [URL] {
+    if let importCandidates { return importCandidates }
+    let urls = systemRecents()
+    importCandidates = urls
+    return urls
+  }
+
+  func recordOpened(_ url: URL) async {
+    receive(await history.recordOpened(url, importing: seedURLs()))
+  }
+
+  func clearRecents() async { receive(await history.clear()) }
+
+  private func receive(_ snapshot: RecentDocumentHistory.Snapshot) {
+    recentsIssue =
+      snapshot.failure == nil
+      ? nil
+      : "Could not save or load recent documents. Your previous saved history has been kept."
+    if let failure = snapshot.failure, failure != lastHistoryFailure {
+      telemetry.send(.failed(.catalog, failure))
+    }
+    lastHistoryFailure = snapshot.failure
+  }
+
+  static func systemRecentDocuments() -> [URL] {
+    guard RecentDocumentHistory.usesSystemRecents else { return [] }
+    #if DEBUG
+      // Debug has its own history and must not seed it with the release app's list.
+      return []
+    #else
+      return NSDocumentController.shared.recentDocumentURLs
+    #endif
   }
 
   private func destination(for entry: CatalogEntry) async throws -> URL? {

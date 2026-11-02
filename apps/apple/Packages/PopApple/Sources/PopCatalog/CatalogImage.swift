@@ -13,7 +13,7 @@ struct IconTile: View {
     CatalogImageView(artwork: artwork, fallback: .applicationIcon)
       .padding(size * 0.1)
       .frame(width: size, height: size)
-      .background(.white, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+      .background(CatalogStyle.card, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
       .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(CatalogStyle.hairline))
       .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
   }

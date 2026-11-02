@@ -78,6 +78,9 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
   public var createdAt: Date?
   public var updatedAt: Date?
   public var initialSize: String?
+  /// Local Mac navigation metadata; independent of the document's contents and widgets.
+  public var recentHistoryID: UUID?
+  public var isUnavailable = false
   public init(id: String, source: Source, title: String) {
     self.id = id
     self.source = source
@@ -114,6 +117,11 @@ public struct CatalogClient {
   public var recents: @MainActor () async -> [CatalogEntry]
   /// The recent document at a URL, read again after its artwork changed.
   public var recent: @MainActor (URL) async -> CatalogEntry?
+  public var recentsIssue: @MainActor () -> String? = { nil }
+  public var resolveRecent: @MainActor (CatalogEntry) async throws -> URL = { entry in
+    guard case .recent(let url) = entry.source else { throw CocoaError(.fileNoSuchFile) }
+    return url
+  }
   /// Returns nil when the destination picker is cancelled.
   public var chooseDestination: @MainActor (CatalogEntry) async throws -> URL?
   /// Copies the template to the chosen destination and returns the new document.
@@ -173,6 +181,8 @@ public enum CatalogStorageChoice: Sendable {
       if var entry = synced[path] {
         entry.createdAt = recent.createdAt
         entry.updatedAt = recent.updatedAt
+        entry.recentHistoryID = recent.recentHistoryID
+        entry.isUnavailable = recent.isUnavailable
         return entry
       }
       if let managedFolder {
@@ -184,6 +194,7 @@ public enum CatalogStorageChoice: Sendable {
     }
   }
   public private(set) var localIssues: [String] = []
+  public private(set) var recentsIssue: String?
   /// The template being created, from choosing its destination until its copy finishes.
   public private(set) var creating: CatalogEntry?
   /// True only while the template is copied, never while the save panel is open.
@@ -200,10 +211,12 @@ public enum CatalogStorageChoice: Sendable {
   @ObservationIgnored private var hasSelectedFilter = false
   @ObservationIgnored private var localTask: Task<Void, Never>?
   @ObservationIgnored private var recentsTask: Task<Void, Never>?
+  @ObservationIgnored private var recentsGeneration = 0
   @ObservationIgnored private var refreshTask: Task<Void, Never>?
   @ObservationIgnored let work = TaskSet()
   /// A recent document was chosen.
   @ObservationIgnored var onOpen: @MainActor (URL) -> Void = { _ in }
+  @ObservationIgnored var onOpenFailed: @MainActor (String) -> Void = { _ in }
   /// A creation ended: the new document, or nil when it was cancelled or failed.
   @ObservationIgnored var onCreationEnded: @MainActor (URL?) -> Void = { _ in }
 
@@ -244,12 +257,23 @@ public enum CatalogStorageChoice: Sendable {
 
   /// Lists recent documents again; a listing still in flight is dropped.
   public func refreshRecents() {
+    recentsGeneration += 1
     recentsTask?.cancel()
     recentsTask = work.run {
       let entries = await self.client.recents()
       guard !Task.isCancelled else { return }
       self.recentFiles = entries
+      self.recentsIssue = self.client.recentsIssue()
       self.synchronizeSelection()
+    }
+  }
+
+  public func reloadRecents() async {
+    refreshRecents()
+    while let task = recentsTask {
+      let requested = recentsGeneration
+      await task.value
+      if requested == recentsGeneration { return }
     }
   }
 
@@ -260,7 +284,7 @@ public enum CatalogStorageChoice: Sendable {
     work.run {
       let entry = await self.client.recent(url)
       guard let index = self.recentFiles.firstIndex(where: { $0.source == .recent(url) }) else { return }
-      if let entry { self.recentFiles[index] = entry } else { self.recentFiles.remove(at: index) }
+      if let entry { self.recentFiles[index] = entry } else { self.recentFiles[index].isUnavailable = true }
       self.synchronizeSelection()
     }
   }
@@ -277,7 +301,21 @@ public enum CatalogStorageChoice: Sendable {
   /// chooses. One creation at a time; nothing while quitting.
   public func primaryAction(_ entry: CatalogEntry) {
     guard !isQuitting, creating == nil else { return }
-    if case .recent(let url) = entry.source { return onOpen(url) }
+    if case .recent(let url) = entry.source {
+      guard entry.recentHistoryID != nil else { return onOpen(url) }
+      work.run {
+        do {
+          let resolved = try await self.client.resolveRecent(entry)
+          guard !self.isQuitting else { return }
+          self.onOpen(resolved)
+        } catch {
+          guard !self.isQuitting else { return }
+          self.onOpenFailed(error.localizedDescription)
+          self.refreshRecents()
+        }
+      }
+      return
+    }
     creating = entry
     work.run { await self.create(entry) }
   }

@@ -54,7 +54,7 @@ struct PhoneRootView: View {
         }
       }
     }
-    .tint(PhoneStyle.accent)
+    .tint(PopBrand.accent)
     .fileImporter(isPresented: $model.showImporter, allowedContentTypes: [UTType(filenameExtension: "pop") ?? .data]) {
       result in
       switch result {
@@ -116,7 +116,7 @@ struct PhoneRootView: View {
               .toolbar { Button("Done") { showSharingAccount = false } }
           }
         }
-      }.tint(PhoneStyle.accent)
+      }.tint(PopBrand.accent)
     }
     .sheet(isPresented: Binding(get: { model.exported != nil }, set: { if !$0 { model.finishExport() } })) {
       if let exported = model.exported {

@@ -665,6 +665,19 @@ Swift carries file paths and opaque version tokens, never Loro bytes. Both catal
 sync progress, errors and last success; a clean row says synced only after a successful
 check since foregrounding. Unified logs use subsystem `click.dotpop.library` without content.
 Ordinary Mac files retain their existing path.
+On Mac, Recents and File → Open Recent share a local history of successfully opened
+documents. Native Swift metadata lives in an atomically replaced versioned JSON file
+under Application Support's pop/Recents folder, with separate Debug and Release files.
+It contains bookmarks, entry IDs, last known locations and opening times, never document
+contents. Release seeds it once from compatible .pop entries in macOS Recents; Debug
+starts independently. Later system-list changes cannot replace it. Entries have no count
+or age limit. Bookmarks follow renames and moves; unreachable files stay visible as
+Unavailable and can be retried. Active-library account filtering still applies. Explicit
+Clear Menu clears both histories and persists an empty initialized list. Storage failures
+retain previous saved metadata and pending in-memory openings, with a catalog warning
+and Retry; they never fail a document open. Widgets retain their independent cache and
+document references.
+
 On iPhone, Recents interleaves local and library documents by their latest opening or
 file change. Opening times are device preferences, never edits to a document. Swipe
 actions distinguish **Delete Everywhere** from **Remove Download** for iCloud documents;

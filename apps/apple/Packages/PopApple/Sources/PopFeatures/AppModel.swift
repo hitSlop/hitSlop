@@ -75,6 +75,7 @@ public struct AppClient {
     self.catalog = catalog
     self.makeID = makeID
     catalog.onOpen = { [weak self] url in self?.open(url) }
+    catalog.onOpenFailed = { [weak self] message in self?.client.alert(.failure(message), nil) }
     catalog.onCreationEnded = { [weak self] url in self?.creationEnded(url) }
   }
 

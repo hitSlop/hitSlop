@@ -72,7 +72,8 @@ test.if(!!app)("an acknowledged edit survives the death of the host that acknowl
   // The real host owns a WebView and socket; acknowledge through the CLI, then kill it.
   // Release hosts ignore POP_TEST_REGISTRY. Keep the app and every probe in the
   // account registry, just as installed-app acceptance does, even under `verify`.
-  const env = { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin" };
+  const env = { HOME: process.env.HOME, TMPDIR: process.env.TMPDIR, PATH: "/usr/bin:/bin",
+    POP_TEST_RECENTS_FILE: join(folder, "recents.json") };
   const placement = { engine: documentEngine, env };
   const root = await documentFromStage(fixture, join(folder, "Host.pop"), placement);
   await mkdir(".pop/evidence", { recursive: true });

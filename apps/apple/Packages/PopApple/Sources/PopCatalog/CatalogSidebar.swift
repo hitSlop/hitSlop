@@ -11,11 +11,13 @@ struct CatalogSidebar: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 10) {
-        PopBrandMark(size: 30)
-        Text("dotpop").font(PopBrand.heading(22, relativeTo: .title3))
+      HStack(alignment: .lastTextBaseline, spacing: 1) {
+        Circle().fill(PopBrand.accent).frame(width: 9, height: 9)
+        Text("pop").font(PopBrand.heading(30, relativeTo: .title))
       }
-      .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 18)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("dotpop")
+      .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 18)
 
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
@@ -37,6 +39,7 @@ struct CatalogSidebar: View {
         }
         .padding(.horizontal, 10).padding(.bottom, 18)
       }
+      .frame(minHeight: 0, maxHeight: .infinity)
 
       AuthoringLink()
         .padding(.horizontal, 12).padding(.bottom, 12)
@@ -61,24 +64,39 @@ private struct AuthoringLink: View {
 
   var body: some View {
     Link(destination: PopLinks.authoring) {
-      HStack(alignment: .top, spacing: 8) {
-        Text("Learn how to make your own pop")
-          .font(.callout.weight(.medium))
-          .multilineTextAlignment(.leading)
-          .fixedSize(horizontal: false, vertical: true)
-          .frame(maxWidth: .infinity, alignment: .leading)
+      HStack(alignment: .top, spacing: 10) {
+        Image(systemName: "sparkles")
+          .font(.system(size: 16, weight: .semibold))
+          .foregroundStyle(PopBrand.accent)
+          .padding(.top, 1)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Your idea. A little app.")
+            .font(PopBrand.heading(14, relativeTo: .callout))
+            .foregroundStyle(.primary)
+          Text("Learn how to make your own pop")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
         Image(systemName: "arrow.up.right")
           .font(.caption.weight(.semibold))
+          .foregroundStyle(isHovering ? PopBrand.accentHover : PopBrand.accent)
           .padding(.top, 2)
           .accessibilityHidden(true)
       }
-      .foregroundStyle(isHovering ? CatalogStyle.brandHover : CatalogStyle.brand)
       .padding(12)
       .background(
-        CatalogStyle.brand.opacity(isHovering ? 0.14 : 0.08),
-        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        PopBrand.accent.opacity(isHovering ? 0.12 : 0.07),
+        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
       )
-      .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+          .strokeBorder(CatalogStyle.selectionStroke.opacity(0.6))
+      )
+      .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
     .buttonStyle(.plain)
     .onHover { isHovering = $0 }
@@ -169,7 +187,7 @@ private struct SidebarButton: View {
           switch icon {
           case .symbol(let name):
             Image(systemName: name).font(.system(size: 14, weight: .medium))
-              .foregroundStyle(selected ? CatalogStyle.brand : .secondary)
+              .foregroundStyle(selected ? PopBrand.accent : .secondary)
           case .emoji(let emoji):
             Text(emoji).font(.system(size: 14))
           }
@@ -185,7 +203,7 @@ private struct SidebarButton: View {
       .padding(.horizontal, 10).frame(height: 32)
       .background(
         selected ? CatalogStyle.selection : isHovering ? CatalogStyle.hover : .clear,
-        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
       )
       .contentShape(Rectangle())
     }
