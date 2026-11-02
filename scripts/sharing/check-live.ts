@@ -12,6 +12,7 @@ import { buildTemplate } from "../../packages/pop/src/cli/template";
 import { execute } from "../../packages/pop/src/cli/engine";
 import { repository } from "../lib/artifacts";
 import { SharingHost } from "../../packages/pop/src/wire/constants.generated";
+import { sharingFailureMessage } from "./report";
 import type { Batch } from "../../packages/pop/src/wire/core.generated";
 
 const root=join(repository,".pop/sharing",`check-${crypto.randomUUID()}`);
@@ -193,7 +194,7 @@ try {
   await writeFile(report,JSON.stringify({passed:true,checks,document:ready.document,copy,chrome:restored.browser()?.version()},null,2));
   console.log("Sharing checks passed; report: "+report);
 } catch(error) {
-  const message=String(error).replace(/https:\/\/share\.pop\.com\/join#[a-f0-9]+\.[a-f0-9]+/g,"[private invitation]");
+  const message=sharingFailureMessage(error);
   await writeFile(report,JSON.stringify({passed:false,checks,error:message},null,2));
   console.error(message);process.exitCode=1;
 } finally {
