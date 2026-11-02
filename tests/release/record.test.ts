@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { sha256 } from "../../scripts/lib/artifacts";
 import { stableTag } from "../../scripts/lib/release-assets";
-import { advancesBuild, appcastBuild, assertQualified, validateApproval, validateCandidate, validatePublication, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "../../scripts/release/record";
+import { advancesBuild, appcastBuild, assertQualified, legacyAppcast, validateApproval, validateCandidate, validatePublication, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "../../scripts/release/record";
 
 test("pop release tags do not include the preserved hitSlop lineage", () => {
   expect(stableTag.test("pop-v1.0.0")).toBe(true);
@@ -18,21 +18,36 @@ test("resumed candidates require their original identity and complete, unchanged
   const folder = await mkdtemp(join(tmpdir(), "pop-release-record-"));
   const saved: ReleaseRecord = { tag: "pop-v7.2.0", macVersion: "7.2.0", macBuild: "42", commit: "c".repeat(40), run: "123", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", corpus: { file: "compat-corpus-7.2.0.tar.gz", sha256: sha256(Buffer.from("compat-corpus-7.2.0.tar.gz")) }, qualified: {}, artifacts: {} };
   try {
-    for (const name of ["compat-corpus-7.2.0.tar.gz", "hitslop-pop-7.2.0.tgz", "dotpop.dmg", "dotpop.zip", "appcast.xml", "dotpop-7.2.0.md", "release-notes.md"]) {
-      await writeFile(join(folder, name), name);
-      saved.artifacts[name] = sha256(Buffer.from(name));
+    const feeds = {
+      "dotpop-appcast.xml": '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item><enclosure sparkle:version="42"/></item></channel></rss>',
+      "appcast.xml": legacyAppcast,
+    };
+    for (const name of ["compat-corpus-7.2.0.tar.gz", "hitslop-pop-7.2.0.tgz", "dotpop.dmg", "dotpop.zip", ...Object.keys(feeds), "dotpop-7.2.0.md", "release-notes.md"]) {
+      const bytes = feeds[name as keyof typeof feeds] ?? name;
+      await writeFile(join(folder, name), bytes);
+      saved.artifacts[name] = sha256(Buffer.from(bytes));
     }
     validateRecord(saved, saved.tag, saved.commit);
     await verifyArtifacts(saved, folder);
     expect(() => validateRecord(saved, saved.tag, "d".repeat(40))).toThrow("different tag or commit");
     expect(() => validateRecord({ ...saved, artifacts: {} }, saved.tag, saved.commit)).toThrow("missing");
-    for (const name of ["dotpop-7.2.0.md", "release-notes.md"]) {
+    for (const name of ["dotpop-appcast.xml", "appcast.xml", "dotpop-7.2.0.md", "release-notes.md"]) {
       const artifacts = { ...saved.artifacts };
       delete artifacts[name];
       expect(() => validateRecord({ ...saved, artifacts }, saved.tag, saved.commit)).toThrow(`missing ${name}`);
       await writeFile(join(folder, name), "regenerated notes");
       await expect(verifyArtifacts(saved, folder)).rejects.toThrow(`Artifact differs from release record: ${name}`);
-      await writeFile(join(folder, name), name);
+      await writeFile(join(folder, name), feeds[name as keyof typeof feeds] ?? name);
+    }
+    for (const [name, bytes, error] of [
+      ["appcast.xml", feeds["dotpop-appcast.xml"], "Legacy appcast must remain empty"],
+      ["dotpop-appcast.xml", feeds["appcast.xml"], "no Mac build"],
+      ["dotpop-appcast.xml", feeds["dotpop-appcast.xml"].replace('"42"', '"41"'), "Appcast build differs"],
+    ] as const) {
+      await writeFile(join(folder, name), bytes);
+      const artifacts = { ...saved.artifacts, [name]: sha256(Buffer.from(bytes)) };
+      await expect(verifyArtifacts({ ...saved, artifacts }, folder)).rejects.toThrow(error);
+      await writeFile(join(folder, name), feeds[name]);
     }
     expect(() => validateRecord({ ...saved, artifacts: { ...saved.artifacts, "../outside": "a".repeat(64) } }, saved.tag, saved.commit)).toThrow("Invalid artifact");
     await writeFile(join(folder, "dotpop.dmg"), "rebuilt");

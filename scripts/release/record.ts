@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { fileDigest } from "../lib/artifacts";
 import { releaseNotesNames } from "./notes";
 
@@ -22,7 +23,7 @@ export function validateRecord(record: ReleaseRecord, tag: string, commit: strin
     if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name) || !/^[a-f0-9]{64}$/.test(hash))
       throw new Error("Invalid artifact record");
   }
-  for (const name of [`hitslop-pop-${record.macVersion}.tgz`, "dotpop.dmg", "dotpop.zip", "appcast.xml", `compat-corpus-${record.macVersion}.tar.gz`, ...Object.values(releaseNotesNames(record.macVersion))])
+  for (const name of [`hitslop-pop-${record.macVersion}.tgz`, "dotpop.dmg", "dotpop.zip", "dotpop-appcast.xml", "appcast.xml", `compat-corpus-${record.macVersion}.tar.gz`, ...Object.values(releaseNotesNames(record.macVersion))])
     if (!record.artifacts[name]) throw new Error(`Release record is missing ${name}`);
   if (record.corpus?.file !== `compat-corpus-${record.macVersion}.tar.gz` || record.artifacts[record.corpus.file] !== record.corpus.sha256)
     throw new Error("Invalid corpus record");
@@ -60,6 +61,28 @@ export function validatePublication(record: ReleaseRecord, state: {
 export async function verifyArtifacts(record: ReleaseRecord, directory: string) {
   for (const [name, hash] of Object.entries(record.artifacts))
     if (await fileDigest(join(directory, name)) !== hash) throw new Error(`Artifact differs from release record: ${name}`);
+  await verifyAppcasts(directory, record.macBuild);
+}
+
+// The old app follows the repository redirect and still requests appcast.xml.
+// Every dotpop release must retain this exact empty feed, including future releases.
+export const legacyAppcast = `<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+  <channel>
+    <title>hitSlop updates retired</title>
+    <link>https://dotpop.click</link>
+    <description>No updates are available for hitSlop.</description>
+  </channel>
+</rss>
+`;
+
+export async function verifyAppcasts(directory: string, build: string) {
+  const [current, legacy] = await Promise.all([
+    readFile(join(directory, "dotpop-appcast.xml"), "utf8"),
+    readFile(join(directory, "appcast.xml"), "utf8"),
+  ]);
+  if (legacy !== legacyAppcast) throw new Error("Legacy appcast must remain empty");
+  if (appcastBuild(current) !== build) throw new Error("Appcast build differs from the release record");
 }
 
 export function advancesBuild(candidate: string, previous: string) {
@@ -67,7 +90,7 @@ export function advancesBuild(candidate: string, previous: string) {
   return BigInt(candidate) > BigInt(previous);
 }
 
-/** The prelaunch Mac releases have appcasts but no unified release record. */
+/** Read the highest Mac build offered by an update feed. */
 export function appcastBuild(xml: string) {
   const versions = [...xml.matchAll(/<sparkle:version>\s*(\d+)\s*<\/sparkle:version>|sparkle:version="(\d+)"/g)]
     .map(match => BigInt(match[1] ?? match[2]!));

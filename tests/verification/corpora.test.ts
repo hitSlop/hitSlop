@@ -42,7 +42,7 @@ async function fixture(root: string, version = "1.0.0", id = 1) {
   await run(["tar", "--format=ustar", "-czf", archive, "-C", directory, "."], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
   const bytes = await readFile(archive);
   const artifacts: Record<string, string> = {};
-  for (const name of [`hitslop-pop-${version}.tgz`, "dotpop.dmg", "dotpop.zip", "appcast.xml", `dotpop-${version}.md`, "release-notes.md"]) artifacts[name] = "a".repeat(64);
+  for (const name of [`hitslop-pop-${version}.tgz`, "dotpop.dmg", "dotpop.zip", "dotpop-appcast.xml", "appcast.xml", `dotpop-${version}.md`, "release-notes.md"]) artifacts[name] = "a".repeat(64);
   artifacts[`compat-corpus-${version}.tar.gz`] = sha256(bytes);
   const entry: HistoricalRelease = { release: { id, tag_name: `pop-v${version}`, draft: false, prerelease: false, immutable: true,
     assets: [{ id, name: "release-record.json" }, { id: id + 1, name: `compat-corpus-${version}.tar.gz` }, { id: id + 2, name: `hitslop-pop-${version}.tgz` }] },

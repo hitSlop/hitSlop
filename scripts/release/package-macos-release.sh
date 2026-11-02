@@ -314,7 +314,7 @@ if [ -n "$sparkle_private" ]; then
     --ed-key-file "$sparkle_private" \
     --download-url-prefix "$feed_prefix" \
     --release-notes-url-prefix "$feed_prefix" \
-    -o "$output_dir/appcast.xml" \
+    -o "$output_dir/dotpop-appcast.xml" \
     "$appcast_dir"
 else
   echo "No Sparkle private key; writing unsigned appcast placeholder skipped." >&2
@@ -324,18 +324,22 @@ fi
 
 # Retain the exact file processed by Sparkle (including any signing metadata).
 /bin/cp "$appcast_dir/${versioned}.md" "$output_dir/${versioned}.md"
-notes_url=$(/usr/bin/xmllint --xpath 'string(/rss/channel/item/*[local-name()="releaseNotesLink"])' "$output_dir/appcast.xml")
+notes_url=$(/usr/bin/xmllint --xpath 'string(/rss/channel/item/*[local-name()="releaseNotesLink"])' "$output_dir/dotpop-appcast.xml")
 if [ "$notes_url" != "${feed_prefix}${versioned}.md" ]; then
   echo "Appcast release notes URL differs from the versioned Markdown asset: $notes_url" >&2
   exit 65
 fi
 
+bun "$script_dir/appcast.ts" "$output_dir" "$build_version"
+/usr/bin/xmllint --noout "$output_dir/appcast.xml" "$output_dir/dotpop-appcast.xml"
+
 (
   cd "$output_dir"
-  /usr/bin/shasum -a 256 "${versioned}.dmg" "${versioned}.zip" dotpop.dmg dotpop.zip appcast.xml "${versioned}.md" release-notes.md > SHA256SUMS
+  /usr/bin/shasum -a 256 "${versioned}.dmg" "${versioned}.zip" dotpop.dmg dotpop.zip dotpop-appcast.xml appcast.xml "${versioned}.md" release-notes.md > SHA256SUMS
 )
 
 echo "Packaged $marketing_version ($build_version)"
 echo "  $dmg"
 echo "  $app_zip"
 echo "  $output_dir/appcast.xml"
+echo "  $output_dir/dotpop-appcast.xml"

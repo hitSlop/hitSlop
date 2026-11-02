@@ -10,7 +10,7 @@ import { verifyCorpus } from "../compat/integrity";
 import { verifyPackedWriter } from "../compat/writers";
 import { enginePlatforms } from "../build/core";
 import { projectVersion } from "./preflight";
-import { validateRecord, type ReleaseRecord } from "./record";
+import { validateRecord, verifyArtifacts, type ReleaseRecord } from "./record";
 import { exec, run } from "../../packages/pop/src/cli/process";
 
 const { version, build, tag } = await projectVersion();
@@ -55,6 +55,7 @@ const record: ReleaseRecord = { commit, run: process.env.GITHUB_RUN_ID!, attempt
   npmIntegrity: "sha512-" + createHash("sha512").update(await readFile(cliPackage)).digest("base64"),
   corpus: { file: corpusFile, sha256: hashes[corpusFile]! }, qualified: receipt.inventory, artifacts: hashes };
 validateRecord(record, tag, commit);
+await verifyArtifacts(record, output);
 await writeFile(join(output, "release-record.json"), JSON.stringify(record, null, 2) + "\n");
 if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `record-sha=${await fileDigest(join(output, "release-record.json"))}\n`);
 hashes["release-record.json"] = await fileDigest(join(output, "release-record.json"));

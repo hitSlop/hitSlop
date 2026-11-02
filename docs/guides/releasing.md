@@ -32,7 +32,7 @@ and version changes to master. Never release an older line with a higher Sparkle
 
 ## Frozen compatibility evidence
 
-Each immutable GitHub release contains `compat-corpus-X.Y.Z.tar.gz`, its exact npm
+Each immutable dotpop GitHub release contains `compat-corpus-X.Y.Z.tar.gz`, its exact npm
 writer tarball, `release-record.json`, and `SHA256SUMS`. The record binds source commit,
 workflow run/attempt, all artifact hashes and `qualified` (every prior corpus version
 and SHA-256 actually replayed). Frozen evidence is never imported into Git, edited,
@@ -83,13 +83,14 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-dotpop starts a separate release lineage in the original repository, renamed to `hitSlop/dotpop`. Release tags use `pop-vX.Y.Z`; legacy `vX.Y.Z` tags and assets remain unchanged and are excluded from pop discovery. Before its first publication,
+dotpop starts a separate release lineage in the original repository, renamed to `hitSlop/dotpop`. Release tags use `pop-vX.Y.Z`; legacy `vX.Y.Z` tags remain unchanged and are excluded from pop discovery. Legacy public releases may be retired only through the verified offline archival procedure in [the launch checklist](pop-transition.md); their original assets and attestations stay immutable in that archive. Before its first publication,
 ordinary development permits empty history; release qualification still requires a frozen
 candidate corpus. After publishing pop-v1.0.0, permanently pin its `corpus.sha256` from the
 retained release record in `scripts/compat/pop-required-history.json` before another
 release. Missing or changed published history must then fail on a cold machine.
-The original hitSlop pin in `scripts/compat/required-history.json` and its release assets
-remain immutable historical evidence. They are not pop acceptance inputs.
+The original hitSlop pin in `scripts/compat/required-history.json` and its archived release assets
+remain immutable historical evidence. They are not pop acceptance inputs. This one-time
+public retirement does not permit deleting any published dotpop corpus or release.
 
 ## Publication and recovery
 
@@ -208,16 +209,21 @@ steps such as rate-limit bindings and R2 lifecycle rules.
   permissions. The workflow uses npm 11.21.0. Configure a new publisher close to release
   because its first publish must occur within two days. See
   [npm trusted publishing](https://docs.npmjs.com/trusted-publishers/).
-- Confirm ownership of `pop`. If npm requires a bootstrap package before configuring
-  trust, separately approve a metadata-only `0.0.0-bootstrap.0` under `bootstrap`.
+- Confirm ownership of `@hitslop/pop`. If npm requires a bootstrap package before configuring
+  trust, publish the launch-approved metadata-only `0.0.0-bootstrap.0` under `bootstrap`.
   It contains no executable/runtime and creates no supported document format.
 - Confirm Apple signing/notarization and Sparkle credentials, and Cloudflare credentials
   for the independent website workflow. Keep the dSYM
   upload phase. Only after the first release is verified should superseded packages
-  be deprecated in favor of `pop`.
+  be deprecated in favor of `@hitslop/pop`.
 
 After publication, verify npm integrity/dist-tags, all GitHub assets and immutable
-status, the Sparkle appcast, and a cold-cache corpus replay. Complete the local backup
+status, both Sparkle feeds, and a cold-cache corpus replay. `dotpop-appcast.xml` offers
+the accepted dotpop build. The separate legacy `appcast.xml` must remain valid RSS
+with no update items on every release; existing hitSlop installations follow the
+repository redirect to that filename. Never put a dotpop update in the legacy feed.
+The candidate record and checksums bind both files, and publication checks their contents.
+Complete the local backup
 below and confirm a Time Machine backup includes it. Check website health separately. Make
 `native-rust` required alongside the existing required checks. Retire `release/1.0`
 after its fixes are merged; new hotfix branches are temporary and may be deleted.
@@ -326,7 +332,7 @@ candidate DMG; do not substitute a local rebuild.
 
 Keep a personal library under the ignored `release-sanity/` directory in this checkout.
 After each public release, create about ten varied mini apps with that exact published
-`pop@X.Y.Z` package, then use the matching released Mac app to fill, save and close
+`@hitslop/pop@X.Y.Z` package, then use the matching released Mac app to fill, save and close
 their documents. Pin the SDK dependency too; a versioned CLI alone does not pin the
 app's SDK. Keep these projects outside the repository's npm workspace resolution and
 confirm they use the installed release, not a workspace link or engine override.

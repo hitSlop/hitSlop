@@ -53,6 +53,7 @@ try {
   // which read the file with the same core.
   const plist = async (path: string) => JSON.parse(await installed(["-convert", "json", "-o", "-", path], "/usr/bin/plutil"));
   const info = await plist(join(app, "Contents/Info.plist"));
+  assert.equal(info.SUFeedURL, "https://github.com/hitSlop/dotpop/releases/latest/download/dotpop-appcast.xml", "The app must use the dotpop update feed");
   await verifyArtifactCapabilities(info, app, unsigned);
   const type = info.UTExportedTypeDeclarations?.find((t: { UTTypeIdentifier: string }) => t.UTTypeIdentifier === "click.dotpop.document");
   assert.ok(type?.UTTypeConformsTo?.includes("public.data"), "The .pop type must be a plain data file");
