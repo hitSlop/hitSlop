@@ -8,12 +8,13 @@ import {
   placeSticker as place, podView, removeVideo as removeRow, round, selectVideo, setVolume, shuffleAll,
   sizeSticker as size, turnSticker as turn, type StickerKind, type Video,
 } from "./pod";
-import { getDocument } from "@hitslop/pop/svelte";
+import { attachments, getDocument, getEnvironment, haptics } from "@hitslop/pop/svelte";
+import { refuse } from "@hitslop/pop";
 import { LookupError, youtube, type YouTubeHandlers, type YouTubePlayer } from "@hitslop/pop/embed";
 
 export type ScreenId =
   | "menu" | "coverflow" | "videos" | "add" | "playing"
-  | "settings" | "stickers" | "stickerPack" | "remove";
+  | "settings" | "customize" | "stickers" | "stickerPack" | "remove" | "games" | "breakout";
 export type Entry = { id: ScreenId; cursor: number };
 export type Notice = { text: string; tone: "info" | "ok" | "error" };
 export type Playback = {
@@ -22,7 +23,7 @@ export type Playback = {
   /** The embed has answered at least once. */
   ready: boolean;
   /** Controls for the mounted embed, if any. */
-  controller: YouTubePlayer | null;
+  controller: PlaybackController | null;
   /** -1 unstarted, 0 ended, 1 playing, 2 paused, 3 buffering, 5 cued. */
   state: number;
   time: number;
@@ -30,8 +31,9 @@ export type Playback = {
   /** A YouTube error code, or -1 when the player never answered. */
   error: number | null;
 };
+export type PlaybackController = Pick<YouTubePlayer, "play" | "pause" | "seek" | "setVolume">;
 
-export const menuItems = ["Now Playing", "Cover Flow", "Videos", "Add Video", "Shuffle", "Stickers", "Settings"] as const;
+export const menuItems = ["Now Playing", "Cover Flow", "Songs", "Add Music", "Shuffle", "Customize", "Games", "Settings"] as const;
 export const settingsItems = ["Clicker", "Repeat", "Shuffle", "Name"] as const;
 export const stickerItems = ["Add Sticker", "Remove Last", "Clear All"] as const;
 
@@ -45,6 +47,8 @@ const random = () => Math.random();
 // App calls this while it initializes, when getDocument can reach the mounted document.
 export function createPod() {
   const doc = getDocument(schema);
+  const environment = getEnvironment();
+  const systemVolume = $derived(environment.current.platform === "ios");
   const ui = $state({
     stack: [{ id: "menu", cursor: 0 }] as Entry[],
     held: false,
@@ -70,21 +74,25 @@ export function createPod() {
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
   let volumeTimer: ReturnType<typeof setTimeout> | undefined;
   let volumeHideTimer: ReturnType<typeof setTimeout> | undefined;
+  let game: ((intent: Intent) => void) | null = null;
+  function attachGame(handler: ((intent: Intent) => void) | null) { game = handler; }
 
   function flash(text: string, tone: Notice["tone"] = "info"): void {
     ui.notice = { text, tone };
     clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => { ui.notice = null; }, 2800);
   }
-  const tick = () => { if (doc.current.clicker) click(); };
+  const tick = () => { if (doc.current.clicker) click(); haptics.selection(); };
 
   function push(id: ScreenId, cursor = 0): void {
+    if (top.id === "breakout") game?.({ type: "menu" });
     ui.stack.push({ id, cursor });
     ui.scrub = false;
     ui.renaming = false;
   }
   function pop(): void {
     if (ui.stack.length < 2) return;
+    if (top.id === "breakout") game?.({ type: "menu" });
     const left = ui.stack.pop()!;
     ui.scrub = false;
     ui.renaming = false;
@@ -106,6 +114,11 @@ export function createPod() {
   }
 
   async function play(video: Video): Promise<void> {
+    if (playback.started && current?.$id === video.$id && playback.controller) {
+      playback.controller.seek(0);
+      playback.controller.play();
+      return;
+    }
     startPlayback();
     if (doc.current.nowPlayingId !== video.$id) await doc.change((tx) => selectVideo(tx, doc.current, video.$id));
   }
@@ -115,7 +128,7 @@ export function createPod() {
   }
 
   function playPause(): void {
-    if (!current) { flash("Paste a YouTube link to add a video."); return; }
+    if (!current) { flash("Add local songs or a YouTube link first."); return; }
     const controller = playback.controller;
     if (!playback.started || !controller) { void play(current); return; }
     if (playback.state === 1 || playback.state === 3) controller.pause();
@@ -144,17 +157,21 @@ export function createPod() {
   }
 
   function nudgeVolume(delta: number): void {
+    ui.volumeVisible = true;
+    clearTimeout(volumeHideTimer);
+    volumeHideTimer = setTimeout(() => { ui.volumeVisible = false; }, systemVolume ? 3200 : 1600);
+    // iOS owns media volume. Do not change a stored level or show a working
+    // meter for an adjustment its media player will silently ignore.
+    if (systemVolume) return;
     const level = round(clamp((ui.volume ?? doc.current.volume) + delta, 0, 1), 2);
     ui.volume = level;
-    ui.volumeVisible = true;
+    doc.fields.volume.preview(level);
     playback.controller?.setVolume(level);
     clearTimeout(volumeTimer);
     volumeTimer = setTimeout(() => {
       ui.volume = null;
       void doc.change((tx) => setVolume(tx, level));
     }, 400);
-    clearTimeout(volumeHideTimer);
-    volumeHideTimer = setTimeout(() => { ui.volumeVisible = false; }, 1600);
   }
 
   async function ended(): Promise<void> {
@@ -171,7 +188,8 @@ export function createPod() {
   const handlers: YouTubeHandlers = {
     onReady() {
       playback.ready = true;
-      playback.controller?.setVolume(doc.current.volume);
+      if (playback.error === -1) playback.error = null;
+      if (!systemVolume) playback.controller?.setVolume(doc.current.volume);
     },
     onState(state) {
       playback.state = state;
@@ -184,7 +202,7 @@ export function createPod() {
     onEnded: () => { void ended(); },
     onError(code) { playback.error = code; },
   };
-  function attach(controller: YouTubePlayer | null): void {
+  function attach(controller: PlaybackController | null): void {
     playback.controller = controller;
   }
 
@@ -222,6 +240,34 @@ export function createPod() {
     const text = ui.addText.trim();
     if (!text) { flash("Paste a YouTube link first."); return; }
     if (await addFromText(text)) ui.addText = "";
+  }
+
+  async function importSongs(files: File[]): Promise<void> {
+    if (ui.busy || !files.length) return;
+    ui.busy = true;
+    let added = 0;
+    let skipped = 0;
+    try {
+      for (const file of files) {
+        if (!file.size || file.size > 10 * 1024 * 1024 ||
+          !(/\.(mp3|m4a|wav|flac|ogg|opus)$/i.test(file.name) || file.type.startsWith("audio/"))) {
+          skipped++;
+          continue;
+        }
+        const name = file.name.replace(/\.[^.]+$/, "");
+        const parts = name.split(" - ");
+        const author = parts.length > 1 ? parts.shift()! : "Local audio";
+        const title = parts.join(" - ") || name;
+        await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
+          if (!ref.mimeType.startsWith("audio/")) refuse(`“${file.name}” is not a supported audio file.`);
+          const { id } = tx.fields.videos.insert({ title: Array.from(title).slice(0, 200).join(""), author: Array.from(author).slice(0, 120).join(""), audio: { id: ref.id, name: ref.name, mimeType: ref.mimeType } });
+          if (!doc.current.videos.length) tx.fields.nowPlayingId.set(id);
+        });
+        added++;
+      }
+      flash(`${added} ${added === 1 ? "song" : "songs"} added.${skipped ? ` ${skipped} skipped; use audio files up to 10 MB each.` : ""}`, added ? "ok" : "error");
+      if (added) haptics.notification("success");
+    } finally { ui.busy = false; }
   }
 
   async function removeVideo(id: string): Promise<void> {
@@ -280,6 +326,7 @@ export function createPod() {
       case "settings": if (ui.renaming) return; next = within(settingsItems.length - 1); break;
       case "stickers": next = within(stickerItems.length - 1); break;
       case "stickerPack": next = within(stickerKinds.length - 1); break;
+      case "games": return;
       case "playing":
         if (ui.scrub) seekBy(delta * SEEK_PER_DETENT);
         else nudgeVolume(delta * VOLUME_PER_DETENT);
@@ -291,7 +338,7 @@ export function createPod() {
   }
 
   async function shuffleAndPlay(): Promise<void> {
-    if (!videos.length) { flash("Add a video first."); return; }
+    if (!videos.length) { flash("Add a song first."); return; }
     startPlayback();
     push("playing");
     await doc.change((tx) => shuffleAll(tx, doc.current, random));
@@ -300,7 +347,7 @@ export function createPod() {
   function selectMenu(index: number): void {
     switch (index) {
       case 0:
-        if (!current) { flash("Paste a YouTube link to add a video."); push("add"); return; }
+        if (!current) { flash("Add local songs or a YouTube link first."); push("add"); return; }
         if (!playback.started) void play(current);
         push("playing");
         return;
@@ -308,8 +355,9 @@ export function createPod() {
       case 2: push("videos", view.currentIndex); return;
       case 3: push("add"); return;
       case 4: void shuffleAndPlay(); return;
-      case 5: push("stickers"); return;
-      case 6: push("settings"); return;
+      case 5: push("customize"); return;
+      case 6: push("games"); return;
+      case 7: push("settings"); return;
     }
   }
 
@@ -332,10 +380,11 @@ export function createPod() {
         return;
       }
       case "playing":
-        if (playback.started) ui.scrub = !ui.scrub;
+        if (playback.started) { ui.scrub = !ui.scrub; ui.volumeVisible = false; }
         else playPause();
         return;
       case "add": void submitAdd(); return;
+      case "games": push("breakout"); return;
       case "settings": selectSetting(top.cursor); return;
       case "stickers":
         if (top.cursor === 0) push("stickerPack");
@@ -370,6 +419,10 @@ export function createPod() {
 
   function dispatch(intent: Intent): void {
     if (ui.held) return;
+    if (top.id === "breakout" && ["scroll", "prev", "next", "select", "hold-select", "seek"].includes(intent.type)) {
+      game?.(intent);
+      return;
+    }
     switch (intent.type) {
       case "scroll": scroll(intent.delta); break;
       case "select": select(); break;
@@ -389,12 +442,13 @@ export function createPod() {
   }
 
   return {
-    ui, playback, dispatch, dispose, flash, setCursor, addFromText,
-    handlers, attach, addSticker, peelSticker, placeSticker, turnSticker, sizeSticker,
+    ui, playback, dispatch, dispose, flash, setCursor, addFromText, submitAdd, importSongs, push,
+    handlers, attach, attachGame, addSticker, peelSticker, placeSticker, turnSticker, sizeSticker,
     get videos() { return videos; },
     get current() { return current; },
     get top() { return top; },
     get menuTitle() { return view.menuTitle; },
+    get systemVolume() { return systemVolume; },
   };
 }
 

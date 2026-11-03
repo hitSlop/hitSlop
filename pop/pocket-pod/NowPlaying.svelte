@@ -1,20 +1,23 @@
 <script lang="ts">
 import Player from "./Player.svelte";
+import LocalPlayer from "./LocalPlayer.svelte";
+import TrackArt from "./TrackArt.svelte";
+import { Button } from "bits-ui";
 import TitleBar from "./TitleBar.svelte";
-import type { YouTubeHandlers, YouTubePlayer } from "@hitslop/pop/embed";
-import { thumbnail } from "@hitslop/pop/youtube";
-import type { Playback } from "./controller.svelte";
+import type { YouTubeHandlers } from "@hitslop/pop/embed";
+import type { Playback, PlaybackController } from "./controller.svelte";
 import type { Video } from "./pod";
 
-let { video, playback, scrub, volume, volumeVisible, held, handlers, onattach }: {
+let { video, playback, scrub, volume, volumeVisible, systemVolume, held, handlers, onattach }: {
   video: Video | undefined;
   playback: Playback;
   scrub: boolean;
   volume: number;
   volumeVisible: boolean;
+  systemVolume: boolean;
   held: boolean;
   handlers: YouTubeHandlers;
-  onattach: (controller: YouTubePlayer | null) => void;
+  onattach: (controller: PlaybackController | null) => void;
 } = $props();
 
 const clock = (seconds: number) => {
@@ -29,7 +32,8 @@ const clock = (seconds: number) => {
 const waiting = $derived(playback.ready && playback.error === null && (playback.state === -1 || playback.state === 5));
 const progress = $derived(playback.duration ? Math.min(1, playback.time / playback.duration) : 0);
 const failure = (code: number) =>
-  code === -1 ? "Can’t reach the player. Check your connection."
+  code === -2 ? "This audio format won’t play on this device. Try MP3 or M4A."
+    : code === -1 ? "Can’t reach the player. Check your connection."
     : code === 100 ? "That video is no longer available."
     : code === 101 || code === 150 ? "The owner doesn’t allow this video to play here."
     : "This video won’t play here. Try the next one.";
@@ -52,24 +56,37 @@ const status = $derived.by(() => {
     {held}
   />
   <div class="pod-video">
-    {#if video}<img class="pod-poster" src={thumbnail(video.youtubeId)} alt="" draggable="false" />{/if}
+    {#if video}<TrackArt class="pod-poster" {video} />{/if}
     {#if playback.started && video}
-      {#key video.youtubeId}
-        <Player youtubeId={video.youtubeId} {handlers} {onattach} {waiting} />
+      {#key video.$id}
+        {#if video.audio}
+          <LocalPlayer id={video.audio.id} {handlers} {onattach} />
+        {:else}
+          <Player youtubeId={video.youtubeId} {handlers} {onattach} {waiting} />
+        {/if}
       {/key}
     {/if}
-    {#if !video}
-      <p class="pod-empty pod-empty-dark">No videos yet.<br />Paste a YouTube link to add one.</p>
-    {:else if status && !volumeVisible}
-      <p class="pod-video-status" role="status">{status}</p>
+    {#if video?.audio && playback.started && playback.ready && playback.state === 2}
+      <Button.Root class="pod-local-resume" onclick={() => playback.controller?.play()} aria-label="Play local song">▶ Play</Button.Root>
     {/if}
-    {#if volumeVisible}
+    {#if !video}
+      <p class="pod-empty pod-empty-dark">No songs yet.<br />Add local audio or a YouTube link.</p>
+    {/if}
+  </div>
+  {#if volumeVisible}
+    {#if systemVolume}
+      <p class="pod-playback-status" role="status">Use the phone’s volume buttons.<br />Press the center to scrub with the wheel.</p>
+    {:else}
       <div class="pod-volume" role="img" aria-label={`Volume ${Math.round(volume * 100)} percent`}>
         <svg viewBox="0 0 16 14" aria-hidden="true"><path d="M1 5h3l4-3.5v11L4 9H1zM10.5 4.5a4 4 0 0 1 0 5" /></svg>
         <span class="pod-volume-track"><span style:width="{volume * 100}%"></span></span>
       </div>
     {/if}
-  </div>
+  {/if}
+  {#if status && video}<p class="pod-playback-status" role="status">{status}</p>{/if}
+  {#if video?.audio}
+    <div class="pod-track-info"><strong>{video.title}</strong><span>{video.author} · On this Pod</span></div>
+  {/if}
   <div class="pod-progress" data-scrub={scrub}>
     <span class="pod-time">{clock(playback.time)}</span>
     <span class="pod-scrubber" role="progressbar" aria-label={scrub ? "Scrub position" : "Position"} aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(progress * 100)}>

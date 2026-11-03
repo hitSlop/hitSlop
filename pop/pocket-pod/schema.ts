@@ -5,11 +5,18 @@ export const stickerKinds = [
   "note", "rainbow", "pizza", "alien", "cassette", "hello", "cloud", "fan",
 ] as const;
 export const repeatModes = ["off", "all", "one"] as const;
+export const backgroundFits = ["cover", "contain"] as const;
+const file = s.object({
+  id: s.string({ description: "The host-owned attachment ID." }),
+  name: s.string(),
+  mimeType: s.string(),
+});
 
 export default defineDocument({
   ownerName: s.text({ description: "The owner's name, shown as “Name’s Pod”." }),
   videos: s.list(s.object({
-    youtubeId: s.string({ maxLength: 11, description: "The 11-character YouTube video id." }),
+    youtubeId: s.string({ maxLength: 11, default: "", description: "The 11-character YouTube video id; empty for a local song." }),
+    audio: s.optional(file),
     title: s.string({ maxLength: 200 }),
     author: s.string({ maxLength: 120, default: "" }),
   })),
@@ -18,6 +25,10 @@ export default defineDocument({
   repeat: s.enum(repeatModes, { default: "off" }),
   shuffle: s.boolean({ default: false }),
   clicker: s.boolean({ default: true, description: "Play a tick when the wheel turns." }),
+  background: s.optional(file),
+  backgroundFit: s.enum(backgroundFits, { default: "cover" }),
+  backgroundDim: s.number({ min: 0, max: 0.8, default: 0.15 }),
+  brickBest: s.integer({ min: 0, default: 0, description: "Best Brick Breaker score on this Pod." }),
   stickers: s.list(s.object({
     kind: s.enum(stickerKinds),
     x: s.number({ min: 0, max: 1, description: "Horizontal position as a fraction of the case width." }),

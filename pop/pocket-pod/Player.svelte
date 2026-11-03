@@ -13,7 +13,7 @@ let frame = $state<HTMLIFrameElement>();
 
 $effect(() => {
   if (!frame) return;
-  const controller = youtube.player(frame, handlers);
+  const controller = youtube.player(frame, handlers, { timeoutMs: 30_000 });
   onattach(controller);
   return () => {
     controller.dispose();

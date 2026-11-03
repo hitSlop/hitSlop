@@ -75,8 +75,8 @@ function key(event: KeyboardEvent, sticker: StickerRow) {
       } : {}}
       data-selected={selectedId === sticker.$id}
       data-dragging={drag?.id === sticker.$id}
-      style:left="{at.x * 360}px"
-      style:top="{at.y * 603}px"
+      style:left="{at.x * 100}%"
+      style:top="{at.y * 100}%"
       style:--turn="{sticker.rotation}deg"
       style:--grow={sticker.scale}
       onpointerdown={(event) => down(event, sticker)}

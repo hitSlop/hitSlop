@@ -11,14 +11,8 @@ struct CatalogSidebar: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      HStack(alignment: .lastTextBaseline, spacing: 1) {
-        PopBrandMark(size: 30).padding(.trailing, 7)
-        Circle().fill(PopBrand.accent).frame(width: 9, height: 9)
-        Text("pop").font(PopBrand.heading(30, relativeTo: .title))
-      }
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel("dotpop")
-      .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 18)
+      PopBrandMark()
+        .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 18)
 
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {

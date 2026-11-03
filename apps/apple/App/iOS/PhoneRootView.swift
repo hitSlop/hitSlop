@@ -105,6 +105,12 @@ struct PhoneRootView: View {
               showSettings = false
             }
           }
+          Section("Community") {
+            Link(destination: PopLinks.discord) {
+              Label("Join Discord", systemImage: "bubble.left.and.bubble.right")
+            }
+            .accessibilityHint("Opens the dotpop Discord community")
+          }
         }
         .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
         .toolbar { Button("Done") { showSettings = false } }

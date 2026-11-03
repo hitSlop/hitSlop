@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where pop sends people: the guide, the source and the community. The catalog sidebar and
-/// the failure screen open these same addresses.
+/// Settings and failure screens open these same addresses.
 public enum PopLinks {
   public static let authoring = URL(string: "https://dotpop.click/docs/getting-started/")!
   public static let github = URL(string: "https://github.com/hitSlop/dotpop")!

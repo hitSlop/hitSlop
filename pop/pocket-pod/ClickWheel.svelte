@@ -33,6 +33,7 @@ function stopTimers(): void {
   clearTimeout(holdTimer);
   clearInterval(seekTimer);
 }
+$effect(() => () => { stopTimers(); clearTimeout(centerTimer); });
 
 function down(event: PointerEvent): void {
   if (held || event.button !== 0) return;
@@ -103,10 +104,10 @@ const key = (type: Sector) => (event: MouseEvent) => {
 
 <div class="pod-wheel" bind:this={ring} role="group" aria-label="Click wheel" data-held={held} data-pressed={pressed}>
   <Button.Root class="pod-wheel-label pod-wheel-menu" onclick={key("menu")} aria-label="Menu">MENU</Button.Root>
-  <Button.Root class="pod-wheel-label pod-wheel-prev" onclick={key("prev")} aria-label="Previous video">
+  <Button.Root class="pod-wheel-label pod-wheel-prev" onclick={key("prev")} aria-label="Previous track">
     <svg viewBox="0 0 24 14" aria-hidden="true"><path d="M2 1v12M13 1L4 7l9 6zM22 1l-9 6 9 6z" /></svg>
   </Button.Root>
-  <Button.Root class="pod-wheel-label pod-wheel-next" onclick={key("next")} aria-label="Next video">
+  <Button.Root class="pod-wheel-label pod-wheel-next" onclick={key("next")} aria-label="Next track">
     <svg viewBox="0 0 24 14" aria-hidden="true"><path d="M22 1v12M11 1l9 6-9 6zM2 1l9 6-9 6z" /></svg>
   </Button.Root>
   <Button.Root class="pod-wheel-label pod-wheel-play" onclick={key("playpause")} aria-label="Play or pause">

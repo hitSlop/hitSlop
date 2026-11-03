@@ -16,7 +16,7 @@ let { cursor, playing, paused, held, onpick }: {
   <TitleBar title="Sticker Pack" {playing} {paused} {held} />
   <div class="pod-grid-body" role="listbox" aria-label="Stickers">
     {#each stickerKinds as kind, index (kind)}
-      <button type="button" role="option" aria-selected={index === cursor} aria-label={kind} data-selected={index === cursor} tabindex="-1" onclick={() => onpick(index)}>
+      <button type="button" role="option" aria-selected={index === cursor} aria-label={kind} data-selected={index === cursor} onclick={() => onpick(index)}>
         <Sticker {kind} />
       </button>
     {/each}

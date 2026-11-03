@@ -690,8 +690,8 @@ button {
 
 .pod-video {
   position: relative;
-  flex: none;
-  height: 169px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   background: #000;
 }
@@ -719,30 +719,11 @@ button {
   pointer-events: auto;
 }
 
-.pod-video-status {
-  pointer-events: none;
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 14px;
-  z-index: 2;
-  margin: 0;
-  padding: 0 16px;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.3;
-  text-align: center;
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-}
 
 .pod-volume {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 10px;
-  z-index: 3;
+  flex: none;
   height: 26px;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1129,3 +1110,661 @@ button {
 /* Capture keeps the printed sticker artwork without browser drop shadows. */
 html[data-pop-capture] .pod-sticker-art,
 html[data-pop-capture] .pod-icon-screen i { filter: none; }
+
+/* A photo is a host-owned attachment, beneath every interactive part of the case. */
+.pod-background {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pod-background img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.pod-background-shade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+.pod-quick-actions {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: auto;
+}
+.pod-quick {
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 24px;
+  background: var(--pop-screen);
+  color: var(--pop-screenInk);
+  box-shadow: 0 1px 3px #0003;
+  font-size: 13px;
+  font-weight: 700;
+}
+.pod-quick-actions .pod-deboss {
+  display: none;
+}
+.pod-track-info {
+  display: none;
+}
+.pod-local-resume {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 24px;
+  color: #fff;
+  background: #202126e6;
+  font-weight: 700;
+}
+.pod-flow-cover svg,
+.pod-remove-body svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.pod-remove-body > svg {
+  width: 70px;
+  height: 70px;
+  flex: none;
+}
+.pod-file-input {
+  display: none;
+}
+.pod-rows {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.pod-rows button:focus-visible,
+.pod-quick:focus-visible {
+  outline: 3px solid var(--pop-accent);
+  outline-offset: -3px;
+}
+.pod-quick:active {
+  transform: translateY(1px);
+}
+.pod-quick:disabled {
+  opacity: 0.5;
+}
+
+/* One Bits UI surface for adding music, a photo skin and a name. */
+.pod-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #10121870;
+}
+.pod-sheet {
+  position: fixed;
+  z-index: 101;
+  left: 12px;
+  right: 12px;
+  bottom: max(12px, var(--pop-keyboard-inset, 0px));
+  margin: 0 auto;
+  max-width: 440px;
+  max-height: calc(
+    100dvh - var(--pop-safe-top, 0px) - var(--pop-host-actions-height, 0px) -
+      var(--pop-keyboard-inset, 0px) - 32px
+  );
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #ffffffaa;
+  border-radius: 24px;
+  background: var(--pop-screen);
+  color: var(--pop-screenInk);
+  box-shadow: 0 12px 48px #0005;
+  font-family: var(--font);
+  outline: none;
+}
+.pod-sheet-heading {
+  flex: none;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 18px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--pop-screenInk) 12%, transparent);
+}
+.pod-sheet-heading [data-dialog-title] {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -0.6px;
+}
+.pod-sheet-heading [data-dialog-description] {
+  margin: 5px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  opacity: 0.65;
+}
+.pod-sheet-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--pop-screenInk) 7%, transparent);
+  font-size: 28px;
+}
+.pod-sheet-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 18px 18px max(20px, var(--pop-safe-bottom, 0px));
+}
+.pod-sheet-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--pop-screenInk) 14%, transparent);
+  border-radius: 14px;
+  text-align: left;
+  font-size: 15px;
+  font-weight: 700;
+}
+.pod-sheet-action > span:first-child {
+  font-size: 26px;
+  color: var(--pop-accent);
+}
+.pod-sheet-action > span:nth-child(2) {
+  flex: 1;
+}
+.pod-sheet-action small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.6;
+  font-weight: 400;
+}
+.pod-sheet-action:disabled,
+.pod-sheet-primary:disabled {
+  opacity: 0.5;
+}
+.pod-sheet-help {
+  margin: 12px 0 20px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.65;
+}
+.pod-sheet-help:last-child {
+  margin-bottom: 0;
+}
+.pod-sheet-form {
+  display: grid;
+  gap: 10px;
+}
+.pod-sheet-form label,
+.pod-skin-dim label {
+  font-size: 14px;
+  font-weight: 700;
+}
+.pod-sheet-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--pop-screenInk) 25%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pop-screen) 95%, var(--pop-screenInk));
+  font-size: 16px;
+}
+.pod-sheet-primary {
+  min-height: 48px;
+  border-radius: 12px;
+  background: var(--pop-accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+.pod-sheet button:focus-visible,
+.pod-sheet input:focus-visible,
+.pod-sheet [data-slider-thumb]:focus-visible {
+  outline: 3px solid var(--pop-accent);
+  outline-offset: 2px;
+}
+.pod-sheet-action:active {
+  background: color-mix(in srgb, var(--pop-accent) 9%, var(--pop-screen));
+}
+.pod-skin-preview {
+  height: 104px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  margin-bottom: 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--pop-caseHi), var(--pop-case), var(--pop-caseLo));
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.pod-skin-preview span {
+  width: 100%;
+  padding: 10px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #0007;
+  color: #fff;
+  font-size: 12px;
+}
+.pod-fit-options {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin-top: 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pop-screenInk) 7%, transparent);
+}
+.pod-fit-options [data-tabs-trigger] {
+  flex: 1;
+  min-height: 44px;
+  padding: 6px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pod-fit-options [data-state="active"] {
+  background: var(--pop-screen);
+  box-shadow: 0 1px 4px #0002;
+}
+.pod-skin-dim {
+  margin-top: 18px;
+}
+.pod-skin-dim label {
+  display: flex;
+  justify-content: space-between;
+}
+.pod-skin-dim label span {
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+.pod-dim-slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 44px;
+  touch-action: none;
+}
+.pod-dim-track {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pop-screenInk) 15%, transparent);
+}
+.pod-dim-range {
+  position: absolute;
+  height: 100%;
+  background: var(--pop-accent);
+}
+.pod-dim-thumb {
+  width: 28px;
+  height: 28px;
+  border: 1px solid #0002;
+  border-radius: 50%;
+  background: var(--pop-screen);
+  box-shadow: 0 1px 5px #0003;
+}
+.pod-dim-thumb::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.pod-sheet-text {
+  min-height: 44px;
+  padding: 0 4px;
+  margin-bottom: 14px;
+  color: var(--pop-accent);
+  font-size: 14px;
+}
+
+/* On iPhone the whole phone becomes the player, rather than a scaled desktop object. */
+html[data-pop-device="phone"],
+html[data-pop-device="phone"] body {
+  background: var(--pop-case);
+  overflow: hidden;
+}
+.pod-stage[data-phone="true"] {
+  display: flex;
+  flex-direction: column;
+  padding: var(--pop-safe-top, 0px) 16px var(--pop-safe-bottom, 0px);
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+.pod-phone-heading {
+  position: relative;
+  z-index: 4;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: max(60px, var(--pop-host-actions-height, 0px));
+  padding: 8px calc(12px + var(--pop-host-actions-width, 0px)) 12px 4px;
+  color: var(--pop-screenInk);
+}
+.pod-phone-heading strong {
+  overflow: hidden;
+  font-size: 21px;
+  line-height: 1.3;
+  letter-spacing: -0.6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pod-stage[data-phone="true"] .pod-fit {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: 100%;
+  height: auto;
+  flex: 1;
+  min-height: 0;
+}
+.pod-stage[data-phone="true"] .pod {
+  display: grid;
+  grid-template-rows: minmax(180px, 1fr) 54px minmax(180px, 0.95fr) 48px;
+  justify-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 0 4px;
+}
+.pod-stage[data-phone="true"] .pod-bezel {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: 100%;
+  height: 100%;
+  padding: 3px;
+  border-radius: 14px;
+}
+.pod-stage[data-phone="true"] .pod-glass {
+  width: 100%;
+  height: 100%;
+  border-radius: 11px;
+}
+.pod-stage[data-phone="true"] .pod-tray {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: 100%;
+  height: 54px;
+  padding: 0 2px;
+  z-index: 3;
+}
+.pod-stage[data-phone="true"] .pod-wheel-slot {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 310px;
+  aspect-ratio: 1;
+  align-self: center;
+}
+.pod-stage[data-phone="true"] .pod-wheel-center {
+  width: 38%;
+  height: 38%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+}
+.pod-stage[data-phone="true"] .pod-wheel-center:active,
+.pod-stage[data-phone="true"] .pod-wheel[data-pressed="select"] .pod-wheel-center {
+  transform: translate(-50%, -50%) scale(0.97);
+}
+.pod-stage[data-phone="true"] .pod-wheel-label {
+  font-size: 14px;
+}
+.pod-stage[data-phone="true"] .pod-dock {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: 100%;
+  height: 48px;
+  z-index: 4;
+}
+.pod-stage[data-phone="true"] .pod-tool {
+  min-width: 44px;
+  min-height: 44px;
+}
+.pod-stage[data-phone="true"] .pod-tools {
+  padding: 2px 6px;
+  gap: 4px;
+}
+.pod-stage[data-phone="true"] .pod-hold {
+  top: auto;
+  bottom: 0;
+  left: 0;
+  width: 76px;
+  height: 44px;
+  align-items: center;
+  padding: 0;
+}
+.pod-stage[data-phone="true"] .pod-hold-label {
+  font-size: 9px;
+}
+.pod-stage[data-phone="true"] .pod:has(.pod-tools) .pod-hold {
+  visibility: hidden;
+}
+.pod-stage[data-phone="true"] .pod-bar {
+  height: 36px;
+  padding-inline: 12px;
+}
+.pod-stage[data-phone="true"] .pod-bar-title {
+  font-size: 16px;
+}
+.pod-stage[data-phone="true"] .pod-list-body[data-aside="yes"] .pod-rows {
+  flex-basis: 100%;
+  border: 0;
+}
+.pod-stage[data-phone="true"] .pod-aside {
+  display: none;
+}
+.pod-stage[data-phone="true"] .pod-rows {
+  padding: 6px;
+}
+.pod-stage[data-phone="true"] .pod-rows li {
+  height: 44px;
+}
+.pod-stage[data-phone="true"] .pod-rows li button {
+  font-size: 16px;
+  padding-inline: 12px;
+  border-radius: 8px;
+}
+.pod-stage[data-phone="true"] .pod-footer {
+  height: 26px;
+}
+.pod-stage[data-phone="true"] .pod-flow-stage {
+  height: min(65%, 240px);
+  display: flex;
+  align-items: center;
+}
+.pod-stage[data-phone="true"] .pod-flow-cover {
+  top: calc(50% - 65px);
+  width: 130px;
+  height: 130px;
+  margin-left: -65px;
+}
+.pod-stage[data-phone="true"] .pod-flow-caption {
+  padding-bottom: 12px;
+}
+.pod-stage[data-phone="true"] .pod-flow-caption strong {
+  font-size: 16px;
+}
+.pod-stage[data-phone="true"] .pod-track-info {
+  display: grid;
+  flex: none;
+  gap: 3px;
+  padding: 8px 12px;
+}
+.pod-track-info strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+.pod-track-info span {
+  font-size: 12px;
+  opacity: 0.65;
+}
+.pod-stage[data-phone="true"] .pod-progress {
+  flex: none;
+  height: 32px;
+}
+.pod-stage[data-phone="true"] .pod-poster {
+  object-fit: contain;
+}
+.pod-stage[data-phone="true"] .pod-sticker {
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+}
+@media (max-height: 740px) {
+  .pod-stage[data-phone="true"] .pod {
+    grid-template-rows: minmax(160px, 1fr) 50px minmax(150px, 0.8fr) 46px;
+  }
+  .pod-phone-heading {
+    min-height: 52px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pod-hold-slot i {
+    transition: none;
+  }
+}
+
+.pod-sheet-message {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pop-accent) 12%, var(--pop-screen));
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Brick Breaker lives on the LCD. The wheel and music remain part of the same Pod. */
+.pod-breakout {
+  background: #131a24;
+  color: #e9eef5;
+}
+.pod-game-score {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  align-items: center;
+  height: 25px;
+  padding: 0 10px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #b6c8dd;
+}
+.pod-game-score > span:first-child {
+  color: #fff;
+}
+.pod-game-score > span:last-child {
+  letter-spacing: 2px;
+  color: #ff9daa;
+}
+.pod-game-field {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.pod-game-arena {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.pod-game-prompt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #131a2466;
+  pointer-events: none;
+}
+.pod-game-prompt strong {
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #131a24d9;
+  font-size: 18px;
+  letter-spacing: -0.3px;
+}
+.pod-game-prompt button {
+  pointer-events: auto;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 22px;
+  background: #e9eef5;
+  color: #131a24;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 2px 10px #0004;
+}
+.pod-game-prompt button:focus-visible {
+  outline: 3px solid #8bc8fa;
+  outline-offset: 3px;
+}
+.pod-game-prompt button:disabled {
+  opacity: 0.5;
+}
+.pod-game-hint {
+  flex: none;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #b6c8dd;
+}
+.pod-stage[data-phone="true"] .pod-game-score {
+  height: 32px;
+  font-size: 12px;
+}
+.pod-stage[data-phone="true"] .pod-game-hint {
+  height: 30px;
+  font-size: 11px;
+}
+
+.pod-stage[data-phone="true"] .pod-grid-body {
+  overflow-y: auto;
+  grid-template-rows: repeat(4, minmax(44px, 1fr));
+}
+.pod-grid-body button:focus-visible {
+  outline: 3px solid var(--pop-accent);
+  outline-offset: -3px;
+}
+
+/* Keep connection and playback notices out of the video picture. */
+.pod-playback-status {
+  flex: none;
+  margin: 0;
+  padding: 5px 10px;
+  background: var(--pop-screen);
+  color: var(--pop-screenInk);
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+}
+.pod-playing .pod-progress {
+  flex: none;
+  min-height: 32px;
+}

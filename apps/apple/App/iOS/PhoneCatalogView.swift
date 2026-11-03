@@ -21,8 +21,7 @@ struct PhoneCatalogView: View {
   }
   private var header: some View {
     HStack(spacing: 12) {
-      PopBrandMark(size: 30)
-      Text("dotpop").font(PopBrand.heading(24, relativeTo: .title)).tracking(-0.6)
+      PopBrandMark()
       Spacer()
       Button {
         model.tapped()

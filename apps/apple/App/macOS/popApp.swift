@@ -26,7 +26,7 @@ import WidgetKit
   }
 }
 
-private struct UpdateSettingsView: View {
+private struct AppSettingsView: View {
   let updater: SPUUpdater
   var body: some View {
     Form {
@@ -36,6 +36,12 @@ private struct UpdateSettingsView: View {
           get: { updater.automaticallyChecksForUpdates },
           set: { updater.automaticallyChecksForUpdates = $0 }
         ))
+      Section("Community") {
+        Link(destination: PopLinks.discord) {
+          Label("Join Discord", systemImage: "bubble.left.and.bubble.right")
+        }
+        .accessibilityHint("Opens the dotpop Discord community")
+      }
     }
     .formStyle(.grouped)
     .frame(width: 420)
@@ -242,7 +248,7 @@ private struct UpdateSettingsView: View {
   }
   @objc private func showSettings() {
     if settingsWindow == nil {
-      let content = UpdateSettingsView(updater: updater).frame(width: 480, height: 340)
+      let content = AppSettingsView(updater: updater).frame(width: 480, height: 340)
       let window = NSWindow(contentViewController: NSHostingController(rootView: content))
       window.title = "Settings"
       window.styleMask = [.titled, .closable]
