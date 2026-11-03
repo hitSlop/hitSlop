@@ -60,6 +60,11 @@ Connected opening is required; open copies remain editable offline and after Sto
 Mac and iPhone builds enable live collaboration without a launch flag. The v1 wire
 contract is frozen for shipped Mac and TestFlight clients.
 
+Sharing links have a generic Messages preview, with the current dotpop icon and
+an invitation title served directly in HTML. The preview exposes no document title,
+contents or capability; the capability remains in the URL fragment. It does not
+change the installed app's Universal Links handling.
+
 The host serves a static, cacheable Apple App Site Association response at
 `https://share.dotpop.click/.well-known/apple-app-site-association` without a redirect.
 It associates `/join` with team `78UAXU8QG8`'s `com.hitslop.app` and reserves the
@@ -116,8 +121,11 @@ retries do not emit another transition; metrics are best effort, not an audit le
 
 `.github/workflows/sharing.yml` builds the relay and host and runs this qualification on
 every matching `master` change. It deploys both with the repository's Cloudflare credentials
-only for a `v*` release tag or a manual run, then smoke-checks `/health` and the app-site
-association, so browser guests run the same core as released apps. Roll back with
+only for a `pop-v*` release tag or a manual run when `POP_DEPLOY_ENABLED=true`, then
+smoke-checks `/health` and the app-site association, so browser guests run the same core
+as released apps. Its job summary distinguishes qualification-only runs, disabled
+deployments and completed deployments; a green qualification does not prove deployment.
+Roll back with
 `wrangler rollback --config apps/sharing/wrangler.jsonc` (and the host config); a rollback
 never undoes Durable Object migrations or stored data. `wrangler.jsonc` is the production config; its migration
 transfers the Durable Object classes from the retired preview script, which exists only on the
