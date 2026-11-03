@@ -4,12 +4,13 @@ import "./styles.css";
 import type { CaptureProps } from "@hitslop/pop/svelte";
 import type schema from "./schema";
 import Case from "./Case.svelte";
+import Background from "./Background.svelte";
 import ClickWheel from "./ClickWheel.svelte";
 import CoverFlow from "./CoverFlow.svelte";
 import StickerLayer from "./StickerLayer.svelte";
 import { podView } from "./pod";
 
-let { snapshot }: CaptureProps<typeof schema> = $props();
+let { snapshot, attachmentURL }: CaptureProps<typeof schema> = $props();
 
 // The same body, with the current video centered in Cover Flow.
 const { videos, currentIndex: cursor } = $derived(podView(snapshot));
@@ -32,5 +33,6 @@ const { videos, currentIndex: cursor } = $derived(podView(snapshot));
 {/snippet}
 
 <div class="pod-surface pod-export">
+  <Background source={snapshot.background ? attachmentURL(snapshot.background.id) : undefined} fit={snapshot.backgroundFit} dim={snapshot.backgroundDim} />
   <Case {stickers} {screen} {tray} {wheel} />
 </div>

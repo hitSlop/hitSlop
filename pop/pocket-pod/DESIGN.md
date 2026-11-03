@@ -1,11 +1,14 @@
 # Pocket Pod design
 
-One job: a small player you can fill with YouTube videos and make your own.
+One job: a personal click-wheel player for local songs and YouTube, with a case you can make your own.
 
-- **Object.** A 360×603 anodized-aluminium player: 4:3 glass on top, a click wheel below. The window is the object; its corner mask matches the case radius.
-- **Material.** The case is a brushed gradient driven by `case`, `caseHi` and `caseLo`; the wheel plate by `wheel`, `wheelInk` and `button`; selection by `accent`. System type only.
-- **Screens.** An iPod-style stack: Menu with a preview pane, Cover Flow, Videos, Add Video, Now Playing, Settings, Stickers. MENU pops one level; playback keeps going underneath.
-- **Wheel.** About 15° of travel per detent. A press shorter than 8° of travel is a button chosen by sector. Mouse wheel and keys do the same things.
-- **Stickers.** Sixteen drawn stickers with a white die-cut edge. They sit under the screen and wheel so they never block a control. Drag to move; the tray under the screen turns, resizes or peels the selected one.
-- **Motion.** Cover Flow springs, a short start-up screen and a sticker "stick" all honor reduced motion. Nothing animated is saved.
-- **Export and icon.** Export shows the case with the current video in Cover Flow; the icon is the silhouette with a play triangle and no text.
+- **Object.** A 360×603 anodized-aluminium player on desktop. On iPhone the case fills the viewport without the desktop edge bevel; the page backing uses the case color through the safe areas. Content has safe-area padding, room for the native actions menu, a fluid LCD and a large wheel. Touch selects a row in one tap; wheel and keyboard navigation remain available.
+- **Material.** The brushed gradient uses `case`, `caseHi` and `caseLo`; the wheel uses `wheel`, `wheelInk` and `button`; selection uses `accent`. System type only. Owners can replace the case surface with an uploaded PNG, JPEG, WebP or GIF, choose fill/fit and adjust its shade. Theme colors remain host-owned.
+- **Library.** Local MP3, M4A, WAV, FLAC and Ogg files join YouTube in one Songs list, Cover Flow, shuffle and repeat. Local files live as immutable attachments inside the pop, up to the host's 10 MiB per-file limit. Codec support depends on the device. Subscription downloads are not importable; Spotify and Apple Music account integrations are not included.
+- **Screens.** Menu, Cover Flow, Songs, Now Playing, Games, Settings and Stickers use the LCD stack. Add Music, Customize and Name share one Bits UI sheet with bounded scrolling, keyboard clearance and no automatic keyboard opening. MENU returns one level; playback keeps going underneath.
+- **Video.** Inline YouTube playback fills the LCD between its title bar and compact timeline. The title appears once; the separate artist/title strip is for local audio. Video keeps its original aspect ratio, with any necessary letterboxing. Loading, errors and volume stay outside the picture.
+- **Wheel.** About 15° per detent. A short press chooses its sector. Keys and a mouse wheel work too; iPhone detents add selection haptics. iOS controls YouTube and local audio volume through its volume buttons/Control Center; turning the wheel shows that guidance rather than changing an ineffective saved volume. Press center to switch to scrubbing. Desktop wheel volume remains available.
+- **Stickers.** Sixteen drawn stickers with a white die-cut edge. Fractional positions follow the responsive case. Drag to move; the bottom dock turns, resizes or peels the selected sticker. Screen, wheel and quick actions stay above stickers.
+- **Brick Breaker.** Games opens a small brick game with three lives and successive levels. Spin, use arrow keys or drag to move; the wheel shows Back, paddle arrows and Launch/Pause. Its music control still plays/pauses the soundtrack. Hide or Hold pauses play. Only accepted best-score writes are remembered; the board and physics stay in memory.
+- **Motion.** Cover Flow, the brief boot screen and sticker placement honor reduced motion. The game runs only during active play and stops on unmount; it has no idle loop or decorative animation.
+- **Export and icon.** Export/preview show the photo skin, stickers and current track in Cover Flow. Local songs have a drawn record sleeve. The icon retains the player silhouette and theme colors. Capture views stay synchronous and exclude editor sheets and games.

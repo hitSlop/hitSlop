@@ -3,13 +3,16 @@ import "@hitslop/pop/base.css";
 import "./styles.css";
 import { onMount } from "svelte";
 import { prefersReducedMotion } from "svelte/motion";
-import { Button } from "bits-ui";
-import { bindText, getDocument } from "@hitslop/pop/svelte";
-import { thumbnail } from "@hitslop/pop/youtube";
+import { Button, Slider, Tabs } from "bits-ui";
+import { attachments, bindText, getDocument, getEnvironment, haptics } from "@hitslop/pop/svelte";
+import { refuse } from "@hitslop/pop";
 import schema from "./schema";
 import { createPod, menuItems } from "./controller.svelte";
 import { closeClicker } from "./clicker";
-import AddScreen from "./AddScreen.svelte";
+import Background from "./Background.svelte";
+import Breakout from "./Breakout.svelte";
+import PodSheet from "./PodSheet.svelte";
+import TrackArt from "./TrackArt.svelte";
 import Case from "./Case.svelte";
 import ClickWheel from "./ClickWheel.svelte";
 import CoverFlow from "./CoverFlow.svelte";
@@ -21,6 +24,47 @@ import StickerLayer from "./StickerLayer.svelte";
 
 const doc = getDocument(schema);
 const pod = createPod();
+const environment = getEnvironment();
+const phone = $derived(environment.current.device === "phone");
+const sheet = $derived(pod.ui.renaming ? "name" : pod.top.id === "add" ? "add" : pod.top.id === "customize" ? "customize" : null);
+let skinBusy = $state(false);
+let imagePicker: HTMLInputElement;
+let songPicker: HTMLInputElement;
+const backgroundURL = $derived(doc.current.background ? attachments.url(doc.current.background.id) : undefined);
+
+function closeSheet() {
+  if (pod.ui.renaming) pod.ui.renaming = false;
+  else pod.dispatch({ type: "menu" });
+}
+async function importBackground(event: Event) {
+  const field = event.currentTarget as HTMLInputElement;
+  const file = field.files?.[0];
+  field.value = "";
+  if (!file) return;
+  if ((!/^image\/(png|jpeg|webp|gif)$/.test(file.type) && !/\.(png|jpe?g|webp|gif)$/i.test(file.name)) || file.size > 10 * 1024 * 1024 || !file.size) {
+    pod.flash("Choose a PNG, JPEG, WebP or GIF up to 10 MB.", "error");
+    return;
+  }
+  skinBusy = true;
+  try {
+    await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
+      if (!/^image\/(png|jpeg|webp|gif)$/.test(ref.mimeType)) refuse("Choose a PNG, JPEG, WebP or GIF image.");
+      tx.fields.background.$set({ id: ref.id, name: ref.name, mimeType: ref.mimeType });
+    });
+    pod.flash("Photo skin applied.", "ok");
+    haptics.notification("success");
+  } finally { skinBusy = false; }
+}
+async function importSongs(event: Event) {
+  const field = event.currentTarget as HTMLInputElement;
+  const files = Array.from(field.files ?? []);
+  field.value = "";
+  await pod.importSongs(files);
+}
+function stickerPack() {
+  closeSheet();
+  pod.push("stickers");
+}
 
 let stage = $state<HTMLElement>();
 let stageWidth = $state(360);
@@ -46,16 +90,17 @@ const selectedSticker = $derived(pod.ui.selectedSticker);
 
 // Pointing at a row moves the cursor; pointing at the row under the cursor chooses it.
 const activate = (index: number) => {
-  if (index === pod.top.cursor) pod.dispatch({ type: "select" });
+  if (phone) { pod.setCursor(index); pod.dispatch({ type: "select" }); }
+  else if (index === pod.top.cursor) pod.dispatch({ type: "select" });
   else pod.setCursor(index);
 };
-const focusOnMount = (node: HTMLInputElement) => node.focus();
 const editable = (target: EventTarget | null) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 
 function onKey(event: KeyboardEvent): void {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   booting = false;
   const target = event.target as HTMLElement | null;
+  if (target?.closest("[data-dialog-content]")) return;
   if (target?.closest(".pod-sticker")) return;
   if (editable(target)) {
     if (event.key === "Escape") { event.preventDefault(); pod.dispatch({ type: "menu" }); }
@@ -75,7 +120,7 @@ function onKey(event: KeyboardEvent): void {
 }
 
 function onPaste(event: ClipboardEvent): void {
-  if (editable(event.target)) return;
+  if (editable(event.target) || sheet) return;
   const text = event.clipboardData?.getData("text") ?? "";
   if (!text.trim()) return;
   event.preventDefault();
@@ -85,6 +130,7 @@ function onPaste(event: ClipboardEvent): void {
 // A mouse or trackpad over the pod turns the wheel: one detent per 40 units of travel.
 let wheelCarry = 0;
 function onWheel(event: WheelEvent): void {
+  if (phone && (event.target as HTMLElement).closest(".pod-rows")) return;
   event.preventDefault();
   booting = false;
   wheelCarry += Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
@@ -127,12 +173,12 @@ onMount(() => {
 
 {#snippet menuAside()}
   {#if pod.current}
-    <img class="pod-aside-art" src={thumbnail(pod.current.youtubeId)} alt="" draggable="false" />
+    <TrackArt class="pod-aside-art" video={pod.current} />
     <p class="pod-aside-title">{pod.current.title}</p>
     <p class="pod-aside-sub">{pod.current.author}</p>
   {:else}
     <div class="pod-aside-art pod-aside-empty" aria-hidden="true">+</div>
-    <p class="pod-aside-title">Paste a YouTube link to add a video</p>
+    <p class="pod-aside-title">Add songs or a YouTube link</p>
   {/if}
 {/snippet}
 
@@ -157,6 +203,7 @@ onMount(() => {
       scrub={pod.ui.scrub}
       volume={pod.ui.volume ?? doc.current.volume}
       volumeVisible={pod.ui.volumeVisible}
+      systemVolume={pod.systemVolume}
       {held}
       handlers={pod.handlers}
       onattach={pod.attach}
@@ -164,50 +211,32 @@ onMount(() => {
   </div>
   {#if top.id !== "playing"}
     <div class="pod-layer pod-layer-front">
-      {#if top.id === "menu"}
-        <ListScreen title={pod.menuTitle} rows={menuRows} cursor={top.cursor} aside={menuAside} {playing} {paused} {held} onrow={activate} />
+      {#if (top.id === "menu" || top.id === "add" || top.id === "customize")}
+        <ListScreen touch={phone} title={pod.menuTitle} rows={menuRows} cursor={top.cursor} aside={menuAside} {playing} {paused} {held} onrow={activate} />
       {:else if top.id === "coverflow"}
         <CoverFlow videos={pod.videos} cursor={top.cursor} {playing} {paused} {held} onpick={activate} />
       {:else if top.id === "videos"}
         <ListScreen
-          title="Videos"
+          touch={phone}
+          title="Songs"
           rows={videoRows}
           cursor={top.cursor}
           footer={pod.videos[top.cursor]?.author ?? ""}
-          empty="No videos yet. Paste a YouTube link."
+          empty="No songs yet. Add local audio or a YouTube link."
           {playing}
           {paused}
           {held}
           onrow={activate}
         />
-      {:else if top.id === "add"}
-        <AddScreen
-          bind:text={pod.ui.addText}
-          busy={pod.ui.busy}
-          {playing}
-          {paused}
-          {held}
-          onsubmit={() => pod.dispatch({ type: "select" })}
-          onescape={() => pod.dispatch({ type: "menu" })}
-        />
       {:else if top.id === "settings"}
-        <ListScreen title="Settings" rows={settingsRows} cursor={top.cursor} {playing} {paused} {held} onrow={activate} />
-        {#if pod.ui.renaming}
-          <div class="pod-rename">
-            <label for="pod-name">Your name</label>
-            <input
-              id="pod-name"
-              use:focusOnMount
-              use:bindText={doc.fields.ownerName}
-              maxlength="24"
-              autocomplete="off"
-              spellcheck="false"
-              onkeydown={(event) => { if (event.key === "Enter" || event.key === "Escape") { event.preventDefault(); event.stopPropagation(); pod.ui.renaming = false; } }}
-            />
-          </div>
-        {/if}
+        <ListScreen touch={phone} title="Settings" rows={settingsRows} cursor={top.cursor} {playing} {paused} {held} onrow={activate} />
+      {:else if top.id === "games"}
+        <ListScreen touch={phone} title="Games" rows={[{ label: "Brick Breaker", chevron: true }]} cursor={0} footer={`Best: ${doc.current.brickBest} · Your music keeps playing`} {playing} {paused} {held} onrow={activate} />
+      {:else if top.id === "breakout"}
+        <Breakout {held} {playing} {paused} best={doc.current.brickBest} onbest={(score) => doc.fields.brickBest.set(score)} onattach={pod.attachGame} />
       {:else if top.id === "stickers"}
         <ListScreen
+          touch={phone}
           title="Stickers"
           rows={stickerRows}
           cursor={top.cursor}
@@ -243,7 +272,11 @@ onMount(() => {
 {/snippet}
 
 {#snippet tray()}
-  <span class="pod-deboss">POCKET POD</span>
+  <div class="pod-quick-actions">
+    <Button.Root class="pod-quick" disabled={held} onclick={() => pod.push("customize")} aria-label="Customize your Pod">✦ <span>Customize</span></Button.Root>
+    <span class="pod-deboss">POCKET POD</span>
+    <Button.Root class="pod-quick" disabled={held} onclick={() => pod.push("add")}>+ <span>Add music</span></Button.Root>
+  </div>
 {/snippet}
 
 {#snippet dock()}
@@ -259,7 +292,7 @@ onMount(() => {
 {/snippet}
 
 {#snippet wheel()}
-  <ClickWheel {held} ondispatch={pod.dispatch} />
+  <ClickWheel {held} game={top.id === "breakout"} ondispatch={pod.dispatch} />
 {/snippet}
 
 {#snippet hold()}
@@ -271,6 +304,7 @@ onMount(() => {
 
 <main
   class="pod-stage pod-surface"
+  data-phone={phone}
   bind:this={stage}
   bind:clientWidth={stageWidth}
   bind:clientHeight={stageHeight}
@@ -278,7 +312,55 @@ onMount(() => {
   onpointerdown={onStagePointerDown}
   onpointerup={onStagePointerUp}
 >
-  <div class="pod-fit" style:transform="translate(-50%, -50%) scale({scale})">
+  <Background source={backgroundURL} fit={doc.current.backgroundFit} dim={doc.current.backgroundDim} />
+  {#if phone}<header class="pod-phone-heading"><strong>{pod.menuTitle}</strong></header>{/if}
+  <div class="pod-fit" style:transform={phone ? undefined : `translate(-50%, -50%) scale(${scale})`}>
     <Case {stickers} {screen} {tray} {wheel} {hold} {dock} />
   </div>
 </main>
+
+
+<input class="pod-file-input" bind:this={imagePicker} type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label="Upload background image" onchange={importBackground} />
+<input class="pod-file-input" bind:this={songPicker} type="file" accept="audio/mpeg,audio/mp4,audio/wav,audio/flac,audio/ogg,.mp3,.m4a,.wav,.flac,.ogg,.opus" multiple aria-label="Import local songs" onchange={importSongs} />
+
+<PodSheet open={sheet !== null} title={sheet === "add" ? "Add music" : sheet === "name" ? "Name your Pod" : "Make it yours"}
+  description={sheet === "add" ? "Local favorites and YouTube, together on your Pod." : sheet === "name" ? "A little player with your name on it." : "Your photos, your colors, your stickers."} onclose={closeSheet}>
+  {#if pod.ui.notice}<p class="pod-sheet-message" role="status">{pod.ui.notice.text}</p>{/if}
+  {#if sheet === "add"}
+    <Button.Root class="pod-sheet-action" disabled={pod.ui.busy} onclick={() => songPicker.click()}>
+      <span aria-hidden="true">♫</span><span>{pod.ui.busy ? "Adding music…" : "Choose audio files"}<small>From Files · up to 10 MB per song</small></span><span aria-hidden="true">＋</span>
+    </Button.Root>
+    <p class="pod-sheet-help">MP3, M4A and WAV work best on iPhone. Imported files travel with this pop and play offline. Subscription downloads from music apps cannot be imported.</p>
+    <form class="pod-sheet-form" onsubmit={(event) => { event.preventDefault(); void pod.submitAdd(); }}>
+      <label for="pod-add-link">Or paste a YouTube link</label>
+      <input id="pod-add-link" bind:value={pod.ui.addText} type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="youtube.com/watch?v=…" disabled={pod.ui.busy} />
+      <Button.Root type="submit" class="pod-sheet-primary" disabled={pod.ui.busy || !pod.ui.addText.trim()}>{pod.ui.busy ? "Adding…" : "Add YouTube video"}</Button.Root>
+    </form>
+    <p class="pod-sheet-help">YouTube needs an internet connection. Open Songs, choose a track, then press play. Hold the center button on a song to remove it.</p>
+  {:else if sheet === "name"}
+    <div class="pod-sheet-form">
+      <label for="pod-name">Your name</label>
+      <input id="pod-name" use:bindText={doc.fields.ownerName} maxlength="24" autocomplete="off" placeholder="Your name" onkeydown={(event) => { if (event.key === "Enter") { event.preventDefault(); closeSheet(); } }} />
+      <Button.Root class="pod-sheet-primary" onclick={closeSheet}>Done</Button.Root>
+    </div>
+  {:else if sheet === "customize"}
+    <div class="pod-skin-preview" style:background-image={backgroundURL ? `url("${backgroundURL}")` : undefined} style:background-size={doc.current.backgroundFit}>
+      <span>{doc.current.background ? doc.current.background.name : "A blank canvas for your soundtrack"}</span>
+    </div>
+    <Button.Root class="pod-sheet-action" disabled={skinBusy} onclick={() => imagePicker.click()}><span aria-hidden="true">▧</span><span>{skinBusy ? "Importing skin…" : doc.current.background ? "Change photo skin" : "Upload a photo skin"}<small>PNG, JPEG, WebP or GIF · up to 10 MB</small></span><span aria-hidden="true">＋</span></Button.Root>
+    {#if doc.current.background}
+      <Tabs.Root value={doc.current.backgroundFit} onValueChange={(value) => { if (value === "cover" || value === "contain") void doc.fields.backgroundFit.set(value); }}>
+        <Tabs.List class="pod-fit-options" aria-label="Photo fit"><Tabs.Trigger value="cover">Fill the case</Tabs.Trigger><Tabs.Trigger value="contain">Show whole photo</Tabs.Trigger></Tabs.List>
+      </Tabs.Root>
+      <div class="pod-skin-dim">
+        <label for="pod-dim">Shade <span>{Math.round(doc.current.backgroundDim * 100)}%</span></label>
+        <Slider.Root id="pod-dim" type="single" min={0} max={0.8} step={0.05} value={doc.current.backgroundDim} onValueChange={(value) => doc.fields.backgroundDim.preview(value)} onValueCommit={(value) => { void doc.fields.backgroundDim.set(value); }} aria-label="Background shade" class="pod-dim-slider">
+          {#snippet children({ thumbs })}<span class="pod-dim-track"><Slider.Range class="pod-dim-range" /></span>{#each thumbs as thumb}<Slider.Thumb index={thumb} class="pod-dim-thumb" />{/each}{/snippet}
+        </Slider.Root>
+      </div>
+      <Button.Root class="pod-sheet-text" onclick={() => doc.fields.background.$clear()}>Remove photo skin</Button.Root>
+    {/if}
+    <Button.Root class="pod-sheet-action" onclick={stickerPack}><span aria-hidden="true">✦</span><span>Sticker collection<small>Add, drag, turn and resize · {doc.current.stickers.length} on your Pod</small></span><span aria-hidden="true">›</span></Button.Root>
+    <p class="pod-sheet-help">Change the case, wheel, button and screen colors in the pop’s theme palette. Give it a name in Settings → Name.</p>
+  {/if}
+</PodSheet>

@@ -1017,10 +1017,10 @@
   {
     "slug": "pocket-pod",
     "title": "Pocket Pod",
-    "description": "A pocket click-wheel player: paste YouTube links, spin through them in Cover Flow, and cover the case in stickers.",
+    "description": "Your own click-wheel player: bring local songs and YouTube links, upload a photo skin, and make it yours with stickers and colors.",
     "categories": [
       "music",
-      "media"
+      "popular"
     ],
     "shape": "rounded",
     "width": 360,

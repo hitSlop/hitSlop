@@ -2,7 +2,7 @@
 import { untrack } from "svelte";
 import { Spring, prefersReducedMotion } from "svelte/motion";
 import TitleBar from "./TitleBar.svelte";
-import { thumbnail } from "@hitslop/pop/youtube";
+import TrackArt from "./TrackArt.svelte";
 import type { Video } from "./pod";
 
 let { videos, cursor, playing, paused, held, onpick }: {
@@ -38,7 +38,7 @@ function pose(index: number): string {
 <section class="pod-screen pod-flow" aria-label="Cover Flow">
   <TitleBar title="Cover Flow" {playing} {paused} {held} />
   {#if videos.length}
-    <div class="pod-flow-stage" role="listbox" aria-label="Videos">
+    <div class="pod-flow-stage" role="listbox" aria-label="Songs">
       {#each nearby as { video, index } (video.$id)}
         <button
           type="button"
@@ -52,7 +52,7 @@ function pose(index: number): string {
           style:opacity={clamp(1 - (Math.abs(index - position.current) - 3.2), 0, 1)}
           onclick={() => onpick(index)}
         >
-          <img src={thumbnail(video.youtubeId)} alt="" draggable="false" />
+          <TrackArt {video} />
         </button>
       {/each}
     </div>
@@ -61,6 +61,6 @@ function pose(index: number): string {
       <span>{selected?.author}</span>
     </div>
   {:else}
-    <p class="pod-empty">No videos yet.<br />Paste a YouTube link to add one.</p>
+    <p class="pod-empty">No songs yet.<br />Add local audio or a YouTube link.</p>
   {/if}
 </section>

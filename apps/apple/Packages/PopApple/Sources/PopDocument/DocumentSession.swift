@@ -328,6 +328,10 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
     #if os(iOS)
       configuration.ignoresViewportScaleLimits = false
+      // Authored players opt into inline video with playsinline. Keep their own
+      // controls usable, including play commands relayed through an HTTPS frame.
+      configuration.allowsInlineMediaPlayback = true
+      configuration.mediaTypesRequiringUserActionForPlayback = []
     #endif
     configuration.setURLSchemeHandler(
       SchemeHandler(assets: owner.assets, shell: webViewResources), forURLScheme: "pop")

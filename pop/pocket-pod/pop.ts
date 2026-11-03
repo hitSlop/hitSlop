@@ -3,9 +3,9 @@ import { definePop } from "@hitslop/pop";
 export default definePop({
   slug: "pocket-pod",
   title: "Pocket Pod",
-  description: "A pocket click-wheel player: paste YouTube links, spin through them in Cover Flow, and cover the case in stickers.",
+  description: "Your own click-wheel player: bring local songs and YouTube links, upload a photo skin, and make it yours with stickers and colors.",
   author: { name: "pop", url: "https://dotpop.click" },
-  categories: ["music", "media"],
+  categories: ["music", "popular"],
   window: { kind: "standard", width: 360, height: 603, shape: "30px", lockAspect: true },
   theme: {
     case: "#c9ccd1",
