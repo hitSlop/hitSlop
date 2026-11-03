@@ -10,6 +10,7 @@ on:
     tags: ["pop-v*"]
     paths:
       - apps/sharing/**
+      - apps/apple/App/Shared/Assets.xcassets/AppIcon.appiconset/appicon-1024.png
       - crates/pop-sharing-*/**
       - crates/pop-core/**
       - crates/pop-core-wasm/**
@@ -44,21 +45,62 @@ jobs:
         run: bun scripts/build/sharing.ts
       # The built WASM relay on Miniflare: create, join, Stop, account deletion, limits, AASA.
       - name: Qualify
+        id: qualify
         run: bun run verify sharing
       - name: Deploy relay
+        id: relay
         if: vars.POP_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/pop-v') || github.event_name == 'workflow_dispatch')
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Deploy host
+        id: host
         if: vars.POP_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/pop-v') || github.event_name == 'workflow_dispatch')
         run: bunx wrangler@4.46.0 deploy --config apps/sharing/host.wrangler.jsonc
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Smoke
+        id: smoke
         if: vars.POP_DEPLOY_ENABLED == 'true' && (startsWith(github.ref, 'refs/tags/pop-v') || github.event_name == 'workflow_dispatch')
         run: |
           test "$(curl -s -o /dev/null -w '%{http_code}' https://share.dotpop.click/health)" = 200
           curl -sf https://share.dotpop.click/.well-known/apple-app-site-association | grep -q '"applinks"'
+      - name: Sharing status
+        if: always()
+        env:
+          SHARING_QUALIFY: ${{ steps.qualify.outcome }}
+          SHARING_RELAY: ${{ steps.relay.outcome }}
+          SHARING_HOST: ${{ steps.host.outcome }}
+          SHARING_SMOKE: ${{ steps.smoke.outcome }}
+          SHARING_DEPLOY_ENABLED: ${{ vars.POP_DEPLOY_ENABLED }}
+          SHARING_DEPLOY_REQUESTED: ${{ startsWith(github.ref, 'refs/tags/pop-v') || github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "$SHARING_QUALIFY" != success ]; then
+            status="Qualification incomplete"
+            detail="Sharing qualification did not pass. Production deployment was not completed."
+          elif [ "$SHARING_RELAY" = success ] && [ "$SHARING_HOST" = success ] && [ "$SHARING_SMOKE" = success ]; then
+            status="Deployed"
+            detail="Relay and browser host deployed, and production smoke checks passed."
+          elif [ "$SHARING_RELAY" = skipped ] && [ "$SHARING_HOST" = skipped ]; then
+            if [ "$SHARING_DEPLOY_REQUESTED" != true ]; then
+              status="Qualified"
+              detail="Master pushes qualify sharing only. Deployment requires a release tag or a manual run."
+            elif [ "$SHARING_DEPLOY_ENABLED" != true ]; then
+              status="Deployment skipped"
+              detail="Qualification passed. POP_DEPLOY_ENABLED is not true; neither Worker was deployed and production smoke checks did not run."
+              echo "::warning::$detail"
+            else
+              status="Deployment skipped"
+              detail="Qualification passed, but neither deployment step ran. Check whether the run was cancelled."
+            fi
+          else
+            status="Deployment incomplete"
+            detail="Qualification passed, but deployment or production smoke checks did not complete successfully. Check the step results below."
+          fi
+          {
+            printf '## Sharing: %s\n\n%s\n\n' "$status" "$detail"
+            printf '| Step | Result |\n| --- | --- |\n'
+            printf '| Qualification | %s |\n| Relay | %s |\n| Host | %s |\n| Production smoke | %s |\n' "$SHARING_QUALIFY" "$SHARING_RELAY" "$SHARING_HOST" "$SHARING_SMOKE"
+          } >> "$GITHUB_STEP_SUMMARY"

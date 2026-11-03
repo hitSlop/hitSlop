@@ -130,11 +130,46 @@ try {
   assert.equal(await head.text(), "");
   assert.equal((await host.fetch(new Request(associationURL, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
   assert.equal((await host.fetch(new Request(associationURL.replace("share.dotpop.click", "copy.dotslop.com")), { ASSETS: unused, RELAY: unused })).status, 404);
-  const join = await host.fetch(new Request("https://share.dotpop.click/join"), {
-    ASSETS: { async fetch(request: Request) { assert.equal(new URL(request.url).pathname, "/index.html"); return new Response("join"); } }, RELAY: unused,
-  });
-  assert.equal(await join.text(), "join");
-  assert.equal(join.headers.get("Content-Security-Policy"), SharingHost.hostPolicy);
+  const assets = { async fetch(request: Request) {
+    const path = new URL(request.url).pathname;
+    assert.ok(path === "/index.html" || path === "/share-icon.png", "Only the public preview assets are requested");
+    const bytes = await readFile(join(repository, "generated/sharing/assets", path));
+    return new Response(bytes, { headers: { "Content-Type": path.endsWith(".png") ? "image/png" : "text/html" } });
+  } };
+  const invitation = `${SharingHost.origin}/join#${"a".repeat(32)}.${"b".repeat(64)}`;
+  let preview: string | undefined;
+  for (const url of [SharingHost.origin + "/", SharingHost.origin + "/join", invitation]) {
+    const response = await host.fetch(new Request(url), { ASSETS: assets, RELAY: unused });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Content-Security-Policy"), SharingHost.hostPolicy);
+    const html = await response.text();
+    assert.match(html, /<title>Open a shared pop<\/title>/);
+    for (const tag of [
+      '<meta property="og:title" content="Open a shared pop"',
+      '<meta property="og:site_name" content="dotpop"',
+      '<meta property="og:type" content="website"',
+      '<meta property="og:description" content="Open this invitation in dotpop to edit together."',
+      `<meta property="og:image" content="${SharingHost.origin}/share-icon.png"`,
+      `<link rel="apple-touch-icon" href="${SharingHost.origin}/share-icon.png"`,
+    ]) assert.ok(html.includes(tag), `Preview metadata is present without running JavaScript: ${tag}`);
+    assert.ok(!html.includes(invitation) && !html.includes("b".repeat(64)), "Preview metadata contains no invitation credential");
+    if (preview) assert.equal(html, preview, "All invitations have the same public preview");
+    preview = html;
+  }
+  for (const method of ["GET", "HEAD"]) {
+    const response = await host.fetch(new Request(`${SharingHost.origin}/share-icon.png`, { method }), { ASSETS: assets, RELAY: unused });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Content-Type"), "image/png");
+    const image = Buffer.from(await response.arrayBuffer());
+    if (method === "HEAD") assert.equal(image.length, 0);
+    else {
+      assert.equal(image.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+      assert.ok(image.readUInt32BE(16) >= 900 && image.readUInt32BE(20) >= 900, "Messages receives a high-resolution preview image");
+    }
+  }
+  assert.equal((await host.fetch(new Request(`${SharingHost.origin}/share-icon.png`, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
+  for (const url of [`${SharingHost.origin}/unlisted.png`, `https://copy.${SharingHost.domain}/share-icon.png`])
+    assert.equal((await host.fetch(new Request(url), { ASSETS: unused, RELAY: unused })).status, 404);
   assert.equal((await call("account", undefined, "DELETE")).status, 401);
   assert.equal((await call("account", "not-an-identity", "DELETE")).status, 401);
   assert.equal((await call("rooms", undefined, "POST", { document })).status, 401);
