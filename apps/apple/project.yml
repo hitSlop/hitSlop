@@ -11,8 +11,8 @@ settings:
     DEVELOPMENT_TEAM: 78UAXU8QG8
     CODE_SIGN_STYLE: Automatic
     # The app and its extensions ship as one version.
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "49"
+    MARKETING_VERSION: "1.4.0"
+    CURRENT_PROJECT_VERSION: "50"
 packages:
   PopApple:
     path: Packages/PopApple
