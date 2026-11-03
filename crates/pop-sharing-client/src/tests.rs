@@ -52,6 +52,58 @@ fn untrusted_invitations_are_refused_before_installing_a_file() {
 }
 
 #[test]
+fn downloaded_seed_installs_a_new_replica_and_rebinds_its_room() {
+    for predecessor in [None, Some("a".repeat(32))] {
+        let (dir, owner) = fixture();
+        if let Some(room) = predecessor {
+            request(
+                &owner,
+                Request::Share { share: Share { room, endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() } },
+            )
+            .unwrap();
+        }
+        let seed_path = dir.path().join("seed.pop");
+        request(&owner, Request::Backup { destination: seed_path.clone() }).unwrap();
+        let expected = snapshot::inspect(&seed_path).unwrap();
+        let bytes = std::fs::read(&seed_path).unwrap();
+        let key = RoomKey {
+            room: "c".repeat(32),
+            capability: "b".repeat(64),
+            origin: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
+        };
+        let mut info = RoomInfo {
+            document: "00000000-0000-4000-8000-000000000000".into(),
+            phase: RoomPhase::Live,
+            seed_hash: Some(hex(&Sha256::digest(&bytes))),
+            seed_size: Some(bytes.len() as u32),
+            app: Some(hex(&expected.app_digest)),
+            capability: None,
+            compact: false,
+        };
+        let target = dir.path().join("guest/received.pop");
+        assert!(install_seed(&target, &key, &info, &bytes).is_err(), "A different document identity is refused");
+        assert!(!target.exists());
+        assert_eq!(
+            std::fs::read_dir(target.parent().unwrap()).unwrap().count(),
+            0,
+            "Failed installation is cleaned up"
+        );
+
+        info.document = expected.id.clone();
+        install_seed(&target, &key, &info, &bytes).expect("A guest can install its first local copy");
+        let replica = Owner::open(&target, Mode::Document, Arc::new(|_| {})).unwrap();
+        assert_eq!(replica.app().document_uuid.as_deref(), Some(expected.id.as_str()));
+        assert_eq!(replica.share().unwrap(), Some(Share { room: key.room, endpoint: key.origin }));
+        request(&replica, Request::Close { preview: None, icon: None }).unwrap();
+        let installed = snapshot::inspect(&target).unwrap();
+        assert_eq!(installed.fingerprint, expected.fingerprint, "Installing preserves saved state and attachments");
+        assert_eq!(installed.app_digest, expected.app_digest);
+        assert_eq!(std::fs::read_dir(target.parent().unwrap()).unwrap().count(), 1, "Only the installed copy remains");
+        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    }
+}
+
+#[test]
 fn opening_offline_catches_up_when_the_seed_service_returns_without_a_ui_retry() {
     use std::{
         io::{Read, Write},
