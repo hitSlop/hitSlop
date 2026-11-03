@@ -25,7 +25,7 @@
     },
     "packages/pop": {
       "name": "@hitslop/pop",
-      "version": "1.4.0",
+      "version": "1.4.1",
       "bin": {
         "pop": "src/cli/cli.ts",
       },
