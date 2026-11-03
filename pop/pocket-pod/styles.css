@@ -392,6 +392,20 @@ button {
   box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(0, 0, 0, 0.24);
 }
 
+.pod-wheel-game-center {
+  color: var(--pop-wheelInk);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+}
+
+.pod-wheel-music-label {
+  font-size: 8px;
+  line-height: 1;
+  letter-spacing: 0.1em;
+}
+
 .pod-wheel[data-held="true"] {
   filter: saturate(0.6) brightness(0.96);
 }

@@ -247,6 +247,8 @@ export function createPod() {
     ui.busy = true;
     let added = 0;
     let skipped = 0;
+    let failed = 0;
+    let lastFailure = "";
     try {
       for (const file of files) {
         if (!file.size || file.size > 10 * 1024 * 1024 ||
@@ -258,15 +260,25 @@ export function createPod() {
         const parts = name.split(" - ");
         const author = parts.length > 1 ? parts.shift()! : "Local audio";
         const title = parts.join(" - ") || name;
-        await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
-          if (!ref.mimeType.startsWith("audio/")) refuse(`“${file.name}” is not a supported audio file.`);
-          const { id } = tx.fields.videos.insert({ title: Array.from(title).slice(0, 200).join(""), author: Array.from(author).slice(0, 120).join(""), audio: { id: ref.id, name: ref.name, mimeType: ref.mimeType } });
-          if (!doc.current.videos.length) tx.fields.nowPlayingId.set(id);
-        });
-        added++;
+        try {
+          await attachments.import<typeof schema.descriptor>(file, (tx, ref) => {
+            if (!ref.mimeType.startsWith("audio/")) refuse(`“${file.name}” is not a supported audio file.`);
+            const { id } = tx.fields.videos.insert({
+              title: Array.from(title).slice(0, 200).join(""),
+              author: Array.from(author).slice(0, 120).join(""),
+              audio: { id: ref.id, name: ref.name, mimeType: ref.mimeType },
+            });
+            if (!doc.current.videos.length) tx.fields.nowPlayingId.set(id);
+          });
+          added++;
+        } catch (cause) {
+          failed++;
+          lastFailure = `${file.name}: ${cause instanceof Error ? cause.message : String(cause)}`;
+        }
       }
-      flash(`${added} ${added === 1 ? "song" : "songs"} added.${skipped ? ` ${skipped} skipped; use audio files up to 10 MB each.` : ""}`, added ? "ok" : "error");
-      if (added) haptics.notification("success");
+      flash(`${added} ${added === 1 ? "song" : "songs"} added.${skipped ? ` ${skipped} skipped; use audio files up to 10 MB each.` : ""}${failed ? ` ${failed} failed. ${lastFailure}` : ""}`, added && !failed ? "ok" : "error");
+      if (added) haptics.notification(failed || skipped ? "warning" : "success");
+      else if (failed) haptics.notification("error");
     } finally { ui.busy = false; }
   }
 

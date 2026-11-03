@@ -292,7 +292,7 @@ onMount(() => {
 {/snippet}
 
 {#snippet wheel()}
-  <ClickWheel {held} ondispatch={pod.dispatch} />
+  <ClickWheel {held} game={top.id === "breakout"} ondispatch={pod.dispatch} />
 {/snippet}
 
 {#snippet hold()}

@@ -2,7 +2,7 @@
 import { Button } from "bits-ui";
 import type { Intent } from "./intents";
 
-let { held, ondispatch }: { held: boolean; ondispatch: (intent: Intent) => void } = $props();
+let { held, game = false, ondispatch }: { held: boolean; game?: boolean; ondispatch: (intent: Intent) => void } = $props();
 
 type Sector = "menu" | "next" | "playpause" | "prev";
 const DETENT = Math.PI / 12;
@@ -102,15 +102,20 @@ const key = (type: Sector) => (event: MouseEvent) => {
 };
 </script>
 
-<div class="pod-wheel" bind:this={ring} role="group" aria-label="Click wheel" data-held={held} data-pressed={pressed}>
-  <Button.Root class="pod-wheel-label pod-wheel-menu" onclick={key("menu")} aria-label="Menu">MENU</Button.Root>
-  <Button.Root class="pod-wheel-label pod-wheel-prev" onclick={key("prev")} aria-label="Previous track">
-    <svg viewBox="0 0 24 14" aria-hidden="true"><path d="M2 1v12M13 1L4 7l9 6zM22 1l-9 6 9 6z" /></svg>
+<div class="pod-wheel" bind:this={ring} role="group" aria-label={game ? "Brick Breaker controls" : "Click wheel"} data-held={held} data-pressed={pressed}>
+  <Button.Root class="pod-wheel-label pod-wheel-menu" onclick={key("menu")} aria-label={game ? "Back to Games" : "Menu"}>{game ? "BACK" : "MENU"}</Button.Root>
+  <Button.Root class="pod-wheel-label pod-wheel-prev" onclick={key("prev")} aria-label={game ? "Move paddle left" : "Previous track"}>
+    <svg viewBox="0 0 24 14" aria-hidden="true">
+      {#if game}<path d="M21 7H3m6-5L3 7l6 5" fill="none" />{:else}<path d="M2 1v12M13 1L4 7l9 6zM22 1l-9 6 9 6z" />{/if}
+    </svg>
   </Button.Root>
-  <Button.Root class="pod-wheel-label pod-wheel-next" onclick={key("next")} aria-label="Next track">
-    <svg viewBox="0 0 24 14" aria-hidden="true"><path d="M22 1v12M11 1l9 6-9 6zM2 1l9 6-9 6z" /></svg>
+  <Button.Root class="pod-wheel-label pod-wheel-next" onclick={key("next")} aria-label={game ? "Move paddle right" : "Next track"}>
+    <svg viewBox="0 0 24 14" aria-hidden="true">
+      {#if game}<path d="M3 7h18m-6-5 6 5-6 5" fill="none" />{:else}<path d="M22 1v12M11 1l9 6-9 6zM2 1l9 6-9 6z" />{/if}
+    </svg>
   </Button.Root>
-  <Button.Root class="pod-wheel-label pod-wheel-play" onclick={key("playpause")} aria-label="Play or pause">
+  <Button.Root class="pod-wheel-label pod-wheel-play" onclick={key("playpause")} aria-label={game ? "Play or pause music" : "Play or pause"}>
+    {#if game}<span class="pod-wheel-music-label">MUSIC</span>{/if}
     <svg viewBox="0 0 26 14" aria-hidden="true"><path d="M1 1l10 6-10 6zM16 1h3.5v12H16zM22 1h3.5v12H22z" /></svg>
   </Button.Root>
   <div
@@ -123,11 +128,13 @@ const key = (type: Sector) => (event: MouseEvent) => {
   ></div>
   <Button.Root
     class="pod-wheel-center"
-    aria-label="Select"
+    aria-label={game ? "Launch or pause game" : "Select"}
     onpointerdown={centerDown}
     onpointerup={centerUp}
     onpointercancel={centerUp}
     onpointerleave={centerUp}
     onclick={centerClick}
-  />
+  >
+    {#if game}<span class="pod-wheel-game-center" aria-hidden="true">LAUNCH<br />PAUSE</span>{/if}
+  </Button.Root>
 </div>

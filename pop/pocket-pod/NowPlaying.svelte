@@ -32,7 +32,7 @@ const clock = (seconds: number) => {
 const waiting = $derived(playback.ready && playback.error === null && (playback.state === -1 || playback.state === 5));
 const progress = $derived(playback.duration ? Math.min(1, playback.time / playback.duration) : 0);
 const failure = (code: number) =>
-  code === -2 ? "This audio format won’t play on this device. Try MP3 or M4A."
+  code === -2 ? "This song couldn’t be played. Try again or import it again."
     : code === -1 ? "Can’t reach the player. Check your connection."
     : code === 100 ? "That video is no longer available."
     : code === 101 || code === 150 ? "The owner doesn’t allow this video to play here."

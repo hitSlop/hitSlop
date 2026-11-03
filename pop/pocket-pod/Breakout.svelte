@@ -43,8 +43,9 @@ function movePaddle(x: number) {
 }
 async function recordBest() {
   if (score <= Math.max(best, recordedBest)) return;
-  recordedBest = score;
-  await onbest(score);
+  const next = score;
+  await onbest(next);
+  recordedBest = Math.max(recordedBest, next);
 }
 function restart() {
   score = 0; lives = 3; level = 1; bricks = newBricks(); paddle = W / 2;
