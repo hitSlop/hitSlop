@@ -526,15 +526,18 @@ pub fn install(destination: &Path, link: &str) -> Result<()> {
         return Ok(());
     }
     let bytes = transport::http(&key, "GET", "seed", Some(&key.capability), &[], &[])?;
-    if Some(hex(&Sha256::digest(&bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {
+    install_seed(destination, &key, &info, &bytes)
+}
+fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]) -> Result<()> {
+    if Some(hex(&Sha256::digest(bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {
         return Err("Seed checksum mismatch".into());
     }
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent).map_err(fail)?;
     }
-    let stage = destination.with_extension(format!("{}.stage", random()?));
+    let stage = destination.with_file_name(format!(".pop-sharing-{}.pop", random()?));
     let result = (|| {
-        private_file(&stage, &bytes)?;
+        private_file(&stage, bytes)?;
         // A re-share seed may still contain its predecessor's membership. Bind the
         // new replica through its owner before callers restore the new credential.
         let owner = Owner::open(&stage, Mode::Document, Arc::new(|_| {})).map_err(fail)?;
