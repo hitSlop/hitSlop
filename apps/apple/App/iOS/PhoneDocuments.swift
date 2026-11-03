@@ -10,6 +10,24 @@ struct PhoneRecent: Identifiable, Sendable {
   let title: String
   let entry: SyncedPop?
   var id: String { url.standardizedFileURL.path }
+
+  static func isSharedDocument(_ url: URL) -> Bool {
+    url.deletingLastPathComponent().lastPathComponent == "SharedDocuments"
+      && UUID(uuidString: url.deletingPathExtension().lastPathComponent) != nil
+  }
+
+  /// Shared copies keep their UUID path for canonical joins; their app supplies the visible name.
+  static func localTitle(_ url: URL) -> String {
+    if isSharedDocument(url) {
+      return (try? PopSummary(url: url).metadata.title) ?? "Shared pop"
+    }
+    var name = url.deletingPathExtension().lastPathComponent
+    if let dash = name.lastIndex(of: "-") {
+      let suffix = name[name.index(after: dash)...]
+      if suffix.count == 8 && suffix.allSatisfy({ $0.isHexDigit }) { name = String(name[..<dash]) }
+    }
+    return name
+  }
 }
 
 @MainActor final class PhoneDocuments: ObservableObject, DocumentSessionDelegate {
@@ -84,7 +102,11 @@ struct PhoneRecent: Identifiable, Sendable {
     let managed = Set(synced.map(\.id))
     let local = documents.compactMap { url -> PhoneRecent? in
       guard !managed.contains(url.standardizedFileURL.path) else { return nil }
-      return PhoneRecent(url: url, title: localTitles[url] ?? url.deletingPathExtension().lastPathComponent, entry: nil)
+      return PhoneRecent(
+        url: url,
+        title: localTitles[url]
+          ?? (PhoneRecent.isSharedDocument(url) ? "Shared pop" : url.deletingPathExtension().lastPathComponent),
+        entry: nil)
     }
     func activity(_ recent: PhoneRecent) -> Date {
       max(
@@ -181,12 +203,7 @@ struct PhoneRecent: Identifiable, Sendable {
         var titles: [URL: String] = [:]
         var dates: [URL: Date] = [:]
         for url in paths {
-          var name = url.deletingPathExtension().lastPathComponent
-          if let dash = name.lastIndex(of: "-") {
-            let suffix = name[name.index(after: dash)...]
-            if suffix.count == 8 && suffix.allSatisfy({ $0.isHexDigit }) { name = String(name[..<dash]) }
-          }
-          titles[url] = name
+          titles[url] = PhoneRecent.localTitle(url)
           let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
           dates[url] = max(values?.contentModificationDate ?? .distantPast, values?.creationDate ?? .distantPast)
         }
