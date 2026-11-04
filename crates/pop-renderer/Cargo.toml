@@ -1,0 +1,17 @@
+[package]
+name = "pop-renderer"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pop-contracts = { path = "../pop-contracts" }
+serde_json.workspace = true
+takumi = { git = "https://github.com/kane50613/takumi", rev = "e527358cbd9b4f5deb361f56ef2cb02a88759f2b", version = "=2.15.1", default-features = false, features = ["unstable", "raster-backend", "from-html", "svg-source", "png", "jpeg", "gif", "webp", "woff2"] }
+takumi-pdf = { git = "https://github.com/kane50613/takumi", rev = "e527358cbd9b4f5deb361f56ef2cb02a88759f2b", version = "=0.16.1" }
+base64 = { version = "0.22" }
+png = { version = "=0.18.1" }

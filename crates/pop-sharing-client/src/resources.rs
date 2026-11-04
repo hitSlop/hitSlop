@@ -1,50 +1,9 @@
 use super::*;
-use pop_sharing_protocol::resources::{self as resource_types, Manifest, Resource};
+use pop_sharing_protocol::resources::{self as resource_types, Resource};
 
-/// The incoming seed is transport-bounded; a valid local file may have grown beyond
-/// CloudKit's preview checkpoint limit. Keep that policy out of relay reconnection.
-pub(crate) fn merge_seed(owner: &Owner, source: &Path) -> std::result::Result<(), transport::HttpFailure> {
-    let remote = Store::open(source, Mode::Snapshot).map_err(transport::HttpFailure::from)?;
-    let local = Store::open(owner.path(), Mode::Snapshot).map_err(fail)?;
-    if remote.app().document_uuid != local.app().document_uuid
-        || remote.app_digest().map_err(fail)? != local.app_digest().map_err(fail)?
-    {
-        return Err(fail("Seed identity/app mismatch").into());
-    }
-    for item in remote.attachments().map_err(fail)? {
-        let bytes = remote.attachment(&item.id).map_err(fail)?;
-        request(owner, Request::PutAttachment { bytes })?;
-    }
-    let document = remote.document().map_err(transport::HttpFailure::from)?;
-    let bytes = document.checkpoint().map_err(fail)?;
-    snapshot::request_typed(owner, Request::MergeSnapshot { bytes }).map_err(transport::HttpFailure::from)?;
-    request(owner, Request::Flush)?;
-    Ok(())
-}
-
-pub(crate) fn upload_app(key: &RoomKey, store: &Store, path: &Path, token: &str) -> Result<()> {
+pub(crate) fn upload_app(key: &RoomKey, store: &Store, _path: &Path, token: &str) -> Result<()> {
     let reader = store.resource_reader().map_err(fail)?;
-    let mut resources = vec![];
-    for asset in pop_core::file::inspect(path).map_err(fail)?.assets {
-        if !resource_types::asset_key(&asset.name) {
-            continue;
-        }
-        let route = pop_core::file::ResourceRoute::App;
-        if let Some(info) = reader.info(route, &asset.name).map_err(fail)? {
-            let bytes = reader
-                .read_range(route, &asset.name, 0, info.size)
-                .map_err(fail)?
-                .ok_or_else(|| fail("Missing app bytes"))?;
-            resources.push(Resource {
-                key: asset.name,
-                hash: hex(&Sha256::digest(&bytes)),
-                size: info.size,
-                media_type: info.media_type,
-            });
-        }
-    }
-    resource_types::validate(&resources, false).map_err(fail)?;
-    let manifest = Manifest { app: hex(&store.app_digest().map_err(fail)?), resources };
+    let manifest = store.sharing_manifest().map_err(fail)?;
     transport::http(
         key,
         "POST",
@@ -55,7 +14,7 @@ pub(crate) fn upload_app(key: &RoomKey, store: &Store, path: &Path, token: &str)
     )?;
     for item in manifest.resources {
         let bytes = reader
-            .read_range(pop_core::file::ResourceRoute::App, &item.key, 0, item.size)
+            .read_range(pop_storage::file::ResourceRoute::App, &item.key, 0, item.size)
             .map_err(fail)?
             .ok_or_else(|| fail("Missing app bytes"))?;
         transport::http(
@@ -69,9 +28,9 @@ pub(crate) fn upload_app(key: &RoomKey, store: &Store, path: &Path, token: &str)
     }
     Ok(())
 }
-fn local_blobs(owner: &Owner) -> Result<Vec<Resource>> {
+fn local_blobs(owner: &Owner) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
     let Reply::Attachments { items } = request(owner, Request::Attachments)? else {
-        return Err(fail("Missing attachment inventory"));
+        return Err(fail("Missing attachment inventory").into());
     };
     Ok(items
         .into_iter()
@@ -111,10 +70,20 @@ pub(crate) fn download_blobs(
     key: &RoomKey,
     uploaded: &mut Vec<Resource>,
 ) -> std::result::Result<(), transport::HttpFailure> {
-    let remote = remote_blobs(key)?;
+    download_blobs_authenticated(owner, key, uploaded, &key.capability)
+}
+pub(crate) fn download_blobs_authenticated(
+    owner: &Owner,
+    key: &RoomKey,
+    uploaded: &mut Vec<Resource>,
+    token: &str,
+) -> std::result::Result<(), transport::HttpFailure> {
+    let list = transport::http_typed(key, "GET", "blobs", Some(token), &[], &[])?;
+    let remote: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
+    resource_types::validate(&remote, true).map_err(fail)?;
     for item in resource_types::missing_attachments(&remote, &local_blobs(owner)?).map_err(fail)? {
-        let bytes = transport::http_typed(key, "GET", &format!("blob/{}", item.hash), Some(&key.capability), &[], &[])?;
-        let accepted = pop_core::store::Attachment::from_bytes(&bytes).map_err(fail)?;
+        let bytes = transport::http_typed(key, "GET", &format!("blob/{}", item.hash), Some(token), &[], &[])?;
+        let accepted = pop_storage::store::Attachment::from_bytes(&bytes).map_err(transport::HttpFailure::from)?;
         if accepted.id != item.hash || accepted.bytes != item.size || accepted.media_type != item.media_type {
             return Err(fail("Downloaded attachment failed verification").into());
         }

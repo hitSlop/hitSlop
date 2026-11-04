@@ -11,7 +11,7 @@ fn run(code: &str) -> Result<Value, String> {
         "globalThis.__popCommands = {{[Symbol.for('pop.command-set')]:{{specs:{{probe:{{args:{args},run(ctx){{{code}}}}}}}}}}};"
     );
     let request = json!({"name":"probe","args":{},"value":{"count":0},"descriptor":{"kind":"object","properties":{"count":{"kind":"counter"}}},"now":1234,"seed":[1,2,3,4]});
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     let output = evaluator.run(1, &bundle, &request.to_string())?;
     serde_json::from_str(&output).map_err(|e| format!("{e}: {output}"))
 }
@@ -24,6 +24,15 @@ fn restricted_commands_collect_intents_with_only_host_time_and_seed() {
     assert_eq!(result["result"]["now"], 1234);
     assert_eq!(result["result"]["apis"], json!(vec!["undefined"; 5]));
     assert_eq!(evaluate(code), result, "same invocation is deterministic");
+}
+#[cfg(all(feature = "process", feature = "capture-in-process"))]
+#[test]
+fn explicit_capture_and_process_providers_keep_distinct_command_authority() {
+    let capture = Evaluator::in_process_capture(env!("CARGO_BIN_EXE_pop-evaluator").into()).unwrap();
+    assert!(capture.run(1, "", "{}").is_err(), "capture does not acquire commands from feature unification");
+    let output = evaluate("return [typeof process,typeof Bun,typeof fetch,typeof require,typeof WebSocket]");
+    assert_eq!(output["ok"], true, "{output}");
+    assert_eq!(output["result"], json!(vec!["undefined"; 5]));
 }
 #[test]
 fn runner_refuses_async_mutation_and_ambient_clock() {

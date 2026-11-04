@@ -1,61 +1,33 @@
 //! Shared native/WASM document semantics.
 
-#[cfg(feature = "storage")]
 pub mod app;
 pub mod arguments;
 #[cfg(feature = "ts")]
 pub mod bindings;
 pub mod capture;
 mod check;
-#[cfg(feature = "storage")]
-pub mod command;
 pub mod describe;
 mod descriptor;
 mod document;
-#[cfg(feature = "storage")]
-mod error;
 mod execute;
-#[cfg(feature = "storage")]
-pub mod file;
 mod identity;
-#[cfg(feature = "storage")]
-pub mod images;
 mod layout;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub mod library;
-#[cfg(feature = "storage")]
-pub mod media;
-#[cfg(feature = "storage")]
-pub mod owner;
 mod project;
 mod publication;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub mod registry;
 mod replace;
 pub mod shape;
-#[cfg(all(feature = "snapshot-spike", not(target_arch = "wasm32")))]
-pub use library::snapshot as snapshot_spike;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32"), feature = "desktop"))]
-pub mod socket;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32"), not(feature = "desktop")))]
-#[path = "socket_unavailable.rs"]
-pub mod socket;
-#[cfg(feature = "storage")]
-pub mod store;
 pub mod sync;
 mod text;
 pub mod theme;
-#[cfg(feature = "storage")]
 pub mod widgets;
 mod wire;
 
 pub use descriptor::validate;
 use descriptor::{Node, is_scalar, loro_scalar, unwrap_optional, valid_key};
-#[cfg(feature = "storage")]
-use document::version::hex;
-pub use document::{AppSpec, Applied, Document, LAYOUT, Origin, TextEdit};
+pub use document::{AppSpec, Applied, Document, HistoryVersion, LAYOUT, Origin, TextEdit};
 use execute::{put, resolve};
 use identity::application_id;
+use layout::Layout;
 use loro::{
     Container, ContainerID, ContainerTrait, Index, LoroDoc, LoroMap, LoroMovableList, LoroText, LoroValue,
     ValueOrContainer,
@@ -65,13 +37,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
-#[cfg(feature = "storage")]
 pub use wire::browser as browser_wire;
-#[cfg(feature = "storage")]
 pub use wire::build;
-#[cfg(feature = "storage")]
 pub use wire::engine;
-#[cfg(feature = "storage")]
 pub use wire::engine::{EngineReply, EngineRequest, EngineSuccess};
 use wire::valid_id;
 pub use wire::{
@@ -79,33 +47,13 @@ pub use wire::{
     ATTACHMENT_NAME_BYTES, Code, IMAGE_PIXELS, IMAGE_SIDE, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS,
 };
 pub use wire::{Anchor, Batch, Hunk, Intent, OwnerState, PatchOp, Publication, Reading, Segment, Selection, ThemeFile};
-#[cfg(feature = "storage")]
 pub use wire::{ENGINE_PROTOCOL, HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
-#[cfg(feature = "storage")]
 pub use wire::{OutcomeCode, page as page_wire, preview, socket as socket_wire};
 
 /// The largest JSON text the core parses: a page request, or an app's initial values.
 use wire::JSON_BYTES as MAX_JSON;
 
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("{code}: {message}")]
-pub struct Error {
-    pub code: Code,
-    pub message: String,
-    pub op_index: Option<usize>,
-    /// Location within a checked value; independent of the batch's operation index.
-    pub path: Vec<String>,
-}
-impl Error {
-    fn at(mut self, segment: impl ToString) -> Self {
-        self.path.insert(0, segment.to_string());
-        self
-    }
-    /// RFC 6901 pointer; an empty string identifies the checked value itself.
-    pub fn pointer(&self) -> String {
-        self.path.iter().map(|s| format!("/{}", s.replace('~', "~0").replace('/', "~1"))).collect()
-    }
-}
+pub use pop_contracts::Error;
 type Result<T> = std::result::Result<T, Error>;
 fn err(code: Code, message: impl ToString) -> Error {
     Error { code, message: message.to_string(), op_index: None, path: vec![] }
@@ -136,14 +84,6 @@ pub(crate) fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, 
 fn random(buffer: &mut [u8]) {
     getrandom::getrandom(buffer).expect("random bytes");
 }
-/// `bytes` random bytes in lowercase hex.
-#[cfg(feature = "storage")]
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn random_hex(bytes: usize) -> String {
-    let mut buffer = vec![0u8; bytes];
-    random(&mut buffer);
-    hex(&buffer)
-}
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 fn safe(n: i64) -> bool {
     (-MAX_SAFE..=MAX_SAFE).contains(&n)
@@ -158,6 +98,3 @@ fn integer(value: &Value) -> Option<i64> {
 /// Identifies the core build (a hash of its sources and the lockfile), so a release can
 /// prove the app and the engine embed the same core.
 pub const BUILD_ID: &str = env!("POP_CORE_BUILD_ID");
-
-/// Share-row endpoint that retains document history for the personal library.
-pub const LIBRARY_SHARE_ENDPOINT: &str = "cloudkit://library";

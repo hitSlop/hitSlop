@@ -1,18 +1,17 @@
 //! A document's semantics, session history and validated Loro state.
 use crate::descriptor::{Node, descriptor};
 use crate::execute::{execute, fill};
-use crate::project::project;
 use crate::publication::{self, Events};
 use crate::{
     Batch, Code, Error, Intent, Publication, Reading, Result, STORAGE_BYTES, Segment, check, encode, engine, err, json,
     lock, parse, text, theme, wire,
 };
-use loro::{Container, ExportMode, Frontiers, LoroDoc, ValueOrContainer};
+use crate::{layout::Layout, project};
+use loro::{Container, ContainerTrait, ExportMode, Frontiers, LoroDoc, LoroValue, ValueOrContainer};
 use serde_json::Value;
-#[cfg(feature = "storage")]
 use std::collections::HashSet;
+mod epoch;
 mod history;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
 mod template;
 pub(crate) mod version;
 use history::Run;
@@ -30,28 +29,127 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
 fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
     doc.set_next_commit_message("create");
     doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
-    fill(&doc.get_map("data"), schema, value)?;
+    fill(Layout::Generations, &doc.get_map("data"), schema, value)?;
     doc.commit();
     Ok(doc)
 }
 /// The document layout: how descriptor kinds map to Loro containers
 /// (docs/reference/document-types.md). A compatibility requirement, not a release number,
 /// written into each document's `meta` map when it is created. A build refuses a newer one.
-pub const LAYOUT: i64 = 1;
+pub const LAYOUT: i64 = 2;
 const META: &str = "meta";
-const _: () = assert!(LAYOUT == 1, "add a layout arm to check_layout before raising LAYOUT");
-/// Refuses a document whose layout this build cannot read, before interpreting it. Each
-/// layout a released build wrote keeps its arm: raising `LAYOUT` adds an arm that reads
-/// the new layout and leaves the old ones reading (or migrating losslessly in memory).
+/// A reset's causal anchor: canonical decimal peer ID, whose first operation is the
+/// rebuilt checkpoint's first operation. Absence denotes the original history lineage.
+const HISTORY_EPOCH: &str = "historyEpoch";
+
+fn history_epoch(doc: &LoroDoc) -> Result<Option<loro::ID>> {
+    // Layout 1 predates epochs and accepted unrelated metadata without interpreting it.
+    if !Layout::of(doc).generations() {
+        return Ok(None);
+    }
+    let Some(value) = doc.get_map(META).get(HISTORY_EPOCH) else { return Ok(None) };
+    let invalid = || err(Code::InvalidBytes, "Invalid document history epoch");
+    let ValueOrContainer::Value(loro::LoroValue::String(peer)) = value else { return Err(invalid()) };
+    let parsed: u64 = peer.parse().map_err(|_| invalid())?;
+    let anchor = loro::ID::new(parsed, 0);
+    if parsed.to_string() != peer.as_ref() || !doc.oplog_vv().includes_id(anchor) {
+        return Err(invalid());
+    }
+    Ok(Some(anchor))
+}
+
+/// An epoch is a causal boundary, not an LWW selector. An old snapshot can leave the
+/// current marker unchanged while importing unrelated operations into mergeable roots.
+fn check_history_epoch(doc: &LoroDoc, expected: Option<loro::ID>, before: &loro::VersionVector) -> Result<()> {
+    let missing = || err(Code::MissingDependencies, "Document history was rebuilt; reopen its current checkpoint");
+    if history_epoch(doc)? != expected {
+        return Err(missing());
+    }
+    let Some(anchor) = expected else { return Ok(()) };
+    for (&peer, &end) in doc.oplog_vv().iter() {
+        let start = before.get(&peer).copied().unwrap_or(0);
+        if start >= end {
+            continue;
+        }
+        let frontier = Frontiers::from(loro::ID::new(peer, start));
+        let ancestry = doc.try_frontiers_to_vv(&frontier).map_err(|_| missing())?.ok_or_else(missing)?;
+        if !ancestry.includes_id(anchor) {
+            return Err(missing());
+        }
+    }
+    Ok(())
+}
+
+/// Published layout 1 keeps its original representation and history on every read/write.
+/// New documents use layout 2; opening never upgrades a document.
 fn check_layout(doc: &LoroDoc) -> Result<()> {
     match doc.get_map(META).get("layout") {
-        Some(ValueOrContainer::Value(loro::LoroValue::I64(1))) => Ok(()),
+        Some(ValueOrContainer::Value(loro::LoroValue::I64(1 | 2))) => Ok(()),
         Some(ValueOrContainer::Value(loro::LoroValue::I64(layout))) if layout > LAYOUT => Err(err(
             Code::RequiresUpdate,
             format!("This document uses layout {layout}; this pop reads layout {LAYOUT}"),
         )),
         _ => Err(err(Code::InvalidBytes, "Document has no supported layout")),
     }
+}
+
+/// Independently inspect self-contained inputs before Loro can discard conflicting
+/// operation IDs (deterministic template seeds use peer 1 in both layouts). Ordinary
+/// deltas retain their single-import path; their newly integrated marker writes are
+/// checked below when their dependencies arrive.
+fn check_import_layout(bytes: &[u8], expected: Layout) -> Result<()> {
+    let meta = LoroDoc::decode_import_blob_meta(bytes, false).map_err(|e| err(Code::InvalidBytes, e))?;
+    if matches!(meta.mode, loro::EncodedBlobMode::Snapshot | loro::EncodedBlobMode::ShallowSnapshot)
+        || meta.partial_start_vv.is_empty()
+    {
+        let probe = LoroDoc::new();
+        probe.import(bytes).map_err(|e| err(Code::InvalidBytes, e))?;
+        if probe.get_map(META).get("layout").is_some() {
+            check_layout(&probe)?;
+            if Layout::of(&probe) != expected {
+                return Err(err(Code::InvalidBytes, "Cannot merge different document layouts"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Inspect imported marker writes even when LWW leaves our marker unchanged. Only
+/// incoming operations are visited, in bounded chunks; no application snapshot is copied.
+fn check_layout_history(doc: &LoroDoc, expected: Layout, before: &loro::VersionVector) -> Result<()> {
+    check_layout(doc)?;
+    let mismatch = || err(Code::InvalidBytes, "Cannot merge different document layouts");
+    if Layout::of(doc) != expected {
+        return Err(mismatch());
+    }
+    let meta = doc.get_map(META).id();
+    let expected = if expected.generations() { 2 } else { 1 };
+    for (&peer, &end) in doc.oplog_vv().iter() {
+        let mut start = before.get(&peer).copied().unwrap_or(0);
+        while start < end {
+            let next = start.saturating_add(256).min(end);
+            for change in doc.export_json_in_id_span(loro::IdSpan::new(peer, start, next)) {
+                for op in change.ops {
+                    if op.container != meta {
+                        continue;
+                    }
+                    match op.content {
+                        loro::JsonOpContent::Map(loro::JsonMapOp::Insert { key, value }) if key == "layout" => {
+                            if value != LoroValue::I64(expected) {
+                                return Err(mismatch());
+                            }
+                        }
+                        loro::JsonOpContent::Map(loro::JsonMapOp::Delete { key }) if key == "layout" => {
+                            return Err(mismatch());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            start = next;
+        }
+    }
+    Ok(())
 }
 
 /// Who made a change: the person, in the page or in the window's own controls (the theme
@@ -119,6 +217,16 @@ pub struct TextEdit {
     pub selection: [usize; 2],
 }
 
+/// An opaque point in a document's operation history, used to save only later updates.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct HistoryVersion(loro::VersionVector);
+impl HistoryVersion {
+    /// Whether this history includes every operation in `other`.
+    pub fn includes(&self, other: &Self) -> bool {
+        self.0.includes_vv(&other.0)
+    }
+}
+
 /// Exactly one host executor owns this value. Neither binding contains semantics.
 pub struct Document {
     pub(crate) doc: LoroDoc,
@@ -181,8 +289,9 @@ impl Document {
     }
     /// Imports `checkpoint`, then each update `updates` passes to its import function, in
     /// order. Storage streams rows through it without copying them, failing in its own
-    /// error type (`core` wraps the document's); callers bound the total size first.
-    pub(crate) fn open_with<E>(
+    /// error type (`core` wraps the document's). Callers must check that the combined
+    /// checkpoint and update bytes fit [`STORAGE_BYTES`] before importing.
+    pub fn open_with<E>(
         app: &AppSpec,
         checkpoint: &[u8],
         core: impl Fn(Error) -> E,
@@ -197,10 +306,17 @@ impl Document {
         }
         let doc = LoroDoc::new();
         imported(doc.import(checkpoint)).map_err(&core)?;
+        check_layout(&doc).map_err(&core)?;
+        let layout = Layout::of(&doc);
         let trimmed = doc.shallow_since_vv();
+        let epoch = history_epoch(&doc).map_err(&core)?;
         // One import per update measured faster than Loro's `import_batch` here.
         updates(&mut |bytes: &[u8]| {
+            check_import_layout(bytes, layout).map_err(&core)?;
+            let before = doc.oplog_vv();
             imported(doc.import(bytes)).map_err(&core)?;
+            check_history_epoch(&doc, epoch, &before).map_err(&core)?;
+            check_layout_history(&doc, layout, &before).map_err(&core)?;
             if doc.shallow_since_vv() != trimmed {
                 return Err(core(err(Code::InvalidBytes, "Only a checkpoint may trim history")));
             }
@@ -214,7 +330,7 @@ impl Document {
     }
     /// The application value: the stored value, each counter and number as it reads.
     pub(crate) fn projected(&self) -> Value {
-        project(Some(&self.app.schema), raw(&self.doc))
+        project::with_layout(Layout::of(&self.doc), Some(&self.app.schema), raw(&self.doc))
     }
     /// The application value as JSON.
     pub fn value(&self) -> String {
@@ -423,11 +539,10 @@ impl Document {
         self.sequence = next;
         Ok(Some(Published { json, theme: themed }))
     }
-    /// The `stored` attachment IDs this state names: each one that appears in a string, a
-    /// text or a map key, alone or inside longer text such as markdown. A false match only
-    /// keeps a blob, so a blob the state references is never left out.
-    #[cfg(feature = "storage")]
-    pub(crate) fn attachment_references(&self, stored: &[String]) -> HashSet<String> {
+    /// The `stored` attachment IDs the visible state names, including strings, text and
+    /// map keys. Retained generations support session undo but are not live references
+    /// after close. A false match only keeps a blob, so referenced blobs are never lost.
+    pub fn attachment_references(&self, stored: &[String]) -> HashSet<String> {
         let stored: HashSet<&str> = stored.iter().map(String::as_str).collect();
         let mut found = HashSet::new();
         let mut scan = |text: &str| {
@@ -439,13 +554,13 @@ impl Document {
                 }
             }
         };
-        let root = self.doc.get_deep_value();
+        let root = self.projected();
         let mut pending = vec![&root];
         while let Some(value) = pending.pop() {
             match value {
-                loro::LoroValue::String(text) => scan(text),
-                loro::LoroValue::List(items) => pending.extend(items.iter()),
-                loro::LoroValue::Map(entries) => {
+                Value::String(text) => scan(text),
+                Value::Array(items) => pending.extend(items.iter()),
+                Value::Object(entries) => {
                     for (key, value) in entries.iter() {
                         scan(key);
                         pending.push(value);
@@ -456,8 +571,56 @@ impl Document {
         }
         found
     }
+    /// An independent document containing only accepted visible state and theme overrides.
+    /// Rebuilding drops hidden mergeable roots that a shallow Loro snapshot still retains.
+    pub fn clean_checkpoint(&self) -> Result<Vec<u8>> {
+        self.intact()?;
+        // Stored acceptance permits merged states beyond authoring/write limits. This
+        // copies their projection directly, rather than passing it through `create`.
+        let doc = LoroDoc::new();
+        doc.get_map(META).insert(HISTORY_EPOCH, doc.peer_id().to_string()).map_err(engine)?;
+        let doc = filled(doc, &self.app.schema, &self.projected())?;
+        let theme = doc.get_map(theme::ROOT);
+        for (key, value) in self.theme_state()?.overrides {
+            theme.insert(&key, value).map_err(engine)?;
+        }
+        doc.commit();
+        acceptable(&doc, &self.app)?;
+        doc.export(ExportMode::Snapshot).map_err(engine)
+    }
+
     pub fn checkpoint(&self) -> Result<Vec<u8>> {
         self.doc.export(ExportMode::Snapshot).map_err(engine)
+    }
+
+    /// Whether this document's history includes every operation visible in `other`.
+    pub fn includes_history(&self, other: &Document) -> bool {
+        let version = self.doc.oplog_vv();
+        other.doc.state_frontiers().iter().all(|id| version.includes_id(id))
+    }
+
+    /// The current operation history, without exposing the document engine's version type.
+    pub fn history_version(&self) -> HistoryVersion {
+        HistoryVersion(self.doc.oplog_vv())
+    }
+    /// The operations this document holds after a previously recorded history version.
+    pub fn history_updates_since(&self, version: &HistoryVersion) -> Result<Vec<u8>> {
+        if !self.history_version().includes(version) {
+            return Err(err(Code::MissingDependencies, "Saved history is not part of this live document"));
+        }
+        self.updates_since(&version.0)
+    }
+    /// Whether this layout supports explicitly rebuilding retained history. Published
+    /// legacy documents preserve their existing identity and sync lineage on close.
+    pub fn supports_deep_compaction(&self) -> bool {
+        Layout::of(&self.doc).generations()
+    }
+
+    /// A checkpoint starting at the current version, retaining its CRDT identities.
+    /// Unlike `clean_checkpoint`, this can retain hidden mergeable container payloads.
+    pub fn current_history_checkpoint(&self) -> Result<Vec<u8>> {
+        self.doc.commit();
+        self.doc.export(ExportMode::shallow_snapshot(&self.doc.oplog_frontiers())).map_err(engine)
     }
 
     /// Every operation this replica holds, by peer.
@@ -505,11 +668,18 @@ impl Document {
         self.intact()?;
         let before = self.doc.state_frontiers();
         let version = self.doc.oplog_vv();
+        let epoch = history_epoch(&self.doc)?;
+        let layout = Layout::of(&self.doc);
+        // Preflight the entire batch before any mutation or undo-history reset.
+        for bytes in updates {
+            check_import_layout(bytes, layout)?;
+        }
         let imported = updates
             .iter()
             .try_for_each(|bytes| self.doc.import(bytes).map(drop))
             .map_err(|e| err(Code::InvalidBytes, e))
-            .and_then(|()| check_layout(&self.doc))
+            .and_then(|()| check_layout_history(&self.doc, layout, &version))
+            .and_then(|()| check_history_epoch(&self.doc, epoch, &version))
             .and_then(|()| acceptable(&self.doc, &self.app));
         if let Err(error) = imported {
             self.abort(&before)?;
@@ -532,7 +702,12 @@ impl Document {
 /// Whether `doc` holds what `app` accepts: checked whenever state arrives from outside
 /// this session, a saved file or another replica.
 fn acceptable(doc: &LoroDoc, app: &AppSpec) -> Result<()> {
-    check::stored(&app.schema, Some(ValueOrContainer::Container(Container::Map(doc.get_map("data")))))?;
+    history_epoch(doc)?;
+    check::stored(
+        Layout::of(doc),
+        &app.schema,
+        Some(ValueOrContainer::Container(Container::Map(doc.get_map("data")))),
+    )?;
     app.theme.check_stored(&doc.get_map(theme::ROOT))
 }
 /// A new long-lived replica holding exactly the history up to `frontiers`. Built by
@@ -560,4 +735,169 @@ fn imported(result: loro::LoroResult<loro::ImportStatus>) -> Result<()> {
         return Err(err(Code::MissingDependencies, "Durable pending-import buffering is not implemented"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use loro::{LoroMap, LoroMovableList, LoroText};
+    use serde_json::json;
+
+    #[test]
+    fn published_layout_keeps_legacy_children_and_sync_lineage() {
+        let child = json!({"kind":"object","properties":{
+            "text":{"kind":"text"}, "done":{"kind":"boolean","default":false}
+        }});
+        let schema = json!({"kind":"object","properties":{
+            "title":{"kind":"text"}, "extra":{"kind":"optional","inner":child},
+            "entries":{"kind":"record","value":child}, "rows":{"kind":"list","item":child}
+        }});
+        let app = AppSpec::data(&schema.to_string()).unwrap();
+        // An independent layout-1 writer uses ordinary children, not the adapter's fill.
+        let old = LoroDoc::new();
+        old.get_map(META).insert("layout", 1).unwrap();
+        old.get_map(META).insert(HISTORY_EPOCH, "uninterpreted legacy metadata").unwrap();
+        let root = old.get_map("data");
+        let title = root.insert_container("title", LoroText::new()).unwrap();
+        title.insert(0, "Before").unwrap();
+        root.insert_container("entries", LoroMap::new()).unwrap();
+        let rows = root.insert_container("rows", LoroMap::new()).unwrap();
+        rows.insert_container("rows", LoroMap::new()).unwrap();
+        rows.insert_container("order", LoroMovableList::new()).unwrap();
+        old.commit();
+        let opening = old.export(ExportMode::Snapshot).unwrap();
+        let mut a = Document::open(&app, &opening, &[]).unwrap();
+        let mut b = Document::open(&app, &opening, &[]).unwrap();
+        let opening_version = a.history_version();
+        assert!(!a.supports_deep_compaction());
+        assert_eq!(a.history_version(), opening_version, "opening does not rewrite history");
+        let edits = |text: &str| {
+            serde_json::from_value(json!({"intents":[
+                {"type":"set","path":["extra"],"value":{"text":text}},
+                {"type":"set","path":["entries","same"],"value":{"text":text}},
+                {"type":"insert","path":["rows"],"id":"same","value":{"text":text}}
+            ]}))
+            .unwrap()
+        };
+        a.apply_batch(edits("Left"), Origin::Page).unwrap();
+        b.apply_batch(edits("Right"), Origin::Page).unwrap();
+        let left = a.checkpoint().unwrap();
+        let right = b.checkpoint().unwrap();
+        a.import_remote(&[&right]).unwrap();
+        b.import_remote(&[&left]).unwrap();
+        assert_eq!(a.projected(), b.projected());
+        for value in [&a.projected()["extra"], &a.projected()["entries"]["same"], &a.projected()["rows"][0]] {
+            assert!(
+                [json!("Left"), json!("Right")].contains(&value["text"]),
+                "legacy concurrent creation remains whole-child LWW"
+            );
+            assert_eq!(value["done"], false);
+        }
+        // Old writer edits the same original text after receiving the newer writer's data.
+        old.import(&a.checkpoint().unwrap()).unwrap();
+        title.insert(title.len_unicode(), " remote").unwrap();
+        old.commit();
+        a.import_remote(&[&old.export(ExportMode::Snapshot).unwrap()]).unwrap();
+        assert_eq!(a.projected()["title"], "Before remote");
+        let clear = serde_json::from_value(json!({"intents":[
+            {"type":"clear","path":["extra"]},
+            {"type":"clear","path":["entries","same"]},
+            {"type":"remove","path":["rows"],"id":"same"}
+        ]}))
+        .unwrap();
+        a.apply_batch(clear, Origin::Page).unwrap();
+        assert!(a.projected().get("extra").is_none());
+        a.undo().unwrap();
+        assert!(a.projected().get("extra").is_some());
+        a.redo().unwrap();
+        let saved = a.checkpoint().unwrap();
+        let reopened = Document::open(&app, &saved, &[]).unwrap();
+        assert_eq!(reopened.projected(), a.projected());
+        old.import(&saved).unwrap();
+        assert!(matches!(old.get_map(META).get("layout"), Some(ValueOrContainer::Value(LoroValue::I64(1)))));
+        assert!(old.get_map("data").get("extra").is_none());
+        assert!(reopened.history_version().includes(&opening_version));
+    }
+
+    #[test]
+    fn mixed_layout_imports_are_refused_even_when_the_marker_loses() {
+        let app = AppSpec::data(r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#).unwrap();
+        for (own, same_peer) in [(1, false), (2, false), (1, true), (2, true)] {
+            let old = LoroDoc::new();
+            if same_peer {
+                old.set_peer_id(1).unwrap();
+            }
+            old.get_map(META).insert("layout", own).unwrap();
+            old.get_map("data").insert_container("title", LoroText::new()).unwrap().insert(0, "kept").unwrap();
+            old.commit();
+            let seed = old.export(ExportMode::Snapshot).unwrap();
+            let seed_version = old.oplog_vv();
+            let delta_source = LoroDoc::new();
+            delta_source.import(&seed).unwrap();
+            delta_source.get_map(META).insert("layout", 3 - own).unwrap();
+            delta_source.commit();
+            let incompatible_delta = delta_source.export(ExportMode::updates(&seed_version)).unwrap();
+            let mut doc = Document::open(&app, &seed, &[]).unwrap();
+            let other = LoroDoc::new();
+            if same_peer {
+                other.set_peer_id(1).unwrap();
+            }
+            other.get_map(META).insert("layout", 3 - own).unwrap();
+            other.get_map("data").insert_container("title", LoroText::new()).unwrap().insert(0, "foreign").unwrap();
+            other.commit();
+            // A later local assignment makes the incompatible foreign marker lose LWW.
+            for _ in 0..5 {
+                old.get_map(META).insert("layout", own).unwrap();
+                old.commit();
+            }
+            doc.import_remote(&[&old.export(ExportMode::Snapshot).unwrap()]).unwrap();
+            let before = doc.history_version();
+            let value = doc.projected();
+            for incoming in [
+                other.export(ExportMode::Snapshot).unwrap(),
+                other.export(ExportMode::all_updates()).unwrap(),
+                incompatible_delta,
+            ] {
+                assert_eq!(doc.import_remote(&[&incoming]).unwrap_err().code, Code::InvalidBytes);
+                assert_eq!(doc.history_version(), before);
+                assert_eq!(doc.projected(), value);
+            }
+        }
+    }
+
+    #[test]
+    fn removed_subtrees_release_publication_indexes() {
+        let leaf = json!({"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"}}}});
+        let object = json!({"kind":"object","properties":{"children":leaf}});
+        let schema = json!({"kind":"object","properties":{
+            "extra":{"kind":"optional","inner":object},
+            "entries":{"kind":"record","value":object},
+            "rows":{"kind":"list","item":object}
+        }});
+        let app = AppSpec::data(&schema.to_string()).unwrap();
+        let mut doc = Document::create(&app, "{}").unwrap();
+        let baseline = doc.lists.len();
+        for _ in 0..4 {
+            let create: Batch = serde_json::from_value(json!({"intents":[
+                {"type":"set","path":["extra"],"value":{}},
+                {"type":"set","path":["entries","same"],"value":{}},
+                {"type":"insert","path":["rows"],"id":"same","value":{}}
+            ]}))
+            .unwrap();
+            doc.apply_batch(create, Origin::Page).unwrap();
+            assert_eq!(doc.lists.len(), baseline + 3, "one index for each visible nested list");
+            let remove: Batch = serde_json::from_value(json!({"intents":[
+                {"type":"clear","path":["extra"]},
+                {"type":"clear","path":["entries","same"]},
+                {"type":"remove","path":["rows"],"id":"same"}
+            ]}))
+            .unwrap();
+            doc.apply_batch(remove, Origin::Page).unwrap();
+            assert_eq!(doc.lists.len(), baseline, "hidden generations must not retain publication indexes");
+            doc.undo().unwrap();
+            assert_eq!(doc.lists.len(), baseline + 3, "undo indexes the restored generation");
+            doc.redo().unwrap();
+            assert_eq!(doc.lists.len(), baseline);
+        }
+    }
 }

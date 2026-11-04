@@ -1,0 +1,38 @@
+[package]
+name = "pop-capture"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[features]
+desktop = ["pop-runner/process"]
+mobile-capture = ["pop-runner/capture-in-process"]
+
+[dependencies]
+pop-contracts = { path = "../pop-contracts" }
+pop-core = { path = "../pop-core", default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pop-storage = { path = "../pop-storage" }
+pop-runner = { path = "../pop-runner", default-features = false }
+sha2 = "=0.11.0"
+data-encoding = "=2.11.1"
+
+[dev-dependencies]
+tempfile = "3"
+png = "=0.18.1"
+rusqlite = { version = "=0.40.2", features = ["hooks"] }
+libc = "0.2"
+loro.workspace = true
+
+[[test]]
+name = "capture"
+path = "tests/main.rs"
+required-features = ["desktop"]

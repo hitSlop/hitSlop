@@ -5,7 +5,7 @@ import { BrowserHost } from "../schema/constants";
 import type { BrowserRequest } from "../wire/browser.generated";
 import type { Capability, WindowDefinition } from "../wire/app.generated";
 import type { PageFailure } from "../wire/page";
-import { cleanup, listCopies, lockName, putCopy, removeCopy } from "./copies";
+import { cleanup, listCopies, lockName, putCopy, updateCopy, removeCopy } from "./copies";
 import { JoinGate } from "./join";
 import { silhouetteClip } from "../schema/presentation";
 import { capabilityFeatures } from "../schema/policy";
@@ -265,7 +265,10 @@ async function own() {
           throw new Error("There is not enough browser storage for this copy");
       }
       await putCopy({ id: id!, title: "Importing…", created: Date.now(), state: "importing" });
-    } else if (!existing || existing.state !== "ready")
+    } else if (
+      !existing ||
+      (existing.state !== "ready" && !(existing.state === "recovering" && existing.recovery))
+    )
       throw new Error("This browser copy is missing. Open the original file again.");
     // Keep the Web Lock until the worker dies and this tab releases its handles.
     await new Promise<void>((_, reject) => {
@@ -302,8 +305,7 @@ async function own() {
             opened = true;
             title.textContent = data.title;
             try {
-              await putCopy({
-                id: id!,
+              await updateCopy(id!, {
                 title: data.title,
                 created: existing?.created ?? Date.now(),
                 state: "ready",
@@ -358,7 +360,9 @@ async function own() {
         if (hosted)
           worker!.postMessage({
             type: "joinCredential",
-            credential: localStorage.getItem("sharing.invitation." + id) ?? "",
+            credential: existing?.local
+              ? ""
+              : (localStorage.getItem("sharing.invitation." + id) ?? ""),
           } satisfies SharingControl);
         send({ type: "open", copy: id!, source });
       };

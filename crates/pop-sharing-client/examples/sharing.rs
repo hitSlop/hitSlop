@@ -1,12 +1,9 @@
 //! Disposable fixture driver for the deployed sharing check. Never ships in the app.
 //! Invitations and credentials are written only to owner-readable files, never stdout.
-use pop_core::{
-    file,
-    library::snapshot,
-    owner::{Owner, Reply, Request},
-    store::Mode,
-};
+use pop_library::snapshot;
+use pop_runtime::owner::{Owner, Reply, Request};
 use pop_sharing_client::Client;
+use pop_storage::{file, store::Mode};
 use serde::Deserialize;
 use std::{
     io::{BufRead, Write},
@@ -43,11 +40,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret = Path::new(args.get(3).ok_or("Firebase token file required")?);
     let guest = args.get(4).is_some_and(|value| value == "--guest");
     std::fs::create_dir_all(root)?;
-    pop_core::registry::use_folder(&root.join("registry"))?;
+    pop_storage::registry::use_folder(&root.join("registry"))?;
     let path = root.join("native.pop");
     let invitation = if guest { Some(std::fs::read_to_string(secret)?) } else { None };
     if let Some(link) = &invitation {
-        pop_sharing_client::install(&path, link.trim())?;
+        pop_sharing_client::install(&path, link.trim(), &root.join("relay-state"))?;
     } else {
         file::create_document(template, &path)?;
     }
@@ -57,10 +54,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let published = if let Some(link) = &invitation {
         pop_sharing_client::joined_credential(link.trim())?
     } else {
-        Client::create(&owner, token.trim())?
+        // This disposable local fixture has no CloudKit catalog authority.
+        let prepared = pop_sharing_client::reserve(owner.app().document_uuid.as_deref().unwrap(), token.trim())?;
+        prepared.activate(&owner, token.trim(), None, &root.join("relay-state"))?.credential
     };
     save(&credentials, published.as_bytes())?;
-    let client = Client::restore(owner.clone(), &published)?;
+    let client =
+        Client::restore(owner.clone(), &published, &root.join("relay-state"), (!guest).then_some(token.trim()))?;
     client.set_creator(!guest);
     let link = client.status().link.ok_or("No invitation")?;
     save(&root.join("invitation.txt"), link.as_bytes())?;
@@ -88,7 +88,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if guest {
                         return Err("Stop the disposable room in its signed-in owner app".into());
                     }
-                    let ended = client.stop(token.trim())?;
+                    let frozen = client.freeze(token.trim())?;
+                    let ended = client.finalize(token.trim(), &frozen, None)?;
                     save(&credentials, ended.as_bytes())?;
                 }
                 Control::Pause => client.pause(),

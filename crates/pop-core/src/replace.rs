@@ -5,7 +5,7 @@
 use super::*;
 use execute::{put, rewrite_list};
 use layout::RowList;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Validates `value` completely before the first mutation.
 pub(super) fn replace(
@@ -18,7 +18,7 @@ pub(super) fn replace(
     if path.len() > crate::wire::PATH_SEGMENTS {
         return Err(err(Code::InvalidPath, "Path length"));
     }
-    let mut to = Reconcile { ids };
+    let mut to = Reconcile { layout: Layout::of(doc), ids };
     if path.is_empty() {
         schema.validate(value, false)?;
         return to.object(&doc.get_map("data"), schema, value);
@@ -35,7 +35,7 @@ pub(super) fn replace(
     match &at.parent {
         Some((map, key)) => {
             at.node.validate(value, false)?;
-            to.field(map, key, at.node, value)
+            to.field(map, key, at.node, value, at.entry)
         }
         // A row: its ID stays.
         None => {
@@ -56,8 +56,8 @@ pub(super) fn replace(
 
 /// The present object `map` becomes the fully validated `value`, written as its
 /// differences so surviving text, lists and rows retain their identities.
-pub(super) fn object(map: &LoroMap, node: &Node, value: &Value, ids: &mut Vec<String>) -> Result<()> {
-    Reconcile { ids }.object(map, node, value)
+pub(super) fn object(layout: Layout, map: &LoroMap, node: &Node, value: &Value, ids: &mut Vec<String>) -> Result<()> {
+    Reconcile { layout, ids }.object(map, node, value)
 }
 
 /// A stored scalar as the snapshot shows it, or none when it is not one.
@@ -69,14 +69,27 @@ fn stored(kind: &Node, value: &ValueOrContainer) -> Option<Value> {
 }
 
 struct Reconcile<'a> {
+    layout: Layout,
     ids: &'a mut Vec<String>,
 }
 impl Reconcile<'_> {
     /// `map[key]` becomes `value`; an absent field or entry is created.
-    fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
+    fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value, entry: bool) -> Result<()> {
         let kind = unwrap_optional(node);
-        let Some(current) = map.get(key) else {
-            return put(map, key, kind, value);
+        let Some(current) = layout::field(self.layout, map, key, node, entry) else {
+            if self.layout.generations()
+                && is_scalar(node)
+                && node
+                    .default_value()
+                    .is_some_and(|default| project(Some(node), default) == project(Some(node), value.clone()))
+            {
+                return Ok(());
+            }
+            return if entry {
+                execute::put_entry(self.layout, map, key, node, value)
+            } else {
+                put(self.layout, map, key, node, value)
+            };
         };
         match (kind, current) {
             (scalar, current) if is_scalar(scalar) => {
@@ -100,7 +113,7 @@ impl Reconcile<'_> {
                 rewrite_list(&list, item, value.as_array().expect("validated list"))?;
             }
             (Node::List { item }, current) => {
-                self.list(&RowList::of(&current)?, item, value.as_array().expect("validated list"))?;
+                self.list(&RowList::of(self.layout, &current)?, item, value.as_array().expect("validated list"))?;
             }
             _ => return Err(unexpected()),
         }
@@ -113,8 +126,8 @@ impl Reconcile<'_> {
         };
         for (key, child) in properties {
             match value.get(key) {
-                Some(value) => self.field(map, key, child, value)?,
-                None if map.get(key).is_some() => map.delete(key).map_err(engine)?,
+                Some(value) => self.field(map, key, child, value, false)?,
+                None if map.get(key).is_some() => layout::clear_field(self.layout, map, key, child, false)?,
                 None => {}
             }
         }
@@ -125,10 +138,10 @@ impl Reconcile<'_> {
         let wanted = value.as_object().expect("validated record");
         let gone: Vec<String> = map.keys().map(|key| key.to_string()).filter(|key| !wanted.contains_key(key)).collect();
         for key in gone {
-            map.delete(&key).map_err(engine)?;
+            layout::clear_field(self.layout, map, &key, entry, true)?;
         }
         for (key, value) in wanted {
-            self.field(map, key, entry, value)?;
+            self.field(map, key, entry, value, true)?;
         }
         Ok(())
     }
@@ -141,40 +154,57 @@ impl Reconcile<'_> {
             .map(|value| value.get("$id").and_then(Value::as_str).map(str::to_owned).unwrap_or_else(application_id))
             .collect();
         // The common import keeps its row IDs in place: reconcile those rows directly.
-        if list.ids() == wanted {
+        let current = list.ids();
+        if current == wanted {
             for (id, value) in wanted.iter().zip(values) {
                 self.object(&list.row(id).ok_or_else(unexpected)?, item, value)?;
             }
             return Ok(());
         }
         let keep: HashSet<&str> = wanted.iter().map(String::as_str).collect();
-        for id in list.ids().iter().filter(|id| !keep.contains(id.as_str())) {
-            list.remove(id)?;
-        }
+        let removed: Vec<&str> = current.iter().map(String::as_str).filter(|id| !keep.contains(id)).collect();
+        list.remove_many(&removed)?;
         // A replacement states the whole order: `order` then names each row once.
         list.normalize()?;
-        let existing: HashSet<String> = list.ids().into_iter().collect();
-        let kept: Vec<&str> = wanted.iter().map(String::as_str).filter(|id| existing.contains(*id)).collect();
-        let positions: Vec<usize> = kept.iter().map(|id| list.index(id)).collect::<Result<_>>()?;
+        let current = list.ids();
+        let existing: HashMap<&str, usize> = current.iter().enumerate().map(|(at, id)| (id.as_str(), at)).collect();
+        let kept: Vec<&str> = wanted.iter().map(String::as_str).filter(|id| existing.contains_key(id)).collect();
+        let positions: Vec<usize> = kept.iter().map(|id| existing[id]).collect();
         let staying: HashSet<&str> = layout::longest_increasing(&positions).into_iter().map(|i| kept[i]).collect();
-        let mut previous: Option<&str> = None;
+
+        // Only this reconciliation mutates this order. Dense tokens let its repeated
+        // rank lookups avoid traversing Loro and allocating every ID again. Moves
+        // update just the affected integer slice; no cache survives the operation.
+        let mut order: Vec<usize> = (0..current.len()).collect();
+        let mut ranks = order.clone();
+        let mut previous: Option<usize> = None;
         for (id, value) in wanted.iter().zip(values) {
-            let after = match previous {
-                Some(previous) => list.index(previous)? + 1,
-                None => 0,
-            };
-            if existing.contains(id) {
+            let after = previous.map_or(0, |token| ranks[token] + 1);
+            let token = if let Some(&token) = existing.get(id.as_str()) {
                 self.object(&list.row(id).ok_or_else(unexpected)?, item, value)?;
-                let from = list.index(id)?;
+                let from = ranks[token];
                 let to = if after > from { after - 1 } else { after };
                 if !staying.contains(id.as_str()) && from != to {
                     list.mov_index(from, to)?;
+                    order.remove(from);
+                    order.insert(to, token);
+                    for at in from.min(to)..=from.max(to) {
+                        ranks[order[at]] = at;
+                    }
                 }
+                token
             } else {
                 list.insert(after, id, item, value)?;
                 self.ids.push(id.clone());
-            }
-            previous = Some(id);
+                let token = ranks.len();
+                ranks.push(after);
+                order.insert(after, token);
+                for (at, &token) in order.iter().enumerate().skip(after) {
+                    ranks[token] = at;
+                }
+                token
+            };
+            previous = Some(token);
         }
         Ok(())
     }

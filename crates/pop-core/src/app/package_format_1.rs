@@ -10,8 +10,8 @@
 //! later build can add an optional member without a new package format. What decides what a
 //! value may be stays exact: the descriptor and the commands' arguments.
 use super::{
-    AppDefinition, AppMetadata, Background, Capability, Category, CommandDefinition, CommandInput, StandardFrame,
-    ThemeInput, Views, WidgetOptions, WindowDefinition, WindowFrame,
+    AppDefinition, AppMetadata, Background, Capability, CommandDefinition, CommandInput, StandardFrame, ThemeInput,
+    Views, WidgetOptions, WindowDefinition, WindowFrame,
 };
 use crate::arguments::Arguments;
 use crate::build::{BuildDeclaration, WindowInput};
@@ -177,22 +177,6 @@ impl From<shape::FillRule> for StoredFillRule {
     }
 }
 /// The `category_primary` and `category_secondary` spellings of format 1.
-const CATEGORY_COLUMNS: [(Category, &str); 14] = [
-    (Category::Popular, "popular"),
-    (Category::Productivity, "productivity"),
-    (Category::Utilities, "utilities"),
-    (Category::Finance, "finance"),
-    (Category::Media, "media"),
-    (Category::Games, "games"),
-    (Category::DeveloperTools, "developer-tools"),
-    (Category::Education, "education"),
-    (Category::Business, "business"),
-    (Category::Personal, "personal"),
-    (Category::Health, "health"),
-    (Category::Creative, "creative"),
-    (Category::Music, "music"),
-    (Category::Other, "other"),
-];
 /// The `capabilities` spellings of format 1. Opening ignores any other string: it can only
 /// name a capability a later build added, which this host does not implement and so never
 /// grants. That lets a later build add a capability without a new package format; one that
@@ -207,28 +191,6 @@ fn capability_name(capability: Capability) -> &'static str {
 fn stored_capability(name: &str) -> Option<Capability> {
     Capability::ALL.iter().copied().find(|&capability| capability_name(capability) == name)
 }
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn category_column(category: Category) -> &'static str {
-    CATEGORY_COLUMNS.iter().find(|(c, _)| *c == category).map(|(_, name)| *name).expect("every category has a column")
-}
-/// The category a stored spelling names. A spelling this build does not know can only come
-/// from a later build that added a category, so it reads as `Other` and the file still lists
-/// and opens. Authoring parses strictly (`Category::parse`).
-fn column_category(name: &str) -> Category {
-    CATEGORY_COLUMNS.iter().find(|(_, column)| *column == name).map_or(Category::Other, |(category, _)| *category)
-}
-/// The categories the two columns hold: one or two different ones, as `stored_metadata`
-/// requires. Spellings that read as one category are one.
-pub(crate) fn column_categories(primary: &str, secondary: Option<&str>) -> Vec<Category> {
-    let mut categories = vec![column_category(primary)];
-    if let Some(secondary) = secondary.map(column_category)
-        && !categories.contains(&secondary)
-    {
-        categories.push(secondary);
-    }
-    categories
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub(super) enum Window {
@@ -370,7 +332,17 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     let mut capabilities: Vec<_> = stored.capabilities.iter().filter_map(|name| stored_capability(name)).collect();
     capabilities.sort();
     capabilities.dedup();
-    Ok(AppDefinition { metadata: metadata_value, stored, window, theme, views, commands, capabilities, spec })
+    Ok(AppDefinition {
+        metadata: metadata_value,
+        stored,
+        window,
+        theme,
+        views,
+        commands,
+        capabilities,
+        spec,
+        state_contract_id: Default::default(),
+    })
 }
 
 /// The stored metadata's shape: bounded, with the one or two different categories its
@@ -388,14 +360,15 @@ fn stored_metadata(value: &AppMetadata) -> Result<()> {
 /// The current authoring rules for a new app, on top of what opening requires.
 fn authoring_widget(widget: Option<super::WidgetOptions>) -> Result<()> {
     if let Some(minutes) = widget.and_then(|widget| widget.refresh_minutes)
-        && !(crate::widgets::MIN_REFRESH_MINUTES..=crate::widgets::MAX_REFRESH_MINUTES).contains(&minutes)
+        && !(pop_contracts::widgets::MIN_REFRESH_MINUTES..=pop_contracts::widgets::MAX_REFRESH_MINUTES)
+            .contains(&minutes)
     {
         return Err(err(
             Code::InvalidRequest,
             format!(
                 "Widget refreshMinutes must be between {} and {}",
-                crate::widgets::MIN_REFRESH_MINUTES,
-                crate::widgets::MAX_REFRESH_MINUTES
+                pop_contracts::widgets::MIN_REFRESH_MINUTES,
+                pop_contracts::widgets::MAX_REFRESH_MINUTES
             ),
         )
         .at("refreshMinutes")
@@ -496,7 +469,7 @@ fn window(value: &Window) -> Result<WindowDefinition> {
             }
         }
         Window::Skin { skin, .. } => {
-            if crate::media::asset_key(skin).is_none_or(|kind| kind.media_type != "image/png") {
+            if pop_contracts::media::asset_key(skin).is_none_or(|kind| kind.media_type != "image/png") {
                 return Err(err(Code::InvalidRequest, "Skin must name a content-addressed PNG asset").at("skin"));
             }
             WindowFrame::Skin { skin: skin.clone() }
@@ -519,14 +492,6 @@ fn bound(bytes: usize, max: usize, field: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// A new host category needs its format-1 column spelling before any pack writes it.
-    #[test]
-    fn every_category_has_one_stored_spelling() {
-        for &category in Category::ALL {
-            assert_eq!(column_category(category_column(category)), category);
-        }
-        assert_eq!(CATEGORY_COLUMNS.len(), Category::ALL.len());
-    }
     /// A capability reads back from the spelling packing stores, and `ALL` lists every one.
     #[test]
     fn every_capability_has_one_stored_spelling() {

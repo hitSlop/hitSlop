@@ -2,13 +2,14 @@
 mod transport;
 use pop_core::{
     Code,
-    command::{self, PageDispatch},
-    file::ResourceRoute,
-    owner::{Event, Owner, Reply, Request},
     page_wire::{HostAction, HostReply, SpeechOutcome},
     preview::PreviewRequest,
-    store::Mode,
 };
+use pop_runtime::{
+    command::{self, PageDispatch},
+    owner::{Event, Owner, Reply, Request},
+};
+use pop_storage::{file::ResourceRoute, store::Mode};
 use serde_json::{Value, json};
 use std::{
     path::Path,
@@ -75,7 +76,7 @@ pub fn serve(path: &Path) -> ExitCode {
                 match request {
                     PreviewRequest::ResourcePlan { id, attachment_id, range } => {
                         let resource = resources.info(ResourceRoute::Attachment, &attachment_id)
-                            .map(|info| json!({"type":"resource","id":id,"plan":info.map(|info| pop_core::file::resource_response(&info, ResourceRoute::Attachment, range.as_deref()))}))
+                            .map(|info| json!({"type":"resource","id":id,"plan":info.map(|info| pop_storage::file::resource_response(&info, ResourceRoute::Attachment, range.as_deref()))}))
                             .unwrap_or_else(|e| json!({"type":"resource","id":id,"error":e.to_string()}));
                         send.send(resource);
                     }
@@ -83,7 +84,7 @@ pub fn serve(path: &Path) -> ExitCode {
                         let resource = (|| {
                             let info = resources.info(ResourceRoute::Attachment, &attachment_id)?;
                             let bytes = resources.read_range(ResourceRoute::Attachment, &attachment_id, offset, length)?;
-                            Ok::<_,pop_core::store::Error>(json!({"type":"resource","id":id,"info":info.map(|i| json!({"size":i.size,"mimeType":i.media_type})),"bytes":bytes.map(|b| data_encoding::BASE64.encode(&b))}))
+                            Ok::<_,pop_storage::store::Error>(json!({"type":"resource","id":id,"info":info.map(|i| json!({"size":i.size,"mimeType":i.media_type})),"bytes":bytes.map(|b| data_encoding::BASE64.encode(&b))}))
                         })().unwrap_or_else(|e| json!({"type":"resource","id":id,"error":e.to_string()}));
                         send.send(resource);
                     }

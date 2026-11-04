@@ -11,10 +11,12 @@ Do not replace it with a playground shell. Read docs/architecture.md first.
 
 **Ownership.** A `.pop` is one SQLite file: the app (its `app` row, assets and artwork)
 and, for a document, its saved state, theme overrides and attachments. `pop-core`
-(Rust on Loro, linked through UniFFI as `PopCoreBinding`) owns document semantics,
-validation, window-shape geometry, error codes and durable storage: the file, the writer
-lock, save policy, owner scheduling and Unix socket routing. Attachments are immutable
-rows in the file, stored and read through the core. The shared Rust owner runs one write
+owns Loro document semantics and app acceptance. `pop-contracts` owns passive wire types,
+error codes, shared limits and shape geometry; `pop-storage` owns file acceptance, SQLite,
+the writer lock, save policy and immutable attachments. `pop-runtime` owns owner scheduling
+and Unix socket routing; `pop-library` coordinates private-library snapshots, while
+`pop-capture` and `pop-renderer` own saved-source capture and native rendering. UniFFI
+exposes the composed runtime through `PopCoreBinding`. The shared Rust owner runs one write
 in flight on its persistence worker. Swift `DocumentOwner` forwards typed requests and
 events; `DocumentSession` delivers ordered publications to the page. The private
 `packages/pop/src/shell` holds immutable snapshots and no CRDT;
@@ -26,7 +28,7 @@ the shared Rust owner in-process. The bundled `pop-engine` handles data commands
 macOS, renders a closed document's export and a template's artwork in its restricted
 evaluator; the app owns the documents it has open, and `pop open` asks LaunchServices to
 open one in it. The writer lock and the live owner's
-discovery live outside the file, in the core's registry (`~/.pop/live`, keyed by the
+discovery live outside the file, in the storage registry (`~/.pop/live`, keyed by the
 file's device and inode); never remove a lock file there or bypass a busy lock, and never
 lock or open the database file outside the core. Closed edits never start WebKit. Agent commands use the owner's restricted child runner; pages edit through handles. The app embeds and signs `pop-evaluator`. A
 document is a local regular file: never a link, and never with a second hard link.
@@ -40,7 +42,8 @@ ownership and shows a native retry; close and export flush first.
 **Contracts.** Rust serde types own internal wires and package-format acceptance; ts-rs generates TypeScript and UniFFI carries native records/enums. Run `bun run schema:generate`; never edit generated files. Rust parses page requests once and returns opaque replies or typed host actions. Swift never decodes app, theme or page JSON. WebKit correlates replies; Swift checks the sender and supplies its native view token.
 Keep native view fences and the command protocol check when changing the page or socket protocol. Released
 documents stay openable: follow AGENTS.md's Compatibility rules, and keep
-`tests/compat` passing (`CompatCorpusTests`, `bun run verify native compat-replay`).
+the resolved published corpora passing (`crates/pop-runtime/tests/compat.rs`,
+`CompatCorpusTests`, `bun run verify native compat-replay`).
 
 **Windows and captures.** `PopSilhouette` builds paths from the core's parsed shape and
 is the one mask for window clipping and hit testing; captures are never masked. Flush and

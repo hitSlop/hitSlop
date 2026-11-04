@@ -42,6 +42,14 @@ pub struct Base {
     pub start: VersionVector,
     pub bytes: Vec<u8>,
 }
+/// One acknowledged local state, exported by the serial owner for a bounded receipt.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+pub struct Confirmation {
+    pub version: String,
+    pub heads: pop_sharing_protocol::lifecycle::WireVersion,
+}
 
 /// What a person sees about sync.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -72,9 +80,12 @@ impl Status {
 }
 /// `Status` for a host: the phase, and the pause when sync has stopped.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
 pub struct SyncState {
     pub phase: SyncPhase,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub pause: Option<Pause>,
 }
 
@@ -118,6 +129,18 @@ impl Session {
     }
     pub fn status(&self) -> &Status {
         &self.status
+    }
+    /// A durable receipt may confirm this exact local version only after every visible
+    /// operation is acknowledged. Merely observing a previous Synced event is insufficient.
+    pub fn confirmed_version(&self, doc: &Document) -> Option<Confirmation> {
+        (self.caught_up
+            && self.in_flight.is_none()
+            && !matches!(self.status, Status::Paused { .. })
+            && self.relay.as_ref().is_some_and(|relay| *relay == doc.doc.state_vv()))
+        .then(|| Confirmation {
+            version: doc.version(),
+            heads: pop_sharing_protocol::frame::version_pairs(to_wire(&doc.doc.state_vv())),
+        })
     }
     /// A connection opened: the Hello to send first.
     pub fn connect(&mut self, doc: &Document) -> Vec<u8> {
@@ -269,6 +292,8 @@ impl Session {
             Frame::Error { code, message } => self.pause(
                 if code == pop_sharing_protocol::frame::ERROR_PROTOCOL {
                     PauseKind::NeedsUpdate
+                } else if code == pop_sharing_protocol::frame::ERROR_EPOCH {
+                    PauseKind::MissingHistory
                 } else if code == pop_sharing_protocol::frame::ERROR_ENDED {
                     PauseKind::Ended
                 } else {

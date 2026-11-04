@@ -383,6 +383,111 @@ tracks what remains. What stays open:
 - **Presence:** cursors and who is here, probably through Loro's `EphemeralStore`, never
   saved.
 
+### Shared-history epoch maintenance
+
+This direction is implemented and locally qualified. The
+[sharing lifecycle specification](reference/sharing-lifecycle.md) defines the current contracts;
+the [roadmap](roadmap.md#rust-foundation-redesign) records completed checks and the
+remaining deployed-service and signed-device release qualification. It addresses the difference
+between trimming relay update records and actually replacing a document's retained
+history. The relay's current `/compact` replaces record zero and `base_version`, but
+keeps the seed, root and heads lineage. That can shorten relay replay while preserving
+the old Loro epoch; it cannot publish a fresh epoch or reclaim history embedded in the
+seed.
+
+- **Prepare an epoch candidate.** The owner builds a sanitized, immutable SQLite seed
+  and manifest from an accepted snapshot, with only referenced attachments and the
+  required app/resources. Preparation is tied to `expectedVersion` and does not replace
+  the live owner or its file. The owner returns a staged candidate and opaque token.
+  Stages have a bounded TTL and are discoverable for cleanup after a crash.
+- **Publish to the relay.** A stage is immutable and selected by its seed hash. Commit
+  carries exact `expectedEpoch` and `oldHeads`; one compare-and-swap atomically replaces
+  seed, root, heads, epoch, update records and blob inventory. The relay fences existing
+  sockets and in-flight uploads across the transition. A stale CAS leaves the prior
+  epoch intact and the candidate eligible for expiry. The epoch publication endpoint
+  provides this operation; legacy `/compact` preserves its existing history lineage.
+- **CloudKit owns discovery, not active-room bytes.** While a room is active, the relay
+  is the authority for shared document bytes; CloudKit stores only the catalog/discovery
+  record. Do not mirror every active-room epoch into a CKAsset. The CloudKit record's
+  `ifServerRecordUnchanged` change tag still provides CAS for catalog transitions and the
+  final snapshot handoff. Use bounded crash receipt tokens so retry and receipt discovery
+  are idempotent; a conflict must not become an unrestricted restage loop.
+- **Install at the owner.** The owner exposes `prepare_epoch(expectedVersion)` and a
+  conditional commit keyed by the staged token/receipt. It installs only if its state is
+  still unchanged and the publication receipt is confirmed. Otherwise preserve the old
+  owner and candidate until reconciliation. Track the last confirmed authority frontier
+  and epoch separately from durable version-vector state; a durable VV alone does not
+  prove that shared publication succeeded.
+- **Preserve uncertain work.** Before replacing a canonical replica whose authority is
+  stale or whose local work has an uncertain outcome, create a sanitized recovery
+  document with a new UUID. Make it idempotently discoverable and exportable in both
+  native and browser hosts. If quota prevents recovery or publication, keep the old owner
+  paused; do not discard its edits or silently accept a new epoch.
+- **Keep membership separate.** Epoch replacement and history/blob retention are not
+  membership or acknowledgement protocols. Define explicit retention limits for stages,
+  abandoned candidates, replaced seeds and attachments without adding a device registry
+  or indefinite history archive.
+
+**Selected authority: relay while active, CloudKit after Stop.** The live room owns active
+shared bytes; the Synced Library is a catalog and an inactive-document store. This avoids
+duplicating each active room epoch in iCloud.
+The transition spans two services without a shared transaction, so make each phase
+explicit, conditional and recoverable. Catalog format 2 encodes authority
+states `snapshot`, `checkpoint`, `preparing`, `relay` and `handoff`; readers that only understand
+format 1 must refuse format 2 rather than treating relay authority as an ordinary CKAsset.
+Legacy format 1 records remain readable. A bounded catalog revision and change tag fence
+late callbacks without retaining every prior room or transition.
+
+- **Start.** Preserve the existing `Uploading` room state. CAS the catalog from its
+  current snapshot into `preparing` with a bounded operation token. Upload and verify the
+  immutable room seed and resources; only then make the relay room `Live`. CAS the catalog
+  to `relay` and remove its snapshot asset after relay authority is confirmed. Each
+  intermediate record/room state must be discoverable after a crash and retriable with
+  the same token. Until `relay` is confirmed, retain the old snapshot asset; never delete
+  the recovery source first.
+- **Stop.** Freeze relay writes and uploads, then obtain an exact final epoch/heads token.
+  Build the sanitized final library snapshot from those exact heads. CAS the catalog from
+  `relay`/handoff state to `snapshot`, installing that asset and version metadata together
+  with `ifServerRecordUnchanged`. Only after that receipt is confirmed finalize the room.
+  A retry uses the same bounded receipt token. If snapshot creation or CloudKit publication
+  fails, leave the old owner and frozen room recoverable for retry/export; do not finalize
+  first or discard bytes. Keep explicit `handoff` state so a crash between catalog CAS and
+  room finalization can be reconciled safely.
+- **Existing dual bindings.** When a document already has both CloudKit and relay
+  bindings, reconcile cloud-only edits before changing authority. If a participant crosses
+  the cutoff with dirty or uncertain work, make a sanitized recovery copy with a new UUID
+  before refresh or replacement. Do not assume the relay's final heads contain edits that
+  only reached CloudKit.
+- **Identity and guest access.** Catalog resolution must work without an open owner:
+  creator-account lookup and document lookup are needed because creator credentials are
+  ThisDeviceOnly Keychain items and do not follow the catalog to another device. Guests
+  retain their explicit per-device link; catalog discovery does not grant guest access.
+- **Failure and availability.** If CloudKit is unavailable or the final snapshot is too
+  large, retain a retryable frozen room and owner state, with export/recovery available;
+  do not delete the relay copy. Guests keep the copy already on their device and end its
+  relay membership. There is no final-download window after Stop.
+
+The required cross-service oracles include crashes after every catalog CAS, seed/resource
+verification, relay `Live`, final-head freeze, final snapshot CAS and room finalization;
+retries must converge without losing either the previous snapshot or relay copy. Qualify
+stale catalog tags, concurrent starts/stops, partial uploads, cutoff edits,
+missing creator credentials, no CloudKit, oversized snapshots and recovery-copy discovery.
+The [roadmap](roadmap.md#rust-foundation-redesign) retains integration and platform
+qualification separately from implementation.
+
+**Maintenance policy is shared.** Native and browser hosts use one Rust decision table
+with explicit host cadence and wait-after-sync inputs; transport and scheduling may
+differ. Private checkpoint candidates survive restart and remain bound to their original
+CAS base once eligible for upload. Active relay entries do not exchange CloudKit document
+bytes, and Stop restores private checkpoint provenance. Qualification should cover first/explicit/
+interval eligibility, endpoint unavailable, native waiting for sync, stale expected
+version, relay CAS conflict, CloudKit record conflict, quota failure, crash at each
+stage/receipt boundary, socket and upload fencing, abandoned-stage expiry, and recovery
+creation exactly once. These are qualification oracles, not claims that every platform
+check has passed.
+
+### Per-person persistent preferences
+
 Per-person persistent preferences remain a separate `s.local(node)` proposal. Today,
 keep temporary view state in Svelte and document content in fields. A new local-field
 kind would need Rust, SDK, fixtures, export semantics and a compatibility decision;

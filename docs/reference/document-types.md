@@ -129,10 +129,11 @@ kept rows and text keep their identity, and unchanged values are not written, so
 text fields keep their place. The
 [CLI guide](../guides/cli.md#operations) has the rules.
 
-**Always valid.** One owner applies every edit, and every accepted edit keeps the
-document matching its descriptor, so a snapshot never holds a wrong type, an
-out-of-range value or a duplicate `$id`. Opening refuses a file whose saved state does
-not match (`invalid_bytes`) and changes nothing in it.
+**Always valid.** One owner applies edits through Rust acceptance for the saved layout.
+Snapshots contain accepted kinds, scalar values and row identities; concurrent merged
+state is not rejected merely for exceeding a creation-only collection limit. Opening
+refuses invalid saved state (`invalid_bytes`) without changing the file. Authoring checks
+for a new descriptor or initial value are separate from saved-state acceptance.
 
 **Core reasons (`Code`).** These are the wire reply’s `reason`, distinct from its
 outcome `code`. `DocumentError.reason` exposes them to apps.
@@ -253,9 +254,11 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
 - `$set` on an object that is already set writes only the fields that differ.
-- Clearing and then setting writes the new value over the field's earlier content. A
-  text edit from the old text merges into the field that is there now; while the field is
-  cleared it is `path_not_found`.
+- In layout 2, clearing selects a new payload generation. Setting after that clear
+  creates current content there; an edit addressed to the old generation stays hidden.
+  Undo can restore the earlier generation and its content. While the field is cleared,
+  its children are `path_not_found`. Released layout-1 documents retain their original
+  in-place clear/recreate semantics through the layout adapter.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
@@ -282,8 +285,10 @@ by `$id`, never by position.
   - `insert(value, { before | after })` mints the id and resolves `{id}`;
   - `remove(row)`, `move(row, { before | after })`, `item(row)`: row arguments and destinations accept a snapshot row or its `$id`, including inside `change()`.
   - Omitting the destination appends.
-- **Identity:** inserts, removes and moves from anywhere keep each row's `$id`; a removed
-  row is no longer a valid target.
+- **Identity:** moving or editing a surviving row keeps its `$id`; a removed row is no
+  longer a valid target. Undo restores that row's identity. In layout 2, removal selects
+  a new payload generation so stale edits do not recreate the removed content. An
+  application `$id` is not a physical Loro container ID.
 - **Moving between lists:** only moves within the same list preserve the Loro row
   container. SDK insertion always mints a new id; removing and reinserting is a new row.
   Use one list plus a status/group field when identity must survive moving sections.
@@ -330,8 +335,9 @@ widths by column. Values are scalars or objects.
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
 - **Entries behave like optional fields.** A new object entry receives creation
   defaults; replacing an existing entry requires a complete value and reconciles its
-  surviving children. Delete followed by put writes the new value over the entry's
-  earlier content.
+  surviving children. For layout-2 object entries, delete followed by put uses the
+  generation selected by that deletion; stale edits to an earlier entry remain hidden.
+  Layout 1 retains its original in-place recreation behavior.
 - **Fields:** edits to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
@@ -355,26 +361,31 @@ widths by column. Values are scalars or objects.
 ## Storage layout
 
 How kinds map to Loro containers is a persisted contract: every saved document records
-its layout in the root map `meta` (`{"layout": 1}`), written with the initial values.
-A build reads every layout it knows, or migrates one losslessly, and refuses a newer one
+its layout in the root map `meta` (`{"layout": 2}`), written with the initial values.
+New documents use layout 2. Published layout-1 documents keep ordinary parent-owned
+children, direct row maps, fully materialized defaults and LWW concurrent creation.
+Their adapter reads, edits, saves and syncs that representation without migrating it or
+rebuilding its history. Sanitized copies may start a new layout-2 lineage. A build
+reads every released layout it knows and refuses a newer one
 with `requires_update` ([engineering contract](../engineering-contract.md#compatibility)).
 
-Layout 1:
+Layout 2:
 
 | Kind | Stored as |
 |---|---|
 | the authored document data | the root map `data`, one entry per field |
 | document theme overrides | the root map `theme`, declared color token → canonical color string |
-| `s.text()` | a parent-owned `LoroText` |
+| `s.text()` | a mergeable `LoroText` |
 | `s.boolean()`, `s.string()`, `s.enum()` | a boolean or string value |
 | `s.number()` | an f64 value; integral values project as integers |
 | `s.integer()` | an i64 value |
-| `s.counter()` | a parent-owned `LoroCounter`; the total projects as an integer |
-| `s.optional(inner)` | the inner kind's representation, or no entry when unset |
-| `s.object({...})` | a parent-owned `LoroMap` |
-| `s.list(s.object({...}))` | a parent-owned `LoroMap` of `rows` (a `LoroMap` of `$id` → `LoroMap` row) and `order` (a `LoroMovableList` of `$id` strings) |
-| `s.list(scalar)` | a parent-owned `LoroMovableList` of values |
-| `s.record(value)` | a parent-owned `LoroMap` of key to the value's representation |
+| `s.counter()` | a mergeable `LoroCounter`; the total projects as an integer |
+| `s.optional(scalar)` | the scalar value, or no entry when unset |
+| optional text or object | a mergeable generation slot selecting the inner container, or an absent selected payload |
+| `s.object({...})` | a mergeable `LoroMap` |
+| `s.list(s.object({...}))` | a mergeable map of `rows` (a mergeable map of `$id` → generation slot) and `order` (a mergeable `LoroMovableList` of `$id` strings) |
+| `s.list(scalar)` | a mergeable `LoroMovableList` of values |
+| `s.record(value)` | a mergeable map of key to scalar value or object generation slot |
 
 The theme map is host-owned and outside the authored descriptor. Defaults remain in the
 immutable app row; the effective palette combines them with these overrides. Per-color
@@ -383,31 +394,53 @@ advance the same publication sequence. JSON replacement targets `data`, so it ne
 replaces the theme. State carries the effective `theme`; publications include it when
 it changes, including on a theme-only edit.
 
-Containers are ordinary Loro children, created with their parent entry. Edits reuse a
-present container; creating an absent field, entry or row creates a new one. Removing it
-allows a history-trimming snapshot to discard its deleted content. Full checkpoints keep
-history, and the live session keeps its undo independently of a trimmed saved checkpoint.
-Application `$id`s survive undo; Loro's internal container IDs need not.
+Concurrent creators share deterministic mergeable containers. Scalar creation defaults
+are a shared baseline: projection supplies an omitted default, and creation writes only
+values that differ from it. An omitted default cannot overwrite another creator's
+explicit value. Text and counter operations merge; conflicting explicit scalar writes
+still use last-writer-wins.
 
-These remain CRDT containers: edits to an existing shared text or counter merge. Two
-replicas independently creating the same absent field, record key or row ID create
-different containers, and the parent map chooses one complete container by last-writer-wins.
-Undo may restore a row in new containers, so remote edits to its previous containers need
-not follow it. The local owner serializes page, window and CLI writes; these creation and
-restoration races are limits of live sharing.
+A deletable container has a stable slot. Its `current` selector names a payload generation;
+an absent selector means `initial`. Clearing selects a new unique generation without a
+payload. Recreating fills that generation, so stale edits to an earlier generation remain
+hidden. Undo restores the prior selector and content; application `$id`s survive it.
+Concurrent recreation after the same observed clear merges in the same generation.
 
-Public rollout must qualify these conflicts. Live sharing seeds a room from a backup
-that preserves the document UUID and history; see the
-[relay architecture](../architecture.md#relay) for seed and retention rules.
+Routine checkpoints preserve CRDT identity and session undo. A current-frontier shallow
+checkpoint removes old operations, but hidden generations may remain. A sanitized copy
+reconstructs accepted visible data and theme with fresh physical history, retains row
+`$id`s, creates a new document UUID, and copies only referenced attachment bytes. It
+clears stale artwork and sharing membership. This is a new independent copy, not a
+layout migration of its source.
+
+A fresh authority epoch is different from an ordinary checkpoint. It retains the
+canonical document UUID but changes physical history only after a conditional authority
+commit and explicit owner adoption. A divergent local copy is preserved as a findable
+private recovery before canonical replacement. Old-epoch updates cannot be appended to
+the new history; ordinary import refuses missing dependencies. Adoption of changed history
+publishes one full data/theme replacement and resets session undo. Re-adopting the exact
+accepted current history is a no-op and preserves undo, including layout-1 shallow
+candidates. Same-document adoption never changes the persisted layout.
+
+Large edited unshared layout-2 files may use a fresh visible-state epoch at final close;
+layout 1 keeps its existing lineage. The live owner and undo remain available until
+close succeeds. Shared documents use the explicit catalog/relay authority protocol rather
+than silently discarding peer dependencies during an ordinary save. See the
+[checkpoint and recovery contract](../engineering-contract.md#checkpoints-copies-and-authority-epochs)
+and [relay architecture](../architecture.md#relay). Release qualification covers these
+conflicts; measured performance does not change saved-format acceptance.
 
 A row list's application order is `order` read once per row at its first place, then
 rows `order` misses, by `$id`. Merging valid edits from several devices can leave `order`
 naming a row twice (two restores of one row), naming a removed row, or missing a row;
 every reading resolves those the same way, and `replace` writes a clean order.
 
-Stored state always matches the descriptor, and opening checks it: container kinds,
-scalar rules, valid row IDs and record keys, finite counters, and maps holding only
-declared fields. Any merge of valid edits passes this check (`tests/merge.rs`).
+Opening checks accepted state using its saved layout: container kinds, scalar rules,
+valid row IDs and record keys, finite counters, and maps holding only declared fields.
+Local edits and imported history use the same Rust semantic acceptance. Creation limits
+are distinct from acceptance of valid merged state: concurrent inserts can exceed an
+individual authoring list limit, and that accepted state must still open, copy and save.
+Reconstructing a sanitized copy therefore does not rerun new-document authoring checks.
 
 Complete replacements retain surviving containers. A text edit addresses the field at
 its path and merges from the text it started from, so a binding edits a restored row

@@ -381,6 +381,131 @@ test("Chrome Rust export flushes accepted edits and resource reads reject oversi
   } finally { await context.close(); }
 }, 30_000);
 
+test("Chrome epoch adoption preserves dirty edits in an independent recovery copy", async () => {
+  const canonical = join(directory, "browser-canonical.pop");
+  await execute({ method: "copy", documentPath: snapshot, output: canonical });
+  await execute({ method: "batch", documentPath: canonical,
+    batch: { intents: [{ type: "set", path: ["title"], value: "Canonical relay title" }] } });
+  // The relay's sanitized epoch preserves document identity. This fixture uses the
+  // existing clean-copy engine and restores that one field before browser import.
+  const uuid = documentIdentity(snapshot);
+  const db = new Database(canonical);
+  const trigger = (db.query("SELECT sql FROM sqlite_master WHERE name='document_update'").get() as { sql: string }).sql;
+  db.exec("DROP TRIGGER document_update");
+  db.query("UPDATE document SET uuid=?").run(uuid);
+  db.exec(trigger); db.close();
+  const inspected = await execute({ method: "inspect", file: snapshot });
+  const initial = [...new Uint8Array(await Bun.file(snapshot).arrayBuffer())];
+  const incoming = [...new Uint8Array(await Bun.file(canonical).arrayBuffer())];
+  const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "epoch-profile-")), { channel: "chrome" });
+  try {
+    const page = await context.newPage(); await page.goto(await imported());
+    await page.frameLocator("iframe").getByRole("textbox").waitFor();
+    const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
+    const result = await worker.evaluate(async input => {
+      const runtimeURL = "/browser/core/pop_core_wasm.js";
+      const runtime = await import(runtimeURL); await runtime.default();
+      const digest = async (bytes: number[]) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)))].map(n => n.toString(16).padStart(2, "0")).join("");
+      const initialHash = await digest(input.initial), seedHash = await digest(input.incoming);
+      const info = (hash: string, size: number) => JSON.stringify({ phase: "live", document: input.uuid,
+        app: input.app, seedHash: hash, seedSize: size });
+      const load = async (bytes: number[]) => {
+        const copy = await runtime.installCopy(crypto.randomUUID());
+        copy.importBegin(bytes.length);
+        for (let at = 0; at < bytes.length; at += 65536) copy.importWrite(new Uint8Array(bytes.slice(at, at + 65536)));
+        copy.importFinish(); return copy;
+      };
+      const local = await load(input.initial);
+      local.openJoined("https://share.dotpop.click/join#" + "a".repeat(32) + "." + "b".repeat(64),
+        "https://share.dotpop.click", info(initialHash, input.initial.length));
+      local.page("dirty", JSON.stringify({ method: "apply", batch: { intents: [{ type: "set", path: ["title"], value: "Offline edits to recover" }] } }));
+      local.poll(1, Date.now());
+      const before = local.currentVersion();
+      const staged = await runtime.installCopy(crypto.randomUUID());
+      const prepared = JSON.parse(local.prepareEpoch(staged, JSON.stringify({ seedHash: initialHash, heads: [] })));
+      const preparedBytes: number[] = [];
+      staged.exportEpoch((bytes: Uint8Array) => preparedBytes.push(...bytes));
+      const preparedMatches = prepared.sourceVersion === before && prepared.size === preparedBytes.length &&
+        prepared.publish.seedHash === await digest(preparedBytes) && local.currentVersion() === before;
+      const cutoffDetected = !local.hasEpoch(JSON.stringify({ seedHash: prepared.publish.seedHash,
+        root: prepared.publish.root, heads: prepared.publish.root }));
+      staged.releaseStorage();
+      const candidate = await load(input.incoming);
+      let invalidRoot = false;
+      try { candidate.validateEpoch(info(seedHash, input.incoming.length), JSON.stringify({ seedHash, root: [["ffffffffffffffff", 1]], heads: [["ffffffffffffffff", 1]] })); }
+      catch { invalidRoot = true; }
+      const unchanged = before === local.currentVersion();
+      candidate.validateEpoch(info(seedHash, input.incoming.length), JSON.stringify({ seedHash, root: [], heads: [] }));
+      const recoveryID = crypto.randomUUID();
+      const root = await navigator.storage.getDirectory();
+      const folder = await (await root.getDirectoryHandle("copies", { create: true })).getDirectoryHandle(recoveryID, { create: true });
+      const marker = await (await folder.getFileHandle("container.json", { create: true })).createWritable();
+      await marker.write(JSON.stringify({ format: input.containerFormat })); await marker.close();
+      // Leave the reservation pending to simulate a crash after Rust commits but
+      // before the worker acknowledges that the recovery copy is ready.
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("pop-browser", 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result, tx = db.transaction("copies", "readwrite");
+          tx.objectStore("copies").put({ id: recoveryID, title: "Recovered offline edits", created: Date.now(), state: "recovering",
+            recovery: { source: crypto.randomUUID(), document: input.uuid, epoch: initialHash, version: before } });
+          tx.oncomplete = () => { db.close(); resolve(); }; tx.onerror = () => reject(tx.error);
+        };
+      });
+      let recovery = await runtime.installCopy(recoveryID);
+      const prototype = (globalThis as any).FileSystemSyncAccessHandle.prototype;
+      const write = prototype.write;
+      let quotaRefused = false;
+      prototype.write = () => { throw new DOMException("No space", "QuotaExceededError"); };
+      try { local.adoptEpoch(candidate, recovery, ""); }
+      catch { quotaRefused = true; }
+      finally { prototype.write = write; }
+      const keptAfterQuota = local.currentVersion() === before;
+      recovery.releaseStorage();
+      recovery = await runtime.installCopy(recoveryID);
+      const recovered = local.adoptEpoch(candidate, recovery, "");
+      const bytes: number[] = []; local.export((chunk: Uint8Array) => bytes.push(...chunk));
+      local.leaveRoom();
+      const endedBytes: number[] = []; local.export((chunk: Uint8Array) => endedBytes.push(...chunk));
+      recovery.releaseStorage();
+      const reopened = await runtime.installCopy(recoveryID);
+      reopened.openRecovery(input.uuid);
+      const savedRecovery: number[] = []; reopened.export((chunk: Uint8Array) => savedRecovery.push(...chunk));
+      candidate.releaseStorage();
+      return { recovered, invalidRoot, unchanged, quotaRefused, keptAfterQuota, bytes, savedRecovery, recoveryID, preparedMatches, preparedBytes, cutoffDetected, endedBytes };
+    }, { initial, incoming, uuid, app: inspected.info.appDigest, containerFormat: BrowserHost.containerFormat });
+    expect(result.preparedMatches).toBe(true); expect(result.cutoffDetected).toBe(true);
+    const preparedFile = join(directory, "browser-prepared.pop");
+    await Bun.write(preparedFile, new Uint8Array(result.preparedBytes));
+    expect(documentIdentity(preparedFile)).toBe(uuid);
+    expect(((await execute({ method: "get", documentPath: preparedFile })).state as any).value.title).toBe("Offline edits to recover");
+    expect(result.invalidRoot).toBe(true); expect(result.unchanged).toBe(true);
+    expect(result.quotaRefused).toBe(true); expect(result.keptAfterQuota).toBe(true); expect(result.recovered).toBe(true);
+    const saved = join(directory, "browser-adopted.pop"), recovery = join(directory, "browser-recovery.pop");
+    await Bun.write(saved, new Uint8Array(result.bytes)); await Bun.write(recovery, new Uint8Array(result.savedRecovery));
+    expect(documentIdentity(saved)).toBe(uuid); expect(documentIdentity(recovery)).not.toBe(uuid);
+    const endedFile = join(directory, "browser-ended-local.pop");
+    await Bun.write(endedFile, new Uint8Array(result.endedBytes));
+    expect(documentIdentity(endedFile)).toBe(uuid);
+    expect(((await execute({ method: "get", documentPath: endedFile })).state as any).value.title).toBe("Canonical relay title");
+    const endedDB = new Database(endedFile, { readonly: true });
+    expect(endedDB.query("SELECT * FROM share").all()).toEqual([]); endedDB.close();
+    expect(((await execute({ method: "get", documentPath: saved })).state as any).value.title).toBe("Canonical relay title");
+    expect(((await execute({ method: "get", documentPath: recovery })).state as any).value.title).toBe("Offline edits to recover");
+    const recoveryDB = new Database(recovery, { readonly: true });
+    expect(recoveryDB.query("SELECT * FROM share").all()).toEqual([]); recoveryDB.close();
+    await page.close();
+    const catalog = await context.newPage(); await catalog.goto(origin);
+    await catalog.getByRole("link", { name: "Recovered offline edits", exact: true }).click();
+    const recoveredField = catalog.frameLocator("iframe").getByRole("textbox");
+    await recoveredField.waitFor();
+    expect(await recoveredField.inputValue()).toBe("Offline edits to recover");
+    await catalog.reload(); await recoveredField.waitFor();
+    expect(await recoveredField.inputValue()).toBe("Offline edits to recover");
+  } finally { await context.close(); }
+}, 60_000);
+
 test("Chrome keep-awake reflects release and ignores a grant after switching off", async () => {
   const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "wake-profile-")), { channel: "chrome" });
   try {

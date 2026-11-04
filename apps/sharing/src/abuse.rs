@@ -5,7 +5,16 @@ pub(crate) fn guest_limit(method: &str, path: &str) -> Option<&'static str> {
         return None;
     }
     match (method, parts.as_slice()) {
-        ("POST", [_, "compact"]) => Some("GUEST_COMPACT_LIMIT"),
+        ("POST", [_, "compact" | "epoch"]) => Some("GUEST_COMPACT_LIMIT"),
+        ("PUT" | "DELETE", [_, "epochs", hash]) if pop_sharing_protocol::resources::hash_id(hash) => {
+            Some("GUEST_COMPACT_LIMIT")
+        }
+        ("PUT", [_, "epochs", seed, "blobs", hash])
+            if pop_sharing_protocol::resources::hash_id(seed) && pop_sharing_protocol::resources::hash_id(hash) =>
+        {
+            Some("GUEST_BLOB_LIMIT")
+        }
+        ("GET", [_, "epoch"]) => Some("GUEST_METADATA_LIMIT"),
         ("GET", [_]) => Some("GUEST_METADATA_LIMIT"),
         ("GET", [_, "seed"]) => Some("GUEST_SEED_LIMIT"),
         ("GET", [_, "sync"]) => Some("GUEST_CONNECT_LIMIT"),

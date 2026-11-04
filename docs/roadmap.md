@@ -51,6 +51,155 @@ publishing and installing community pop; and deeper native integrations. These a
 directions without release dates or a platform delivery order. The
 [README roadmap](../README.md#roadmap) gives the short version; proposals live in [ideas](ideas.md).
 
+## Rust foundation redesign
+
+This work permits breaking internal crate APIs while preserving released document and
+runtime contracts and immutable release artifacts. A completed item records its owning checks; proposals are not completion
+claims. Builds are coordinated centrally, with filtered checks during iteration and one
+integration run per batch rather than one full rebuild per agent.
+
+- [x] Immediate defects: owner callback containment and settlement, overflowing frame
+  lengths, creator identity outages classified as retryable.
+- [x] Contracts and rendering: extract evaluator contracts and native renderer; update
+  packaging, fingerprints, template cache and feature builds.
+- [x] Core/storage/runtime/library/capture extractions and explicit dependency direction.
+- [x] Typed owner replies, bounded admission, lifecycle states and persistence ownership.
+- [x] Structured errors and local poisoned-state recovery policy.
+- [x] Layout 2: generation-aware creation, default initialization, clear/recreate/undo,
+  row deduplication, saved acceptance and publication fidelity.
+- [x] Retention: independent membership, checkpoint epochs, safe deep compaction,
+  conditional publication, dirty-stale recovery copies and attachment reclamation.
+- [x] Shared document authority handoff: relay-only bytes while a room is active;
+  CloudKit catalog/discovery only, then a CAS-published final library snapshot on Stop.
+  Catalog format 2, start/stop crash recovery and discoverable recovery copies are
+  implemented and locally qualified. Guests keep their existing
+  local copy; there is no final-download window. See
+  [shared-history epoch maintenance](ideas.md#shared-history-epoch-maintenance).
+- [x] Sharing: one codec, shared retry/compaction policy, cancellable native networking,
+  control/relay/resource boundaries and testable server decisions.
+- [x] Explicit runner providers, additive features and typed jobs/replies. Phone command
+  invocation remains deferred; ordinary phone editing and capture remain supported.
+- [x] Derived row indexing and pruning; benchmark before adding a ranked sequence.
+- [x] State-contract/app-revision identities; no embedded-app updater in this phase.
+- [x] Generated adapter contracts, complete build fingerprints and documentation cleanup.
+- [x] Test consolidation with unique coverage retained; native/browser/sharing qualification.
+
+Local qualification completed on `rust-foundation-redesign`, based on `ed2e8560`:
+
+- `bun run verify` and `bun run verify --native` passed, including all 521 ordinary
+  Rust tests, 189 SDK/shell tests, 102 CLI tests, the Swift integration suites,
+  native artifacts, rendering and package checks. All three published compatibility
+  corpora replayed. Strict Rust checks cover the workspace, the mobile host feature
+  configuration and the relay WASM target.
+- `bun run verify browser --parallel=1` passed all 32 browser tests, including real
+  Chrome OPFS recovery, interrupted catalog promotion, guest-copy persistence and
+  native reopening. Browser qualification used the final Rust and host artifacts.
+- The freshly rebuilt sharing host/Worker passed `bun run verify --no-build sharing`
+  against local Durable Objects and R2. Frozen historical relocations remain
+  byte-identical and permanent history pins are unchanged.
+- The 13-scenario replacement benchmark retained independent value oracles; its
+  measured results are below. No timing bounds were added to correctness tests.
+
+This is local engineering qualification. The full shipping `release:check`, Linux
+matrix, real CloudKit/two-device account transitions and physical iPhone/TestFlight
+qualification remain release work. Phone commands and embedded-app updating remain
+deferred features.
+
+Every new test must name an observable failure, an independent oracle, the coverage gap
+and its owning boundary. Do not add tests for a mechanical move or private call sequence.
+Bug regressions run red before the fix. Keep convergence, refusal atomicity, publication
+replay and reopen oracles. Transfer unique coverage before removing duplicate randomized
+loops; performance measurements belong in benchmarks rather than timing assertions.
+
+New findings belong with their subsystem here or in the architecture/ideas pages. Agents
+report evidence and impact before expanding their assigned scope.
+
+### Implementation work packages
+
+The numbered scope below keeps the larger changes reviewable. A source change alone
+does not complete its work package; its existing boundary checks must pass after integration.
+
+| # | Change | Acceptance evidence |
+|---|---|---|
+| 1 | Introduce layout 2 while preserving released layout-1 behavior and relocate historical assets outside obsolete crate directories | Frozen bytes and permanent history pins unchanged; future layouts refused without writes |
+| 2 | Extract passive Rust contracts, limits and semantic errors | No Loro, SQLite or execution dependency; generated TypeScript unchanged except intentional API changes |
+| 3 | Extract native raster/PDF rendering and its fonts/notices | Existing image/PDF oracles and packaging checks |
+| 4 | Extract private-library coordination | Existing install, merge, receipt, identity and cleanup tests at the library boundary |
+| 5 | Extract file and SQLite storage | One acceptance path, writer lock and transactional publisher; existing storage refusal/atomicity tests |
+| 6 | Extract saved-source capture | Capture reads an accepted saved source; existing role, resource and export tests |
+| 7 | Extract owner/runtime orchestration | One edit path; native, browser and closed CLI adapters use the same owner |
+| 8 | Encapsulate semantic history exports used by storage | Storage never reaches into `Document` or duplicates Loro acceptance |
+| 9 | Select evaluator providers explicitly | Process and in-process capture coexist under unified features; phone commands stay refused |
+| 10 | Give evaluator jobs and replies explicit types | Invalid job/reply combinations refused; capture programs retain their ABI contract |
+| 11 | Contain listener, completion and sync callback panics | Subsequent edits save and reopen after injected callback panics |
+| 12 | Settle queued callbacks during shutdown | Requests queued behind Stop complete once, without applying their mutation |
+| 13 | Bound outstanding owner work and retained payload capacity | Immediate Busy before mutation; reserved Flush capacity; permits recycled before callbacks |
+| 14 | Make owner lifecycle and persistence ownership explicit | Close/save/retry transitions preserve ownership and accepted state |
+| 15 | Preserve structured failures and define poisoned-state recovery | No retry decisions from error text; uncertain state is fenced and recoverable |
+| 16 | Merge concurrent container creation | Both merge orders retain independently created children and remain editable |
+| 17 | Materialize canonical defaults without conflicting creation writes | Defaults never overwrite another creator's explicit values; deterministic template seeds |
+| 18 | Isolate clear/recreate generations | Stale edits stay hidden; fresh recreation and undo/redo preserve application identity |
+| 19 | Align stored acceptance and incremental publications with layout 2 | Reopen and independent publication replay equal the semantic value |
+| 20 | Find attachment references in visible accepted state | Undo retains blobs during a session; close reclaims hidden references; record-key references survive |
+| 21 | Rebuild sanitized copies from accepted visible state | Deleted private payloads absent; merged values beyond authoring limits remain copyable |
+| 22 | Separate replication membership from retention policy | CloudKit and relay membership do not imply perpetual history/blob retention |
+| 23 | Introduce explicit checkpoint epochs for deep compaction | Fresh accepted state releases hidden roots; ordinary checkpoints preserve identity and undo |
+| 24 | Preserve dirty stale replicas before epoch refresh | Recovery copy before replacement; concurrent publication uses a conditional update |
+| 25 | Share maintenance eligibility and retry scheduling | Native/browser decisions agree; ordinary 256-save checkpoints never cause epoch swaps |
+| 26 | Cancel native network work during shutdown | Stalled HTTP bodies, upgrades, sockets and owner waits cannot delay Stop until network timeouts |
+| 27 | Keep typed local owner failures through sharing retries | Definite conflicts, unavailable identity and unknown outcomes choose distinct actions |
+| 28 | Separate creator control, byte relay and resource authorization | Guest capabilities and server quotas remain enforced independently of creator sign-in availability |
+| 29 | Keep one sharing frame codec | Frozen binary and refusal vectors pass in every consumer |
+| 30 | Maintain derived row indexes and prune removed subtrees | Existing reorder/replay oracles; removed generations release their cache entries |
+| 31 | Measure row lookup, replacement and publication costs | Opt-in benchmarks with independent value checks; no wall-clock assertions in ordinary tests |
+| 32 | Separate state-contract identity from app-revision identity | Schema/theme compatibility independent of cosmetic bundle bytes; updater remains deferred |
+| 33 | Generate adapter contracts from Rust | TypeScript and Swift adapters carry the owning Rust types and refusal codes |
+| 34 | Fingerprint every local implementation dependency | Engine/app identity and template invalidation include extracted crates and renderer assets |
+| 35 | Consolidate tests around unique observable coverage | Preserve convergence, refusal atomicity, publication replay and reopen; remove distribution/count assertions |
+| 36 | Qualify the integrated graph and update contracts | Full verifier, native/FFI checks and feature builds once the batch is stable; record deferred platform qualification |
+
+### Row replacement measurements
+
+The opt-in `cargo run --release -p pop-core --features acceptance --example bench_replace`
+benchmark checks every result against independently edited JSON outside the timed section.
+These local Mac measurements compare the redesigned layout before and after removing
+repeated full-order scans from replacement. Each replacement sample starts with a fresh
+document; medians exclude the first of six trials. They are observations, not test budgets
+or end-to-end UI latency claims.
+
+| Replacement | Rows | Before median | After median |
+| --- | ---: | ---: | ---: |
+| Append one row | 1,000 | 374.9 ms | 51.6 ms |
+| Append one row | 5,000 | 8,767.0 ms | 301.6 ms |
+| Reverse | 1,000 | 476.2 ms | 70.7 ms |
+| Reverse | 5,000 | 11,488.7 ms | 551.9 ms |
+| Remove, reorder and append | 5,000 | 8,787.2 ms | 488.8 ms |
+| Set one field by row ID | 5,000 | 0.086 ms | 0.077 ms |
+
+All 13 scenarios retained their independent value checks and sparse publication sizes.
+Unchanged/full-field replacements remain proportional to the rows they reconcile. The
+operation-local index uses dense tokens and integer positions; moves still shift a vector,
+so extreme reorder workloads may justify a ranked sequence later. No such dependency is
+needed for this improvement. The separate two-intent page batch over roughly 4 MiB of text
+remained around 82 ms and needs its own profile before changing transaction machinery.
+
+Product questions to retain during implementation:
+
+- Private-library snapshots currently cap the whole file at 16 MiB, below the document's
+  total attachment allowance. Larger local files remain usable, but library replication
+  refuses them. Decide whether this cap is the intended product limit before changing it.
+- Theme defaults participate in the state contract because stored overrides are accepted
+  relative to them. A future bundle updater needs an explicit palette policy even when
+  the authored data descriptor is unchanged.
+- Session undo retains causal history while a document stays open. Saved-file limits and
+  owner admission budgets do not bound Loro's total memory. Choose any session-undo or
+  memory budget after the long-lived memory study; it is a separate product policy.
+- Deep compaction intentionally creates an offline cutoff. A stale copy with edits needs
+  a recovery document and a clear refresh flow; it cannot silently lose those edits.
+- After sharing ends, an already mounted browser frame may need a manual reopen for
+  resources it has not loaded yet. The durable local copy and later local opens use its
+  saved resources. Do not reload an active page automatically and discard unsent fields.
+
 ## Open now
 
 - **App Store release.** Release the iPhone app on the App Store. The Mac app with
@@ -76,7 +225,7 @@ directions without release dates or a platform delivery order. The
 
 - Native `window.fullscreenable` and the local Chrome browser beta are implemented.
   The same Rust owner/store powers independent OPFS copies, bounded resource reads,
-  command workers and Save As downloads back to native. Identity, export barriers,
+  Save As downloads back to native. Identity, export barriers,
   failed writes and recovery are covered at their owning boundaries. Browser launch
   polish, sustained-edit/near-limit performance qualification and Safari/mobile browser
   support remain deferred. Hosted links use the live sharing service described above. `pop dev` keeps its native owner.
@@ -121,7 +270,7 @@ directions without release dates or a platform delivery order. The
   content, which was not reproduced and has no confirmed cause
   ([evidence](evidence/shape-lab-interaction-2026-09-30.md)).
 - A long-lived memory study across windows, captures and close/reopen cycles, including
-  owner-queue growth and capture concurrency before choosing admission caps. The window
+  owner-queue growth and capture concurrency before tuning admission caps. The window
   benchmarks record footprints only and make no leak claim.
 - **Older documents on iPhone.** Edge-to-edge editors require safe-area padding and
   a reservation for the floating actions menu. Existing documents keep their compiled
@@ -132,12 +281,11 @@ directions without release dates or a platform delivery order. The
 
 ## Next
 
-- **Sharing client lifecycle.** Make HTTP and attachment transfers cancellable during
-  shutdown, preserve typed local owner failures through retry classification, replace
-  error-driven reconnects with explicit outcomes, and generate the remaining sharing
-  failure/state types from Rust. Native and browser compaction scheduling should share
-  policy. These remain follow-ups to the release fixes; working details are in the
-  local `plans/sharing-client-followups.md` when present.
+- **Sharing qualification.** The foundation redesign implements cancellable HTTP and
+  attachment transfers, typed owner failures, explicit reconnect outcomes, generated
+  sharing types and shared maintenance policy. Complete native/browser and release
+  qualification before treating those changes as shipped behavior; the work packages
+  above track integration evidence.
 - **Review the restored examples in the app.** The archived examples now live in
   `pop/` in the current format, with model modules and commands. They have been checked
   in the dev preview; individual native checks do not qualify the entire collection.
@@ -247,7 +395,7 @@ the [pre-launch simplification review](evidence/prelaunch-simplification-2026-10
 
 ## Later
 
-**Catalog capture fidelity.** The [visual review](evidence/pop-capture-review-2026-10-12.md)
+**Catalog capture fidelity.** The [visual review](evidence/slop-capture-review-2026-10-12.md)
 finds blank icons, lost SVG styling and collapsed exports in its historical build. The
 current Takumi capture compositions cover the bundled pop, including saved cells and
 attachments. Broader theme and populated-state coverage remains product qualification;

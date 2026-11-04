@@ -1,13 +1,9 @@
 use super::*;
-#[cfg(feature = "storage")]
-#[cfg(not(target_arch = "wasm32"))]
 fn fnv(text: &str) -> u64 {
     text.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
 }
 /// A valid row ID derived from `seed`: the same seed always gives the same ID, so packing
 /// an app twice writes the same template.
-#[cfg(feature = "storage")]
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn derived(seed: &str) -> String {
     let mut bits = (u128::from(fnv(seed)) << 64) | u128::from(fnv(&format!("pop:{seed}")));
     let mut out = String::from("x-");
@@ -35,7 +31,7 @@ pub(super) fn application_id() -> String {
     out
 }
 
-#[cfg(all(test, feature = "storage", not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
 

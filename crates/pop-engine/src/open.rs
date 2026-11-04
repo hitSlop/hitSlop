@@ -1,6 +1,7 @@
 //! Opening a document in a window: the one request that needs dotpop.app, so macOS only.
 use super::refusal;
-use pop_core::{Code, file, store};
+use pop_core::Code;
+use pop_storage::{file, store};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 

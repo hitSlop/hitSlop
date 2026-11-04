@@ -3,7 +3,13 @@
 The Rust Worker is a Loro-free byte relay with private R2 resources. Contracts and limits
 live in `crates/pop-sharing-protocol`; native transport lives in
 `crates/pop-sharing-client`. Rust generates TypeScript and `openapi.json` through
-`bun run schema:generate`. The released `.pop` format and binary sync protocol are unchanged.
+`bun run schema:generate`. Released document layouts and frozen v1 wire vectors remain
+supported. New epoch and handoff controls are additive; they do not rewrite those fixtures.
+
+The [sharing lifecycle specification](../../docs/reference/sharing-lifecycle.md) defines
+catalog formats and revision ordering, single byte authority, Preparing payload reconciliation,
+checkpoint publication, recovery, and creator finalization. This README supplies the relay
+routes, operational configuration, and qualification procedure.
 
 Each Room owns one phase: **Uploading → Live → Ended**. Its SQLite meta stores the owner
 UID, document UUID, plaintext capability, app digest and seed hash/size; other tables hold
@@ -24,7 +30,8 @@ All HTTP routes use `/v1/`:
   can be replaced. App bytes use `PUT /rooms/{room}/asset/{hash}`; attachments use
   `PUT /rooms/{room}/blob/{hash}`.
 - `POST /rooms/{room}/open` verifies the seed, manifest and all app assets in R2 and
-  makes the room Live. Seed and app resources then become immutable.
+  makes the room Live. Ordinary seed/app replacement then stops; an explicit epoch CAS
+  can publish a new immutable seed and its accepted inventory.
 - `GET /rooms/{room}` returns document, phase, seed hash/size and app digest. Firebase
   owner authentication also returns the capability. Guests use a capability bearer.
   `GET /account/rooms/{document}` returns `{room}` or null for owner recovery.
@@ -33,8 +40,10 @@ All HTTP routes use `/v1/`:
   JSON `null`; retries (including after partial cleanup) succeed idempotently. A later
   sign-in can create rooms again. This removes relay data; Firebase/Apple identity
   revocation remains a separate native account flow.
-- `DELETE /rooms/{room}` by the owner ends sharing, closes sockets, purges R2 and tables,
-  and releases the account quota slot. Uploads crossing Stop delete late writes.
+- Legacy `DELETE /rooms/{room}` by the owner ends an ordinary room, closes sockets,
+  purges R2 and tables, and releases the account quota slot. New clients use the durable
+  handoff below for Live rooms. Generic DELETE refuses a frozen handoff. Uploads crossing
+  Stop delete late writes.
   Uploading rooms expire through a 24-hour alarm. Re-share creates a fresh random room;
   stale rooms return 410.
 
@@ -43,13 +52,18 @@ WebSockets use the capability subprotocol; hosted app resources use a short-live
 host-scoped partitioned HttpOnly cookie. An edit link is
 `https://share.dotpop.click/join#<room>.<capability>`; Join reads seed metadata from the room.
 
-Native creation backs up the current owner to a temporary file and retries uploads;
-there is no stable seed journal or original-device requirement. Share preserves UUID,
-path, owner and full history. Join reuses a matching file or installs a canonical copy.
-Credentials contain only `{link, ended}` and stay device-local, outside documents and
-CloudKit. Sign-out preserves existing capability sync and cached links; creation,
-owner recovery and Stop require Firebase identity. The account panel verifies its session
-through account lookup and displays a short UID hash.
+Native creation prepares an accepted owner-derived seed and retries uploads. Managed
+creation first records Preparing with its retained private CloudKit payload. Same-room
+resume adopts the committed nonce and reconciles that payload before activation; Relay
+catalog discovery remains metadata-only. There is no original-device requirement.
+
+Share preserves the application document UUID and path. Layout-2 maintenance may replace
+physical CRDT history through explicit, conditional owner adoption; it does not promise
+unchanged undo across a cutoff. Device-local receipt journals and recoveries survive lost
+acknowledgements. Credentials contain only `{link, ended}` and stay outside documents and
+CloudKit. Signing out does not revoke a distributed capability; creator recovery, reservation
+and Stop still require verified identity. The account panel verifies its session through
+account lookup and displays a short UID hash.
 
 `share.dotpop.click` hosts trusted workers and storage. Authored UI runs on separate
 `<copy UUID>.dotslop.com` origins. One browser host serves local resources through Service
@@ -57,8 +71,9 @@ Worker channels and hosted resources through network requests and cookies. Autho
 never receives the link. OPFS holds SQLite and IndexedDB holds the copy catalog.
 Connected opening is required; open copies remain editable offline and after Stop.
 
-Mac and iPhone builds enable live collaboration without a launch flag. The v1 wire
-contract is frozen for shipped Mac and TestFlight clients.
+Mac and iPhone build configurations enable live collaboration. Frozen v1 contracts remain
+acceptance inputs; local qualification does not establish deployment or signed-device release
+qualification for the new lifecycle.
 
 Sharing links have a generic Messages preview, with the current dotpop icon and
 an invitation title served directly in HTML. The preview exposes no document title,
@@ -106,7 +121,8 @@ The fixture README describes canonical JSON and both binary representations.
 Guest entry points have independent per-client-IP (`CF-Connecting-IP`) Workers budgets
 across rooms: metadata GET 120/minute, seed GET 30/minute, sync GET 60/minute and blob
 PUT 120/minute. These entry point limits also apply to owner requests on those routes;
-missing IPs share a fallback budget. Compaction POST has its own 6/minute budget.
+missing IPs share a fallback budget. Compaction POST, epoch publication, and seed-stage
+PUT/DELETE share a 6/minute maintenance budget. Staged attachment PUT uses the blob budget.
 Each room admits at most eight sockets per IP. Each socket admits 8 MiB of Push wire
 bytes and 1,800 Push messages per minute, including retries; exceeding either closes
 with 1013 before storing the push. Creation retains its existing per-account 5/minute
@@ -134,6 +150,58 @@ production account. Staging, fresh accounts and local `wrangler dev` use `wrangl
 dataset is created on first write). The rate-limit namespaces (`ACCOUNT_CREATE_LIMIT`
 `27924743`, `GUEST_METADATA_LIMIT` `27924744`, `GUEST_SEED_LIMIT` `27924745`,
 `GUEST_CONNECT_LIMIT` `27924746`, `GUEST_BLOB_LIMIT` `27924747`, `GUEST_COMPACT_LIMIT` `27924748`) need no separate provisioning.
+
+## Checkpoint epochs and stopping a live link
+
+The client owns document acceptance. The relay never opens SQLite or Loro; it checks
+opaque seed hashes, resource bounds and conditional version metadata.
+
+- `GET /v1/rooms/{room}/epoch` returns `EpochState`: current seed hash, canonical
+  root/heads and optional creator handoff. Peer tuples use the existing wire encoding.
+- `PUT /v1/rooms/{room}/epochs/{sha256}` stages immutable seed bytes. At most two
+  unpublished seeds fit in a room; each expires after ten minutes. Cleanup is registered
+  before R2 upload and runs through the room alarm. Staging never changes bootstrap.
+  `DELETE .../epochs/{sha256}` releases an unused candidate immediately, including its
+  unclaimed blobs; missing stages are idempotent and the current seed is refused with
+  409. Clients release candidates in cleanup even after a lost publication response.
+- `PUT .../epochs/{sha256}/blobs/{hash}` uploads referenced candidate attachments
+  under that seed's lease. Each stage permits at most 16 MiB, separate from the current
+  room's attachment budget. Staged blobs stay outside the visible inventory until the
+  epoch CAS succeeds. Expiry reclaims a blob only when neither the current epoch nor
+  another unexpired stage references it.
+- `POST /v1/rooms/{room}/epoch` accepts `PublishEpoch`. An exact expected seed hash
+  **and heads** comparison atomically switches the seed pointer, root, heads and resource
+  inventories, discarding the prior record/base set. A concurrent push makes it conflict.
+  A lost receipt can be retried by candidate hash/root. The referenced app and blobs must
+  already exist with the declared lengths. Obsolete seed/blob cleanup is durable and
+  retryable; a completed epoch removes old compaction archives too.
+- `GET .../seed?hash={expected}` refuses a raced epoch with 409. Old sockets are fenced
+  and receive error 6 (`ERROR_EPOCH`); a reconnecting Hello must include the current root.
+  Legacy rooms retain their existing Hello acceptance until an epoch is published.
+
+Canceling preparation uses creator-authorized `DELETE .../rooms/{room}?phase=uploading`.
+The room checks that condition after authorization and marks Ended before yielding;
+an already activated room returns 409. Clients cancel the relay reservation before
+restoring the retained CloudKit snapshot, so an interrupted restore stays retryable.
+
+Stopping a managed live link is a creator-authorized handoff, not an upload racing an
+immediate DELETE. `POST .../handoff/begin` takes `BeginHandoff` (client-generated 32-hex
+idempotency token and exact expected epoch frontier). It freezes writes and immediately
+revokes guest sockets, capabilities and resource cookies with the existing Ended refusal.
+Guests keep their existing local copy; there is no final-download window.
+
+The creator can still recover the room from the account index and use an identity bearer
+for seed, resource and `GET .../handoff/history` reads. History pages are plain binary
+`Frame::Records`, at most 32 records and a 1 MiB target (one larger base is allowed).
+The optional `after` query is the previous `X-Sharing-Next` sequence; `X-Sharing-Done`
+is `0` or `1`. The frozen frontier stays fixed across pages. Once the client confirms its
+final snapshot at the durable destination, `POST .../handoff/finalize` with the same token
+ends and purges the room. Retrying an already ended finalization receives 410.
+
+A frozen handoff does not idle-expire: it holds one bounded, non-growing final state until
+completion. Ordinary DELETE refuses a frozen handoff; explicit account deletion is
+separately authorized to finalize/discard it. Existing DELETE and `/compact` behavior
+remain available for ordinary rooms. `/compact` does not change the checkpoint epoch.
 
 ## Compaction and retention
 
@@ -167,18 +235,20 @@ leaves heads unchanged. Normal AUTOINCREMENT records remain positive. Hello send
 base first to clients behind F; connected sockets never receive a base broadcast.
 The v1 binary protocol and acknowledgements are unchanged.
 
-Clients check this hint on connection and every ten minutes, wait a random 0–30
-seconds, then re-fetch it and request an eligible export from their serial owner.
-The base is Loro **updates** from the retained-history start through confirmed relay
-heads, self-checked before upload; a shallow snapshot is not a usable room base.
-Quota waits as `RoomFull` while clients compact confirmed history and reconnect to
-retry the rejected local push. A repeated Quota with no compaction due, or a base
-above 16 MiB, becomes `Outgrown` and offers a clean unshared copy/new link. HTTP 409
-is a race/retry; 429, 500 and network failures back off. Attachment upload 413 is a
-terminal `FilesFull` pause. Clients send text `ping` every twenty seconds, ignore
-text/Pong controls, and reconnect on 1011/1013 without pausing. Typed pauses also
-carry `NeedsUpdate`, `Refused`, `MissingHistory` and `Ended` recovery choices.
+Clients check maintenance on connection and every ten minutes, wait a random 0–30
+seconds, then reread current metadata. Layout 1 uses the full-history base path described
+above: Loro **updates** through the confirmed frontier, not a shallow snapshot. Layout 2
+uses a fresh accepted-state epoch with exact seed-hash/heads CAS. The serial owner checks
+frontier coverage; the relay remains opaque.
 
+`RoomFull` and eligible layout-2 `FilesFull` pauses can request maintenance and reconnect.
+The FilesFull cycle gets one fresh attempt; a confirmed successful sync permits another
+independent episode. A visible candidate above 16 MiB remains Outgrown rather than losing
+content. Legacy FilesFull remains paused. HTTP 409 is a race/retry; 429, 500 and network
+failures back off. Clients send text `ping` every twenty seconds, ignore text/Pong controls,
+and reconnect on 1011/1013. Typed pauses also carry `NeedsUpdate`, `Refused`, `MissingHistory`
+and `Ended` recovery choices. See the shared protocol maintenance/failure classifiers and
+[recovery specification](../../docs/reference/sharing-lifecycle.md#refresh-and-local-recovery).
 
 **Operator:** add a 14-day object expiration lifecycle rule with prefix `rooms/` to
 both production and staging R2 buckets. Only compaction archives use this prefix
@@ -199,7 +269,8 @@ slots; already cleaned Ended rooms have no account identifiers and need no revis
 
 Only permanent socket refusals send Error then close 1008: protocol (code 1), app
 mismatch (2), ended/unknown room (3), unauthorized (4), and malformed messages (5).
-Invalid capabilities are refused before upgrade. Storage and other transient message
+The additive epoch error (6) fences an old connection and requests checkpoint recovery;
+it does not authorize merging the old epoch into the new one. Invalid capabilities are refused before upgrade. Storage and other transient message
 failures close 1011 without Error, allowing shipped clients to reconnect.
 Owner identity accepts any Firebase sign-in provider except `anonymous`; clients offer
 only Sign in with Apple.
@@ -226,8 +297,9 @@ Only the local runtime's certificate fetch uses a generated test key;
 production has no identity bypass. It covers idempotent creation, seed replacement,
 open, guest access, second-session owner recovery, authorization, Stop/upload cleanup,
 re-share, stale-room refusal, account deletion of Live/Uploading rooms, socket revocation,
-cold re-sign-in with restored quota and bursts against all five guest budgets.
-Compaction checks cover bounds/conflicts, partial coverage, archival and expiry,
+cold re-sign-in with restored quota and bursts against the guest budgets. Epoch checks
+cover exact-frontier publication, old-socket fencing, staged blob quotas/expiry/release,
+Uploading-only cancellation, creator-only frozen backfill and finalization. Compaction checks cover bounds/conflicts, partial coverage, archival and expiry,
 base-first backfill, quotas and both socket budgets, transient/permanent refusals,
 per-IP socket admission, idle expiry, identifier removal and tombstone purge.
 
@@ -254,9 +326,11 @@ barriers, download/native reopen and revocation. Ignored reports stay under
 
 Seeds, retained updates (excluding the base), and the full-history base each have a
 16 MiB limit. Retained updates also have a 32,768-row cap. Rooms admit 32 connections. App and
-attachment limits use core acceptance. Automatic CloudKit checkpoints for relay documents
-run at most once a minute per process; manual/background saves bypass the interval.
-Reliable offline web reopening remains deferred.
+attachment limits use shared acceptance constants. While Relay owns a managed document,
+CloudKit carries catalog/discovery metadata rather than mirrored shared snapshots. Private
+checkpoint candidates and handoff snapshots use conditional catalog publication, with dirty
+recovery before canonical replacement. A guest that observes Ended keeps an unshared local
+copy with the same UUID. Reliable fully offline hosted-browser reopening remains deferred.
 
 `POP_SHARING_TRACE=1` logs fixed transport event names and timestamps without tokens,
 capabilities, room IDs or payloads. CloudKit run, phase, token and retry diagnostics use
@@ -271,4 +345,5 @@ and historical [account](../../docs/evidence/live-sharing-accounts-2026-10-19.md
 The production Worker names are `hitslop-sharing-relay` and `hitslop-sharing-host`.
 The `sharing-rename-v1` migration transfers the existing room and account namespaces;
 keep this applied migration in the configuration. Its source Worker names are historical.
-The public domains and v1 sharing contract are unchanged.
+The public domains and frozen v1 frame layouts are unchanged; epoch and handoff controls
+are additive routes and metadata.

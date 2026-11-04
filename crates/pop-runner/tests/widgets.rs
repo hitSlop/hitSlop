@@ -10,7 +10,7 @@ fn render(evaluator: &Evaluator, bundle: &str, mode: JobKind) -> Result<String, 
     }
 }
 fn run(batch: Value) -> Value {
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     let bundle = format!("globalThis.__popWidget = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
     serde_json::from_str(&render(&evaluator, &bundle, JobKind::Widget).unwrap()).unwrap()
 }
@@ -82,7 +82,7 @@ fn capture_reads_future_batch_frame_and_font_hints_openly() {
 
 #[test]
 fn saved_view_capture_measures_exports_crops_previews_and_bounds_rasters() {
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     for (kind, height, content_width, expected) in [
         ("icon", 512, 512, Some((512, 512))),
         ("export", 1000, 200, Some((400, 2000))),
@@ -114,7 +114,7 @@ fn saved_view_capture_measures_exports_crops_previews_and_bounds_rasters() {
 
 #[test]
 fn capture_extends_canvas_without_reflowing_viewport_relative_overflow() {
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
         "html":"<html><body><div></div></body></html>",
         "css":"html,body{margin:0;width:100%;height:100px}body{position:relative}div{position:absolute;left:100%;width:20px;height:100px;background:#123456}"}]});
@@ -131,7 +131,7 @@ fn capture_extends_canvas_without_reflowing_viewport_relative_overflow() {
 
 #[test]
 fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     for (height, expected) in [(200, [0.0, 0.0, 200.0, 200.0]), (20_000, [0.0, 0.0, 144.0, 14_400.0])] {
         let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
             "html":"<html><body><div>Selectable text 🌿<a href='#end'>Jump</a></div><div id='end'>Last line</div></body></html>",
@@ -167,7 +167,7 @@ fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
 
 #[test]
 fn damaged_saved_image_refuses_capture_instead_of_publishing_a_blank() {
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     let url = format!("data:image/png;base64,{}", STANDARD.encode(b"damaged image"));
     let request = json!({"saved-image":url});
     let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
@@ -186,7 +186,7 @@ fn damaged_saved_image_refuses_capture_instead_of_publishing_a_blank() {
 
 #[test]
 fn repeated_attachment_tokens_share_saved_bytes_and_render_each_occurrence() {
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     let mut png = Vec::new();
     let mut encoder = png::Encoder::new(&mut png, 1, 1);
     encoder.set_color(png::ColorType::Rgba);
@@ -222,7 +222,7 @@ fn repeated_attachment_tokens_share_saved_bytes_and_render_each_occurrence() {
 
 #[test]
 fn markup_runs_without_image_bytes_and_raster_refuses_javascript() {
-    let evaluator = Evaluator::new(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
     let bundle = "globalThis.__popCapture = json => { const r=JSON.parse(json); if(r.attachments.photo!== 'image/png' || 'resources' in r) throw Error('image bytes leaked'); return JSON.stringify({frames:[{kind:'preview',width:64,height:64,html:'<html>Saved</html>',css:''}],fonts:[]}); };";
     let markup = evaluator.markup(1, bundle, r#"{"attachments":{"photo":"image/png"}}"#, false).unwrap();
     assert_eq!(markup.frames.len(), 1);

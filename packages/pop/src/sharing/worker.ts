@@ -4,20 +4,51 @@ import {
   type BrowserCopy as LocalCopy,
   type BrowserRuntime as LocalRuntime,
 } from "../browser/worker-owner";
+import {
+  checkContainer,
+  listCopies,
+  lockName,
+  putCopy,
+  updateCopy,
+  removeCopy,
+  reserveRecovery,
+} from "../browser/copies";
 import { BrowserHost } from "../schema/constants";
 import type {
   ConnectionPlan,
+  Failure,
+  FullState,
+  MaintenanceAction,
+  Step,
   Pause,
   RoomInfo,
   Resource,
   ResourceGrant,
+  PublishEpoch,
+  EpochState,
   SharingControl,
   SharingEvent,
   SyncPhase,
+  SyncState,
 } from "../wire/sharing.generated";
 import { SharingHost } from "../wire/constants.generated";
 
 interface BrowserCopy extends LocalCopy {
+  openLocal(): void;
+  leaveRoom(): void;
+  supportsEpoch(): boolean;
+  confirmEpoch(receipt: string): void;
+  hasEpoch(epoch: string): boolean;
+  prepareEpoch(candidate: BrowserCopy, expected: string): string;
+  exportEpoch(write: (bytes: Uint8Array) => void): void;
+  epochAttachment(id: string): Uint8Array;
+  currentVersion(): string;
+  documentIdentity(): string;
+  confirmedVersion(): string | undefined;
+  validateEpoch(metadata: string, epoch: string): void;
+  adoptEpoch(candidate: BrowserCopy, recovery: BrowserCopy, confirmed: string): boolean;
+  releaseStorage(): void;
+  abortImport(): void;
   openJoined(invitation: string, origin: string, info: string): void;
   openSavedJoined(invitation: string, origin: string): void;
   syncAttach(): void;
@@ -41,23 +72,13 @@ interface BrowserRuntime extends LocalRuntime<BrowserCopy> {
   invitationRequest(link: string, origin: string, info: string): string;
   frameOperation(bytes: Uint8Array): string;
   classifyFailure(status: number, code: string | undefined, url: string): string;
+  maintenanceAction(full: string, step: string, random: number): string;
 }
-/** What the WASM core makes of a failed relay request: the same table the native client uses. */
-type Failure = {
-  outcome:
-    | "ended"
-    | "needsUpdate"
-    | "refused"
-    | "outgrown"
-    | "filesFull"
-    | "conflict"
-    | "signIn"
-    | "failed";
-  message: string;
-};
-/** The owner's sync state: the phase, and the pause when sync has stopped. */
-type SyncState = { phase: SyncPhase; pause?: Pause };
 let invitation = "";
+let localRecovery = false;
+let refreshing = false;
+let ending = false;
+let confirmedVersion = "";
 let socket: WebSocket | undefined;
 let generation = 0,
   backoff: number = SharingHost.backoffMinMs;
@@ -74,7 +95,10 @@ let compactAfter = 0;
 let checkedRoomAt = 0;
 let retriedFull = false;
 /** Room-full waits for compaction, which this worker runs, so only the other pauses stop it. */
-const stops = (pause: Pause | undefined) => pause !== undefined && pause.kind !== "roomFull";
+const stops = (pause: Pause | undefined) =>
+  pause !== undefined &&
+  pause.kind !== "roomFull" &&
+  !(pause.kind === "filesFull" && owner.copy?.supportsEpoch());
 function copyState(): SyncState | undefined {
   const state = owner.copy?.syncState();
   return state ? (JSON.parse(state) as SyncState) : undefined;
@@ -100,6 +124,7 @@ function pauseSync(pause: Pause) {
 async function compactRoom(epoch: number, full: boolean) {
   if (compacting || Date.now() < compactAfter) return;
   compacting = epoch;
+  const filesFull = copyState()?.pause?.kind === "filesFull" && owner.copy!.supportsEpoch();
   try {
     const info = async () =>
       JSON.parse(
@@ -112,29 +137,70 @@ async function compactRoom(epoch: number, full: boolean) {
           epoch,
         ),
       ) as RoomInfo;
+    const runtime = (await owner.initialized) as BrowserRuntime;
+    const decide = (step: Step, random = 0): MaintenanceAction => {
+      const fullState: FullState = filesFull
+        ? retriedFull
+          ? "filesRetried"
+          : "filesWaiting"
+        : full
+          ? retriedFull
+            ? "retried"
+            : "waiting"
+          : "available";
+      return JSON.parse(
+        runtime.maintenanceAction(JSON.stringify(fullState), JSON.stringify(step), random),
+      );
+    };
     const first = await info();
     checkedRoomAt = Date.now();
-    if (full && !first.compact && retriedFull) {
+    let action = decide(
+      { step: "probe", compact: first.compact ?? false },
+      crypto.getRandomValues(new Uint16Array(1))[0]!,
+    );
+    if (action.action === "outgrown") {
       pauseSync({ kind: "outgrown", reason: "This document has outgrown sharing" });
       return;
     }
-    if (!first.compact && !full) return;
-    await new Promise((resolve) =>
-      setTimeout(resolve, Math.random() * SharingHost.compactJitterMs),
-    );
+    if (action.action !== "jitter") return;
+    const delay = action.milliseconds;
+    await new Promise((resolve) => setTimeout(resolve, delay));
     currentEpoch(epoch);
     const latest = await info();
-    if (!latest.compact) {
-      if (full) {
-        retriedFull = true;
-        resourceFailure(new Error("Retry after compaction"), epoch);
-      }
+    action = decide({ step: "recheck", compact: latest.compact ?? false });
+    if (action.action === "reconnect") {
+      retriedFull = true;
+      reconnectAfterCompaction(epoch);
+      return;
+    }
+    if (action.action !== "readBase") return;
+    if (filesFull) {
+      const canonical = JSON.parse(
+        await metadata(
+          await checkedFetch(
+            connection.url.replace(/seed$/, "epoch"),
+            {
+              headers: connection.headers,
+            },
+            epoch,
+          ),
+          epoch,
+        ),
+      ) as EpochState;
+      await publishFreshEpoch(canonical.seedHash, JSON.stringify(canonical.heads));
       return;
     }
     const base = owner.copy!.syncBase(BigInt(Math.floor(performance.now())), BigInt(Date.now()));
     if (!base) {
       // Not eligible yet; each retry re-reads RoomInfo inside the guest metadata budget.
-      compactAfter = Date.now() + SharingHost.compactRetryMs;
+      action = decide({ step: "baseUnavailable" });
+      if (action.action === "retryBase") compactAfter = Date.now() + action.milliseconds;
+      return;
+    }
+    if (owner.copy!.supportsEpoch()) {
+      const heads = base.frontier();
+      base.free();
+      await publishFreshEpoch(latest.seedHash!, heads);
       return;
     }
     try {
@@ -162,9 +228,9 @@ async function compactRoom(epoch: number, full: boolean) {
     } finally {
       base.free();
     }
-    if (full) {
+    if (decide({ step: "compacted" }).action === "reconnect") {
       retriedFull = true;
-      resourceFailure(new Error("Retry after compaction"), epoch);
+      reconnectAfterCompaction(epoch);
     }
   } catch (error) {
     if (epoch !== generation) return;
@@ -349,28 +415,48 @@ async function receiveInventory(epoch: number) {
   }
   sharingEvent({ type: "files", status: "Files ready" });
 }
-function resourceFailure(error: unknown, epoch = generation) {
-  if (epoch !== generation) return;
-  if (error instanceof TransportError && error.pause && owner.copy) pauseSync(error.pause);
-  sharingEvent({ type: "files", status: "File transfer pending: " + String(error) });
-  const state = copyState();
-  if (stops(state?.pause)) {
-    ended = true;
-    reportState(state);
-  }
-  // Fence the generation before QueuedCaughtUp can follow a failed file download.
+function detachConnection(code: number, reason: string) {
+  // Fence the generation before any queued work can follow the detached connection.
   ++generation;
   networkAbort?.abort();
   const target = socket;
   socket = undefined;
-  target?.close(4011, "File transfer interrupted");
+  target?.close(code, reason);
   owner.copy?.syncDetach();
   if (owner.opened) owner.poll();
+}
+function reconnectAfterCompaction(epoch: number) {
+  if (epoch !== generation || ended) return;
+  detachConnection(1000, "Room compacted");
+  reportSync("Syncing", "syncing");
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    void connectSocket().catch((error) => resourceFailure(error));
+  }, backoff);
+}
+function resourceFailure(error: unknown, epoch = generation) {
+  if (epoch !== generation || refreshing) return;
   if (error instanceof TransportError && error.status === 410) {
     ended = true;
-    reportSync("Sharing ended", "ended");
+    void settleEndedCopy();
     return;
   }
+  if (copyState()?.pause?.kind === "missingHistory") {
+    void refreshEpoch();
+    return;
+  }
+  if (error instanceof TransportError && error.pause && owner.copy) pauseSync(error.pause);
+  sharingEvent({ type: "files", status: "File transfer pending: " + String(error) });
+  const state = copyState();
+  if (state?.pause?.kind === "filesFull" && owner.copy?.supportsEpoch()) {
+    void compactRoom(epoch, true);
+    return;
+  }
+  if (stops(state?.pause)) {
+    ended = true;
+    reportState(state);
+  }
+  detachConnection(4011, "File transfer interrupted");
   if (ended) return;
   reportSync("Offline; reconnecting", "offline");
   clearTimeout(reconnectTimer);
@@ -388,6 +474,21 @@ async function connectSocket() {
   checkedRoomAt = 0;
   compactAfter = 0;
   remoteAttachments.clear();
+  await owner.copy!.recoverStorage();
+  const canonical = await metadata(
+    await checkedFetch(
+      connection.url.replace(/seed$/, "epoch"),
+      {
+        headers: connection.headers,
+      },
+      epoch,
+    ),
+    epoch,
+  );
+  if (!owner.copy!.hasEpoch(canonical)) {
+    await refreshEpoch();
+    return;
+  }
   await resourceSession(epoch);
   await receiveFiles(epoch);
   currentEpoch(epoch);
@@ -454,18 +555,33 @@ async function connectSocket() {
   };
 }
 function flushSocket() {
+  if (refreshing || localRecovery) return;
   if (!owner.copy || socket?.readyState !== WebSocket.OPEN || sending === generation) return;
   const state = copyState();
   const pause = state?.pause;
+  if (pause?.kind === "missingHistory") {
+    void refreshEpoch();
+    return;
+  }
   if (stops(pause)) {
     ended = true;
     socket.close(1000, "Sharing paused");
     reportState(state);
     return;
   }
-  if (state?.phase === "synced") retriedFull = false;
-  if (pause?.kind === "roomFull" || Date.now() - checkedRoomAt >= SharingHost.recheckMs)
-    void compactRoom(generation, pause?.kind === "roomFull");
+  if (state?.phase === "synced") {
+    const confirmation = owner.copy.confirmedVersion();
+    if (confirmation !== undefined) {
+      retriedFull = false;
+      confirmedVersion = confirmation;
+    }
+  }
+  if (
+    pause?.kind === "roomFull" ||
+    pause?.kind === "filesFull" ||
+    Date.now() - checkedRoomAt >= SharingHost.recheckMs
+  )
+    void compactRoom(generation, pause?.kind === "roomFull" || pause?.kind === "filesFull");
   if (receiving !== generation) reportState(state);
   let frame: Uint8Array | undefined;
   try {
@@ -496,12 +612,333 @@ function flushSocket() {
       flushSocket();
     });
 }
+/** Guests keep their existing copy when sharing ends. No final fetch or UUID
+ * rewrite occurs; failed saves retain the open owner and its accepted local edits. */
+async function settleEndedCopy() {
+  if (ending || !owner.opened || !owner.copy) return;
+  ending = true;
+  ended = true;
+  reportSync("Sharing ended; keeping this browser copy", "ended");
+  detachConnection(1000, "Sharing ended");
+  clearTimeout(reconnectTimer);
+  try {
+    await owner.serialize(async () => {
+      owner.copy!.leaveRoom();
+      await updateCopy(owner.copyID, { local: true });
+      localRecovery = true;
+      owner.poll();
+    });
+    reportSync("Sharing ended; this copy is saved in your browser", "ended");
+  } catch (error) {
+    reportSync("Sharing ended; this copy still needs to save: " + String(error), "ended");
+    owner.poll();
+  } finally {
+    ending = false;
+  }
+}
+
+/** Same eligibility policy as legacy /compact, but layout 2 publishes a bounded
+ * latest SQLite seed. The relay CAS is the authority change; local adoption follows it. */
+async function publishFreshEpoch(seedHash: string, heads: string) {
+  if (refreshing || ended || !owner.copy) return;
+  refreshing = true;
+  detachConnection(1000, "Publishing shared snapshot");
+  clearTimeout(reconnectTimer);
+  networkAbort = new AbortController();
+  const epoch = generation,
+    scratch = crypto.randomUUID();
+  let reconnect = true;
+  try {
+    await owner.serialize(async () => {
+      const runtime = (await owner.initialized) as BrowserRuntime;
+      await putCopy({
+        id: scratch,
+        title: "Preparing shared snapshot…",
+        created: Date.now(),
+        state: "importing",
+      });
+      await navigator.locks.request(lockName(scratch), async () => {
+        await checkContainer(scratch, true);
+        const candidate = await runtime.installCopy(scratch);
+        const endpoint = connection.url.replace(/seed$/, "");
+        const cleanupHeaders = connection.headers;
+        let stagedHash: string | undefined;
+        try {
+          const prepared = JSON.parse(
+            owner.copy!.prepareEpoch(
+              candidate,
+              JSON.stringify({ seedHash, heads: JSON.parse(heads) }),
+            ),
+          ) as {
+            sourceVersion: string;
+            size: number;
+            publish: PublishEpoch;
+          };
+          const root = await navigator.storage.getDirectory();
+          const folder = await (
+            await root.getDirectoryHandle("exports", { create: true })
+          ).getDirectoryHandle(scratch, { create: true });
+          const file = await folder.getFileHandle("epoch.pop", { create: true });
+          const handle = await (file as any).createSyncAccessHandle();
+          try {
+            handle.truncate(0);
+            let offset = 0;
+            candidate.exportEpoch((bytes) => {
+              if (handle.write(bytes, { at: offset }) !== bytes.byteLength)
+                throw new Error("Incomplete epoch export");
+              offset += bytes.byteLength;
+            });
+            if (offset !== prepared.size) throw new Error("Epoch export size changed");
+            handle.flush();
+          } finally {
+            handle.close();
+          }
+          stagedHash = prepared.publish.seedHash;
+          await checkedFetch(
+            endpoint + "epochs/" + prepared.publish.seedHash,
+            {
+              method: "PUT",
+              headers: { ...connection.headers, "Content-Type": "application/octet-stream" },
+              body: await file.getFile(),
+            },
+            epoch,
+          );
+          // Candidate inventory contains only referenced blobs. Existing immutable app
+          // resources belong to the same embedded app and are checked again at commit.
+          const inventory = JSON.parse(
+            await metadata(
+              await checkedFetch(
+                endpoint + "blobs",
+                {
+                  headers: connection.headers,
+                },
+                epoch,
+              ),
+              epoch,
+            ),
+          ) as Resource[];
+          const present = new Set(inventory.map((item) => item.hash));
+          for (const item of prepared.publish.attachments) {
+            if (present.has(item.hash)) continue;
+            await checkedFetch(
+              endpoint + "epochs/" + prepared.publish.seedHash + "/blobs/" + item.hash,
+              {
+                method: "PUT",
+                headers: { ...connection.headers, "Content-Type": item.media_type },
+                body: new Uint8Array(candidate.epochAttachment(item.key)),
+              },
+              epoch,
+            );
+          }
+          const receipt = await checkedFetch(
+            endpoint + "epoch",
+            {
+              method: "POST",
+              headers: { ...connection.headers, "Content-Type": "application/json" },
+              body: JSON.stringify(prepared.publish),
+            },
+            epoch,
+          );
+          candidate.confirmEpoch(await metadata(receipt, epoch));
+          await adoptCandidate(
+            runtime,
+            candidate,
+            prepared.publish.seedHash,
+            prepared.sourceVersion,
+            epoch,
+          );
+          confirmedVersion = "";
+          retriedFull = true;
+          owner.poll();
+        } finally {
+          try {
+            candidate.abortImport();
+            candidate.releaseStorage();
+          } finally {
+            // A lost publication response is safe: DELETE refuses the current hash.
+            // Cleanup has its own timeout rather than the abandoned socket's signal.
+            if (stagedHash)
+              await fetch(endpoint + "epochs/" + stagedHash, {
+                method: "DELETE",
+                headers: cleanupHeaders,
+                signal: AbortSignal.timeout(5000),
+              }).catch(() => {});
+          }
+        }
+      });
+    });
+  } catch (error) {
+    if (
+      (error instanceof TransportError && error.pause?.kind === "outgrown") ||
+      (error instanceof Error && "code" in error && error.code === "outgrown")
+    ) {
+      reconnect = false;
+      reportSync("This document has outgrown sharing", "paused");
+    } else if (!(error instanceof TransportError && error.status === 409)) {
+      // A lost commit acknowledgment is resolved by the next epoch handshake; the
+      // local owner is unchanged unless its durable adoption already succeeded.
+      reportSync("Shared maintenance interrupted: " + String(error), "offline");
+    }
+  } finally {
+    refreshing = false;
+    await removeCopy(scratch).catch(() => {});
+  }
+  if (reconnect && !ended) await connectSocket().catch((error) => resourceFailure(error));
+}
+
+/** Called inside the serialized owner queue after its sync connection is detached. */
+async function adoptCandidate(
+  runtime: BrowserRuntime,
+  candidate: BrowserCopy,
+  seedHash: string,
+  expected: string,
+  epoch: number,
+) {
+  const source = (await listCopies()).find((copy) => copy.id === owner.copyID);
+  const version = owner.copy!.currentVersion();
+  const recovery = await reserveRecovery(
+    owner.copyID,
+    owner.copy!.documentIdentity(),
+    source?.epoch ?? "unknown",
+    version,
+  );
+  let unused = false;
+  try {
+    await navigator.locks.request(lockName(recovery.id), { ifAvailable: true }, async (lock) => {
+      if (!lock) throw new Error("The recovery copy is open in another tab");
+      await checkContainer(recovery.id, true);
+      const installed = await runtime.installCopy(recovery.id);
+      try {
+        currentEpoch(epoch);
+        const recovered = owner.copy!.adoptEpoch(candidate, installed, expected);
+        // A failed catalog acknowledgment retains the discoverable reservation.
+        if (recovered) await updateCopy(recovery.id, { state: "ready" });
+        else unused = true;
+        await updateCopy(owner.copyID, { epoch: seedHash });
+      } finally {
+        installed.releaseStorage();
+      }
+    });
+  } finally {
+    if (unused) await removeCopy(recovery.id).catch(() => {});
+  }
+}
+
+/** Download into a separate OPFS pool. Old state remains editable until this
+ * operation joins the owner queue; no relay snapshot is merged across epochs. */
+async function refreshEpoch() {
+  if (refreshing || ended || !owner.copy) return;
+  refreshing = true;
+  // Fence remote imports before the first await and before reserving a source version.
+  detachConnection(1000, "Refreshing shared snapshot");
+  clearTimeout(reconnectTimer);
+  networkAbort = new AbortController();
+  const epoch = generation;
+  const scratch = crypto.randomUUID();
+  try {
+    await owner.serialize(async () => {
+      const runtime = (await owner.initialized) as BrowserRuntime;
+      const base = connection.url.replace(/seed$/, "");
+      const info = await metadata(
+        await checkedFetch(
+          base.slice(0, -1),
+          {
+            headers: connection.headers,
+            credentials: "omit",
+          },
+          epoch,
+        ),
+        epoch,
+      );
+      const canonical = await metadata(
+        await checkedFetch(
+          base + "epoch",
+          {
+            headers: connection.headers,
+            credentials: "omit",
+          },
+          epoch,
+        ),
+        epoch,
+      );
+      const plan = JSON.parse(
+        runtime.invitationRequest(invitation, config.relay, info),
+      ) as ConnectionPlan;
+      const remote = JSON.parse(canonical) as { seedHash: string };
+      await putCopy({
+        id: scratch,
+        title: "Refreshing shared snapshot…",
+        created: Date.now(),
+        state: "importing",
+      });
+      await navigator.locks.request(lockName(scratch), async () => {
+        await checkContainer(scratch, true);
+        const candidate = await runtime.installCopy(scratch);
+        try {
+          const response = await checkedFetch(
+            plan.url + "?hash=" + encodeURIComponent(remote.seedHash),
+            {
+              headers: plan.headers,
+              credentials: "omit",
+            },
+            epoch,
+          );
+          if (!response.body || plan.size < 100 || plan.size > BrowserHost.fileBytes)
+            throw new Error("Invalid epoch seed");
+          candidate.importBegin(plan.size);
+          const reader = response.body.getReader();
+          let received = 0;
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              currentEpoch(epoch);
+              if (done) break;
+              received += value.length;
+              if (received > plan.size) throw new Error("Epoch seed exceeds declared size");
+              for (let offset = 0; offset < value.length; offset += BrowserHost.chunkBytes)
+                candidate.importWrite(value.subarray(offset, offset + BrowserHost.chunkBytes));
+            }
+            if (received !== plan.size) throw new Error("Incomplete epoch seed");
+            candidate.importFinish();
+          } finally {
+            await reader.cancel().catch(() => {});
+          }
+          candidate.validateEpoch(info, canonical);
+          await adoptCandidate(runtime, candidate, remote.seedHash, confirmedVersion, epoch);
+          roomInfo = info;
+          connection = plan;
+          confirmedVersion = "";
+          owner.poll();
+        } finally {
+          candidate.abortImport();
+          candidate.releaseStorage();
+        }
+      });
+    });
+    refreshing = false;
+    await connectSocket();
+  } catch (error) {
+    // Refusal, quota and uncertain writes keep the old copy and its recovery reservation.
+    // No automatic retry may overwrite either one while authority is uncertain.
+    if (error instanceof TransportError && error.status === 410) {
+      ended = true;
+      void settleEndedCopy();
+    } else reportSync("Shared refresh paused: " + String(error), "paused");
+  } finally {
+    refreshing = false;
+    await removeCopy(scratch).catch(() => {});
+  }
+}
 let roomInfo = "";
 const owner = new WorkerOwner<BrowserCopy>({
   async control(input) {
     const control = input as Partial<SharingControl> | null;
     if (control?.type !== "joinCredential") return false;
     const candidate = control.credential;
+    if (candidate === "" && !owner.copy) {
+      localRecovery = true;
+      return true;
+    }
     if (
       owner.copy ||
       typeof candidate !== "string" ||
@@ -560,15 +997,25 @@ const owner = new WorkerOwner<BrowserCopy>({
     }
   },
   openCopy(installed) {
+    if (localRecovery) {
+      installed.openLocal();
+      return;
+    }
     if (ended) {
       installed.openSavedJoined(invitation, config.relay);
-      reportSync("Sharing ended", "ended");
+      reportSync("Sharing ended; keeping this browser copy", "ended");
     } else installed.openJoined(invitation, config.relay, roomInfo);
   },
   afterPoll: flushSocket,
   afterOpen() {
+    if (localRecovery) {
+      reportSync("Local browser copy", "ended");
+      sharingEvent({ type: "resourcesReady" });
+      return;
+    }
     if (ended) {
       sharingEvent({ type: "resourcesReady" });
+      void settleEndedCopy();
       return;
     }
     setInterval(() => {

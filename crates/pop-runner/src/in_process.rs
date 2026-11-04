@@ -2,6 +2,7 @@
 //! QuickJS has its ordinary heap/stack limits and cooperative deadline. Native raster
 //! work has no process watchdog or crash isolation; this is not a sandbox substitute.
 use super::*;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -12,9 +13,9 @@ pub struct Evaluator {
 }
 impl Evaluator {
     /// The containing binary supplies the renderer/font fingerprint; it is never spawned.
-    pub fn new(executable: PathBuf, arguments: Vec<String>) -> Result<Self, String> {
-        if !executable.is_absolute() || !arguments.is_empty() {
-            return Err("In-process capture requires an absolute host binary path and no arguments".into());
+    pub fn new(executable: PathBuf) -> Result<Self, String> {
+        if !executable.is_absolute() {
+            return Err("In-process capture requires an absolute host binary path".into());
         }
         Ok(Self { executable })
     }

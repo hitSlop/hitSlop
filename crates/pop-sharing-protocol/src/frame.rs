@@ -33,6 +33,8 @@ pub const ERROR_ENDED: u8 = 3;
 pub const ERROR_UNAUTHORIZED: u8 = 4;
 /// Permanent refusal: malformed frame or client message sequence.
 pub const ERROR_MALFORMED: u8 = 5;
+/// The room published a fresh checkpoint; recover local edits before refreshing.
+pub const ERROR_EPOCH: u8 = 6;
 
 /// One peer's operations `start..end`: what a record's bytes contain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -212,6 +214,9 @@ impl<'a> Reader<'a> {
         let mut n = 0u64;
         for shift in (0..64).step_by(7) {
             let byte = self.byte()?;
+            if shift == 63 && byte & 0x7f > 1 {
+                return Err(invalid("integer overflow"));
+            }
             n |= u64::from(byte & 0x7f) << shift;
             if byte & 0x80 == 0 {
                 return Ok(n);

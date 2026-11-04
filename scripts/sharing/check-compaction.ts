@@ -68,7 +68,7 @@ const push = (id: number, start: number, end: number, bytes = new Uint8Array([7]
     ...uint(bytes.length),
     ...bytes,
   ]);
-function decode(bytes: ArrayBuffer) {
+function decode(bytes: ArrayBuffer, current = false) {
   const b = new Uint8Array(bytes);
   let pos = 0;
   const read = () => {
@@ -90,7 +90,7 @@ function decode(bytes: ArrayBuffer) {
   if (tag === 1) return { tag, write: read(), version: version() };
   if (tag === 5) return { tag, id: read(), status: read() };
   if (tag === 6) return { tag, code: read() };
-  if (tag === 2) {
+  if (tag === (current ? 3 : 2)) {
     const records = [];
     for (let count = read(); count; count--) {
       const spans = [];
@@ -192,8 +192,8 @@ export async function checkCompaction(
   assert.equal((await compact(4, new Uint8Array((16 << 20) + 1))).status, 413);
   let stage = "initial backfill";
   const sockets: any[] = [];
-  async function socket(ip = "203.0.113.1") {
-    const response = await call(base + "/sync", room.capability, "GET", undefined, {
+  async function socket(ip = "203.0.113.1", endpoint = base, capability = room.capability) {
+    const response = await call(endpoint + "/sync", capability, "GET", undefined, {
       Upgrade: "websocket",
       "Sec-WebSocket-Protocol": "pop.sync.v1",
       "CF-Connecting-IP": ip,
@@ -501,6 +501,163 @@ export async function checkCompaction(
     null,
     "Idle expiry releases account index and quota",
   );
+  // These are independent behavioral scenarios. Keep their real per-IP rate
+  // budgets separate; rate-limit exhaustion has its own owning check.
+  const fromIP = (ip: string): typeof call => (path, token, method, body, headers) =>
+    call(path, token, method, body, { ...headers, "CF-Connecting-IP": ip });
+  const publicationCall = fromIP("198.51.100.240");
+  const releaseCall = fromIP("198.51.100.241");
+  const expiryCall = fromIP("198.51.100.242");
+  const handoffCall = fromIP("198.51.100.243");
+  // Fresh epochs replace the bootstrap seed and inventory together, not only record 0.
+  const epochRoom = await (await publicationCall("rooms", owner, "POST", {
+    document: "00000000-0000-4000-a000-000000000004",
+  })).json();
+  const epochBase = "rooms/" + epochRoom.room;
+  const manifest = { app: "aa".repeat(32), resources: [] };
+  assert.equal((await publicationCall(epochBase + "/seed", owner, "PUT", seed, {
+    "X-Sharing-SHA256": hash(seed), "X-Sharing-App": manifest.app, "X-Sharing-Version": "[]",
+  })).status, 200);
+  assert.equal((await publicationCall(epochBase + "/resources", owner, "POST", manifest)).status, 200);
+  assert.equal((await publicationCall(epochBase + "/open", owner, "POST")).status, 200);
+  assert.equal((await publicationCall(epochBase + "?phase=uploading", owner, "DELETE")).status, 409,
+    "canceling preparation cannot delete a room that activated meanwhile");
+  assert.equal((await publicationCall(epochBase, epochRoom.capability)).status, 200);
+  const cancelled = await (await publicationCall("rooms", owner, "POST", { document: "00000000-0000-4000-a000-000000000005" })).json();
+  assert.equal((await publicationCall("rooms/" + cancelled.room + "?phase=uploading", owner, "DELETE")).status, 200);
+  assert.equal((await publicationCall("rooms/" + cancelled.room + "/open", owner, "POST")).status, 410,
+    "activation cannot revive a canceled preparation");
+  assert.equal(await (await publicationCall("account/rooms/00000000-0000-4000-a000-000000000005", owner)).json(), null);
+  const epochStub = namespace.get(namespace.idFromName(epochRoom.room));
+  const epochSql = (sql: string, args: unknown[] = []) => epochStub.fetch("https://test/__test/sql", {
+    method: "POST", body: JSON.stringify({sql, args}),
+  });
+  const latest = new Uint8Array(512).fill(17), latestHash = hash(latest);
+  assert.equal((await publicationCall(epochBase + "/epochs/" + latestHash, epochRoom.capability, "PUT", latest)).status, 200,
+    "an immutable fresh seed can be staged while the room is live");
+  const oldBlob = new Uint8Array([1, 2, 3]);
+  assert.equal((await publicationCall(epochBase + "/blob/" + hash(oldBlob), epochRoom.capability, "PUT", oldBlob, {
+    "Content-Type": "application/octet-stream", "Content-Length": String(oldBlob.length),
+  })).status, 200);
+  // Occupied accepted inventory at the normal room budget must not prevent a
+  // bounded staged replacement from uploading its new referenced attachment.
+  // The existing SQL harness models old retained occupancy without allocating 100 MiB.
+  const oldResource = { key: hash(oldBlob), hash: hash(oldBlob), size: oldBlob.length, media_type: "application/octet-stream" };
+  for (let n = 0; n < 10; n++) {
+    const id = n === 0 ? hash(oldBlob) : n.toString(16).padStart(64, "0");
+    await epochSql("INSERT OR REPLACE INTO resource_blobs VALUES(?,?)", [id, JSON.stringify({ ...oldResource, key: id, hash: id, size: 10485760 })]);
+  }
+  const replacementBlob = new Uint8Array([4, 5, 6, 7]);
+  const replacement = { key: hash(replacementBlob), hash: hash(replacementBlob), size: replacementBlob.length, media_type: "application/octet-stream" };
+  const replacementHeaders = { "Content-Type": replacement.media_type, "Content-Length": String(replacement.size) };
+  assert.equal((await publicationCall(epochBase + "/blob/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 413,
+    "ordinary uploads retain their existing room quota");
+  assert.equal((await publicationCall(epochBase + "/epochs/" + latestHash + "/blobs/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 200,
+    "an epoch stage has a separate bounded blob budget");
+  assert.equal((await (await publicationCall(epochBase + "/blobs", epochRoom.capability)).json()).length, 10,
+    "staged blobs do not enter the current visible inventory");
+  await epochSql("DELETE FROM resource_blobs");
+  await epochSql("INSERT INTO resource_blobs VALUES(?,?)", [oldResource.hash, JSON.stringify(oldResource)]);
+  const beforeEpochSocket = await socket("203.0.113.31", epochBase, epochRoom.capability);
+  await beforeEpochSocket.joined(0);
+  const expected = {seedHash: hash(seed), heads: []};
+  const publication = {expected, seedHash: latestHash, root: [["000000000000000a", 5]], resources: manifest, attachments: [replacement]};
+  assert.equal((await publicationCall(epochBase + "/epoch", epochRoom.capability, "POST", {
+    ...publication, expected: {...expected, heads: [["0000000000000001", 1]]},
+  })).status, 409);
+  assert.equal(hash(new Uint8Array(await (await publicationCall(epochBase + "/seed", epochRoom.capability)).arrayBuffer())), hash(seed));
+  assert.equal((await (await publicationCall(epochBase + "/blobs", epochRoom.capability)).json()).length, 1);
+  assert.equal((await publicationCall(epochBase + "/epoch", epochRoom.capability, "POST", publication)).status, 200);
+  assert.equal((await beforeEpochSocket.next()).code, 6, "old epoch connections must refresh before pushing");
+  const staleEpochSocket = await socket("203.0.113.32", epochBase, epochRoom.capability);
+  staleEpochSocket.ws.send(hello());
+  assert.equal((await staleEpochSocket.next()).code, 6, "a new connection cannot push without the current seed root");
+  assert.equal(hash(new Uint8Array(await (await publicationCall(epochBase + "/seed", epochRoom.capability)).arrayBuffer())), latestHash);
+  assert.deepEqual(await (await publicationCall(epochBase + "/blobs", epochRoom.capability)).json(), [replacement]);
+  const currentEpoch = await (await publicationCall(epochBase + "/epoch", epochRoom.capability)).json();
+  assert.deepEqual(currentEpoch, {seedHash: latestHash, root: publication.root, heads: publication.root});
+  assert.equal((await publicationCall(epochBase + "/epoch", epochRoom.capability, "POST", publication)).status, 200,
+    "a lost publication receipt can be retried");
+  assert.equal((await publicationCall(epochBase + "/seed?hash=" + hash(seed), epochRoom.capability)).status, 409,
+    "a raced seed read does not return a different epoch");
+  const abandonedSeed = new Uint8Array(512).fill(20), abandonedSeedHash = hash(abandonedSeed);
+  const abandonedLeaseBlob = new Uint8Array([20, 21, 22]), abandonedLeaseBlobHash = hash(abandonedLeaseBlob);
+  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash, epochRoom.capability, "PUT", abandonedSeed)).status, 200);
+  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash + "/blobs/" + abandonedLeaseBlobHash, epochRoom.capability, "PUT", abandonedLeaseBlob, {
+    "Content-Type": "application/octet-stream", "Content-Length": String(abandonedLeaseBlob.length),
+  })).status, 200);
+  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash, epochRoom.capability, "DELETE")).status, 200,
+    "a losing candidate can release its slot immediately instead of blocking maintenance for ten minutes");
+  assert.equal(await bucket.get(`${epochRoom.room}/epochs/${abandonedSeedHash}`), null);
+  assert.equal(await bucket.get(`${epochRoom.room}/blobs/${abandonedLeaseBlobHash}`), null);
+  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash, epochRoom.capability, "DELETE")).status, 200);
+  assert.equal((await releaseCall(epochBase + "/epochs/" + latestHash, epochRoom.capability, "DELETE")).status, 409,
+    "lost publication acknowledgments cannot cause cleanup to delete the current seed");
+  assert.equal(hash(new Uint8Array(await (await releaseCall(epochBase + "/seed", epochRoom.capability)).arrayBuffer())), latestHash);
+  const pending = new Uint8Array(512).fill(18), pendingHash = hash(pending);
+  assert.equal((await expiryCall(epochBase + "/epochs/" + pendingHash, epochRoom.capability, "PUT", pending)).status, 200);
+  const otherPending = new Uint8Array(512).fill(19), otherHash = hash(otherPending);
+  assert.equal((await expiryCall(epochBase + "/epochs/" + otherHash, epochRoom.capability, "PUT", otherPending)).status, 200);
+  const abandoned = new Uint8Array([9, 8, 7]), abandonedHash = hash(abandoned);
+  for (const stage of [pendingHash, otherHash]) {
+    assert.equal((await expiryCall(epochBase + "/epochs/" + stage + "/blobs/" + abandonedHash, epochRoom.capability, "PUT", abandoned, {
+      "Content-Type": "application/octet-stream", "Content-Length": String(abandoned.length),
+    })).status, 200);
+  }
+  assert.equal((await expiryCall(epochBase + "/epochs/" + pendingHash + "/blobs/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 200);
+  // One candidate cannot reserve more raw blob bytes than the maximum seed size.
+  for (const id of ["d".repeat(64), "e".repeat(64)])
+    await epochSql("INSERT INTO epoch_blobs VALUES(?,?,?)", [otherHash, id, JSON.stringify({ ...replacement, key: id, hash: id, size: 8388608 })]);
+  assert.equal((await expiryCall(epochBase + "/epochs/" + otherHash + "/blobs/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 413);
+  await epochSql("DELETE FROM epoch_blobs WHERE id IN (?,?)", ["d".repeat(64), "e".repeat(64)]);
+  await epochSql("UPDATE epoch_seeds SET expires=0 WHERE hash=?", [pendingHash]);
+  await epochStub.fetch("https://test/__test/alarm", {method:"POST"});
+  assert.equal(await bucket.get(`${epochRoom.room}/epochs/${pendingHash}`), null, "expired unpublished seeds are reclaimed");
+  assert.ok(await bucket.get(`${epochRoom.room}/blobs/${abandonedHash}`), "another unexpired stage keeps the shared immutable blob");
+  await epochSql("UPDATE epoch_seeds SET expires=0 WHERE hash=?", [otherHash]);
+  await epochStub.fetch("https://test/__test/alarm", {method:"POST"});
+  assert.equal(await bucket.get(`${epochRoom.room}/blobs/${abandonedHash}`), null, "unclaimed staged blobs expire with their last lease");
+  assert.ok(await bucket.get(`${epochRoom.room}/blobs/${replacement.hash}`), "stage expiry never deletes a current epoch's attachment");
+  const frozenSocket = await socket("203.0.113.33", epochBase, epochRoom.capability);
+  frozenSocket.ws.send(new Uint8Array([0, 1, ...Array(32).fill(0xaa), 1, 10, 5]));
+  assert.equal((await frozenSocket.next()).tag, 1);
+  assert.equal((await frozenSocket.next()).tag, 3);
+  for (let n = 0; n < 33; n++) {
+    frozenSocket.ws.send(push(2000 + n, n, n + 1));
+    assert.equal((await frozenSocket.next()).status, 0);
+    assert.equal((await frozenSocket.next()).tag, 2);
+  }
+  const frozenHeads = [["0000000000000001", 33], ...publication.root];
+  const token = "f".repeat(32);
+  const handoff = {token, expected: {seedHash: latestHash, heads: frozenHeads}};
+  assert.equal((await handoffCall(epochBase + "/handoff/begin", epochRoom.capability, "POST", handoff)).status, 403);
+  assert.equal((await handoffCall(epochBase + "/handoff/begin", owner, "POST", {...handoff, expected})).status, 409);
+  const frozen = await handoffCall(epochBase + "/handoff/begin", owner, "POST", handoff);
+  assert.equal(frozen.status, 200);
+  const frozenInfo = await frozen.json();
+  assert.deepEqual(frozenInfo, {token, seedHash: latestHash, root: publication.root, heads: frozenHeads});
+  assert.equal((await frozenSocket.next()).code, 3, "freeze immediately revokes existing guest sockets");
+  assert.deepEqual(await (await handoffCall(epochBase + "/handoff/begin", owner, "POST", handoff)).json(), frozenInfo);
+  for (const route of ["", "/seed", "/epoch", "/resources", "/blobs", "/handoff/history"]) {
+    assert.equal((await handoffCall(epochBase + route, epochRoom.capability)).status, 410, "frozen guests keep only their local copy");
+  }
+  assert.equal((await handoffCall(epochBase + "/seed", owner)).status, 200);
+  const history = await handoffCall(epochBase + "/handoff/history", owner);
+  assert.equal(history.status, 200);
+  assert.equal(history.headers.get("X-Sharing-Done"), "0");
+  assert.equal(decode(await history.arrayBuffer(), true).records?.length, 32);
+  const remainder = await handoffCall(epochBase + "/handoff/history?after=" + history.headers.get("X-Sharing-Next"), owner);
+  assert.equal(remainder.headers.get("X-Sharing-Done"), "1");
+  assert.equal(decode(await remainder.arrayBuffer(), true).records?.length, 1);
+  await epochSql("UPDATE meta SET value='0' WHERE key='last_active'");
+  await epochStub.fetch("https://test/__test/alarm", {method:"POST"});
+  assert.equal((await handoffCall(epochBase + "/seed", owner)).status, 200, "an unfinished handoff never idle-expires");
+  assert.equal((await handoffCall(epochBase, owner, "DELETE")).status, 409, "ordinary Stop cannot bypass a pending durable handoff");
+  assert.deepEqual(await (await handoffCall("account/rooms/00000000-0000-4000-a000-000000000004", owner)).json(), {room: epochRoom.room});
+  assert.equal((await handoffCall(epochBase + "/handoff/finalize", owner, "POST", {token: "e".repeat(32)})).status, 409);
+  assert.equal((await handoffCall(epochBase + "/handoff/finalize", owner, "POST", {token})).status, 200);
+  assert.equal((await handoffCall(epochBase + "/seed", owner)).status, 410);
+  assert.equal(await (await handoffCall("account/rooms/00000000-0000-4000-a000-000000000004", owner)).json(), null);
   console.log(
     "Passed: compaction conflicts/bounds/hash, archive/base/backfill, quota relief and row cap, push budget, permanent/transient close policy, Stop and tombstone purge.",
   );

@@ -3,8 +3,18 @@
 The document semantics every host uses: the Swift app and the CLI's engine (`pop dev`
 included) use the native Rust core. Bun SDK tests use the WASM adapter.
 
-- `pop-core`: descriptor interpretation, Loro operations, publications and bytes; with
-  `storage`, the `.pop` file, its writer lock and the save policy.
+- `pop-contracts`: passive shared wire, error, limit, app-presentation, media-registry
+  and evaluator types; no Loro, SQLite or renderer.
+- `pop-core`: pure Loro document semantics, app acceptance and sync. It has no storage or
+  runtime features by default; optional `acceptance` codecs and `ts` generation are tooling.
+- `pop-storage`: SQLite `.pop` files, file acceptance, registry, attachments and atomic
+  publication. It depends on core and contracts.
+- `pop-capture`: saved-source capture and widgets; it uses storage, core and the restricted
+  runner.
+- `pop-runtime`: owner, command, socket and persistence orchestration; it composes core,
+  storage, capture and runner.
+- `pop-renderer`: Takumi raster/PDF rendering and fonts; no JavaScript or owner.
+- `pop-library`: private CloudKit whole-file coordination on runtime and storage.
 - `pop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
 - `pop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
 - `pop-engine`: the document engine the CLI runs on any platform (templates, create,
@@ -46,22 +56,20 @@ selects it, and the release gate, compatibility capture, the release workflow an
 Engines workflow set it. CI caches artifacts by toolchain, lockfile and source; a cache hit
 never substitutes for Cargo's dependency checks.
 Generated XCFramework and Swift bindings are disposable and excluded from Git. Rust owns
-wire types and shared limits in `pop-core/src/wire`; ts-rs exports TypeScript and
-UniFFI carries native types to Swift; the app definition and its format readers live in
-`pop-core/src/app`. Run `bun run schema:generate`; never edit generated files manually.
+shared wire types and limits in `pop-contracts` and the sharing protocol; ts-rs exports
+TypeScript and UniFFI carries native types to Swift. App acceptance belongs to `pop-core`;
+file acceptance belongs to `pop-storage`. Run `bun run schema:generate`; never edit
+generated files manually.
 The Cargo configuration pins macOS 15.0 for Rust and C dependencies, matching the lowest
 native consumer (the Swift package), rather than the locally installed SDK.
 
-The core's `file` owns the `.pop` file (one SQLite database holding the app and its
-saved state), every statement on its tables (every write in `file::rows`) and the checks
-every open runs; its `store` decides what a save writes (a snapshot or the updates since the last save, in `history`,
-with theme overrides and attachments), its `owner` schedules saves, and its `registry` owns the
-writer lock. Swift's `DocumentOwner` is the owner's façade.
+`pop-storage` owns the `.pop` file (one SQLite database holding the app and its saved
+state), its schema and file acceptance, save planning and attachments, and the registry
+writer lock. `pop-runtime` owns the live owner and persistence scheduling. Swift's
+`DocumentOwner` is the owner's façade.
 See [the architecture](../docs/architecture.md).
 
-The semantic implementation lives under `document/`: session history, frontier tokens,
-replication and history maintenance stay beside `Document`. The crate root re-exports its
-public types. `store/` separates save planning, attachments, native copies and browser
-storage; `file/` separates connections, acceptance and app reads. `owner/` keeps the
-actor's admission and save ordering together, with failures and serial persistence in
-child modules.
+The semantic implementation lives under `pop-core`'s `document/`: session history,
+frontier tokens, replication and history maintenance stay beside `Document`. Storage,
+capture and runtime responsibilities live in their respective crates rather than behind
+features on `pop-core`.

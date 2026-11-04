@@ -31,11 +31,13 @@ export async function verifyCorpus(root: string, release: Release) {
     for (const [path, hash] of Object.entries(release.storageSchemas)) {
       assert.match(
         path,
-        /^crates\/pop-core\/src\/file\/storage-\d+\.sql$/,
+        /^crates\/(?:pop-core|pop-storage)\/src\/file\/storage-\d+\.sql$/,
         `Not a storage schema: ${path}`,
       );
       assert.equal(
-        await fileDigest(join(repository, path)),
+        // Mechanical extraction relocates the source; published records retain their
+        // original path and byte hash permanently.
+        await fileDigest(join(repository, path.replace(/^crates\/pop-core\/src\/file\//, "crates/pop-storage/src/file/"))),
         hash,
         `Changed released storage schema: ${path}`,
       );

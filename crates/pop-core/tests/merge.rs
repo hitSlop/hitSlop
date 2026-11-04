@@ -85,10 +85,9 @@ fn concurrent_edits_of_every_kind_merge_into_documents_that_open() {
     }
 }
 
-// Ordinary children choose one complete value on concurrent creation. Existing text
-// still merges, and later edits to the winning child remain shared by both replicas.
+// Concurrent creations share their semantic container, including nested rows.
 #[test]
-fn concurrent_creation_selects_whole_children_and_keeps_them_editable() {
+fn concurrent_creation_merges_children_and_keeps_them_editable() {
     let schema = json!({"kind":"object","properties":{
         "title":{"kind":"text"},
         "note":{"kind":"optional","inner":{"kind":"text"}},
@@ -137,9 +136,9 @@ fn concurrent_creation_selects_whole_children_and_keeps_them_editable() {
     assert_eq!(merged, support::value(&b));
     assert_eq!(merged["title"], "LbaseR");
     for child in [&merged["note"], &merged["entries"]["same"]["text"], &merged["rows"][0]["text"]] {
-        assert!(child == "Left" || child == "Right", "creation must select one child: {child}");
+        assert!(child == "LeftRight" || child == "RightLeft", "both creations must survive: {child}");
     }
-    assert_eq!(merged["entries"]["same"]["text"], merged["entries"]["same"]["label"]);
+    assert!(merged["entries"]["same"]["label"] == "Left" || merged["entries"]["same"]["label"] == "Right");
     assert_eq!(merged["rows"].as_array().unwrap().len(), 1);
     assert_eq!(merged["rows"][0]["$id"], "same");
     for path in [json!(["note"]), json!(["entries", "same", "text"]), json!(["rows",{"id":"same"},"text"])] {
@@ -166,4 +165,173 @@ fn concurrent_creation_selects_whole_children_and_keeps_them_editable() {
     assert_eq!(support::value(&a), support::value(&b));
     let reopened = Document::open(&spec, &b.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(support::value(&a), support::value(&reopened));
+}
+
+#[test]
+fn concurrent_creation_does_not_write_canonical_defaults_over_other_fields() {
+    let fields = json!({"kind":"object","properties":{
+        "left":{"kind":"text"}, "right":{"kind":"text"},
+        "enabled":{"kind":"boolean","default":false}
+    }});
+    let schema = json!({"kind":"object","properties":{
+        "extra":{"kind":"optional","inner":fields},
+        "entries":{"kind":"record","value":fields},
+        "rows":{"kind":"list","item":fields}
+    }});
+    let spec = app(schema.to_string());
+    let seed = Document::create(&spec, "{}").unwrap().checkpoint().unwrap();
+    let mut replicas = [Document::open(&spec, &seed, &[]).unwrap(), Document::open(&spec, &seed, &[]).unwrap()];
+    for (doc, value) in replicas.iter_mut().zip([json!({"left":"L", "enabled":true}), json!({"right":"R"})]) {
+        doc.apply_json(
+            &json!({"intents":[
+                {"type":"set","path":["extra"],"value":value},
+                {"type":"set","path":["entries","same"],"value":value},
+                {"type":"insert","path":["rows"],"id":"same","value":value}
+            ]})
+            .to_string(),
+            Origin::Page,
+        )
+        .unwrap();
+    }
+    let checkpoints: Vec<_> = replicas.iter().map(|doc| doc.checkpoint().unwrap()).collect();
+    for (first, second) in [(0, 1), (1, 0)] {
+        let mut merged = Document::open(&spec, &checkpoints[first], &[]).unwrap();
+        let mut view = support::View::of(&merged);
+        let result = merged.import_remote(&[&checkpoints[second]]).unwrap().unwrap();
+        view.publish(&result.publication.unwrap());
+        view.check(&merged, "concurrent creation with defaults");
+        let state = support::value(&merged);
+        let expected = json!({"left":"L", "right":"R", "enabled":true});
+        assert_eq!(state["extra"], expected);
+        assert_eq!(state["entries"]["same"], expected);
+        assert_eq!(state["rows"], json!([{"$id":"same","left":"L","right":"R","enabled":true}]));
+        let reopened = Document::open(&spec, &merged.checkpoint().unwrap(), &[]).unwrap();
+        assert_eq!(support::value(&reopened), state);
+    }
+}
+
+#[test]
+fn cleared_generations_hide_stale_writes_and_recreation_starts_fresh() {
+    let fields = json!({"kind":"object","properties":{"text":{"kind":"text"}}});
+    let schema = json!({"kind":"object","properties":{
+        "note":{"kind":"optional","inner":{"kind":"text"}},
+        "extra":{"kind":"optional","inner":fields},
+        "entries":{"kind":"record","value":fields},
+        "rows":{"kind":"list","item":fields}
+    }});
+    let spec = app(schema.to_string());
+    let initial = json!({"note":"old", "extra":{"text":"old"},
+        "entries":{"same":{"text":"old"}}, "rows":[{"$id":"same","text":"old"}]});
+    let seed = Document::create(&spec, &initial.to_string()).unwrap().checkpoint().unwrap();
+    let mut cleared = Document::open(&spec, &seed, &[]).unwrap();
+    let mut stale = Document::open(&spec, &seed, &[]).unwrap();
+    cleared
+        .apply_json(
+            &json!({"intents":[
+                {"type":"clear","path":["note"]}, {"type":"clear","path":["extra"]},
+                {"type":"clear","path":["entries","same"]}, {"type":"remove","path":["rows"],"id":"same"}
+            ]})
+            .to_string(),
+            Origin::Page,
+        )
+        .unwrap();
+    for path in [
+        json!(["note"]),
+        json!(["extra", "text"]),
+        json!(["entries", "same", "text"]),
+        json!(["rows",{"id":"same"},"text"]),
+    ] {
+        stale
+            .apply_json(&json!({"intents":[{"type":"set","path":path,"value":"stale"}]}).to_string(), Origin::Page)
+            .unwrap();
+    }
+    let deleted = cleared.checkpoint().unwrap();
+    let edited = stale.checkpoint().unwrap();
+    let empty = json!({"entries":{},"rows":[]});
+    for (first, second) in [(&deleted, &edited), (&edited, &deleted)] {
+        let mut merged = Document::open(&spec, first, &[]).unwrap();
+        let mut view = support::View::of(&merged);
+        let applied = merged.import_remote(&[second]).unwrap().unwrap();
+        view.publish(&applied.publication.unwrap());
+        view.check(&merged, "clear against stale writes");
+        assert_eq!(support::value(&merged), empty);
+        let created = merged
+            .apply_json(
+                &json!({"intents":[
+                    {"type":"set","path":["note"],"value":"fresh"},
+                    {"type":"set","path":["extra"],"value":{"text":"fresh"}},
+                    {"type":"set","path":["entries","same"],"value":{"text":"fresh"}},
+                    {"type":"insert","path":["rows"],"id":"same","value":{"text":"fresh"}}
+                ]})
+                .to_string(),
+                Origin::Page,
+            )
+            .unwrap();
+        view.publish(&created.publication.unwrap());
+        view.check(&merged, "fresh generation after clear");
+        let expected = json!({"note":"fresh","extra":{"text":"fresh"},
+            "entries":{"same":{"text":"fresh"}},"rows":[{"$id":"same","text":"fresh"}]});
+        assert_eq!(support::value(&merged), expected);
+        assert_eq!(support::value(&Document::open(&spec, &merged.checkpoint().unwrap(), &[]).unwrap()), expected);
+    }
+    let mut view = support::View::of(&cleared);
+    view.publish(&cleared.undo().unwrap().publication.unwrap());
+    view.check(&cleared, "undo restores selected generation");
+    assert_eq!(support::value(&cleared), initial);
+    view.publish(&cleared.redo().unwrap().publication.unwrap());
+    view.check(&cleared, "redo hides old generation");
+    assert_eq!(support::value(&cleared), empty);
+    view.publish(&cleared.import_remote(&[&edited]).unwrap().unwrap().publication.unwrap());
+    view.publish(&cleared.undo().unwrap().publication.unwrap());
+    view.check(&cleared, "undo restores retained remote edits");
+    assert_eq!(
+        support::value(&cleared),
+        json!({"note":"stale","extra":{"text":"stale"},
+        "entries":{"same":{"text":"stale"}},"rows":[{"$id":"same","text":"stale"}]})
+    );
+}
+
+#[test]
+fn rebuilt_history_refuses_stale_epochs_and_accepts_descendants_out_of_order() {
+    use pop_core::{Code, HistoryVersion};
+    let spec = app(r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#);
+    let mut old = Document::create(&spec, r#"{"title":"base"}"#).unwrap();
+    old.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"old"}]}"#, Origin::Page).unwrap();
+    let fresh = old.clean_checkpoint().unwrap();
+    let rebuilt = Document::open(&spec, &fresh, &[]).unwrap();
+    assert_eq!(
+        old.history_updates_since(&rebuilt.history_version()).unwrap_err().code,
+        Code::MissingDependencies,
+        "an old live owner cannot append deltas to a rebuilt durable history"
+    );
+    for stale in [old.checkpoint().unwrap(), old.history_updates_since(&HistoryVersion::default()).unwrap()] {
+        let mut receiver = Document::open(&spec, &fresh, &[]).unwrap();
+        let before = receiver.state().unwrap();
+        let error = receiver.import_remote(&[&stale]).expect_err("old history must not merge into rebuilt state");
+        assert_eq!(error.code, Code::MissingDependencies);
+        assert_eq!(receiver.state().unwrap(), before, "epoch refusal precedes publication");
+        assert!(Document::open(&spec, &fresh, &[stale]).is_err(), "saved updates obey the same epoch boundary");
+    }
+    let mut writer = Document::open(&spec, &fresh, &[]).unwrap();
+    let start = writer.history_version();
+    writer.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"first"}]}"#, Origin::Page).unwrap();
+    let first = writer.history_updates_since(&start).unwrap();
+    let middle = writer.history_version();
+    writer.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"second"}]}"#, Origin::Page).unwrap();
+    let second = writer.history_updates_since(&middle).unwrap();
+    for updates in [[&first, &second], [&second, &first]] {
+        let mut receiver = Document::open(&spec, &fresh, &[]).unwrap();
+        let mut view = support::View::of(&receiver);
+        for update in updates {
+            if let Some(applied) = receiver.import_remote(&[update]).unwrap() {
+                view.publish(&applied.publication.unwrap());
+                view.check(&receiver, "same epoch out-of-order delivery");
+            }
+        }
+        assert_eq!(support::value(&receiver), json!({"title":"second"}));
+        assert_eq!(
+            support::value(&Document::open(&spec, &receiver.checkpoint().unwrap(), &[]).unwrap()),
+            support::value(&receiver)
+        );
+    }
 }

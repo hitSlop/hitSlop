@@ -107,6 +107,13 @@ fn frozen_binary_codecs() {
     }
 }
 #[test]
+fn malformed_varint_overflow_is_refused() {
+    let mut bytes = vec![7, 1]; // Error frame, code 1, then an overflowing message length
+    bytes.extend([0x80; 9]);
+    bytes.extend([0x02]);
+    assert!(Frame::decode(&bytes).is_err());
+}
+#[test]
 fn unknown_variants_fail_closed_but_error_codes_remain_opaque() {
     let cases: Value = serde_json::from_str(include_str!("../tests/fixtures/v1/unknown.json")).unwrap();
     assert!(serde_json::from_value::<RoomPhase>(cases["phase"].clone()).is_err());

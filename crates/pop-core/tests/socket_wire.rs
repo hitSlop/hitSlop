@@ -1,4 +1,3 @@
-#![cfg(feature = "storage")]
 //! Routing checks live beside the serde types, not in a second JSON Schema decoder.
 use pop_core::{
     Code, EngineReply,

@@ -6,13 +6,16 @@ use serde::Serialize;
 pub enum Route {
     Other,
     Compact,
+    Epoch,
     Blob,
 }
 impl Route {
     /// The route a room URL addresses.
     pub fn of(url: &str) -> Self {
         let path = url.split(['?', '#']).next().unwrap_or_default();
-        if path.ends_with("/compact") {
+        if path.contains("/epochs/") {
+            Self::Epoch
+        } else if path.ends_with("/compact") {
             Self::Compact
         } else if path.contains("/blob/") {
             Self::Blob
@@ -24,6 +27,8 @@ impl Route {
 /// A failure's meaning. Names match the pause kinds of the four that pause sync.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
 pub enum Outcome {
     /// The room is gone.
     Ended,
@@ -40,6 +45,14 @@ pub enum Outcome {
     /// Anything else: shown, and retried where the caller retries.
     Failed,
 }
+/// The browser-facing projection of a classified relay failure.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
+pub struct Failure {
+    pub outcome: Outcome,
+    pub message: String,
+}
 /// `code` is the relay's `ApiFailure` code, when the body carried one.
 pub fn classify(status: u16, code: Option<&str>, route: Route) -> Outcome {
     if code == Some("requires_update") {
@@ -47,7 +60,7 @@ pub fn classify(status: u16, code: Option<&str>, route: Route) -> Outcome {
     }
     match (status, route) {
         (410, _) => Outcome::Ended,
-        (413, Route::Compact) => Outcome::Outgrown,
+        (413, Route::Compact | Route::Epoch) => Outcome::Outgrown,
         (413, Route::Blob) => Outcome::FilesFull,
         (401, _) => Outcome::SignIn,
         (409, _) => Outcome::Conflict,
@@ -78,6 +91,7 @@ mod tests {
         use Outcome::*;
         use Route::*;
         for (status, code, route, expected) in [
+            (413, None, Epoch, Outgrown),
             (400, None, Other, Refused),
             (403, None, Other, Refused),
             (404, None, Blob, Refused),
@@ -104,6 +118,8 @@ mod tests {
     fn routes_follow_the_room_url() {
         let room = "https://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         assert_eq!(Route::of(&format!("{room}/compact")), Route::Compact);
+        assert_eq!(Route::of(&format!("{room}/epochs/{}", "b".repeat(64))), Route::Epoch);
+        assert_eq!(Route::of(&format!("{room}/epochs/{}/blobs/{}", "b".repeat(64), "c".repeat(64))), Route::Epoch);
         assert_eq!(Route::of(&format!("{room}/blob/{}", "b".repeat(64))), Route::Blob);
         for other in ["", "/seed", "/blobs", "/resources", "/sync"] {
             assert_eq!(Route::of(&format!("{room}{other}")), Route::Other, "{other}");

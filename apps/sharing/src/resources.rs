@@ -85,7 +85,7 @@ pub(super) async fn entry(mut req: Request, env: Env) -> Result<Response> {
 
 impl SlopRoom {
     pub(super) async fn resource_fetch(&self, mut req: Request) -> Result<Response> {
-        if self.phase()? == Some(RoomPhase::Ended) {
+        if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() {
             return Response::error("Sharing ended", 410);
         }
         if self.phase()? != Some(RoomPhase::Live) {
@@ -93,12 +93,12 @@ impl SlopRoom {
         }
         let host = req.url()?.origin().ascii_serialization();
         if req.path().starts_with("/_resources/") {
-            if req.method() != Method::Post || !self.authorized(&req, false).await? {
+            if req.method() != Method::Post || !self.authorized_guest(&req).await? {
                 return denied();
             }
             let bytes = bounded_body(&mut req, CONTROL_BYTES).await?;
             let input: pop_sharing_protocol::http::ResourceGrant = serde_json::from_slice(&bytes)?;
-            if self.phase()? == Some(RoomPhase::Ended) {
+            if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() {
                 return Response::error("Sharing ended", 410);
             }
             let app = self.text("app")?.ok_or_else(|| fail("Missing app"))?;
@@ -118,7 +118,7 @@ impl SlopRoom {
                 vec![hash(&token).into(), host.into(), app.into(), expires.into()],
             )?;
             self.state.storage().sync().await?;
-            if self.phase()? == Some(RoomPhase::Ended) {
+            if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() {
                 return Response::error("Sharing ended", 410);
             }
             let room = req.path().trim_start_matches("/_resources/").to_string();
@@ -166,6 +166,9 @@ impl SlopRoom {
                 .range(worker::Range::OffsetWithLength { offset: span.offset, length: span.length })
                 .execute()
                 .await?;
+            if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() {
+                return Response::error("Sharing ended", 410);
+            }
             let Some(object) = object else {
                 return Response::error("Resource unavailable", 503);
             };
@@ -207,7 +210,7 @@ impl SlopRoom {
             }
             let body = bounded_body(req, CONTROL_BYTES).await?;
             let input: Manifest = serde_json::from_slice(&body)?;
-            if self.phase()? == Some(RoomPhase::Ended) {
+            if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() {
                 return Response::error("Sharing ended", 410);
             }
             if resource_types::validate(&input.resources, false).is_err() || !resource_types::hash_id(&input.app) {
@@ -234,6 +237,12 @@ impl SlopRoom {
         let key = format!("{room}/{}/{id}", if blob { "blobs" } else { "assets" });
         let bucket = self.env.bucket("SEEDS")?;
         if req.method() == Method::Put {
+            // Serialize blob uploads with epoch swaps; Stop/freeze remain independent.
+            let _upload = if blob { Some(self.uploads.lock().await) } else { None };
+            let epoch = self.text("seed_hash")?;
+            if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() {
+                return Response::error("Sharing ended", 410);
+            }
             let item = if blob {
                 Resource {
                     key: id.into(),
@@ -274,11 +283,12 @@ impl SlopRoom {
             }
             // Reading the body yielded to Stop. Refuse before beginning a new write;
             // if Stop races the R2 write itself, remove that late object afterwards.
-            if self.phase()? == Some(RoomPhase::Ended) {
+            if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() {
                 return Response::error("Sharing ended", 410);
             }
             bucket.put(key, body).sha256(decode_hex(id)?).execute().await?;
-            if self.phase()? == Some(RoomPhase::Ended) {
+            if self.phase()? == Some(RoomPhase::Ended) || self.handoff()?.is_some() || self.text("seed_hash")? != epoch
+            {
                 bucket.delete(format!("{room}/{}/{id}", if blob { "blobs" } else { "assets" })).await?;
                 return Response::error("Sharing ended", 410);
             }
@@ -303,6 +313,11 @@ impl SlopRoom {
         }
         if req.method() == Method::Get {
             if let Some(object) = bucket.get(key).execute().await? {
+                if self.phase()? == Some(RoomPhase::Ended)
+                    || (self.handoff()?.is_some() && self.authorized_guest(req).await?)
+                {
+                    return Response::error("Sharing ended", 410);
+                }
                 return Response::from_body(object.body().ok_or_else(|| fail("Missing body"))?.response_body()?);
             }
             return Response::error("Not found", 404);

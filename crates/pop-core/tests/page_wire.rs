@@ -1,4 +1,3 @@
-#![cfg(feature = "storage")]
 //! The Rust boundary owns request shapes and limits; Swift carries only typed host actions.
 use pop_core::page_wire::{HostReply, HostRequest, PageRequest};
 use serde_json::json;

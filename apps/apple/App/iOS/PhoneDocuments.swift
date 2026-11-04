@@ -1,3 +1,4 @@
+import Combine
 import PopCore
 import PopCoreBinding
 import PopDocument
@@ -18,6 +19,11 @@ struct PhoneRecent: Identifiable, Sendable {
 
   /// Shared copies keep their UUID path for canonical joins; their app supplies the visible name.
   static func localTitle(_ url: URL) -> String {
+    if url.deletingPathExtension().lastPathComponent.contains("-recovery-"),
+      let title = try? PopSummary(url: url).metadata.title
+    {
+      return "Recovered — \(title)"
+    }
     if isSharedDocument(url) {
       guard let title = try? PopSummary(url: url).metadata.title,
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -65,6 +71,8 @@ struct PhoneRecent: Identifiable, Sendable {
   private var backgroundID: UIBackgroundTaskIdentifier = .invalid
   private var backgroundSave: Task<Void, Never>?
   private var refreshTask: Task<Void, Never>?
+  private var recoveryObservers: [AnyCancellable] = []
+  private static let recoveriesKey = "phone.recents.recovered"
   private static let recentsKey = "phone.recents.openedAt"
   private let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("Documents", isDirectory: true)
@@ -72,6 +80,28 @@ struct PhoneRecent: Identifiable, Sendable {
   init() {
     openedAt = UserDefaults.standard.dictionary(forKey: Self.recentsKey) as? [String: Double] ?? [:]
     _ = widgets
+    let recoveryNames: [Notification.Name] = [.popSharingRecoveryAvailable, .popOpenSharingRecovery]
+    recoveryObservers = recoveryNames.map { name in
+      NotificationCenter.default.publisher(for: name).sink { [weak self] notification in
+        guard let url = notification.object as? URL else { return }
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          do {
+            guard let id = try await PopPreparation.run({ try sharingLocalDocument(path: url.path) }) else { return }
+            var recovered = UserDefaults.standard.dictionary(forKey: Self.recoveriesKey) as? [String: String] ?? [:]
+            recovered[id] = url.path
+            UserDefaults.standard.set(recovered, forKey: Self.recoveriesKey)
+            self.refresh()
+            if name == .popOpenSharingRecovery {
+              self.close { [weak self] closed in if closed { self?.open(url) } }
+            }
+          } catch { self.message = sharingMessage(error) }
+        }
+      }
+    }
+    Task { @MainActor [weak self] in
+      do { try await SharingLinks.discoverRecoveries() } catch { self?.message = sharingMessage(error) }
+    }
     PopRegistry.sweep()
     do {
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -195,10 +225,14 @@ struct PhoneRecent: Identifiable, Sendable {
     let shared = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("pop/SharedDocuments", isDirectory: true)
     let local = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    documents = [folder, shared, local].flatMap {
-      (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
-    }
-    .filter { $0.pathExtension == "pop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    let recovered = (UserDefaults.standard.dictionary(forKey: Self.recoveriesKey) as? [String: String] ?? [:])
+      .values.map { URL(fileURLWithPath: $0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+    documents = Array(
+      Set(
+        [folder, shared, local].flatMap {
+          (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
+        } + recovered)
+    ).filter { $0.pathExtension == "pop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
     let paths = Set(documents + PopLibrary.shared.visibleEntries.map { URL(fileURLWithPath: $0.path) })
     refreshTask?.cancel()
     refreshTask = Task {

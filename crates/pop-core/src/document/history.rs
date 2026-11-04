@@ -39,10 +39,12 @@ impl Document {
         self.run = None;
         let before = self.doc.state_frontiers();
         let label = if undo { "undo" } else { "redo" };
-        let mut done = false;
+        let mut changed = false;
         for _ in 0..UNDO_STEPS {
             self.doc.set_next_commit_message(label);
-            done = match if undo { self.undo.undo() } else { self.undo.redo() } {
+            let first_event = lock(&self.events).len();
+            let before_inverse = self.doc.state_frontiers();
+            let done = match if undo { self.undo.undo() } else { self.undo.redo() } {
                 Ok(done) => done,
                 Err(error) => {
                     // Loro rolls back a failed inverse itself, leaving its history item
@@ -52,18 +54,44 @@ impl Document {
                     return Err(engine(error));
                 }
             };
-            // A remote edit can make one item a no-op. One request still reaches the
-            // next effective step, within the session's bounded history.
-            if done || !(if undo { self.undo.can_undo() } else { self.undo.can_redo() }) {
+            changed |= done;
+            self.doc.commit();
+            // A remote deletion can leave an inverse writing only a hidden generation.
+            // Inspect committed event paths, not a before/after copy of the document.
+            let visible = if done {
+                let visible = publication::affects_view(
+                    &self.doc,
+                    &self.app.schema,
+                    &self.lists,
+                    &before_inverse,
+                    &lock(&self.events)[first_event..],
+                );
+                match visible {
+                    Ok(visible) => visible,
+                    Err(error) => {
+                        self.abort(&before)?;
+                        return Err(error);
+                    }
+                }
+            } else {
+                false
+            };
+            if visible || !(if undo { self.undo.can_undo() } else { self.undo.can_redo() }) {
                 break;
             }
         }
-        if !done {
+        if !changed {
             return Ok(Self::applied(self.sequence, vec![], None, None));
         }
-        self.doc.set_next_commit_message(label);
-        self.doc.commit();
-        let published = self.publish_or_abort(&before)?;
+        // Even an inverse with no visible effect advances the history version. Publish
+        // that version once, after reaching an effective step or exhausting the stack.
+        let published = match self.publish_with(true) {
+            Ok(published) => published,
+            Err(error) => {
+                self.abort(&before)?;
+                return Err(error);
+            }
+        };
         Ok(Self::applied(self.sequence, vec![], published, None))
     }
     /// Groups the pending edit before it commits: it joins the current step when it

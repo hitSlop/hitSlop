@@ -1,14 +1,22 @@
 //! Native sharing transport over the existing owner. Swift persists opaque credentials.
+use pop_library::snapshot;
+mod epochs;
+mod handoff;
+pub use handoff::finalize_catalog_handoff;
+mod journal;
+mod preparation;
+pub use preparation::{ActivatedRoom, PreparedRoom, cancel_preparation, reserve};
+mod recovery;
+pub use recovery::recovered_documents;
+mod resolution;
 mod resources;
+pub use resolution::{ResolvedRoom, resolve};
 #[cfg(test)]
 mod tests;
 mod transport;
-use pop_core::{
-    library::snapshot,
-    owner::{Owner, Reply, Request},
-    store::{Mode, Share, Store},
-};
+use pop_runtime::owner::{Owner, Reply, Request};
 use pop_sharing_protocol::http::{AccountRoom, CreateRoom, CreatedRoom, Invitation, RoomInfo, RoomPhase};
+use pop_storage::store::{Mode, Share, Store};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -21,8 +29,8 @@ type Notice = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
 fn fail(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
-fn request(owner: &Owner, request: Request) -> Result<Reply> {
-    snapshot::request(owner, request)
+fn request(owner: &Owner, request: Request) -> std::result::Result<Reply, transport::HttpFailure> {
+    transport::owner_request(owner, request)
 }
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -149,7 +157,7 @@ fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
         return Err("Different sharing document".into());
     }
     if owner.share().map_err(fail)?.is_some_and(|s| {
-        s.endpoint != pop_core::LIBRARY_SHARE_ENDPOINT && s.endpoint != pop_sharing_protocol::TRUSTED_ORIGIN
+        s.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT && s.endpoint != pop_sharing_protocol::TRUSTED_ORIGIN
     }) {
         return Err("Conflicting room membership".into());
     }
@@ -157,10 +165,25 @@ fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
     Ok(())
 }
 fn owner_credential(owner: &Owner, room: &str, token: &str) -> Result<Option<(Credential, RoomInfo)>> {
+    let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
+    let result = creator_credential_at(document, room, token, pop_sharing_protocol::TRUSTED_ORIGIN)?;
+    if let Some((credential, info)) = &result
+        && info.phase == RoomPhase::Live
+    {
+        bind_owner(owner, &credential.runtime()?, &info.document)?;
+    }
+    Ok(result)
+}
+fn creator_credential_at(
+    document: &str,
+    room: &str,
+    token: &str,
+    origin: &str,
+) -> Result<Option<(Credential, RoomInfo)>> {
     // The room owner is authenticated by Firebase; its capability is recovered here.
     let bytes = match transport::http_request_typed(
         "GET",
-        &format!("{}/v1/rooms/{room}", pop_sharing_protocol::TRUSTED_ORIGIN),
+        &format!("{origin}/v1/rooms/{room}"),
         Some(token),
         &[],
         &[],
@@ -171,7 +194,7 @@ fn owner_credential(owner: &Owner, room: &str, token: &str) -> Result<Option<(Cr
         Err(error) => return Err(error.into()),
     };
     let info: RoomInfo = serde_json::from_slice(&bytes).map_err(|_| "Invalid room reply")?;
-    if owner.app().document_uuid.as_deref() != Some(&info.document) {
+    if info.document != document {
         return Err("Different sharing document".into());
     }
     let invitation = Invitation {
@@ -179,39 +202,64 @@ fn owner_credential(owner: &Owner, room: &str, token: &str) -> Result<Option<(Cr
         capability: info.capability.clone().ok_or("Only the creator can recover this share")?,
     };
     let key = Credential { link: invitation.link()?, ended: info.phase == RoomPhase::Ended };
-    if info.phase == RoomPhase::Live {
-        bind_owner(owner, &key.runtime()?, &info.document)?;
-    }
     Ok(Some((key, info)))
 }
-/// Every attempt takes a fresh, private backup. An Uploading room accepts replacement.
+/// Every attempt stages a fresh accepted epoch, without stale artwork or unreferenced
+/// attachments. An Uploading room accepts replacement before becoming live.
 struct SeedBackup {
     path: std::path::PathBuf,
     version: Vec<(String, u32)>,
     app: String,
     hash: String,
+    source_version: String,
+    epoch_version: String,
 }
 fn stage(owner: &Owner) -> Result<SeedBackup> {
+    stage_required(owner, None).map_err(Into::into)
+}
+fn stage_required(
+    owner: &Owner,
+    required_heads: Option<pop_sharing_protocol::lifecycle::WireVersion>,
+) -> std::result::Result<SeedBackup, transport::HttpFailure> {
     let directory = std::env::temp_dir().join(format!("pop-sharing-{}", random()?));
     use std::os::unix::fs::DirBuilderExt;
-    std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(fail)?;
+    std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(epochs::local)?;
     let path = directory.join("seed.pop");
     let result = (|| {
-        request(owner, Request::Backup { destination: path.clone() })?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(fail)?;
-        if std::fs::metadata(&path).map_err(fail)?.len() > pop_sharing_protocol::SEED_BYTES as u64 {
-            return Err("Sharing starts files up to 16 MiB. Your local document is retained.".into());
+        let Reply::State { reading, .. } = request(owner, Request::State)? else {
+            return Err(epochs::local("Owner did not provide the epoch source version"));
+        };
+        let Reply::EpochCandidate { path: staged, source_version, version: epoch_version } =
+            epochs::retry_busy(owner, || Request::PrepareEpoch {
+                destination: path.clone().into(),
+                expected_version: reading.version.clone(),
+                required_heads: required_heads.clone(),
+            })?
+        else {
+            return Err(epochs::local("Owner did not prepare an epoch"));
+        };
+        if staged.native_path() != path.as_path() {
+            return Err(epochs::local("Owner returned a different epoch destination"));
         }
-        let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
-        let checkpoint = store.document().map_err(fail)?.checkpoint().map_err(fail)?;
-        let meta = loro::LoroDoc::decode_import_blob_meta(&checkpoint, true).map_err(|_| "Invalid seed history")?;
-        let seed = pop_sharing_protocol::frame::version_pairs(meta.partial_end_vv.iter().map(|(&p, &n)| (p, n as u32)));
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(epochs::local)?;
+        if std::fs::metadata(&path).map_err(epochs::local)?.len() > pop_sharing_protocol::SEED_BYTES as u64 {
+            return Err(transport::HttpFailure::Paused(pop_core::sync::Pause {
+                kind: PauseKind::Outgrown,
+                reason:
+                    "The latest accepted document exceeds the 16 MiB sharing limit. Your local document is retained."
+                        .into(),
+            }));
+        }
+        let store = Store::open(&path, Mode::Snapshot).map_err(epochs::local)?;
+        let seed = store.document().map_err(epochs::local)?.wire_history();
         Ok(SeedBackup {
             path: path.clone(),
+            source_version,
+            epoch_version,
             version: seed,
-            app: hex(&store.app_digest().map_err(fail)?),
-            hash: hex(&Sha256::digest(std::fs::read(&path).map_err(fail)?)),
+            app: hex(&store.app_digest().map_err(epochs::local)?),
+            hash: hex(&Sha256::digest(std::fs::read(&path).map_err(epochs::local)?)),
         })
     })();
     if result.is_err() {
@@ -219,30 +267,6 @@ fn stage(owner: &Owner) -> Result<SeedBackup> {
         let _ = std::fs::remove_dir(&directory);
     }
     result
-}
-
-/// Initial seed catch-up belongs to the reconnecting transport. A document opened
-/// offline must not need a UI action or a credential-poll loop to recover later.
-fn bootstrap(owner: &Owner, key: &RoomKey) -> std::result::Result<(), transport::HttpFailure> {
-    let info = room_info(key, None)?;
-    if info.phase != RoomPhase::Live {
-        return Err("Sharing is not live".into());
-    }
-    if owner.app().document_uuid.as_deref() != Some(&info.document) {
-        return Err("Different sharing document".into());
-    }
-    let bytes = transport::http_typed(key, "GET", "seed", Some(&key.capability), &[], &[])?;
-    if Some(hex(&Sha256::digest(&bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {
-        return Err("Seed checksum mismatch".into());
-    }
-    let stage = std::env::temp_dir().join(format!("pop-sharing-{}.pop", random()?));
-    let result = (|| {
-        private_file(&stage, &bytes)?;
-        resources::merge_seed(owner, &stage)
-    })();
-    let _ = std::fs::remove_file(&stage);
-    result?;
-    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -261,6 +285,7 @@ pub struct ClientStatus {
     pub detail: String,
     pub link: Option<String>,
     pub creator: bool,
+    pub recovery_path: Option<String>,
 }
 pub struct AccountAccess {
     pub credential: Option<String>,
@@ -273,53 +298,9 @@ pub struct Client {
     connection: Mutex<Option<transport::Connection>>,
     creator: std::sync::atomic::AtomicBool,
     notice: Notice,
+    access: Arc<epochs::Access>,
 }
 impl Client {
-    /// The account index makes creation retryable from any device of the owner.
-    pub fn create(owner: &Owner, token: &str) -> Result<String> {
-        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
-        let room: CreatedRoom = account_request(
-            "POST",
-            "rooms",
-            token,
-            &serde_json::to_vec(&CreateRoom { document: document.into() }).map_err(fail)?,
-        )?;
-        let key =
-            Credential { link: Invitation { room: room.room, capability: room.capability }.link()?, ended: false };
-        let runtime = key.runtime()?;
-        if room.phase == RoomPhase::Live {
-            let info = room_info(&runtime, Some(token))?;
-            bind_owner(owner, &runtime, &info.document)?;
-            return key.encode();
-        }
-        if room.phase != RoomPhase::Uploading {
-            return Err("Sharing ended".into());
-        }
-        let SeedBackup { path, version, app, hash } = stage(owner)?;
-        let result = (|| {
-            let bytes = std::fs::read(&path).map_err(fail)?;
-            let version = serde_json::to_string(&version).map_err(fail)?;
-            transport::http(
-                &runtime,
-                "PUT",
-                "seed",
-                Some(token),
-                &bytes,
-                &[("X-Sharing-Version", &version), ("X-Sharing-App", &app), ("X-Sharing-SHA256", &hash)],
-            )?;
-            let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
-            resources::upload_app(&runtime, &store, &path, token)?;
-            resources::upload_initial_blobs(&runtime, &store, token)?;
-            transport::http(&runtime, "POST", "open", Some(token), &[], &[])?;
-            bind_owner(owner, &runtime, document)?;
-            key.encode()
-        })();
-        let _ = std::fs::remove_file(&path);
-        if let Some(directory) = path.parent() {
-            let _ = std::fs::remove_dir(directory);
-        }
-        result
-    }
     pub fn recover(owner: &Owner, token: &str) -> Result<AccountAccess> {
         let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
         let Some(room) = access(document, token)? else {
@@ -328,33 +309,29 @@ impl Client {
         let Some((key, info)) = owner_credential(owner, &room.room, token)? else {
             return Ok(AccountAccess { credential: None, phase: Some(Phase::Ended) });
         };
+        let frozen = info.phase == RoomPhase::Live && resolution::epoch(&key.runtime()?, token)?.handoff.is_some();
         Ok(AccountAccess {
             credential: if info.phase == RoomPhase::Live { Some(key.encode()?) } else { None },
             phase: Some(match info.phase {
                 RoomPhase::Uploading => Phase::Preparing,
+                RoomPhase::Live if frozen => Phase::Paused,
                 RoomPhase::Live => Phase::Offline,
                 RoomPhase::Ended => Phase::Ended,
             }),
         })
     }
-    pub fn stop_document(owner: &Owner, token: &str) -> Result<()> {
-        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
-        let room = access(document, token)?.ok_or("Only the creator can stop this share")?;
-        let Some((key, _)) = owner_credential(owner, &room.room, token)? else {
-            return Ok(());
-        };
-        transport::http(&key.runtime()?, "DELETE", "", Some(token), &[], &[])?;
-        Ok(())
-    }
-    pub fn restore(owner: Arc<Owner>, value: &str) -> Result<Self> {
+    pub fn restore(owner: Arc<Owner>, value: &str, state_directory: &Path, identity: Option<&str>) -> Result<Self> {
         let key = Credential::decode(value)?;
         validate_membership(owner.share().map_err(fail)?, &key.runtime()?)?;
+        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
+        let journal = journal::Journal::new(state_directory, &key.runtime()?, document)?;
         Ok(Self {
             owner,
             key: Mutex::new(key),
             connection: Mutex::new(None),
             creator: std::sync::atomic::AtomicBool::new(false),
             notice: Arc::new(Mutex::new(None)),
+            access: Arc::new(epochs::Access { journal: Arc::new(journal), identity: identity.map(str::to_owned) }),
         })
     }
     pub fn connect(&self) -> Result<()> {
@@ -364,18 +341,21 @@ impl Client {
             return Ok(());
         }
         let key = key.runtime()?;
+        if self.access.identity.is_none() && self.access.journal.frozen_handoff()? {
+            return Ok(());
+        }
         let binding = Share { room: key.room.clone(), endpoint: key.origin.clone() };
         if self
             .owner
             .share()
             .map_err(fail)?
-            .is_some_and(|s| s.endpoint != pop_core::LIBRARY_SHARE_ENDPOINT && s != binding)
+            .is_some_and(|s| s.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT && s != binding)
         {
             return Err("Conflicting room membership".into());
         }
         request(&self.owner, Request::Share { share: binding })?;
         *self.connection.lock().expect("sharing connection") =
-            Some(transport::Connection::start(self.owner.clone(), key, self.notice.clone()));
+            Some(transport::Connection::start(self.owner.clone(), key, self.notice.clone(), self.access.clone()));
         Ok(())
     }
     pub fn pause(&self) {
@@ -383,15 +363,6 @@ impl Client {
         if let Some(connection) = connection {
             connection.stop();
         }
-    }
-    pub fn stop(&self, token: &str) -> Result<String> {
-        let mut key = self.key.lock().expect("sharing key").clone();
-        transport::http(&key.runtime()?, "DELETE", "", Some(token), &[], &[])?;
-        self.pause();
-        key.ended = true;
-        let value = key.encode()?;
-        *self.key.lock().expect("sharing key") = key;
-        Ok(value)
     }
     pub fn set_creator(&self, creator: bool) {
         self.creator.store(creator, std::sync::atomic::Ordering::Relaxed);
@@ -401,18 +372,26 @@ impl Client {
     }
     pub fn status(&self) -> ClientStatus {
         let key = self.key.lock().expect("sharing key");
-        let (phase, detail, pause_kind) = self
+        let (mut phase, mut detail, mut pause_kind) = self
             .connection
             .lock()
             .expect("sharing connection")
             .as_ref()
             .map_or((Phase::Offline, "Offline".into(), None), |c| c.status());
+        let frozen_pending = self.access.journal.frozen_handoff().unwrap_or(false);
+        if !key.ended && self.access.identity.is_none() && frozen_pending {
+            phase = Phase::Paused;
+            pause_kind = Some(PauseKind::Refused);
+            detail = "Sign in to the creator's sharing account to finish this frozen handoff.".into();
+        }
         let (phase, detail) = if key.ended { (Phase::Ended, "Ended".into()) } else { (phase, detail) };
+        let recovery_path = self.access.journal.completed_recovery().map(|path| path.to_string_lossy().into_owned());
         ClientStatus {
+            recovery_path,
             pause_kind,
             phase,
             detail,
-            creator: self.creator.load(std::sync::atomic::Ordering::Relaxed),
+            creator: self.creator.load(std::sync::atomic::Ordering::Relaxed) || frozen_pending,
             link: Some(key.link.clone()),
         }
     }
@@ -439,7 +418,7 @@ pub fn local_document(path: &Path) -> Result<Option<String>> {
 }
 fn validate_membership(share: Option<Share>, key: &RoomKey) -> Result<()> {
     if share.is_some_and(|s| {
-        s.endpoint != pop_core::LIBRARY_SHARE_ENDPOINT && (s.endpoint != key.origin || s.room != key.room)
+        s.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT && (s.endpoint != key.origin || s.room != key.room)
     }) {
         return Err("Conflicting room membership".into());
     }
@@ -482,7 +461,7 @@ fn bind_invitation(
         return Err("Different sharing document".into());
     }
     if let Some(old) = owner.share().map_err(fail)?
-        && old.endpoint != pop_core::LIBRARY_SHARE_ENDPOINT
+        && old.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT
         && (old.room != key.room || old.endpoint != key.origin)
     {
         if old.endpoint != pop_sharing_protocol::TRUSTED_ORIGIN {
@@ -511,7 +490,7 @@ fn join_at(owner: &Owner, existing: Option<&str>, link: &str, origin: &str) -> R
     Ok(saved)
 }
 /// Install only a missing canonical file. Matching existing files merge after opening.
-pub fn install(destination: &Path, link: &str) -> Result<()> {
+pub fn install(destination: &Path, link: &str, state_directory: &Path) -> Result<()> {
     let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
     let info = room_info(&key, None)?;
     if info.phase != RoomPhase::Live {
@@ -525,8 +504,10 @@ pub fn install(destination: &Path, link: &str) -> Result<()> {
         validate_membership(store.share().map_err(fail)?, &key)?;
         return Ok(());
     }
-    let bytes = transport::http(&key, "GET", "seed", Some(&key.capability), &[], &[])?;
-    install_seed(destination, &key, &info, &bytes)
+    let epoch = resolution::epoch(&key, &key.capability)?;
+    let credential = joined_credential(link)?;
+    let resolved = resolution::download(key.clone(), info, epoch, credential, &key.capability)?;
+    resolved.install(destination, state_directory)
 }
 fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]) -> Result<()> {
     if Some(hex(&Sha256::digest(bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {

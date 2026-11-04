@@ -540,3 +540,42 @@ fn redoing_inserted_and_moved_rows_after_a_removal_restores_them() {
     assert_eq!(value(&d), moved);
     assert_eq!(view.value, moved, "the page's view follows");
 }
+
+#[test]
+fn one_undo_skips_creation_already_hidden_by_remote_clear() {
+    let schema = json!({"kind":"object","properties":{
+        "title":{"kind":"text"},
+        "note":{"kind":"optional","inner":{"kind":"text"}},
+        "entries":{"kind":"record","value":{"kind":"object","properties":{"text":{"kind":"text"}}}}
+    }});
+    let spec = app(schema.to_string());
+    let mut local = Document::create(&spec, r#"{"title":"Before"}"#).unwrap();
+    let mut view = View::of(&local);
+    apply(&mut local, &mut view, &set(json!(["title"]), json!("After")), Origin::Page);
+    apply(
+        &mut local,
+        &mut view,
+        &batch(json!([
+            {"type":"set","path":["note"],"value":"Local note"},
+            {"type":"set","path":["entries","same"],"value":{"text":"Local entry"}}
+        ])),
+        Origin::Page,
+    );
+    let mut remote = Document::open(&spec, &local.checkpoint().unwrap(), &[]).unwrap();
+    remote
+        .apply_json(
+            &batch(json!([
+                {"type":"clear","path":["note"]},
+                {"type":"clear","path":["entries","same"]}
+            ])),
+            Origin::Page,
+        )
+        .unwrap();
+    view.publish(&local.import_remote(&[&remote.checkpoint().unwrap()]).unwrap().unwrap().publication.unwrap());
+    assert!(undo(&mut local, &mut view));
+    assert_eq!(value(&local), json!({"title":"Before","entries":{}}), "undo reaches the earlier visible edit");
+    view.check(&local, "undo skips a remotely cleared creation");
+    assert!(redo(&mut local, &mut view));
+    assert_eq!(value(&local), json!({"title":"After","entries":{}}));
+    view.check(&local, "redo preserves the remote clears");
+}

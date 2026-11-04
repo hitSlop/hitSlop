@@ -20,7 +20,7 @@ test("corpus discovery permits a missing optional directory but surfaces filesys
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-async function fixture(root: string, version = "1.0.0", id = 1) {
+async function fixture(root: string, version = "1.0.0", id = 1, schema = "crates/pop-storage/src/file/storage-1.sql") {
   const directory = join(root, `original-${version}`);
   for (const dir of ["documents", "expected", "scenarios", "pages", "acceptance"]) await mkdir(join(directory, dir), { recursive: true });
   for (const name of ["conformance", "conformance-compacted"]) {
@@ -30,10 +30,9 @@ async function fixture(root: string, version = "1.0.0", id = 1) {
     await writeFile(join(directory, `pages/${name}.json`), "{}");
   }
   await writeFile(join(directory, "acceptance/vector.json"), "{}");
-  const schema = "crates/pop-core/src/file/storage-1.sql";
   const release: Release = { release: version, frozen: true, commit: "c".repeat(40), captured: "2026-10-15",
     markers: { packageFormat: 1, runtimeABI: 1, storage: 1, layout: 1, protocol: 1 },
-    producer: { coreBuildID: "core" }, files: await corpusFiles(directory), storageSchemas: { [schema]: await fileDigest(join(repository, schema)) },
+    producer: { coreBuildID: "core" }, files: await corpusFiles(directory), storageSchemas: { [schema]: await fileDigest(join(repository, "crates/pop-storage/src/file/storage-1.sql")) },
     limits: [{ name: "example", value: "1", kind: "Max" }], templates: {}, templateAppDigests: {},
     writer: { version, platform: "darwin-arm64", sha256: "a".repeat(64), buildId: "core" }, toolchain: {}, clock: 1,
     storage: { conformance: { checkpointBytes: 1, updates: 0 }, "conformance-compacted": { checkpointBytes: 1, updates: 0 } } };
@@ -55,7 +54,7 @@ test("published archives are verified, replayed from cache and cannot silently d
   const root = await mkdtemp(join(tmpdir(), "pop-corpora-"));
   const previous = process.env.POP_COMPAT_ROOT;
   try {
-    const { entry, bytes } = await fixture(root);
+    const { entry, bytes } = await fixture(root, "1.0.0", 1, "crates/pop-core/src/file/storage-1.sql");
     let downloads = 0;
     const options = { required: {}, cache: join(root, "cache"), output: join(root, "replays"), list: async () => [entry.release], download: async (id: number) => {
       if (id === 1) return Buffer.from(JSON.stringify(entry.record));

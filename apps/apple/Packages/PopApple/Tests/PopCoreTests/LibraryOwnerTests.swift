@@ -21,7 +21,7 @@ import Testing
   let staged = try legacy.stage(id: old.id)
   try legacy.acknowledge(
     id: old.id, version: staged.entry.version, assetRevision: staged.entry.assetRevision,
-    fields: Data(), deleted: false)
+    fields: Data(), deleted: false, stamp: nil)
   if let asset = staged.assetPath { try legacy.releaseUpload(path: asset) }
 
   let legacyZone = CKRecordZone.ID(zoneName: "Library")
@@ -48,7 +48,7 @@ import Testing
     } else if let operation = operation as? CKModifyRecordsOperation {
       for record in operation.recordsToSave ?? [] {
         uploaded.withLock { $0.append(record.recordID) }
-        operation.perRecordSaveBlock?(record.recordID, .success(record))
+        operation.perRecordSaveBlock?(record.recordID, .success(CommittedCloudRecord(committing: record)))
       }
       operation.modifyRecordsResultBlock?(.success(()))
     }
@@ -92,7 +92,7 @@ import Testing
     try library.receive(
       id: entry.id, title: entry.title, template: entry.template,
       asset: checkpoint.assetPath, version: checkpoint.entry.version,
-      fields: Data(), deleted: false, artworkVersion: nil, assetRevision: nil)
+      fields: Data(), deleted: false, artworkVersion: nil, assetRevision: nil, stamp: nil)
     let state = try Fixtures.object(await owner.state())["value"] as? [String: Any]
     #expect(state?["hits"] as? Int == 3)
     let upload = try library.stage(id: entry.id)
@@ -118,7 +118,7 @@ private final class FinishedCount: Sendable { let value = Mutex(0) }
   let asset = try #require(checkpoint.assetPath)
   try library.acknowledge(
     id: entry.id, version: checkpoint.entry.version, assetRevision: checkpoint.entry.assetRevision,
-    fields: Data(), deleted: false)
+    fields: Data(), deleted: false, stamp: nil)
   try library.removeDownload(id: entry.id)
   let zone = CKRecordZone.ID(zoneName: "Library")
   let id = CKRecord.ID(recordName: entry.id, zoneID: zone)
@@ -282,7 +282,7 @@ private final class FinishedCount: Sendable { let value = Mutex(0) }
       if attempt == 1 || persistentFailure {
         op.perRecordSaveBlock?(record.recordID, .failure(CKError(.unknownItem)))
       } else {
-        op.perRecordSaveBlock?(record.recordID, .success(record))
+        op.perRecordSaveBlock?(record.recordID, .success(CommittedCloudRecord(committing: record)))
       }
       op.modifyRecordsResultBlock?(.success(()))
     }
@@ -320,10 +320,10 @@ func unsupportedCloudRecordsPreserveUpdateGuidance(path: String) async throws {
     } else if let op = operation as? CKModifySubscriptionsOperation {
       op.modifySubscriptionsResultBlock?(.success(()))
     } else if let op = operation as? CKFetchRecordZoneChangesOperation {
-      if path == "fetch" { op.recordWasChangedBlock?(id, .success(record)) }
+      if path == "fetch" { op.recordWasChangedBlock?(id, .success(CommittedCloudRecord(committing: record))) }
       op.fetchRecordZoneChangesResultBlock?(.failure(CKError(.networkUnavailable)))
     } else if let op = operation as? CKFetchRecordsOperation {
-      op.perRecordResultBlock?(id, .success(record))
+      op.perRecordResultBlock?(id, .success(CommittedCloudRecord(committing: record)))
       op.fetchRecordsResultBlock?(.success(()))
     }
   }
@@ -357,5 +357,153 @@ func unsupportedCloudRecordsPreserveUpdateGuidance(path: String) async throws {
   }
   let result = await sync.sync(.full)
   #expect(result.message == "Some changes couldn't sync. Please retry.")
+  await sync.stop()
+}
+
+@Test func catalogAuthorityRoundTripsThroughRustAndKeepsFormatOneAcceptance() throws {
+  let relay = CatalogAuthority.relay(
+    transition: String(repeating: "a", count: 32), room: "creator-room", seedHash: String(repeating: "b", count: 64))
+  let encoded = try libraryEncodeAuthority(authority: relay)
+  #expect(try libraryDecodeAuthority(format: 2, json: encoded) == relay)
+  #expect(try libraryDecodeAuthority(format: 1, json: nil) == .snapshot(receipt: nil))
+  #expect(throws: LibraryError.self) { try libraryDecodeAuthority(format: 3, json: nil) }
+}
+
+@Test func aLiveRelayCatalogEntryFetchesNoCloudKitDocumentAsset() async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let template = try Fixtures.template(stage: Fixtures.stage())
+  defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+  let original = try library.create(template: template.path, title: "Private copy")
+  let privateUpload = try library.stage(id: original.id)
+  try library.acknowledge(
+    id: original.id, version: privateUpload.entry.version,
+    assetRevision: privateUpload.entry.assetRevision, fields: Data(), deleted: false,
+    stamp: CatalogStamp(revision: 1, changeTag: "private-record"))
+  if let path = privateUpload.assetPath { try library.releaseUpload(path: path) }
+  try library.removeDownload(id: original.id)
+  let zone = CKRecordZone.ID(zoneName: "CatalogAuthority")
+  let id = CKRecord.ID(recordName: original.id, zoneID: zone)
+  let relay = CatalogAuthority.relay(
+    transition: String(repeating: "a", count: 32), room: "creator-room", seedHash: String(repeating: "b", count: 64))
+  let record = CKRecord(recordType: "SlopDocument", recordID: id)
+  record["format"] = 2
+  record["catalogRevision"] = Int64(2)
+  record["snapshotVersion"] = privateUpload.entry.version
+  record["assetRevision"] = privateUpload.entry.assetRevision
+  record["authority"] = try libraryEncodeAuthority(authority: relay)
+  record["title"] = "Live on another device"
+  record["template"] = "fixture"
+  let committed = CommittedCloudRecord(committing: record)
+  let assets = FinishedCount()
+  let uploads = FinishedCount()
+  let sync = LibrarySync(library: library, zone: zone) { operation in
+    if let op = operation as? CKModifyRecordZonesOperation {
+      op.modifyRecordZonesResultBlock?(.success(()))
+    } else if let op = operation as? CKModifySubscriptionsOperation {
+      op.modifySubscriptionsResultBlock?(.success(()))
+    } else if let op = operation as? CKFetchRecordZoneChangesOperation {
+      let projected = CommittedCloudRecord(
+        committing: committed, desiredKeys: op.configurationsByRecordZoneID?[zone]?.desiredKeys)
+      op.recordWasChangedBlock?(id, .success(projected))
+      op.fetchRecordZoneChangesResultBlock?(.failure(CKError(.networkUnavailable)))
+    } else if let op = operation as? CKFetchRecordsOperation {
+      assets.value.withLock { $0 += 1 }
+      op.fetchRecordsResultBlock?(.failure(CKError(.networkUnavailable)))
+    } else if let op = operation as? CKModifyRecordsOperation {
+      uploads.value.withLock { $0 += 1 }
+      op.modifyRecordsResultBlock?(.failure(CKError(.networkUnavailable)))
+    }
+  }
+  _ = await sync.sync(.full, explicit: true)
+  let entry = try #require(library.entries().first)
+  #expect(entry.id == id.recordName)
+  #expect(!entry.downloaded && !entry.dirty && entry.problem == nil)
+  #expect(!FileManager.default.fileExists(atPath: entry.path))
+  #expect(try library.authority(id: entry.id) == relay)
+  #expect(try library.catalogStamp(id: entry.id)?.revision == 2)
+  #expect(assets.value.withLock { $0 } == 0)
+  #expect(uploads.value.withLock { $0 } == 0)
+  await sync.stop()
+}
+
+// A server response has an immutable change tag. Use the public property override;
+// no private CloudKit archives or production acceptance exceptions are involved.
+private final class CommittedCloudRecord: CKRecord, @unchecked Sendable {
+  private var fixtureTag = UUID().uuidString
+  override var recordChangeTag: String? { fixtureTag }
+  convenience init(committing record: CKRecord, desiredKeys: [String]? = nil) {
+    self.init(recordType: record.recordType, recordID: record.recordID)
+    fixtureTag = record.recordChangeTag ?? fixtureTag
+    for key in desiredKeys ?? record.allKeys() { self[key] = record[key] }
+  }
+}
+
+@Test(arguments: [false, true])
+func startingTheSameReservedRoomAdoptsAnotherDevicesCommittedNonce(alreadyLive: Bool) async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let template = try Fixtures.template(stage: Fixtures.stage())
+  defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+  let library = try NativeLibrary.open(root: folder.path, account: "fixture")
+  let entry = try library.create(template: template.path, title: "Resume sharing")
+  let retained = try library.stage(id: entry.id)
+  let retainedPath = try #require(retained.assetPath)
+  defer { try? library.releaseUpload(path: retainedPath) }
+  let firstDevice = try DocumentOwner(url: URL(fileURLWithPath: retainedPath))
+  _ = try await firstDevice.apply(
+    batch: #"{"intents":[{"type":"set","path":["title"],"value":"Private first-device edit"}]}"#)
+  let retainedVersion = try #require(try Fixtures.object(await firstDevice.state())["version"] as? String)
+  try await firstDevice.close()
+  let secondDevice = try DocumentOwner(url: URL(fileURLWithPath: entry.path))
+  _ = try await secondDevice.apply(batch: #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#)
+  try await secondDevice.close()
+  let zone = CKRecordZone.ID(zoneName: "Library")
+  let record = CKRecord(recordType: "SlopDocument", recordID: CKRecord.ID(recordName: entry.id, zoneID: zone))
+  let committed: CatalogAuthority =
+    alreadyLive
+    ? .relay(
+      transition: String(repeating: "a", count: 32), room: "reserved-room", seedHash: String(repeating: "b", count: 64))
+    : .preparing(
+      transition: String(repeating: "a", count: 32), room: "reserved-room", seedHash: nil, priorCheckpoint: nil)
+  record["format"] = 2
+  record["catalogRevision"] = Int64(7)
+  record["title"] = entry.title
+  record["template"] = entry.template
+  record["authority"] = try libraryEncodeAuthority(authority: committed)
+  if !alreadyLive {
+    record["payload"] = CKAsset(fileURL: URL(fileURLWithPath: retainedPath))
+    record["snapshotVersion"] = retainedVersion
+  }
+  let response = CommittedCloudRecord(committing: record)
+  let sync = LibrarySync(library: library, zone: zone) { operation in
+    if let op = operation as? CKModifyRecordZonesOperation {
+      op.modifyRecordZonesResultBlock?(.success(()))
+    } else if let op = operation as? CKModifySubscriptionsOperation {
+      op.modifySubscriptionsResultBlock?(.success(()))
+    } else if let op = operation as? CKFetchRecordsOperation {
+      op.perRecordResultBlock?(record.recordID, .success(response))
+      op.fetchRecordsResultBlock?(.success(()))
+    }
+  }
+  let accepted = try await sync.beginRelay(
+    id: entry.id, room: "reserved-room",
+    transition: String(repeating: "c", count: 32), seedHash: nil)
+  #expect(accepted == committed)
+  #expect(try library.authority(id: entry.id) == committed)
+  #expect(try library.pendingAuthority(id: entry.id) == nil)
+  let reopened = try DocumentOwner(url: URL(fileURLWithPath: entry.path))
+  let value = try #require(try Fixtures.object(await reopened.state())["value"] as? [String: Any])
+  #expect(value["hits"] as? Int == 3)
+  if !alreadyLive { #expect(value["title"] as? String == "Private first-device edit") }
+  try await reopened.close()
+  do {
+    _ = try await sync.beginRelay(
+      id: entry.id, room: "different-room",
+      transition: String(repeating: "d", count: 32), seedHash: nil)
+    Issue.record("A different room must not take over the committed sharing transition")
+  } catch {}
+  #expect(try library.authority(id: entry.id) == committed)
   await sync.stop()
 }

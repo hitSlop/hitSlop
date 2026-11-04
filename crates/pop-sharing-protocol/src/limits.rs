@@ -48,3 +48,12 @@ pub const PING_MS: u64 = 20_000;
 /// Reconnect delays start here and double up to `BACKOFF_MAX_MS`.
 pub const BACKOFF_MIN_MS: u64 = 250;
 pub const BACKOFF_MAX_MS: u64 = 8_000;
+
+/// Unpublished immutable epoch seeds are quota bounded and expire after ten minutes.
+pub const EPOCH_STAGE_COUNT: usize = 2;
+pub const EPOCH_STAGE_TTL_MS: u64 = 600_000;
+/// Referenced raw attachments must fit inside the accepted staged SQLite seed.
+pub const EPOCH_STAGE_BLOB_BYTES: usize = crate::SEED_BYTES;
+/// Bounded creator-only frozen-history page. A single base may exceed the byte target.
+pub const HANDOFF_PAGE_RECORDS: usize = 32;
+pub const HANDOFF_PAGE_BYTES: usize = 1 << 20;

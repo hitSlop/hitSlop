@@ -7,6 +7,39 @@ use pop_core::Origin;
 use serde_json::{Value, json};
 use support::ApplyJson;
 use support::{Edit, View, app, fixture, next};
+
+// A confirmed authority replacement must reset history without breaking the page's
+// ordered stream; retrying a lost acknowledgment must preserve subsequent session undo.
+#[test]
+fn adopted_epochs_publish_one_complete_snapshot_and_retry_without_losing_undo() {
+    let f = fixture("checklist");
+    let spec = app(f["schema"].to_string());
+    let mut document = Document::create(&spec, &f["initial"].to_string()).unwrap();
+    document.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Before"}]}"#, Origin::Page).unwrap();
+    let old = document.checkpoint().unwrap();
+    let mut canonical = Document::open(&spec, &document.clean_checkpoint().unwrap(), &[]).unwrap();
+    canonical.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Canonical"}]}"#, Origin::Page).unwrap();
+    let checkpoint = canonical.checkpoint().unwrap();
+    let mut view = View::of(&document);
+    let previous = document.sequence();
+    let adopted = document.adopt_checkpoint(&checkpoint).unwrap();
+    assert_eq!(adopted.sequence, previous + 1);
+    view.publish(adopted.publication.as_ref().unwrap());
+    view.check(&document, "authority replacement");
+    assert_eq!(document.reading().unwrap().value["title"], "Canonical");
+    assert!(!document.can_undo(), "undo cannot refer into a replaced epoch");
+    let version = document.version();
+    assert!(document.adopt_checkpoint(&checkpoint).unwrap().publication.is_none());
+    assert_eq!(document.version(), version);
+    let unchanged = document.state().unwrap();
+    assert!(document.import_remote(&[&old]).is_err());
+    assert_eq!(document.state().unwrap(), unchanged);
+    document.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"New edit"}]}"#, Origin::Page).unwrap();
+    let current = document.checkpoint().unwrap();
+    assert!(document.adopt_checkpoint(&current).unwrap().publication.is_none());
+    document.undo().unwrap();
+    assert_eq!(document.reading().unwrap().value["title"], "Canonical");
+}
 fn random_op(rng: &mut u64, id: &mut u64, d: &Document) -> Value {
     let view: Value = serde_json::from_str(&d.state().unwrap()).unwrap();
     let rows = view["value"]["rows"].as_array().unwrap();

@@ -186,6 +186,8 @@ const tiers: Tier[] = [
     // A full run compiles and lints first; a filtered one (`verify rust store::`)
     // is for iterating, so it runs only the tests.
     run: async (args, prepare) => {
+      const scope = args.some(arg => arg === "--workspace" || arg.startsWith("-p") || arg === "--package" || arg.startsWith("--package="))
+        ? [] : ["--workspace"];
       if (!args.length) await prepare("Rust compilation and lints", async () => {
         await quiet(["cargo", "fmt", "--all", "--", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
@@ -208,14 +210,14 @@ const tiers: Tier[] = [
       });
       // Ask nextest which tests the actual filter selects. A filtered store:: run
       // must not fetch history or writers; expressions and exclusions work too.
-      const listing = await logged(["cargo", "nextest", "list", "--locked", "--workspace", "--message-format", "json", ...nextestFilters(args), ...args]);
+      const listing = await logged(["cargo", "nextest", "list", "--locked", ...scope, "--message-format", "json", ...nextestFilters(args), ...args]);
       if (listing.code) throw new Error(`Cannot list selected Rust tests: ${listing.stderr}`);
       const listed = JSON.parse(listing.stdout);
       const matches = (module: string) => Object.values(listed["rust-suites"] as Record<string, { "binary-name": string; testcases: Record<string, { "filter-match": { status: string } }> }>).some(suite =>
         Object.entries(suite.testcases).some(([name, test]) => name.startsWith(module + "::") && test["filter-match"].status === "matches"));
       if (matches("compat") || matches("compat_writers")) await prepare("Compatibility corpora", prepareCorpora);
       if (matches("compat_writers")) await prepare("Compatibility writers", resolveWriters);
-      await sh(["cargo", "nextest", "run", "--locked", "--workspace", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
+      await sh(["cargo", "nextest", "run", "--locked", ...scope, ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {
           await quiet(["cargo", "clippy", "--locked", "-p", "pop-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);

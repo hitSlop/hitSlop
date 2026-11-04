@@ -3,7 +3,7 @@ use pop_runner::{Batch, Evaluator, JobKind};
 use std::time::{Duration, Instant};
 
 fn run(script: &str) -> Result<String, String> {
-    Evaluator::new("/bin/sh".into(), vec!["-c".into(), script.into()]).unwrap().run(1, "", "{}")
+    Evaluator::process("/bin/sh".into(), vec!["-c".into(), script.into()]).unwrap().run(1, "", "{}")
 }
 
 #[test]
@@ -21,7 +21,7 @@ fn unresponsive_and_oversized_children_are_stopped() {
 
 #[test]
 fn render_jobs_have_their_own_output_and_time_budgets() {
-    let evaluator = Evaluator::new(
+    let evaluator = Evaluator::process(
         "/bin/sh".into(),
         vec!["-c".into(), "/bin/cat >/dev/null; exec /usr/bin/head -c 8388609 /dev/zero".into()],
     )
@@ -41,9 +41,11 @@ fn render_jobs_have_their_own_output_and_time_budgets() {
     );
 
     // Capture and PDF allow the same output size, but only PDF gets a longer watchdog.
-    let evaluator =
-        Evaluator::new("/bin/sh".into(), vec!["-c".into(), "/bin/cat >/dev/null; /bin/sleep 4; printf done".into()])
-            .unwrap();
+    let evaluator = Evaluator::process(
+        "/bin/sh".into(),
+        vec!["-c".into(), "/bin/cat >/dev/null; /bin/sleep 4; printf done".into()],
+    )
+    .unwrap();
     assert!(
         evaluator
             .raster(1, Batch { frames: vec![], fonts: vec![] }, Default::default(), JobKind::Capture)
@@ -61,7 +63,7 @@ fn render_jobs_have_their_own_output_and_time_budgets() {
 #[test]
 fn raster_input_holds_the_markup_and_image_budgets_together() {
     let evaluator =
-        Evaluator::new("/bin/sh".into(), vec!["-c".into(), "/bin/cat >/dev/null; printf done".into()]).unwrap();
+        Evaluator::process("/bin/sh".into(), vec!["-c".into(), "/bin/cat >/dev/null; printf done".into()]).unwrap();
     let batch = Batch {
         frames: vec![pop_runner::Frame {
             html: "\"".repeat((pop_runner::MARKUP_BYTES - 256) / 2),

@@ -9,7 +9,7 @@ struct CloudFailure: Error, CustomStringConvertible {
   init(_ text: String) { description = text }
 }
 
-/// CloudKit transports complete files; Rust owns replication and the live owner.
+/// CloudKit owns the catalog and snapshot authority; a live relay exclusively owns document bytes.
 actor LibrarySync {
   enum Request: String, Sendable { case full, changes }
   struct Outcome: Sendable {
@@ -53,6 +53,7 @@ actor LibrarySync {
   private var retryRunAt: Date?
   /// Consecutive failures per record this session; retries back off from 5 s to 15 min.
   private var failures: [String: Int] = [:]
+  private var transitions: Set<String> = []
   /// Consecutive failed runs; the next automatic run backs off the same way.
   private var runFailures = 0
   /// Whether a caller is waiting for a rerun.
@@ -114,6 +115,14 @@ actor LibrarySync {
     if let running { _ = await running.value }
     try check()
     try library.removeDownload(id: id)
+  }
+  func refreshRecord(id: String) async throws -> CatalogAuthority {
+    if let running { _ = await running.value }
+    let options = Options(request: .full, explicit: true, background: false)
+    try await prepare(options)
+    let record = try await fetchRecord(CKRecord.ID(recordName: id, zoneID: zone), options)
+    try await accept(record, options)
+    return try library.authority(id: id)
   }
   func download(id: String) async throws {
     if let running { _ = await running.value }
@@ -254,6 +263,7 @@ actor LibrarySync {
     // Fetch metadata first so an evicted document stays off this device during sync.
     config.desiredKeys = [
       "deleted", "title", "template", "snapshotVersion", "assetRevision", "artworkVersion", "format",
+      "authority", "catalogRevision",
     ]
     let op = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zone], configurationsByRecordZoneID: [zone: config])
     op.fetchAllChanges = false
@@ -316,12 +326,17 @@ actor LibrarySync {
           let record = try result.get()
           if record.recordType != "SlopDocument" { continue }
           let confirmed = try library.confirmedRevision(id: id.recordName)
-          guard (record["format"] as? Int) == 1, record["title"] is String, record["template"] is String,
-            record["snapshotVersion"] is String
+          let authority = try decodeAuthority(record)
+          let stamp = try catalogStamp(record)
+          guard record["title"] is String, record["template"] is String,
+            !authority.isSnapshot || record["snapshotVersion"] is String
           else { throw LibraryError.Failed(issue: .requiresUpdate, message: "This synced pop needs a newer pop.") }
+          let sameAuthority = try library.authority(id: id.recordName) == authority
+          let sameStamp = try library.catalogStamp(id: id.recordName) == stamp
           let retrying = try library.retries().contains { $0.id == id.recordName && $0.incoming }
           let unchanged =
             options.request == .full && confirmed?.count == 2
+            && sameAuthority && sameStamp
             && confirmed?[0] == record["snapshotVersion"] as? String
             && confirmed?[1] == record["assetRevision"] as? String
             && (record["deleted"] as? Int) != 1
@@ -405,6 +420,8 @@ actor LibrarySync {
   @discardableResult private func block(
     _ id: CKRecord.ID, _ error: Error, record: CKRecord? = nil, incoming: Bool
   ) -> Bool {
+    // A superseded callback cannot rewrite catalog metadata or schedule a retry.
+    if case LibraryError.Failed(let issue, _) = error, issue == .staleCatalog { return false }
     recordDiagnostic(error)
     let message = message(error)
     outcome.message = outcome.message ?? message
@@ -464,22 +481,39 @@ actor LibrarySync {
   private func fields(_ record: CKRecord) -> Data {
     let coder = NSKeyedArchiver(requiringSecureCoding: true)
     record.encodeSystemFields(with: coder)
+    if let revision = record["catalogRevision"] as? Int64 { coder.encode(revision, forKey: "popCatalogRevision") }
     coder.finishEncoding()
     return coder.encodedData
   }
 
-  private func accept(_ input: CKRecord, _ options: Options, downloading: Bool = false) async throws {
+  private func accept(_ input: CKRecord, _ options: Options, downloading: Bool = false, transitioning: Bool = false)
+    async throws
+  {
     guard input.recordID.zoneID == zone, input.recordType == "SlopDocument" else { return }
     try check()
-    if !downloading, (input["deleted"] as? Int) != 1 {
-      guard let version = input["snapshotVersion"] as? String,
-        let title = input["title"] as? String, let template = input["template"] as? String,
-        (input["format"] as? Int) == 1
-      else { throw LibraryError.Failed(issue: .requiresUpdate, message: "This synced pop needs a newer pop.") }
+    if transitions.contains(input.recordID.recordName) && !transitioning { return }
+    let authority = try decodeAuthority(input)
+    try library.admitAuthority(id: input.recordID.recordName, authority: authority, stamp: try catalogStamp(input))
+    guard let title = input["title"] as? String, let template = input["template"] as? String else {
+      throw CloudFailure("Missing catalog metadata")
+    }
+    if !authority.isSnapshot {
+      try library.acceptAuthority(
+        id: input.recordID.recordName, title: title, template: template, authority: authority, fields: fields(input),
+        stamp: try catalogStamp(input))
+      failures[input.recordID.recordName] = nil
+      try library.clearRetry(id: input.recordID.recordName)
+      return
+    }
+    if !downloading, (input["deleted"] as? Int) != 1, let version = input["snapshotVersion"] as? String {
       if try library.receiveRemovedMetadata(
         id: input.recordID.recordName, title: title, template: template, version: version, fields: fields(input),
-        artworkVersion: input["artworkVersion"] as? String, assetRevision: input["assetRevision"] as? String)
+        artworkVersion: input["artworkVersion"] as? String, assetRevision: input["assetRevision"] as? String,
+        stamp: try catalogStamp(input))
       {
+        try library.acceptAuthority(
+          id: input.recordID.recordName, title: title, template: template, authority: authority, fields: fields(input),
+          stamp: try catalogStamp(input))
         failures[input.recordID.recordName] = nil
         try library.clearRetry(id: input.recordID.recordName)
         return
@@ -490,16 +524,24 @@ actor LibrarySync {
       record = try await fetchRecord(input.recordID, options)
     }
     try check()
+    if !(try decodeAuthority(record)).isSnapshot {
+      try await accept(record, options, downloading: downloading, transitioning: transitioning)
+      return
+    }
     guard let version = record["snapshotVersion"] as? String,
       let title = record["title"] as? String,
       let template = record["template"] as? String,
-      (record["format"] as? Int) == 1
+      try decodeAuthority(record).isSnapshot
     else { throw LibraryError.Failed(issue: .requiresUpdate, message: "This synced pop needs a newer pop.") }
-    try library.receive(
+    try library.receiveCatalogSnapshot(
       id: record.recordID.recordName, title: title, template: template,
       asset: (record["payload"] as? CKAsset)?.fileURL?.path, version: version, fields: fields(record),
       deleted: (record["deleted"] as? Int) == 1,
-      artworkVersion: record["artworkVersion"] as? String, assetRevision: record["assetRevision"] as? String)
+      artworkVersion: record["artworkVersion"] as? String, assetRevision: record["assetRevision"] as? String,
+      authority: try decodeAuthority(record), stamp: try catalogStamp(record))
+    try library.acceptAuthority(
+      id: record.recordID.recordName, title: title, template: template, authority: try decodeAuthority(record),
+      fields: fields(record), stamp: try catalogStamp(record))
     failures[record.recordID.recordName] = nil
     let dirty = try library.entries().contains { $0.id == record.recordID.recordName && $0.dirty }
     if try library.retries().contains(where: { $0.id == record.recordID.recordName && ($0.incoming || !dirty) }) {
@@ -507,8 +549,292 @@ actor LibrarySync {
     }
   }
 
+  /// The room is reserved once by the creator before this change-tag fence.
+  func beginRelay(id: String, room: String, transition: String, seedHash: String?) async throws -> CatalogAuthority {
+    guard transitions.insert(id).inserted else { throw CloudFailure("A sharing transition is already running") }
+    defer { transitions.remove(id) }
+    if let running { _ = await running.value }
+    let options = Options(request: .full, explicit: true, background: false)
+    try await prepare(options)
+    for attempt in 0..<3 {
+      let record = try await authorityRecord(id, options)
+      if record.recordChangeTag != nil {
+        let current = try decodeAuthority(record)
+        if current.roomID == room {
+          switch current {
+          case .preparing:
+            return try await resumePreparing(record, room: room, options)
+          case .relay:
+            try await accept(record, options, transitioning: true)
+            return current
+          default: break
+          }
+        }
+        guard current.isSnapshot else {
+          throw CloudFailure("This catalog record already belongs to another live transition")
+        }
+        // Reconcile the old CloudKit snapshot through the existing owner before the fence.
+        try await accept(record, options, transitioning: true)
+      }
+      var preparing = CatalogAuthority.preparing(
+        transition: transition, room: room, seedHash: seedHash,
+        priorCheckpoint: try library.authority(id: id).checkpointProof)
+      try library.prepareAuthority(id: id, authority: preparing)
+      let upload = try library.stagePreparing(id: id, transition: transition)
+      defer { if let path = upload.assetPath { try? library.releaseUpload(path: path) } }
+      if var proof = try library.authority(id: id).checkpointProof {
+        proof.version = upload.entry.version
+        preparing = .preparing(transition: transition, room: room, seedHash: seedHash, priorCheckpoint: proof)
+        try library.prepareAuthority(id: id, authority: preparing)
+      }
+      apply(upload, to: record)
+      record["authority"] = try libraryEncodeAuthority(authority: preparing)
+      do {
+        let saved = try await save(record, options)
+        try rememberAuthority(saved, preparing)
+        return preparing
+      } catch let error as CKError where error.code == .serverRecordChanged && attempt < 2 { continue }
+    }
+    throw CloudFailure("The catalog changed while preparing sharing. Retry the same room.")
+  }
+
+  // Preparing retains private CloudKit bytes until activation. Only this explicit
+  // start/resume path reconciles them; background discovery stays metadata-only.
+  private func resumePreparing(_ input: CKRecord, room: String, _ options: Options) async throws -> CatalogAuthority {
+    var record = input
+    if (record["payload"] as? CKAsset)?.fileURL == nil {
+      record = try await fetchRecord(record.recordID, options)
+    }
+    let authority = try decodeAuthority(record)
+    guard authority.roomID == room else { throw CloudFailure("The reserved sharing room changed") }
+    if case .relay = authority {
+      try await accept(record, options, transitioning: true)
+      return authority
+    }
+    guard case .preparing = authority,
+      (record["deleted"] as? Int) != 1,
+      let path = (record["payload"] as? CKAsset)?.fileURL?.path,
+      let version = record["snapshotVersion"] as? String,
+      let title = record["title"] as? String, let template = record["template"] as? String
+    else { throw CloudFailure("The preparing relay is missing its retained private snapshot") }
+    try library.receiveCatalogSnapshot(
+      id: record.recordID.recordName, title: title, template: template,
+      asset: path, version: version, fields: fields(record), deleted: false,
+      artworkVersion: record["artworkVersion"] as? String, assetRevision: record["assetRevision"] as? String,
+      authority: authority, stamp: try catalogStamp(record))
+    return authority
+  }
+
+  func confirmRelay(id: String, room: String, transition: String, seedHash: String) async throws {
+    let relay = CatalogAuthority.relay(transition: transition, room: room, seedHash: seedHash)
+    try await commitCatalog(id: id, authority: relay)
+  }
+
+  func handoffSnapshot(id: String, room: String, transition: String, freeze: String) async throws -> CatalogReceipt {
+    guard transitions.insert(id).inserted else { throw CloudFailure("A sharing transition is already running") }
+    defer { transitions.remove(id) }
+    if let running { _ = await running.value }
+    let options = Options(request: .full, explicit: true, background: false)
+    try await prepare(options)
+    let frozen = CatalogAuthority.handoff(transition: transition, room: room, freeze: freeze)
+    for attempt in 0..<3 {
+      let record = try await authorityRecord(id, options)
+      let current = try decodeAuthority(record)
+      let restaging: Bool
+      if case .snapshot(let receipt) = current, let receipt, receipt.transition == transition,
+        receipt.room == room, receipt.freeze == freeze
+      {
+        restaging = true
+      } else {
+        restaging = false
+      }
+      try await accept(record, options, transitioning: true)
+      if current != frozen && !restaging {
+        try library.prepareAuthority(id: id, authority: frozen)
+        record["format"] = 2
+        record["authority"] = try libraryEncodeAuthority(authority: frozen)
+        record["payload"] = nil
+        do {
+          let saved = try await save(record, options)
+          try rememberAuthority(saved, frozen)
+        } catch let error as CKError where error.code == .serverRecordChanged && attempt < 2 { continue }
+      }
+      let expected = restaging ? current : frozen
+      // Rust accepts the staged file and verifies it covers the frozen relay frontier.
+      let upload = try library.stageHandoff(id: id, transition: transition)
+      defer { if let path = upload.assetPath { try? library.releaseUpload(path: path) } }
+      let receipt = CatalogReceipt(
+        transition: transition, room: room, freeze: freeze, snapshotVersion: upload.entry.version)
+      let snapshot = CatalogAuthority.snapshot(receipt: receipt)
+      try library.prepareAuthority(id: id, authority: snapshot)
+      let latest = try await fetchRecord(record.recordID, options)
+      guard try decodeAuthority(latest) == expected else {
+        try await accept(latest, options, transitioning: true)
+        continue
+      }
+      apply(upload, to: latest)
+      latest["authority"] = try libraryEncodeAuthority(authority: snapshot)
+      do {
+        let saved = try await save(latest, options)
+        try library.acknowledge(
+          id: id, version: upload.entry.version, assetRevision: upload.entry.assetRevision, fields: fields(saved),
+          deleted: false, stamp: try catalogStamp(saved))
+        try rememberAuthority(saved, snapshot)
+        return receipt
+      } catch let error as CKError where error.code == .serverRecordChanged && attempt < 2 { continue }
+    }
+    throw CloudFailure("The final snapshot is retained locally. Retry stopping sharing.")
+  }
+
+  func cancelPreparing(id: String, room: String, transition: String) async throws {
+    guard transitions.insert(id).inserted else { throw CloudFailure("A sharing transition is already running") }
+    defer { transitions.remove(id) }
+    if let running { _ = await running.value }
+    let options = Options(request: .full, explicit: true, background: false)
+    let record = try await fetchRecord(CKRecord.ID(recordName: id, zoneID: zone), options)
+    let current = try decodeAuthority(record)
+    guard case .preparing(let actual, let actualRoom, _, let priorCheckpoint) = current, actual == transition,
+      actualRoom == room
+    else {
+      let local = try library.authority(id: id)
+      let pending = try library.pendingAuthority(id: id)
+      var restored: CatalogAuthority?
+      if case .preparing(let nonce, let reserved, _, let prior) = local,
+        nonce == transition, reserved == room
+      {
+        restored = prior.map { .checkpoint(proof: $0) } ?? .snapshot(receipt: nil)
+      } else if let pending, pending.isSnapshot {
+        restored = pending
+      }
+      if current == restored {
+        try rememberAuthority(record, current)
+        return
+      }
+      throw CloudFailure("The catalog no longer has the canceled preparing room")
+    }
+    try rememberAuthority(record, current)
+    let snapshot = priorCheckpoint.map { CatalogAuthority.checkpoint(proof: $0) } ?? .snapshot(receipt: nil)
+    try library.prepareAuthority(id: id, authority: snapshot)
+    record["format"] = 2
+    record["authority"] = try libraryEncodeAuthority(authority: snapshot)
+    let saved = try await save(record, options)
+    try rememberAuthority(saved, snapshot)
+  }
+
+  func finishHandoff(id: String, receipt: CatalogReceipt) async throws {
+    guard transitions.insert(id).inserted else { throw CloudFailure("A sharing transition is already running") }
+    defer { transitions.remove(id) }
+    if let running { _ = await running.value }
+    let options = Options(request: .full, explicit: true, background: false)
+    try await prepare(options)
+    for attempt in 0..<3 {
+      let record = try await fetchRecord(CKRecord.ID(recordName: id, zoneID: zone), options)
+      let current = try decodeAuthority(record)
+      if let proof = current.checkpointProof, proof.transition == receipt.transition,
+        proof.sourceVersion == receipt.snapshotVersion
+      {
+        try await accept(record, options, transitioning: true)
+        return
+      }
+      guard current == .snapshot(receipt: receipt),
+        let version = record["snapshotVersion"] as? String, version == receipt.snapshotVersion
+      else {
+        throw CloudFailure("The handoff receipt changed")
+      }
+      try rememberAuthority(record, current)
+      let retired = CatalogAuthority.checkpoint(
+        proof: CatalogCheckpointProof(
+          transition: receipt.transition, sourceVersion: receipt.snapshotVersion, version: version))
+      try library.prepareAuthority(id: id, authority: retired)
+      record["authority"] = try libraryEncodeAuthority(authority: retired)
+      do {
+        let saved = try await save(record, options)
+        try rememberAuthority(saved, retired)
+        return
+      } catch let error as CKError where error.code == .serverRecordChanged && attempt < 2 { continue }
+    }
+    throw CloudFailure("The catalog changed while retiring the handoff receipt")
+  }
+
+  private func commitCatalog(id: String, authority: CatalogAuthority) async throws {
+    guard transitions.insert(id).inserted else { throw CloudFailure("A sharing transition is already running") }
+    defer { transitions.remove(id) }
+    if let running { _ = await running.value }
+    let options = Options(request: .full, explicit: true, background: false)
+    try await prepare(options)
+    for attempt in 0..<3 {
+      let record = try await authorityRecord(id, options)
+      let current = try decodeAuthority(record)
+      try await accept(record, options, transitioning: true)
+      if current == authority { return }
+      try library.prepareAuthority(id: id, authority: authority)
+      record["format"] = 2
+      record["authority"] = try libraryEncodeAuthority(authority: authority)
+      if !authority.isSnapshot { record["payload"] = nil }
+      do {
+        let saved = try await save(record, options)
+        try rememberAuthority(saved, authority)
+        return
+      } catch let error as CKError where error.code == .serverRecordChanged && attempt < 2 { continue }
+    }
+    throw CloudFailure("The catalog changed. Retry the same sharing transition.")
+  }
+
+  private func authorityRecord(_ id: String, _ options: Options) async throws -> CKRecord {
+    let recordID = CKRecord.ID(recordName: id, zoneID: zone)
+    do { return try await fetchRecord(recordID, options) } catch let error as CKError where error.code == .unknownItem {
+      guard let entry = try library.entries().first(where: { $0.id == id }), !entry.deleted else {
+        throw CloudFailure("The library document is unavailable")
+      }
+      let record = CKRecord(recordType: "SlopDocument", recordID: recordID)
+      record["title"] = entry.title
+      record["template"] = entry.template
+      record["snapshotVersion"] = entry.version
+      return record
+    }
+  }
+  private func apply(_ upload: LibraryUpload, to record: CKRecord) {
+    record["payload"] = upload.assetPath.map { CKAsset(fileURL: URL(fileURLWithPath: $0)) }
+    record["deleted"] = upload.entry.deleted ? 1 : 0
+    record["title"] = upload.entry.title
+    record["template"] = upload.entry.template
+    record["snapshotVersion"] = upload.entry.version
+    record["assetRevision"] = upload.entry.assetRevision
+    record["artworkVersion"] = upload.entry.artworkVersion
+    record["format"] = 2
+  }
+  private func rememberAuthority(_ record: CKRecord, _ authority: CatalogAuthority) throws {
+    guard let title = record["title"] as? String, let template = record["template"] as? String else {
+      throw CloudFailure("Missing catalog metadata")
+    }
+    try library.acceptAuthority(
+      id: record.recordID.recordName, title: title, template: template, authority: authority, fields: fields(record),
+      stamp: try catalogStamp(record))
+  }
+
+  private func decodeAuthority(_ record: CKRecord) throws -> CatalogAuthority {
+    let format = record["format"] as? Int ?? 0
+    guard format >= 0, format <= Int(UInt32.max) else { throw CloudFailure("Invalid catalog format") }
+    return try libraryDecodeAuthority(format: UInt32(format), json: record["authority"] as? String)
+  }
+
+  private func catalogStamp(_ record: CKRecord) throws -> CatalogStamp? {
+    let format = record["format"] as? Int ?? 0
+    guard format >= 2 else { return nil }
+    guard let revision = record["catalogRevision"] as? Int64, revision > 0,
+      let tag = record.recordChangeTag, !tag.isEmpty
+    else { throw CloudFailure("Missing catalog revision receipt") }
+    return CatalogStamp(revision: UInt64(revision), changeTag: tag)
+  }
+
   private func save(_ record: CKRecord, _ options: Options) async throws -> CKRecord {
     try check()
+    var revision = record["catalogRevision"] as? Int64 ?? 0
+    if record.recordChangeTag == nil, let prior = try library.catalogStamp(id: record.recordID.recordName) {
+      revision = max(revision, Int64(prior.revision))
+    }
+    guard revision >= 0, revision < Int64.max else { throw CloudFailure("Catalog revision exhausted") }
+    record["catalogRevision"] = revision + 1
     let op = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
     op.savePolicy = .ifServerRecordUnchanged
     op.isAtomic = false
@@ -531,7 +857,8 @@ actor LibrarySync {
     let retries = Dictionary(uniqueKeysWithValues: try library.retries().map { ($0.id, $0) })
     var sent = 0
     var conflicts = 0
-    for entry in try library.entries() where entry.dirty {
+    for entry in try library.entries() where !transitions.contains(entry.id) {
+      guard try (entry.dirty || library.hasPendingCheckpoint(id: entry.id)) else { continue }
       if let retry = retries[entry.id],
         retry.incoming || (!options.explicit && retry.retryAt > Date().timeIntervalSince1970)
       {
@@ -543,6 +870,14 @@ actor LibrarySync {
         defer { if let path { try? library.releaseUpload(path: path) } }
         do {
           try check()
+          if round == 0, try library.hasPendingCheckpoint(id: entry.id) {
+            do {
+              let latest = try await fetchRecord(id, options)
+              try await accept(latest, options)
+            } catch let error as CKError where error.code == .unknownItem {
+              guard try library.pendingCheckpointNewRecord(id: entry.id) else { throw error }
+            }
+          }
           let upload: LibraryUpload
           if round == 0 {
             guard let staged = try library.stageSync(id: entry.id, explicit: options.explicit) else { break }
@@ -557,6 +892,9 @@ actor LibrarySync {
             let decoder = try NSKeyedUnarchiver(forReadingFrom: bytes)
             decoder.requiresSecureCoding = true
             guard let restored = CKRecord(coder: decoder) else { throw CloudFailure("Invalid server record metadata") }
+            if decoder.containsValue(forKey: "popCatalogRevision") {
+              restored["catalogRevision"] = decoder.decodeInt64(forKey: "popCatalogRevision")
+            }
             decoder.finishDecoding()
             record = restored
           } else {
@@ -569,15 +907,23 @@ actor LibrarySync {
           record["snapshotVersion"] = upload.entry.version
           record["assetRevision"] = upload.entry.assetRevision
           record["artworkVersion"] = upload.entry.artworkVersion
-          record["format"] = 1
+          record["format"] = 2
+          record["authority"] = try libraryEncodeAuthority(authority: upload.authority)
           let saved = try await save(record, options)
           try check()
           guard let version = saved["snapshotVersion"] as? String else {
             throw CloudFailure("Missing uploaded version")
           }
-          try library.acknowledge(
-            id: entry.id, version: version, assetRevision: saved["assetRevision"] as? String,
-            fields: fields(saved), deleted: (saved["deleted"] as? Int) == 1)
+          if case .checkpoint = upload.authority {
+            try library.receiveCatalogSnapshot(
+              id: entry.id, title: upload.entry.title, template: upload.entry.template, asset: path, version: version,
+              fields: fields(saved), deleted: upload.entry.deleted, artworkVersion: upload.entry.artworkVersion,
+              assetRevision: upload.entry.assetRevision, authority: upload.authority, stamp: try catalogStamp(saved))
+          } else {
+            try library.acknowledge(
+              id: entry.id, version: version, assetRevision: saved["assetRevision"] as? String,
+              fields: fields(saved), deleted: (saved["deleted"] as? Int) == 1, stamp: try catalogStamp(saved))
+          }
           try library.clearRetry(id: entry.id)
           failures[entry.id] = nil
           sent += 1

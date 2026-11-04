@@ -1,10 +1,10 @@
 //! Native transport adapter. All routing, framing and document commands live in Rust;
 //! only a live owner's validated export request is handed to the native renderer.
 use super::*;
-use pop_core::command as core;
 use pop_core::engine::ExportFormat;
-use pop_core::owner::Failure;
 use pop_core::{Code, OutcomeCode};
+use pop_runtime::command as core;
+use pop_runtime::owner::Failure;
 
 #[uniffi::remote(Enum)]
 pub enum ExportFormat {
@@ -101,7 +101,7 @@ pub fn publish_export(
     output: String,
     activity: Box<dyn NativeExportActivity>,
 ) -> Result<(), CoreError> {
-    Ok(pop_core::capture::publish_export(&bytes, Path::new(&output), || activity.is_active())?)
+    Ok(pop_capture::capture::publish_export(&bytes, Path::new(&output), || activity.is_active())?)
 }
 #[uniffi::export(callback_interface)]
 pub trait NativeCommandCompletion: Send + Sync {
@@ -126,12 +126,12 @@ impl core::ExportHandler for Exporter {
     }
 }
 #[derive(uniffi::Object)]
-pub struct NativeSocketServer(pop_core::socket::Server);
+pub struct NativeSocketServer(pop_runtime::socket::Server);
 #[uniffi::export]
 impl NativeSocketServer {
     #[uniffi::constructor]
     pub fn start(owner: Arc<NativeOwner>, exporter: Box<dyn NativeExportHandler>) -> Result<Arc<Self>, CoreError> {
-        Ok(Arc::new(Self(pop_core::socket::Server::start(owner.0.clone(), Arc::new(Exporter(exporter)))?)))
+        Ok(Arc::new(Self(pop_runtime::socket::Server::start(owner.0.clone(), Arc::new(Exporter(exporter)))?)))
     }
     pub fn publish(&self) -> Result<(), CoreError> {
         Ok(self.0.publish()?)

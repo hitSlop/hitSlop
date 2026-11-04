@@ -80,16 +80,42 @@ mod runtime {
                 self.sql.exec("INSERT OR IGNORE INTO deleting VALUES(1)", None)?;
                 self.state.storage().sync().await?;
                 for row in &rooms {
+                    // Explicit account deletion revokes all rooms, including a pending
+                    // handoff. Its creator authorization intentionally permits discarding it.
+                    let stub = self.env.durable_object("ROOMS")?.get_by_name(&row.room)?;
+                    let mut read = RequestInit::new();
+                    read.with_method(Method::Get).with_headers(req.headers().clone());
+                    let mut state = stub
+                        .fetch_with_request(Request::new_with_init(
+                            &format!("https://account.internal/v1/rooms/{}/epoch", row.room),
+                            &read,
+                        )?)
+                        .await?;
+                    let handoff = if state.status_code() == 200 {
+                        state.json::<pop_sharing_protocol::lifecycle::EpochState>().await?.handoff
+                    } else if matches!(state.status_code(), 404 | 409 | 410) {
+                        None
+                    } else {
+                        return Ok(state);
+                    };
                     let mut init = RequestInit::new();
-                    init.with_method(Method::Delete).with_headers(req.headers().clone());
+                    let route = if let Some(handoff) = handoff {
+                        init.with_method(Method::Post).with_headers(req.headers().clone()).with_body(Some(
+                            serde_json::to_string(&pop_sharing_protocol::lifecycle::FinalizeHandoff {
+                                token: handoff.token,
+                            })?
+                            .into(),
+                        ));
+                        format!("https://account.internal/v1/rooms/{}/handoff/finalize", row.room)
+                    } else {
+                        init.with_method(Method::Delete).with_headers(req.headers().clone());
+                        format!("https://account.internal/v1/rooms/{}", row.room)
+                    };
                     let response = self
                         .env
                         .durable_object("ROOMS")?
                         .get_by_name(&row.room)?
-                        .fetch_with_request(Request::new_with_init(
-                            &format!("https://account.internal/v1/rooms/{}", row.room),
-                            &init,
-                        )?)
+                        .fetch_with_request(Request::new_with_init(&route, &init)?)
                         .await?;
                     // A reserved slot whose init never reached Room has no payloads
                     // or invitation to revoke. It can be removed with the account.

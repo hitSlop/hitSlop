@@ -500,7 +500,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
       packageFormat: PackageFormat,
       runtimeABI: RuntimeABI,
       storage: Number(
-        (await readFile(join(repository, "crates/pop-core/src/file/mod.rs"), "utf8")).match(
+        (await readFile(join(repository, "crates/pop-storage/src/file/mod.rs"), "utf8")).match(
           /const STORAGE_VERSION: i64 = (\d+);/,
         )![1],
       ),
@@ -524,7 +524,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
     limits,
     storageSchemas: Object.fromEntries(
       await Promise.all(
-        ["crates/pop-core/src/file/storage-1.sql"].map(async (path) => [
+        ["crates/pop-storage/src/file/storage-1.sql"].map(async (path) => [
           path,
           await fileDigest(join(repository, path)),
         ]),

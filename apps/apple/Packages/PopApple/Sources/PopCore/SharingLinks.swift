@@ -5,15 +5,36 @@ import Security
 extension Notification.Name {
   public static let popSharingAccountChanged = Notification.Name("pop.sharingAccountChanged")
   public static let popSharingForeground = Notification.Name("pop.sharingForeground")
+  public static let popSharingRecoveryAvailable = Notification.Name("pop.sharingRecoveryAvailable")
+  public static let popOpenSharingRecovery = Notification.Name("pop.openSharingRecovery")
   public static let popJoinSharedPop = Notification.Name("pop.joinSharedPop")
 }
 
 /// Parses live collaboration invitations on Mac and iPhone.
 public enum SharingLinks {
+  public static func stateDirectory() throws -> String {
+    var directory = PopLibrary.managedFolder.deletingLastPathComponent().appendingPathComponent(
+      "RelayState", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    try directory.setResourceValues(values)
+    return directory.path
+  }
   public static let appleSignIn = (
     servicesID: "com.hitslop.app.signin",
     returnURL: "https://share.dotpop.click/auth/apple"
   )
+
+  /// Accepted independent files remain discoverable after the rolling relay receipt advances.
+  @MainActor public static func discoverRecoveries() async throws {
+    let directory = try stateDirectory()
+    let paths = try await PopPreparation.run { try sharingRecoveredDocuments(stateDirectory: directory) }
+    for path in paths {
+      NotificationCenter.default.post(name: .popSharingRecoveryAvailable, object: URL(fileURLWithPath: path))
+    }
+  }
 
   /// Preserve the full URL, including its capability fragment, through the Rust parser.
   /// A non-sharing URL is left to the caller's existing routing.

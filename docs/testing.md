@@ -19,12 +19,14 @@ openable, so its frozen entries never change.
 
 | Boundary | Where | Proves |
 |---|---|---|
-| Rust semantics | `crates/pop-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import, FFI panic containment |
-| Rust storage | `crates/pop-core/tests/{store,file}.rs` (feature `storage`) | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, a history that does not start with a snapshot refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
+| Rust semantics | `crates/pop-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import |
+| Rust storage | `crates/pop-storage/tests/{store,file}.rs` | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, a history that does not start with a snapshot refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
+| Rust capture | `crates/pop-capture/tests` | Saved-source rendering, independent output failures, image budgets and exclusive export publication |
+| Private library | `crates/pop-library/tests` | Replica installation, identity, merge, receipts and cleanup through the same owner |
 | File engine | `crates/pop-engine/tests` | `pack` (with the artwork it renders), `inspect` and `schema` as the CLI runs them; a refused build publishes nothing; a closed export that never replaces a file, and `open` refusals |
 | Shell over WASM | `packages/pop/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
 | Author SDK | `packages/pop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` browser behavior |
-| Rust owner and commands | `crates/pop-core/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
+| Rust owner and commands | `crates/pop-runtime/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/PopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | Chrome durable copies and WebKit native-owner preview, without building Swift |
 | Sharing service | `scripts/sharing/check-accounts.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, room creation/open, replaceable uploads, owner recovery, quota release and Stop/upload races; local certificate substitution only |
@@ -58,6 +60,23 @@ packs each stage and creates a document from it.
 `tests/apps` holds authored infrastructure fixtures: a small document app and an
 `EditableText` consumer. They are never shipped as starter templates. Test media
 belongs to fixtures, not examples or the landing page.
+
+## Test value during the foundation redesign
+
+A test earns its place by naming an observable failure, an independent oracle, the
+coverage gap, and its owning boundary. Mechanical moves and new wrappers do not require
+new tests. Reuse the existing convergence, refusal-atomicity, publication-replay and
+reopen models. Do not copy their semantic matrix into adapters.
+
+When consolidating tests, transfer unique cases and sparse-publication guarantees first;
+remove assertions about generator distributions or private algorithm steps. Benchmark
+scaling and retained-memory/artifact growth separately from correctness tests. Temporary
+probes of upstream Loro behavior are design evidence, not new pop test contracts.
+
+Coordinate builds centrally: agents stage changes and report exact filtered checks;
+prove bug regressions red, then batch green checks after related changes. The integration
+runner remains required, with native qualification when Swift/FFI changes. A deferred
+check must be reported explicitly rather than described as passing.
 
 ## Running tests
 
@@ -238,8 +257,11 @@ benchmark app. Report the first sample separately, then the warmed median and p9
 Performance diagnostics are opt-in and not CI gates:
 `cargo run --release -p pop-core --example bench_replace` measures whole-list
 replacement at 1k/5k rows: unchanged values, field edits, append, reverse and mixed
-membership/order changes. It prints five samples and a median after one warmup per
-case, with fresh document creation outside the timer. Compare builds sequentially
+membership/order changes, plus an ID-addressed edit to the last row. It also measures
+two small page edits in a larger text-heavy document. Each sample checks the result
+against independently edited JSON outside the timer. It prints the first sample,
+warmed samples, median, p95 and publication bytes; document creation and batch decoding
+stay outside the timer. Compare builds sequentially
 without concurrent tests or compilation; these timings are not test assertions.
 The [2026-10-07 samples](evidence/replace-2026-10-07.json) compare the same-order
 row fast path with the original reconciler; shared-machine timing variation limits
@@ -336,7 +358,7 @@ rules are free to tighten while recorded acceptance remains unchanged. Only a co
 capture is published and frozen. Capture requires a release version, a candidate writer
 and a new output directory; an existing destination is refused.
 
-- Rust (`crates/pop-core/tests/compat.rs`, in every `verify rust`) replays saved
+- Rust (`crates/pop-runtime/tests/compat.rs`, in every `verify rust`) replays saved
   values, themes, app digests, edits, save/close and reopen. It also checks every entry’s
   limits ratchet
   and decodes its raw acceptance vectors, comparing typed re-encoding semantically with

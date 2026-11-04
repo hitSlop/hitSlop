@@ -31,7 +31,7 @@ import Testing
   #expect(try PopSaveLocation.folder(home: home, defaults: defaults) == desktop)
 }
 
-// The core owns the file's rules (crates/pop-core/tests/file.rs and manifest.rs).
+// Rust owns the file's rules (crates/pop-storage/tests/file.rs and build_input.rs).
 // These prove Swift reads what the core checked: the manifest, the window, the theme's
 // order and the file's kind, and that it maps the core's refusals.
 

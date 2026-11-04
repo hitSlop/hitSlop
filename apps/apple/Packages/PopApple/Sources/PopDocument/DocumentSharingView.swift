@@ -90,7 +90,9 @@ public struct LiveCollaborationSection: View {
             #endif
           }
         }
-        if model.status?.phase == .offline {
+        if model.status?.phase == .paused && model.status?.pauseKind == nil {
+          caption(model.status?.detail ?? "Finish stopping this live link.")
+        } else if model.status?.phase == .offline {
           caption("Offline — changes will sync when you're back online.")
         } else if model.status?.phase == .syncing {
           caption("Syncing…")
@@ -102,6 +104,10 @@ public struct LiveCollaborationSection: View {
             : "Edit together in real time. Anyone with the link can edit.")
       }
 
+      if model.status?.recoveryPath != nil {
+        caption("Your earlier local edits were kept in a separate recovered copy.")
+        Button("Open Recovered Copy") { model.openRecovery() }.disabled(model.busy)
+      }
       if live, let kind = model.status?.pauseKind {
         switch kind {
         case .roomFull:

@@ -1,5 +1,6 @@
 //! Read-only inspection of a local attachment before a batch imports it.
-use pop_core::{ATTACHMENT_FILE_BYTES, ATTACHMENT_NAME_BYTES, Code, engine::AttachmentRef, store};
+use pop_core::{ATTACHMENT_FILE_BYTES, ATTACHMENT_NAME_BYTES, Code, engine::AttachmentRef};
+use pop_storage::store;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;

@@ -34,7 +34,7 @@
     "compat:capture": "bun scripts/compat/capture.ts",
     "core:build:wasm": "bun scripts/build/core.ts --wasm",
     "core:test": "bun scripts/verify.ts rust",
-    "core:test:extended": "POP_MODEL_SEEDS=64 POP_MODEL_STEPS=500 POP_MERGE_SEEDS=400 POP_COMPAT_SEEDS=16 POP_COMPAT_STEPS=40 cargo nextest run --locked --release --ignore-default-filter --profile extended -p pop-core -E 'test(/^model::/) | test(/^merge::/) | test(/^compat_writers::/)'"
+    "core:test:extended": "POP_MODEL_SEEDS=64 POP_MODEL_STEPS=500 POP_MERGE_SEEDS=400 POP_COMPAT_SEEDS=16 POP_COMPAT_STEPS=40 NEXTEST_PROFILE=extended bun scripts/verify.ts rust --release -p pop-core -p pop-runtime -E 'test(/^model::/) | test(/^merge::/) | test(/^compat_writers::/)'"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20251106.1",

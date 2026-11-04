@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import PopCore
 import PopDocument
 import PopFeatures
@@ -13,6 +14,7 @@ import SwiftUI
   private let presentsWindows: Bool
   private let windows: DocumentWindows
   private let catalogServices: CatalogServices
+  private var recoveryObservers: [AnyCancellable] = []
   private var catalogWindow: NSWindowController?
   /// Where tests see the alerts the app would show.
   private let alertOverride: (@MainActor (AppAlert, UUID?) -> Void)?
@@ -42,6 +44,25 @@ import SwiftUI
       client: catalogClient ?? (presentsWindows || historyURL != nil ? catalogServices.client : .empty))
     model = AppModel(client: windows.client, catalog: catalog)
     windows.coordinator = self
+    let recoveryNames: [Notification.Name] = [.popSharingRecoveryAvailable, .popOpenSharingRecovery]
+    recoveryObservers = recoveryNames.map { name in
+      NotificationCenter.default.publisher(for: name).sink { [weak self] notification in
+        guard let url = notification.object as? URL else { return }
+        Task { @MainActor [weak self] in
+          guard let self else { return }
+          await self.catalogServices.recordOpened(url)
+          if name == .popOpenSharingRecovery { self.openDocument(url) }
+        }
+      }
+    }
+    if presentsWindows {
+      Task { @MainActor [weak self] in
+        do { try await SharingLinks.discoverRecoveries() } catch {
+          self?.present(.failure(sharingMessage(error), title: "Could not find recovered copies"), for: nil)
+        }
+      }
+    }
+
   }
 
   public var hasOpenDocuments: Bool { !model.documents.isEmpty }

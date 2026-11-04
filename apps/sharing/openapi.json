@@ -271,6 +271,18 @@
               "type": "string",
               "pattern": "^[0-9a-f]{32}$"
             }
+          },
+          {
+            "name": "phase",
+            "in": "query",
+            "description": "Use uploading to cancel preparation only; refuses a room that activated meanwhile",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "uploading"
+              ]
+            }
           }
         ],
         "responses": {
@@ -594,6 +606,472 @@
         ]
       }
     },
+    "/v1/rooms/{room}/epoch": {
+      "get": {
+        "summary": "Read the current checkpoint epoch and optional frozen handoff",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpochState"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      },
+      "post": {
+        "summary": "Conditionally publish a staged seed and exact resource inventory",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishEpoch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpochState"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/rooms/{room}/epochs/{hash}": {
+      "put": {
+        "summary": "Stage an immutable bounded checkpoint seed for ten minutes",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 16777216
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StagedSeed"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      },
+      "delete": {
+        "summary": "Release an unpublished stage immediately; never deletes the current checkpoint",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/rooms/{room}/epochs/{seed}/blobs/{hash}": {
+      "put": {
+        "summary": "Stage an immutable attachment within a checkpoint seed's bounded lease",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          {
+            "name": "seed",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "maxLength": 10485760
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/rooms/{room}/handoff/begin": {
+      "post": {
+        "summary": "Creator freezes the exact epoch frontier; guests immediately lose access",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BeginHandoff"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Handoff"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          }
+        ]
+      }
+    },
+    "/v1/rooms/{room}/handoff/finalize": {
+      "post": {
+        "summary": "Creator finalizes a frozen handoff after its durable destination receipt",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizeHandoff"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          }
+        ]
+      }
+    },
+    "/v1/rooms/{room}/handoff/history": {
+      "get": {
+        "summary": "Creator reads one bounded plain Records frame; after cursor and X-Sharing-Next/Done headers paginate frozen history",
+        "parameters": [
+          {
+            "name": "room",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "401": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "403": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "409": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "410": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "413": {
+            "$ref": "#/components/responses/Refused"
+          },
+          "429": {
+            "$ref": "#/components/responses/Refused"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          }
+        ]
+      }
+    },
     "/v1/rooms/{room}/open": {
       "post": {
         "summary": "Open a room after its seed and app resources are uploaded",
@@ -881,6 +1359,21 @@
           }
         }
       },
+      "BeginHandoff": {
+        "type": "object",
+        "required": [
+          "token",
+          "expected"
+        ],
+        "properties": {
+          "expected": {
+            "$ref": "#/components/schemas/EpochBase"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
       "CreateRoom": {
         "type": "object",
         "required": [
@@ -911,6 +1404,174 @@
           }
         }
       },
+      "EpochBase": {
+        "type": "object",
+        "required": [
+          "seedHash",
+          "heads"
+        ],
+        "properties": {
+          "heads": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                {
+                  "type": "integer",
+                  "maximum": 2147483647,
+                  "minimum": 0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "description": "Unique peer pairs in ascending canonical peer order"
+          },
+          "seedHash": {
+            "type": "string"
+          }
+        }
+      },
+      "EpochState": {
+        "type": "object",
+        "required": [
+          "seedHash",
+          "root",
+          "heads"
+        ],
+        "properties": {
+          "handoff": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Handoff"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "heads": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                {
+                  "type": "integer",
+                  "maximum": 2147483647,
+                  "minimum": 0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "description": "Unique peer pairs in ascending canonical peer order"
+          },
+          "root": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                {
+                  "type": "integer",
+                  "maximum": 2147483647,
+                  "minimum": 0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "description": "Unique peer pairs in ascending canonical peer order"
+          },
+          "seedHash": {
+            "type": "string"
+          }
+        }
+      },
+      "FinalizeHandoff": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "Handoff": {
+        "type": "object",
+        "required": [
+          "token",
+          "seedHash",
+          "root",
+          "heads"
+        ],
+        "properties": {
+          "heads": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                {
+                  "type": "integer",
+                  "maximum": 2147483647,
+                  "minimum": 0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "description": "Unique peer pairs in ascending canonical peer order"
+          },
+          "root": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                {
+                  "type": "integer",
+                  "maximum": 2147483647,
+                  "minimum": 0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "description": "Unique peer pairs in ascending canonical peer order"
+          },
+          "seedHash": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
       "Manifest": {
         "type": "object",
         "required": [
@@ -926,6 +1587,54 @@
             "items": {
               "$ref": "#/components/schemas/Resource"
             }
+          }
+        }
+      },
+      "PublishEpoch": {
+        "type": "object",
+        "required": [
+          "expected",
+          "seedHash",
+          "root",
+          "resources",
+          "attachments"
+        ],
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Resource"
+            }
+          },
+          "expected": {
+            "$ref": "#/components/schemas/EpochBase"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/Manifest"
+          },
+          "root": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": false,
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$"
+                },
+                {
+                  "type": "integer",
+                  "maximum": 2147483647,
+                  "minimum": 0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            },
+            "description": "Unique peer pairs in ascending canonical peer order"
+          },
+          "seedHash": {
+            "type": "string"
           }
         }
       },
@@ -1016,6 +1725,29 @@
           "live",
           "ended"
         ]
+      },
+      "StagedSeed": {
+        "type": "object",
+        "required": [
+          "seedHash",
+          "size",
+          "expiresAt"
+        ],
+        "properties": {
+          "expiresAt": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "seedHash": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
       }
     },
     "responses": {

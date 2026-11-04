@@ -182,7 +182,7 @@ impl Transport {
         loop {
             self.pump()?;
             let end = self.buffer[self.scanned..].iter().position(|b| *b == b'\n').map(|n| self.scanned + n + 1);
-            if end.unwrap_or(self.buffer.len()) > pop_core::command::MAX_REQUEST_BYTES {
+            if end.unwrap_or(self.buffer.len()) > pop_runtime::command::MAX_REQUEST_BYTES {
                 return Err("Oversized preview frame".into());
             }
             if let Some(end) = end {

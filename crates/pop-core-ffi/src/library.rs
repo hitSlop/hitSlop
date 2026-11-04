@@ -1,7 +1,10 @@
 //! Paths, typed library metadata and opaque CloudKit state; never Loro payloads.
 use super::*;
-use core::{Entry, Issue, Retry, Upload};
-use pop_core::library as core;
+use core::{
+    CatalogAuthority, CatalogCheckpointProof, CatalogReceipt, CatalogRelayBinding, CatalogStamp, Entry, Issue, Retry,
+    Upload,
+};
+use pop_library as core;
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum LibraryError {
     #[error("{message}")]
@@ -19,6 +22,7 @@ pub enum Issue {
     AppMismatch,
     TooLarge,
     AccountChanged,
+    StaleCatalog,
     Failed,
 }
 #[uniffi::remote(Record)]
@@ -50,6 +54,70 @@ pub struct Upload {
     pub entry: core::Entry,
     pub asset_path: Option<String>,
     pub fields: Option<Vec<u8>>,
+    pub authority: core::CatalogAuthority,
+}
+#[uniffi::remote(Record)]
+pub struct CatalogStamp {
+    pub revision: u64,
+    pub change_tag: String,
+}
+#[uniffi::remote(Record)]
+pub struct CatalogReceipt {
+    pub transition: String,
+    pub room: String,
+    pub freeze: String,
+    pub snapshot_version: String,
+}
+#[uniffi::remote(Record)]
+pub struct CatalogCheckpointProof {
+    pub transition: String,
+    pub source_version: String,
+    pub version: String,
+}
+#[uniffi::remote(Record)]
+pub struct CatalogRelayBinding {
+    pub transition: String,
+    pub room: String,
+    pub seed_hash: String,
+}
+#[uniffi::export]
+pub fn library_relay_binding(
+    authority: core::CatalogAuthority,
+) -> Result<Option<core::CatalogRelayBinding>, LibraryError> {
+    Ok(authority.relay_binding()?)
+}
+#[uniffi::remote(Enum)]
+pub enum CatalogAuthority {
+    Snapshot {
+        receipt: Option<core::CatalogReceipt>,
+    },
+    Checkpoint {
+        proof: core::CatalogCheckpointProof,
+    },
+    Preparing {
+        transition: String,
+        room: String,
+        seed_hash: Option<String>,
+        prior_checkpoint: Option<core::CatalogCheckpointProof>,
+    },
+    Relay {
+        transition: String,
+        room: String,
+        seed_hash: String,
+    },
+    Handoff {
+        transition: String,
+        room: String,
+        freeze: String,
+    },
+}
+#[uniffi::export]
+pub fn library_decode_authority(format: u32, json: Option<String>) -> Result<core::CatalogAuthority, LibraryError> {
+    Ok(core::CatalogAuthority::decode(format, json.as_deref())?)
+}
+#[uniffi::export]
+pub fn library_encode_authority(authority: core::CatalogAuthority) -> Result<String, LibraryError> {
+    Ok(authority.encode()?)
 }
 #[derive(uniffi::Object)]
 pub struct NativeLibrary(Arc<core::Library>);
@@ -91,6 +159,52 @@ impl NativeLibrary {
     ) -> Result<bool, LibraryError> {
         Ok(self.0.publish_artwork(&owner.0, &source_version, preview, icon)?)
     }
+    pub fn catalog_stamp(&self, id: String) -> Result<Option<core::CatalogStamp>, LibraryError> {
+        Ok(self.0.catalog_stamp(&id)?)
+    }
+    pub fn authority(&self, id: String) -> Result<core::CatalogAuthority, LibraryError> {
+        Ok(self.0.authority(&id)?)
+    }
+    pub fn pending_authority(&self, id: String) -> Result<Option<core::CatalogAuthority>, LibraryError> {
+        Ok(self.0.pending_authority(&id)?)
+    }
+    pub fn prepare_authority(&self, id: String, authority: core::CatalogAuthority) -> Result<(), LibraryError> {
+        Ok(self.0.prepare_authority(&id, authority)?)
+    }
+    pub fn accept_authority(
+        &self,
+        id: String,
+        title: String,
+        template: String,
+        authority: core::CatalogAuthority,
+        fields: Vec<u8>,
+        stamp: Option<core::CatalogStamp>,
+    ) -> Result<(), LibraryError> {
+        Ok(self.0.accept_authority(&id, &title, &template, authority, &fields, stamp.as_ref())?)
+    }
+    pub fn admit_authority(
+        &self,
+        id: String,
+        authority: core::CatalogAuthority,
+        stamp: Option<core::CatalogStamp>,
+    ) -> Result<(), LibraryError> {
+        Ok(self.0.admit_authority(&id, &authority, stamp.as_ref())?)
+    }
+    pub fn stage_preparing(&self, id: String, transition: String) -> Result<core::Upload, LibraryError> {
+        Ok(self.0.stage_preparing(&id, &transition)?)
+    }
+    pub fn confirm_relay_download(&self, id: String, room: String, seed_hash: String) -> Result<(), LibraryError> {
+        Ok(self.0.confirm_relay_download(&id, &room, &seed_hash)?)
+    }
+    pub fn stage_handoff(&self, id: String, transition: String) -> Result<core::Upload, LibraryError> {
+        Ok(self.0.stage_handoff(&id, &transition)?)
+    }
+    pub fn pending_checkpoint_new_record(&self, id: String) -> Result<bool, LibraryError> {
+        Ok(self.0.pending_checkpoint_new_record(&id)?)
+    }
+    pub fn has_pending_checkpoint(&self, id: String) -> Result<bool, LibraryError> {
+        Ok(self.0.has_pending_checkpoint(&id)?)
+    }
     pub fn stage_allowed(&self, id: String, explicit: bool) -> Result<bool, LibraryError> {
         Ok(self.0.stage_allowed(&id, explicit)?)
     }
@@ -112,6 +226,7 @@ impl NativeLibrary {
         deleted: bool,
         artwork_version: Option<String>,
         asset_revision: Option<String>,
+        stamp: Option<core::CatalogStamp>,
     ) -> Result<(), LibraryError> {
         Ok(self.0.receive_with_artwork(
             &id,
@@ -123,10 +238,40 @@ impl NativeLibrary {
             deleted,
             artwork_version.as_deref(),
             asset_revision.as_deref(),
+            stamp.as_ref(),
         )?)
     }
     pub fn block(&self, id: String, title: String, template: String, message: String) -> Result<(), LibraryError> {
         Ok(self.0.block(&id, &title, &template, &message)?)
+    }
+    #[allow(clippy::too_many_arguments, reason = "A complete accepted cloud snapshot enters this boundary")]
+    pub fn receive_catalog_snapshot(
+        &self,
+        id: String,
+        title: String,
+        template: String,
+        asset: Option<String>,
+        version: String,
+        fields: Vec<u8>,
+        deleted: bool,
+        artwork_version: Option<String>,
+        asset_revision: Option<String>,
+        authority: core::CatalogAuthority,
+        stamp: Option<core::CatalogStamp>,
+    ) -> Result<(), LibraryError> {
+        Ok(self.0.receive_catalog_snapshot(
+            &id,
+            &title,
+            &template,
+            asset.as_deref().map(Path::new),
+            &version,
+            &fields,
+            deleted,
+            artwork_version.as_deref(),
+            asset_revision.as_deref(),
+            authority,
+            stamp.as_ref(),
+        )?)
     }
     pub fn acknowledge(
         &self,
@@ -135,8 +280,9 @@ impl NativeLibrary {
         asset_revision: Option<String>,
         fields: Vec<u8>,
         deleted: bool,
+        stamp: Option<core::CatalogStamp>,
     ) -> Result<(), LibraryError> {
-        Ok(self.0.acknowledge_asset(&id, &version, asset_revision.as_deref(), &fields, deleted)?)
+        Ok(self.0.acknowledge_asset(&id, &version, asset_revision.as_deref(), &fields, deleted, stamp.as_ref())?)
     }
     pub fn delete(&self, id: String) -> Result<(), LibraryError> {
         Ok(self.0.delete(&id)?)
@@ -154,6 +300,7 @@ impl NativeLibrary {
         fields: Vec<u8>,
         artwork_version: Option<String>,
         asset_revision: Option<String>,
+        stamp: Option<core::CatalogStamp>,
     ) -> Result<bool, LibraryError> {
         Ok(self.0.receive_removed_metadata(
             &id,
@@ -163,6 +310,7 @@ impl NativeLibrary {
             &fields,
             artwork_version.as_deref(),
             asset_revision.as_deref(),
+            stamp.as_ref(),
         )?)
     }
     pub fn cleanup(&self) -> Result<(), LibraryError> {

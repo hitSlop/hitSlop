@@ -1,8 +1,8 @@
 //! Typed native adapter; sequencing and persistence remain in pop-core::owner.
 use super::*;
-use pop_core::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
-use pop_core::store::Pressure;
 use pop_core::{Batch, Code};
+use pop_runtime::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
+use pop_storage::store::Pressure;
 use std::path::PathBuf;
 #[uniffi::remote(Enum)]
 pub enum ThemeChange {
@@ -121,6 +121,8 @@ impl Request {
 /// command path reads, or the failure.
 #[derive(uniffi::Enum)]
 pub enum OwnerReply {
+    EpochCandidate { source_version: String, version: String, path: PathBuf },
+    EpochAdopted { recovery_path: Option<PathBuf> },
     Command { sequence: u64, ids: Vec<String>, result_json: String },
     Unit,
     State { json: String },
@@ -135,6 +137,12 @@ pub enum OwnerReply {
 impl From<core::Reply> for OwnerReply {
     fn from(value: core::Reply) -> Self {
         match value {
+            core::Reply::EpochCandidate { source_version, version, path } => {
+                Self::EpochCandidate { source_version, version, path: path.native_path().to_owned() }
+            }
+            core::Reply::EpochAdopted { recovery_path } => {
+                Self::EpochAdopted { recovery_path: recovery_path.map(|path| path.native_path().to_owned()) }
+            }
             core::Reply::Command { sequence, ids, result_json } => Self::Command { sequence, ids, result_json },
             core::Reply::Unit => Self::Unit,
             core::Reply::State { reading, .. } => Self::State { json: reading.to_json() },
@@ -190,9 +198,24 @@ impl NativeOwner {
             Path::new(&path),
             mode,
             Arc::new(move |event| listener.event(event)),
-            evaluator_path.map(|path| core::Evaluator::new(PathBuf::from(path), vec![])).transpose().map_err(|e| {
-                Failure { kind: FailureKind::Rejected, message: e, reason: Some(Code::InvalidRequest), op_index: None }
-            })?,
+            evaluator_path
+                .map(|path| {
+                    #[cfg(target_os = "ios")]
+                    {
+                        core::Evaluator::in_process_capture(PathBuf::from(path))
+                    }
+                    #[cfg(not(target_os = "ios"))]
+                    {
+                        core::Evaluator::process(PathBuf::from(path), vec![])
+                    }
+                })
+                .transpose()
+                .map_err(|e| Failure {
+                    kind: FailureKind::Rejected,
+                    message: e,
+                    reason: Some(Code::InvalidRequest),
+                    op_index: None,
+                })?,
         )?))))
     }
     pub fn app(&self) -> OpenedFile {

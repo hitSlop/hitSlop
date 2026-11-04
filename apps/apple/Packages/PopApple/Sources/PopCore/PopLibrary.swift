@@ -292,6 +292,55 @@ public struct LibrarySyncAttention {
   }
   public func receivedPush() async { await request(.full) }
   public func syncNow() async { await request(.full, explicit: true) }
+  /// Supplied by the authenticated sharing coordinator. The resolver validates creator,
+  /// room, document and epoch before installing a seed; credentials stay on this device.
+  public var relayDownloader:
+    (@Sendable (_ id: String, _ path: String, _ room: String, _ seedHash: String) async throws -> Void)?
+  public func authority(id: String) throws -> CatalogAuthority {
+    guard let native else { throw PopFailure("iCloud is unavailable. Your local pop is retained.") }
+    return try native.authority(id: id)
+  }
+  public func pendingAuthority(id: String) throws -> CatalogAuthority? {
+    guard let native else { throw PopFailure("iCloud is unavailable. Your local pop is retained.") }
+    return try native.pendingAuthority(id: id)
+  }
+  public func beginRelay(id: String, room: String, transition: String, seedHash: String? = nil) async throws
+    -> CatalogAuthority
+  {
+    guard let sync, isReady else { throw PopFailure("Connect to iCloud before starting live sharing.") }
+    let authority = try await sync.beginRelay(id: id, room: room, transition: transition, seedHash: seedHash)
+    await refresh()
+    return authority
+  }
+  public func cancelPreparing(id: String, room: String, transition: String) async throws {
+    guard let sync, isReady else { throw PopFailure("Connect to iCloud to restore the canceled sharing setup.") }
+    try await sync.cancelPreparing(id: id, room: room, transition: transition)
+    await refresh()
+  }
+  public func hasPendingCheckpoint(id: String) throws -> Bool {
+    guard let native else { throw PopFailure("The library is unavailable") }
+    return try native.hasPendingCheckpoint(id: id)
+  }
+  public func confirmRelay(id: String, room: String, transition: String, seedHash: String) async throws {
+    guard let sync, isReady else { throw PopFailure("Connect to iCloud to finish starting live sharing.") }
+    try await sync.confirmRelay(id: id, room: room, transition: transition, seedHash: seedHash)
+    await refresh()
+  }
+  public func handoffSnapshot(id: String, room: String, transition: String, freeze: String) async throws
+    -> CatalogReceipt
+  {
+    guard let sync, isReady else {
+      throw PopFailure("Connect to iCloud to finish stopping sharing. Your local pop is retained.")
+    }
+    let receipt = try await sync.handoffSnapshot(id: id, room: room, transition: transition, freeze: freeze)
+    await refresh()
+    return receipt
+  }
+  public func finishHandoff(id: String, receipt: CatalogReceipt) async throws {
+    guard let sync, isReady else { throw PopFailure("Connect to iCloud to finish the handoff receipt.") }
+    try await sync.finishHandoff(id: id, receipt: receipt)
+    await refresh()
+  }
   public func create(template: URL, title: String) async throws -> SyncedPop {
     guard let sync, isReady else { throw PopFailure("Sign in to iCloud before creating a synced pop.") }
     do {
@@ -329,7 +378,23 @@ public struct LibrarySyncAttention {
   public func download(_ entry: SyncedPop) async throws {
     guard let sync, isReady else { throw PopFailure("Connect to iCloud to download this pop.") }
     do {
-      try await sync.download(id: entry.id)
+      let authority = try await sync.refreshRecord(id: entry.id)
+      if let relay = authority.relayIdentity {
+        guard let relayDownloader, let native else {
+          throw PopFailure("Sign in to the creator account to download this live pop.")
+        }
+        try await relayDownloader(entry.id, entry.path, relay.room, relay.seedHash)
+        let refreshed = try native.authority(id: entry.id)
+        guard let current = refreshed.relayIdentity, current.room == relay.room,
+          refreshed.transitionID == authority.transitionID
+        else { throw PopFailure("The sharing authority changed during download. Your local copy is retained.") }
+        try native.confirmRelayDownload(id: entry.id, room: current.room, seedHash: current.seedHash)
+      } else {
+        guard authority.isSnapshot else {
+          throw PopFailure("This pop is changing sharing authority. Retry when the transition finishes.")
+        }
+        try await sync.download(id: entry.id)
+      }
       await refresh()
     } catch { throw PopFailure(libraryMessage(error)) }
   }

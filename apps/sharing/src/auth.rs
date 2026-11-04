@@ -5,6 +5,27 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 const TOKEN_BYTES: usize = pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum IdentityError {
+    Denied,
+    Unavailable,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CreatorAuthorization {
+    Allowed,
+    Denied,
+    Unavailable,
+}
+pub(crate) fn creator_authorization(
+    identity: std::result::Result<String, IdentityError>,
+    owner_uid: &str,
+) -> CreatorAuthorization {
+    match identity {
+        Ok(uid) if uid == owner_uid => CreatorAuthorization::Allowed,
+        Ok(_) | Err(IdentityError::Denied) => CreatorAuthorization::Denied,
+        Err(IdentityError::Unavailable) => CreatorAuthorization::Unavailable,
+    }
+}
 #[derive(Clone, Deserialize)]
 pub(crate) struct Claims {
     pub sub: String,
@@ -77,11 +98,6 @@ mod runtime {
     use super::*;
     use std::cell::RefCell;
     use worker::*;
-    #[derive(Debug)]
-    pub(crate) enum IdentityError {
-        Denied,
-        Unavailable,
-    }
     type IdentityResult<T> = std::result::Result<T, IdentityError>;
     const CERTIFICATES: &str =
         "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
@@ -138,7 +154,7 @@ mod runtime {
     }
 }
 #[cfg(target_arch = "wasm32")]
-pub(crate) use runtime::{IdentityError, identity};
+pub(crate) use runtime::identity;
 
 #[cfg(test)]
 mod tests {
@@ -149,6 +165,13 @@ mod tests {
     use serde_json::{Value, json};
     use std::sync::OnceLock;
     const NOW: u64 = 1_700_000_000;
+    #[test]
+    fn creator_authorization_distinguishes_denial_from_identity_outage() {
+        assert_eq!(creator_authorization(Ok("owner".into()), "owner"), CreatorAuthorization::Allowed);
+        assert_eq!(creator_authorization(Ok("other".into()), "owner"), CreatorAuthorization::Denied);
+        assert_eq!(creator_authorization(Err(IdentityError::Denied), "owner"), CreatorAuthorization::Denied);
+        assert_eq!(creator_authorization(Err(IdentityError::Unavailable), "owner"), CreatorAuthorization::Unavailable);
+    }
     fn keys() -> &'static (EncodingKey, DecodingKey) {
         static KEYS: OnceLock<(EncodingKey, DecodingKey)> = OnceLock::new();
         KEYS.get_or_init(|| {

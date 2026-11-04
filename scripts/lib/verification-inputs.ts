@@ -20,7 +20,7 @@ export const appBuildInputs = [
 ];
 
 export const tierInputs = {
-  compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/pop-core\/src\/(app|file)\//],
+  compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/pop-core\/src\/app\//, /^crates\/pop-storage\/src\/file\//],
   tooling: [
     /^tests\/verification\//,
     /^scripts\/compat\//,

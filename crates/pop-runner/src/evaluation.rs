@@ -16,48 +16,43 @@ pub fn evaluate(input: &[u8], interrupted: impl FnMut() -> bool + 'static) -> Re
 
 pub(crate) fn evaluate_job(input: Job<'_>, interrupted: impl FnMut() -> bool + 'static) -> Result<String, String> {
     let prelude = prelude(input.runtime_abi)?;
-    if matches!(input.mode, JobKind::Widget | JobKind::Capture | JobKind::Pdf) {
-        if !input.bundle.is_empty() || !input.request.is_empty() {
-            return Err("Raster jobs cannot carry JavaScript or an authored request".into());
-        }
-        #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
-        {
-            let raster = input.raster.ok_or("Raster job requires frames and images")?;
-            raster.batch.validate()?;
-            if serde_json::to_vec(&raster.batch).map_err(|e| e.to_string())?.len() > crate::MARKUP_BYTES {
-                return Err("Capture markup exceeds 16 MiB".into());
+    let function = match input.mode {
+        JobKind::Widget | JobKind::Capture | JobKind::Pdf => {
+            if !input.bundle.is_empty() || !input.request.is_empty() {
+                return Err("Raster jobs cannot carry JavaScript or an authored request".into());
             }
-            return crate::capture::raster(raster, input.mode);
+            #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+            {
+                let raster = input.raster.ok_or("Raster job requires frames and images")?;
+                raster.batch.validate()?;
+                if serde_json::to_vec(&raster.batch).map_err(|e| e.to_string())?.len() > crate::MARKUP_BYTES {
+                    return Err("Capture markup exceeds 16 MiB".into());
+                }
+                return pop_renderer::raster(raster, input.mode);
+            }
+            #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
+            return Err("Native capture rendering is unavailable".into());
         }
-        #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
-        return Err("Native capture rendering is unavailable".into());
-    }
-    if input.raster.is_some() {
-        return Err("JavaScript jobs cannot carry raster images".into());
-    }
-    if matches!(input.mode, JobKind::Markup | JobKind::WidgetMarkup) {
-        #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
-        return crate::capture::evaluate_markup(
-            &input.bundle,
-            &input.request,
-            if matches!(input.mode, JobKind::WidgetMarkup) { "__popWidget" } else { "__popCapture" },
-            interrupted,
-        );
-        #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
-        return Err("Native capture rendering is unavailable".into());
-    }
+        _ if input.raster.is_some() => return Err("JavaScript jobs cannot carry raster images".into()),
+        JobKind::Markup | JobKind::WidgetMarkup => {
+            #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+            return crate::capture::evaluate_markup(
+                &input.bundle,
+                &input.request,
+                if matches!(input.mode, JobKind::WidgetMarkup) { "__popWidget" } else { "__popCapture" },
+                interrupted,
+            );
+            #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
+            return Err("Native capture rendering is unavailable".into());
+        }
+        JobKind::Command => "__popRun",
+        JobKind::Definition => "__popDescribe",
+    };
     let (_runtime, context) = crate::realm::create(interrupted)?;
     let strict = |script: &str| format!("(function(){{\"use strict\";\n{script}\n}})();");
     let output = context.with(|ctx| {
         ctx.eval::<(), _>(strict(prelude)).catch(&ctx).map_err(|e| e.to_string())?;
         ctx.eval::<(), _>(strict(&input.bundle)).catch(&ctx).map_err(|e| e.to_string())?;
-        let function = match input.mode {
-            JobKind::Command => "__popRun",
-            JobKind::Definition => "__popDescribe",
-            JobKind::Markup | JobKind::WidgetMarkup | JobKind::Widget | JobKind::Capture | JobKind::Pdf => {
-                unreachable!("handled before the command realm")
-            }
-        };
         let run: Function = ctx.globals().get(function).catch(&ctx).map_err(|e| e.to_string())?;
         run.call::<_, String>((input.request.as_ref(),)).catch(&ctx).map_err(|e| e.to_string())
     })?;

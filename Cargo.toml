@@ -1,9 +1,10 @@
 [workspace]
-members = ["crates/pop-core", "crates/pop-core-ffi", "crates/pop-core-wasm", "crates/pop-engine", "crates/pop-runner", "crates/pop-sharing-protocol", "apps/sharing", "crates/pop-sharing-client"]
+members = ["crates/pop-storage", "crates/pop-runtime", "crates/pop-capture", "crates/pop-contracts", "crates/pop-core", "crates/pop-core-ffi", "crates/pop-core-wasm", "crates/pop-engine", "crates/pop-library", "crates/pop-renderer", "crates/pop-runner", "crates/pop-sharing-protocol", "apps/sharing", "crates/pop-sharing-client"]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
+rust-version = "1.96"
 publish = false
 
 [workspace.dependencies]

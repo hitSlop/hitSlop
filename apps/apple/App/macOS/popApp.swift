@@ -76,6 +76,7 @@ private struct AppSettingsView: View {
     NSApp.setActivationPolicy(.regular)
     installMenus()
     NSApp.registerForRemoteNotifications()
+    DocumentSharing.installLibraryResolver()
     PopLibrary.shared.start()
     libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
       [weak self] _ in

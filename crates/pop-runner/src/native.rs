@@ -1,5 +1,6 @@
 //! Native process driver for the shared evaluator.
 use super::*;
+use std::borrow::Cow;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};

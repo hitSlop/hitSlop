@@ -224,7 +224,14 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
         ResourceGrant,
         ApiFailure,
         crate::resources::Manifest,
-        crate::resources::Resource
+        crate::resources::Resource,
+        crate::lifecycle::EpochBase,
+        crate::lifecycle::EpochState,
+        crate::lifecycle::StagedSeed,
+        crate::lifecycle::PublishEpoch,
+        crate::lifecycle::Handoff,
+        crate::lifecycle::BeginHandoff,
+        crate::lifecycle::FinalizeHandoff
     )))]
     struct Description;
     let mut doc = Description::openapi();
@@ -261,6 +268,61 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
         (
             "/v1/rooms/{room}/open",
             vec![("post", None, Some("RoomInfo"), "Open a room after its seed and app resources are uploaded")],
+        ),
+        (
+            "/v1/rooms/{room}/epoch",
+            vec![
+                ("get", None, Some("EpochState"), "Read the current checkpoint epoch and optional frozen handoff"),
+                (
+                    "post",
+                    Some("PublishEpoch"),
+                    Some("EpochState"),
+                    "Conditionally publish a staged seed and exact resource inventory",
+                ),
+            ],
+        ),
+        (
+            "/v1/rooms/{room}/epochs/{hash}",
+            vec![
+                ("put", None, Some("StagedSeed"), "Stage an immutable bounded checkpoint seed for ten minutes"),
+                (
+                    "delete",
+                    None,
+                    None,
+                    "Release an unpublished stage immediately; never deletes the current checkpoint",
+                ),
+            ],
+        ),
+        (
+            "/v1/rooms/{room}/epochs/{seed}/blobs/{hash}",
+            vec![("put", None, None, "Stage an immutable attachment within a checkpoint seed's bounded lease")],
+        ),
+        (
+            "/v1/rooms/{room}/handoff/begin",
+            vec![(
+                "post",
+                Some("BeginHandoff"),
+                Some("Handoff"),
+                "Creator freezes the exact epoch frontier; guests immediately lose access",
+            )],
+        ),
+        (
+            "/v1/rooms/{room}/handoff/finalize",
+            vec![(
+                "post",
+                Some("FinalizeHandoff"),
+                None,
+                "Creator finalizes a frozen handoff after its durable destination receipt",
+            )],
+        ),
+        (
+            "/v1/rooms/{room}/handoff/history",
+            vec![(
+                "get",
+                None,
+                None,
+                "Creator reads one bounded plain Records frame; after cursor and X-Sharing-Next/Done headers paginate frozen history",
+            )],
         ),
         (
             "/v1/rooms/{room}/compact",
@@ -308,8 +370,14 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
             if path.contains("{hash}") {
                 parameters.push(serde_json::json!({"name":"hash","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}));
             }
+            if path.contains("{seed}") {
+                parameters.push(serde_json::json!({"name":"seed","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}));
+            }
             if path.contains("{document}") {
                 parameters.push(serde_json::json!({"name":"document","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}));
+            }
+            if method == "delete" && path == "/v1/rooms/{room}" {
+                parameters.push(serde_json::json!({"name":"phase","in":"query","required":false,"description":"Use uploading to cancel preparation only; refuses a room that activated meanwhile","schema":{"type":"string","enum":["uploading"]}}));
             }
             if method == "put" && path.ends_with("/seed") {
                 for header in ["X-Sharing-SHA256", "X-Sharing-App", "X-Sharing-Version"] {
@@ -341,17 +409,27 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
                 }
                 operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary","maxLength":crate::BASE_BYTES}}}});
             }
+            if method == "put" && path.contains("/epochs/") {
+                let limit =
+                    if path.contains("/blobs/") { crate::limits::ATTACHMENT_FILE_BYTES } else { crate::SEED_BYTES };
+                operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary","maxLength":limit}}}});
+            }
             let creator = path.starts_with("/v1/account/")
                 || path == "/v1/rooms"
                 || path.ends_with("/open")
-                || method == "delete"
+                || path.contains("/handoff/")
+                || (method == "delete" && !path.contains("/epochs/"))
                 || (method == "put" && (path.ends_with("/seed") || path.contains("/asset/")))
                 || (method == "post" && path.ends_with("/resources"));
             if creator {
                 operation["security"] = serde_json::json!([{"firebaseIdentity":[]}]);
                 operation["responses"]["401"] = serde_json::json!({"$ref":"#/components/responses/Refused"});
             }
-            if (method == "get" && path == "/v1/rooms/{room}") || (method == "put" && path.contains("/blob/")) {
+            if (method == "get" && path == "/v1/rooms/{room}")
+                || (method == "put" && path.contains("/blob/"))
+                || path.ends_with("/epoch")
+                || path.contains("/epochs/")
+            {
                 operation["security"] = serde_json::json!([{"firebaseIdentity":[]},{"capability":[]}]);
             }
             if path == "/v1/account" {

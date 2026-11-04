@@ -3,6 +3,14 @@
 dotpop starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not pop acceptance inputs.
 
 
+The approved [Rust foundation redesign](docs/roadmap.md#rust-foundation-redesign)
+allows breaking internal crate APIs while preserving every released document and runtime
+contract. Published layout-1 files keep their acceptance through the same engine's layout
+adapter; new documents use layout 2. Preserve historical release assets, expectations,
+preludes and hash pins. There is no compatibility reset or new acceptance baseline;
+mechanical extractions never change a format marker. Keep the one-owner edit path and
+data-preservation rules.
+
 Architecture: [architecture](docs/architecture.md). Status and open work:
 [direction](docs/roadmap.md); proposals in [ideas](docs/ideas.md).
 Contracts: [engineering contract](docs/engineering-contract.md). Tests:
@@ -11,9 +19,10 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 ## Non-negotiable
 
 - **Every released pop stays openable.** See [Compatibility](#compatibility).
-- `pop-core` (Rust on Loro) owns document semantics and durable storage: the `.pop`
-  file (one SQLite database holding the app and its saved state), the writer lock and the
-  save policy, serial owner, persistence worker and socket routing. Swift `DocumentOwner`
+- `pop-core` (Rust on Loro) owns document semantics and app acceptance. `pop-storage`
+  owns durable `.pop` storage (one SQLite database holding the app and its saved state),
+  the writer lock and save policy; `pop-runtime` owns the serial owner, persistence worker
+  and socket routing. Swift `DocumentOwner`
   is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
   (`packages/pop/src/shell`) holds no CRDT; `packages/pop/src/sdk` is the author SDK, and pop
   contain only their app.

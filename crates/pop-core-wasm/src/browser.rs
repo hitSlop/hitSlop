@@ -1,11 +1,14 @@
 use pop_core::{
     browser_wire::{BrowserEvent as Event, BrowserRequest, BrowserSaveStatus as Status, ResourceRoute},
-    owner, page_wire,
+    page_wire,
 };
+use pop_runtime::owner;
+use rsqlite_vfs::VfsFilesManager;
 use rsqlite_vfs::transfer::{DbImport, DbTransfer};
 use sha2::{Digest, Sha256};
 use sqlite_wasm_vfs::sahpool::{OpfsSAHImportTarget, OpfsSAHPoolCfgBuilder, OpfsSAHPoolUtil, install};
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
@@ -65,11 +68,11 @@ impl rsqlite_vfs::OsCallback for BrowserOs {
     }
 }
 
-/// One pool and owner per dedicated worker. The pool must outlive SQLite and imports;
-/// its allocation is reclaimed when this worker and its WASM instance terminate.
+/// The live copy's pool outlives its owner and imports. Closed transfer/recovery
+/// pools are explicitly released after the serial storage effect finishes.
 #[wasm_bindgen]
 pub struct BrowserCopy {
-    pool: &'static OpfsSAHPoolUtil,
+    pool: Option<&'static OpfsSAHPoolUtil>,
     vfs: String,
     importing: Option<DbImport<OpfsSAHImportTarget<'static>>>,
     imported: u64,
@@ -81,6 +84,9 @@ pub struct BrowserCopy {
     imported_hash: Option<String>,
     sync_events: SyncEvents,
     sync_link: Option<owner::SyncConnection>,
+    accepted_epoch: Option<pop_sharing_protocol::lifecycle::EpochState>,
+    transfer_active: Arc<AtomicBool>,
+    epoch_supported: std::cell::Cell<Option<bool>>,
 }
 
 #[wasm_bindgen(js_name = installCopy)]
@@ -90,8 +96,11 @@ pub async fn install_copy(copy: &str) -> Result<BrowserCopy, JsValue> {
     }
     let config = OpfsSAHPoolCfgBuilder::new().vfs_name(copy).directory(&format!("copies/{copy}")).build();
     let pool = install::<BrowserOs>(&config, false).await.map_err(error)?;
+    if pool.is_paused() {
+        pool.resume().await.map_err(error)?;
+    }
     Ok(BrowserCopy {
-        pool: Box::leak(Box::new(pool)),
+        pool: Some(Box::leak(Box::new(pool))),
         vfs: copy.into(),
         importing: None,
         imported: 0,
@@ -103,6 +112,9 @@ pub async fn install_copy(copy: &str) -> Result<BrowserCopy, JsValue> {
         imported_hash: None,
         sync_events: Arc::default(),
         sync_link: None,
+        accepted_epoch: None,
+        transfer_active: Arc::default(),
+        epoch_supported: std::cell::Cell::new(None),
     })
 }
 
@@ -117,7 +129,8 @@ impl BrowserCopy {
         {
             return Err(error("Invalid browser import"));
         }
-        self.importing = Some(self.pool.begin_import_unchecked("document.pop", size as u64).map_err(error)?);
+        self.accepted_epoch = None;
+        self.importing = Some(self.pool()?.begin_import_unchecked("document.pop", size as u64).map_err(error)?);
         self.imported = 0;
         self.expected = size as u64;
         self.digest = Sha256::new();
@@ -195,8 +208,8 @@ impl BrowserCopy {
     #[wasm_bindgen(js_name = recoverStorage)]
     pub async fn recover_storage(&self) -> Result<(), JsValue> {
         if self.driver.as_ref().is_some_and(|driver| driver.store().browser_needs_recovery()) {
-            self.pool.pause().map_err(error)?;
-            self.pool.resume().await.map_err(error)?;
+            self.pool()?.pause().map_err(error)?;
+            self.pool()?.resume().await.map_err(error)?;
         }
         Ok(())
     }
@@ -214,7 +227,7 @@ impl BrowserCopy {
                     .resource_info(route, &key)
                     .map_err(error)?
                     .ok_or_else(|| error("Resource not found"))?;
-                let plan = pop_core::file::resource_response(&info, route, range.as_deref());
+                let plan = pop_storage::file::resource_response(&info, route, range.as_deref());
                 push(&self.events, Event::ResourcePlan { id, size: info.size, plan });
             }
             BrowserRequest::Resource { id, route, key, offset, length } => {
@@ -238,10 +251,10 @@ impl BrowserCopy {
     pub fn page(&self, id: String, request: &str) -> Result<(), JsValue> {
         let driver = self.driver.as_ref().ok_or_else(|| error("Copy is not open"))?;
         let events = self.events.clone();
-        pop_core::command::page(driver.owner(), "browser".into(), request, move |dispatch| {
+        pop_runtime::command::page(driver.owner(), "browser".into(), request, move |dispatch| {
             let json = match dispatch {
-                pop_core::command::PageDispatch::Reply { json, .. } => json,
-                pop_core::command::PageDispatch::Host { action } => match action {
+                pop_runtime::command::PageDispatch::Reply { json, .. } => json,
+                pop_runtime::command::PageDispatch::Host { action } => match action {
                     page_wire::HostAction::Environment => {
                         page_wire::HostReply::Environment { environment: page_wire::HostEnvironment::unknown() }
                     }
@@ -315,7 +328,7 @@ impl BrowserCopy {
                 write
                     .call1(&JsValue::NULL, &bytes)
                     .map(|_| ())
-                    .map_err(|e| pop_core::store::Error::Failed(format!("Export write failed: {e:?}")))
+                    .map_err(|e| pop_storage::store::Error::Failed(format!("Export write failed: {e:?}")))
             })
             .map_err(error)
     }
@@ -333,7 +346,9 @@ impl BrowserCopy {
         self.open()?;
         let driver = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?;
         let share = driver.owner().share().map_err(error)?;
-        if !share.is_some_and(|share| share.endpoint == origin && share.room == key.room) {
+        // A prior terminal-room cleanup may have cleared membership before its
+        // flush/catalog acknowledgment was interrupted. Keep that local copy open.
+        if share.is_some_and(|share| share.endpoint != origin || share.room != key.room) {
             self.driver = None;
             self.events.lock().unwrap().clear();
             return Err(error("Saved membership mismatch"));
@@ -357,7 +372,7 @@ impl BrowserCopy {
         if driver.owner().app().document_uuid.as_deref() != Some(info.document.as_str())
             || Some(hex(&driver.store().app_digest().map_err(error)?)).as_deref() != info.app.as_deref()
             || share.is_some_and(|share| {
-                share.endpoint != pop_core::LIBRARY_SHARE_ENDPOINT
+                share.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT
                     && (share.endpoint != origin || (!imported && share.room != key.room))
             })
         {
@@ -367,7 +382,7 @@ impl BrowserCopy {
         }
         let (send, receive) = std::sync::mpsc::channel();
         driver.owner().submit(
-            owner::Request::Share { share: pop_core::store::Share { room: key.room, endpoint: origin.into() } },
+            owner::Request::Share { share: pop_storage::store::Share { room: key.room, endpoint: origin.into() } },
             None,
             Box::new(move |reply| {
                 let _ = send.send(reply);
@@ -491,7 +506,17 @@ pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<St
 #[wasm_bindgen(js_name = classifyFailure)]
 pub fn classify_failure(status: u16, code: Option<String>, url: &str) -> String {
     let outcome = failure::classify(status, code.as_deref(), failure::Route::of(url));
-    serde_json::json!({"outcome": outcome, "message": outcome.message(status)}).to_string()
+    serde_json::to_string(&failure::Failure { outcome, message: outcome.message(status) })
+        .expect("failure is serializable")
+}
+
+/// Apply the same compaction policy as the native supervisor.
+#[wasm_bindgen(js_name = maintenanceAction)]
+pub fn maintenance_action(full: &str, step: &str, random: u16) -> Result<String, JsValue> {
+    use pop_sharing_protocol::maintenance;
+    let full = serde_json::from_str(full).map_err(error)?;
+    let step = serde_json::from_str(step).map_err(error)?;
+    serde_json::to_string(&maintenance::decide(full, step, random)).map_err(error)
 }
 
 #[wasm_bindgen(js_name = socketBudget)]
@@ -499,8 +524,8 @@ pub fn socket_budget() -> u32 {
     pop_sharing_protocol::QUEUED_BYTES as u32
 }
 
-fn route_to_file(attachment: bool) -> pop_core::file::ResourceRoute {
-    if attachment { pop_core::file::ResourceRoute::Attachment } else { pop_core::file::ResourceRoute::App }
+fn route_to_file(attachment: bool) -> pop_storage::file::ResourceRoute {
+    if attachment { pop_storage::file::ResourceRoute::Attachment } else { pop_storage::file::ResourceRoute::App }
 }
 
 /// Validate asynchronous browser operations before JavaScript starts them.
@@ -524,5 +549,406 @@ impl SharingBase {
     }
     pub fn root(&self) -> String {
         frame::version_json(self.0.start.iter().map(|(&p, &n)| (p, n as u32)))
+    }
+}
+
+// Epoch transfers use separate installed VFSs. The live owner's file is only changed
+// by its serial adoption effect, after any independent recovery copy is durable.
+#[wasm_bindgen]
+impl BrowserCopy {
+    /// Detect a cutoff before downloading resources into the obsolete local file.
+    /// Epoch roots are installed durably before owner adoption; ordinary unsaved edits
+    /// cannot remove them, so the accepted saved frontier is sufficient here.
+    #[wasm_bindgen(js_name = leaveRoom)]
+    pub fn leave_room(&mut self) -> Result<(), JsValue> {
+        let driver = self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?;
+        let (send, receive) = std::sync::mpsc::channel();
+        driver.owner().submit(
+            owner::Request::Unshare,
+            None,
+            Box::new(move |reply| {
+                let _ = send.send(reply);
+            }),
+        );
+        driver.poll(0, js_sys::Date::now() as u64);
+        receive.try_recv().map_err(error)?.map_err(error)?;
+        // Clear the shared retention policy before flushing: shared history may have
+        // reached its limit, while the latest local state still fits. Keep this owner
+        // and accepted edits alive if either operation cannot be acknowledged.
+        driver.flush().map_err(error)
+    }
+
+    #[wasm_bindgen(js_name = hasEpoch)]
+    pub fn has_epoch(&self, json: &str) -> Result<bool, JsValue> {
+        let epoch: pop_sharing_protocol::lifecycle::EpochState = serde_json::from_str(json).map_err(error)?;
+        epoch.validate().map_err(error)?;
+        self.driver
+            .as_ref()
+            .ok_or_else(|| error("Copy is not open"))?
+            .store()
+            .document()
+            .map_err(error)?
+            .covers_wire_history(&epoch.root)
+            .map_err(error)
+    }
+
+    #[wasm_bindgen(js_name = confirmEpoch)]
+    pub fn confirm_epoch(&self, json: &str) -> Result<(), JsValue> {
+        let receipt: pop_sharing_protocol::lifecycle::EpochState = serde_json::from_str(json).map_err(error)?;
+        receipt.validate().map_err(error)?;
+        let candidate = self.accepted_epoch.as_ref().ok_or_else(|| error("No accepted epoch candidate"))?;
+        if receipt.seed_hash != candidate.seed_hash || receipt.root != candidate.root {
+            return Err(error("Relay did not confirm the prepared epoch"));
+        }
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = supportsEpoch)]
+    pub fn supports_epoch(&self) -> Result<bool, JsValue> {
+        if let Some(supported) = self.epoch_supported.get() {
+            return Ok(supported);
+        }
+        let supported = self
+            .driver
+            .as_ref()
+            .ok_or_else(|| error("Copy is not open"))?
+            .store()
+            .document()
+            .map_err(error)?
+            .supports_deep_compaction();
+        // Layout never migrates during ordinary edits; authority adoption only accepts
+        // layout 2 on both sides. Do not reopen Loro on every paused transport tick.
+        self.epoch_supported.set(Some(supported));
+        Ok(supported)
+    }
+
+    /// Prepare a private SQLite snapshot through the same serial owner effect as
+    /// native sharing. The expected relay frontier is checked before history is cut.
+    #[wasm_bindgen(js_name = prepareEpoch)]
+    pub fn prepare_epoch(&mut self, candidate: &mut BrowserCopy, expected: &str) -> Result<String, JsValue> {
+        use pop_sharing_protocol::lifecycle::{EpochBase, EpochState, PublishEpoch};
+        use pop_sharing_protocol::resources::Resource;
+        let expected: EpochBase = serde_json::from_str(expected).map_err(error)?;
+        expected.validate().map_err(error)?;
+        if candidate.driver.is_some() || candidate.importing.is_some() || candidate.vfs == self.vfs {
+            return Err(error("Invalid epoch staging destination"));
+        }
+        candidate.accepted_epoch = None;
+        candidate.clear_epoch_scratch()?;
+        let source_version = self.current_version()?;
+        let driver = self.driver.as_mut().expect("current version requires open owner");
+        let (send, receive) = std::sync::mpsc::channel();
+        let active = candidate.transfer_active.clone();
+        active.store(true, Ordering::Release);
+        driver.owner().submit(
+            owner::Request::PrepareEpoch {
+                destination: pop_storage::store::EpochLocation::Vfs {
+                    name: "document.pop".into(),
+                    vfs: candidate.vfs.clone(),
+                },
+                expected_version: source_version.clone(),
+                required_heads: Some(expected.heads.clone()),
+            },
+            None,
+            Box::new(move |reply| {
+                active.store(false, Ordering::Release);
+                let _ = send.send(reply);
+            }),
+        );
+        driver.poll(0, js_sys::Date::now() as u64);
+        let result = receive.try_recv().map_err(error)?.map_err(error);
+        let cleanup = candidate.clear_epoch_scratch();
+        let owner::Reply::EpochCandidate { .. } = result? else {
+            return Err(error("Unexpected epoch preparation reply"));
+        };
+        cleanup?;
+        let store = pop_storage::store::Store::open_vfs("document.pop", &candidate.vfs, false).map_err(error)?;
+        let result = (|| {
+            let mut hash = Sha256::new();
+            let mut size = 0_u64;
+            let exported = store.export_pages(|bytes| {
+                size += bytes.len() as u64;
+                if size > pop_sharing_protocol::SEED_BYTES as u64 {
+                    return Err(pop_storage::store::Error::Full);
+                }
+                hash.update(bytes);
+                Ok(())
+            });
+            if size > pop_sharing_protocol::SEED_BYTES as u64 {
+                let failure = js_sys::Error::new("This document has outgrown sharing");
+                js_sys::Reflect::set(&failure, &"code".into(), &"outgrown".into())?;
+                return Err(failure.into());
+            }
+            exported.map_err(error)?;
+            let seed_hash = hex(&hash.finalize());
+            let root = store.document().map_err(error)?.wire_history();
+            let resources = store.sharing_manifest().map_err(error)?;
+            let attachments = store
+                .attachments()
+                .map_err(error)?
+                .into_iter()
+                .map(|item| Resource {
+                    key: item.id.clone(),
+                    hash: item.id,
+                    size: item.bytes,
+                    media_type: item.media_type,
+                })
+                .collect();
+            let publish =
+                PublishEpoch { expected, seed_hash: seed_hash.clone(), root: root.clone(), resources, attachments };
+            publish.validate().map_err(error)?;
+            candidate.accepted_epoch = Some(EpochState { seed_hash, root: root.clone(), heads: root, handoff: None });
+            serde_json::to_string(
+                &serde_json::json!({"sourceVersion": source_version, "size": size, "publish": publish}),
+            )
+            .map_err(error)
+        })();
+        let closed = store.close().map_err(error);
+        let output = result?;
+        closed?;
+        Ok(output)
+    }
+
+    /// Transport streams immutable SQLite pages to an OPFS upload file, never JSON.
+    #[wasm_bindgen(js_name = exportEpoch)]
+    pub fn export_epoch(&self, write: &js_sys::Function) -> Result<(), JsValue> {
+        if self.accepted_epoch.is_none() || self.driver.is_some() || self.transfer_active.load(Ordering::Acquire) {
+            return Err(error("No prepared epoch"));
+        }
+        let store = pop_storage::store::Store::open_vfs("document.pop", &self.vfs, false).map_err(error)?;
+        let result = store
+            .export_pages(|bytes| {
+                write
+                    .call1(&JsValue::NULL, &js_sys::Uint8Array::from(bytes))
+                    .map(|_| ())
+                    .map_err(|error| pop_storage::store::Error::Failed(format!("Epoch export failed: {error:?}")))
+            })
+            .map_err(error);
+        let closed = store.close().map_err(error);
+        result?;
+        closed
+    }
+
+    #[wasm_bindgen(js_name = epochAttachment)]
+    pub fn epoch_attachment(&self, id: &str) -> Result<Vec<u8>, JsValue> {
+        if self.accepted_epoch.is_none() || self.driver.is_some() || self.transfer_active.load(Ordering::Acquire) {
+            return Err(error("No prepared epoch"));
+        }
+        let store = pop_storage::store::Store::open_vfs("document.pop", &self.vfs, false).map_err(error)?;
+        let result = store.attachment(id).map_err(error);
+        let closed = store.close().map_err(error);
+        let bytes = result?;
+        closed?;
+        Ok(bytes)
+    }
+
+    #[wasm_bindgen(js_name = validateEpoch)]
+    pub fn validate_epoch(&mut self, metadata: &str, epoch: &str) -> Result<(), JsValue> {
+        if self.driver.is_some() || self.importing.is_some() || self.transfer_active.load(Ordering::Acquire) {
+            return Err(error("Epoch candidate must be closed"));
+        }
+        self.accepted_epoch = None;
+        let info = room_info(metadata)?;
+        let epoch: pop_sharing_protocol::lifecycle::EpochState = serde_json::from_str(epoch).map_err(error)?;
+        epoch.validate().map_err(error)?;
+        if epoch.handoff.is_some()
+            || Some(epoch.seed_hash.as_str()) != info.seed_hash.as_deref()
+            || self.imported_hash.as_deref() != Some(epoch.seed_hash.as_str())
+        {
+            return Err(error("Epoch seed checksum or authority mismatch"));
+        }
+        let store = pop_storage::store::Store::open_vfs("document.pop", &self.vfs, false).map_err(error)?;
+        let accepted = (|| {
+            if store.app().document_uuid.as_deref() != Some(info.document.as_str())
+                || Some(hex(&store.app_digest().map_err(error)?)).as_deref() != info.app.as_deref()
+                || !store.document().map_err(error)?.covers_wire_history(&epoch.root).map_err(error)?
+            {
+                return Err(error("Epoch document, app or root mismatch"));
+            }
+            Ok(())
+        })();
+        let closed = store.close().map_err(error);
+        accepted?;
+        closed?;
+        self.accepted_epoch = Some(epoch);
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = openLocal)]
+    pub fn open_local(&mut self) -> Result<(), JsValue> {
+        self.open()?;
+        if self.driver.as_ref().expect("opened").store().share().map_err(error)?.is_some() {
+            self.driver = None;
+            self.events.lock().expect("events").clear();
+            return Err(error("This shared copy needs its invitation"));
+        }
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = documentIdentity)]
+    pub fn document_identity(&self) -> Result<String, JsValue> {
+        self.driver
+            .as_ref()
+            .ok_or_else(|| error("Copy is not open"))?
+            .store()
+            .app()
+            .document_uuid
+            .clone()
+            .ok_or_else(|| error("Missing document identity"))
+    }
+
+    /// A catalog reservation can outlive a lost acknowledgment. Only the atomic clean
+    /// copy result (new identity and no membership) may be promoted to a usable copy.
+    #[wasm_bindgen(js_name = openRecovery)]
+    pub fn open_recovery(&mut self, original: &str) -> Result<(), JsValue> {
+        if !pop_core::browser_wire::valid_copy(original) || self.fresh || self.driver.is_some() {
+            return Err(error("Invalid recovery reservation"));
+        }
+        let store = pop_storage::store::Store::open_vfs("document.pop", &self.vfs, false).map_err(error)?;
+        let complete = store.app().document_uuid.as_deref().is_some_and(|id| id != original)
+            && store.share().map_err(error)?.is_none();
+        store.close().map_err(error)?;
+        if !complete {
+            return Err(error("Recovery is incomplete; reopen the original shared copy to retry"));
+        }
+        self.open()
+    }
+
+    #[wasm_bindgen(js_name = currentVersion)]
+    pub fn current_version(&mut self) -> Result<String, JsValue> {
+        let driver = self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?;
+        let (send, receive) = std::sync::mpsc::channel();
+        driver.owner().submit(
+            owner::Request::State,
+            None,
+            Box::new(move |reply| {
+                let _ = send.send(reply);
+            }),
+        );
+        driver.poll(0, js_sys::Date::now() as u64);
+        match receive.try_recv().map_err(error)?.map_err(error)? {
+            owner::Reply::State { reading, .. } => Ok(reading.version),
+            _ => Err(error("Unexpected owner state reply")),
+        }
+    }
+
+    #[wasm_bindgen(js_name = confirmedVersion)]
+    pub fn confirmed_version(&mut self) -> Result<Option<String>, JsValue> {
+        let Some(link) = &self.sync_link else { return Ok(None) };
+        let (send, receive) = std::sync::mpsc::channel();
+        link.confirmed_version(move |confirmation| {
+            let _ = send.send(confirmation.map(|value| value.version));
+        });
+        self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?.poll(0, js_sys::Date::now() as u64);
+        receive.try_recv().map_err(error)
+    }
+
+    #[wasm_bindgen(js_name = adoptEpoch)]
+    pub fn adopt_epoch(
+        &mut self,
+        candidate: &BrowserCopy,
+        recovery: &BrowserCopy,
+        confirmed: &str,
+    ) -> Result<bool, JsValue> {
+        if candidate.accepted_epoch.is_none()
+            || candidate.transfer_active.load(Ordering::Acquire)
+            || recovery.transfer_active.load(Ordering::Acquire)
+            || candidate.driver.is_some()
+            || recovery.driver.is_some()
+            || self.vfs == candidate.vfs
+            || self.vfs == recovery.vfs
+            || candidate.vfs == recovery.vfs
+        {
+            return Err(error("Invalid epoch or recovery destination"));
+        }
+        recovery.clear_epoch_scratch()?;
+        let driver = self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?;
+        let location = |copy: &BrowserCopy| pop_storage::store::EpochLocation::Vfs {
+            name: "document.pop".into(),
+            vfs: copy.vfs.clone(),
+        };
+        let (send, receive) = std::sync::mpsc::channel();
+        let candidate_active = candidate.transfer_active.clone();
+        let recovery_active = recovery.transfer_active.clone();
+        candidate_active.store(true, Ordering::Release);
+        recovery_active.store(true, Ordering::Release);
+        driver.owner().submit(
+            owner::Request::AdoptEpoch {
+                source: location(candidate),
+                expected_version: confirmed.into(),
+                recovery_destination: Some(location(recovery)),
+            },
+            None,
+            Box::new(move |reply| {
+                candidate_active.store(false, Ordering::Release);
+                recovery_active.store(false, Ordering::Release);
+                let _ = send.send(reply);
+            }),
+        );
+        driver.poll(0, js_sys::Date::now() as u64);
+        let result = receive.try_recv().map_err(error)?.map_err(error);
+        // Both connections have left the serial effect by this point. A failed
+        // cleanup leaves only private scratch, which the next attempt removes.
+        let cleanup = recovery.clear_epoch_scratch();
+        match result? {
+            owner::Reply::EpochAdopted { recovery_path } => {
+                cleanup?;
+                Ok(recovery_path.is_some())
+            }
+            _ => Err(error("Unexpected epoch adoption reply")),
+        }
+    }
+
+    #[wasm_bindgen(js_name = abortImport)]
+    pub fn abort_import(&mut self) -> Result<(), JsValue> {
+        if self.driver.is_some() || self.transfer_active.load(Ordering::Acquire) {
+            return Err(error("Copy storage is in use"));
+        }
+        drop(self.importing.take());
+        Ok(())
+    }
+
+    /// Release sync access handles for an unopened transfer/recovery pool. Persistent
+    /// data remains available to a later worker under its own Web Lock.
+    #[wasm_bindgen(js_name = releaseStorage)]
+    pub fn release_storage(&mut self) -> Result<(), JsValue> {
+        if self.driver.is_some() || self.importing.is_some() || self.transfer_active.load(Ordering::Acquire) {
+            return Err(error("Copy storage is still in use"));
+        }
+        // SAFETY: this transfer-only copy has no owner or active import. Every
+        // temporary Store and persistence effect has closed its SQLite connection:
+        // the effect callback clears transfer_active only after perform returns.
+        // Exports are synchronous &self calls, so wasm-bindgen's borrow guard also
+        // prevents mutable release during an export callback. These satisfy the
+        // OpfsSAHPoolUtil::uninstall contract: no SQLite users or saved VFS pointers.
+        // Unregister as well as closing handles so repeated refreshes do not retain
+        // a pool's slots and namespace for the lifetime of the worker.
+        let Some(pool) = self.pool.take() else { return Ok(()) };
+        // SAFETY: the checks and lifecycle argument above exclude every SQLite user
+        // and retained VFS pointer before removing this exact registration.
+        if let Err(failure) = unsafe { pool.uninstall() } {
+            self.pool = Some(pool);
+            return Err(error(failure));
+        }
+        // SAFETY: install_copy allocated this exact utility with Box::leak. No
+        // import borrows it, SQLite's registration is gone, and taking the Option
+        // makes every later pool access fail rather than retain a dangling reference.
+        unsafe { drop(Box::from_raw(std::ptr::from_ref(pool).cast_mut())) };
+        Ok(())
+    }
+}
+
+impl BrowserCopy {
+    fn pool(&self) -> Result<&'static OpfsSAHPoolUtil, JsValue> {
+        self.pool.ok_or_else(|| error("Copy storage has been released"))
+    }
+
+    fn clear_epoch_scratch(&self) -> Result<(), JsValue> {
+        if self.driver.is_some() || self.importing.is_some() || self.transfer_active.load(Ordering::Acquire) {
+            return Err(error("Epoch scratch is still in use"));
+        }
+        self.pool()?.remove("epoch-staging.pop-journal").map_err(error)?;
+        self.pool()?.remove("epoch-staging.pop").map_err(error)?;
+        Ok(())
     }
 }

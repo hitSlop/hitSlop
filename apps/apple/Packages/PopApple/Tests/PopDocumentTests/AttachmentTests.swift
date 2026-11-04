@@ -8,7 +8,7 @@ import Testing
 
 @testable import PopDocument
 
-// The core owns attachment storage (crates/pop-core/tests/file.rs); these prove the
+// Rust owns attachment storage (crates/pop-storage/tests/file.rs); these prove the
 // page, the CLI and Duplicate reach it through the owner.
 @Suite(.serialized) struct AttachmentTests {
   @Test @MainActor func liveSocketClosedCLIAndDuplicationPreserveLargeAttachments() async throws {

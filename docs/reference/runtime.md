@@ -59,7 +59,7 @@ The Mac catalog combines immutable bundled starters, `~/.pop/templates`, and Rec
 
 ## File layout
 
-A `.pop` file is one SQLite database (application ID `0x54494E59`, "POP"; storage version in
+A `.pop` file is one SQLite database (application ID `0x54494E59`; storage version in
 `user_version`). Rust defines internal wires and package-format acceptance. `pop.ts`
 declares identity, window, ordered theme, capabilities and optional artwork. `schema.ts`
 supplies the descriptor and initial values; fixed root component and command files
@@ -93,7 +93,7 @@ Assets are inserted first and the single app row last. The app row seals assets:
 
 ## Persistence and ownership
 
-The Rust store (`pop-core`'s `store`, on the platform SQLite) owns a document's saved state: the `document`, `history` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque Loro bytes. Replacing the history with a checkpoint and freeing the pages it covered are atomic. Nothing outside the core opens the file, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
+The Rust store (`pop-storage`, on the platform SQLite) owns a document's saved state: the `document`, `history` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque Loro bytes. Replacing the history with a checkpoint and freeing the pages it covered are atomic. File access goes through `pop-storage`, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.pop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
 
@@ -103,7 +103,23 @@ Generic mutations are not replayed; a named command may reevaluate once after a 
 
 The [close and capture flow](../architecture.md#close-export-and-capture) defines ownership release, retry and quit ordering. Close before moving or renaming documents. iCloud and other synced folders are unsupported; the Mac offers to move an iCloud document to `~/pop`, and the [Apple library](../architecture.md#synced-library) carries a person's own devices.
 
-Opaque imported attachments live in the file's `attachments` table by SHA-256, outside Loro. `attachments.import(file, (tx, ref) => …)` stores the bytes, then submits the collector's reference edits; the close and capture barriers wait for both. An agent's `batch` carries its files (`pop apply --attach`), stored before its operations in the same request, so no close falls between a blob and its reference. A collector that throws, or an edit the core refuses, leaves the stored blob unreferenced. After the final save of an unshared document, the owner deletes blobs whose ID appears in no string, text or map key of the saved state (`Store::reclaim_attachments`). Shared and Synced Library documents retain every attachment, including unreferenced ones, because another replica can still reference it. Closing or deleting a reference does not free their attachment budget; an unshared clean copy retains only referenced files. The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments) (10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. Duplicate and Share Pop File carry only the attachments their state references, with no history and artwork rendered for the copy (`Store::copy_clean`); templates contain none.
+Opaque imported attachments live in the file's `attachments` table by SHA-256, outside Loro. `attachments.import(file, (tx, ref) => …)` stores the bytes, then submits the collector's reference edits; the close and capture barriers wait for both. An agent's `batch` carries its files (`pop apply --attach`), stored before its operations in the same request, so no close falls between a blob and its reference. A collector that throws, or an edit the core refuses, leaves the stored blob unreferenced.
+
+After the final save of a changed, unshared document, the owner can delete blobs whose
+ID appears in no visible string, text or map key (`Store::reclaim_attachments`). An
+unchanged session does no reclamation. Ordinary shared saves retain blobs that another
+replica or live undo can still reference. Explicit private checkpoint or relay epoch
+maintenance can instead publish a sanitized latest-state file containing only visible
+references, after the conditional receipt and recovery checks in the
+[sharing lifecycle](sharing-lifecycle.md). A no-op adoption preserves undo and its hidden
+blobs. Removing a reference alone does not promise immediate reclamation.
+
+The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments)
+(10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. The
+private CloudKit upload and relay seed each have a separate 16 MiB bound; a valid local
+document can exceed those transport limits. Duplicate and Share Pop File carry only
+referenced attachments, fresh accepted state and artwork rendered for the copy
+(`Store::copy_clean`); templates contain no attachments.
 
 Theme overrides are limited to 256 declared colors, checked on write and on open. Their storage, publication and undo behavior are described in [themes and attachments](../architecture.md#themes-and-attachments). Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
 
@@ -123,7 +139,8 @@ Authored code can change or damage its own document. Runtime operation validatio
 The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`, `widget.js`, `icon.js`, `preview.js` or `export.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
 The native, browser and development-preview CSPs are defined in Rust
-(`crates/pop-core/src/wire/limits.rs`, `wire/browser.rs` and `bindings.rs`) and re-exported by `packages/pop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
+(`crates/pop-contracts/src/wire/limits.rs` and `wire/browser.rs`, projected through
+`pop-core`'s bindings) and re-exported by `packages/pop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
 
 | Capability | Boundary | Availability |
 | --- | --- | --- |
@@ -159,6 +176,40 @@ Pop-initiated blob/data downloads require a native save confirmation. Download b
 
 Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell, development preview and browser host. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping and hit testing; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
 
+## Command evaluation and execution providers
+
+Named commands are app-authored operations in private `commands.js`, such as an
+`addTask` command accepting `{title: "Review launch", urgent: true}` and returning
+document edit intents plus a JSON result. The owner checks the command's declared
+arguments, evaluates against an immutable snapshot, validates the returned intents,
+and admits them through the same edit path as page writes. Evaluation never grants
+the child direct access to the live owner or SQLite file. Generic CLI operations
+(`set`, `insert`, `batch`, and so on) do not evaluate authored JavaScript.
+
+Current command arguments are one object whose fields are scalar descriptors, with
+optional scalar fields and defaults: strings, numbers, integers, booleans and enums.
+“Flat” means a command can accept `{title, urgent}`, but cannot declare nested objects
+or arrays as arguments. This remains the current contract; richer command inputs and
+named commands on iPhone are deferred product decisions, not enabled by this refactor.
+
+`pop-contracts::evaluator` owns the typed job modes, shared limits, raster requests and
+validated render replies. `pop-runner::Evaluator` selects its provider explicitly:
+
+| Provider | Host use | Isolation and supported work |
+| --- | --- | --- |
+| Fresh restricted process | Mac/Linux commands and captures | One child per job, QuickJS limits, process watchdog and OS resource restrictions. Only returned intents reach the owner. |
+| In-process capture | iPhone artwork and widget PNGs | Same Rust QuickJS/renderer pipeline on a background thread, with heap/stack limits and cooperative deadlines. No child-process crash isolation; named commands and PDF raster are refused. |
+| Unavailable | Hosts without a supported configured driver | Explicit refusal; no fallback to another engine or implicit privilege increase. |
+
+Browser copies accept page edits through their Rust owner; named command execution
+is unavailable there. The portable evaluator is exercised in disposable browser workers
+by shared tests, which does not enable that feature in the browser host.
+
+Enabling Cargo features cannot silently change a configured provider. `pop-capture`
+acquires accepted saved sources and orchestrates capture; `pop-renderer` owns Takumi,
+fonts and raster/PDF output without authored JavaScript or owner access. The stored
+runtime ABI still chooses the command/capture prelude and reply interpretation.
+
 ## Capture and Finder integration
 
 ### Stored capture program ABI (runtimeABI 1)
@@ -179,8 +230,9 @@ openly, ignoring unknown members while checking required fields and bounds.
 `attachmentURL(id)` returns `pop-attachment:<id>` for an inventoried image and
 throws for anything else. IDs are 64 lowercase hexadecimal SHA-256 characters.
 The host scans frame HTML and CSS, verifies and loads only the attachments they
-reference, then sends markup and those images to a separate raster child. Authored
-JavaScript never receives attachment image bytes; the raster child never executes JavaScript.
+reference, then sends markup and those images to the raster stage (a separate child
+on Mac/Linux). Authored JavaScript never receives attachment image bytes; the raster
+stage never executes JavaScript.
 A failed output does not discard successful sibling outputs.
 
 Programs run in bare QuickJS, without `window`, `document`, `navigator`,
@@ -229,8 +281,8 @@ document. Capture components receive a deeply readonly `snapshot` and an `attach
 state to prepare their view.
 
 The builder emits separate synchronous SSR programs for every preview, icon and declared export.
-These read their immutable `snapshot` prop in a fresh QuickJS realm and render with Takumi in
-the restricted Rust child. Icons are 512×512; export PNGs are 2× with measured natural
+These read their immutable `snapshot` prop in a fresh QuickJS realm and render with Takumi
+through the explicitly selected execution provider described below. Icons are 512×512; export PNGs are 2× with measured natural
 height, and previews crop at the larger of the saved window height and three widths.
 Native capture preserves the saved viewport's layout while extending the image canvas
 to include horizontal overflow; viewport units retain the saved window dimensions.
@@ -293,7 +345,7 @@ shell refuses to mount an app on a document of another: key order never matters.
 The native page protocol has one request/reply envelope for document edits and host
 services. Text edits are batches: a binding's `apply` carries a `set` with `from` and
 `selection`, and the reply adds the merged selection
-([architecture](../architecture.md#text)). Rust owns it in `crates/pop-core/src/wire/page.rs`; core payloads are in
+([architecture](../architecture.md#text)). Rust owns it in `crates/pop-contracts/src/wire/page.rs`; core payloads are in
 `wire/core.rs`. Requests carry no correlation ID or view token: WebKit
 correlates promises and Swift supplies its own lifecycle view token alongside the
 request after checking the sender. The page never chooses that token.

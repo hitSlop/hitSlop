@@ -1,6 +1,7 @@
 import BackgroundTasks
 import CloudKit
 import PopCore
+import PopDocument
 import SwiftUI
 import UIKit
 
@@ -12,6 +13,7 @@ import UIKit
   func application(
     _ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    DocumentSharing.installLibraryResolver()
     BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: .main) { [weak self] task in
       MainActor.assumeIsolated {
         guard let self, let refresh = task as? BGAppRefreshTask else {

@@ -2,6 +2,7 @@
 name = "pop-core-wasm"
 version = "0.0.0"
 edition.workspace = true
+rust-version.workspace = true
 publish.workspace = true
 
 [lints]
@@ -13,11 +14,13 @@ test = false
 doctest = false
 
 [features]
-browser = ["pop-core/storage", "dep:sqlite-wasm-vfs", "dep:rsqlite-vfs", "dep:wasm-bindgen-futures", "dep:getrandom", "dep:serde_json", "dep:sha2"]
+browser = ["dep:pop-runtime", "dep:pop-storage", "dep:sqlite-wasm-vfs", "dep:rsqlite-vfs", "dep:wasm-bindgen-futures", "dep:getrandom", "dep:serde_json", "dep:sha2"]
 
 [dependencies]
 pop-sharing-protocol = { path = "../pop-sharing-protocol" }
 pop-core = { path = "../pop-core", default-features = false }
+pop-runtime = { path = "../pop-runtime", default-features = false, optional = true }
+pop-storage = { path = "../pop-storage", optional = true }
 
 # Only the WASM build compiles the adapter: on the host, wasm-bindgen's proc macros would
 # change the features of every other proc macro, and so the whole host graph.
