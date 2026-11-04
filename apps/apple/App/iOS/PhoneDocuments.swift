@@ -19,7 +19,10 @@ struct PhoneRecent: Identifiable, Sendable {
   /// Shared copies keep their UUID path for canonical joins; their app supplies the visible name.
   static func localTitle(_ url: URL) -> String {
     if isSharedDocument(url) {
-      return (try? PopSummary(url: url).metadata.title) ?? "Shared pop"
+      guard let title = try? PopSummary(url: url).metadata.title,
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else { return "Shared pop" }
+      return title
     }
     var name = url.deletingPathExtension().lastPathComponent
     if let dash = name.lastIndex(of: "-") {
