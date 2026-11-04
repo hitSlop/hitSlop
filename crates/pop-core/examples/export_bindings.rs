@@ -12,13 +12,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pop_core::browser_wire::BrowserEvent::export_all(&config)?;
     pop_sharing_protocol::http::CreateRoom::export_all(&config)?;
     pop_sharing_protocol::http::CreatedRoom::export_all(&config)?;
-    pop_sharing_protocol::http::AccountRoom::export_all(&config)?;
     pop_sharing_protocol::http::RoomInfo::export_all(&config)?;
+    pop_sharing_protocol::document::DocumentEntry::export_all(&config)?;
+    pop_sharing_protocol::document::RegisteredDocument::export_all(&config)?;
+    pop_sharing_protocol::document::RegisteredDocuments::export_all(&config)?;
+    pop_sharing_protocol::document::DocumentMetadata::export_all(&config)?;
+
+    pop_sharing_protocol::document::AccessState::export_all(&config)?;
+    pop_sharing_protocol::document::UpdateDocument::export_all(&config)?;
+    pop_sharing_protocol::document::JoinDocument::export_all(&config)?;
+
     pop_sharing_protocol::lifecycle::EpochState::export_all(&config)?;
     pop_sharing_protocol::lifecycle::PublishEpoch::export_all(&config)?;
     pop_sharing_protocol::lifecycle::StagedSeed::export_all(&config)?;
-    pop_sharing_protocol::lifecycle::BeginHandoff::export_all(&config)?;
-    pop_sharing_protocol::lifecycle::FinalizeHandoff::export_all(&config)?;
     pop_sharing_protocol::http::ResourceGrant::export_all(&config)?;
     pop_sharing_protocol::http::ApiFailure::export_all(&config)?;
     pop_sharing_protocol::http::ConnectionPlan::export_all(&config)?;

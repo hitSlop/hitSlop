@@ -116,7 +116,7 @@ mod tests {
     }
     #[test]
     fn routes_follow_the_room_url() {
-        let room = "https://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let room = "https://share.dotpop.click/v1/documents/00000000-0000-4000-8000-000000000001";
         assert_eq!(Route::of(&format!("{room}/compact")), Route::Compact);
         assert_eq!(Route::of(&format!("{room}/epochs/{}", "b".repeat(64))), Route::Epoch);
         assert_eq!(Route::of(&format!("{room}/epochs/{}/blobs/{}", "b".repeat(64), "c".repeat(64))), Route::Epoch);

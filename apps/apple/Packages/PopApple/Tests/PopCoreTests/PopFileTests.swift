@@ -161,7 +161,7 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
 
 @Test func incomingSharingActivityPreservesTheCapabilityAndReportsMissingFragments() throws {
   let link =
-    "https://share.dotpop.click/join#" + String(repeating: "a", count: 32) + "." + String(repeating: "b", count: 64)
+    "https://share.dotpop.click/join#aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa." + String(repeating: "b", count: 64)
   let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
   activity.webpageURL = try #require(URL(string: link))
   #expect(try SharingLinks.incomingLink(#require(activity.webpageURL)) == link)

@@ -239,7 +239,8 @@ const tiers: Tier[] = [
     run: async () => {
       await sh([process.execPath, "scripts/sharing/check-accounts.ts"]);
       await sh(["firebase", "emulators:exec", "--only", "auth,firestore", "--project", "demo-pop-catalog",
-        `${process.execPath} scripts/sharing/check-firestore.ts`]);
+        `${process.execPath} scripts/sharing/check-firestore.ts`],
+        { env: { JAVA_TOOL_OPTIONS: process.env.JAVA_TOOL_OPTIONS ?? "-Xmx256m" } });
     },
   },
   {

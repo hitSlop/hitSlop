@@ -26,6 +26,11 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
   is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
   (`packages/pop/src/shell`) holds no CRDT; `packages/pop/src/sdk` is the author SDK, and pop
   contain only their app.
+- **Cloud documents have one authority.** Persistent Cloudflare Document DOs and R2 own
+  cloud state and permissions. Clients maintain their own Firestore discovery references
+  after upload acknowledgement; catalog metadata never grants document access. Swift's
+  official SDK handles Firestore IO; Rust keeps local files and pending reference writes.
+  See [cloud documents](docs/cloud-documents.md). CloudKit is removed.
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or remove a lock file from the registry
   (`~/.pop/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.

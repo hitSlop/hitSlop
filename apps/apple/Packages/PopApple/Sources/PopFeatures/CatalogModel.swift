@@ -66,7 +66,7 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
   public var slug = ""
   public var isBundled = false
   public var isSynced = false
-  /// A synced entry kept in iCloud, not one kept only on this device.
+  /// A synced entry synced across devices, not one kept only on this device.
   public var inCloud = false
   public var description = ""
   public var categories: [PopCategory] = []
@@ -168,6 +168,7 @@ public enum CatalogStorageChoice: Sendable {
   /// The managed library's folder. Files inside it appear in Recents only as their synced
   /// entries; anything else there (another account's or an earlier preview's library) is left out.
   public var managedFolder: String?
+  public var accountBoundPaths: Set<String> = []
   /// Recent documents, newest first; a library document shows as its synced entry.
   public var recents: [CatalogEntry] {
     let synced = Dictionary(
@@ -185,6 +186,7 @@ public enum CatalogStorageChoice: Sendable {
         entry.isUnavailable = recent.isUnavailable
         return entry
       }
+      if accountBoundPaths.contains(path) { return nil }
       if let managedFolder {
         let folder = URL(fileURLWithPath: managedFolder).standardizedFileURL.path
         // Earlier previews left sibling Library-development-… folders. Other siblings are local files.

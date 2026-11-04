@@ -114,6 +114,7 @@ import SwiftUI
   @Published public private(set) var message = ""
   @Published var busy = false
   private var auth: Auth?
+  private var tokenListener: NSObjectProtocol?
   private var nonce: String?
   public func configure() {
     guard auth == nil else { return }
@@ -128,7 +129,17 @@ import SwiftUI
       FirebaseApp.configure(name: name, options: options)
     }
     guard let app = FirebaseApp.app(name: name) else { return }
-    auth = Auth.auth(app: app)
+    let auth = Auth.auth(app: app)
+    self.auth = auth
+    PopLibrary.shared.tokenProvider = { try await SharingAccount.shared.token() }
+    tokenListener = auth.addIDTokenDidChangeListener { auth, user in
+      Task { @MainActor in
+        guard !self.deleting else { return }
+        self.updateIdentity()
+        CloudCatalog.shared.connect(auth: auth, user: user)
+        NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
+      }
+    }
     updateIdentity()
   }
   private func updateIdentity() {
@@ -232,7 +243,6 @@ import SwiftUI
   }
   private var deleting = false
   private var deletionStarted = false
-  private var deletionDocuments: [String] = []
   /// Owned document ids, read once before the relay deletion and kept per account across restarts:
   /// a relay that is mid-deletion refuses ownership lookups, so a retry must not repeat them.
   private static func deletionSnapshotKey(_ uid: String) -> String {
@@ -244,20 +254,11 @@ import SwiftUI
     busy = true
     deleting = true
     message = ""
-    var relayDeleted = deletionStarted
     defer {
-      if relayDeleted {
-        var failed = false
-        for document in deletionDocuments {
-          do { try SharingCredentials.remove(document) } catch { failed = true }
-        }
-        if failed { message += " Could not clear sharing details. Unlock this device and retry." }
-      }
       deleting = false
       busy = false
       nonce = nil
       updateIdentity()
-      if relayDeleted { NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil) }
     }
     var note = ""
     do {
@@ -272,25 +273,13 @@ import SwiftUI
           webAuthorization = .failure(error)
         }
       #endif
+      deletionStarted = deletionStarted || UserDefaults.standard.bool(forKey: Self.deletionSnapshotKey(user.uid))
       if !deletionStarted {
         let token = try await user.getIDToken(forcingRefresh: true)
-        let snapshotKey = Self.deletionSnapshotKey(user.uid)
-        if let saved = UserDefaults.standard.stringArray(forKey: snapshotKey) {
-          deletionDocuments = saved
-        } else {
-          deletionDocuments = try await Task.detached(priority: .utility) {
-            var documents: [String] = []
-            for (document, credential) in try SharingCredentials.all()
-            where try sharingAccountOwns(document: document, credential: credential, token: token) {
-              documents.append(document)
-            }
-            return documents
-          }.value
-          UserDefaults.standard.set(deletionDocuments, forKey: snapshotKey)
-        }
+        try await PopLibrary.shared.setAccount("")
         try await Task.detached(priority: .utility) { try sharingDeleteAccount(token: token) }.value
         deletionStarted = true
-        relayDeleted = true
+        UserDefaults.standard.set(true, forKey: Self.deletionSnapshotKey(user.uid))
       }
       var apple: AuthCredential?
       do {
@@ -326,20 +315,24 @@ import SwiftUI
     } catch {
       message =
         deletionStarted
-        ? "Your live links stopped. Could not finish deleting the account. Try again." + note
+        ? "Your cloud documents were deleted. Could not finish deleting the account. Try again." + note
         : "Could not delete the account. Try again."
     }
   }
   public func signOut() {
     guard !busy else { return }
-    do {
-      try auth?.signOut()
-      deletionStarted = false
-      deletionDocuments = []
-      updateIdentity()
-      NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
-      message = ""
-    } catch { message = "Could not sign out. Try again." }
+    busy = true
+    Task {
+      defer { busy = false }
+      do {
+        // Flush and fence Rust transport before changing identity. Failure keeps ownership.
+        try await PopLibrary.shared.setAccount("")
+        try auth?.signOut()
+        deletionStarted = false
+        updateIdentity()
+        message = ""
+      } catch { message = "Could not save and sign out. Your documents remain open. Retry." }
+    }
   }
 }
 
@@ -379,7 +372,7 @@ public struct SharingAccountView: View {
       Button("Cancel", role: .cancel) {}
     } message: {
       Text(
-        "Your live links stop working and the sharing account is deleted. Documents on your devices and in iCloud stay."
+        "Your cloud documents and shared links will be deleted. Downloaded files stay on your devices."
       )
     }
   }

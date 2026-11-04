@@ -1,63 +1,77 @@
-//! Per-UID index and quota. Room phases and capabilities belong only to the Room DO.
+#[cfg(target_arch = "wasm32")]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct RegistryRequest {
+    pub document: String,
+    pub generation: Option<u64>,
+}
+// Per-account registration/quota and deletion coordination; Document DO owns permissions.
 #[cfg(target_arch = "wasm32")]
 mod runtime {
-    use crate::metrics::{Metric, record};
-    use crate::room::{bounded_body, hash, identity_response, random_hex};
-    use pop_sharing_protocol::http::{AccountRoom, CreateRoom, RoomInit};
+    use crate::room::{hash, identity_response};
+    use pop_sharing_protocol::http::{CreateRoom, RoomInit};
     use serde::Deserialize;
     use worker::*;
-
     #[derive(Deserialize)]
-    struct RoomRow {
-        room: String,
+    struct Registration {
+        document: String,
+        owned: i64,
     }
     #[derive(Deserialize)]
-    struct CountRow {
-        n: usize,
+    struct Number {
+        n: i64,
     }
     #[durable_object]
-    pub struct SharingAccount {
+    pub struct DocumentAccount {
         state: State,
         env: Env,
         sql: SqlStorage,
-        // Internal Room release callbacks bypass this gate, avoiding a DO call cycle.
         operations: futures_util::lock::Mutex<()>,
     }
-    impl SharingAccount {
-        fn current(&self, document: &str) -> Result<Option<String>> {
-            Ok(self
-                .sql
-                .exec("SELECT room FROM rooms WHERE document=?", vec![document.into()])?
-                .to_array::<RoomRow>()?
-                .first()
-                .map(|r| r.room.clone()))
-        }
-        fn active(&self, room: &str) -> Result<bool> {
-            Ok(self.sql.exec("SELECT count(*) AS n FROM live WHERE room=?", vec![room.into()])?.one::<CountRow>()?.n
-                > 0)
-        }
-        async fn init_room(&self, room: &str, owner_uid: &str, document: &str) -> Result<Response> {
+    impl DocumentAccount {
+        async fn document(
+            &self,
+            id: &str,
+            path: &str,
+            method: Method,
+            headers: Headers,
+            body: Option<String>,
+        ) -> Result<Response> {
             let mut init = RequestInit::new();
-            init.with_method(Method::Post).with_body(Some(
-                serde_json::to_string(&RoomInit { owner_uid: owner_uid.into(), document: document.into() })?.into(),
-            ));
+            init.with_method(method).with_headers(headers);
+            if let Some(body) = body {
+                init.with_body(Some(body.into()));
+            }
             self.env
-                .durable_object("ROOMS")?
-                .get_by_name(room)?
-                .fetch_with_request(Request::new_with_init(
-                    &format!("https://account.internal/internal/rooms/{room}/init"),
-                    &init,
-                )?)
+                .durable_object("DOCUMENTS")?
+                .get_by_name(id)?
+                .fetch_with_request(Request::new_with_init(&format!("https://account.internal{path}"), &init)?)
                 .await
         }
         async fn serve(&self, mut req: Request) -> Result<Response> {
-            // Only the room uses this path; the public router never forwards it.
             if req.path() == "/internal/release" && req.method() == Method::Post {
-                let room = req.text().await?;
-                self.sql.exec("DELETE FROM rooms WHERE room=?", vec![room.clone().into()])?;
-                self.sql.exec("DELETE FROM live WHERE room=?", vec![room.into()])?;
+                let input: super::RegistryRequest = req.json().await?;
+                if let Some(generation) = input.generation {
+                    self.sql.exec(
+                        "DELETE FROM documents WHERE document=? AND owned=0 AND generation<=?",
+                        vec![input.document.into(), (generation as i64).into()],
+                    )?;
+                } else {
+                    self.sql.exec("DELETE FROM documents WHERE document=? AND owned=1", vec![input.document.into()])?;
+                }
                 self.state.storage().sync().await?;
                 return Response::ok("released");
+            }
+            if req.path() == "/internal/member" && req.method() == Method::Post {
+                let input: super::RegistryRequest = req.json().await?;
+                if !pop_sharing_protocol::valid_copy(&input.document) || input.generation.is_none() {
+                    return Response::error("Invalid document", 400);
+                }
+                if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n > 0 {
+                    return Response::error("Account deletion pending", 409);
+                }
+                self.sql.exec("INSERT INTO documents VALUES(?,0,?) ON CONFLICT(document) DO UPDATE SET generation=max(documents.generation,excluded.generation) WHERE documents.owned=0",vec![input.document.into(),(input.generation.unwrap_or(0) as i64).into()])?;
+                self.state.storage().sync().await?;
+                return Response::ok("registered");
             }
             let claims = match crate::auth::identity(&req, &self.env).await {
                 Ok(c) => c,
@@ -68,136 +82,129 @@ mod runtime {
             {
                 return Response::error("Denied", 403);
             }
-            let _operation = self.operations.lock().await;
+            let _guard = self.operations.lock().await;
             if req.path() == "/v1/account" && req.method() == Method::Delete {
-                // Persist the fence before network IO. A failed deletion remains retryable
-                // across eviction, and cannot admit new rooms until cleanup finishes.
-                // Released rooms have already completed Stop. Only outstanding slots
-                // need IO, so retries make progress and deletion stays quota-bounded.
-                let rooms = self.sql.exec("SELECT room FROM live", None)?.to_array::<RoomRow>()?;
-                let had_index = self.sql.exec("SELECT count(*) AS n FROM rooms", None)?.one::<CountRow>()?.n > 0;
-                let pending = self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<CountRow>()?.n > 0;
                 self.sql.exec("INSERT OR IGNORE INTO deleting VALUES(1)", None)?;
                 self.state.storage().sync().await?;
-                for row in &rooms {
-                    // Explicit account deletion revokes all rooms, including a pending
-                    // handoff. Its creator authorization intentionally permits discarding it.
-                    let stub = self.env.durable_object("ROOMS")?.get_by_name(&row.room)?;
-                    let mut read = RequestInit::new();
-                    read.with_method(Method::Get).with_headers(req.headers().clone());
-                    let mut state = stub
-                        .fetch_with_request(Request::new_with_init(
-                            &format!("https://account.internal/v1/rooms/{}/epoch", row.room),
-                            &read,
-                        )?)
-                        .await?;
-                    let handoff = if state.status_code() == 200 {
-                        state.json::<pop_sharing_protocol::lifecycle::EpochState>().await?.handoff
-                    } else if matches!(state.status_code(), 404 | 409 | 410) {
-                        None
+                for row in self.sql.exec("SELECT document,owned FROM documents", None)?.to_array::<Registration>()? {
+                    let path = if row.owned != 0 {
+                        format!("/v1/documents/{}", row.document)
                     } else {
-                        return Ok(state);
+                        format!("/v1/documents/{}/members", row.document)
                     };
-                    let mut init = RequestInit::new();
-                    let route = if let Some(handoff) = handoff {
-                        init.with_method(Method::Post).with_headers(req.headers().clone()).with_body(Some(
-                            serde_json::to_string(&pop_sharing_protocol::lifecycle::FinalizeHandoff {
-                                token: handoff.token,
-                            })?
-                            .into(),
-                        ));
-                        format!("https://account.internal/v1/rooms/{}/handoff/finalize", row.room)
-                    } else {
-                        init.with_method(Method::Delete).with_headers(req.headers().clone());
-                        format!("https://account.internal/v1/rooms/{}", row.room)
-                    };
-                    let response = self
-                        .env
-                        .durable_object("ROOMS")?
-                        .get_by_name(&row.room)?
-                        .fetch_with_request(Request::new_with_init(&route, &init)?)
-                        .await?;
-                    // A reserved slot whose init never reached Room has no payloads
-                    // or invitation to revoke. It can be removed with the account.
-                    if !matches!(response.status_code(), 200 | 404 | 410) {
+                    let response =
+                        self.document(&row.document, &path, Method::Delete, req.headers().clone(), None).await?;
+                    if !matches!(response.status_code(), 200 | 403 | 404 | 410) {
                         return Ok(response);
                     }
+                    self.sql.exec("DELETE FROM documents WHERE document=?", vec![row.document.into()])?;
                 }
-                self.sql.exec("DELETE FROM rooms; DELETE FROM live; DELETE FROM deleting", None)?;
+                // The fence stays durable. A new Firebase UID is a new account.
                 self.state.storage().sync().await?;
-                if had_index || pending {
-                    record(&self.env, Metric::AccountDeleted);
+                return Response::ok("deleted");
+            }
+            if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n > 0 {
+                return Response::error("Account deleted", 410);
+            }
+            if req.path() == "/v1/account/documents" && req.method() == Method::Get {
+                use pop_sharing_protocol::document::{DocumentRole, RegisteredDocument, RegisteredDocuments};
+                let documents = self
+                    .sql
+                    .exec("SELECT document,owned FROM documents ORDER BY document", None)?
+                    .to_array::<Registration>()?
+                    .into_iter()
+                    .map(|row| RegisteredDocument {
+                        document: row.document,
+                        role: if row.owned != 0 { DocumentRole::Owner } else { DocumentRole::Editor },
+                    })
+                    .collect();
+                return Response::from_json(&RegisteredDocuments { documents });
+            }
+            if let Some(id) = req.path().strip_prefix("/v1/account/documents/") {
+                if req.method() != Method::Get || !pop_sharing_protocol::valid_copy(id) {
+                    return Response::error("Invalid document", 400);
                 }
-                return Response::from_json(&());
+                return self
+                    .document(id, &format!("/v1/documents/{id}/sharing"), Method::Get, req.headers().clone(), None)
+                    .await;
             }
-            if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<CountRow>()?.n > 0 {
-                return Response::error("Account deletion pending; retry deletion", 409);
-            }
-            if let Some(document) = req.path().strip_prefix("/v1/account/rooms/") {
-                if req.method() != Method::Get || !pop_sharing_protocol::valid_copy(document) {
-                    return Response::error("Invalid request", 400);
-                }
-                return Response::from_json(&self.current(document)?.map(|room| AccountRoom { room }));
-            }
-            if req.path() != "/v1/rooms" || req.method() != Method::Post {
+            if req.path() != "/v1/documents" || req.method() != Method::Post {
                 return Response::error("Not found", 404);
             }
-            let body = bounded_body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await?;
-            let input: CreateRoom = match serde_json::from_slice(&body) {
-                Ok(v) => v,
-                Err(_) => return Response::error("Invalid request", 400),
+            let body = crate::room::bounded_body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await?;
+            let Ok(input) = serde_json::from_slice::<CreateRoom>(&body) else {
+                return Response::error("Invalid document", 400);
             };
             if !pop_sharing_protocol::valid_copy(&input.document) {
                 return Response::error("Invalid document", 400);
             }
-            // Claim the index before awaiting Room init. Retried or concurrent requests
-            // initialize the same room, and never consume a second quota slot.
-            if let Some(room) = self.current(&input.document)?
-                && self.active(&room)?
-            {
-                let response = self.init_room(&room, &claims.sub, &input.document).await?;
-                if response.status_code() != 410 {
-                    return Ok(response);
+            let was_member = self
+                .sql
+                .exec(
+                    "SELECT count(*) AS n FROM documents WHERE document=? AND owned=0",
+                    vec![input.document.clone().into()],
+                )?
+                .one::<Number>()?
+                .n
+                > 0;
+            let known = self
+                .sql
+                .exec(
+                    "SELECT count(*) AS n FROM documents WHERE document=? AND owned=1",
+                    vec![input.document.clone().into()],
+                )?
+                .one::<Number>()?
+                .n
+                > 0;
+            if !known {
+                if self.env.var("CREATION_ENABLED").ok().is_none_or(|v| v.to_string() != "1") {
+                    return Response::error("Creation unavailable", 503);
                 }
-                self.sql.exec("DELETE FROM live WHERE room=?", vec![room.into()])?;
-            }
-            if self.env.var("CREATION_ENABLED").ok().is_none_or(|v| v.to_string() != "1") {
-                return Response::error("Creation unavailable", 503);
-            }
-            if !self.env.rate_limiter("ACCOUNT_CREATE_LIMIT")?.limit(hash(&claims.sub)).await?.success {
-                return Response::error("Limited", 429);
-            }
-            // Recheck membership after the limiter yields to internal release callbacks.
-            let room = if let Some(room) = self.current(&input.document)?
-                && self.active(&room)?
-            {
-                room
-            } else {
-                let n = self.sql.exec("SELECT count(*) AS n FROM live", None)?.one::<CountRow>()?.n;
-                if n >= pop_sharing_protocol::limits::ACCOUNT_ROOMS {
-                    return Response::error("Room quota reached", 429);
+                if !self.env.rate_limiter("ACCOUNT_CREATE_LIMIT")?.limit(hash(&claims.sub)).await?.success {
+                    return Response::error("Limited", 429);
                 }
-                let room = random_hex(16)?;
+                if self.sql.exec("SELECT count(*) AS n FROM documents WHERE owned=1", None)?.one::<Number>()?.n
+                    >= pop_sharing_protocol::limits::ACCOUNT_DOCUMENTS as i64
+                {
+                    return Response::error("Document quota reached", 429);
+                }
                 self.sql.exec(
-                    "INSERT INTO rooms VALUES(?,?) ON CONFLICT(document) DO UPDATE SET room=excluded.room",
-                    vec![input.document.clone().into(), room.clone().into()],
+                    "INSERT INTO documents VALUES(?,1,0) ON CONFLICT(document) DO UPDATE SET owned=1",
+                    vec![input.document.clone().into()],
                 )?;
-                self.sql.exec("INSERT INTO live VALUES(?)", vec![room.clone().into()])?;
-                room
-            };
-            self.init_room(&room, &claims.sub, &input.document).await
+                self.state.storage().sync().await?;
+            }
+            let init = RoomInit { owner_uid: claims.sub, document: input.document.clone() };
+            let result = self
+                .document(
+                    &input.document,
+                    &format!("/internal/documents/{}/init", input.document),
+                    Method::Post,
+                    Headers::new(),
+                    Some(serde_json::to_string(&init)?),
+                )
+                .await?;
+            if matches!(result.status_code(), 403 | 410) {
+                if was_member {
+                    self.sql.exec("UPDATE documents SET owned=0 WHERE document=?", vec![input.document.into()])?;
+                } else {
+                    self.sql.exec("DELETE FROM documents WHERE document=?", vec![input.document.into()])?;
+                }
+                self.state.storage().sync().await?;
+            }
+            Ok(result)
         }
     }
-    impl DurableObject for SharingAccount {
+    impl DurableObject for DocumentAccount {
         fn new(state: State, env: Env) -> Self {
             let sql = state.storage().sql();
-            sql.exec("CREATE TABLE IF NOT EXISTS rooms(document TEXT PRIMARY KEY,room TEXT NOT NULL); CREATE TABLE IF NOT EXISTS live(room TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS deleting(id INTEGER PRIMARY KEY)", None).expect("account index");
+            sql.exec("CREATE TABLE IF NOT EXISTS documents(document TEXT PRIMARY KEY,owned INTEGER NOT NULL,generation INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS deleting(id INTEGER PRIMARY KEY)",None).expect("account registry");
             Self { state, env, sql, operations: futures_util::lock::Mutex::new(()) }
         }
         async fn fetch(&self, req: Request) -> Result<Response> {
-            let mut response = self.serve(req).await?;
+            let response = self.serve(req).await?;
             let headers = response.headers().clone();
-            response = response.with_headers(headers);
+            let mut response = response.with_headers(headers);
             response.headers_mut().set("Cache-Control", "no-store")?;
             Ok(response)
         }

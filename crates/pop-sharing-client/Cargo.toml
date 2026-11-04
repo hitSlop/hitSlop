@@ -7,7 +7,6 @@ publish.workspace = true
 [lints]
 workspace = true
 [dependencies]
-pop-library = { path = "../pop-library" }
 pop-core = { path = "../pop-core", default-features = false }
 pop-storage = { path = "../pop-storage", default-features = false }
 pop-runtime = { path = "../pop-runtime", default-features = false }

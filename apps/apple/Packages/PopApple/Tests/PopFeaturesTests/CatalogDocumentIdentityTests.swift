@@ -69,3 +69,24 @@ import Testing
   #expect(model.recents.first?.displayTitle == "Weeknight Recipe")
   #expect(model.recents.first?.updatedAt == opened.updatedAt)
 }
+
+@Test @MainActor func signOutHidesPromotedExternalFilesWhileIndependentLocalCopiesRemain() async {
+  let promoted = CatalogEntry(
+    id: "external", source: .recent(URL(fileURLWithPath: "/Work/Private.pop")), title: "Private")
+  let independent = CatalogEntry(
+    id: "copy", source: .recent(URL(fileURLWithPath: "/Work/Private copy.pop")), title: "Local copy")
+  let catalog = Catalog()
+  catalog.recents = { [promoted, independent] }
+  let model = CatalogModel(client: catalog.client)
+  model.accountBoundPaths = ["/Work/Private.pop"]
+  var cloud = CatalogEntry(id: "cloud", source: promoted.source, title: "Private cloud document")
+  cloud.isSynced = true
+  model.synced = [cloud]
+  model.refreshRecents()
+  await model.work.settled()
+  #expect(model.recents.map(\.id) == ["cloud", "copy"])
+  model.synced = []
+  #expect(model.recents.map(\.id) == ["copy"])
+  model.synced = [cloud]
+  #expect(model.recents.map(\.id) == ["cloud", "copy"])
+}

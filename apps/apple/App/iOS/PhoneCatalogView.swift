@@ -109,8 +109,18 @@ struct PhoneCatalogView: View {
         Button("Remove Download", systemImage: "icloud.and.arrow.down") { model.removeDownload(entry) }
           .tint(.gray).disabled(entry.dirty || entry.problem != nil)
       }
-      Button("Delete Everywhere", systemImage: "trash", role: .destructive) { model.delete(recent) }
+      if entry.downloaded {
+        Button("Save Local Copy", systemImage: "doc.on.doc") { model.saveLocalCopy(entry) }
+      }
+      Button(
+        entry.role == .editor ? "Leave Shared Document" : "Delete Everywhere",
+        systemImage: "trash", role: .destructive
+      ) { model.delete(recent) }
     } else {
+      if let entry = recent.entry {
+        Button("Enable Sync Across Devices", systemImage: "arrow.triangle.2.circlepath") { model.enableSync(entry) }
+          .disabled(library.accountIdentity.isEmpty)
+      }
       Button("Delete from This iPhone", systemImage: "trash", role: .destructive) { model.delete(recent) }
     }
   }

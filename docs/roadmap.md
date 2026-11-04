@@ -449,9 +449,9 @@ web reopening remain later work. Keep qualifying
 as collaboration grows. Keep the existing Rust owner and relay boundaries described in
 [architecture](architecture.md#relay).
 
-**Sync beyond Apple devices.** The implemented CloudKit Synced Library uses a person's
-iCloud account. Relay-based replication of a person's own documents remains an option
-for platforms without CloudKit ([proposal](ideas.md#sync-between-your-own-devices)).
+**Sync beyond Apple devices.** Persistent document replication uses Cloudflare; personal
+references use Firestore. Future native platforms can reuse the Rust document client
+and add their own account/catalog adapter. See the [cloud specification](cloud-documents.md).
 
 ## Deferred
 
@@ -464,7 +464,8 @@ Pre-launch documents are not migrated.
 ## Persistent cloud documents
 
 Approved replacement of CloudKit with Firestore discovery and persistent Cloudflare
-document state is in progress on `cloud-document-sync`, stacked over the Rust foundation
+document state is implemented on `cloud-document-sync`, stacked over the Rust foundation
 PR. The [cloud document specification](cloud-documents.md) owns identity, permissions,
-local/offline behavior, clean cutover and future template boundaries. Production
-deployment and physical-device qualification are pending.
+local/offline behavior, clean cutover and future template boundaries. The document
+service and client catalog rules were deployed on 2026-11-04. Physical-device
+qualification remains pending; see the [deployment evidence](evidence/cloud-documents-2026-11-04.md).

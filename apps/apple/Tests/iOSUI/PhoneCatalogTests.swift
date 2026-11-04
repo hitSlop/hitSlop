@@ -4,7 +4,7 @@ import XCTest
 final class PhoneCatalogTests: XCTestCase {
   @MainActor func testBundledTemplateCreatesAnEditableSyncedPop() throws {
     guard ProcessInfo.processInfo.environment["POP_REAL_CLOUD_PROOF"] == "1" else {
-      throw XCTSkip("Requires the explicitly enabled physical-device CloudKit proof")
+      throw XCTSkip("Requires the explicitly enabled physical-device cloud sync proof")
     }
     continueAfterFailure = false
     let app = XCUIApplication()
@@ -17,15 +17,18 @@ final class PhoneCatalogTests: XCTestCase {
     let create = app.buttons["create-pop"]
     XCTAssertTrue(create.waitForExistence(timeout: 15))
     capture(app, "Template preview")
+    app.buttons["Sync across devices"].tap()
     let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: create)
-    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 60), .completed, "Sign the mini into the test Apple ID")
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [connected], timeout: 60), .completed,
+      "Sign in through pop’s Account screen before running the cloud proof")
     create.tap()
     app.buttons["Cancel"].tap()
     XCTAssertFalse(app.webViews.firstMatch.exists)
     create.tap()
     let name = app.textFields["pop-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 10))
-    let documentName = "Phone artwork " + UUID().uuidString.prefix(6)
+    let documentName = "Disposable sync proof " + UUID().uuidString.prefix(8)
     name.tap()
     name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (name.value as? String)?.count ?? 0))
     name.typeText(String(documentName))

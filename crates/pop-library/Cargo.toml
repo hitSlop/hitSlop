@@ -9,6 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+pop-sharing-client = { path = "../pop-sharing-client" }
 pop-sharing-protocol = { path = "../pop-sharing-protocol" }
 pop-core = { path = "../pop-core", default-features = false }
 pop-storage = { path = "../pop-storage", default-features = false }

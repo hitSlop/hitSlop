@@ -40,6 +40,7 @@ struct PhoneRecent: Identifiable, Sendable {
 }
 
 @MainActor final class PhoneDocuments: ObservableObject, DocumentSessionDelegate {
+  @Published var accountRequired = false
   @Published var documents: [URL] = []
   @Published var templates: [PhoneTemplate] = []
   @Published var localTitles: [URL: String] = [:]
@@ -123,9 +124,9 @@ struct PhoneRecent: Identifiable, Sendable {
       }
     } catch { message = error.localizedDescription }
   }
-  func create(_ template: PhoneTemplate, name: String) {
+  func create(_ template: PhoneTemplate, name: String, sync: Bool = false) {
     perform {
-      let entry = try await PopLibrary.shared.create(template: template.url, title: name)
+      let entry = try await PopLibrary.shared.create(template: template.url, title: name, sync: sync)
       try await self.show(URL(fileURLWithPath: entry.path))
       self.successFeedback += 1
     }
@@ -176,6 +177,15 @@ struct PhoneRecent: Identifiable, Sendable {
       self.refresh()
       self.deletionFeedback += 1
     }
+  }
+  func saveLocalCopy(_ entry: SyncedPop) {
+    perform {
+      let copy = try await PopLibrary.shared.localCopy(entry)
+      try await self.show(URL(fileURLWithPath: copy.path))
+    }
+  }
+  func enableSync(_ entry: SyncedPop) {
+    perform { _ = try await PopLibrary.shared.enableSync(id: entry.id) }
   }
   func removeDownload(_ entry: SyncedPop) {
     perform {
@@ -232,7 +242,8 @@ struct PhoneRecent: Identifiable, Sendable {
         [folder, shared, local].flatMap {
           (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
         } + recovered)
-    ).filter { $0.pathExtension == "pop" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+    ).filter { $0.pathExtension == "pop" && !PopLibrary.shared.accountBoundPaths.contains($0.standardizedFileURL.path) }
+      .sorted { $0.lastPathComponent < $1.lastPathComponent }
     let paths = Set(documents + PopLibrary.shared.visibleEntries.map { URL(fileURLWithPath: $0.path) })
     refreshTask?.cancel()
     refreshTask = Task {

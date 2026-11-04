@@ -85,6 +85,7 @@ test("a pull request qualifies sharing for every input of the sharing tier, and 
     "firestore.rules",
     "firestore.indexes.json",
     "firebase.json",
+    ".github/workflows/sharing.yml",
     "scripts/sharing/check-accounts.ts",
     "packages/pop/src/browser/host.ts",
     "packages/pop/src/sharing/room.ts",

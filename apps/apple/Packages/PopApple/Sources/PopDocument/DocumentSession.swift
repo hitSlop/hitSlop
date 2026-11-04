@@ -564,7 +564,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     await liveWebView?.setCameraCaptureState(.none)
     await liveWebView?.setMicrophoneCaptureState(.none)
     try await saveAccepted()
-    await sharing?.pause()
+    try await sharing?.pause()
   }
 
   /// Edit ▸ Undo or Redo. A live page sends its unsent edits first, as the person sees
@@ -801,7 +801,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     // Discovery goes before the writer lock, so it can never name the next owner. A
     // failed close keeps ownership, so commands reach this session again.
     server?.withdraw()
-    await sharing?.pause()
+    try await sharing?.pause()
     do {
       let interval = trace?.begin("Rust owner close")
       defer { trace?.end("Rust owner close", interval) }

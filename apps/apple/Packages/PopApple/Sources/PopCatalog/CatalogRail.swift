@@ -13,6 +13,9 @@ struct CatalogRail: View {
   var recentsIssue: String? = nil
   let onRefresh: () -> Void
   var onDelete: (CatalogEntry) -> Void = { _ in }
+  var onRemoveDownload: (CatalogEntry) -> Void = { _ in }
+  var onLocalCopy: (CatalogEntry) -> Void = { _ in }
+  var onEnableSync: (CatalogEntry) -> Void = { _ in }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -69,12 +72,23 @@ struct CatalogRail: View {
                 CatalogRow(entry: entry, selected: entry.id == selectedID) { selectedID = entry.id }
                   .id(entry.id)
                   .contextMenu {
-                    if entry.isSynced,
-                      PopLibrary.shared.visibleEntries.contains(where: { "library:" + $0.id == entry.id })
+                    if let document = PopLibrary.shared.visibleEntries.first(where: { "library:" + $0.id == entry.id })
                     {
-                      Button("Delete Pop", role: .destructive) {
-                        onDelete(entry)
+                      if document.localOnly {
+                        Button("Enable Sync Across Devices") { onEnableSync(entry) }
+                          .disabled(PopLibrary.shared.accountIdentity.isEmpty)
+                      } else {
+                        if document.downloaded {
+                          Button("Save Local Copy") { onLocalCopy(entry) }
+                          Button("Remove Download") { onRemoveDownload(entry) }
+                            .disabled(document.dirty || document.problem != nil)
+                        }
                       }
+                      Button(
+                        document.localOnly
+                          ? "Delete from This Device"
+                          : document.role == .editor ? "Leave Shared Document" : "Delete Everywhere", role: .destructive
+                      ) { onDelete(entry) }
                     }
                   }
               }
@@ -202,7 +216,7 @@ private struct CatalogRow: View {
 
   private var subtitle: String {
     if let identity = entry.documentIdentity {
-      let folder = entry.inCloud ? "iCloud" : folderName(identity.folderPath)
+      let folder = entry.inCloud ? "Sync across devices" : folderName(identity.folderPath)
       if entry.isUnavailable { return "\(folder) · Unavailable" }
       guard let date = entry.updatedAt else { return folder }
       return "\(folder) · \(relativeDate(date))"

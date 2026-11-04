@@ -9,10 +9,10 @@ extension PopDocumentWindowController {
   public var canExport: Bool { session.file.views.export }
   /// Whether this is a shared document, which can save an unshared copy.
   public var isShared: Bool { session.retainsHistory }
-  /// A local pop can move into the library while iCloud is connected. The app checks this
-  /// again when the move runs, after the queue has stopped accepting other commands.
+  /// A local pop can enable sync after signing in. The app checks this
+  /// again when promotion runs, after the queue has stopped accepting other commands.
   public var canMoveToCloud: Bool {
-    PopLibrary.shared.isReady && PopLibrary.shared.entry(at: session.file.url) == nil
+    !PopLibrary.shared.accountIdentity.isEmpty && PopLibrary.shared.entry(at: session.file.url)?.localOnly != false
   }
 
   /// Whether `command` can run now: the one rule the toolbar, the menu bar and requests
@@ -82,7 +82,7 @@ extension PopDocumentWindowController {
         reportLifecycleFailure(.recovery, error: error)
         throw error
       }
-    case .moveToCloud: throw PopFailure("Move to iCloud must run through the app.")
+    case .moveToCloud: throw PopFailure("Enable Sync Across Devices must run through the app.")
     case .close: try await closeDocument()
     case .retrySave: try await session.retrySave()
     case .discardUnsaved:

@@ -155,7 +155,8 @@ import WidgetKit
     await task.value
   }
   private func publish(
-    url: URL, identity: String, capture: PopRenderer.WidgetCapture, capturedAt: Date, refreshMinutes: UInt32?
+    url: URL, identity: String, capture: PopRenderer.WidgetCapture, capturedAt: Date, refreshMinutes: UInt32?,
+    scheduledRefresh: Bool = false
   )
     throws
   {
@@ -163,6 +164,9 @@ import WidgetKit
       throw PopFailure("The widget document moved during capture")
     }
     guard enabled, let cache else { return }
+    // Close captures can overlap a queued save capture. Only a scheduled refresh
+    // needs new pixels when another capture already published this exact source.
+    if !scheduledRefresh, cache.record(for: url)?.sourceVersion == capture.sourceVersion { return }
     let previous = cache.record(for: url)?.generation
     let record = try cache.publish(
       url: url, title: url.deletingPathExtension().lastPathComponent,
@@ -227,7 +231,7 @@ import WidgetKit
         guard lifetime == started else { return }
         try publish(
           url: url, identity: identity, capture: capture, capturedAt: capturedAt,
-          refreshMinutes: current.refreshMinutes)
+          refreshMinutes: current.refreshMinutes, scheduledRefresh: due)
       }
     }
   }

@@ -23,17 +23,27 @@ state or replicate SQLite rows. Rust clients own semantics and local persistence
 R2 contains immutable snapshots, app resources and attachments. Each local `.pop` remains
 a complete SQLite file, usable and exportable offline. One Rust owner writes it.
 
-Firestore is a discovery projection. Entries under
-`users/{uid}/documents/{documentId}` contain `documentId`, `title`, `templateId`,
-`appRevision`, `previewRef`, `modifiedAt`, `role`, `accessGeneration`,
-`catalogRevision`, and `deleted`. `modifiedAt` is a Firestore timestamp; transport DTOs
-use milliseconds. Roles are `owner` and `editor`. Clients can read their own catalog;
-only the backend publishes entries. Credentials and document state never enter it.
+Firestore is a client-maintained list of personal document references. Entries under
+`users/{uid}/documents/{documentId}` contain document identity, display metadata and
+access hints. Clients read and write only their own list. Those hints never authorize
+access to a cloud document; the DO checks every request.
 
-The DO commits projection work to a durable outbox with lifecycle changes. Publication
-is conditional on catalog revision and retried after failures. Deletion tombstones fence
-older publications. A stale entry may temporarily remain visible, but cannot authorize
-a document request. Firestore failure does not block an already opened document.
+After Cloudflare confirms an upload, Rust records a pending catalog write in its local
+index. Swift uses the official Firestore SDK to publish it, then acknowledges that local
+operation. Retry after sign-in or network failure is idempotent. The queue retains only
+the latest desired entry for each document. A local operation revision prevents an old
+acknowledgement clearing a newer pending write; it is not a distributed catalog clock.
+
+Firestore listeners discover entries on other devices. Revocation is immediate at the
+DO, but a guest's reference may remain listed until their client checks access. The
+client then cleans up its own reference. Shared titles and other metadata may likewise
+refresh when opened. This intentionally eventual library requires no server publication
+or cross-user Firestore writes.
+
+If upload succeeds before catalog publication and that client disappears, the account
+registry lists registered document IDs for discovery repair. Resolve those IDs through
+the DO before restoring references. The Worker has no Firestore credentials or client.
+Firestore failure does not block local editing or an existing cloud connection.
 
 ## User flows
 
@@ -44,7 +54,9 @@ local file and offer retry; completion requires durable cloud acknowledgement.
 
 Sign-in retrieves metadata. Files download when opened and remain available offline.
 Already downloaded files refresh when opened; pending local changes reconnect through
-the same sync client. Downloading validates and installs through Rust under normal
+the same sync client when opened. Edits made by a closed-file CLI owner remain local
+until the native document is opened; background ownership of closed documents is not
+part of this change. Downloading validates and installs through Rust under normal
 writer ownership. Invalid or newer unsupported content never modifies a valid local file.
 
 Sharing enables an invitation on the existing cloud document. A local document must
@@ -55,7 +67,10 @@ independent local copy. Exporting or duplicating never grants future cloud acces
 Sign-out flushes owners, stops subscriptions and transport, and hides account-scoped
 files and Recents without deleting files or pending edits. Failed saves retain ownership
 and require retry. An account change cannot apply old listener events or credentials
-to the new account. Explicit independent local copies stay visible.
+to the new account. Explicit independent local copies stay visible. Automatic cloud recovery copies remain
+account-scoped local documents: discoverable on sign-in, hidden on sign-out, and never
+automatically uploaded. A recovery journal is indexed after restart, and final owner
+unregistration preserves later accepted page edits before hiding a deleted source.
 
 Actions have distinct effects:
 
@@ -93,18 +108,23 @@ are not part of this change.
 ## Cutover and operations
 
 This is a clean CloudKit cutover without an automatic importer. Previously downloaded
-managed files remain local and can opt into new sync. Cloud-only documents must first be
+managed files remain local and can opt into new sync. Startup discovers only known
+previous library directories and validates files through Rust. Normal adoption preserves
+UUID and path, and retains a prior local-index title when available. For distinct files
+with one UUID and divergent state, preserve both originals and expose a clearly labeled
+independent recovery copy; a durable source mapping prevents repeated recovery copies.
+Cloud-only documents must first be
 downloaded/exported with the previous app. No process deletes old CloudKit records.
 Released `.pop` acceptance, app ABI, writer locking and compatibility corpora remain.
 No `.pop` storage schema change is required; device catalog schemas are implementation
 metadata and can change independently.
 
-Firestore rules and indexes are in the repository root. The Worker uses the existing
-`FIREBASE_PROJECT`, with `FIRESTORE_SERVICE_ACCOUNT_EMAIL` and
-`FIRESTORE_SERVICE_ACCOUNT_PRIVATE_KEY` supplied as deployment secrets. The key is PKCS8
-RSA PEM. OAuth goes only to Google's fixed token endpoint with the datastore scope.
-No service credential belongs in the app or repository. IAM governs backend publication;
-Firestore rules govern client reads. Production deployment is a separate release step.
+Firestore rules and indexes are in the repository root. Client SDKs use the existing
+Firebase project and Firebase Authentication account. Rules permit catalog reads and
+writes only below the requesting user's own UID. Cloudflare verifies Firebase tokens
+for document access but never connects to Firestore. Existing template and publisher
+collection policies remain in place. Production service and rules deployment is recorded
+in the [deployment evidence](evidence/cloud-documents-2026-11-04.md).
 
 Run the catalog access check with:
 
@@ -113,6 +133,6 @@ firebase emulators:exec --only auth,firestore --project demo-pop-catalog 'bun sc
 ```
 
 The sharing verification tier includes this emulator check. Server integration covers
-initialization, authorization, revocation, epoch recovery and outbox retry ordering.
+initialization, authorization, revocation, epoch recovery and registry-based discovery repair.
 Native integration covers catalog delivery, owner lifetime and account switching.
 Browser integration covers anonymous join, edit, offline reopen, revocation and export.

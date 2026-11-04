@@ -1,22 +1,23 @@
-//! Native sharing transport over the existing owner. Swift persists opaque credentials.
-use pop_library::snapshot;
+//! Persistent cloud document synchronization and explicit anonymous invitations.
+mod cloud;
 mod epochs;
-mod handoff;
-pub use handoff::finalize_catalog_handoff;
 mod journal;
-mod preparation;
-pub use preparation::{ActivatedRoom, PreparedRoom, cancel_preparation, reserve};
+pub mod local;
 mod recovery;
-pub use recovery::recovered_documents;
 mod resolution;
 mod resources;
-pub use resolution::{ResolvedRoom, resolve};
 #[cfg(test)]
 mod tests;
 mod transport;
+pub use cloud::{
+    access, authorized_access, bootstrap, delete_document, document_metadata, join_member, leave,
+    ready_document_metadata, registered_documents, set_sharing, sharing_link, update_document,
+};
 use pop_runtime::owner::{Owner, Reply, Request};
-use pop_sharing_protocol::http::{AccountRoom, CreateRoom, CreatedRoom, Invitation, RoomInfo, RoomPhase};
+use pop_sharing_protocol::http::{Invitation, RoomInfo, RoomPhase};
 use pop_storage::store::{Mode, Share, Store};
+pub use recovery::recovered_documents;
+pub use resolution::{ResolvedRoom, resolve};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -24,188 +25,140 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
-type Result<T> = std::result::Result<T, String>;
+pub type Result<T> = std::result::Result<T, String>;
 type Notice = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
-fn fail(e: impl std::fmt::Display) -> String {
-    e.to_string()
+fn fail(error: impl std::fmt::Display) -> String {
+    error.to_string()
 }
 fn request(owner: &Owner, request: Request) -> std::result::Result<Reply, transport::HttpFailure> {
     transport::owner_request(owner, request)
 }
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+fn random() -> Result<String> {
+    let mut bytes = [0; 32];
+    getrandom::getrandom(&mut bytes).map_err(|_| "Cannot generate document identity")?;
+    Ok(hex(&bytes))
 }
 fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
     let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path).map_err(fail)?;
     file.write_all(bytes).map_err(fail)?;
     file.sync_all().map_err(fail)
 }
-fn random() -> Result<String> {
-    let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).map_err(|_| "Cannot create sharing credentials")?;
-    Ok(hex(&bytes))
+#[derive(Clone)]
+enum Authorization {
+    Capability(String),
+    Identity(String),
 }
-
-/// Tokens are transient request arguments, never persisted with a document.
-pub fn verify_account(token: &str) -> Result<()> {
-    let _: Option<AccountRoom> =
-        account_request("GET", "account/rooms/00000000-0000-4000-8000-000000000000", token, &[])?;
-    Ok(())
+#[derive(Clone)]
+struct RoomKey {
+    room: String,
+    authorization: Authorization,
+    origin: String,
 }
-/// End all indexed shares and remove the relay account. Tokens are never persisted.
-pub fn delete_account(token: &str) -> Result<()> {
-    delete_account_at(pop_sharing_protocol::TRUSTED_ORIGIN, token)
-}
-fn delete_account_at(origin: &str, token: &str) -> Result<()> {
-    account_request_at::<()>(origin, "DELETE", "account", token, &[])
-}
-fn account_request<T: serde::de::DeserializeOwned>(method: &str, route: &str, token: &str, body: &[u8]) -> Result<T> {
-    account_request_at(pop_sharing_protocol::TRUSTED_ORIGIN, method, route, token, body)
-}
-fn account_request_at<T: serde::de::DeserializeOwned>(
-    origin: &str,
-    method: &str,
-    route: &str,
-    token: &str,
-    body: &[u8],
-) -> Result<T> {
-    if token.is_empty() || token.len() > pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES {
-        return Err("Sign in to your sharing account first".into());
-    }
-    let bytes = transport::http_request(
-        method,
-        &format!("{origin}/v1/{route}"),
-        Some(token),
-        body,
-        &[("Content-Type", "application/json")],
-        pop_sharing_protocol::CONTROL_BYTES as u64,
-    )?;
-    serde_json::from_slice(&bytes).map_err(|_| "Invalid account reply".into())
-}
-/// Identify locally saved credentials belonging to this account before deletion.
-/// An unreadable saved credential is not owned; relay lookup failures still propagate.
-pub fn account_owns(document: &str, credential: &str, token: &str) -> Result<bool> {
-    if !pop_sharing_protocol::valid_copy(document) {
-        return Ok(false);
-    }
-    let Ok(saved) = Credential::decode(credential).and_then(|saved| saved.runtime()) else {
-        return Ok(false);
-    };
-    Ok(access(document, token)?.is_some_and(|room| room.room == saved.room))
-}
-fn access(document: &str, token: &str) -> Result<Option<AccountRoom>> {
-    if !pop_sharing_protocol::valid_copy(document) {
-        return Err("Invalid document identity".into());
-    }
-    let result: Option<AccountRoom> = account_request("GET", &format!("account/rooms/{document}"), token, &[])?;
-    if result.as_ref().is_some_and(|r| !pop_sharing_protocol::valid_room(&r.room)) {
-        return Err("Invalid account room".into());
-    }
-    Ok(result)
-}
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Credential {
-    link: String,
-    ended: bool,
-}
-impl Credential {
-    fn decode(value: &str) -> Result<Self> {
-        if value.len() > 1024 {
-            return Err("Sharing link is no longer valid".into());
+impl RoomKey {
+    fn bearer(&self) -> &str {
+        match &self.authorization {
+            Authorization::Capability(value) | Authorization::Identity(value) => value,
         }
-        let key: Self = serde_json::from_str(value).map_err(|_| "Sharing link is no longer valid")?;
-        Invitation::parse(&key.link)?;
-        Ok(key)
     }
-    fn encode(&self) -> Result<String> {
-        serde_json::to_string(self).map_err(fail)
+    fn capability(&self) -> Option<&str> {
+        match &self.authorization {
+            Authorization::Capability(value) => Some(value),
+            Authorization::Identity(_) => None,
+        }
     }
-    fn runtime(&self) -> Result<RoomKey> {
-        let invitation = Invitation::parse(&self.link)?;
-        Ok(RoomKey {
-            room: invitation.room,
-            capability: invitation.capability,
+    fn identity(document: &str, token: &str) -> Result<Self> {
+        if !pop_sharing_protocol::valid_copy(document)
+            || token.is_empty()
+            || token.len() > pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES
+        {
+            return Err("Invalid cloud document access".into());
+        }
+        Ok(Self {
+            room: document.into(),
+            authorization: Authorization::Identity(token.into()),
             origin: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
         })
     }
 }
-/// Transient transport addressing. Only the pinned-origin link is persisted.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GuestCredential {
+    link: String,
+    ended: bool,
+}
 #[derive(Clone)]
-struct RoomKey {
-    room: String,
-    capability: String,
-    origin: String,
+enum Credential {
+    Guest(GuestCredential),
+    Cloud { document: String, identity: String },
+}
+impl Credential {
+    fn decode(value: &str) -> Result<Self> {
+        if value.len() > 1024 {
+            return Err("Invalid invitation credential".into());
+        }
+        let guest: GuestCredential = serde_json::from_str(value).map_err(fail)?;
+        Invitation::parse(&guest.link)?;
+        Ok(Self::Guest(guest))
+    }
+    fn runtime(&self) -> Result<RoomKey> {
+        match self {
+            Self::Cloud { document, identity } => RoomKey::identity(document, identity),
+            Self::Guest(guest) => {
+                let invitation = Invitation::parse(&guest.link)?;
+                Ok(RoomKey {
+                    room: invitation.room,
+                    authorization: Authorization::Capability(invitation.capability),
+                    origin: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
+                })
+            }
+        }
+    }
+    fn ended(&self) -> bool {
+        matches!(self, Self::Guest(GuestCredential { ended: true, .. }))
+    }
+    fn link(&self) -> Option<String> {
+        match self {
+            Self::Guest(guest) => Some(guest.link.clone()),
+            Self::Cloud { .. } => None,
+        }
+    }
 }
 fn room_info(key: &RoomKey, token: Option<&str>) -> std::result::Result<RoomInfo, transport::HttpFailure> {
-    let bytes = transport::http_typed(key, "GET", "", token.or(Some(&key.capability)), &[], &[])?;
-    let info: RoomInfo = serde_json::from_slice(&bytes).map_err(|_| "Invalid room reply")?;
+    let bytes = transport::http_typed(key, "GET", "", Some(token.unwrap_or(key.bearer())), &[], &[])?;
+    let info: RoomInfo = serde_json::from_slice(&bytes).map_err(fail)?;
     if !pop_sharing_protocol::valid_copy(&info.document)
-        || info.seed_hash.as_deref().is_some_and(|h| !pop_sharing_protocol::resources::hash_id(h))
-        || info.app.as_deref().is_some_and(|h| !pop_sharing_protocol::resources::hash_id(h))
-        || info.seed_size.is_some_and(|n| n < 100 || n as usize > pop_sharing_protocol::SEED_BYTES)
-        || info.capability.as_deref().is_some_and(|c| c != key.capability)
+        || info.document != key.room
+        || info.seed_hash.as_deref().is_some_and(|hash| !pop_sharing_protocol::resources::hash_id(hash))
+        || info.seed_size.is_some_and(|size| size as usize > pop_sharing_protocol::SEED_BYTES)
+        || key.capability().is_some_and(|cap| info.capability.as_deref().is_some_and(|actual| actual != cap))
     {
-        return Err("Invalid room metadata".into());
+        return Err("Invalid cloud document metadata".into());
     }
     Ok(info)
 }
-fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
-    if owner.app().document_uuid.as_deref() != Some(document) {
-        return Err("Different sharing document".into());
-    }
-    if owner.share().map_err(fail)?.is_some_and(|s| {
-        s.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT && s.endpoint != pop_sharing_protocol::TRUSTED_ORIGIN
+fn validate_membership(share: Option<Share>, key: &RoomKey) -> Result<()> {
+    if share.is_some_and(|share| {
+        share.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT
+            && (share.endpoint != key.origin || share.room != key.room)
     }) {
-        return Err("Conflicting room membership".into());
+        return Err("Conflicting cloud document membership".into());
     }
-    request(owner, Request::Share { share: Share { room: key.room.clone(), endpoint: key.origin.clone() } })?;
     Ok(())
 }
-fn owner_credential(owner: &Owner, room: &str, token: &str) -> Result<Option<(Credential, RoomInfo)>> {
-    let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
-    let result = creator_credential_at(document, room, token, pop_sharing_protocol::TRUSTED_ORIGIN)?;
-    if let Some((credential, info)) = &result
-        && info.phase == RoomPhase::Live
-    {
-        bind_owner(owner, &credential.runtime()?, &info.document)?;
+fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
+    if owner.app().document_uuid.as_deref() != Some(document) {
+        return Err("Different cloud document".into());
     }
-    Ok(result)
+    validate_membership(owner.share().map_err(fail)?, key)?;
+    epochs::retry_busy(owner, || Request::Share {
+        share: Share { room: key.room.clone(), endpoint: key.origin.clone() },
+    })?;
+    Ok(())
 }
-fn creator_credential_at(
-    document: &str,
-    room: &str,
-    token: &str,
-    origin: &str,
-) -> Result<Option<(Credential, RoomInfo)>> {
-    // The room owner is authenticated by Firebase; its capability is recovered here.
-    let bytes = match transport::http_request_typed(
-        "GET",
-        &format!("{origin}/v1/rooms/{room}"),
-        Some(token),
-        &[],
-        &[],
-        pop_sharing_protocol::CONTROL_BYTES as u64,
-    ) {
-        Ok(bytes) => bytes,
-        Err(transport::HttpFailure::Ended) => return Ok(None),
-        Err(error) => return Err(error.into()),
-    };
-    let info: RoomInfo = serde_json::from_slice(&bytes).map_err(|_| "Invalid room reply")?;
-    if info.document != document {
-        return Err("Different sharing document".into());
-    }
-    let invitation = Invitation {
-        room: room.into(),
-        capability: info.capability.clone().ok_or("Only the creator can recover this share")?,
-    };
-    let key = Credential { link: invitation.link()?, ended: info.phase == RoomPhase::Ended };
-    Ok(Some((key, info)))
-}
-/// Every attempt stages a fresh accepted epoch, without stale artwork or unreferenced
-/// attachments. An Uploading room accepts replacement before becoming live.
 struct SeedBackup {
     path: std::path::PathBuf,
     version: Vec<(String, u32)>,
@@ -287,11 +240,6 @@ pub struct ClientStatus {
     pub creator: bool,
     pub recovery_path: Option<String>,
 }
-pub struct AccountAccess {
-    pub credential: Option<String>,
-    pub phase: Option<Phase>,
-}
-
 pub struct Client {
     owner: Arc<Owner>,
     key: Mutex<Credential>,
@@ -301,68 +249,66 @@ pub struct Client {
     access: Arc<epochs::Access>,
 }
 impl Client {
-    pub fn recover(owner: &Owner, token: &str) -> Result<AccountAccess> {
-        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
-        let Some(room) = access(document, token)? else {
-            return Ok(AccountAccess { credential: None, phase: None });
+    fn new(owner: Arc<Owner>, key: Credential, state_directory: &Path) -> Result<Self> {
+        let runtime = key.runtime()?;
+        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can synchronize")?;
+        if document != runtime.room {
+            return Err("Different cloud document".into());
+        }
+        validate_membership(owner.share().map_err(fail)?, &runtime)?;
+        let identity = match &key {
+            Credential::Cloud { identity, .. } => Some(identity.clone()),
+            Credential::Guest(_) => None,
         };
-        let Some((key, info)) = owner_credential(owner, &room.room, token)? else {
-            return Ok(AccountAccess { credential: None, phase: Some(Phase::Ended) });
-        };
-        let frozen = info.phase == RoomPhase::Live && resolution::epoch(&key.runtime()?, token)?.handoff.is_some();
-        Ok(AccountAccess {
-            credential: if info.phase == RoomPhase::Live { Some(key.encode()?) } else { None },
-            phase: Some(match info.phase {
-                RoomPhase::Uploading => Phase::Preparing,
-                RoomPhase::Live if frozen => Phase::Paused,
-                RoomPhase::Live => Phase::Offline,
-                RoomPhase::Ended => Phase::Ended,
-            }),
-        })
-    }
-    pub fn restore(owner: Arc<Owner>, value: &str, state_directory: &Path, identity: Option<&str>) -> Result<Self> {
-        let key = Credential::decode(value)?;
-        validate_membership(owner.share().map_err(fail)?, &key.runtime()?)?;
-        let document = owner.app().document_uuid.as_deref().ok_or("Only documents can be shared")?;
-        let journal = journal::Journal::new(state_directory, &key.runtime()?, document)?;
+        let journal = Arc::new(journal::Journal::new(state_directory, &runtime, document)?);
         Ok(Self {
             owner,
             key: Mutex::new(key),
             connection: Mutex::new(None),
             creator: std::sync::atomic::AtomicBool::new(false),
             notice: Arc::new(Mutex::new(None)),
-            access: Arc::new(epochs::Access { journal: Arc::new(journal), identity: identity.map(str::to_owned) }),
+            access: Arc::new(epochs::Access { journal, identity }),
         })
+    }
+    pub fn cloud(owner: Arc<Owner>, document: &str, token: &str, state_directory: &Path) -> Result<Self> {
+        Self::new(owner, Credential::Cloud { document: document.into(), identity: token.into() }, state_directory)
+    }
+    pub fn restore(owner: Arc<Owner>, value: &str, state_directory: &Path) -> Result<Self> {
+        Self::new(owner, Credential::decode(value)?, state_directory)
     }
     pub fn connect(&self) -> Result<()> {
         self.pause();
-        let key = self.key.lock().expect("sharing key").clone();
-        if key.ended {
+        let key = self.key.lock().unwrap().clone();
+        if key.ended() {
             return Ok(());
         }
         let key = key.runtime()?;
-        if self.access.identity.is_none() && self.access.journal.frozen_handoff()? {
-            return Ok(());
-        }
-        let binding = Share { room: key.room.clone(), endpoint: key.origin.clone() };
-        if self
-            .owner
-            .share()
-            .map_err(fail)?
-            .is_some_and(|s| s.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT && s != binding)
-        {
-            return Err("Conflicting room membership".into());
-        }
-        request(&self.owner, Request::Share { share: binding })?;
-        *self.connection.lock().expect("sharing connection") =
+        bind_owner(&self.owner, &key, &key.room)?;
+        *self.connection.lock().unwrap() =
             Some(transport::Connection::start(self.owner.clone(), key, self.notice.clone(), self.access.clone()));
         Ok(())
     }
     pub fn pause(&self) {
-        let connection = self.connection.lock().expect("sharing connection").take();
+        let connection = self.connection.lock().unwrap().take();
         if let Some(connection) = connection {
             connection.stop();
         }
+    }
+    pub fn flush(&self) -> Result<()> {
+        epochs::retry_busy(&self.owner, || Request::Flush)?;
+        Ok(())
+    }
+    pub fn confirmed(&self) -> Result<bool> {
+        self.flush()?;
+        let Reply::State { reading, .. } = request(&self.owner, Request::State)? else {
+            return Err("Owner state unavailable".into());
+        };
+        Ok(self
+            .access
+            .journal
+            .transaction()?
+            .current()?
+            .is_some_and(|receipt| receipt.owner_version == reading.version))
     }
     pub fn set_creator(&self, creator: bool) {
         self.creator.store(creator, std::sync::atomic::Ordering::Relaxed);
@@ -371,28 +317,25 @@ impl Client {
         *self.notice.lock().unwrap() = Some(notice);
     }
     pub fn status(&self) -> ClientStatus {
-        let key = self.key.lock().expect("sharing key");
-        let (mut phase, mut detail, mut pause_kind) = self
+        let key = self.key.lock().unwrap();
+        let (phase, detail, pause_kind) = self
             .connection
             .lock()
-            .expect("sharing connection")
+            .unwrap()
             .as_ref()
-            .map_or((Phase::Offline, "Offline".into(), None), |c| c.status());
-        let frozen_pending = self.access.journal.frozen_handoff().unwrap_or(false);
-        if !key.ended && self.access.identity.is_none() && frozen_pending {
-            phase = Phase::Paused;
-            pause_kind = Some(PauseKind::Refused);
-            detail = "Sign in to the creator's sharing account to finish this frozen handoff.".into();
-        }
-        let (phase, detail) = if key.ended { (Phase::Ended, "Ended".into()) } else { (phase, detail) };
-        let recovery_path = self.access.journal.completed_recovery().map(|path| path.to_string_lossy().into_owned());
+            .map_or((Phase::Offline, "Offline".into(), None), |connection| connection.status());
+        let (phase, detail) = if key.ended() {
+            (Phase::Ended, "Sharing ended; your local copy is retained".into())
+        } else {
+            (phase, detail)
+        };
         ClientStatus {
-            recovery_path,
-            pause_kind,
             phase,
             detail,
-            creator: self.creator.load(std::sync::atomic::Ordering::Relaxed) || frozen_pending,
-            link: Some(key.link.clone()),
+            pause_kind,
+            link: key.link(),
+            creator: self.creator.load(std::sync::atomic::Ordering::Relaxed),
+            recovery_path: self.access.journal.completed_recovery().map(|path| path.to_string_lossy().into_owned()),
         }
     }
 }
@@ -401,113 +344,37 @@ impl Drop for Client {
         self.pause();
     }
 }
-
 pub fn joined_credential(link: &str) -> Result<String> {
-    Credential { link: Invitation::parse(link)?.link()?, ended: false }.encode()
+    serde_json::to_string(&GuestCredential { link: Invitation::parse(link)?.link()?, ended: false }).map_err(fail)
 }
 pub fn invitation_document(link: &str) -> Result<String> {
     let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
-    let info = room_info(&key, None)?;
-    if info.phase != RoomPhase::Live {
-        return Err("Sharing is not live".into());
-    }
-    Ok(info.document)
+    Ok(room_info(&key, None)?.document)
 }
 pub fn local_document(path: &Path) -> Result<Option<String>> {
     Ok(Store::open(path, Mode::Snapshot).map_err(fail)?.app().document_uuid.clone())
 }
-fn validate_membership(share: Option<Share>, key: &RoomKey) -> Result<()> {
-    if share.is_some_and(|s| {
-        s.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT && (s.endpoint != key.origin || s.room != key.room)
-    }) {
-        return Err("Conflicting room membership".into());
-    }
-    Ok(())
-}
-/// Replace credentials only after the relay confirms the predecessor ended.
-pub fn accept_invitation(existing: Option<&str>, link: &str) -> Result<String> {
-    accept_with(existing, link, |key| room_info(key, None))
-}
-fn accept_with(
-    existing: Option<&str>,
-    link: &str,
-    lookup: impl Fn(&RoomKey) -> std::result::Result<RoomInfo, transport::HttpFailure>,
-) -> Result<String> {
-    let incoming = joined_credential(link)?;
-    if let Some(value) = existing {
-        let saved = Credential::decode(value)?;
-        let next = Credential::decode(&incoming)?;
-        if saved.link == next.link && !saved.ended {
-            return Ok(value.to_owned());
-        }
-        match lookup(&saved.runtime()?) {
-            Err(transport::HttpFailure::Ended) => {}
-            Err(error) => return Err(error.into()),
-            Ok(_) => return Err("This document is still shared with another live link. Stop that share first.".into()),
-        }
-    }
-    Ok(incoming)
-}
-fn bind_invitation(
-    owner: &Owner,
-    key: &RoomKey,
-    info: &RoomInfo,
-    lookup: impl Fn(&RoomKey) -> std::result::Result<RoomInfo, transport::HttpFailure>,
-) -> Result<()> {
-    if info.phase != RoomPhase::Live {
-        return Err("Sharing is not live".into());
-    }
-    if owner.app().document_uuid.as_deref() != Some(&info.document) {
-        return Err("Different sharing document".into());
-    }
-    if let Some(old) = owner.share().map_err(fail)?
-        && old.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT
-        && (old.room != key.room || old.endpoint != key.origin)
-    {
-        if old.endpoint != pop_sharing_protocol::TRUSTED_ORIGIN {
-            return Err("This document already uses another sharing service".into());
-        }
-        // Ended rooms return 410 before capability authorization. This also
-        // works for a local replica whose device has no saved credential.
-        let old = RoomKey { room: old.room, origin: old.endpoint, capability: key.capability.clone() };
-        match lookup(&old) {
-            Err(transport::HttpFailure::Ended) => {}
-            _ => return Err("Could not confirm the previous link has ended. Try again.".into()),
-        }
-    }
-    bind_owner(owner, key, &info.document)
-}
-/// Rebind through the serial owner, preserving all current edits and the local identity.
-pub fn join(owner: &Owner, existing: Option<&str>, link: &str) -> Result<String> {
-    join_at(owner, existing, link, pop_sharing_protocol::TRUSTED_ORIGIN)
-}
-fn join_at(owner: &Owner, existing: Option<&str>, link: &str, origin: &str) -> Result<String> {
-    let lookup = |key: &RoomKey| room_info(&RoomKey { origin: origin.into(), ..key.clone() }, None);
-    let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
-    let info = lookup(&key)?;
-    let saved = accept_with(existing, link, lookup)?;
-    bind_invitation(owner, &key, &info, lookup)?;
-    Ok(saved)
-}
-/// Install only a missing canonical file. Matching existing files merge after opening.
 pub fn install(destination: &Path, link: &str, state_directory: &Path) -> Result<()> {
     let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
     let info = room_info(&key, None)?;
-    if info.phase != RoomPhase::Live {
-        return Err("Sharing is not live".into());
-    }
     if destination.exists() {
-        let store = Store::open(destination, Mode::Snapshot).map_err(fail)?;
-        if store.app().document_uuid.as_deref() != Some(&info.document) {
-            return Err("Existing document identity mismatch".into());
+        let local = Store::open(destination, Mode::Snapshot).map_err(fail)?;
+        if local.app().document_uuid.as_deref() != Some(info.document.as_str()) {
+            return Err("Different local document".into());
         }
-        validate_membership(store.share().map_err(fail)?, &key)?;
-        return Ok(());
+        return validate_membership(local.share().map_err(fail)?, &key);
     }
-    let epoch = resolution::epoch(&key, &key.capability)?;
-    let credential = joined_credential(link)?;
-    let resolved = resolution::download(key.clone(), info, epoch, credential, &key.capability)?;
-    resolved.install(destination, state_directory)
+    let epoch = resolution::epoch(&key, key.bearer())?;
+    resolution::download(key.clone(), info, epoch, key.bearer())?.install(destination, state_directory)
+}
+pub fn verify_account(token: &str) -> Result<()> {
+    if token.is_empty() { Err("Sign in first".into()) } else { Ok(()) }
+}
+pub fn delete_account(token: &str) -> Result<()> {
+    cloud::control("DELETE", "account", token, &[]).map(|_| ())
+}
+pub fn account_owns(document: &str, _credential: &str, token: &str) -> Result<bool> {
+    Ok(access(document, token)?.role == pop_sharing_protocol::document::DocumentRole::Owner)
 }
 fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]) -> Result<()> {
     if Some(hex(&Sha256::digest(bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {
@@ -527,9 +394,33 @@ fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]
         let closed = request(&owner, Request::Close { preview: None, icon: None });
         binding?;
         closed?;
-        snapshot::install(&stage, destination, &info.document)?;
+        local::install(&stage, destination, &info.document)?;
         Ok(())
     })();
     let _ = std::fs::remove_file(stage);
     result
+}
+
+/// Bounded receipt metadata for catalog status; this does not open document state.
+pub fn confirmed_saved_version(state_directory: &Path, document: &str) -> Result<Option<String>> {
+    let journal = journal::Journal::at(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
+    let transaction = journal.transaction()?;
+    if transaction.pending()?.is_some() {
+        return Ok(None);
+    }
+    Ok(transaction.current()?.map(|receipt| receipt.owner_version))
+}
+
+/// Removing a cache requires a saved frontier acknowledged by this cloud document.
+pub fn saved_confirmed(path: &Path, state_directory: &Path, document: &str) -> Result<bool> {
+    let store = Store::open(path, Mode::Snapshot).map_err(fail)?;
+    if store.app().document_uuid.as_deref() != Some(document) {
+        return Err("Different cloud document".into());
+    }
+    let version = store.document().map_err(fail)?.version();
+    store.close().map_err(fail)?;
+    let journal = journal::Journal::at(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
+    let transaction = journal.transaction()?;
+    Ok(transaction.pending()?.is_none()
+        && transaction.current()?.is_some_and(|receipt| receipt.owner_version == version))
 }

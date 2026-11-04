@@ -1,4 +1,4 @@
-/** Real emulator boundary: clients can discover their own catalog but cannot publish it. */
+/** Real emulator boundary: clients maintain their own catalog; other accounts cannot read or alter it. */
 import assert from "node:assert/strict";
 
 const project = "demo-pop-catalog";
@@ -26,15 +26,16 @@ const request = (suffix: string, token: string, method = "GET", body?: unknown) 
   method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
-// The emulator's owner credential represents service/IAM publication, not a client bypass.
-assert.equal((await request(path, "owner", "PATCH", { fields })).status, 200);
+assert.equal((await request(path, owner.idToken, "PATCH", { fields })).status, 200);
 assert.equal((await request(path, owner.idToken)).status, 200);
 assert.equal((await request(path, other.idToken)).status, 403);
 assert.equal((await fetch(base + path)).status, 403);
-assert.equal((await request(path, owner.idToken, "PATCH", { fields })).status, 403);
-assert.equal((await request(path, owner.idToken, "DELETE")).status, 403);
-assert.equal((await request(path + "-forged", owner.idToken, "PATCH", { fields })).status, 403);
+assert.equal((await request(path, owner.idToken, "PATCH", { fields })).status, 200);
+assert.equal((await request(path, other.idToken, "PATCH", { fields })).status, 403);
+assert.equal((await request(path, other.idToken, "DELETE")).status, 403);
+assert.equal((await request(path, owner.idToken, "DELETE")).status, 200);
+assert.equal((await request(`/users/${other.localId}/documents/forged`, owner.idToken, "PATCH", { fields })).status, 403);
 assert.equal((await request(`/users/${owner.localId}/documents`, owner.idToken)).status, 200);
 assert.equal((await request(`/users/${owner.localId}/documents`, other.idToken)).status, 403);
 assert.equal((await request("/templates/private", owner.idToken)).status, 403);
-console.log("Firestore catalog isolation and backend-only publication passed");
+console.log("Firestore client catalog ownership and account isolation passed");

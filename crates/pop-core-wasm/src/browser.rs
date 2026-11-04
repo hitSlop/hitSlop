@@ -494,9 +494,9 @@ pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<St
     serde_json::to_string(&pop_sharing_protocol::http::ConnectionPlan {
         document: info.document,
         size: info.seed_size.expect("validated size"),
-        url: format!("{origin}/v1/rooms/{}/seed", key.room),
+        url: format!("{origin}/v1/documents/{}/seed", key.room),
         headers: [("Authorization".into(), format!("Bearer {}", key.capability))].into_iter().collect(),
-        socket: format!("{}/v1/rooms/{}/sync", origin.replacen("https://", "wss://", 1), key.room),
+        socket: format!("{}/v1/documents/{}/sync", origin.replacen("https://", "wss://", 1), key.room),
         protocols: vec![pop_sharing_protocol::SOCKET_PROTOCOL.into(), format!("cap.{}", key.capability)],
     })
     .map_err(error)
@@ -697,7 +697,7 @@ impl BrowserCopy {
             let publish =
                 PublishEpoch { expected, seed_hash: seed_hash.clone(), root: root.clone(), resources, attachments };
             publish.validate().map_err(error)?;
-            candidate.accepted_epoch = Some(EpochState { seed_hash, root: root.clone(), heads: root, handoff: None });
+            candidate.accepted_epoch = Some(EpochState { seed_hash, root: root.clone(), heads: root });
             serde_json::to_string(
                 &serde_json::json!({"sourceVersion": source_version, "size": size, "publish": publish}),
             )
@@ -751,8 +751,7 @@ impl BrowserCopy {
         let info = room_info(metadata)?;
         let epoch: pop_sharing_protocol::lifecycle::EpochState = serde_json::from_str(epoch).map_err(error)?;
         epoch.validate().map_err(error)?;
-        if epoch.handoff.is_some()
-            || Some(epoch.seed_hash.as_str()) != info.seed_hash.as_deref()
+        if Some(epoch.seed_hash.as_str()) != info.seed_hash.as_deref()
             || self.imported_hash.as_deref() != Some(epoch.seed_hash.as_str())
         {
             return Err(error("Epoch seed checksum or authority mismatch"));

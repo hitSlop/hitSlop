@@ -752,8 +752,9 @@ while owner sync continues and downloaded guest copies remain usable offline.
 Fresh epoch publication remains conditional on the current seed hash and frontier.
 An outdated client preserves unconfirmed work in an independent recovery document
 before refreshing. Current snapshots and bounded updates replace indefinite archives.
-Firestore publication uses a durable revisioned outbox; delayed discovery cannot grant
-access because every document operation is authorized by the DO.
+Clients publish their own Firestore references after cloud acknowledgement, with a
+small durable local retry queue. Stale references are cleaned up when access is checked.
+The Worker never connects to Firestore; the account registry supports discovery repair.
 
 
 ### Hosted browser isolation

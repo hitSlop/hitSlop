@@ -1,25 +1,22 @@
-//! Account-scoped library metadata and whole-file replication through the existing owner.
-mod catalog;
-mod checkpoint;
-mod recovery;
-mod stamp;
-pub use stamp::CatalogStamp;
-pub mod snapshot;
-pub use catalog::{CATALOG_FORMAT, CatalogAuthority, CatalogCheckpointProof, CatalogReceipt, CatalogRelayBinding};
-use pop_core::Code;
+//! Device-local document index and account-scoped cloud cache. Bytes synchronize
+//! through the existing owner and persistent cloud protocol, never through catalog assets.
 use pop_runtime::owner::{Failure, FailureKind, Owner, Request};
+use pop_sharing_client::{Client, ClientStatus, local};
+pub use pop_sharing_protocol::document::{AccessState, DocumentEntry, DocumentRole};
 use pop_storage::{
     file,
-    store::{Mode, Share, Store},
+    store::{Mode, Store},
 };
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
+use sha2::{Digest, Sha256};
 use std::{
-    cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, Weak},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
 };
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Issue {
     Busy,
@@ -27,7 +24,6 @@ pub enum Issue {
     AppMismatch,
     TooLarge,
     AccountChanged,
-    StaleCatalog,
     Failed,
 }
 #[derive(Debug, thiserror::Error)]
@@ -37,42 +33,36 @@ pub struct Error {
     pub message: String,
 }
 pub type Result<T> = std::result::Result<T, Error>;
-fn failed(e: impl std::fmt::Display) -> Error {
-    Error { issue: Issue::Failed, message: e.to_string() }
-}
-impl From<rusqlite::Error> for Error {
-    fn from(e: rusqlite::Error) -> Self {
-        failed(e)
-    }
+fn failed(error: impl std::fmt::Display) -> Error {
+    Error { issue: Issue::Failed, message: error.to_string() }
 }
 impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        failed(e)
+    fn from(error: std::io::Error) -> Self {
+        failed(error)
+    }
+}
+impl From<rusqlite::Error> for Error {
+    fn from(error: rusqlite::Error) -> Self {
+        failed(error)
     }
 }
 impl From<Failure> for Error {
-    fn from(e: Failure) -> Self {
-        let issue = if e.reason == Some(Code::RequiresUpdate) {
+    fn from(error: Failure) -> Self {
+        let issue = if error.reason == Some(pop_core::Code::RequiresUpdate) {
             Issue::RequiresUpdate
-        } else if matches!(e.kind, FailureKind::Busy | FailureKind::Locked | FailureKind::Closing) {
+        } else if matches!(error.kind, FailureKind::Busy | FailureKind::Locked | FailureKind::Closing) {
             Issue::Busy
         } else {
             Issue::Failed
         };
-        Self { issue, message: e.message }
+        Self { issue, message: error.message }
     }
 }
 impl From<pop_storage::store::Error> for Error {
-    fn from(e: pop_storage::store::Error) -> Self {
-        Failure::from(e).into()
+    fn from(error: pop_storage::store::Error) -> Self {
+        Failure::from(error).into()
     }
 }
-impl From<pop_core::Error> for Error {
-    fn from(e: pop_core::Error) -> Self {
-        Failure::from(e).into()
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Entry {
     pub id: String,
@@ -85,1056 +75,1042 @@ pub struct Entry {
     pub dirty: bool,
     pub deleted: bool,
     pub local_only: bool,
+    pub account_bound: bool,
     pub downloaded: bool,
     pub problem: Option<String>,
-}
-#[derive(Clone, Debug)]
-pub struct Retry {
-    pub id: String,
-    pub title: String,
-    pub template: String,
-    pub message: String,
-    pub retry_at: f64,
-    pub incoming: bool,
-}
-pub struct Upload {
-    pub entry: Entry,
-    pub asset_path: Option<String>,
-    pub fields: Option<Vec<u8>>,
-    pub authority: CatalogAuthority,
+    pub role: Option<DocumentRole>,
+    pub revision: u64,
 }
 struct Inner {
     db: Connection,
     live: HashMap<String, Weak<Owner>>,
-    // Failed temporary owners keep their writer lease and unsaved state for retry.
+    clients: HashMap<String, Arc<Client>>,
     retained: HashMap<String, Arc<Owner>>,
-    artwork_cache: RefCell<HashMap<String, (u64, std::time::SystemTime, String, String)>>,
+    token: Option<String>,
 }
 pub struct Library {
     root: PathBuf,
+    account: String,
+    scope: String,
     inner: Mutex<Inner>,
-    recovery_paths: Mutex<HashMap<String, String>>,
+    active: AtomicBool,
+    generation: AtomicU64,
+    projections: Mutex<()>,
 }
 impl Library {
     pub fn open(root: &Path, account: &str) -> Result<Arc<Self>> {
-        std::fs::create_dir_all(root.join("documents"))?;
-        std::fs::create_dir_all(root.join("uploads"))?;
-        std::fs::create_dir_all(root.join("recoveries"))?;
-        std::fs::create_dir_all(root.join("candidates"))?;
+        std::fs::create_dir_all(root)?;
         let root = std::fs::canonicalize(root)?;
-        let db = Connection::open(root.join("library.sqlite"))?;
-        db.execute_batch(
-            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
-          CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value BLOB NOT NULL);
-          CREATE TABLE IF NOT EXISTS documents(id TEXT PRIMARY KEY, title TEXT NOT NULL, template TEXT NOT NULL,
-            confirmed TEXT NOT NULL DEFAULT '', fields BLOB, deleted INTEGER NOT NULL DEFAULT 0,
-            confirmed_deleted INTEGER NOT NULL DEFAULT 0, remote_delete INTEGER NOT NULL DEFAULT 0,
-            local_only INTEGER NOT NULL DEFAULT 0, problem TEXT);
-          CREATE TABLE IF NOT EXISTS retries(id TEXT PRIMARY KEY, title TEXT NOT NULL, template TEXT NOT NULL,
-            message TEXT NOT NULL, retry_at REAL NOT NULL, incoming INTEGER NOT NULL);",
-        )?;
-        db.execute_batch(
-            "CREATE TABLE IF NOT EXISTS catalog(id TEXT PRIMARY KEY, committed TEXT NOT NULL, pending TEXT);",
-        )?;
-        db.execute_batch("CREATE TABLE IF NOT EXISTS catalog_recoveries(document_id TEXT NOT NULL, transition TEXT NOT NULL, filename TEXT NOT NULL, recovery_id TEXT, ready INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(document_id,transition));")?;
-        db.execute_batch("CREATE TABLE IF NOT EXISTS catalog_stamps(id TEXT PRIMARY KEY, revision INTEGER NOT NULL, change_tag TEXT NOT NULL);")?;
-        db.execute_batch("CREATE TABLE IF NOT EXISTS catalog_candidates(document_id TEXT PRIMARY KEY, transition TEXT NOT NULL, source_version TEXT NOT NULL, version TEXT, filename TEXT NOT NULL, fields BLOB);")?;
-        let retained_candidates = db
-            .prepare("SELECT filename FROM catalog_candidates")?
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()?;
-        for file in std::fs::read_dir(root.join("candidates"))? {
-            let file = file?;
-            if file.file_type()?.is_file()
-                && !retained_candidates.contains(&file.file_name().to_string_lossy().into_owned())
-            {
-                std::fs::remove_file(file.path())?;
-            }
-        }
-        let recovery_paths = db
-            .prepare("SELECT recovery_id,filename FROM catalog_recoveries WHERE recovery_id IS NOT NULL")?
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
-            .collect::<std::result::Result<HashMap<_, _>, _>>()?;
-        for (id, filename) in &recovery_paths {
-            Self::valid_id(id)?;
-            if filename.contains(['/', '\\']) || !filename.ends_with(".pop") {
-                return Err(failed("Invalid recovery catalog location"));
-            }
-        }
+        let db = Connection::open(root.join("cloud-index.sqlite"))?;
+        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS documents(account TEXT NOT NULL,id TEXT NOT NULL,title TEXT NOT NULL,template TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL DEFAULT '',role TEXT,revision INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0,problem TEXT,pending_enable INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(account,id));")?;
         let columns = db
             .prepare("PRAGMA table_info(documents)")?
-            .query_map([], |r| r.get::<_, String>(1))?
+            .query_map([], |row| row.get::<_, String>(1))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        for name in ["confirmed_asset", "artwork_version"] {
-            if !columns.iter().any(|column| column == name) {
-                db.execute_batch(&format!("ALTER TABLE documents ADD COLUMN {name} TEXT NOT NULL DEFAULT '';"))?;
+        for column in ["artwork_version", "artwork_digest", "file_stamp"] {
+            if !columns.iter().any(|name| name == column) {
+                db.execute_batch(&format!("ALTER TABLE documents ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"))?;
             }
         }
-        if !columns.iter().any(|column| column == "download_removed") {
-            db.execute_batch("ALTER TABLE documents ADD COLUMN download_removed INTEGER NOT NULL DEFAULT 0;")?;
+        if !columns.iter().any(|name| name == "catalog_seen") {
+            db.execute_batch("ALTER TABLE documents ADD COLUMN catalog_seen INTEGER NOT NULL DEFAULT 0")?;
         }
-        let saved: Option<String> =
-            db.query_row("SELECT CAST(value AS TEXT) FROM meta WHERE key='account'", [], |r| r.get(0)).ok();
-        if saved.is_some_and(|saved| saved != account) {
-            return Err(Error {
-                issue: Issue::AccountChanged,
-                message: "Not syncing: this library belongs to another iCloud account".into(),
-            });
-        }
-        db.execute("INSERT OR IGNORE INTO meta VALUES('account', ?1)", [account])?;
-        for entry in std::fs::read_dir(root.join("uploads"))? {
-            let entry = entry?;
-            if entry.file_type()?.is_file() {
-                std::fs::remove_file(entry.path())?;
-            }
-        }
-        let library = Arc::new(Self {
+        db.execute_batch("CREATE TABLE IF NOT EXISTS legacy_sources(path TEXT PRIMARY KEY,id TEXT NOT NULL,fingerprint TEXT NOT NULL);")?;
+        db.execute_batch("CREATE TABLE IF NOT EXISTS catalog_writes(account TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(account,id)); CREATE TABLE IF NOT EXISTS catalog_clock(account TEXT PRIMARY KEY,revision INTEGER NOT NULL);")?;
+        let scope = crate::hex(&Sha256::digest(account.as_bytes()));
+        std::fs::create_dir_all(root.join("documents"))?;
+        std::fs::create_dir_all(root.join("accounts").join(&scope).join("documents"))?;
+        Ok(Arc::new(Self {
             root,
-            recovery_paths: Mutex::new(recovery_paths),
+            account: account.into(),
+            scope,
             inner: Mutex::new(Inner {
                 db,
                 live: HashMap::new(),
+                clients: HashMap::new(),
                 retained: HashMap::new(),
-                artwork_cache: RefCell::new(HashMap::new()),
+                token: None,
             }),
-        });
-        library.recover_catalog_slots()?;
-        Ok(library)
+            active: AtomicBool::new(true),
+            generation: AtomicU64::new(1),
+            projections: Mutex::new(()),
+        }))
     }
-    fn valid_id(id: &str) -> Result<()> {
-        if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
-            return Err(failed("Invalid library document ID"));
+    fn check(&self) -> Result<()> {
+        if !self.active.load(Ordering::Acquire) {
+            Err(Error { issue: Issue::AccountChanged, message: "The cloud account changed".into() })
+        } else {
+            Ok(())
+        }
+    }
+    fn cloud(&self) -> Result<()> {
+        self.check()?;
+        if self.account.is_empty() {
+            Err(Error { issue: Issue::AccountChanged, message: "Sign in to enable cloud sync".into() })
+        } else {
+            Ok(())
+        }
+    }
+    fn valid(id: &str) -> Result<()> {
+        if pop_sharing_protocol::valid_copy(id) { Ok(()) } else { Err(failed("Invalid document identity")) }
+    }
+    fn operation(&self) -> Result<u64> {
+        self.cloud()?;
+        Ok(self.generation.load(Ordering::Acquire))
+    }
+    fn current_operation(&self, generation: u64) -> Result<()> {
+        self.check()?;
+        if generation != self.generation.load(Ordering::Acquire) {
+            return Err(Error { issue: Issue::AccountChanged, message: "The cloud account changed".into() });
         }
         Ok(())
     }
-    fn path(&self, id: &str) -> PathBuf {
-        if let Some(filename) = self.recovery_paths.lock().unwrap().get(id) {
-            self.root.join("recoveries").join(filename)
-        } else {
-            self.root.join("documents").join(format!("{id}.pop"))
-        }
-    }
-    pub fn register(&self, owner: &Arc<Owner>) -> Result<()> {
-        let mut inner = self.inner.lock().unwrap();
-        if let Some(id) = owner.app().document_uuid.as_ref()
-            && owner.path() == self.path(id)
-        {
-            inner.live.insert(id.clone(), Arc::downgrade(owner));
-        }
-        Ok(())
-    }
-    fn entry(&self, inner: &Inner, id: &str) -> Result<Entry> {
-        let (title, template, confirmed, deleted, confirmed_deleted, local_only): (
-            String,
-            String,
-            String,
-            bool,
-            bool,
-            bool,
-        ) = inner.db.query_row(
-            "SELECT title,template,confirmed,deleted,confirmed_deleted,local_only FROM documents WHERE id=?1",
-            [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?)),
-        )?;
-        let problem: Option<String> =
-            inner.db.query_row("SELECT problem FROM documents WHERE id=?1", [id], |r| r.get(0))?;
-        let (confirmed_asset, source_version): (String, String) =
-            inner.db.query_row("SELECT confirmed_asset,artwork_version FROM documents WHERE id=?1", [id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })?;
-        let removed: bool =
-            inner.db.query_row("SELECT download_removed FROM documents WHERE id=?1", [id], |r| r.get(0))?;
-        let (version, asset_revision) = if deleted || problem.is_some() {
-            (String::new(), String::new())
-        } else if removed || !self.path(id).exists() {
-            (confirmed.clone(), confirmed_asset.clone())
-        } else {
-            let path = self.path(id);
-            let stat = std::fs::metadata(&path)?;
-            let stamp = (stat.len(), stat.modified()?);
-            let mut cache = inner.artwork_cache.borrow_mut();
-            let (version, digest) = match cache.get(id) {
-                Some((size, time, version, digest)) if (*size, *time) == stamp => (version.clone(), digest.clone()),
-                _ => {
-                    let store = Store::open(&path, Mode::Snapshot)?;
-                    let version = store.document()?.reading()?.version;
-                    let digest = snapshot::artwork_digest(&store).map_err(failed)?;
-                    cache.insert(id.into(), (stamp.0, stamp.1, version.clone(), digest.clone()));
-                    (version, digest)
-                }
-            };
-            let revision = snapshot::asset_revision(&version, &source_version, &digest);
-            (version, revision)
+    fn with_owner<T>(&self, id: &str, work: impl FnOnce(&Arc<Owner>) -> Result<T>) -> Result<T> {
+        let (entry, existing, temporary) = {
+            let inner = self.inner.lock().unwrap();
+            let retained = inner.retained.get(id).cloned();
+            let live = inner.live.get(id).and_then(Weak::upgrade);
+            (self.row(&inner, id)?, retained.clone().or(live.clone()), retained.is_some() || live.is_none())
         };
+        let existing = existing.filter(|owner| !matches!(local::request_typed(owner, Request::State), Err(error) if error.kind == FailureKind::Closed));
+        let temporary = temporary || existing.is_none();
+        let owner = match existing {
+            Some(owner) => owner,
+            None => Arc::new(Owner::open(Path::new(&entry.path), Mode::Document, Arc::new(|_| {}))?),
+        };
+        let result = work(&owner);
+        if temporary {
+            match local::request_typed(&owner, Request::Close { preview: None, icon: None }) {
+                Ok(_) => {
+                    self.inner.lock().unwrap().retained.remove(id);
+                }
+                Err(error) => {
+                    self.inner.lock().unwrap().retained.insert(id.into(), owner);
+                    return Err(error.into());
+                }
+            }
+        }
+        result
+    }
+    fn state_dir(&self) -> PathBuf {
+        self.root.join("accounts").join(&self.scope).join("relay-state")
+    }
+    fn cached_path(&self, id: &str) -> PathBuf {
+        self.root.join("accounts").join(&self.scope).join("documents").join(format!("{id}.pop"))
+    }
+    fn row(&self, inner: &Inner, id: &str) -> Result<Entry> {
+        Self::valid(id)?;
+        let row=inner.db.query_row("SELECT account,title,template,path,version,role,revision,deleted,problem FROM documents WHERE id=?1 AND (account=?2 OR account='') ORDER BY (account=?2) DESC LIMIT 1",params![id,self.account],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,String>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,i64>(6)?,row.get::<_,bool>(7)?,row.get::<_,Option<String>>(8)?)))?;
+        let downloaded = Path::new(&row.3).is_file();
+        let role = match row.5.as_deref() {
+            Some("owner") => Some(DocumentRole::Owner),
+            Some("editor") => Some(DocumentRole::Editor),
+            _ => None,
+        };
+        let (source_version, digest, saved_stamp, pending): (String, String, String, bool) = inner.db.query_row(
+            "SELECT artwork_version,artwork_digest,file_stamp,pending_enable FROM documents WHERE account=?1 AND id=?2",
+            params![row.0, id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+        let mut version = row.4;
+        let stamp = if downloaded { file_stamp(Path::new(&row.3)).ok() } else { None };
+        let (confirmed, receipt_problem) = if role.is_some() {
+            match pop_sharing_client::confirmed_saved_version(&self.state_dir(), id) {
+                Ok(version) => (version, None),
+                Err(error) => (None, Some(error)),
+            }
+        } else {
+            (None, None)
+        };
+        let client_synced =
+            inner.clients.get(id).is_some_and(|client| client.status().phase == pop_sharing_client::Phase::Synced);
+        if client_synced && let Some(confirmed) = &confirmed {
+            version = confirmed.clone();
+            inner.db.execute(
+                "UPDATE documents SET version=?3,file_stamp=?4 WHERE account=?1 AND id=?2",
+                params![row.0, id, version, stamp.as_deref().unwrap_or("")],
+            )?;
+        }
+        let dirty = role.is_some()
+            && (pending
+                || downloaded
+                    && (confirmed.as_deref() != Some(&version)
+                        || (!client_synced && stamp.as_deref() != Some(&saved_stamp))
+                        || inner
+                            .clients
+                            .get(id)
+                            .is_some_and(|client| client.status().phase != pop_sharing_client::Phase::Synced)));
+        let asset_revision = local::asset_revision(&version, &source_version, &digest);
+        let artwork_version = if source_version == version { source_version } else { String::new() };
         Ok(Entry {
             id: id.into(),
-            title,
-            template,
-            path: self.path(id).to_string_lossy().into_owned(),
-            dirty: problem.is_none()
-                && Self::authority_inner(inner, id)?.snapshot()
-                && !local_only
-                && if deleted {
-                    !confirmed_deleted
-                } else if removed {
-                    false
-                } else if confirmed_asset.is_empty() {
-                    version != confirmed || source_version == version
-                } else {
-                    asset_revision != confirmed_asset
-                },
-            artwork_version: if source_version == version { source_version } else { String::new() },
+            title: row.1,
+            template: row.2,
+            path: row.3,
             version,
             asset_revision,
-            deleted,
-            local_only,
-            downloaded: !removed && self.path(id).exists(),
-            problem,
+            artwork_version,
+            dirty,
+            deleted: row.7,
+            local_only: role.is_none(),
+            account_bound: !row.0.is_empty(),
+            downloaded,
+            problem: row.8.or(receipt_problem),
+            role,
+            revision: u64::try_from(row.6).map_err(failed)?,
         })
     }
     pub fn entries(&self) -> Result<Vec<Entry>> {
+        self.check()?;
+        self.discover_recoveries()?;
         let inner = self.inner.lock().unwrap();
         let ids = inner
             .db
-            .prepare("SELECT id FROM documents ORDER BY rowid DESC")?
-            .query_map([], |r| r.get::<_, String>(0))?
+            .prepare("SELECT DISTINCT id FROM documents WHERE (account=?1 OR account='') ORDER BY title")?
+            .query_map([&self.account], |row| row.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        ids.iter().map(|id| self.entry(&inner, id)).collect()
+        ids.into_iter().map(|id| self.row(&inner, &id)).collect()
     }
-    /// Work must be idempotent: it reruns on the saved file when a live owner closes during it.
-    fn with_owner<T>(&self, inner: &mut Inner, id: &str, mut work: impl FnMut(&Owner) -> Result<T>) -> Result<T> {
-        let existing = inner.retained.get(id).cloned().or_else(|| inner.live.get(id).and_then(Weak::upgrade));
-        if let Some(owner) = existing
-            && snapshot::request(&owner, Request::State).is_ok()
-        {
-            let result = work(&owner);
-            // Closing saves first, so the file holds everything the closed owner had.
-            if result.is_ok() || snapshot::request(&owner, Request::State).is_ok() {
-                return result;
+    pub fn receive_catalog(&self, entries: &[DocumentEntry]) -> Result<()> {
+        self.cloud()?;
+        let _projection = self.projections.lock().unwrap();
+        let mut accepted = Vec::new();
+        for entry in entries {
+            Self::valid(&entry.document_id)?;
+            if entry.catalog_revision > i64::MAX as u64 || entry.title.len() > 4096 || entry.template_id.len() > 1024 {
+                return Err(failed("Invalid cloud catalog entry"));
             }
+            let prior = {
+                let inner = self.inner.lock().unwrap();
+                inner
+                    .db
+                    .query_row(
+                        "SELECT revision,deleted,path FROM documents WHERE account=?1 AND id=?2",
+                        params![self.account, entry.document_id],
+                        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?, row.get::<_, String>(2)?)),
+                    )
+                    .optional()?
+            };
+            if entry.deleted && prior.as_ref().is_some_and(|prior| !prior.1 && Path::new(&prior.2).is_file()) {
+                if let Some(client) = self.connection(&entry.document_id) {
+                    client.pause();
+                }
+                // Preserve an independently openable copy before the authoritative
+                // tombstone can hide this account's former cache/window entry.
+                let title = {
+                    let inner = self.inner.lock().unwrap();
+                    inner.db.query_row(
+                        "SELECT title FROM documents WHERE account=?1 AND id=?2",
+                        params![self.account, entry.document_id],
+                        |row| row.get::<_, String>(0),
+                    )?
+                };
+                self.account_recovery(&entry.document_id, &format!("Recovered edits — {title}"))?;
+            }
+            accepted.push(entry);
         }
-        let owner = Arc::new(Owner::open(&self.path(id), Mode::Document, Arc::new(|_| {}))?);
-        let result = work(&owner);
-        match snapshot::request(&owner, Request::Close { preview: None, icon: None }) {
-            Ok(_) => {
-                inner.retained.remove(id);
-                result
-            }
-            Err(e) => {
-                inner.retained.insert(id.into(), owner);
-                Err(failed(e))
-            }
+        let mut inner = self.inner.lock().unwrap();
+        let tx = inner.db.transaction()?;
+        for entry in &accepted {
+            let path: String = tx
+                .query_row("SELECT path FROM documents WHERE id=?1 AND account=''", [&entry.document_id], |row| {
+                    row.get(0)
+                })
+                .optional()?
+                .unwrap_or_else(|| self.cached_path(&entry.document_id).to_string_lossy().into_owned());
+            let role = match entry.role {
+                DocumentRole::Owner => "owner",
+                DocumentRole::Editor => "editor",
+            };
+            tx.execute("INSERT INTO documents(account,id,title,template,path,role,revision,deleted,catalog_seen) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,revision=excluded.revision,deleted=excluded.deleted,catalog_seen=1",params![self.account,entry.document_id,entry.title,entry.template_id,path,role,i64::try_from(entry.catalog_revision).map_err(failed)?,entry.deleted])?;
         }
+        tx.commit()?;
+        let stopped = accepted
+            .iter()
+            .filter(|entry| entry.deleted)
+            .filter_map(|entry| inner.clients.remove(&entry.document_id))
+            .collect::<Vec<_>>();
+        drop(inner);
+        for client in stopped {
+            client.pause();
+            client.flush().map_err(failed)?;
+        }
+        Ok(())
     }
     pub fn create(&self, template: &Path, title: &str) -> Result<Entry> {
-        let title = title.trim();
-        if title.is_empty() {
-            return Err(failed("Enter a name for this pop"));
-        }
-        let mut inner = self.inner.lock().unwrap();
-        let temporary = self.root.join("documents").join(format!("new-{}.pop", crate::random_hex(12)));
+        self.check()?;
+        let temporary = self.root.join("documents").join(format!("new-{}.pop", random_hex(16)));
         file::create_document(template, &temporary)?;
         let opened = file::open(&temporary, true)?;
-        let id = opened.document_uuid.as_ref().ok_or_else(|| failed("Missing document identity"))?;
-        std::fs::rename(&temporary, self.path(id))?;
-        self.with_owner(&mut inner, id, |owner| {
-            snapshot::request(
-                owner,
-                Request::Share {
-                    share: Share { room: id.clone(), endpoint: pop_storage::LIBRARY_SHARE_ENDPOINT.into() },
-                },
-            )
-            .map_err(failed)?;
-            Ok(())
-        })?;
-        inner.db.execute(
-            "INSERT INTO documents(id,title,template) VALUES(?1,?2,?3)",
-            params![id, title, opened.app.metadata().slug],
-        )?;
-        let entry = self.entry(&inner, id)?;
-        inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
-        self.entry(&inner, id)
+        let id = opened.document_uuid.ok_or_else(|| failed("Missing document identity"))?;
+        let path = self.root.join("documents").join(format!("{id}.pop"));
+        std::fs::rename(&temporary, &path)?;
+        self.adopt(&path, title)
     }
-    /// Adopt a closed local document without changing its identity or the source file.
     pub fn adopt(&self, source: &Path, title: &str) -> Result<Entry> {
-        let title = title.trim();
-        if title.is_empty() {
-            return Err(failed("Enter a name for this pop"));
-        }
-        file::document_location(source)?;
-        // Refuse before moving anything: the library could never upload it.
-        if std::fs::metadata(source)?.len() > snapshot::MAX_FILE_BYTES {
-            return Err(Error {
-                issue: Issue::TooLarge,
-                message: "iCloud sync supports pop up to 16 MiB. This one stays where it is.".into(),
-            });
-        }
-        let lease = pop_storage::registry::Lease::acquire(source)?;
-        let opened = file::open(source, true)?;
-        let store = Store::open(source, Mode::Snapshot)?;
-        let id = opened.document_uuid.as_ref().ok_or_else(|| failed("Not a document"))?.clone();
-        Self::valid_id(&id)?;
-        if store.share()?.is_some() {
-            return Err(failed("This pop is already shared or belongs to a library"));
-        }
+        self.check()?;
+        let source = file::resolve(source)?;
+        let info = local::inspect(&source).map_err(failed)?;
+        let store = Store::open(&source, Mode::Snapshot)?;
         let template = store.app().app.metadata().slug.clone();
-        let mut inner = self.inner.lock().unwrap();
-        let exists: bool =
-            inner.db.query_row("SELECT EXISTS(SELECT 1 FROM documents WHERE id=?1)", [&id], |r| r.get(0))?;
-        if exists || self.path(&id).exists() {
-            return Err(failed("This pop is already in iCloud"));
-        }
-        snapshot::install(source, &self.path(&id), &id).map_err(failed)?;
-        let adopted = (|| {
-            lease.check()?;
-            self.with_owner(&mut inner, &id, |owner| {
-                snapshot::request(
-                    owner,
-                    Request::Share {
-                        share: Share { room: id.clone(), endpoint: pop_storage::LIBRARY_SHARE_ENDPOINT.into() },
-                    },
-                )
-                .map_err(failed)?;
-                Ok(())
-            })?;
-            // All metadata, including the final read, must succeed before the copy is listed.
-            let tx = inner.db.unchecked_transaction()?;
-            tx.execute("INSERT INTO documents(id,title,template) VALUES(?1,?2,?3)", params![id, title, template])?;
-            let entry = self.entry(&inner, &id)?;
-            tx.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, entry.version])?;
-            let entry = self.entry(&inner, &id)?;
-            tx.commit()?;
-            Ok(entry)
-        })();
-        if adopted.is_err() {
-            // A failed save can retain a writer. Release it before removing its disposable copy.
-            drop(inner.retained.remove(&id));
-            inner.artwork_cache.borrow_mut().remove(&id);
-            let _ = std::fs::remove_file(self.path(&id));
-        }
-        adopted
-    }
-    /// Cleanup is separate so the native app can open the adopted copy first. A changed
-    /// or busy source is retained; both accepted copies must still contain the same work.
-    #[cfg(target_os = "macos")]
-    pub fn trash_adopted(&self, source: &Path, id: &str) -> Result<()> {
-        Self::valid_id(id)?;
+        store.close()?;
         let inner = self.inner.lock().unwrap();
-        let entry = self.entry(&inner, id)?;
-        if entry.deleted || entry.problem.is_some() || entry.local_only {
-            return Err(failed("The iCloud copy is unavailable"));
-        }
-        file::trash_replica_original(source, &self.path(id), id)?;
-        Ok(())
-    }
-    /// The same owner handles live edits and derived images. Local files are not library entries.
-    pub fn publish_artwork(
-        &self,
-        owner: &Arc<Owner>,
-        source_version: &str,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    ) -> Result<bool> {
-        let Some(id) = owner.app().document_uuid.as_ref() else { return Ok(false) };
-        if owner.path() != self.path(id) {
-            return Ok(false);
-        }
-        let inner = self.inner.lock().unwrap();
-        snapshot::request_typed(owner, Request::SetArtwork { source_version: source_version.into(), preview, icon })
-            .map_err(Error::from)?;
-        inner.db.execute("UPDATE documents SET artwork_version=?2 WHERE id=?1", params![id, source_version])?;
-        Ok(true)
-    }
-    /// A relay is the only byte authority while live, including explicit sync requests.
-    pub fn stage_allowed(&self, id: &str, _explicit: bool) -> Result<bool> {
-        Self::valid_id(id)?;
-        let inner = self.inner.lock().unwrap();
-        let authority = Self::authority_inner(&inner, id)?;
-        if !authority.snapshot()
-            || self
-                .pending_authority_unlocked(&inner, id)?
-                .is_some_and(|pending| !matches!(pending, CatalogAuthority::Checkpoint { .. }))
-        {
-            return Ok(false);
-        }
-        // Ordinary uploads remain fenced until Finalize; explicit handoff restaging
-        // may replace the payload only under the same frozen origin.
-        if matches!(authority, CatalogAuthority::Snapshot { receipt: Some(_) }) {
-            return Ok(false);
-        }
-        let entry = self.entry(&inner, id)?;
-        if entry.deleted {
-            return Ok(true);
-        }
-        let share = match inner.live.get(id).and_then(Weak::upgrade).and_then(|owner| owner.share().ok()) {
-            Some(share) => share,
-            None if self.path(id).exists() => Store::open(&self.path(id), Mode::Snapshot)?.share()?,
-            None => return Ok(false),
-        };
-        Ok(share.is_none_or(|share| share.endpoint == pop_storage::LIBRARY_SHARE_ENDPOINT))
-    }
-    pub fn stage_sync(&self, id: &str, explicit: bool) -> Result<Option<Upload>> {
-        if !self.stage_allowed(id, explicit)? {
-            return Ok(None);
-        }
-        self.stage(id).map(Some)
-    }
-    pub fn stage(&self, id: &str) -> Result<Upload> {
-        if !self.stage_allowed(id, true)? {
-            return Err(failed("Document bytes are owned by the live relay or a pending transition"));
-        }
-        if let Some(upload) = self.stage_checkpoint(id)? {
-            return Ok(upload);
-        }
-        self.stage_snapshot(id)
-    }
-    fn stage_snapshot(&self, id: &str) -> Result<Upload> {
-        Self::valid_id(id)?;
-        let mut inner = self.inner.lock().unwrap();
-        let mut entry = self.entry(&inner, id)?;
-        let fields = inner.db.query_row("SELECT fields FROM documents WHERE id=?1", [id], |r| r.get(0))?;
-        let asset_path = if entry.deleted {
-            None
-        } else {
-            let path = self.root.join("uploads").join(format!("{}-{}.pop", id, crate::random_hex(12)));
-            self.with_owner(&mut inner, id, |owner| {
-                if owner.share()?.is_none() {
-                    snapshot::request_typed(
-                        owner,
-                        Request::Share {
-                            share: Share { room: id.into(), endpoint: pop_storage::LIBRARY_SHARE_ENDPOINT.into() },
-                        },
-                    )?;
-                }
-                // A retry replaces whatever an interrupted attempt left behind.
-                let _ = std::fs::remove_file(&path);
-                snapshot::request(owner, Request::Backup { destination: path.clone() }).map_err(failed)?;
-                Ok(())
-            })?;
-            let info = match self.inspect(&path) {
-                Ok(info) => info,
-                Err(error) => {
-                    let _ = std::fs::remove_file(&path);
-                    return Err(error);
-                }
-            };
-            entry.asset_revision =
-                snapshot::asset_revision(&info.version, &entry.artwork_version, &info.artwork_digest);
-            if entry.artwork_version != info.version {
-                entry.artwork_version.clear();
-            }
-            entry.version = info.version;
-            Some(path.to_string_lossy().into_owned())
-        };
-        let mut authority = Self::authority_inner(&inner, id)?;
-        if let CatalogAuthority::Checkpoint { proof } = &mut authority {
-            proof.version = entry.version.clone();
-        }
-        Ok(Upload { entry, asset_path, fields, authority })
-    }
-    fn inspect(&self, path: &Path) -> Result<snapshot::Info> {
-        if std::fs::metadata(path)?.len() > snapshot::MAX_FILE_BYTES {
-            return Err(Error {
-                issue: Issue::TooLarge,
-                message: "Saved locally. iCloud sync supports pop up to 16 MiB.".into(),
-            });
-        }
-        // Preserve the existing typed compatibility refusal before inspecting history.
-        file::open(path, true)?;
-        snapshot::inspect(path).map_err(failed)
-    }
-    #[allow(clippy::too_many_arguments, reason = "A single complete cloud record enters at this boundary")]
-    pub fn receive(
-        &self,
-        id: &str,
-        title: &str,
-        template: &str,
-        source: Option<&Path>,
-        version: &str,
-        fields: &[u8],
-        deleted: bool,
-        stamp: Option<&CatalogStamp>,
-    ) -> Result<()> {
-        self.receive_with_artwork(id, title, template, source, version, fields, deleted, None, None, stamp)
-    }
-    #[allow(clippy::too_many_arguments, reason = "One complete cloud snapshot enters this boundary")]
-    pub fn receive_with_artwork(
-        &self,
-        id: &str,
-        title: &str,
-        template: &str,
-        source: Option<&Path>,
-        version: &str,
-        fields: &[u8],
-        deleted: bool,
-        artwork_version: Option<&str>,
-        asset_revision: Option<&str>,
-        stamp: Option<&CatalogStamp>,
-    ) -> Result<()> {
-        self.receive_with_authority(
-            id,
-            title,
-            template,
-            source,
-            version,
-            fields,
-            deleted,
-            artwork_version,
-            asset_revision,
-            None,
-            stamp,
-        )
-    }
-    #[allow(clippy::too_many_arguments, reason = "One complete cloud snapshot enters this boundary")]
-    pub fn receive_catalog_snapshot(
-        &self,
-        id: &str,
-        title: &str,
-        template: &str,
-        source: Option<&Path>,
-        version: &str,
-        fields: &[u8],
-        deleted: bool,
-        artwork_version: Option<&str>,
-        asset_revision: Option<&str>,
-        authority: CatalogAuthority,
-        stamp: Option<&CatalogStamp>,
-    ) -> Result<()> {
-        if matches!(authority, CatalogAuthority::Preparing { .. }) {
-            if deleted || source.is_none() {
-                return Err(failed("A preparing relay requires its retained private snapshot"));
-            }
-        } else if !authority.snapshot() {
-            return Err(failed("Catalog authority has no CloudKit snapshot"));
-        }
-        self.receive_with_authority(
-            id,
-            title,
-            template,
-            source,
-            version,
-            fields,
-            deleted,
-            artwork_version,
-            asset_revision,
-            Some(authority),
-            stamp,
-        )
-    }
-    #[allow(clippy::too_many_arguments, reason = "One complete cloud snapshot enters this boundary")]
-    fn receive_with_authority(
-        &self,
-        id: &str,
-        title: &str,
-        template: &str,
-        source: Option<&Path>,
-        version: &str,
-        fields: &[u8],
-        deleted: bool,
-        artwork_version: Option<&str>,
-        asset_revision: Option<&str>,
-        authority: Option<CatalogAuthority>,
-        stamp: Option<&CatalogStamp>,
-    ) -> Result<()> {
-        Self::valid_id(id)?;
-        if fields.len() > 64 * 1024 {
-            return Err(failed("Catalog system fields exceed their limit"));
-        }
-        let mut inner = self.inner.lock().unwrap();
-        stamp::check(&inner.db, id, stamp)?;
-        let prior_stamp = stamp::read(&inner.db, id)?;
-        let supersedes =
-            stamp.is_some_and(|stamp| prior_stamp.as_ref().is_none_or(|old| stamp.revision > old.revision));
-        let current = Self::authority_inner(&inner, id)?;
-        if let Some(authority) = &authority {
-            stamp::authority(&current, authority, stamp)?;
-        } else if !current.snapshot() {
-            return Err(failed("CloudKit bytes are fenced by the relay catalog authority"));
-        }
-
-        let cutoff = match &authority {
-            Some(CatalogAuthority::Snapshot { receipt: Some(receipt) }) => Some(receipt.clone()),
-            _ => None,
-        };
-        let checkpoint_proof = match &authority {
-            Some(CatalogAuthority::Checkpoint {
-                proof: CatalogCheckpointProof { transition, source_version, version },
-            })
-            | Some(CatalogAuthority::Preparing {
-                prior_checkpoint: Some(CatalogCheckpointProof { transition, source_version, version }),
-                ..
-            }) => Some((transition.clone(), source_version.clone(), version.clone())),
-            _ => None,
-        };
-        let cutoff_transition = cutoff
-            .as_ref()
-            .map(|receipt| receipt.transition.clone())
-            .or_else(|| checkpoint_proof.as_ref().map(|proof| proof.0.clone()));
-        let mut recovery_slot_key: Option<String> = None;
-        let mut adopted_artwork: Option<String> = None;
-        let mut confirmed_asset = String::new();
-        let exists: bool =
-            inner.db.query_row("SELECT EXISTS(SELECT 1 FROM documents WHERE id=?1)", [id], |r| r.get(0))?;
-        let tombstoned = exists && self.entry(&inner, id)?.deleted;
-        if !deleted && tombstoned {
-            let tx = inner.db.transaction()?;
-            tx.execute("UPDATE documents SET fields=?2,confirmed_deleted=0 WHERE id=?1", params![id, fields])?;
-            stamp::commit(&tx, id, stamp)?;
-            tx.commit()?;
-            return Ok(());
-        } // A stale device cannot resurrect a deletion.
-        if !deleted {
-            let source = source.ok_or_else(|| failed("Missing document download"))?;
-            let incoming = self.inspect(source)?;
-            if incoming.id != id || incoming.version != version {
-                return Err(failed("Cloud record does not match its document"));
-            }
-            if let Some(CatalogAuthority::Snapshot { receipt: Some(receipt) }) = &authority {
-                if receipt.snapshot_version != version {
-                    return Err(failed("Snapshot receipt does not match the uploaded version"));
-                }
-                let frozen = catalog::validate_freeze(&receipt.freeze)?;
-                let accepted = Store::open(source, Mode::Snapshot)?;
-                if !accepted.document()?.covers_wire_history(&frozen.heads)? {
-                    return Err(failed("Cloud snapshot does not cover its frozen relay receipt"));
-                }
-            }
-            if let Some((_, _, candidate_version)) = &checkpoint_proof
-                && candidate_version != version
-            {
-                return Err(failed("Private checkpoint does not match its accepted epoch"));
-            }
-            let source_version = artwork_version.unwrap_or_default();
-            confirmed_asset = snapshot::asset_revision(version, source_version, &incoming.artwork_digest);
-            if asset_revision.is_some_and(|revision| revision != confirmed_asset) {
-                return Err(failed("Cloud artwork revision does not match its asset"));
-            }
-            if exists && self.path(id).exists() {
-                let local = Store::open(&self.path(id), Mode::Snapshot)?;
-                let remote = Store::open(source, Mode::Snapshot)?;
-                if !snapshot::compatible(&local.app().app, &remote.app().app) {
-                    return Err(Error {
-                        issue: Issue::AppMismatch,
-                        message: "Sync paused: these copies use different data schemas or theme palettes. Your local edits are saved.".into(),
-                    });
-                }
-                let mut expected_local: String =
-                    inner.db.query_row("SELECT confirmed FROM documents WHERE id=?1", [id], |row| row.get(0))?;
-                if let Some(authority) = &authority
-                    && let Some(source) = Self::own_checkpoint_source(&inner, id, authority)?
-                {
-                    expected_local = source;
-                }
-                // Fence the fully validated incoming record before any canonical
-                // write. An uncertain install may retry this same immutable receipt,
-                // but an older callback must never regain authority afterward.
-                stamp::commit(&inner.db, id, stamp)?;
-                let recovery = if let Some(transition) = &cutoff_transition {
-                    let captured_version = self.with_owner(&mut inner, id, |owner| {
-                        let pop_runtime::owner::Reply::State { reading, .. } =
-                            snapshot::request_typed(owner, Request::State)?
-                        else {
-                            return Err(failed("Owner state unavailable during recovery reservation"));
-                        };
-                        Ok(reading.version)
-                    })?;
-                    let (path, key) = self.recovery_slot(&mut inner, id, transition, &captured_version)?;
-                    recovery_slot_key = Some(key);
-                    // Durable evidence precedes canonical replacement. A restart keeps
-                    // both the authority receipt and any completed recovery findable.
-                    let pending = authority.as_ref().expect("receipt has authority").encode()?;
-                    let committed = Self::authority_inner(&inner, id)?.encode()?;
-                    let tx = inner.db.transaction()?;
-                    tx.execute("INSERT INTO catalog(id,committed,pending) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET pending=excluded.pending", params![id,committed,pending])?;
-                    tx.execute("UPDATE documents SET fields=?2 WHERE id=?1", params![id, fields])?;
-                    tx.commit()?;
-                    Some(path)
-                } else {
-                    None
-                };
-                let merged = self.with_owner(&mut inner, id, |owner| {
-                    match snapshot::merge_typed(owner, source) {
-                        Ok(_) => {}
-                        Err(error)
-                            if error.reason == Some(Code::MissingDependencies) && cutoff_transition.is_some() =>
-                        {
-                            snapshot::request_typed(
-                                owner,
-                                Request::AdoptEpoch {
-                                    source: pop_storage::store::EpochLocation::Path(source.to_path_buf()),
-                                    expected_version: expected_local.clone(),
-                                    recovery_destination: recovery.clone().map(pop_storage::store::EpochLocation::Path),
-                                },
-                            )?;
-                        }
-                        Err(error) => return Err(Error::from(error)),
-                    }
-                    snapshot::require_history(owner, source).map_err(failed)?;
-                    if source_version == version {
-                        let store = Store::open(source, Mode::Snapshot)?;
-                        let result = snapshot::request_typed(
-                            owner,
-                            Request::SetArtwork {
-                                source_version: version.into(),
-                                preview: store.artwork(file::Artwork::Preview)?,
-                                icon: store.artwork(file::Artwork::Icon)?,
-                            },
-                        );
-                        match result {
-                            Ok(_) => adopted_artwork = Some(source_version.into()),
-                            Err(error) if error.kind == FailureKind::Replaced => {}
-                            Err(error) => return Err(failed(error)),
-                        }
-                    }
-                    Ok(())
-                });
-                let registered = if let Some(key) = &recovery_slot_key {
-                    self.register_recovery_slot(&mut inner, id, key)
-                } else {
-                    Ok(())
-                };
-                if let Err(error) = merged {
-                    // Even a lost acknowledgment must not hide a completed recovery.
-                    registered?;
-                    inner.db.execute("UPDATE documents SET problem=?2 WHERE id=?1", params![id, error.message])?;
-                    return Err(error);
-                }
-                registered?;
-            } else {
-                stamp::commit(&inner.db, id, stamp)?;
-                snapshot::install(source, &self.path(id), id).map_err(failed)?;
-                adopted_artwork = Some(source_version.into());
-            }
-            self.with_owner(&mut inner, id, |owner| {
-                // The placeholder enables history retention; an existing local relay
-                // membership is already shared and must survive a snapshot download.
-                if cutoff_transition.is_some() || owner.share()?.is_none() {
-                    snapshot::request(
-                        owner,
-                        Request::Share {
-                            share: Share { room: id.into(), endpoint: pop_storage::LIBRARY_SHARE_ENDPOINT.into() },
-                        },
-                    )
-                    .map_err(failed)?;
-                }
-                Ok(())
-            })?;
-        }
-        let tx = inner.db.transaction()?;
-        tx.execute("INSERT INTO documents(id,title,template,confirmed,fields,deleted,confirmed_deleted,remote_delete)
-            VALUES(?1,?2,?3,?4,?5,?6,?6,?6) ON CONFLICT(id) DO UPDATE SET title=excluded.title,
-            template=excluded.template, confirmed=CASE WHEN excluded.deleted THEN documents.confirmed ELSE excluded.confirmed END,
-            fields=excluded.fields, deleted=excluded.deleted,confirmed_deleted=excluded.deleted,remote_delete=excluded.deleted,problem=NULL",
-            params![id,title,template,version,fields,deleted])?;
-        tx.execute(
-            "UPDATE documents SET confirmed_asset=?2, artwork_version=COALESCE(?3,artwork_version),download_removed=0 WHERE id=?1",
-            params![id, confirmed_asset, adopted_artwork],
-        )?;
-        if let Some(authority) = authority {
-            let encoded = authority.encode()?;
-            tx.execute("INSERT INTO catalog(id,committed) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET committed=excluded.committed,pending=CASE WHEN ?3 OR pending=excluded.committed THEN NULL ELSE pending END", params![id,encoded,supersedes])?;
-        }
-        if let Some(transition) = &recovery_slot_key {
-            tx.execute(
-                "UPDATE catalog_recoveries SET ready=1 WHERE document_id=?1 AND transition=?2",
-                params![id, transition],
-            )?;
-            tx.execute("UPDATE documents SET local_only=0 WHERE id IN (SELECT recovery_id FROM catalog_recoveries WHERE document_id=?1 AND transition=?2 AND recovery_id IS NOT NULL)", params![id,transition])?;
-        }
-        stamp::commit(&tx, id, stamp)?;
-        tx.commit()?;
-        let obsolete = Self::retire_checkpoint(&mut inner, id)?;
-        if let Some(filename) = obsolete {
-            let _ = std::fs::remove_file(self.root.join("candidates").join(filename));
-        }
-        Ok(())
-    }
-    pub fn block(&self, id: &str, title: &str, template: &str, message: &str) -> Result<()> {
-        Self::valid_id(id)?;
-        self.inner.lock().unwrap().db.execute(
-            "INSERT INTO documents(id,title,template,problem) VALUES(?1,?2,?3,?4)
-            ON CONFLICT(id) DO UPDATE SET problem=excluded.problem",
-            params![id, title, template, message],
-        )?;
-        Ok(())
-    }
-    pub fn acknowledge(
-        &self,
-        id: &str,
-        version: &str,
-        fields: &[u8],
-        deleted: bool,
-        stamp: Option<&CatalogStamp>,
-    ) -> Result<()> {
-        self.acknowledge_asset(id, version, None, fields, deleted, stamp)
-    }
-    pub fn acknowledge_asset(
-        &self,
-        id: &str,
-        version: &str,
-        asset_revision: Option<&str>,
-        fields: &[u8],
-        deleted: bool,
-        stamp: Option<&CatalogStamp>,
-    ) -> Result<()> {
-        let mut inner = self.inner.lock().unwrap();
-        stamp::check(&inner.db, id, stamp)?;
-        let entry = self.entry(&inner, id)?;
-        let revision = asset_revision
-            .map(String::from)
-            .unwrap_or_else(|| if entry.version == version { entry.asset_revision } else { String::new() });
-        let tx = inner.db.transaction()?;
-        tx.execute(
-            "UPDATE documents SET confirmed=?2, fields=?3, confirmed_deleted=?4 WHERE id=?1",
-            params![id, version, fields, deleted],
-        )?;
-        tx.execute("UPDATE documents SET confirmed_asset=?2 WHERE id=?1", params![id, revision])?;
-        stamp::commit(&tx, id, stamp)?;
-        tx.commit()?;
-        Ok(())
-    }
-    pub fn delete(&self, id: &str) -> Result<()> {
-        use rusqlite::OptionalExtension;
-        Self::valid_id(id)?;
-        let inner = self.inner.lock().unwrap();
-        if Self::checkpoint_pending_inner(&inner, id)? {
-            return Err(failed("Finish the pending private checkpoint before deleting this pop"));
-        }
-
-        if !Self::authority_inner(&inner, id)?.snapshot() || self.pending_authority_unlocked(&inner, id)?.is_some() {
-            return Err(failed("Finish stopping live sharing before deleting this library pop"));
-        }
-
-        let local: Option<(bool, bool)> = inner
+        let existing = inner
             .db
-            .query_row("SELECT local_only,deleted FROM documents WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))
-            .optional()?;
-        if let Some((true, deleted)) = local {
-            // Commit the local deletion intent before unlinking. Cleanup can finish an
-            // interrupted deletion without waiting for a cloud receipt that will never exist.
-            inner.db.execute("UPDATE documents SET deleted=1 WHERE id=?1", [id])?;
-            let path = self.path(id);
-            let removal = match std::fs::symlink_metadata(&path) {
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                _ => file::delete_document(&path),
-            };
-            if let Err(error) = removal {
-                inner.db.execute("UPDATE documents SET deleted=?2 WHERE id=?1", params![id, deleted])?;
-                return Err(error.into());
-            }
-            inner.artwork_cache.borrow_mut().remove(id);
-        } else {
-            inner.db.execute("UPDATE documents SET deleted=1,confirmed_deleted=0,remote_delete=0 WHERE id=?1", [id])?;
-        }
-        Ok(())
-    }
-    /// Evicts only a closed, cloud-confirmed replica. The local-only intent is committed
-    /// before unlinking, so a crash never leaves a missing file treated as an unsynced edit.
-    pub fn remove_download(&self, id: &str) -> Result<()> {
-        Self::valid_id(id)?;
-        let inner = self.inner.lock().unwrap();
-        if Self::checkpoint_pending_inner(&inner, id)? {
-            return Err(failed("Finish the pending private checkpoint before removing this download"));
-        }
-
-        let removed: bool =
-            inner.db.query_row("SELECT download_removed FROM documents WHERE id=?1", [id], |r| r.get(0))?;
-        if removed {
-            return Ok(());
-        }
-        let path = self.path(id);
-        let lease = pop_storage::registry::Lease::acquire(&path)?;
-        let entry = self.entry(&inner, id)?;
-        if entry.deleted || entry.local_only || entry.problem.is_some() || entry.dirty || entry.version.is_empty() {
-            return Err(failed("Sync this pop with iCloud before removing its download"));
-        }
-        lease.check()?;
-        inner.db.execute("UPDATE documents SET download_removed=1 WHERE id=?1", [id])?;
-        if let Err(error) = std::fs::remove_file(&path) {
-            inner.db.execute("UPDATE documents SET download_removed=0 WHERE id=?1", [id])?;
-            return Err(failed(error));
-        }
-        inner.artwork_cache.borrow_mut().remove(id);
-        Ok(())
-    }
-    /// Accepts cloud metadata for an evicted replica without downloading its file.
-    /// Explicit downloads use receive_with_artwork and its complete file acceptance.
-    #[allow(clippy::too_many_arguments, reason = "One complete cloud metadata record enters at this boundary")]
-    pub fn receive_removed_metadata(
-        &self,
-        id: &str,
-        title: &str,
-        template: &str,
-        version: &str,
-        fields: &[u8],
-        artwork_version: Option<&str>,
-        asset_revision: Option<&str>,
-        stamp: Option<&CatalogStamp>,
-    ) -> Result<bool> {
-        Self::valid_id(id)?;
-        let mut inner = self.inner.lock().unwrap();
-        stamp::check(&inner.db, id, stamp)?;
-        let tx = inner.db.transaction()?;
-        let changed = tx.execute(
-            "UPDATE documents SET title=?2,template=?3,confirmed=?4,fields=?5,artwork_version=?6,confirmed_asset=?7,problem=NULL
-             WHERE id=?1 AND download_removed=1 AND deleted=0",
-            params![id, title, template, version, fields, artwork_version.unwrap_or_default(), asset_revision.unwrap_or_default()],
-        )?;
-        if changed != 0 {
-            stamp::commit(&tx, id, stamp)?;
-        }
-        tx.commit()?;
-        Ok(changed != 0)
-    }
-    /// Finalize only after an editor releases ownership. Local-only deletions need no
-    /// cloud receipt. Remote dirty edits become a new local identity; a tombstone always
-    /// remains for the canonical cloud identity.
-    pub fn cleanup(&self) -> Result<()> {
-        let inner = self.inner.lock().unwrap();
-        let ids = inner
-            .db
-            .prepare("SELECT id,local_only FROM documents WHERE deleted=1 AND (confirmed_deleted=1 OR local_only=1)")?
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?)))?
+            .prepare("SELECT account,path FROM documents WHERE id=?1")?
+            .query_map([&info.id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        for (id, local_only) in ids {
-            if !self.path(&id).exists() {
+        if !existing.is_empty() {
+            if existing.iter().any(|(_, path)| Path::new(path) != source) {
+                return Err(Error {
+                    issue: Issue::AppMismatch,
+                    message: "A different local file has this document identity".into(),
+                });
+            }
+            return self.row(&inner, &info.id);
+        }
+        inner.db.execute(
+            "INSERT INTO documents(account,id,title,template,path,version) VALUES('',?1,?2,?3,?4,?5)",
+            params![info.id, title.trim(), template, source.to_string_lossy(), info.version],
+        )?;
+        drop(inner);
+        self.cache_file(&info.id, Some(&info.version))?;
+        let inner = self.inner.lock().unwrap();
+        self.row(&inner, &info.id)
+    }
+    /// One-time local cutover: no CloudKit fields are imported and no existing
+    /// cloud/index binding is replaced. Divergent duplicate identities become visible copies.
+    pub fn adopt_local_cache(&self, source: &Path, title: &str) -> Result<Option<Entry>> {
+        self.check()?;
+        let source = file::resolve(source)?;
+        let info = local::inspect(&source).map_err(failed)?;
+        let source_text = source.to_string_lossy().into_owned();
+        let fingerprint = format!("{}:{}", hex(&info.app_digest), info.fingerprint);
+        let (mapped, existing) = {
+            let inner = self.inner.lock().unwrap();
+            let mapped = inner
+                .db
+                .query_row("SELECT id,fingerprint FROM legacy_sources WHERE path=?1", [&source_text], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .optional()?;
+            let existing = inner
+                .db
+                .prepare("SELECT account,path FROM documents WHERE id=?1")?
+                .query_map([&info.id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            (mapped, existing)
+        };
+        if let Some((id, saved)) = &mapped
+            && ((id == &info.id && existing.iter().any(|(_, path)| path == &source_text))
+                || saved == &fingerprint
+                || existing.iter().any(|(account, path)| !account.is_empty() && path == &source_text))
+        {
+            let inner = self.inner.lock().unwrap();
+            return match self.row(&inner, id) {
+                Ok(entry) if !entry.deleted => Ok(Some(entry)),
+                _ => Ok(None),
+            };
+        }
+        if existing.iter().any(|(account, path)| !account.is_empty() && path == &source_text) {
+            let inner = self.inner.lock().unwrap();
+            let result = self.row(&inner, &info.id).ok();
+            inner.db.execute("INSERT INTO legacy_sources(path,id,fingerprint) VALUES(?1,?2,?3) ON CONFLICT(path) DO UPDATE SET id=excluded.id,fingerprint=excluded.fingerprint",params![source_text,info.id,fingerprint])?;
+            return Ok(result);
+        }
+        let mut target = None;
+        for (_, path) in &existing {
+            if path == &source_text {
                 continue;
             }
-            if inner
-                .live
-                .get(&id)
-                .and_then(Weak::upgrade)
-                .is_some_and(|o| snapshot::request(&o, Request::State).is_ok())
+            if let Ok(known) = local::inspect(Path::new(path))
+                && known.app_digest == info.app_digest
+                && known.fingerprint == info.fingerprint
             {
-                continue;
+                target = Some(info.id.clone());
+                break;
             }
-            if local_only {
-                file::delete_document(&self.path(&id))?;
-                inner.artwork_cache.borrow_mut().remove(&id);
-                continue;
+        }
+        let entry = if target.is_some() {
+            let inner = self.inner.lock().unwrap();
+            self.row(&inner, &info.id).ok()
+        } else if existing.is_empty()
+            || existing.iter().all(|(account, path)| account.is_empty() && path == &source_text)
+        {
+            let mut label = title.to_owned();
+            if let Some(parent) = source.parent().and_then(Path::parent) {
+                let old = parent.join("library.sqlite");
+                if old.is_file()
+                    && let Ok(db) = Connection::open_with_flags(old, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                    && let Ok(saved) = db
+                        .query_row("SELECT title FROM documents WHERE id=?1", [&info.id], |row| row.get::<_, String>(0))
+                {
+                    label = saved;
+                }
             }
-            let owner = Owner::open(&self.path(&id), Mode::Document, Arc::new(|_| {}))?;
-            let (remote, confirmed, title, template): (bool, String, String, String) = inner.db.query_row(
-                "SELECT remote_delete,confirmed,title,template FROM documents WHERE id=?1",
-                [&id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )?;
-            if remote && snapshot::inspect(&self.path(&id)).map_err(failed)?.version != confirmed {
-                let temporary = self.root.join("documents").join(format!("recovered-{}.pop", crate::random_hex(12)));
-                Store::import_copy(&self.path(&id), &temporary)?;
-                let rescued = snapshot::inspect(&temporary).map_err(failed)?.id;
-                std::fs::rename(&temporary, self.path(&rescued))?;
-                inner.db.execute(
-                    "INSERT INTO documents(id,title,template,local_only) VALUES(?1,?2,?3,1)",
-                    params![rescued, format!("{title} — Deleted on another device"), template],
-                )?;
+            let entry = self.adopt(&source, &label)?;
+            self.with_owner(&entry.id, |owner| {
+                local::request(owner, Request::Unshare).map_err(failed)?;
+                local::request(owner, Request::Flush).map_err(failed)?;
+                Ok(())
+            })?;
+            Some(entry)
+        } else {
+            let owner = Owner::open(&source, Mode::Document, Arc::new(|_| {}))?;
+            let destination = self.root.join("documents").join(format!("recovered-{}.pop", random_hex(16)));
+            let copied =
+                local::request(&owner, Request::Copy { destination: destination.clone(), preview: None, icon: None })
+                    .map_err(failed);
+            let closed = local::request(&owner, Request::Close { preview: None, icon: None }).map_err(failed);
+            copied?;
+            closed?;
+            Some(self.adopt(&destination, &format!("Recovered edits — {title}"))?)
+        };
+        let mapped_id = entry.as_ref().map(|entry| entry.id.clone()).or(target).unwrap_or(info.id);
+        self.inner.lock().unwrap().db.execute("INSERT INTO legacy_sources(path,id,fingerprint) VALUES(?1,?2,?3) ON CONFLICT(path) DO UPDATE SET id=excluded.id,fingerprint=excluded.fingerprint",params![source_text,mapped_id,fingerprint])?;
+        Ok(entry)
+    }
+    pub fn register(&self, owner: &Arc<Owner>) -> Result<()> {
+        self.check()?;
+        let Some(id) = owner.app().document_uuid.as_deref() else { return Ok(()) };
+        let token = {
+            let mut inner = self.inner.lock().unwrap();
+            let Ok(entry) = self.row(&inner, id) else { return Ok(()) };
+            if entry.deleted || Path::new(&entry.path) != owner.path() {
+                return Ok(());
             }
-            snapshot::request(&owner, Request::Close { preview: None, icon: None }).map_err(failed)?;
-            std::fs::remove_file(self.path(&id))?;
+            inner.live.insert(id.into(), Arc::downgrade(owner));
+            if entry.local_only { None } else { inner.token.clone() }
+        };
+        if let Some(token) = token {
+            self.attach(id, owner.clone(), &token)?;
         }
         Ok(())
     }
-    pub fn confirmed_revision(&self, id: &str) -> Result<Option<(String, String)>> {
-        use rusqlite::OptionalExtension;
-        Ok(self
+    pub fn unregister(&self, id: &str) -> Result<()> {
+        let (client, owner, deleted) = {
+            let inner = self.inner.lock().unwrap();
+            (
+                inner.clients.get(id).cloned(),
+                inner.live.get(id).and_then(Weak::upgrade),
+                self.row(&inner, id).is_ok_and(|entry| entry.deleted),
+            )
+        };
+        if let Some(client) = client {
+            client.pause();
+        }
+        if let Some(owner) = owner {
+            match local::request_typed(&owner, Request::Flush) {
+                Ok(_) => {}
+                Err(error) if error.kind == FailureKind::Closed => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        let downloaded = {
+            let inner = self.inner.lock().unwrap();
+            self.row(&inner, id).is_ok_and(|entry| entry.downloaded)
+        };
+        if downloaded {
+            self.cache_file(id, None)?;
+        }
+        if deleted && downloaded {
+            self.account_recovery(id, "Recovered edits")?;
+        }
+        let mut inner = self.inner.lock().unwrap();
+        inner.live.remove(id);
+        inner.clients.remove(id);
+        Ok(())
+    }
+    fn attach(&self, id: &str, owner: Arc<Owner>, token: &str) -> Result<Arc<Client>> {
+        let generation = self.operation()?;
+        let previous = self.inner.lock().unwrap().clients.remove(id);
+        if let Some(previous) = previous {
+            previous.pause();
+            previous.flush().map_err(failed)?;
+        }
+        let client = Arc::new(Client::cloud(owner, id, token, &self.state_dir()).map_err(failed)?);
+        let creator = self
             .inner
             .lock()
             .unwrap()
             .db
-            .query_row("SELECT confirmed,confirmed_asset FROM documents WHERE id=?1 AND problem IS NULL", [id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .optional()?)
+            .query_row(
+                "SELECT role='owner' FROM documents WHERE account=?1 AND id=?2",
+                params![self.account, id],
+                |row| row.get::<_, bool>(0),
+            )
+            .unwrap_or(false);
+        client.set_creator(creator);
+        client.connect().map_err(failed)?;
+        self.current_operation(generation)?;
+        let mut inner = self.inner.lock().unwrap();
+        let entry = self.row(&inner, id)?;
+        if entry.deleted || entry.local_only {
+            drop(inner);
+            client.pause();
+            return Err(failed("Cloud access was removed"));
+        }
+        inner.clients.insert(id.into(), client.clone());
+        Ok(client)
     }
-    pub fn retries(&self) -> Result<Vec<Retry>> {
+    pub fn sync(&self, token: &str) -> Result<()> {
+        self.cloud()?;
+        let pending = {
+            let inner = self.inner.lock().unwrap();
+            inner
+                .db
+                .prepare("SELECT id FROM documents WHERE account=?1 AND pending_enable=1 AND deleted=0")?
+                .query_map([&self.account], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        let mut failure = None;
+        let owners = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.token = Some(token.into());
+            inner
+                .live
+                .iter()
+                .filter_map(|(id, owner)| owner.upgrade().map(|owner| (id.clone(), owner)))
+                .collect::<Vec<_>>()
+        };
+        for (id, owner) in owners {
+            let entry = {
+                let inner = self.inner.lock().unwrap();
+                self.row(&inner, &id)?
+            };
+            if !entry.local_only
+                && !entry.deleted
+                && let Err(error) = self.attach(&id, owner, token)
+            {
+                failure = Some(error);
+            }
+        }
+        for id in pending {
+            if let Err(error) = self.enable_sync(&id, token) {
+                failure = Some(error);
+            }
+        }
+        if let Err(error) = self.repair_catalog(token) {
+            failure = Some(error);
+        }
+        failure.map_or(Ok(()), Err)
+    }
+    pub fn connection(&self, id: &str) -> Option<Arc<Client>> {
+        self.inner.lock().unwrap().clients.get(id).cloned()
+    }
+    pub fn status(&self, id: &str) -> Option<ClientStatus> {
+        self.connection(id).map(|client| client.status())
+    }
+    pub fn enable_sync(&self, id: &str, token: &str) -> Result<Entry> {
+        let generation = self.operation()?;
+        let entry = {
+            let inner = self.inner.lock().unwrap();
+            self.row(&inner, id)?
+        };
+        // Selecting synchronization durably binds this exact local file to the account.
+        {
+            let mut inner = self.inner.lock().unwrap();
+            let tx = inner.db.transaction()?;
+            tx.execute("INSERT INTO documents(account,id,title,template,path,version,role,pending_enable) VALUES(?1,?2,?3,?4,?5,?6,'owner',1) ON CONFLICT(account,id) DO UPDATE SET pending_enable=1,path=excluded.path,role='owner',deleted=0",params![self.account,id,entry.title,entry.template,entry.path,entry.version])?;
+            tx.execute("DELETE FROM documents WHERE account='' AND id=?1", [id])?;
+            tx.commit()?;
+        }
+        let outcome = self.with_owner(id, |owner| {
+            pop_sharing_client::bootstrap(owner, token, &self.state_dir()).map_err(failed)?;
+            self.current_operation(generation)?;
+            pop_sharing_client::update_document(id, &entry.title, &entry.template, token).map_err(failed)?;
+            self.current_operation(generation)
+        });
+        if let Err(error) = outcome {
+            self.inner.lock().unwrap().db.execute(
+                "UPDATE documents SET problem=?3 WHERE account=?1 AND id=?2",
+                params![self.account, id, error.message],
+            )?;
+            return Err(error);
+        }
+        let live = {
+            let mut inner = self.inner.lock().unwrap();
+            let tx = inner.db.transaction()?;
+            tx.execute(
+                "UPDATE documents SET pending_enable=0,problem=NULL WHERE account=?1 AND id=?2",
+                params![self.account, id],
+            )?;
+            tx.execute("DELETE FROM documents WHERE account='' AND id=?1", [id])?;
+            tx.commit()?;
+            inner.token = Some(token.into());
+            inner.live.get(id).and_then(Weak::upgrade)
+        };
+        self.queue_catalog(id, false)?;
+        if let Some(owner) = live {
+            self.attach(id, owner, token)?;
+        }
+        let inner = self.inner.lock().unwrap();
+        self.row(&inner, id)
+    }
+    pub fn download(&self, id: &str, token: &str) -> Result<Entry> {
+        let generation = self.operation()?;
+        let entry = {
+            let inner = self.inner.lock().unwrap();
+            self.row(&inner, id)?
+        };
+        if entry.deleted {
+            return Err(failed("Cloud document is no longer available"));
+        }
+        let access = pop_sharing_client::authorized_access(id, token).map_err(failed)?;
+        self.current_operation(generation)?;
+        if access.is_none() {
+            self.receive_catalog(&[DocumentEntry {
+                document_id: id.into(),
+                title: entry.title,
+                template_id: entry.template,
+                app_revision: None,
+                preview_ref: None,
+                modified_at: 0,
+                role: entry.role.ok_or_else(|| failed("Local document is not a cloud download"))?,
+                access_generation: 0,
+                catalog_revision: 0,
+                deleted: true,
+            }])?;
+            self.queue_catalog(id, true)?;
+            return Err(failed("Cloud document access was removed; local edits were retained"));
+        }
+        if entry.downloaded {
+            return Ok(entry);
+        }
+        let resolved = pop_sharing_client::resolve(id, token)
+            .map_err(failed)?
+            .ok_or_else(|| failed("Cloud document is not ready"))?;
+        self.current_operation(generation)?;
+        resolved.install(Path::new(&entry.path), &self.state_dir()).map_err(failed)?;
+        self.cache_file(id, None)?;
+        let inner = self.inner.lock().unwrap();
+        self.row(&inner, id)
+    }
+    pub fn access(&self, id: &str, token: &str) -> Result<AccessState> {
+        self.cloud()?;
+        pop_sharing_client::access(id, token).map_err(failed)
+    }
+    pub fn sharing(&self, id: &str, enabled: bool, token: &str) -> Result<AccessState> {
+        self.cloud()?;
+        pop_sharing_client::set_sharing(id, enabled, token).map_err(failed)
+    }
+    pub fn join(&self, link: &str, token: &str) -> Result<Entry> {
+        self.cloud()?;
+        let access = pop_sharing_client::join_member(link, token).map_err(failed)?;
+        let id = access.document;
+        let metadata = pop_sharing_client::document_metadata(&id, token).map_err(failed)?;
+        let path = self.cached_path(&id);
+        {
+            let inner = self.inner.lock().unwrap();
+            inner.db.execute("INSERT INTO documents(account,id,title,template,path,role) VALUES(?1,?2,?3,?4,?5,'editor') ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role='editor',deleted=0",params![self.account,id,metadata.title,metadata.template_id,path.to_string_lossy()])?;
+        }
+        self.queue_catalog(&id, false)?;
+        self.download(&id, token)
+    }
+    pub fn leave(&self, id: &str, token: &str) -> Result<()> {
+        self.cloud()?;
+        self.unregister(id)?;
+        let downloaded = {
+            let inner = self.inner.lock().unwrap();
+            self.row(&inner, id)?.downloaded
+        };
+        if downloaded {
+            self.local_copy(id, "Retained local copy")?;
+        }
+        pop_sharing_client::leave(id, token).map_err(failed)?;
+        self.inner
+            .lock()
+            .unwrap()
+            .db
+            .execute("UPDATE documents SET deleted=1 WHERE account=?1 AND id=?2", params![self.account, id])?;
+        self.queue_catalog(id, true)?;
+        Ok(())
+    }
+    pub fn delete_everywhere(&self, id: &str, token: &str) -> Result<()> {
+        self.cloud()?;
+        self.unregister(id)?;
+        pop_sharing_client::delete_document(id, token).map_err(failed)?;
+        self.inner
+            .lock()
+            .unwrap()
+            .db
+            .execute("UPDATE documents SET deleted=1 WHERE account=?1 AND id=?2", params![self.account, id])?;
+        self.queue_catalog(id, true)?;
+        Ok(())
+    }
+    pub fn remove_download(&self, id: &str) -> Result<()> {
+        self.cloud()?;
+        let entry = {
+            let inner = self.inner.lock().unwrap();
+            if inner.live.get(id).and_then(Weak::upgrade).is_some() {
+                return Err(Error {
+                    issue: Issue::Busy,
+                    message: "Close this pop before removing its download".into(),
+                });
+            }
+            self.row(&inner, id)?
+        };
+        if entry.local_only {
+            return Err(failed("Local-only documents have no cloud download"));
+        }
+        if !entry.downloaded {
+            return Ok(());
+        }
+        if !Path::new(&entry.path).starts_with(self.root.join("accounts").join(&self.scope)) {
+            return Err(failed("This document is outside the cloud cache; its original file is retained"));
+        }
+        if !pop_sharing_client::saved_confirmed(Path::new(&entry.path), &self.state_dir(), id).map_err(failed)? {
+            return Err(failed("This download has unconfirmed edits; synchronize it before removal"));
+        }
+        self.unregister(id)?;
+        file::delete_document(Path::new(&entry.path))?;
+        Ok(())
+    }
+    pub fn delete_local(&self, id: &str) -> Result<()> {
+        let entry = {
+            let inner = self.inner.lock().unwrap();
+            self.row(&inner, id)?
+        };
+        if !entry.local_only {
+            return Err(failed("Use cloud deletion for synchronized documents"));
+        }
+        self.unregister(id)?;
+        file::delete_document(Path::new(&entry.path))?;
+        self.inner.lock().unwrap().db.execute(
+            "DELETE FROM documents WHERE account=?1 AND id=?2",
+            params![if entry.account_bound { &self.account } else { "" }, id],
+        )?;
+        Ok(())
+    }
+    fn cache_file(&self, id: &str, artwork_source: Option<&str>) -> Result<()> {
+        let entry = {
+            let inner = self.inner.lock().unwrap();
+            self.row(&inner, id)?
+        };
+        let info = local::inspect(Path::new(&entry.path)).map_err(failed)?;
+        let stamp = file_stamp(Path::new(&entry.path))?;
+        let inner = self.inner.lock().unwrap();
+        inner.db.execute("UPDATE documents SET version=?3,artwork_digest=?4,file_stamp=?5,artwork_version=coalesce(?6,artwork_version) WHERE account=?1 AND id=?2",params![if entry.account_bound { &self.account } else { "" },id,info.version,info.artwork_digest,stamp,artwork_source])?;
+        Ok(())
+    }
+    fn repair_catalog(&self, token: &str) -> Result<()> {
+        let generation = self.operation()?;
+        let registered = pop_sharing_client::registered_documents(token).map_err(failed)?;
+        for document in registered.documents {
+            Self::valid(&document.document)?;
+            let needs_repair: bool = self
+                .inner
+                .lock()
+                .unwrap()
+                .db
+                .query_row(
+                    "SELECT catalog_seen=0 AND NOT EXISTS(SELECT 1 FROM catalog_writes WHERE account=?1 AND id=?2) FROM documents WHERE account=?1 AND id=?2",
+                    params![self.account, document.document],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .unwrap_or(true);
+            if !needs_repair {
+                continue;
+            }
+            let access = pop_sharing_client::authorized_access(&document.document, token).map_err(failed)?;
+            self.current_operation(generation)?;
+            if let Some(access) = access {
+                let Some(metadata) =
+                    pop_sharing_client::ready_document_metadata(&document.document, token).map_err(failed)?
+                else {
+                    continue;
+                };
+                self.current_operation(generation)?;
+                let inner = self.inner.lock().unwrap();
+                inner.db.execute("INSERT INTO documents(account,id,title,template,path,role) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0",params![self.account,document.document,metadata.title,metadata.template_id,self.cached_path(&document.document).to_string_lossy(),if access.role == DocumentRole::Owner {"owner"} else {"editor"}])?;
+                drop(inner);
+                self.queue_catalog(&document.document, false)?;
+            }
+        }
+        Ok(())
+    }
+    fn queue_catalog(&self, id: &str, deleted: bool) -> Result<()> {
+        self.cloud()?;
+        let mut inner = self.inner.lock().unwrap();
+        let entry = self.row(&inner, id)?;
+        let tx = inner.db.transaction()?;
+        let previous: i64 = tx
+            .query_row("SELECT revision FROM catalog_clock WHERE account=?1", [&self.account], |row| row.get(0))
+            .optional()?
+            .unwrap_or(0);
+        let revision = previous.checked_add(1).ok_or_else(|| failed("Catalog revision exhausted"))?;
+        let modified_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(failed)?
+            .as_millis()
+            .try_into()
+            .map_err(failed)?;
+        let desired = DocumentEntry {
+            document_id: id.into(),
+            title: entry.title,
+            template_id: entry.template,
+            app_revision: None,
+            preview_ref: None,
+            modified_at,
+            role: entry.role.ok_or_else(|| failed("Local document has no cloud catalog"))?,
+            access_generation: 0,
+            catalog_revision: revision as u64,
+            deleted,
+        };
+        tx.execute("INSERT INTO catalog_clock(account,revision) VALUES(?1,?2) ON CONFLICT(account) DO UPDATE SET revision=excluded.revision",params![self.account,revision])?;
+        tx.execute("INSERT INTO catalog_writes(account,id,revision,payload) VALUES(?1,?2,?3,?4) ON CONFLICT(account,id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload",params![self.account,id,revision,serde_json::to_string(&desired).map_err(failed)?])?;
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn pending_catalog_writes(&self) -> Result<Vec<DocumentEntry>> {
+        self.cloud()?;
+        let inner = self.inner.lock().unwrap();
+        let payloads = inner
+            .db
+            .prepare("SELECT payload FROM catalog_writes WHERE account=?1 ORDER BY revision")?
+            .query_map([&self.account], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        payloads.into_iter().map(|payload| serde_json::from_str(&payload).map_err(failed)).collect()
+    }
+    pub fn ack_catalog_write(&self, document_id: &str, catalog_revision: u64) -> Result<()> {
+        self.cloud()?;
+        Self::valid(document_id)?;
+        let mut inner = self.inner.lock().unwrap();
+        let tx = inner.db.transaction()?;
+        let removed = tx.execute(
+            "DELETE FROM catalog_writes WHERE account=?1 AND id=?2 AND revision=?3",
+            params![self.account, document_id, i64::try_from(catalog_revision).map_err(failed)?],
+        )?;
+        if removed != 0 {
+            tx.execute(
+                "UPDATE documents SET catalog_seen=1 WHERE account=?1 AND id=?2",
+                params![self.account, document_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn account_paths(&self) -> Result<Vec<String>> {
         let inner = self.inner.lock().unwrap();
         Ok(inner
             .db
-            .prepare("SELECT id,title,template,message,retry_at,incoming FROM retries")?
-            .query_map([], |r| {
-                Ok(Retry {
-                    id: r.get(0)?,
-                    title: r.get(1)?,
-                    template: r.get(2)?,
-                    message: r.get(3)?,
-                    retry_at: r.get(4)?,
-                    incoming: r.get(5)?,
-                })
-            })?
+            .prepare("SELECT DISTINCT path FROM documents WHERE account<>''")?
+            .query_map([], |row| row.get(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?)
     }
-    pub fn retry(&self, retry: &Retry) -> Result<()> {
-        self.inner.lock().unwrap().db.execute(
-            "INSERT INTO retries VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(id) DO UPDATE SET
-            title=excluded.title,template=excluded.template,message=excluded.message,retry_at=excluded.retry_at,incoming=excluded.incoming",
-            params![retry.id, retry.title, retry.template, retry.message, retry.retry_at, retry.incoming],
-        )?;
-        Ok(())
-    }
-    /// Forget a missing cloud record only for a durable local deletion. The next
-    /// upload creates a tombstone; absence alone is never a deletion receipt.
-    pub fn prepare_deletion_reupload(&self, id: &str) -> Result<bool> {
-        Self::valid_id(id)?;
-        let mut inner = self.inner.lock().unwrap();
-        let tx = inner.db.transaction()?;
-        let changed = tx.execute(
-            "UPDATE documents SET fields=NULL,problem=NULL,confirmed_deleted=0 WHERE id=?1 AND deleted=1 AND local_only=0",
-            [id],
-        )?;
-        if changed != 0 {
-            tx.execute("DELETE FROM retries WHERE id=?1", [id])?;
-        }
-        tx.commit()?;
-        Ok(changed != 0)
-    }
-    pub fn clear_retry(&self, id: &str) -> Result<()> {
-        self.inner.lock().unwrap().db.execute("DELETE FROM retries WHERE id=?1", [id])?;
-        Ok(())
-    }
-    pub fn change_token(&self) -> Result<Option<Vec<u8>>> {
-        Ok(self
-            .inner
-            .lock()
-            .unwrap()
-            .db
-            .query_row("SELECT value FROM meta WHERE key='change_token'", [], |r| r.get(0))
-            .ok())
-    }
-    pub fn save_change_token(&self, bytes: &[u8]) -> Result<()> {
-        self.inner.lock().unwrap().db.execute(
-            "INSERT INTO meta VALUES('change_token',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            [bytes],
-        )?;
-        Ok(())
-    }
-    pub fn release_upload(&self, path: &Path) -> Result<()> {
-        if path.parent() == Some(self.root.join("candidates").as_path()) {
-            if self.candidate_is_retained(path)? {
-                return Ok(());
-            }
-            if path.exists() {
-                std::fs::remove_file(path)?;
-            }
+    fn discover_recoveries(&self) -> Result<()> {
+        if self.account.is_empty() {
             return Ok(());
         }
-        if path.parent() != Some(self.root.join("uploads").as_path()) {
-            return Err(failed("Not a library upload"));
+        let directory = self.state_dir().join("Recovered");
+        let paths = match std::fs::read_dir(directory) {
+            Ok(paths) => paths,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        for path in paths {
+            let path = path?.path();
+            if !path.is_file() || path.extension().is_none_or(|extension| extension != "pop") {
+                continue;
+            }
+            let known: bool = self.inner.lock().unwrap().db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM documents WHERE path=?1)",
+                [path.to_string_lossy().as_ref()],
+                |row| row.get(0),
+            )?;
+            if !known {
+                self.index_recovery(&path, "Recovered edits")?;
+            }
         }
-        if path.exists() {
-            std::fs::remove_file(path)?;
+        Ok(())
+    }
+    fn index_recovery(&self, path: &Path, title: &str) -> Result<Entry> {
+        let info = local::inspect(path).map_err(failed)?;
+        let store = Store::open(path, Mode::Snapshot)?;
+        if store.share()?.is_some() {
+            return Err(failed("Recovery still belongs to a cloud document"));
+        }
+        let template = store.app().app.metadata().slug.clone();
+        store.close()?;
+        let inner = self.inner.lock().unwrap();
+        inner.db.execute(
+            "INSERT OR IGNORE INTO documents(account,id,title,template,path,version) VALUES(?1,?2,?3,?4,?5,?6)",
+            params![self.account, info.id, title, template, path.to_string_lossy(), info.version],
+        )?;
+        self.row(&inner, &info.id)
+    }
+    fn account_recovery(&self, id: &str, title: &str) -> Result<Entry> {
+        let info = self.with_owner(id, |owner| {
+            let state = local::request(owner, Request::State).map_err(failed)?;
+            let pop_runtime::owner::Reply::State { reading, .. } = state else {
+                return Err(failed("Missing owner state"));
+            };
+            Ok(reading.version)
+        })?;
+        let directory = self.state_dir().join("Recovered");
+        std::fs::create_dir_all(&directory)?;
+        let digest = hex(&Sha256::digest(format!("{id}:{info}").as_bytes()));
+        let path = directory.join(format!("{digest}.pop"));
+        if !path.exists() {
+            self.with_owner(id, |owner| {
+                local::request(owner, Request::Copy { destination: path.clone(), preview: None, icon: None })
+                    .map_err(failed)?;
+                Ok(())
+            })?;
+        }
+        self.index_recovery(&path, title)
+    }
+    pub fn local_copy(&self, id: &str, title: &str) -> Result<Entry> {
+        let path = self.root.join("documents").join(format!("copy-{}.pop", random_hex(16)));
+        self.with_owner(id, |owner| {
+            local::request(owner, Request::Copy { destination: path.clone(), preview: None, icon: None })
+                .map_err(failed)?;
+            Ok(())
+        })?;
+        self.adopt(&path, title)
+    }
+    pub fn rename(&self, id: &str, title: &str) -> Result<()> {
+        self.check()?;
+        let (entry, token) = {
+            let inner = self.inner.lock().unwrap();
+            (self.row(&inner, id)?, inner.token.clone())
+        };
+        if entry.role == Some(DocumentRole::Owner) {
+            pop_sharing_client::update_document(
+                id,
+                title,
+                &entry.template,
+                token.as_deref().ok_or_else(|| failed("Sign in first"))?,
+            )
+            .map_err(failed)?;
+        }
+        let inner = self.inner.lock().unwrap();
+        inner.db.execute(
+            "UPDATE documents SET title=?3 WHERE account=?1 AND id=?2",
+            params![if entry.account_bound { &self.account } else { "" }, id, title.trim()],
+        )?;
+        drop(inner);
+        if !entry.local_only {
+            self.queue_catalog(id, false)?;
+        }
+        Ok(())
+    }
+    pub fn publish_artwork(
+        &self,
+        owner: &Arc<Owner>,
+        version: &str,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+    ) -> Result<bool> {
+        let Some(id) = owner.app().document_uuid.as_deref() else {
+            return Ok(false);
+        };
+        {
+            let inner = self.inner.lock().unwrap();
+            if self.row(&inner, id).is_err() {
+                return Ok(false);
+            }
+        }
+        local::request(owner, Request::SetArtwork { source_version: version.into(), preview, icon }).map_err(failed)?;
+        self.cache_file(id, Some(version))?;
+        Ok(true)
+    }
+    pub fn detach(&self) -> Result<()> {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.active.store(false, Ordering::Release);
+        let (clients, owners) = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.token = None;
+            (
+                std::mem::take(&mut inner.clients),
+                inner
+                    .live
+                    .values()
+                    .filter_map(Weak::upgrade)
+                    .chain(inner.retained.values().cloned())
+                    .collect::<Vec<_>>(),
+            )
+        };
+        for client in clients.into_values() {
+            client.pause();
+        }
+        let mut failure = None;
+        for owner in owners {
+            if let Err(error) = local::request_typed(&owner, Request::Flush)
+                && error.kind != FailureKind::Closed
+            {
+                failure.get_or_insert(error);
+            }
+        }
+        if let Some(error) = failure {
+            self.active.store(true, Ordering::Release);
+            return Err(error.into());
         }
         Ok(())
     }
 }
-
+fn file_stamp(path: &Path) -> Result<String> {
+    use std::os::unix::fs::MetadataExt;
+    let metadata = std::fs::metadata(path)?;
+    let mut stamp = format!(
+        "{}:{}:{}:{}:{}",
+        metadata.dev(),
+        metadata.ino(),
+        metadata.len(),
+        metadata.mtime(),
+        metadata.mtime_nsec()
+    );
+    let wal = PathBuf::from(format!("{}-wal", path.to_string_lossy()));
+    if let Ok(metadata) = std::fs::metadata(wal) {
+        stamp.push_str(&format!(":{}:{}:{}", metadata.len(), metadata.mtime(), metadata.mtime_nsec()));
+    }
+    Ok(stamp)
+}
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 fn random_hex(bytes: usize) -> String {
-    let mut buffer = vec![0; bytes];
-    getrandom::getrandom(&mut buffer).expect("random bytes");
-    hex(&buffer)
+    let mut value = vec![0; bytes];
+    getrandom::getrandom(&mut value).expect("OS random source");
+    hex(&value)
 }
-fn encode(value: &impl serde::Serialize) -> String {
-    serde_json::to_string(value).expect("core values encode as JSON")
+
+#[cfg(test)]
+mod catalog_tests {
+    use super::*;
+    #[test]
+    fn pending_metadata_survives_restart_and_an_old_ack_cannot_erase_a_new_desired_value() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = Library::open(directory.path(), "account-a").unwrap();
+        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let mut entry = DocumentEntry {
+            document_id: id.into(),
+            title: "First".into(),
+            template_id: "fixture".into(),
+            app_revision: None,
+            preview_ref: None,
+            modified_at: 0,
+            role: DocumentRole::Owner,
+            access_generation: 1,
+            catalog_revision: 0,
+            deleted: false,
+        };
+        library.receive_catalog(&[entry.clone()]).unwrap();
+        library.queue_catalog(id, false).unwrap();
+        let first = library.pending_catalog_writes().unwrap().pop().unwrap();
+        entry.title = "Latest".into();
+        library.receive_catalog(&[entry]).unwrap();
+        library.queue_catalog(id, false).unwrap();
+        drop(library);
+        let library = Library::open(directory.path(), "account-a").unwrap();
+        library.ack_catalog_write(id, first.catalog_revision).unwrap();
+        let writes = library.pending_catalog_writes().unwrap();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].title, "Latest");
+        assert!(writes[0].catalog_revision > first.catalog_revision);
+        assert!(Library::open(directory.path(), "account-b").unwrap().pending_catalog_writes().unwrap().is_empty());
+        library.ack_catalog_write(id, writes[0].catalog_revision).unwrap();
+        assert!(library.pending_catalog_writes().unwrap().is_empty());
+    }
 }

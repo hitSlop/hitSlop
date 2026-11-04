@@ -8,7 +8,6 @@ pub struct ResolvedRoom {
     pub(crate) key: RoomKey,
     pub(crate) info: RoomInfo,
     pub(crate) epoch: EpochState,
-    credential: String,
     pub(crate) seed: PrivateSeed,
 }
 impl ResolvedRoom {
@@ -20,26 +19,6 @@ impl ResolvedRoom {
     }
     pub fn seed_hash(&self) -> &str {
         &self.epoch.seed_hash
-    }
-    pub fn validate_authority(&self, authority: &pop_library::CatalogAuthority) -> Result<()> {
-        let binding = authority.relay_binding().map_err(fail)?.ok_or("The catalog has no relay authority")?;
-        if binding.room != self.key.room {
-            return Err("Different catalog relay room".into());
-        }
-        if let pop_library::CatalogAuthority::Handoff { freeze, .. } = authority {
-            let frozen: pop_sharing_protocol::lifecycle::Handoff = serde_json::from_str(freeze).map_err(fail)?;
-            if self.epoch.handoff.as_ref() != Some(&frozen) {
-                return Err("Different frozen catalog handoff".into());
-            }
-        }
-        Ok(())
-    }
-    pub fn credential(&self) -> &str {
-        &self.credential
-    }
-    /// Canonical metadata only; checkpoint/history bytes never cross the native bridge.
-    pub fn handoff(&self) -> Result<Option<String>> {
-        self.epoch.handoff.as_ref().map(serde_json::to_string).transpose().map_err(fail)
     }
     /// Installs only a missing canonical file. Existing local state is never replaced by
     /// resolution; its owner must explicitly adopt an epoch with recovery safeguards.
@@ -92,32 +71,18 @@ impl Drop for PrivateSeed {
 /// Resolve creator access by account identity, without a local file or Owner. An
 /// unfinished upload has no accepted live plan yet; its catalog Preparing state resumes it.
 pub fn resolve(document: &str, token: &str) -> Result<Option<ResolvedRoom>> {
-    resolve_at(document, token, pop_sharing_protocol::TRUSTED_ORIGIN)
-}
-pub(super) fn resolve_at(document: &str, token: &str, origin: &str) -> Result<Option<ResolvedRoom>> {
-    if !pop_sharing_protocol::valid_copy(document) {
-        return Err("Invalid document identity".into());
-    }
-    let room: Option<AccountRoom> =
-        account_request_at(origin, "GET", &format!("account/rooms/{document}"), token, &[])?;
-    let Some(room) = room else { return Ok(None) };
-    if !pop_sharing_protocol::valid_room(&room.room) {
-        return Err("Invalid account room".into());
-    }
-    let Some((credential, info)) = creator_credential_at(document, &room.room, token, origin)? else { return Ok(None) };
+    let key = RoomKey::identity(document, token)?;
+    let info = room_info(&key, Some(token))?;
     if info.phase != RoomPhase::Live {
         return Ok(None);
     }
-    let key = RoomKey { origin: origin.into(), ..credential.runtime()? };
     let epoch = epoch(&key, token)?;
-    download(key, info, epoch, credential.encode()?, token).map(Some).map_err(String::from)
+    download(key, info, epoch, token).map(Some).map_err(Into::into)
 }
-
 pub(crate) fn download(
     key: RoomKey,
     info: RoomInfo,
     epoch: EpochState,
-    credential: String,
     token: &str,
 ) -> std::result::Result<ResolvedRoom, transport::HttpFailure> {
     if info.seed_hash.as_deref() != Some(epoch.seed_hash.as_str()) {
@@ -142,7 +107,7 @@ pub(crate) fn download(
         return Err("Resolved seed frontier mismatch".into());
     }
     store.close().map_err(transport::HttpFailure::from)?;
-    Ok(ResolvedRoom { key, info, epoch, credential, seed })
+    Ok(ResolvedRoom { key, info, epoch, seed })
 }
 
 pub(crate) fn epoch(key: &RoomKey, identity: &str) -> std::result::Result<EpochState, transport::HttpFailure> {

@@ -42,12 +42,22 @@ struct PhoneRootView: View {
       .navigationDestination(for: PhoneRoute.self) { route in
         switch route {
         case .template(let template):
-          PhoneTemplateDetail(template: template, creating: model.busy, canCreate: library.isReady) {
-            model.create(template, name: $0)
+          PhoneTemplateDetail(template: template, creating: model.busy, canSync: !library.accountIdentity.isEmpty) {
+            name, sync in
+            model.create(template, name: name, sync: sync)
           }
         case .document(let url):
           if let session = model.session, session.file.url == url {
-            PhoneEditorView(session: session, model: model, library: library)
+            if model.accountRequired {
+              VStack(spacing: 16) {
+                Text("Sign in to reopen this document").font(.headline)
+                Text("Your file and unsaved text are retained on this device.")
+                Button("Account") { showSharingAccount = true }
+                Button("Retry") { Task { await library.syncNow() } }
+              }.padding()
+            } else {
+              PhoneEditorView(session: session, model: model, library: library)
+            }
           }
         }
       }
@@ -82,7 +92,7 @@ struct PhoneRootView: View {
             Toggle("Haptic Feedback", isOn: $hapticsEnabled)
               .appHaptic(.selection, trigger: hapticsEnabled)
           }
-          Section("iCloud") {
+          Section("Sync across devices") {
             LibrarySyncStatusView(library: library)
             Button("Sync Now") {
               model.tapped()
@@ -168,6 +178,7 @@ struct PhoneRootView: View {
         withAnimation(reduceMotion ? nil : .default) { path.removeAll(where: \.isDocument) }
       }
     }
+    .onChange(of: library.accountBoundPaths) { _, _ in model.libraryChanged() }
     .onChange(of: library.entries) { _, _ in model.libraryChanged() }
     .onChange(of: library.hasLoaded) { _, _ in model.libraryChanged() }
     .onChange(of: scenePhase) { _, phase in

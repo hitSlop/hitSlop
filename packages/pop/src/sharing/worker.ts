@@ -242,7 +242,8 @@ async function compactRoom(epoch: number, full: boolean) {
     console.warn("Room compaction failed; retrying", error);
     compactAfter = Date.now() + backoff;
     backoff = Math.min(SharingHost.backoffMaxMs, backoff * 2);
-    if (error instanceof TransportError && error.status === 410) resourceFailure(error, epoch);
+    if (error instanceof TransportError && (error.status === 410 || error.status === 403))
+      resourceFailure(error, epoch);
   } finally {
     if (compacting === epoch) compacting = 0;
   }
@@ -436,7 +437,7 @@ function reconnectAfterCompaction(epoch: number) {
 }
 function resourceFailure(error: unknown, epoch = generation) {
   if (epoch !== generation || refreshing) return;
-  if (error instanceof TransportError && error.status === 410) {
+  if (error instanceof TransportError && (error.status === 410 || error.status === 403)) {
     ended = true;
     void settleEndedCopy();
     return;
@@ -920,7 +921,7 @@ async function refreshEpoch() {
   } catch (error) {
     // Refusal, quota and uncertain writes keep the old copy and its recovery reservation.
     // No automatic retry may overwrite either one while authority is uncertain.
-    if (error instanceof TransportError && error.status === 410) {
+    if (error instanceof TransportError && (error.status === 410 || error.status === 403)) {
       ended = true;
       void settleEndedCopy();
     } else reportSync("Shared refresh paused: " + String(error), "paused");
@@ -943,19 +944,22 @@ const owner = new WorkerOwner<BrowserCopy>({
       owner.copy ||
       typeof candidate !== "string" ||
       !candidate.startsWith(`${config.host}/join#`) ||
-      !/^[0-9a-f]{32}\.[0-9a-f]{64}$/.test(candidate.slice(`${config.host}/join#`.length))
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{64}$/.test(
+        candidate.slice(`${config.host}/join#`.length),
+      )
     )
       throw new Error("Sharing link is no longer valid");
     invitation = candidate;
     const [room, capability] = candidate.split("#")[1]!.split(".");
     let response: Response;
     try {
-      response = await checkedFetch(`${config.relay}/v1/rooms/${room}`, {
+      response = await checkedFetch(`${config.relay}/v1/documents/${room}`, {
         headers: { Authorization: `Bearer ${capability}` },
         credentials: "omit",
       });
     } catch (error) {
-      if (!(error instanceof TransportError) || error.status !== 410) throw error;
+      if (!(error instanceof TransportError) || (error.status !== 410 && error.status !== 403))
+        throw error;
       ended = true;
       return true;
     }

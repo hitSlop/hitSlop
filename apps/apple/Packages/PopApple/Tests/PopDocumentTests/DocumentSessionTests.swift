@@ -33,9 +33,11 @@ import WebKit
       try? FileManager.default.removeItem(at: original)
       try? FileManager.default.removeItem(at: directory)
     }
-    let library = try NativeLibrary.open(root: directory.appendingPathComponent("library").path, account: "test")
-    let entry = try library.adopt(source: original.path, title: "Full document")
-    let root = URL(fileURLWithPath: entry.path)
+    // A closed, accepted shared-file fixture exercises retention without any cloud service.
+    let document = try #require(try sharingLocalDocument(path: original.path))
+    try Fixtures.sql(
+      original, "INSERT INTO share(id,room,endpoint) VALUES(1,'\(document)','https://share.dotpop.click')")
+    let root = original
     let session = try await DocumentSession.open(url: root)
     session.load()
     try await session.waitUntilReady()

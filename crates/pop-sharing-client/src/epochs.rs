@@ -69,7 +69,7 @@ pub(crate) fn bootstrap(
     key: &RoomKey,
     access: &Access,
 ) -> std::result::Result<(), transport::HttpFailure> {
-    let token = access.identity.as_deref().unwrap_or(&key.capability);
+    let token = access.identity.as_deref().unwrap_or(key.bearer());
     let info = room_info(key, Some(token))?;
     if info.phase != RoomPhase::Live {
         return Err(local("Sharing is not live"));
@@ -93,12 +93,7 @@ pub(crate) fn bootstrap(
             }
         }
     }
-    let credential = Credential {
-        link: Invitation { room: key.room.clone(), capability: key.capability.clone() }.link()?,
-        ended: false,
-    }
-    .encode()?;
-    let resolved = resolution::download(key.clone(), info, epoch, credential, token)?;
+    let resolved = resolution::download(key.clone(), info, epoch, token)?;
     adopt(owner, &resolved, &access.journal)?;
     Ok(())
 }
@@ -212,7 +207,7 @@ pub(crate) fn publish(
                 .collect(),
         };
         publication.validate().map_err(local)?;
-        let token = access.identity.as_deref().unwrap_or(&key.capability);
+        let token = access.identity.as_deref().unwrap_or(key.bearer());
         let bytes = std::fs::read(&seed.path).map_err(local)?;
         transport::http_typed(
             key,
@@ -239,12 +234,7 @@ pub(crate) fn publish(
         {
             let transaction = access.journal.transaction().map_err(local)?;
             let receipt = access.journal.receipt(
-                EpochState {
-                    seed_hash: seed.hash.clone(),
-                    root: seed.version.clone(),
-                    heads: seed.version.clone(),
-                    handoff: None,
-                },
+                EpochState { seed_hash: seed.hash.clone(), root: seed.version.clone(), heads: seed.version.clone() },
                 seed.epoch_version.clone(),
                 None,
             );
@@ -267,7 +257,7 @@ pub(crate) fn publish(
     })();
     // Releasing a committed stage is refused with 409; an uncertain publication
     // therefore cannot delete its authoritative seed. Losing candidates free leases.
-    let token = access.identity.as_deref().unwrap_or(&key.capability);
+    let token = access.identity.as_deref().unwrap_or(key.bearer());
     let _ = transport::http_typed(key, "DELETE", &format!("epochs/{}", seed.hash), Some(token), &[], &[]);
     let _ = std::fs::remove_file(&seed.path);
     if let Some(directory) = seed.path.parent() {

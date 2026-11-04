@@ -32,19 +32,20 @@ pub(crate) struct Transaction<'a> {
 }
 impl Journal {
     pub fn new(directory: &Path, key: &RoomKey, document: &str) -> Result<Self> {
+        Self::at(directory, &key.origin, &key.room, document)
+    }
+    pub fn at(directory: &Path, origin: &str, room: &str, document: &str) -> Result<Self> {
         if !directory.is_absolute() || !pop_sharing_protocol::valid_copy(document) {
             return Err("Invalid relay state location".into());
         }
         use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory).map_err(fail)?;
-        let name = hex(&Sha256::digest(
-            serde_json::to_vec(&(key.origin.as_str(), key.room.as_str(), document)).map_err(fail)?,
-        ));
+        let name = hex(&Sha256::digest(serde_json::to_vec(&(origin, room, document)).map_err(fail)?));
         Ok(Self {
             directory: directory.into(),
             name,
-            endpoint: key.origin.clone(),
-            room: key.room.clone(),
+            endpoint: origin.into(),
+            room: room.into(),
             document: document.into(),
             checked_recovery: Mutex::new(None),
         })
@@ -74,25 +75,6 @@ impl Journal {
         }
         *self.checked_recovery.lock().unwrap() = Some((path.to_owned(), stamp));
         true
-    }
-    pub fn frozen_handoff(&self) -> Result<bool> {
-        let transaction = self.transaction()?;
-        Ok([transaction.pending()?, transaction.current()?]
-            .into_iter()
-            .flatten()
-            .any(|receipt| receipt.epoch.handoff.is_some()))
-    }
-    pub fn retire_handoff(&self, freeze: &str) -> Result<()> {
-        let frozen: pop_sharing_protocol::lifecycle::Handoff = serde_json::from_str(freeze).map_err(fail)?;
-        frozen.validate()?;
-        let transaction = self.transaction()?;
-        if let Some(mut receipt) = transaction.current()?
-            && receipt.epoch.handoff.as_ref() == Some(&frozen)
-        {
-            receipt.epoch.handoff = None;
-            transaction.confirm(&receipt)?;
-        }
-        Ok(())
     }
     pub fn completed_recovery(&self) -> Option<PathBuf> {
         if let Ok(transaction) = self.transaction() {
