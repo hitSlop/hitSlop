@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Catalog entries are published by the document service using IAM credentials.
+    // A catalog entry is discovery metadata, never authorization to a cloud document.
+    match /users/{userId}/documents/{documentId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

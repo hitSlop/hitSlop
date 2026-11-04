@@ -132,12 +132,13 @@ Archive and export both use manual signing with the installed **Developer ID App
 certificate for direct DMG distribution. App Store Connect credentials are used only
 for notarization; packaging does not create development certificates or provisioning profiles.
 
-Mac releases ship the Synced Library using **Production** CloudKit in
-`iCloud.com.hitslop.app`, matching TestFlight and App Store iPhones. Restricted
-CloudKit and push entitlements require a **Developer ID provisioning profile** for
+Mac and iPhone releases use the same Firebase account and cloud-document service.
+Deploy and qualify Firestore rules/indexes and the Document DO/R2 service before
+shipping clients that require it. Associated domains and Keychain access require
+a **Developer ID provisioning profile** for
 team `78UAXU8QG8`, App ID `78UAXU8QG8.com.hitslop.app`. Store its base64 bytes in the
 GitHub Actions secret `MACOS_PROVISIONING_PROFILE`. Regenerate the Developer ID
-profile after changing App ID capabilities (including iCloud containers, push, associated domains or Keychain groups),
+profile after changing App ID capabilities (including associated domains or Keychain groups),
 when renewing its signing certificate, or before expiration, then update the secret.
 Packaging validates the profile before building, selects it for archive/export,
 embeds it at `Contents/embedded.provisionprofile` before final signing, and checks
@@ -164,8 +165,7 @@ This archives, signs and produces a local DMG/ZIP/appcast; it does not publish
 or upload Crashlytics symbols. Normal candidates retain the dSYM upload phase.
 It skips automated signed-host acceptance and notarization, so it cannot replace the
 notarized workflow candidate or its Gatekeeper qualification. Archive and derived
-data are temporary and removed on exit. The local development-signed installer uses
-the Development CloudKit environment; it does not prove Production sync.
+data are temporary and removed on exit. Local development credentials do not prove production cloud-document access.
 
 Stapling and ticket validation retry ticket-service error 68 up to three times, waiting
 10, 20 and 40 seconds. Other errors fail immediately; exhausting the retries also fails
@@ -375,9 +375,11 @@ Mac's Time Machine backup alongside the retained release assets.
   Check the page, edit, save, close and reopen; create one new document too. Until the
   first public release, use the prelaunch sanity set and record that limitation.
 - Check Recents, a basic PNG/PDF export, and quit/relaunch with saved edits intact.
-- Check Synced Library with the same iCloud account on the Mac candidate and a
+- Check Synced Library with the same Firebase account on the Mac candidate and a
   TestFlight/App Store iPhone: create and edit from each device, quit/relaunch,
-  and confirm both directions sync through Production.
+  and confirm both directions sync through the production document service.
+  Verify discovery on a fresh device, download-on-open, invitation revocation while
+  owner sync continues, and sign-out hiding files without losing pending edits.
 - Check live collaboration without launch flags in the signed Mac candidate: Apple
   sign-in, create/copy a link, join on another Mac/iPhone and in Chrome, edit from
   each copy, reconnect after offline edits, Stop and re-share, Save Unshared Copy,

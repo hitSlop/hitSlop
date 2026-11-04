@@ -236,7 +236,11 @@ const tiers: Tier[] = [
   },
   {
     name: "sharing", nightly: true, needs: ["sharing"], inputs: tierInputs.sharing,
-    run: async () => { await sh([process.execPath, "scripts/sharing/check-accounts.ts"]); },
+    run: async () => {
+      await sh([process.execPath, "scripts/sharing/check-accounts.ts"]);
+      await sh(["firebase", "emulators:exec", "--only", "auth,firestore", "--project", "demo-pop-catalog",
+        `${process.execPath} scripts/sharing/check-firestore.ts`]);
+    },
   },
   {
     name: "packed",

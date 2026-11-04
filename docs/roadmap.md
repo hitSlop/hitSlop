@@ -8,9 +8,8 @@ live with others, and export PNG and PDF.
 The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates pop,
 bundles the Popular templates and imports from Files. The current
 iPhone host is portrait-only; per-pop orientation declarations remain future work. The Mac/iPhone Synced Library
-keeps managed pop in sync through the person's iCloud account. The Mac app
-includes the Synced Library on CloudKit Production, matching TestFlight/App Store
-iPhones. iPhone Home Screen
+is being replaced by Firestore discovery and persistent Cloudflare documents;
+see the [cloud document specification](cloud-documents.md) for the approved cutover. iPhone Home Screen
 widgets render library pop with a widget view locally, open them on tap, and refresh
 in the background when iOS allows.
 [Architecture](architecture.md#synced-library) owns the library design.
@@ -461,3 +460,11 @@ direct editing of loose files in iCloud Drive and other synced folders (the Sync
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
 Pre-launch documents are not migrated.
+
+## Persistent cloud documents
+
+Approved replacement of CloudKit with Firestore discovery and persistent Cloudflare
+document state is in progress on `cloud-document-sync`, stacked over the Rust foundation
+PR. The [cloud document specification](cloud-documents.md) owns identity, permissions,
+local/offline behavior, clean cutover and future template boundaries. Production
+deployment and physical-device qualification are pending.
