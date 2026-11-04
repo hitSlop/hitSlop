@@ -35,9 +35,10 @@ the latest desired entry for each document. A local operation revision prevents 
 acknowledgement clearing a newer pending write; it is not a distributed catalog clock.
 
 Firestore listeners discover entries on other devices. Revocation is immediate at the
-DO, but a guest's reference may remain listed until their client checks access. The
-client then cleans up its own reference. Shared titles and other metadata may likewise
-refresh when opened. This intentionally eventual library requires no server publication
+DO. An explicit download check that receives a definitive access denial cleans up
+the client's own reference. A cached guest copy can remain listed after its transport
+is refused; its local work stays available. Shared titles and other metadata may
+likewise remain stale. This intentionally eventual library requires no server publication
 or cross-user Firestore writes.
 
 If upload succeeds before catalog publication and that client disappears, the account

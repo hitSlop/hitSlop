@@ -35,5 +35,5 @@ also passed. Firestore ownership/isolation passed against the real Auth and
 Firestore emulators again after preserving existing project rules.
 
 Production deployment is not a physical-device synchronization proof. Device Rust
-frameworks built successfully; iPhone app compilation and disposable-document
-qualification remain in progress. Existing user documents are not test fixtures.
+frameworks and the arm64 iOS simulator app built successfully. Signed device build
+and disposable-document qualification remain in progress. Existing user documents are not test fixtures.
