@@ -347,6 +347,15 @@ impl Drop for Client {
 pub fn joined_credential(link: &str) -> Result<String> {
     serde_json::to_string(&GuestCredential { link: Invitation::parse(link)?.link()?, ended: false }).map_err(fail)
 }
+/// The saved anonymous relationship, without contacting the service or claiming
+/// current access. Opaque malformed or already-ended credentials have no relationship.
+pub fn credential_document(value: &str) -> Option<String> {
+    let credential = Credential::decode(value).ok()?;
+    if credential.ended() {
+        return None;
+    }
+    Some(credential.runtime().ok()?.room)
+}
 pub fn invitation_document(link: &str) -> Result<String> {
     let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
     Ok(room_info(&key, None)?.document)

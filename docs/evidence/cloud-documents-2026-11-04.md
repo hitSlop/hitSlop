@@ -89,3 +89,46 @@ The fix rebuild reused all 77 cache entries and took 0.6 seconds for that phase.
 Final `bun run verify --native` passed after the promotion fix: Swift and native
 integration ran again, including frozen compatibility replay. Other tiers reused
 their prior exact-input passes. The affected verification took 232.4 seconds.
+
+## App-update relocation regression
+
+The catalog UI rebuild exposed an independent local-cache bug. The new iPhone data
+container had a different UUID, while six library entries still held absolute paths
+into the previous container. Opening an undownloaded entry failed with OS error 1.
+Duplicate old/current legacy-source keys also explained false recovery copies.
+Only index metadata was copied for diagnosis; document files were not edited.
+
+Rust now stores library-owned paths relative to the current library root. A shared
+path helper rebases only matching iOS app-data container prefixes. Migration runs
+before Inbox inference and legacy discovery, preserves genuine external Mac paths,
+and normalizes colliding source mappings without deleting any documents or recovery
+copies. Public entry paths resolve against the current root. Recovery journal paths
+are relative to their owning state directory and resolve before retrying a saved copy.
+
+Both library relocation regressions failed for the intended stale-path reason before
+the fix, then passed. All 13 library tests and the container helper test passed. The
+journal test likewise failed first, then verified the moved recovery's data, independent
+UUID and receipt promotion after the fix. Scoped strict Clippy passed for storage,
+library and sharing client. Fixed iPhone installation and final native qualification
+are recorded after the physical retry.
+
+## Final catalog and device qualification
+
+The final compact build was installed on the attached iPhone without resetting its
+data. The user confirmed “Mac sync proof” downloads, opens and leaves Inbox. Read-only
+index diagnostics show no references to either obsolete container prefix: managed
+paths are relative, external legacy locations use the current prefix, and the entry's
+opened flag is set. Recovery rows remain exactly three, with no additional false copies.
+
+Physical screenshots were reviewed for the compact Recents grid and Templates grid,
+category selection, title wrapping, artwork, download badges and native floating tabs.
+Inbox was observed before opening and absent afterward. The Mac catalog and shared
+presentation compile in the native Swift checks; the three-pane layout and keyboard
+routing were reviewed in source. The user deferred the additional dark-mode and
+larger-text hands-on check. Broader VoiceOver and release/TestFlight qualification
+remain separate from this development proof.
+
+Final `bun run verify` passed in 426.1 seconds, including 484 Rust tests, three frozen
+compatibility corpora, contracts, SDK/shell, CLI, rendering and packed-package checks.
+Final `bun run verify --native` passed in 265.9 seconds, rerunning Swift and native
+integration after the final changes. Builds remained serial with two compiler jobs.

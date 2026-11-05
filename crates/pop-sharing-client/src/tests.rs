@@ -76,4 +76,49 @@ fn anonymous_credentials_are_explicit_uuid_invitations_and_never_identity_tokens
     assert_eq!(decoded.runtime().unwrap().capability(), Some("b".repeat(64).as_str()));
     assert!(decoded.runtime().unwrap().origin.starts_with("https://"));
     assert!(joined_credential("https://attacker.example/join#secret").is_err());
+    assert_eq!(credential_document(&encoded).as_deref(), Some("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+    let ended = serde_json::to_string(&GuestCredential { link, ended: true }).unwrap();
+    assert_eq!(credential_document(&ended), None);
+    for invalid in ["identity-token", "{}", r#"{"link":"https://attacker.example/join#secret","ended":false}"#] {
+        assert_eq!(credential_document(invalid), None);
+    }
+}
+
+#[test]
+fn pending_recovery_remains_openable_when_the_device_state_directory_moves() {
+    let (directory, owner) = fixture();
+    let document = owner.app().document_uuid.clone().unwrap();
+    let key = RoomKey::identity(&document, "memory-only-test-token").unwrap();
+    let access = test_access(&owner, &key, true);
+    request(
+        &owner,
+        Request::Apply {
+            batch: serde_json::from_value(serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":7}]}))
+                .unwrap(),
+            origin: pop_core::Origin::Page,
+        },
+    )
+    .unwrap();
+    let original = access.journal.transaction().unwrap().current().unwrap().unwrap();
+    let destination = access.journal.recovery_destination(&original.owner_version).unwrap();
+    request(&owner, Request::Copy { destination: destination.clone(), preview: None, icon: None }).unwrap();
+    let pending = access.journal.receipt(original.epoch, "pending-installed-version".into(), Some(destination));
+    access.journal.transaction().unwrap().prepare(&pending).unwrap();
+    request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    drop(access);
+    let moved = directory.path().join("relocated-state");
+    std::fs::rename(directory.path().join("relay-state"), &moved).unwrap();
+    let journal = journal::Journal::new(&moved, &key, &document).unwrap();
+    let transaction = journal.transaction().unwrap();
+    let pending = transaction.pending().unwrap().unwrap();
+    let recovered = Store::open(pending.recovery.as_ref().unwrap(), Mode::Snapshot)
+        .expect("pending recovery must resolve inside the moved device state directory");
+    assert_ne!(recovered.app().document_uuid.as_deref(), Some(document.as_str()));
+    assert_eq!(recovered.document().unwrap().reading().unwrap().value["hits"].as_f64(), Some(7.0));
+    recovered.close().unwrap();
+    transaction.promote(&pending).unwrap();
+    let confirmed = transaction.current().unwrap().unwrap();
+    let recovered = Store::open(confirmed.recovery.as_ref().unwrap(), Mode::Snapshot).unwrap();
+    assert_eq!(recovered.document().unwrap().reading().unwrap().value["hits"].as_f64(), Some(7.0));
+    recovered.close().unwrap();
 }

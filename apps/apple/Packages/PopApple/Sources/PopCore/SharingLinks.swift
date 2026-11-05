@@ -5,6 +5,7 @@ import Security
 extension Notification.Name {
   public static let popSharingAccountChanged = Notification.Name("pop.sharingAccountChanged")
   public static let popSharingForeground = Notification.Name("pop.sharingForeground")
+  public static let popSharingCredentialsChanged = Notification.Name("pop.sharingCredentialsChanged")
   public static let popSharingRecoveryAvailable = Notification.Name("pop.sharingRecoveryAvailable")
   public static let popOpenSharingRecovery = Notification.Name("pop.openSharingRecovery")
   public static let popJoinSharedPop = Notification.Name("pop.joinSharedPop")
@@ -100,11 +101,17 @@ public enum SharingCredentials {
         return (document, value)
       })
   }
+  /// A catalog snapshot of actual guest credentials. Rust validates their opaque
+  /// contents; neither a filename nor a remembered document UUID implies sharing.
+  public static func guestDocumentIDs() throws -> Set<String> {
+    Set(try all().values.compactMap { sharingCredentialDocument(credential: $0) })
+  }
   public static func remove(_ document: String) throws {
     let status = SecItemDelete(try query(document) as CFDictionary)
     guard status == errSecSuccess || status == errSecItemNotFound else {
       throw failure(status, "Could not clear sharing details. Unlock this device and retry.")
     }
+    NotificationCenter.default.post(name: .popSharingCredentialsChanged, object: nil)
   }
   public static func write(_ value: String, document: String) throws {
     let query = try query(document)
@@ -119,5 +126,6 @@ public enum SharingCredentials {
     guard status == errSecSuccess else {
       throw failure(status, "Could not save sharing details in Keychain. Unlock this device and retry.")
     }
+    NotificationCenter.default.post(name: .popSharingCredentialsChanged, object: nil)
   }
 }

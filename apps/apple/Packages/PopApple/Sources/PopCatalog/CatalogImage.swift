@@ -15,7 +15,7 @@ struct IconTile: View {
       .frame(width: size, height: size)
       .background(CatalogStyle.card, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
       .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(CatalogStyle.hairline))
-      .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
+      .shadow(color: .black.opacity(0.05), radius: 3, y: 2)
   }
 }
 

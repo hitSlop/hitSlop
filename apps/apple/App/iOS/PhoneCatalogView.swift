@@ -10,97 +10,143 @@ struct PhoneCatalogView: View {
   @Binding var query: String
   @Binding var category: String
 
+  @Environment(\.dynamicTypeSize) private var typeSize
+
   var body: some View {
     TabView(selection: $tab) {
       libraryList.tabItem { Label("Recents", systemImage: "clock") }.tag(PhoneTab.recents)
       templateList.tabItem { Label("Templates", systemImage: "square.grid.2x2.fill") }.tag(PhoneTab.templates)
     }
+    .tint(PopBrand.accent)
     .appHaptic(.selection, trigger: tab) { _, _ in model.session == nil }
     .appHaptic(.selection, trigger: category)
     .navigationTitle(tab == .templates ? "Templates" : "Recents")
   }
   private var header: some View {
     HStack(spacing: 12) {
-      PopBrandMark()
+      PopBrandMark(size: 42)
       Spacer()
       Button {
         model.tapped()
         showSettings = true
       } label: {
-        Image(systemName: "gearshape").font(.title3).foregroundStyle(.primary).frame(width: 44, height: 44)
+        Image(systemName: "gearshape").font(.title3).foregroundStyle(PopBrand.accent).frame(width: 44, height: 44)
       }
       .accessibilityLabel("Settings")
     }.padding(.horizontal, 22).padding(.top, 4).padding(.bottom, 6)
+  }
+  private var allDocuments: [PhoneRecent] { model.recents(in: library.visibleEntries) }
+  private var matchingDocuments: [PhoneRecent] {
+    allDocuments.filter {
+      query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.title.localizedCaseInsensitiveContains(query)
+    }
   }
   private var libraryList: some View {
     VStack(spacing: 0) {
       header
       search
-      HStack {
-        Text("Recents").font(PopBrand.heading(20, relativeTo: .title2))
-        Spacer()
+      GeometryReader { geometry in
+        ScrollView {
+          VStack(alignment: .leading, spacing: 12) {
+            let inbox = matchingDocuments.filter { $0.entry?.inbox == true }
+            let recents = matchingDocuments.filter { $0.entry?.inbox != true }
+            if !inbox.isEmpty {
+              sectionHeading("Inbox", count: inbox.count)
+              inboxStrip(inbox)
+            }
+            sectionHeading("Recents", refresh: true)
+            if allDocuments.isEmpty {
+              firstUse
+            } else if matchingDocuments.isEmpty {
+              ContentUnavailableView.search(text: query)
+            } else if !recents.isEmpty {
+              documentGrid(recents, width: geometry.size.width)
+            } else {
+              Text("Opened documents will appear here.").font(.subheadline).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity).padding(.vertical, 28)
+            }
+          }.padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 20)
+        }.refreshable { await model.syncNow() }
+      }
+    }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      LibrarySyncStatusView(library: library).padding(.vertical, 6).background(PopBrand.cream)
+    }
+    .background(PopBrand.cream)
+  }
+  private func columns(width: CGFloat) -> [GridItem] {
+    let count = typeSize.isAccessibilitySize ? (width < 500 ? 1 : 2) : (width < 350 || typeSize >= .xxxLarge ? 2 : 3)
+    return Array(repeating: GridItem(.flexible(), spacing: 14, alignment: .top), count: count)
+  }
+  private func artworkSize(width: CGFloat) -> CGFloat {
+    min(90, (width - 40 - CGFloat(columns(width: width).count - 1) * 14) / CGFloat(columns(width: width).count))
+  }
+  private func inboxStrip(_ documents: [PhoneRecent]) -> some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      LazyHStack(alignment: .top, spacing: 12) {
+        ForEach(documents) { recent in
+          recentTile(recent, artworkSize: 70).frame(width: typeSize.isAccessibilitySize ? 150 : 96)
+        }
+      }.padding(.horizontal, 4).padding(.vertical, 6)
+    }
+    .padding(.bottom, 6)
+  }
+  private func documentGrid(_ documents: [PhoneRecent], width: CGFloat) -> some View {
+    LazyVGrid(columns: columns(width: width), alignment: .center, spacing: 18) {
+      ForEach(documents) { recent in recentTile(recent, artworkSize: artworkSize(width: width)) }
+    }
+  }
+  private func sectionHeading(_ title: String, count: Int? = nil, refresh: Bool = false) -> some View {
+    HStack(spacing: 8) {
+      Text(title).font(PopBrand.heading(24, relativeTo: .title2))
+      if let count {
+        Text("\(count)").font(.caption.weight(.semibold)).monospacedDigit()
+          .padding(.horizontal, 8).padding(.vertical, 3)
+          .background(PopBrand.accent.opacity(0.1), in: Capsule()).foregroundStyle(PopBrand.accent)
+      }
+      Spacer()
+      if refresh {
         Button {
           model.tapped()
           Task { await model.syncNow() }
         } label: {
-          if library.isSyncing { ProgressView() } else { Image(systemName: "arrow.triangle.2.circlepath") }
+          Group {
+            if library.isSyncing {
+              ProgressView()
+            } else {
+              Image(systemName: "arrow.triangle.2.circlepath").font(.title2)
+            }
+          }.frame(width: 44, height: 44).foregroundStyle(PopBrand.accent)
         }.accessibilityLabel("Sync Now").disabled(library.isSyncing)
-      }.padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 4)
-      List {
-        ForEach(
-          model.recents(in: library.visibleEntries).filter {
-            query.isEmpty || $0.title.localizedCaseInsensitiveContains(query)
-          }
-        ) {
-          recent in
-          recentRow(recent)
-            .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-        }
-        if library.visibleEntries.isEmpty && model.documents.isEmpty {
-          VStack(spacing: 14) {
-            Image(systemName: "sparkles").font(.system(size: 34)).foregroundStyle(PopBrand.accent)
-            Text("A little app for your next thing.").font(.title3.bold())
-            Text("Start a checklist here. Pick it up on your Mac.").foregroundStyle(.secondary).multilineTextAlignment(
-              .center)
-            Button("Explore templates") { tab = .templates }.buttonStyle(.borderedProminent).tint(PopBrand.accent)
-          }
-          .frame(maxWidth: .infinity)
-          .multilineTextAlignment(.center)
-          .padding(.horizontal, 14).padding(.top, 66)
-          .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 14))
-          .listRowSeparator(.hidden).listRowBackground(Color.clear)
-        }
       }
-      .listStyle(.plain).scrollContentBackground(.hidden)
-      .contentMargins(.top, 0, for: .scrollContent)
-      .refreshable { await model.syncNow() }
-      LibrarySyncStatusView(library: library)
-    }.background(PopBrand.cream)
+    }.accessibilityElement(children: .contain)
   }
-  private func recentRow(_ recent: PhoneRecent) -> some View {
-    let subtitle = recent.entry.map { library.state(for: $0) } ?? "On this iPhone"
-    let cloud = recent.entry.map { !$0.localOnly } ?? false
-    let canRemoveDownload = recent.entry.map { $0.downloaded && !$0.dirty && $0.problem == nil } ?? false
-    let unavailable =
-      recent.entry?.problem != nil && recent.entry?.downloaded != false
-      && !FileManager.default.fileExists(atPath: recent.url.path)
+  private var firstUse: some View {
+    VStack(spacing: 14) {
+      Image(systemName: "sparkles").font(.system(size: 34)).foregroundStyle(PopBrand.accent)
+      Text("A little app for your next thing.").font(.title3.bold())
+      Text("Start with a template. Keep it here or sync across devices.").foregroundStyle(.secondary)
+      Button("Explore templates") { tab = .templates }.buttonStyle(.borderedProminent).tint(PopBrand.accent)
+    }.multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(.vertical, 50)
+  }
+  private func recentTile(_ recent: PhoneRecent, artworkSize: CGFloat) -> some View {
+    let presentation: CatalogDocumentPresentation =
+      recent.entry.map { CatalogDocumentPresentation(entry: $0, needsAttention: recent.isUnavailable) }
+      ?? CatalogDocumentPresentation(
+        needsAttention: recent.isUnavailable, downloaded: true, localOnly: true,
+        sharing: recent.documentID.map { library.guestDocumentIDs.contains($0) } == true ? .sharedWithYou : .none)
     return Button {
       model.open(recent.url)
     } label: {
-      PhonePopRow(
-        url: recent.url, title: recent.title, subtitle: subtitle,
-        revision: recent.entry?.assetRevision ?? "", synced: recent.entry.map { library.isSynced($0) } ?? false,
-        downloaded: recent.entry?.downloaded ?? true)
+      PhonePopTile(
+        url: recent.url, title: recent.title,
+        revision: (recent.entry?.assetRevision ?? "") + (recent.entry?.downloaded == false ? "|cloud" : "|local"),
+        presentation: presentation, artworkSize: artworkSize)
     }
     .buttonStyle(.plain)
-    .disabled(unavailable)
     .contextMenu { removalActions(recent) }
-    .swipeActions(edge: .trailing, allowsFullSwipe: !cloud || canRemoveDownload) {
-      removalActions(recent)
-    }
-    .accessibilityLabel(recent.title).accessibilityValue(subtitle)
+    .accessibilityActions { removalActions(recent) }
+    .accessibilityLabel(recent.title).accessibilityValue(presentation.accessibilityValue)
     .disabled(model.busy)
   }
   @ViewBuilder private func removalActions(_ recent: PhoneRecent) -> some View {
@@ -128,8 +174,8 @@ struct PhoneCatalogView: View {
     HStack(spacing: 10) {
       Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
       TextField("Search pop", text: $query).autocorrectionDisabled()
-    }.padding(.horizontal, 13).padding(.vertical, 9).background(
-      Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12)
+    }.padding(.horizontal, 13).padding(.vertical, 14).background(
+      Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 17)
     )
     .padding(.horizontal, 22)
   }
@@ -164,23 +210,34 @@ struct PhoneCatalogView: View {
         Text(category).font(PopBrand.heading(24, relativeTo: .title2))
         Spacer()
       }
-      .padding(.horizontal, 24).padding(.top, 25).padding(.bottom, 12)
-      ScrollView {
-        LazyVStack(spacing: 0) {
-          ForEach(
-            model.templates.filter {
-              $0.categories.contains(category) && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query))
-            }
-          ) {
-            template in
-            NavigationLink(value: PhoneRoute.template(template)) {
-              PhonePopRow(
-                url: template.url, title: template.title, subtitle: template.categories.joined(separator: " · "))
-            }.buttonStyle(.plain).accessibilityLabel(template.title)
+      .padding(.horizontal, 24).padding(.top, 25).padding(.bottom, 6)
+      GeometryReader { geometry in
+        ScrollView {
+          let templates = model.templates.filter {
+            $0.categories.contains(category) && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query))
           }
-        }.padding(.horizontal, 14)
-        Text("More little apps are on their way.").font(.footnote).foregroundStyle(.secondary).padding(28)
+          if templates.isEmpty {
+            if query.isEmpty {
+              ContentUnavailableView("No templates here yet", systemImage: "square.grid.2x2")
+            } else {
+              ContentUnavailableView.search(text: query)
+            }
+          } else {
+            LazyVGrid(columns: columns(width: geometry.size.width), spacing: 18) {
+              ForEach(templates) { template in
+                NavigationLink(value: PhoneRoute.template(template)) {
+                  PhonePopTile(
+                    url: template.url, title: template.title, artworkSize: artworkSize(width: geometry.size.width))
+                }.buttonStyle(.plain).accessibilityLabel(template.title)
+              }
+            }.padding(.horizontal, 20).padding(.bottom, 28)
+          }
+        }
       }
-    }.background(PopBrand.cream)
+    }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      LibrarySyncStatusView(library: library).padding(.vertical, 6).background(PopBrand.cream)
+    }
+    .background(PopBrand.cream)
   }
 }

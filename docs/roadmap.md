@@ -471,3 +471,10 @@ service and client catalog rules were deployed on 2026-11-04. A physical Mac–i
 proof passed discovery, bidirectional edits, concurrent offline merge and reopen
 persistence. Full release qualification remains open; see the
 [deployment evidence](evidence/cloud-documents-2026-11-04.md).
+
+The [Apple catalog refresh](apple-catalog.md) adds responsive iPhone icon grids,
+matching native document badges and a per-device Inbox with a count. Its state is
+cached in the Rust library index. Native verification and the physical iPhone Inbox,
+download, compact Recents and Templates checks passed; the additional dark-mode and
+larger-text hands-on review was deferred. See the
+[qualification evidence](evidence/cloud-documents-2026-11-04.md).

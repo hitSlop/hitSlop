@@ -56,6 +56,8 @@ pub struct Entry {
     pub problem: Option<String>,
     pub role: Option<core::DocumentRole>,
     pub revision: u64,
+    pub sharing_enabled: Option<bool>,
+    pub inbox: bool,
 }
 #[derive(uniffi::Object)]
 pub struct NativeLibrary(Arc<core::Library>);

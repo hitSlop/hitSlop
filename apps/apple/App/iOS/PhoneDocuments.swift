@@ -10,6 +10,8 @@ struct PhoneRecent: Identifiable, Sendable {
   let url: URL
   let title: String
   let entry: SyncedPop?
+  var documentID: String? = nil
+  var isUnavailable = false
   var id: String { url.standardizedFileURL.path }
 
   static func isSharedDocument(_ url: URL) -> Bool {
@@ -43,6 +45,8 @@ struct PhoneRecent: Identifiable, Sendable {
   @Published var accountRequired = false
   @Published var documents: [URL] = []
   @Published var templates: [PhoneTemplate] = []
+  @Published var unavailableDocuments: Set<URL> = []
+  @Published var localDocumentIDs: [URL: String] = [:]
   @Published var localTitles: [URL: String] = [:]
   @Published private var fileDates: [URL: Date] = [:]
   @Published private var openedAt: [String: Double] = [:]
@@ -132,7 +136,12 @@ struct PhoneRecent: Identifiable, Sendable {
     }
   }
   func recents(in entries: [SyncedPop]) -> [PhoneRecent] {
-    let synced = entries.map { PhoneRecent(url: URL(fileURLWithPath: $0.path), title: $0.title, entry: $0) }
+    let synced = entries.map { entry in
+      let url = URL(fileURLWithPath: entry.path)
+      return PhoneRecent(
+        url: url, title: entry.title, entry: entry,
+        isUnavailable: entry.downloaded && unavailableDocuments.contains(url))
+    }
     let managed = Set(synced.map(\.id))
     let local = documents.compactMap { url -> PhoneRecent? in
       guard !managed.contains(url.standardizedFileURL.path) else { return nil }
@@ -140,7 +149,7 @@ struct PhoneRecent: Identifiable, Sendable {
         url: url,
         title: localTitles[url]
           ?? (PhoneRecent.isSharedDocument(url) ? "Shared pop" : url.deletingPathExtension().lastPathComponent),
-        entry: nil)
+        entry: nil, documentID: localDocumentIDs[url], isUnavailable: unavailableDocuments.contains(url))
     }
     func activity(_ recent: PhoneRecent) -> Date {
       max(
@@ -246,20 +255,31 @@ struct PhoneRecent: Identifiable, Sendable {
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
     let paths = Set(documents + PopLibrary.shared.visibleEntries.map { URL(fileURLWithPath: $0.path) })
     refreshTask?.cancel()
+    let previousDocumentIDs = localDocumentIDs
     refreshTask = Task {
       let metadata = await Task.detached(priority: .utility) {
         var titles: [URL: String] = [:]
         var dates: [URL: Date] = [:]
+        var documentIDs: [URL: String] = [:]
+        var unavailable: Set<URL> = []
         for url in paths {
           titles[url] = PhoneRecent.localTitle(url)
+          if let id = try? sharingLocalDocument(path: url.path) {
+            documentIDs[url] = id
+          } else {
+            unavailable.insert(url)
+            documentIDs[url] = previousDocumentIDs[url]
+          }
           let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
           dates[url] = max(values?.contentModificationDate ?? .distantPast, values?.creationDate ?? .distantPast)
         }
-        return (titles, dates)
+        return (titles, dates, documentIDs, unavailable)
       }.value
       guard !Task.isCancelled else { return }
       localTitles = metadata.0
       fileDates = metadata.1
+      localDocumentIDs = metadata.2
+      unavailableDocuments = metadata.3
     }
   }
   private func perform(
@@ -277,7 +297,7 @@ struct PhoneRecent: Identifiable, Sendable {
         try await operation()
         succeeded = true
       } catch {
-        message = error.localizedDescription
+        message = libraryMessage(error)
         succeeded = false
       }
       busy = false

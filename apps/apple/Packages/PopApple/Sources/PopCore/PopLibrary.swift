@@ -1,9 +1,10 @@
+import Combine
 import Foundation
 import PopCoreBinding
 import SwiftUI
 import Synchronization
 
-func libraryMessage(_ error: Error) -> String {
+public func libraryMessage(_ error: Error) -> String {
   if case LibraryError.Failed(_, let message) = error { return message }
   return error.localizedDescription
 }
@@ -59,6 +60,7 @@ public struct LibrarySyncAttention {
   @Published public private(set) var hasLoaded = false
   @Published public private(set) var accountIdentity = ""
   @Published public private(set) var entries: [SyncedPop] = []
+  @Published public private(set) var guestDocumentIDs: Set<String> = []
   @Published public private(set) var accountBoundPaths: Set<String> = []
   @Published public private(set) var issues: [String: String] = [:]
   @Published public private(set) var status = "Saved on this device"
@@ -89,6 +91,8 @@ public struct LibrarySyncAttention {
   private var task: Task<Void, Never>?
   private var syncTask: Task<Void, Never>?
   private var syncAgain = false
+  private var credentialChanges: AnyCancellable?
+  private var guestRefreshRevision: UInt64 = 0
   private let root: URL
   private let owners: LibraryOwners
   private let legacyRoot: URL?
@@ -105,8 +109,14 @@ public struct LibrarySyncAttention {
   }
   public func start() {
     guard task == nil else { return }
+    credentialChanges = NotificationCenter.default.publisher(for: .popSharingCredentialsChanged)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in
+        Task { @MainActor [weak self] in await self?.refreshGuestDocuments() }
+      }
     task = Task {
       if native == nil { try? await setAccount("") }
+      await refreshGuestDocuments()
       while !Task.isCancelled {
         await refresh()
         try? await Task.sleep(for: .seconds(2))
@@ -309,11 +319,24 @@ public struct LibrarySyncAttention {
     if let lastError { throw PopFailure(lastError) }
   }
   public func saveToCloud() async { await syncNow() }
+  private func refreshGuestDocuments() async {
+    let current = generation
+    guestRefreshRevision += 1
+    let revision = guestRefreshRevision
+    guard let guests = try? await PopPreparation.run({ try SharingCredentials.guestDocumentIDs() }),
+      current == generation, revision == guestRefreshRevision
+    else { return }
+    guestDocumentIDs = guests
+  }
   public func activated(_ active: Bool) {
     if active {
       foregroundAt = Date()
+      let alreadyStarted = task != nil
       start()
-      Task { await syncNow() }
+      Task {
+        if alreadyStarted { await refreshGuestDocuments() }
+        await syncNow()
+      }
     }
   }
   public func create(template: URL, title: String, sync: Bool = false) async throws -> SyncedPop {

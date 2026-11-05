@@ -44,7 +44,7 @@ pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use places::document_destination;
 #[cfg(not(target_arch = "wasm32"))]
-pub use places::{TemplateSource, template_roots};
+pub use places::{TemplateSource, rebase_ios_container_path, template_roots};
 #[cfg(target_os = "macos")]
 pub use relocate::trash_replica_original;
 #[cfg(target_os = "macos")]

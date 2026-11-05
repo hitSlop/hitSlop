@@ -741,6 +741,11 @@ file. Rust owns validation, local installation, merge/recovery and persistence. 
 provides Firebase authentication and typed Firestore listener events. Account changes
 fence callbacks, flush owners and retain downloaded files while hiding account entries.
 
+The [Apple catalog](apple-catalog.md) uses a device-local Inbox flag and cached nullable
+sharing state. Receiving a remote reference does not make it a recent document until
+it is opened here. These fields live only in the local library index; they do not
+change the `.pop` format or grant cloud access.
+
 ### Relay
 
 Private sync and collaboration use the same persistent cloud document. Sharing enables

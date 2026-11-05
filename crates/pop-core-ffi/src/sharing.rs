@@ -100,6 +100,10 @@ pub fn sharing_join_credential(link: String) -> Result<String, SharingError> {
     pop_sharing_client::joined_credential(&link).map_err(failure)
 }
 #[uniffi::export]
+pub fn sharing_credential_document(credential: String) -> Option<String> {
+    pop_sharing_client::credential_document(&credential)
+}
+#[uniffi::export]
 pub fn sharing_document(link: String) -> Result<String, SharingError> {
     pop_sharing_client::invitation_document(&link).map_err(failure)
 }

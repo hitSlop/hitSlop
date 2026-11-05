@@ -1,5 +1,6 @@
 //! Device-local document index and account-scoped cloud cache. Bytes synchronize
 //! through the existing owner and persistent cloud protocol, never through catalog assets.
+mod paths;
 use pop_runtime::owner::{Failure, FailureKind, Owner, Request};
 use pop_sharing_client::{Client, ClientStatus, local};
 pub use pop_sharing_protocol::document::{AccessState, DocumentEntry, DocumentRole};
@@ -80,6 +81,8 @@ pub struct Entry {
     pub problem: Option<String>,
     pub role: Option<DocumentRole>,
     pub revision: u64,
+    pub sharing_enabled: Option<bool>,
+    pub inbox: bool,
 }
 struct Inner {
     db: Connection,
@@ -115,7 +118,28 @@ impl Library {
         if !columns.iter().any(|name| name == "catalog_seen") {
             db.execute_batch("ALTER TABLE documents ADD COLUMN catalog_seen INTEGER NOT NULL DEFAULT 0")?;
         }
+        if !columns.iter().any(|name| name == "sharing_enabled") {
+            db.execute_batch("ALTER TABLE documents ADD COLUMN sharing_enabled INTEGER")?;
+        }
         db.execute_batch("CREATE TABLE IF NOT EXISTS legacy_sources(path TEXT PRIMARY KEY,id TEXT NOT NULL,fingerprint TEXT NOT NULL);")?;
+        paths::migrate(&db, &root)?;
+        if !columns.iter().any(|name| name == "opened") {
+            let migration = db.unchecked_transaction()?;
+            migration.execute_batch("ALTER TABLE documents ADD COLUMN opened INTEGER NOT NULL DEFAULT 1")?;
+            // Earlier caches did not track opens. Only an absent remote file with
+            // no saved version/stamp reliably identifies a never-downloaded entry.
+            let unseen = migration.prepare("SELECT account,id,path FROM documents WHERE account<>'' AND role IS NOT NULL AND version='' AND file_stamp='' AND deleted=0")?
+                .query_map([], |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?)))?
+                .collect::<std::result::Result<Vec<_>,_>>()?;
+            for (account, id, path) in unseen {
+                if !paths::resolve(&root, &path)?.is_file() {
+                    migration
+                        .execute("UPDATE documents SET opened=0 WHERE account=?1 AND id=?2", params![account, id])?;
+                }
+            }
+            migration.commit()?;
+        }
+
         db.execute_batch("CREATE TABLE IF NOT EXISTS catalog_writes(account TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(account,id)); CREATE TABLE IF NOT EXISTS catalog_clock(account TEXT PRIMARY KEY,revision INTEGER NOT NULL);")?;
         let scope = crate::hex(&Sha256::digest(account.as_bytes()));
         std::fs::create_dir_all(root.join("documents"))?;
@@ -201,19 +225,20 @@ impl Library {
     fn row(&self, inner: &Inner, id: &str) -> Result<Entry> {
         Self::valid(id)?;
         let row=inner.db.query_row("SELECT account,title,template,path,version,role,revision,deleted,problem FROM documents WHERE id=?1 AND (account=?2 OR account='') ORDER BY (account=?2) DESC LIMIT 1",params![id,self.account],|row|Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?,row.get::<_,String>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,i64>(6)?,row.get::<_,bool>(7)?,row.get::<_,Option<String>>(8)?)))?;
-        let downloaded = Path::new(&row.3).is_file();
+        let resolved_path = paths::resolve(&self.root, &row.3)?;
+        let downloaded = resolved_path.is_file();
         let role = match row.5.as_deref() {
             Some("owner") => Some(DocumentRole::Owner),
             Some("editor") => Some(DocumentRole::Editor),
             _ => None,
         };
-        let (source_version, digest, saved_stamp, pending): (String, String, String, bool) = inner.db.query_row(
-            "SELECT artwork_version,artwork_digest,file_stamp,pending_enable FROM documents WHERE account=?1 AND id=?2",
+        let (source_version, digest, saved_stamp, pending, sharing_enabled, opened): (String, String, String, bool, Option<bool>, bool) = inner.db.query_row(
+            "SELECT artwork_version,artwork_digest,file_stamp,pending_enable,sharing_enabled,opened FROM documents WHERE account=?1 AND id=?2",
             params![row.0, id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
         )?;
         let mut version = row.4;
-        let stamp = if downloaded { file_stamp(Path::new(&row.3)).ok() } else { None };
+        let stamp = if downloaded { file_stamp(&resolved_path).ok() } else { None };
         let (confirmed, receipt_problem) = if role.is_some() {
             match pop_sharing_client::confirmed_saved_version(&self.state_dir(), id) {
                 Ok(version) => (version, None),
@@ -246,7 +271,7 @@ impl Library {
             id: id.into(),
             title: row.1,
             template: row.2,
-            path: row.3,
+            path: resolved_path.to_string_lossy().into_owned(),
             version,
             asset_revision,
             artwork_version,
@@ -255,6 +280,8 @@ impl Library {
             local_only: role.is_none(),
             account_bound: !row.0.is_empty(),
             downloaded,
+            sharing_enabled,
+            inbox: !opened && !row.0.is_empty() && role.is_some() && !row.7,
             problem: row.8.or(receipt_problem),
             role,
             revision: u64::try_from(row.6).map_err(failed)?,
@@ -291,7 +318,11 @@ impl Library {
                     )
                     .optional()?
             };
-            if entry.deleted && prior.as_ref().is_some_and(|prior| !prior.1 && Path::new(&prior.2).is_file()) {
+            if entry.deleted
+                && prior.as_ref().is_some_and(|prior| {
+                    !prior.1 && paths::resolve(&self.root, &prior.2).is_ok_and(|path| path.is_file())
+                })
+            {
                 if let Some(client) = self.connection(&entry.document_id) {
                     client.pause();
                 }
@@ -317,12 +348,12 @@ impl Library {
                     row.get(0)
                 })
                 .optional()?
-                .unwrap_or_else(|| self.cached_path(&entry.document_id).to_string_lossy().into_owned());
+                .map_or_else(|| paths::store(&self.root, &self.cached_path(&entry.document_id)), Ok)?;
             let role = match entry.role {
                 DocumentRole::Owner => "owner",
                 DocumentRole::Editor => "editor",
             };
-            tx.execute("INSERT INTO documents(account,id,title,template,path,role,revision,deleted,catalog_seen) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,revision=excluded.revision,deleted=excluded.deleted,catalog_seen=1",params![self.account,entry.document_id,entry.title,entry.template_id,path,role,i64::try_from(entry.catalog_revision).map_err(failed)?,entry.deleted])?;
+            tx.execute("INSERT INTO documents(account,id,title,template,path,role,revision,deleted,catalog_seen,opened) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0)) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,revision=excluded.revision,deleted=excluded.deleted,catalog_seen=1",params![self.account,entry.document_id,entry.title,entry.template_id,path,role,i64::try_from(entry.catalog_revision).map_err(failed)?,entry.deleted])?;
         }
         tx.commit()?;
         let stopped = accepted
@@ -355,23 +386,23 @@ impl Library {
         let template = store.app().app.metadata().slug.clone();
         store.close()?;
         let inner = self.inner.lock().unwrap();
-        let existing = inner
-            .db
-            .prepare("SELECT account,path FROM documents WHERE id=?1")?
-            .query_map([&info.id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let existing = paths::indexed(&inner.db, &self.root, &info.id)?;
         if !existing.is_empty() {
-            if existing.iter().any(|(_, path)| Path::new(path) != source) {
+            if existing.iter().any(|(_, path)| path != &source) {
                 return Err(Error {
                     issue: Issue::AppMismatch,
                     message: "A different local file has this document identity".into(),
                 });
             }
+            inner.db.execute(
+                "UPDATE documents SET opened=1 WHERE id=?1 AND (account=?2 OR account='')",
+                params![info.id, self.account],
+            )?;
             return self.row(&inner, &info.id);
         }
         inner.db.execute(
             "INSERT INTO documents(account,id,title,template,path,version) VALUES('',?1,?2,?3,?4,?5)",
-            params![info.id, title.trim(), template, source.to_string_lossy(), info.version],
+            params![info.id, title.trim(), template, paths::store(&self.root, &source)?, info.version],
         )?;
         drop(inner);
         self.cache_file(&info.id, Some(&info.version))?;
@@ -384,7 +415,7 @@ impl Library {
         self.check()?;
         let source = file::resolve(source)?;
         let info = local::inspect(&source).map_err(failed)?;
-        let source_text = source.to_string_lossy().into_owned();
+        let source_text = paths::store(&self.root, &source)?;
         let fingerprint = format!("{}:{}", hex(&info.app_digest), info.fingerprint);
         let (mapped, existing) = {
             let inner = self.inner.lock().unwrap();
@@ -394,17 +425,13 @@ impl Library {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })
                 .optional()?;
-            let existing = inner
-                .db
-                .prepare("SELECT account,path FROM documents WHERE id=?1")?
-                .query_map([&info.id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
+            let existing = paths::indexed(&inner.db, &self.root, &info.id)?;
             (mapped, existing)
         };
         if let Some((id, saved)) = &mapped
-            && ((id == &info.id && existing.iter().any(|(_, path)| path == &source_text))
+            && ((id == &info.id && existing.iter().any(|(_, path)| path == &source))
                 || saved == &fingerprint
-                || existing.iter().any(|(account, path)| !account.is_empty() && path == &source_text))
+                || existing.iter().any(|(account, path)| !account.is_empty() && path == &source))
         {
             let inner = self.inner.lock().unwrap();
             return match self.row(&inner, id) {
@@ -412,7 +439,7 @@ impl Library {
                 _ => Ok(None),
             };
         }
-        if existing.iter().any(|(account, path)| !account.is_empty() && path == &source_text) {
+        if existing.iter().any(|(account, path)| !account.is_empty() && path == &source) {
             let inner = self.inner.lock().unwrap();
             let result = self.row(&inner, &info.id).ok();
             inner.db.execute("INSERT INTO legacy_sources(path,id,fingerprint) VALUES(?1,?2,?3) ON CONFLICT(path) DO UPDATE SET id=excluded.id,fingerprint=excluded.fingerprint",params![source_text,info.id,fingerprint])?;
@@ -420,10 +447,10 @@ impl Library {
         }
         let mut target = None;
         for (_, path) in &existing {
-            if path == &source_text {
+            if path == &source {
                 continue;
             }
-            if let Ok(known) = local::inspect(Path::new(path))
+            if let Ok(known) = local::inspect(path)
                 && known.app_digest == info.app_digest
                 && known.fingerprint == info.fingerprint
             {
@@ -434,9 +461,7 @@ impl Library {
         let entry = if target.is_some() {
             let inner = self.inner.lock().unwrap();
             self.row(&inner, &info.id).ok()
-        } else if existing.is_empty()
-            || existing.iter().all(|(account, path)| account.is_empty() && path == &source_text)
-        {
+        } else if existing.is_empty() || existing.iter().all(|(account, path)| account.is_empty() && path == &source) {
             let mut label = title.to_owned();
             if let Some(parent) = source.parent().and_then(Path::parent) {
                 let old = parent.join("library.sqlite");
@@ -479,6 +504,10 @@ impl Library {
             if entry.deleted || Path::new(&entry.path) != owner.path() {
                 return Ok(());
             }
+            inner.db.execute(
+                "UPDATE documents SET opened=1 WHERE account=?1 AND id=?2",
+                params![if entry.account_bound { self.account.as_str() } else { "" }, id],
+            )?;
             inner.live.insert(id.into(), Arc::downgrade(owner));
             if entry.local_only { None } else { inner.token.clone() }
         };
@@ -611,7 +640,7 @@ impl Library {
         {
             let mut inner = self.inner.lock().unwrap();
             let tx = inner.db.transaction()?;
-            tx.execute("INSERT INTO documents(account,id,title,template,path,version,role,pending_enable) VALUES(?1,?2,?3,?4,?5,?6,'owner',1) ON CONFLICT(account,id) DO UPDATE SET pending_enable=1,path=excluded.path,role='owner',deleted=0",params![self.account,id,entry.title,entry.template,entry.path,entry.version])?;
+            tx.execute("INSERT INTO documents(account,id,title,template,path,version,role,pending_enable) VALUES(?1,?2,?3,?4,?5,?6,'owner',1) ON CONFLICT(account,id) DO UPDATE SET pending_enable=1,path=excluded.path,role='owner',deleted=0",params![self.account,id,entry.title,entry.template,paths::store(&self.root,Path::new(&entry.path))?,entry.version])?;
             tx.execute("DELETE FROM documents WHERE account='' AND id=?1", [id])?;
             tx.commit()?;
         }
@@ -619,6 +648,8 @@ impl Library {
             pop_sharing_client::bootstrap(owner, token, &self.state_dir()).map_err(failed)?;
             self.current_operation(generation)?;
             pop_sharing_client::update_document(id, &entry.title, &entry.template, token).map_err(failed)?;
+            // Sharing is a presentation cache. Bootstrap completion must not
+            // depend on another request made only to populate that optional hint.
             self.current_operation(generation)
         });
         if let Err(error) = outcome {
@@ -658,7 +689,7 @@ impl Library {
         }
         let access = pop_sharing_client::authorized_access(id, token).map_err(failed)?;
         self.current_operation(generation)?;
-        if access.is_none() {
+        let Some(access) = access else {
             self.receive_catalog(&[DocumentEntry {
                 document_id: id.into(),
                 title: entry.title,
@@ -673,9 +704,10 @@ impl Library {
             }])?;
             self.queue_catalog(id, true)?;
             return Err(failed("Cloud document access was removed; local edits were retained"));
-        }
+        };
+        self.remember_access(id, &access)?;
         if entry.downloaded {
-            return Ok(entry);
+            return self.row(&self.inner.lock().unwrap(), id);
         }
         let resolved = pop_sharing_client::resolve(id, token)
             .map_err(failed)?
@@ -686,23 +718,42 @@ impl Library {
         let inner = self.inner.lock().unwrap();
         self.row(&inner, id)
     }
-    pub fn access(&self, id: &str, token: &str) -> Result<AccessState> {
+    fn remember_access(&self, id: &str, access: &AccessState) -> Result<()> {
         self.cloud()?;
-        pop_sharing_client::access(id, token).map_err(failed)
+        Self::valid(id)?;
+        if access.document != id {
+            return Err(failed("Access response belongs to another document"));
+        }
+        self.inner.lock().unwrap().db.execute(
+            "UPDATE documents SET sharing_enabled=?3 WHERE account=?1 AND id=?2 AND role IS NOT NULL AND deleted=0",
+            params![self.account, access.document, access.sharing],
+        )?;
+        Ok(())
+    }
+    pub fn access(&self, id: &str, token: &str) -> Result<AccessState> {
+        let generation = self.operation()?;
+        let access = pop_sharing_client::access(id, token).map_err(failed)?;
+        self.current_operation(generation)?;
+        self.remember_access(id, &access)?;
+        Ok(access)
     }
     pub fn sharing(&self, id: &str, enabled: bool, token: &str) -> Result<AccessState> {
-        self.cloud()?;
-        pop_sharing_client::set_sharing(id, enabled, token).map_err(failed)
+        let generation = self.operation()?;
+        let access = pop_sharing_client::set_sharing(id, enabled, token).map_err(failed)?;
+        self.current_operation(generation)?;
+        self.remember_access(id, &access)?;
+        Ok(access)
     }
     pub fn join(&self, link: &str, token: &str) -> Result<Entry> {
-        self.cloud()?;
+        let generation = self.operation()?;
         let access = pop_sharing_client::join_member(link, token).map_err(failed)?;
         let id = access.document;
         let metadata = pop_sharing_client::document_metadata(&id, token).map_err(failed)?;
+        self.current_operation(generation)?;
         let path = self.cached_path(&id);
         {
             let inner = self.inner.lock().unwrap();
-            inner.db.execute("INSERT INTO documents(account,id,title,template,path,role) VALUES(?1,?2,?3,?4,?5,'editor') ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role='editor',deleted=0",params![self.account,id,metadata.title,metadata.template_id,path.to_string_lossy()])?;
+            inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,'editor',coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?6) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role='editor',deleted=0,sharing_enabled=excluded.sharing_enabled",params![self.account,id,metadata.title,metadata.template_id,paths::store(&self.root,&path)?,access.sharing])?;
         }
         self.queue_catalog(&id, false)?;
         self.download(&id, token)
@@ -810,11 +861,23 @@ impl Library {
                 )
                 .optional()?
                 .unwrap_or(true);
+            let access = match pop_sharing_client::authorized_access(&document.document, token) {
+                Ok(access) => access,
+                Err(_) if !needs_repair => {
+                    // An optional cache refresh cannot stop other documents or
+                    // overwrite the last authoritative sharing state.
+                    self.current_operation(generation)?;
+                    continue;
+                }
+                Err(error) => return Err(failed(error)),
+            };
+            self.current_operation(generation)?;
+            if let Some(access) = &access {
+                self.remember_access(&document.document, access)?;
+            }
             if !needs_repair {
                 continue;
             }
-            let access = pop_sharing_client::authorized_access(&document.document, token).map_err(failed)?;
-            self.current_operation(generation)?;
             if let Some(access) = access {
                 let Some(metadata) =
                     pop_sharing_client::ready_document_metadata(&document.document, token).map_err(failed)?
@@ -823,7 +886,7 @@ impl Library {
                 };
                 self.current_operation(generation)?;
                 let inner = self.inner.lock().unwrap();
-                inner.db.execute("INSERT INTO documents(account,id,title,template,path,role) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0",params![self.account,document.document,metadata.title,metadata.template_id,self.cached_path(&document.document).to_string_lossy(),if access.role == DocumentRole::Owner {"owner"} else {"editor"}])?;
+                inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0",params![self.account,document.document,metadata.title,metadata.template_id,paths::store(&self.root,&self.cached_path(&document.document))?,if access.role == DocumentRole::Owner {"owner"} else {"editor"},access.sharing])?;
                 drop(inner);
                 self.queue_catalog(&document.document, false)?;
             }
@@ -893,11 +956,12 @@ impl Library {
     }
     pub fn account_paths(&self) -> Result<Vec<String>> {
         let inner = self.inner.lock().unwrap();
-        Ok(inner
+        let stored = inner
             .db
             .prepare("SELECT DISTINCT path FROM documents WHERE account<>''")?
-            .query_map([], |row| row.get(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?)
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        stored.into_iter().map(|path| Ok(paths::resolve(&self.root, &path)?.to_string_lossy().into_owned())).collect()
     }
     fn discover_recoveries(&self) -> Result<()> {
         if self.account.is_empty() {
@@ -916,7 +980,7 @@ impl Library {
             }
             let known: bool = self.inner.lock().unwrap().db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM documents WHERE path=?1)",
-                [path.to_string_lossy().as_ref()],
+                [paths::store(&self.root, &path)?],
                 |row| row.get(0),
             )?;
             if !known {
@@ -936,7 +1000,7 @@ impl Library {
         let inner = self.inner.lock().unwrap();
         inner.db.execute(
             "INSERT OR IGNORE INTO documents(account,id,title,template,path,version) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![self.account, info.id, title, template, path.to_string_lossy(), info.version],
+            params![self.account, info.id, title, template, paths::store(&self.root, path)?, info.version],
         )?;
         self.row(&inner, &info.id)
     }
@@ -1112,5 +1176,48 @@ mod catalog_tests {
         assert!(Library::open(directory.path(), "account-b").unwrap().pending_catalog_writes().unwrap().is_empty());
         library.ack_catalog_write(id, writes[0].catalog_revision).unwrap();
         assert!(library.pending_catalog_writes().unwrap().is_empty());
+    }
+    #[test]
+    fn sharing_cache_is_authoritative_optional_durable_and_account_scoped() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = Library::open(directory.path(), "account-a").unwrap();
+        let second = Library::open(directory.path(), "account-b").unwrap();
+        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let reference = DocumentEntry {
+            document_id: id.into(),
+            title: "Shared".into(),
+            template_id: "fixture".into(),
+            app_revision: None,
+            preview_ref: None,
+            modified_at: 0,
+            role: DocumentRole::Owner,
+            access_generation: 1,
+            catalog_revision: 0,
+            deleted: false,
+        };
+        first.receive_catalog(std::slice::from_ref(&reference)).unwrap();
+        second.receive_catalog(&[reference]).unwrap();
+        assert_eq!(first.entries().unwrap()[0].sharing_enabled, None, "owner role does not imply private or shared");
+        let mut access = AccessState {
+            document: id.into(),
+            sharing: true,
+            generation: 1,
+            capability: None,
+            role: DocumentRole::Owner,
+        };
+        first.remember_access(id, &access).unwrap();
+        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(true));
+        assert_eq!(second.entries().unwrap()[0].sharing_enabled, None);
+        assert!(first.access(id, "").is_err(), "failed credential refresh must preserve cached knowledge");
+        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(true));
+        drop(first);
+        let first = Library::open(directory.path(), "account-a").unwrap();
+        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(true));
+        access.sharing = false;
+        first.remember_access(id, &access).unwrap();
+        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(false));
+        access.document = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".into();
+        assert!(first.remember_access(id, &access).is_err());
+        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(false));
     }
 }

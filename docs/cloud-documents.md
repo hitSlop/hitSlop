@@ -120,6 +120,15 @@ Released `.pop` acceptance, app ABI, writer locking and compatibility corpora re
 No `.pop` storage schema change is required; device catalog schemas are implementation
 metadata and can change independently.
 
+Downloaded files and the index live in the app's local data directory. This is the
+private iPhone filesystem container, not CloudKit. Firestore lists document references;
+Cloudflare supplies their contents. iOS can relocate the local container during an
+app update. Managed library paths therefore use relative locations, resolved against
+the current root. Recovery receipts use locations relative to their owning state
+directory. A narrowly recognized old iOS container prefix is migrated before cache
+inspection and legacy discovery; genuine external Mac file locations remain external.
+Existing recovery copies are retained rather than silently discarded.
+
 Firestore rules and indexes are in the repository root. Client SDKs use the existing
 Firebase project and Firebase Authentication account. Rules permit catalog reads and
 writes only below the requesting user's own UID. Cloudflare verifies Firebase tokens

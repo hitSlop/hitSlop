@@ -130,6 +130,54 @@ pub(crate) fn document_destination(path: &Path) -> Result<()> {
     check_destination(path, &Places::current())
 }
 
+/// Rebase an old iOS app-data container path against a current app-owned location.
+/// Only the UUID component beneath the same `Containers/Data/Application` parent
+/// may change. This does not relocate arbitrary external files or validate ownership
+/// of the returned suffix; callers must enforce their own managed-directory boundary.
+pub fn rebase_ios_container_path(path: &Path, current_location: &Path) -> Option<PathBuf> {
+    fn container(path: &Path) -> Option<(PathBuf, PathBuf)> {
+        use std::path::Component;
+        if !path.is_absolute() {
+            return None;
+        }
+        let parts = path.components().collect::<Vec<_>>();
+        if parts.iter().any(|part| matches!(part, Component::ParentDir | Component::CurDir)) {
+            return None;
+        }
+        for index in 0..parts.len().saturating_sub(3) {
+            if parts[index].as_os_str() != "Containers"
+                || parts[index + 1].as_os_str() != "Data"
+                || parts[index + 2].as_os_str() != "Application"
+            {
+                continue;
+            }
+            let uuid = parts[index + 3].as_os_str().to_str()?;
+            let valid = uuid.len() == 36
+                && uuid
+                    .bytes()
+                    .enumerate()
+                    .all(|(i, b)| if [8, 13, 18, 23].contains(&i) { b == b'-' } else { b.is_ascii_hexdigit() });
+            if valid {
+                return Some((parts[..index + 4].iter().collect(), parts[index + 4..].iter().collect()));
+            }
+        }
+        None
+    }
+    fn comparable_parent(path: &Path) -> PathBuf {
+        if path.starts_with("/private/var") {
+            Path::new("/").join(path.strip_prefix("/private").expect("checked prefix"))
+        } else {
+            path.to_owned()
+        }
+    }
+    let (old, suffix) = container(path)?;
+    let (current, _) = container(current_location)?;
+    if old == current || comparable_parent(old.parent()?) != comparable_parent(current.parent()?) {
+        return None;
+    }
+    Some(current.join(suffix))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,5 +217,30 @@ mod tests {
             assert_eq!(check_destination(&path, &places).is_ok(), destination, "create {}", path.display());
         }
         assert!(!cloud.join("new").exists(), "checking a place creates nothing");
+    }
+    #[test]
+    fn container_rebasing_changes_only_valid_matching_app_data_prefixes() {
+        let old = "/private/var/mobile/Containers/Data/Application/0E20CAF2-615D-4D0D-8D28-000B84114F4C";
+        let new = "/private/var/mobile/Containers/Data/Application/A1AE72BC-BD1B-47B7-9D74-803FCEB299FF";
+        let anchor = Path::new(new).join("Library/Application Support/pop/CloudDocuments");
+        assert_eq!(
+            rebase_ios_container_path(&Path::new(old).join("Documents/Keep.pop"), &anchor),
+            Some(Path::new(new).join("Documents/Keep.pop"))
+        );
+        assert_eq!(
+            rebase_ios_container_path(
+                &Path::new(old.trim_start_matches("/private")).join("Documents/Keep.pop"),
+                &anchor
+            ),
+            Some(Path::new(new).join("Documents/Keep.pop"))
+        );
+        for unchanged in [
+            "/Users/person/Documents/Keep.pop",
+            "/tmp/Containers/Data/Application/0E20CAF2-615D-4D0D-8D28-000B84114F4C/Keep.pop",
+            "/private/var/mobile/Containers/Data/Application/not-a-uuid/Keep.pop",
+            "/private/var/mobile/Containers/Data/Application/0E20CAF2-615D-4D0D-8D28-000B84114F4C/../Keep.pop",
+        ] {
+            assert_eq!(rebase_ios_container_path(Path::new(unchanged), &anchor), None);
+        }
     }
 }

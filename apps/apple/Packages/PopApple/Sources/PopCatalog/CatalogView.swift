@@ -26,24 +26,27 @@ public struct CatalogView: View {
 
   public var body: some View {
     NavigationSplitView {
-      CatalogSidebar(filter: model.filter, categories: model.categories, recentCount: model.recents.count) {
+      CatalogSidebar(
+        filter: model.filter, categories: model.categories, recentCount: model.recents.count,
+        inboxCount: model.inbox.count
+      ) {
         model.select($0)
       }
       .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
       .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 220)
     } content: {
       CatalogRail(
-        title: model.filter.title, entries: model.visibleEntries,
+        title: model.filter.title, entries: model.visibleEntries, guestDocumentIDs: library.guestDocumentIDs,
         selectedID: $model.selectedID, query: $model.query, searchFocused: $searchFocused,
         localIssues: model.filter != .recents ? model.localIssues : [],
         recentsIssue: model.recentsIssue,
         onRefresh: {
           model.refreshSources()
-          if model.filter == .synced { Task { await library.syncNow() } }
+          if model.filter == .synced || model.filter == .inbox { Task { await library.syncNow() } }
         },
         onDelete: { entry in
           guard let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) else { return }
-          Task { do { try await library.delete(document) } catch { libraryError = error.localizedDescription } }
+          Task { do { try await library.delete(document) } catch { libraryError = libraryMessage(error) } }
         },
         onRemoveDownload: { entry in libraryAction(entry) { try await library.removeDownload($0) } },
         onLocalCopy: { entry in libraryAction(entry) { _ = try await library.localCopy($0) } },
@@ -158,7 +161,7 @@ public struct CatalogView: View {
   }
   private func libraryAction(_ entry: CatalogEntry, _ action: @escaping @MainActor (SyncedPop) async throws -> Void) {
     guard let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) else { return }
-    Task { do { try await action(document) } catch { libraryError = error.localizedDescription } }
+    Task { do { try await action(document) } catch { libraryError = libraryMessage(error) } }
   }
   private func updateLibrary() {
     // Without a connected library there are no synced entries to stand in for its files.
@@ -169,6 +172,9 @@ public struct CatalogView: View {
         id: "library:" + entry.id, source: .recent(URL(fileURLWithPath: entry.path)), title: entry.title)
       item.isSynced = true
       item.inCloud = !entry.localOnly
+      item.inbox = entry.inbox
+      item.savedDocumentID = entry.id
+      item.documentPresentation = entry.catalogPresentation
       item.description = library.state(for: entry)
       let url = URL(fileURLWithPath: entry.path)
       item.icons = [
