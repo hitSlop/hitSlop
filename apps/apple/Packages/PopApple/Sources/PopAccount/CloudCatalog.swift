@@ -30,8 +30,14 @@ import PopCoreBinding
           guard current == self.generation, targetAccount == account, auth.currentUser?.uid == account else {
             throw PopFailure("The account changed. Catalog publication will retry after sign-in.")
           }
-          try await db.collection("users").document(account).collection("documents")
-            .document(entry.documentId).setData(Self.fields(entry))
+          // Submit the SDK's untyped payload synchronously on this actor. Only
+          // the completion crosses the asynchronous boundary.
+          try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            db.collection("users").document(account).collection("documents")
+              .document(entry.documentId).setData(Self.fields(entry)) { error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+              }
+          }
         }
         listener = db.collection("users").document(account).collection("documents")
           .order(by: "modifiedAt", descending: true)
