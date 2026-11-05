@@ -122,7 +122,19 @@ jobs:
       - name: Native tiers
         env:
           POP_TEMPLATE_CACHE_DIR: .pop/template-cache
+          SWIFT_BACKTRACE: enable=yes,interactive=no
         run: bun run verify --ci --keep-going "$TIERS"
+      - name: Collect native crash reports
+        if: failure()
+        run: |
+          mkdir -p .pop/evidence/crashes
+          # ReportCrash can finish writing after swift test has exited.
+          sleep 5
+          for reports in "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports; do
+            if [ -d "$reports" ]; then
+              find "$reports" -type f -mmin -60 \( -name '*.ips' -o -name '*.crash' \) -exec cp {} .pop/evidence/crashes/ \;
+            fi
+          done
       - name: Prune Rust build before caching
         if: github.event_name != 'pull_request'
         run: bash scripts/ci/prune-cargo-target.sh
