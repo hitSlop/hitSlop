@@ -8,7 +8,7 @@ live with others, and export PNG and PDF.
 The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates pop,
 bundles the Popular templates and imports from Files. The current
 iPhone host is portrait-only; per-pop orientation declarations remain future work. The Mac/iPhone Synced Library
-is being replaced by Firestore discovery and persistent Cloudflare documents;
+uses Firestore discovery and persistent Cloudflare documents;
 see the [cloud document specification](cloud-documents.md) for the approved cutover. iPhone Home Screen
 widgets render library pop with a widget view locally, open them on tap, and refresh
 in the background when iOS allows.
@@ -68,12 +68,11 @@ integration run per batch rather than one full rebuild per agent.
   row deduplication, saved acceptance and publication fidelity.
 - [x] Retention: independent membership, checkpoint epochs, safe deep compaction,
   conditional publication, dirty-stale recovery copies and attachment reclamation.
-- [x] Shared document authority handoff: relay-only bytes while a room is active;
-  CloudKit catalog/discovery only, then a CAS-published final library snapshot on Stop.
-  Catalog format 2, start/stop crash recovery and discoverable recovery copies are
-  implemented and locally qualified. Guests keep their existing
-  local copy; there is no final-download window. See
-  [shared-history epoch maintenance](ideas.md#shared-history-epoch-maintenance).
+- [x] Persistent cloud document authority: private sync and collaboration use the same
+  Cloudflare Document DO/R2 authority. Clients publish personal Firestore references
+  after upload acknowledgement. Stop revokes guests without transferring authority;
+  guests keep their existing local copy, with no final-download window. This replaces
+  the earlier CloudKit/relay handoff. See [cloud documents](cloud-documents.md).
 - [x] Sharing: one codec, shared retry/compaction policy, cancellable native networking,
   control/relay/resource boundaries and testable server decisions.
 - [x] Explicit runner providers, additive features and typed jobs/replies. Phone command
@@ -141,7 +140,7 @@ does not complete its work package; its existing boundary checks must pass after
 | 19 | Align stored acceptance and incremental publications with layout 2 | Reopen and independent publication replay equal the semantic value |
 | 20 | Find attachment references in visible accepted state | Undo retains blobs during a session; close reclaims hidden references; record-key references survive |
 | 21 | Rebuild sanitized copies from accepted visible state | Deleted private payloads absent; merged values beyond authoring limits remain copyable |
-| 22 | Separate replication membership from retention policy | CloudKit and relay membership do not imply perpetual history/blob retention |
+| 22 | Separate replication membership from retention policy | Cloud-document membership does not imply perpetual history/blob retention |
 | 23 | Introduce explicit checkpoint epochs for deep compaction | Fresh accepted state releases hidden roots; ordinary checkpoints preserve identity and undo |
 | 24 | Preserve dirty stale replicas before epoch refresh | Recovery copy before replacement; concurrent publication uses a conditional update |
 | 25 | Share maintenance eligibility and retry scheduling | Native/browser decisions agree; ordinary 256-save checkpoints never cause epoch swaps |

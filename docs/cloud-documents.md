@@ -1,8 +1,8 @@
 # Persistent cloud documents
 
 This specification replaces the CloudKit private library and temporary collaboration
-rooms. Implementation is tracked on `cloud-document-sync`, stacked over
-`rust-foundation-redesign`. Qualification and deployment status belong in the roadmap.
+rooms. The implementation is integrated into the Rust foundation redesign.
+Qualification and deployment status belong in the roadmap.
 
 ## Identity and authority
 

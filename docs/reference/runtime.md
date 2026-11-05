@@ -93,6 +93,11 @@ Assets are inserted first and the single app row last. The app row seals assets:
 
 ## Persistence and ownership
 
+The canonical SQL is [storage-1.sql](../../crates/pop-storage/src/file/storage-1.sql).
+The separate account-scoped device index (`cloud-index.sqlite`) caches discovery and
+presentation metadata and pending Firestore writes; its additive migrations do not
+change the `.pop` schema. Document layouts 1 and 2 share that storage schema.
+
 The Rust store (`pop-storage`, on the platform SQLite) owns a document's saved state: the `document`, `history` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque Loro bytes. Replacing the history with a checkpoint and freeing the pages it covered are atomic. File access goes through `pop-storage`, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.pop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
@@ -108,15 +113,15 @@ Opaque imported attachments live in the file's `attachments` table by SHA-256, o
 After the final save of a changed, unshared document, the owner can delete blobs whose
 ID appears in no visible string, text or map key (`Store::reclaim_attachments`). An
 unchanged session does no reclamation. Ordinary shared saves retain blobs that another
-replica or live undo can still reference. Explicit private checkpoint or relay epoch
+replica or live undo can still reference. Explicit cloud-document epoch
 maintenance can instead publish a sanitized latest-state file containing only visible
-references, after the conditional receipt and recovery checks in the
+references, after the conditional publication and recovery checks in the
 [sharing lifecycle](sharing-lifecycle.md). A no-op adoption preserves undo and its hidden
 blobs. Removing a reference alone does not promise immediate reclamation.
 
 The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments)
 (10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. The
-private CloudKit upload and relay seed each have a separate 16 MiB bound; a valid local
+cloud checkpoint seed has a separate 16 MiB bound; a valid local
 document can exceed those transport limits. Duplicate and Share Pop File carry only
 referenced attachments, fresh accepted state and artwork rendered for the copy
 (`Store::copy_clean`); templates contain no attachments.

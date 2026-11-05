@@ -1,291 +1,142 @@
-# Sharing authority, checkpoints, and recovery
+# Cloud document lifecycle
 
-This specifies the implemented sharing and private-library lifecycle. It complements
-[architecture](../architecture.md) and the [engineering contract](../engineering-contract.md).
-The [relay README](../../apps/sharing/README.md) owns operator setup and qualification commands.
-Implementation and local qualification do not establish that a release, deployed relay,
-CloudKit account, or physical-device campaign has been qualified.
+This reference describes the implemented persistent cloud service. The former
+CloudKit snapshot/temporary-room authority handoff is removed. The product contract
+is [cloud documents](../cloud-documents.md); the route and authorization inventory is
+[sharing operations](../../apps/sharing/README.md). Historical spike reports remain
+evidence of their original campaigns, not current lifecycle instructions.
 
-## Owners and authority
+## Identity and authority
 
-`pop-core` accepts app definitions and document history; `pop-storage` owns the SQLite
-file and durable copies; `pop-runtime` serializes mutations and publications. Native and
-browser sharing transports use that owner. The relay validates hashes, opaque frontiers,
-resource inventories and admission limits. It never interprets SQLite or Loro.
+A document has one canonical UUID, allocated locally and preserved when sync or sharing
+is enabled. The Document Durable Object keyed by that UUID owns cloud permissions,
+invitation generation, lifecycle and accepted opaque updates. Its SQLite tables are
+service metadata and update storage, not a replica of the local `.pop` SQL tables.
+R2 holds immutable checkpoint seeds, application resources and attachment blobs.
+Clients validate document semantics and persist through the existing Rust owner.
 
-A managed document has one current byte authority. Private documents use a CloudKit
-snapshot. A live shared document uses the relay; CloudKit retains bounded catalog and
-transition metadata for the owner's devices, not a parallel stream of shared document
-snapshots. Library catalog authority and a file's relay membership are separate records.
-A guest's local file is not an owner CloudKit catalog replica.
+Private synchronization and collaboration use this same authority. Enabling or stopping
+sharing changes access, never byte authority. Internal protocol names such as `RoomInfo`
+and the `share.room` SQL column identify the persistent document UUID; they do not imply
+a separate temporary room or CloudKit checkpoint.
 
-The CloudKit record type remains `SlopDocument` in the current product's library zone;
-that name is not permission to import historical product zones. Its payload is a SQLite
-asset, not JSON document state. Catalog format and document layout are independent markers.
+## Local creation and cloud initialization
 
-## Catalog formats and ordering
+1. Create a self-contained local `.pop` from an immutable template. Local-only use needs
+   no account or network.
+2. To enable sync, authenticate with Firebase and reserve the existing UUID through
+   `POST /v1/documents`. The same owner's retry is idempotent; another owner's UUID is
+   refused. Reuse an already-open local owner rather than opening a second writer.
+3. Upload the accepted seed, resource manifest, app resources and referenced attachments,
+   then activate through `POST /open` beneath the document path. Pending or failed
+   initialization retains the local file and allows retry.
+4. Only after durable cloud acknowledgement, enqueue the latest desired personal catalog
+   reference in the Rust device index. Swift publishes it through the official Firestore
+   SDK and acknowledges the local operation revision after completion.
 
-Catalog format 1 accepts the existing private-snapshot behavior without an authority
-object or revision stamp. Format 2 stores `authority`, `catalogRevision`, and the existing
-`title`, `template`, `snapshotVersion`, `assetRevision`, `artworkVersion`, `deleted` and
-optional `payload` fields. The authority object is Rust-owned, tagged by `phase`:
+A catalog-publication failure does not roll back an acknowledged upload or block editing.
+The pending queue survives restart and replaces older desired writes for the same
+account/document. A late acknowledgement cannot remove a newer pending write.
 
-| Phase | Additional fields | Meaning |
-| --- | --- | --- |
-| `snapshot` | optional `receipt` | CloudKit owns the private snapshot; a receipt records an unfinished finalization. |
-| `checkpoint` | `proof: {transition, sourceVersion, version}` | Latest private checkpoint and its source provenance. |
-| `preparing` | `transition`, `room`, optional `seedHash`, optional `priorCheckpoint` | Relay reservation exists; retained private payload must remain available until activation or cancellation. |
-| `relay` | `transition`, `room`, `seedHash` | The relay owns shared bytes; catalog discovery needs no payload download. |
-| `handoff` | `transition`, `room`, `freeze` | Creator is transferring a frozen relay frontier to private storage. |
+## Discovery and opening
 
-A final snapshot receipt contains `transition`, `room`, `freeze`, and `snapshotVersion`.
-`freeze` is a typed `{token, seedHash, root, heads}` object in catalog JSON. Swift carries
-it through the FFI as opaque JSON; shared Rust decodes and validates it. No credential is
-stored in these objects.
+Firestore stores personal references under `users/{uid}/documents/{documentId}`. Clients
+read and write their own references; the Worker has no Firestore client or credentials.
+A reference contains discovery and presentation hints, not permission to access bytes.
+The DO authorizes access independently on every request.
 
-Each CloudKit compare-and-swap uses `.ifServerRecordUnchanged` and increments the
-revision associated with that exact fetched or restored record. System-field archives
-retain its revision alongside its change tag. The signed 64-bit positive revision and
-CloudKit change tag form `CatalogStamp`; the local library stores one latest validated
-stamp per document. A newly recreated tombstone uses the local revision as a floor.
+Sign-in retrieves references; opening downloads and validates missing contents through
+Rust before installation. Downloaded files remain complete, usable offline `.pop` files.
+Account-generation fences prevent old listeners or asynchronous results crossing into
+a different signed-in account. The account registry can list registered UUID/role hints
+for repairing a missing reference after an upload; resolve each through the DO first.
 
-All receive, acknowledgement, tombstone and metadata paths check the stamp under the
-library lock before mutation. Older revisions, equal revisions with a different tag,
-and unstamped legacy records after a stamped record are refused. An equal revision and
-tag can finish an interrupted installation. A higher revision can cross any number of
-missed sharing cycles; acceptance does not require retaining a chain of old rooms.
-Outgoing local transitions still obey the strict phase rules.
+A definitive access denial during a download check can remove the client's stale
+reference. Cached guest copies may remain listed after transport access is refused.
+Retain local work; discovery is intentionally eventual and needs no server publication
+or cross-user Firestore writes. Closed-file CLI edits reconnect on the next native open.
 
-For a payload installation, Rust validates document UUID, app compatibility, payload
-version and any checkpoint/freeze proof before persisting the incoming authority fence.
-The fence precedes canonical mutation, so an older callback cannot regain authority
-if a later installation step fails. It is an admitted-record fence, not a claim that
-installation completed. Same-tag retry completes the work. Invalid incoming files do
-not advance it. Superseded callbacks do not rewrite catalog errors or enqueue retries.
+## Invitations and membership
 
-Zone-change fetches request `authority` and `catalogRevision` with metadata and exclude
-`payload`. The full-fetch unchanged shortcut requires matching stamp, committed authority,
-snapshot version and asset revision. A new Relay or Handoff record cannot be skipped just
-because its private payload version is unchanged. Unsupported catalog formats require an
-update; no fallback decodes them as snapshots.
+The owner enables sharing through `POST /sharing` beneath the existing document path.
+A local-only document first completes cloud initialization. The resulting link is
+`https://share.dotpop.click/join#{documentUUID}.{capability}`. Anonymous browser guests
+can use the active capability. A named Firebase account can join with it through
+`POST /members`; membership is bound to the current invitation generation.
 
-Source: [catalog types/transitions](../../crates/pop-library/src/catalog.rs),
-[stamp fence](../../crates/pop-library/src/stamp.rs),
-[receive/install](../../crates/pop-library/src/lib.rs),
-[CloudKit adapter](../../apps/apple/Packages/PopApple/Sources/PopCore/LibrarySync.swift).
+Stopping sharing uses `DELETE /sharing`. It revokes the invitation, invalidates its
+memberships and closes guest connections. Owner devices continue private sync against
+the unchanged document authority. Guests keep copies already downloaded; there is no
+final-snapshot download window, CloudKit receipt or authority handoff on Stop.
+Leaving removes the guest membership without deleting the owner's cloud document.
+Knowing a UUID, copying a `.pop`, or editing Firestore metadata grants no future access.
 
-## Starting and canceling a room
+## Epoch publication and recovery
 
-1. A verified creator reserves the document through `POST /v1/rooms`. Account lookup
-   makes retries recover the existing Uploading or Live room.
-2. A managed document conditionally publishes Preparing with its retained private
-   snapshot before opening the relay. A same-room Preparing or Relay record found on
-   another device supplies the authoritative transition nonce; a different room is refused.
-3. Explicit Preparing resume reconciles the retained payload through the existing owner
-   before preparing the relay seed. Without a prior checkpoint proof this is merge-only;
-   a proven cutoff uses recovery-before-adoption. Missing/deleted Preparing payloads and
-   mismatched proof versions are refused. Background Preparing discovery remains
-   metadata-only, and Relay discovery never merges CloudKit bytes.
-4. The creator uploads the seed, app manifest/assets and attachments and calls `open`.
-   The relay validates its stored resources before entering Live. The client records the
-   committed seed/epoch and conditionally adopts the accepted canonical file. Local edits
-   that raced preparation are retained through recovery. CloudKit then confirms Relay.
+Ordinary updates reconnect through the same Rust synchronization path. Fresh epoch
+maintenance bounds retained history without retaining every attachment or intermediate
+state forever. The cloud keeps a usable current snapshot, bounded update tail and
+referenced blobs, plus bounded temporary staging.
 
-Initial Uploading seed replacement remains supported. The accepted seed is bound to the
-same document UUID and app digest; owner-independent native resolution validates it before
-attaching an owner. Sharing does not replace the app inside an existing document.
+A client prepares an accepted latest-state candidate against an exact source version
+and confirmed frontier, stages its checkpoint/resources, and conditionally publishes
+against the current seed and frontier. The DO owns conditional publication; the client
+owns validation and local adoption. Stale publication is refused rather than replacing
+newer accepted state. Interrupted staging is retryable and cleanup removes superseded
+payloads only after safe publication.
 
-Cancel uses creator-authenticated `DELETE /rooms/{room}?phase=uploading` first. The room
-checks Uploading and marks Ended before yielding; Live or frozen returns 409. Only after
-that succeeds does CloudKit restore the retained snapshot or prior checkpoint under CAS.
-If restoration fails, the ended reservation and Preparing record remain retryable. A
-concurrent activation cannot reopen the canceled room.
+Local preparation never replaces the live document. Adoption uses the existing writer
+lease and fences old sync traffic. Before refreshing an outdated local history, preserve
+unconfirmed divergent work as an independent recovery document with a new UUID. Failure
+to create that recovery leaves the original intact. Recovery receipts and managed paths
+are relative to their owning local directories so an iPhone app-container relocation
+does not create spurious recovery copies. A no-op adoption preserves undo and its blobs.
 
-## Private checkpoints
+See [owner publication and adoption](../architecture.md#owner-admission-callbacks-and-epoch-installation) for the owner
+boundary and [cloud documents](../cloud-documents.md) for account-scoped recovery.
 
-An eligible private upload may stage a sanitized accepted-state checkpoint rather than
-carry obsolete history and hidden attachments indefinitely. The candidate is derived
-from the owner, preserves document UUID and app, and leaves the live owner and undo intact
-while awaiting CloudKit CAS. Candidate source/version/receipt and file survive restart.
-An unissued reservation may be refreshed after a source edit or failed oversized attempt;
-an already issued candidate keeps its binding until reconciliation.
+## Account changes, eviction and deletion
 
-A successful current-record receipt drives conditional installation through the owner.
-CAS failure alone never installs the candidate. The accepted latest file keeps visible
-attachment bytes; recovery protects local work that is not covered by the receipt.
-Ordinary writes preserve checkpoint provenance. Preparing cancellation restores the prior
-proof. Completed handoff receipts normalize to the bounded latest checkpoint proof, not
-an ever-growing list of historical rooms.
+Sign-out flushes document owners, stops account transport and hides account-scoped
+entries without deleting downloaded bytes. A failed flush retains the owner and exposes
+native Retry. Externally lost authentication fences transport and conceals the affected
+account document while preserving its file and unsaved work.
 
-A superseded private candidate does not block joining an authoritative relay. Its payload
-is retained until accepted canonical installation/recovery confirms it can be retired.
-These are private latest-state copies, not a document history interface or device-ack registry.
+**Remove Download** evicts only a closed, clean, confirmed local download and keeps its
+reference. **Save Local Copy** creates a standalone file with a new UUID. **Delete
+Everywhere** is owner-only cloud deletion with revocation, payload cleanup and a
+retained deletion identity. Divergent local edits are preserved before applying remote
+deletion. **Delete Account** fences the account and retries owned-document deletion and
+joined-membership removal before Firebase identity deletion. Participant local copies
+remain independent of remote access.
 
-Source: [checkpoint staging](../../crates/pop-library/src/checkpoint.rs),
-[recovery catalog](../../crates/pop-library/src/recovery.rs).
+## Storage boundaries and limits
 
-## Relay epoch publication
+The canonical `.pop` schema is [storage-1.sql](../../crates/pop-storage/src/file/storage-1.sql).
+The storage version, document layout, package format and runtime ABI have separate
+compatibility responsibilities. Sync and catalog presentation do not change that SQL
+schema or replace the app inside an existing document. New documents use layout 2;
+released layout-1 acceptance remains in the same engine's adapter.
 
-The following room routes are relative to `/v1/rooms/{room}`.
+The device's `cloud-index.sqlite` is separate implementation metadata. Its account-scoped
+entries, pending reference writes, nullable sharing hint, opened flag and managed paths
+are created or migrated by [pop-library](../../crates/pop-library/src/lib.rs). They are
+not extra tables in exported `.pop` documents or cloud access credentials.
 
-| Route | Request | Success |
-| --- | --- | --- |
-| `GET /epoch` | Capability while Live; creator identity while frozen | `200 EpochState` |
-| `PUT /epochs/{sha256}` | Raw seed bytes matching the path hash | `200 {seedHash, size, expiresAt}` |
-| `PUT /epochs/{sha256}/blobs/{hash}` | Raw attachment bytes under the seed lease | `200` |
-| `POST /epoch` | `PublishEpoch` JSON | `200 EpochState` |
-| `DELETE /epochs/{sha256}` | Candidate release | `200`; current seed `409` |
-| `POST /handoff/begin` | Creator identity, `{token, expected: {seedHash, heads}}` | `200 {token, seedHash, root, heads}` |
-| `POST /handoff/finalize` | Creator identity, `{token}` | `200`; already Ended `410` |
+Transport and operational limits are distinct from local document acceptance. Current
+seed/base limits are 16 MiB each; retained update storage is separately bounded at
+16 MiB/32,768 rows. Attachment limits are 10 MiB per blob, 100 MiB and 256 blobs per
+document. Authoritative constants live in
+[sharing limits](../../crates/pop-sharing-protocol/src/limits.rs) and the
+[protocol](../../crates/pop-sharing-protocol/src/lib.rs). A valid local file may exceed
+cloud transport limits; upload refusal preserves it.
 
-`GET /epoch` returns `{seedHash, root, heads, handoff?}`. A wire version is an
-array of unique ascending `[peer, counter]` pairs: peer is 16 lowercase hex digits and
-counter is in `0..=2147483647`. `heads` must cover `root`. The root is the original seed
-frontier for the current epoch; ordinary `/compact` does not advance it.
+## Qualification
 
-A capability writer or creator can publish a fresh epoch:
-
-1. Read the expected seed hash and heads. The owner atomically checks that its accepted
-   history covers those heads before preparing the candidate. The candidate can include
-   unsent accepted local edits; the relay CAS prevents omission of a newly accepted remote push.
-2. `PUT /epochs/{sha256}` stages immutable SQLite bytes. Upload referenced attachments to
-   `PUT /epochs/{sha256}/blobs/{hash}`. Staging does not change bootstrap or visible inventory.
-3. `POST /epoch` supplies `{expected: {seedHash, heads}, seedHash, root, resources, attachments}`.
-   Exact expected hash/heads and resource checks precede one transactional change of the seed
-   pointer, root, heads, base/record set and inventories. A race returns 409. Successful
-   publication can be retried after a lost response using the committed candidate identity.
-4. Only after the server receipt does the owner conditionally install the accepted candidate.
-   Cleanup issues `DELETE /epochs/{sha256}` for uncommitted leases, including uncertain responses:
-   absent/expired is idempotent 200; the current seed is protected by 409.
-
-At most two unpublished seeds exist per room, each with a ten-minute lease. Each seed is
-at most 16 MiB; each stage has a separate attachment budget of at most 16 MiB. Current
-attachments and another live stage protect shared immutable blobs from reclamation. Stage
-registration precedes R2 writes; expiry, explicit release, failed uploads and obsolete
-objects have bounded, retryable cleanup. The SQLite pointer/inventory switch is atomic;
-R2 deletion is subsequent cleanup, not a distributed transaction.
-
-Publication fences old sockets and in-flight uploads. Socket error 6 (`ERROR_EPOCH`)
-requests checkpoint recovery; a new Hello must cover the current root. A raced
-`GET /seed?hash={expected}` returns 409. Neither the relay nor JavaScript interprets Loro
-frontiers to manufacture a merge. Rust validates seed hash, UUID, app and accepted root.
-
-Source: [wire types](../../crates/pop-sharing-protocol/src/lifecycle.rs),
-[relay epochs](../../apps/sharing/src/epochs.rs), [resources](../../apps/sharing/src/resources.rs).
-
-## Refresh and local recovery
-
-Native and browser connections retain an epoch-bound owner confirmation of version and
-heads. Missing or uncertain confirmation is conservative: before replacing an incompatible
-checkpoint, preserve unconfirmed local work as an independent accepted local document with
-a new UUID and no relay membership. Recovery retains visible values and referenced blobs.
-Canonical adoption preserves the shared document UUID and emits one full publication with
-a monotonic sequence; its old undo history ends at the cutoff.
-
-Native receipt journals and independently discoverable recovery files survive failed or
-lost adoption acknowledgements. The library's recovery reservations include source version,
-so a failed install followed by more edits can preserve another latest local copy without
-overwriting the earlier recovery. Browser IndexedDB reserves a `recovering` catalog entry
-before OPFS adoption. A completed file remains discoverable after a lost catalog ACK;
-reopening validates it in Rust before promoting it to Ready. The worker and Web Lock own
-SQLite/VFS lifetime; pages never edit SQLite or reconcile a JSON document mirror.
-
-A failure before canonical writes, including recovery quota failure, keeps the old owner
-usable and retryable. An uncertain canonical write invalidates that installation until
-reload. Recovery bytes are not silently overwritten to make a retry succeed. Ordinary
-open-session checkpoints preserve live CRDT identity; they do not perform a fresh epoch cut.
-
-Layouts remain explicit. New layout 2 can use fresh accepted-state epochs. Supported layout 1
-keeps its live lineage and uses identity-preserving seed/checkpoint behavior and `/compact`;
-opening or displaying it never migrates it. `/compact` remains the same-history full-update
-base path, with bounded archive expiry. A layout-2 history cut rejects pre-epoch snapshots
-and updates with missing-history recovery instead of silently merging hidden old roots.
-
-Source: [native epochs](../../crates/pop-sharing-client/src/epochs.rs),
-[native journal](../../crates/pop-sharing-client/src/journal.rs),
-[browser transport](../../packages/pop/src/sharing/worker.ts),
-[owner epoch effects](../../crates/pop-runtime/src/owner/actor/epochs.rs),
-[storage epoch copies](../../crates/pop-storage/src/store/epoch.rs).
-
-## Stopping and finalizing
-
-Creator `POST /handoff/begin` supplies an idempotent 32-hex token and exact expected
-seed hash/heads. It freezes writes at that frontier. Guests immediately receive Ended,
-keep their existing local copy, and have no final-download window. Native/browser guest
-cleanup removes local relay membership before flushing, keeps UUID and accepted edits,
-and preserves ownership on save failure.
-
-A frozen room remains recoverable by creator identity through account lookup. Creator-only
-seed, resource and binary `GET /handoff/history` reads allow catch-up to the fixed frontier.
-History pages contain `Frame::Records`, at most 32 records with a 1 MiB target; one larger
-base may exceed that target. `X-Sharing-Next` supplies the next `after` cursor and
-`X-Sharing-Done` is `0` or `1`.
-
-For a managed document, the creator catches up to the frozen frontier and flushes. The library
-persists Handoff and conditionally publishes a private snapshot covering those heads. Its receipt binds room, transition,
-freeze and snapshot version. Finalization flushes and checks the live owner against the durable
-receipt. Edits after the receipt require restaging the payload under the same room/token/heads;
-this does not unfreeze the room or create a new transition. Only after the durable destination
-receipt and local independent membership state are established does creator
-`POST /handoff/finalize` delete the room. Local, unmanaged documents require their accepted
-saved local copy instead of a CloudKit receipt.
-
-Frozen rooms do not idle-expire while completion is pending. Ordinary DELETE cannot bypass
-a frozen handoff. Explicit account deletion is separately authorized to discard it. A finalized
-room returns 410, so lost-finalize acknowledgements are retryable; catalog normalization follows
-successful finalization. Creator recovery does not require the original device's link capability.
-
-## Authentication, bounds, and failures
-
-The creator is a verified non-anonymous Firebase identity; clients offer Apple sign-in. It can
-reserve, recover capabilities, open, cancel Uploading, freeze/finalize, and delete its account.
-A guest capability grants live collaboration and resource access, including eligible maintenance,
-not creator control. Credentials remain device-local and outside document/CloudKit payloads.
-Signing out does not revoke an already distributed capability; creator operations require renewed
-identity. A cold signed-in device resolves the account's room, validates its canonical seed, then
-attaches through the owner. Authored frames receive neither capability nor identity token.
-
-| Bound | Current value |
-| --- | --- |
-| Rooms per account / connections per room / per-IP room sockets | 10 / 32 / 8 |
-| Relay seed / private CloudKit upload / retained update bytes / same-history base | 16 MiB each |
-| Retained update rows; maintenance hint | 32,768; 4 MiB or 8,192 rows |
-| App resources | 256; 25 MiB per resource; 50 MiB total |
-| Current attachments | 256; 10 MiB each; 100 MiB total |
-| Staged epochs | 2; 10 minutes; 16 MiB candidate attachment bytes each |
-| Push budget per socket | 8 MiB and 1,800 messages per minute, including retries |
-| Catalog authority / archived system fields / change tag | 32 KiB / 64 KiB / 4 KiB |
-| Live idle expiry / ended tombstone / legacy compaction archives | 90 days / 30 days / 14 days |
-
-Entry-point budgets are shared across rooms per IP: metadata 120/minute, seed 30,
-connections 60, blobs 120, and compaction/epoch stage-publication-release 6. They also
-apply to creator requests on those routes. Account creation is 5/minute per account.
-These Cloudflare limits are approximate per-location admission controls, not global quotas.
-
-409 means a conditional race or unavailable current phase. 410 means Ended. Ordinary blob
-413 means FilesFull; staged-epoch or base 413 means Outgrown. Layout 2 may attempt one fresh
-maintenance cycle for FilesFull; confirmed successful sync resets eligibility for a later
-independent episode. Oversized visible state remains paused rather than dropping content.
-429, storage errors and network failures use retry/backoff policy. `requires_update` means
-NeedsUpdate; malformed/unauthorized inputs are refused. Core missing dependencies require
-history recovery. Socket error codes 1–5 keep their existing meanings; code 6 adds epoch
-refresh. Unknown controls/variants fail closed. Frozen v1 fixtures are not rewritten.
-
-The shared [limits](../../crates/pop-sharing-protocol/src/limits.rs),
-[failure classification](../../crates/pop-sharing-protocol/src/failure.rs) and
-[maintenance decisions](../../crates/pop-sharing-protocol/src/maintenance.rs) are executable
-sources for these policies. Generated TypeScript/OpenAPI project Rust types, rather than
-maintaining another handwritten wire schema.
-
-## Qualification boundary
-
-Owning checks cover core acceptance/convergence/publications, SQLite persistence and failed
-recovery, native owner/CloudKit adapters, Chrome OPFS/catalog recovery, and the real Rust relay
-in Miniflare. The relay checker exercises conditional publication, stage cleanup, frozen history,
-creator/guest separation, rate budgets and cancellation. No production test clock or identity
-bypass is compiled into the relay.
-
-Run the repository's changed-tier verification and final native qualification before release.
-Local successes do not replace signed-device Apple/Firebase/CloudKit checks, deployed relay
-qualification, operational lifecycle configuration, or rollout verification. Keep those results
-and remaining manual gates explicit in the [roadmap](../roadmap.md) and evidence reports.
+Existing Rust tests own conditional epoch publication, dirty-stale recovery, retention,
+resource validation and refusal atomicity. The sharing tier runs real Rust WASM with
+SQLite Durable Objects/R2 and Firebase Auth/Firestore emulator rules. Native tests own
+account fences, owner reuse and local installation. Browser checks own anonymous join,
+offline copies, revocation and export. Physical-device and deployment evidence, including
+remaining qualification limits, is recorded in the
+[cloud document campaign](../evidence/cloud-documents-2026-11-04.md).

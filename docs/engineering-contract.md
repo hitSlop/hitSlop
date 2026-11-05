@@ -247,30 +247,33 @@ retain old undo blobs; reclamation follows acknowledged installation or successf
 never a failed close. Post-close reclamation rechecks current identity and actual sharing
 membership under a fresh writer lease (the browser's existing copy lock remains held).
 
-### Private catalog retention
+### Cloud document retention
 
 The cloud seed payload limit is 16 MiB; it is a transport limit, not a smaller
-`.pop` acceptance limit. Private library membership does not authorize discarding history
-before publication. Large retained history, storage pressure, or a SQLite file too large
-to upload can trigger a clean candidate. Merely having a large immutable app does not
-trigger an epoch on every ordinary sync. Layout-2 candidates rebuild current accepted
-state; legacy candidates use their same-lineage current-frontier representation.
+`.pop` acceptance limit. Private sync and collaboration use one persistent document
+authority. Membership alone never authorizes discarding history before conditional
+publication. Storage pressure or large retained history can trigger a clean candidate;
+a large immutable app does not require an epoch on every ordinary sync. Layout-2
+candidates rebuild current accepted state; legacy candidates retain their supported
+same-lineage representation.
 
-One pending candidate per document survives restart outside disposable upload staging.
-Before any candidate is eligible for upload, a reservation may follow a changed source;
-a validated oversized derived file may be replaced under its lease. Once a candidate
-version has been issued for upload it is immutable until an authority receipt resolves
-it. A newer relay authority can supersede that attempt without immediately deleting its
-retained bytes. An ordinary conflict first reconciles the accepted remote state, then
-restages; a conditional catalog write never discards remote edits to make a candidate win.
+Preparation binds the candidate to an exact source version and confirmed frontier.
+Staging is not publication: a conditional DO operation must accept the candidate against
+the current seed/frontier before clients adopt it or superseded payloads are reclaimed.
+Conflicts reconcile remote state rather than discarding its edits to make a candidate
+win. Dirty stale clients preserve unconfirmed work in an independent recovery document
+before refreshing canonical history. Interrupted staging, publication and adoption
+remain retryable without invalidating the original accepted file.
 
-Catalog format 2 retains one bounded current checkpoint proof after a cutoff, including
-after live-sharing finalization. Preparing sharing retains the previous proof so cancel
-can restore it without losing offline recovery authority. Freshness is checked under the
-Rust library lock before payload mutation; older records cannot regain byte authority.
-The detailed catalog/relay lifecycle is specified in [relay architecture](architecture.md#relay).
-These rules bound retained latest-state metadata and candidate staging; they do not promise
-a fixed size for every accepted visible document, app or recovery copy.
+Firestore references are account-local discovery metadata, not checkpoint authority.
+Rust retains only the latest desired pending reference per document until Swift's SDK
+acknowledges publication; operation revisions fence stale acknowledgements. An unavailable
+catalog does not undo an acknowledged cloud upload or block local editing. Stopping
+sharing revokes guests while owner synchronization and the byte authority remain.
+There is no CloudKit catalog revision, final-snapshot receipt or authority handoff.
+The detailed lifecycle is specified in [cloud document lifecycle](reference/sharing-lifecycle.md).
+These rules bound retained latest-state metadata and temporary staging; they do not
+promise a fixed size for every accepted visible document, app or recovery copy.
 
 Retention and compatibility assertions are normative. Passing the published corpora is
 regression evidence, not a proof over all possible documents. Timing, memory and file-size
