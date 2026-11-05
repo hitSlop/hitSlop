@@ -65,12 +65,14 @@ struct PhoneCatalogView: View {
               Text("Opened documents will appear here.").font(.subheadline).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity).padding(.vertical, 28)
             }
-          }.padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 20)
+          }.padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 36)
         }.refreshable { await model.syncNow() }
       }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      LibrarySyncStatusView(library: library).padding(.vertical, 6).background(PopBrand.cream)
+      LibrarySyncStatusView(library: library)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.bottom, 8).background(PopBrand.cream)
     }
     .background(PopBrand.cream)
   }
@@ -230,13 +232,15 @@ struct PhoneCatalogView: View {
                     url: template.url, title: template.title, artworkSize: artworkSize(width: geometry.size.width))
                 }.buttonStyle(.plain).accessibilityLabel(template.title)
               }
-            }.padding(.horizontal, 20).padding(.bottom, 28)
+            }.padding(.horizontal, 20).padding(.bottom, 36)
           }
         }
       }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      LibrarySyncStatusView(library: library).padding(.vertical, 6).background(PopBrand.cream)
+      LibrarySyncStatusView(library: library)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.bottom, 8).background(PopBrand.cream)
     }
     .background(PopBrand.cream)
   }

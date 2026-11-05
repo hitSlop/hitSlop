@@ -38,10 +38,9 @@ struct PhonePopTile: View {
   var body: some View {
     VStack(spacing: 7) {
       PhoneArtworkView(url: url, revision: revision)
-        .padding(5).frame(width: artworkSize, height: artworkSize)
-        .background(PopBrand.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: .black.opacity(0.09), radius: 7, y: 4)
+        .frame(width: artworkSize, height: artworkSize)
+        .compositingGroup()
+        .shadow(color: .black.opacity(0.1), radius: 6, y: 3)
         .overlay(alignment: .bottomTrailing) {
           if let badge = presentation?.badge {
             CatalogDocumentBadgeView(badge: badge).offset(x: 3, y: 3)

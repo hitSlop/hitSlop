@@ -52,7 +52,9 @@ No cloud API, document format or presence service is added.
 
 iPhone Recents and Templates use lazy icon grids: three columns at ordinary portrait
 text sizes, fewer columns on narrow layouts or at large accessibility sizes. Recents
-artwork is about 90 points, softly rounded and shadowed. Inbox is a horizontal shelf
+artwork is about 90 points, preserving its authored shape and transparency with a soft
+shadow behind the artwork only. No added white backing, inset or rounded-square clip
+surrounds the icon; white surfaces embedded in the artwork remain unchanged. Inbox is a horizontal shelf
 with smaller, roughly 70-point artwork. Names are centered with compact two-line
 leading and more space at accessibility sizes. Header and row gaps stay compact.
 Search is tall and rounded; Settings
@@ -62,6 +64,13 @@ with quiet sync status placed above it through safe-area layout.
 Template categories, preview and creation screens, opening, download, refresh, search
 and haptics remain. Long-press menus and equivalent accessibility actions replace swipe
 actions. First-use and no-search-results states are distinct.
+
+### iPhone document navigation
+
+Documents retain the native NavigationStack opening, closing and edge navigation
+behavior. Save failures retain the editor and writer for retry. Background
+sync status has reserved safe-area space above the floating tab bar so the final grid
+row stays reachable. Templates retain their existing preview and creation flow.
 
 Mac list artwork is modestly larger, with softer tiles and selection. Routine sync and
 storage subtitles are removed. Duplicate document names retain folder disambiguation;
