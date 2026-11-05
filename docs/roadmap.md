@@ -100,7 +100,7 @@ Local qualification completed on `rust-foundation-redesign`, based on `ed2e8560`
   measured results are below. No timing bounds were added to correctness tests.
 
 This is local engineering qualification. The full shipping `release:check`, Linux
-matrix, real CloudKit/two-device account transitions and physical iPhone/TestFlight
+matrix, real multi-device account transitions and physical iPhone/TestFlight
 qualification remain release work. Phone commands and embedded-app updating remain
 deferred features.
 
@@ -467,5 +467,7 @@ Approved replacement of CloudKit with Firestore discovery and persistent Cloudfl
 document state is implemented on `cloud-document-sync`, stacked over the Rust foundation
 PR. The [cloud document specification](cloud-documents.md) owns identity, permissions,
 local/offline behavior, clean cutover and future template boundaries. The document
-service and client catalog rules were deployed on 2026-11-04. Physical-device
-qualification remains pending; see the [deployment evidence](evidence/cloud-documents-2026-11-04.md).
+service and client catalog rules were deployed on 2026-11-04. A physical Mac–iPhone
+proof passed discovery, bidirectional edits, concurrent offline merge and reopen
+persistence. Full release qualification remains open; see the
+[deployment evidence](evidence/cloud-documents-2026-11-04.md).

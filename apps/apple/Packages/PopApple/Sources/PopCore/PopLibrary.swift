@@ -334,7 +334,10 @@ public struct LibrarySyncAttention {
   }
   public func enableSync(source: URL, title: String) async throws {
     guard let native else { throw PopFailure("Sign in to sync across devices.") }
+    let current = generation
     let entry = try await PopPreparation.run { try native.adopt(source: source.path, title: title) }
+    guard current == generation else { throw PopFailure("The account changed. Retry.") }
+    try owners.activate(native)
     _ = try await enableSync(id: entry.id)
   }
   public func delete(_ entry: SyncedPop) async throws {

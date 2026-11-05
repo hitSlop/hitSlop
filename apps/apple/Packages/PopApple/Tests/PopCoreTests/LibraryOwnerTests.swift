@@ -61,6 +61,41 @@ import Testing
     try await owner.close()
   }
 
+  @Test @MainActor func interruptedPromotionKeepsTheLiveOwnerUsableForIndependentCopies() async throws {
+    let folder = try Fixtures.folder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let source = try Fixtures.document(stage: Fixtures.stage())
+    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+    let owners = LibraryOwners()
+    let library = PopLibrary(root: folder, owners: owners)
+    try await library.setAccount("owner")
+    let owner = try DocumentOwner(url: source)
+    try owners.register(owner.native)
+    let id = try #require(owner.documentID)
+    let inode = try FileManager.default.attributesOfItem(atPath: source.path)[.systemFileNumber] as? NSNumber
+    _ = try await owner.apply(batch: #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#)
+    library.tokenProvider = { throw PopFailure("Offline before authentication") }
+    await #expect(throws: (any Error).self) { try await library.enableSync(source: source, title: "Existing document") }
+    await library.refresh()
+    let entry = try #require(library.entries.first { $0.id == id })
+    var copy: SyncedPop?
+    var copyError: String?
+    do { copy = try await library.localCopy(entry) } catch { copyError = libraryMessage(error) }
+    // Even interrupted promotion must leave the original writer available to its page.
+    _ = try await owner.apply(batch: #"{"intents":[{"type":"increment","path":["hits"],"by":4}]}"#)
+    #expect(owner.documentID == id)
+    #expect(URL(fileURLWithPath: entry.path).resolvingSymlinksInPath() == source.resolvingSymlinksInPath())
+    #expect(try FileManager.default.attributesOfItem(atPath: source.path)[.systemFileNumber] as? NSNumber == inode)
+    #expect((try Fixtures.object(await owner.state())["value"] as? [String: Any])?["hits"] as? Int == 7)
+    try await owner.close()
+    let independent = try #require(
+      copy, "The indexed document must reuse its existing live writer: \(copyError ?? "no copy returned")")
+    let copied = try DocumentOwner(url: URL(fileURLWithPath: independent.path))
+    #expect(copied.documentID != id)
+    #expect((try Fixtures.object(await copied.state())["value"] as? [String: Any])?["hits"] as? Int == 3)
+    try await copied.close()
+  }
+
   @Test @MainActor func lateCatalogAndTokenCallbacksCannotReopenTheOldAccount() async throws {
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
