@@ -751,7 +751,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
         throw PopFailure("Some text could not be saved. Keep this document open and copy that text before leaving.")
       }
     },
-    renderArtwork: @MainActor (URL) async -> PopRenderedArtwork? = { _ in nil }
+    renderArtwork: (@MainActor (URL) async -> PopRenderedArtwork?)? = nil
   ) async throws -> URL {
     guard !closed, !closing, closeTask == nil else { throw PopFailure("Document is closing") }
     let drafts = try await prepareClose(for: .handoff)
@@ -764,7 +764,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       defer { try? FileManager.default.removeItem(at: directory) }
       let source = directory.appendingPathComponent("copy.pop")
       try await owner.copy(to: source, artwork: nil)
-      artwork = await renderArtwork(source)
+      if let renderArtwork {
+        artwork = await renderArtwork(source)
+      } else {
+        artwork = nil
+      }
       try Task.checkCancellation()
     } catch {
       await cancelClose()
