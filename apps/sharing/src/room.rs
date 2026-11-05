@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
 use worker::*;
+#[path = "access.rs"]
+mod access;
 #[path = "epochs.rs"]
 mod epochs;
 #[path = "resources.rs"]
@@ -17,7 +19,6 @@ mod resources;
 const CHUNK: usize = 1_800_000;
 const BACKFILL: usize = 1 << 20;
 use pop_sharing_protocol::limits::*;
-const DAY_MS: u64 = 86_400_000;
 fn now() -> u64 {
     js_sys::Date::now() as u64
 }
@@ -102,7 +103,7 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         }
         let mut response = Response::empty()?.with_status(204);
         response.headers_mut().set("Access-Control-Allow-Origin", origin.as_deref().unwrap())?;
-        response.headers_mut().set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, DELETE")?;
+        response.headers_mut().set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE")?;
         response.headers_mut().set(
             "Access-Control-Allow-Headers",
             "Authorization, Content-Type, X-Sharing-SHA256, X-Sharing-App, X-Sharing-Version, X-Sharing-Root",
@@ -150,7 +151,9 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
             return Ok(response);
         }
     }
-    let mut response = if path == "/v1/rooms" || path == "/v1/account" || path.starts_with("/v1/account/rooms/") {
+    let mut response = if matches!(path.as_str(), "/v1/documents" | "/v1/account" | "/v1/account/documents")
+        || path.starts_with("/v1/account/documents/")
+    {
         let claims = match crate::auth::identity(&req, &env).await {
             Ok(c) => c,
             Err(e) => return identity_response(e),
@@ -160,13 +163,12 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         let parts: Vec<_> = path.split('/').collect();
         if !(4..=8).contains(&parts.len())
             || parts[1] != "v1"
-            || parts[2] != "rooms"
-            || parts[3].len() != 32
-            || !parts[3].bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            || parts[2] != "documents"
+            || !pop_sharing_protocol::valid_copy(parts[3])
         {
             return Response::error("Not found", 404);
         }
-        env.durable_object("ROOMS")?.get_by_name(parts[3])?.fetch_with_request(req).await?
+        env.durable_object("DOCUMENTS")?.get_by_name(parts[3])?.fetch_with_request(req).await?
     };
     let headers = response.headers().clone();
     response = response.with_headers(headers);
@@ -192,6 +194,12 @@ extern "C" {
 #[derive(Deserialize, Serialize, Clone, Default)]
 struct SocketState {
     joined: bool,
+    #[serde(default)]
+    owner: bool,
+    #[serde(default)]
+    generation: u64,
+    #[serde(default)]
+    uid: String,
     #[serde(default)]
     epoch: String,
     #[serde(default)]
@@ -223,14 +231,14 @@ struct BlobRow {
     bytes: Vec<u8>,
 }
 #[durable_object]
-pub struct SlopRoom {
+pub struct CloudDocument {
     state: State,
     env: Env,
     sql: SqlStorage,
     uploads: futures_util::lock::Mutex<()>,
 }
 
-impl SlopRoom {
+impl CloudDocument {
     fn text(&self, key: &str) -> Result<Option<String>> {
         Ok(self
             .sql
@@ -289,42 +297,9 @@ impl SlopRoom {
         let (bytes, rows) = self.update_usage()?;
         Ok(bytes >= COMPACT_AFTER_BYTES || rows >= COMPACT_AFTER_RECORDS)
     }
-    async fn sweep_archives(&self) -> Result<()> {
-        let Some(room) = self.text("room")? else {
-            return Ok(());
-        };
-        let bucket = self.env.bucket("SEEDS")?;
-        let mut cursor = None;
-        loop {
-            let mut list = bucket.list().prefix(format!("rooms/{room}/compacted/"));
-            if let Some(c) = cursor {
-                list = list.cursor(c);
-            }
-            let listed = list.execute().await?;
-            for item in listed.objects() {
-                if bucket
-                    .head(item.key())
-                    .await?
-                    .and_then(|o| o.custom_metadata().ok())
-                    .and_then(|m| m.get("expires").and_then(|s| s.parse::<u64>().ok()))
-                    .is_some_and(|expiry| expiry <= now())
-                {
-                    bucket.delete(item.key()).await?;
-                }
-            }
-            if !listed.truncated() {
-                break;
-            }
-            cursor = listed.cursor();
-        }
-        Ok(())
-    }
-    async fn compact(&self, req: &mut Request, room: &str) -> Result<Response> {
+    async fn compact(&self, req: &mut Request) -> Result<Response> {
         // Serialize competing archives; Push and Stop may still progress across the R2 await.
         let _guard = self.uploads.lock().await;
-        if self.handoff()?.is_some() {
-            return Response::error("Handoff frozen", 409);
-        }
         let body = match bounded_body(req, BASE_BYTES).await {
             Ok(body) => body,
             Err(worker::Error::RustError(message)) if message == "Request exceeds its byte limit" => {
@@ -377,42 +352,22 @@ impl SlopRoom {
         if !crate::resource_types::hash_id(&digest) || hex(&Sha256::digest(&body)) != digest {
             return Response::error("Base checksum mismatch", 400);
         }
+        if !self.authorized_guest(req).await? {
+            return Response::error("Access revoked", 403);
+        }
         let mut covered = vec![];
-        let mut archive = vec![];
         for row in self.sql.exec("SELECT seq,spans,size FROM records ORDER BY seq", None)?.next::<RecordRow>() {
             let row = row?;
             let spans: Vec<(String, u32, u32)> = serde_json::from_str(&row.spans)?;
-            let spans: Vec<Span> = spans
-                .into_iter()
-                .map(|(p, start, end)| {
-                    Ok(Span { peer: u64::from_str_radix(&p, 16).map_err(|_| fail("Stored peer"))?, start, end })
+            if row.seq == 0
+                || spans.iter().all(|(peer, _, end)| {
+                    u64::from_str_radix(peer, 16)
+                        .ok()
+                        .is_some_and(|peer| *end <= frontier.get(&peer).copied().unwrap_or(0))
                 })
-                .collect::<Result<_>>()?;
-            if row.seq == 0 || spans.iter().all(|s| s.end <= frontier.get(&s.peer).copied().unwrap_or(0)) {
-                let frame = Frame::Records(vec![Record { spans, bytes: self.bytes(row.seq, row.size)? }]).encode();
-                archive.extend_from_slice(&(frame.len() as u32).to_be_bytes());
-                archive.extend(frame);
+            {
                 covered.push(row.seq);
             }
-        }
-        let n = self.text("archive_counter")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0) + 1;
-        self.put("archive_counter", &n.to_string())?;
-        let key = format!("rooms/{room}/compacted/{n}");
-        let bucket = self.env.bucket("SEEDS")?;
-        if self.state.storage().get_alarm().await?.is_none_or(|alarm| alarm as u64 > now() + DAY_MS) {
-            self.state.storage().set_alarm(std::time::Duration::from_millis(DAY_MS)).await?;
-        }
-        bucket
-            .put(key.clone(), archive)
-            .custom_metadata(std::collections::HashMap::from([(
-                "expires".into(),
-                (now() + COMPACTED_ARCHIVE_DAYS * DAY_MS).to_string(),
-            )]))
-            .execute()
-            .await?;
-        if self.phase()? != Some(RoomPhase::Live) {
-            bucket.delete(key).await?;
-            return Response::error("Sharing ended", 410);
         }
         // No await within the swap. Recheck the generation and due state inside transactionSync.
         let sql = self.sql.clone();
@@ -442,7 +397,6 @@ impl SlopRoom {
                     as usize;
             let rows = sql.exec("SELECT count(*) AS n FROM records WHERE seq>0", None)?.one::<NumberRow>()?.n as usize;
             if get("phase")?.as_deref() != Some("\"live\"")
-                || get("handoff")?.is_some()
                 || get("base_version")? != previous_json
                 || (bytes < COMPACT_AFTER_BYTES && rows < COMPACT_AFTER_RECORDS)
             {
@@ -480,22 +434,7 @@ impl SlopRoom {
             return Response::error("Compaction conflict", 409);
         }
         self.state.storage().sync().await?;
-        self.sweep_archives().await?;
-        let expiry = now() + COMPACTED_ARCHIVE_DAYS * DAY_MS;
-        if self.state.storage().get_alarm().await?.is_none_or(|alarm| alarm as u64 > expiry) {
-            self.state.storage().set_alarm(std::time::Duration::from_millis(COMPACTED_ARCHIVE_DAYS * DAY_MS)).await?;
-        }
         Response::empty().map(|r| r.with_status(204))
-    }
-    async fn active(&self) -> Result<()> {
-        let last = self.text("last_active")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-        if now().saturating_sub(last) >= 3_600_000 {
-            self.put("last_active", &now().to_string())?;
-            if self.state.storage().get_alarm().await?.is_none() {
-                self.state.storage().set_alarm(std::time::Duration::from_millis(ROOM_IDLE_DAYS * DAY_MS)).await?;
-            }
-        }
-        Ok(())
     }
     async fn authorize_creator(&self, req: &Request) -> Result<crate::auth::CreatorAuthorization> {
         let identity = crate::auth::identity(req, &self.env).await.map(|claims| claims.sub);
@@ -503,78 +442,49 @@ impl SlopRoom {
         Ok(crate::auth::creator_authorization(identity, &owner_uid))
     }
     async fn authorized_guest(&self, req: &Request) -> Result<bool> {
-        let key = req.headers().get("Authorization")?.unwrap_or_default();
-        let Some(key) = key.strip_prefix("Bearer ") else { return Ok(false) };
-        // Compare fixed-length digests so response timing does not reveal a matching prefix.
-        Ok(self.text("capability")?.is_some_and(|stored| hash(&stored) == hash(key)))
+        if self.capability_access(req).await? {
+            return Ok(true);
+        }
+        Ok(self.identity_role(req).await?.is_some())
     }
     async fn stop_room(&self, room: &str, reason: Metric) -> Result<Response> {
-        let was_ended = self.phase()? == Some(RoomPhase::Ended);
-        self.set_phase(RoomPhase::Ended)?;
-        if self.text("ended_at")?.is_none() {
+        if self.phase()? != Some(RoomPhase::Ended) {
+            self.set_phase(RoomPhase::Ended)?;
             self.put("ended_at", &now().to_string())?;
-        }
-        if !was_ended {
+            self.queue_registry_releases()?;
+            self.sql.exec("DELETE FROM members; DELETE FROM meta WHERE key='capability'", None)?;
             record(&self.env, reason);
         }
-        // A retry alarm finishes cleanup and quota release after a transient failure.
-        self.state.storage().set_alarm(std::time::Duration::from_secs(60)).await?;
-        for ws in self.state.get_websockets() {
-            let _ = ws.serialize_attachment(SocketState::default());
-            let _ = self.send(&ws, Frame::Error { code: crate::frame::ERROR_ENDED, message: "Sharing ended".into() });
-            let _ = ws.close(Some(1008), Some("Sharing ended"));
-        }
-        let bucket = self.env.bucket("SEEDS")?;
-        loop {
-            let listed = bucket.list().prefix(format!("{room}/")).execute().await?;
-            let items = listed.objects();
-            if items.is_empty() {
-                break;
+        // Identity/deletion tombstones persist: the UUID can never be reclaimed by
+        // another account. Retry cleanup and discovery publication independently.
+        if self.text("cleanup_done")?.is_none() {
+            self.schedule_cleanup(5_000).await?;
+            self.state.storage().sync().await?;
+            self.end_connections(crate::frame::ERROR_ENDED, "Document deleted", 1008);
+            let bucket = self.env.bucket("SEEDS")?;
+            for prefix in [format!("{room}/")] {
+                loop {
+                    let objects = bucket.list().prefix(prefix.clone()).execute().await?.objects();
+                    if objects.is_empty() {
+                        break;
+                    }
+                    for item in objects {
+                        bucket.delete(item.key()).await?;
+                    }
+                }
             }
-            for item in items {
-                bucket.delete(item.key()).await?;
+            self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key IN ('seed_hash','seed_key','seed_size','resources','root','heads','base_version')",None)?;
+            self.state.storage().sync().await?;
+            if let Some(uid) = self.text("owner_uid")?
+                && !self.release_registration(&uid, None).await?
+            {
+                return Err(fail("Account release failed"));
             }
+            self.put("cleanup_done", "1")?;
+            self.state.storage().sync().await?;
         }
-        loop {
-            let listed = bucket.list().prefix(format!("rooms/{room}/compacted/")).execute().await?;
-            if listed.objects().is_empty() {
-                break;
-            }
-            for item in listed.objects() {
-                bucket.delete(item.key()).await?;
-            }
-        }
-        self.sql.exec("DELETE FROM epoch_garbage; DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key NOT IN ('phase','ended_at','owner_uid','document','room')", None)?;
-        self.state.storage().sync().await?;
-        let uid = self.text("owner_uid")?.ok_or_else(|| fail("Missing owner"))?;
-        let mut init = RequestInit::new();
-        init.with_method(Method::Post).with_body(Some(room.into()));
-        let response = self
-            .env
-            .durable_object("ACCOUNTS")?
-            .get_by_name(&hash(&uid))?
-            .fetch_with_request(Request::new_with_init("https://room.internal/internal/release", &init)?)
-            .await?;
-        if response.status_code() != 200 {
-            return Err(fail("Account release failed"));
-        }
-        let ended = self.text("ended_at")?.unwrap_or_else(|| now().to_string());
-        self.sql.exec("DELETE FROM meta", None)?;
-        self.set_phase(RoomPhase::Ended)?;
-        self.put("ended_at", &ended)?;
-        // A staged R2 write can finish after Stop's purge. Keep only its bounded cleanup
-        // registration and room prefix until the stage deadline, even across eviction.
-        if self.sql.exec("SELECT count(*) AS n FROM epoch_seeds", None)?.one::<NumberRow>()?.n > 0 {
-            self.put("room", room)?;
-        }
-        let ended_ms = ended.parse::<u64>().map_err(|_| fail("Invalid ended time"))?;
-        self.state
-            .storage()
-            .set_alarm(std::time::Duration::from_millis(
-                self.epoch_alarm_delay((ended_ms + ENDED_TOMBSTONE_DAYS * DAY_MS).saturating_sub(now()).max(1))?,
-            ))
-            .await?;
-        Response::ok("ended")
+        self.flush_registry().await?;
+        Response::ok("deleted")
     }
     fn bytes(&self, seq: i64, size: usize) -> Result<Vec<u8>> {
         let mut bytes = Vec::with_capacity(size);
@@ -658,9 +568,8 @@ impl SlopRoom {
             return Err(fail("Hello required"));
         }
         let connection_epoch = ws.deserialize_attachment::<SocketState>()?.map(|s| s.epoch).unwrap_or_default();
-        if self.handoff()?.is_some()
-            || (self.text("epoch_required")?.is_some()
-                && self.text("seed_hash")?.as_deref() != Some(connection_epoch.as_str()))
+        if self.text("epoch_required")?.is_some()
+            && self.text("seed_hash")?.as_deref() != Some(connection_epoch.as_str())
         {
             self.send(
                 ws,
@@ -716,13 +625,11 @@ impl SlopRoom {
         })?;
         self.state.storage().sync().await?;
         if self.phase()? == Some(RoomPhase::Ended)
-            || self.handoff()?.is_some()
             || (self.text("epoch_required")?.is_some()
                 && self.text("seed_hash")?.as_deref() != Some(connection_epoch.as_str()))
         {
             return Err(fail("Sharing epoch changed"));
         }
-        self.active().await?;
         self.send(ws, Frame::Ack { id, status: Ack::Stored })?;
         for other in self.state.get_websockets() {
             // Echo is harmless and keeps broadcast routing independent of JS object identity.
@@ -738,7 +645,24 @@ impl SlopRoom {
         Ok(())
     }
     async fn message(&self, ws: &WebSocket, msg: WebSocketIncomingMessage) -> SocketResult {
-        if self.phase()? != Some(RoomPhase::Live) || self.handoff()?.is_some() {
+        let access = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
+        if !access.owner
+            && (access.generation != self.generation()?
+                || (!access.uid.is_empty()
+                    && self
+                        .sql
+                        .exec(
+                            "SELECT count(*) AS n FROM members WHERE uid=? AND generation=?",
+                            vec![access.uid.into(), (self.generation()? as i64).into()],
+                        )?
+                        .one::<NumberRow>()?
+                        .n
+                        == 0))
+        {
+            let _ = ws.close(Some(1008), Some("Access revoked"));
+            return Ok(());
+        }
+        if self.phase()? != Some(RoomPhase::Live) {
             return Err(refused(crate::frame::ERROR_ENDED, "Sharing ended"));
         }
         let WebSocketIncomingMessage::Binary(bytes) = msg else {
@@ -756,7 +680,6 @@ impl SlopRoom {
                     return Err(refused(crate::frame::ERROR_APP, "Different app or protocol"));
                 }
                 self.hello(ws, protocol, &app_digest, version)?;
-                self.active().await?;
                 Ok(())
             }
             Frame::Push { id, records } => {
@@ -772,6 +695,7 @@ impl SlopRoom {
 }
 
 fn initialize(sql: &SqlStorage) {
+    sql.exec("CREATE TABLE IF NOT EXISTS pending_registry(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS members(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL)",None).expect("document access tables");
     sql.exec("CREATE TABLE IF NOT EXISTS epoch_seeds(hash TEXT PRIMARY KEY,size INTEGER NOT NULL,expires INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS epoch_blobs(seed TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(seed,id)); CREATE TABLE IF NOT EXISTS epoch_garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
 }
 
@@ -786,7 +710,7 @@ fn decode_hex(text: &str) -> Result<Vec<u8>> {
         })
         .collect()
 }
-impl DurableObject for SlopRoom {
+impl DurableObject for CloudDocument {
     fn new(state: State, env: Env) -> Self {
         state.set_websocket_auto_response(
             &worker::worker_sys::WebSocketRequestResponsePair::new("ping", "pong").expect("valid ping/pong"),
@@ -804,7 +728,7 @@ impl DurableObject for SlopRoom {
         }
         let path = req.path();
         let parts: Vec<_> = path.split('/').collect();
-        if path.starts_with("/internal/rooms/")
+        if path.starts_with("/internal/documents/")
             && parts.len() == 5
             && parts[4] == "init"
             && req.method() == Method::Post
@@ -818,18 +742,14 @@ impl DurableObject for SlopRoom {
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
-            if self.phase()?.is_none() {
+            let creating = self.phase()?.is_none();
+            if creating {
                 self.put("owner_uid", &input.owner_uid)?;
                 self.put("document", &input.document)?;
                 self.put("room", room)?;
-                self.put("capability", &random_hex(32)?)?;
+                self.put("access_generation", "1")?;
                 self.set_phase(RoomPhase::Uploading)?;
-                record(&self.env, Metric::RoomCreated);
-            }
-            // A retry also repairs a failed alarm write; no accepted Uploading room
-            // is left without its abandonment cleanup.
-            if self.phase()? == Some(RoomPhase::Uploading) {
-                self.state.storage().set_alarm(std::time::Duration::from_secs(24 * 60 * 60)).await?;
+                record(&self.env, Metric::DocumentCreated);
             }
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
@@ -839,9 +759,10 @@ impl DurableObject for SlopRoom {
             {
                 return Response::error("Denied", 403);
             }
+            self.state.storage().sync().await?;
             return Response::from_json(&CreatedRoom {
                 room: room.into(),
-                capability: self.text("capability")?.ok_or_else(|| fail("Missing capability"))?,
+                capability: self.text("capability")?.unwrap_or_default(),
                 phase: self.phase()?.ok_or_else(|| fail("Missing phase"))?,
             });
         }
@@ -856,10 +777,6 @@ impl DurableObject for SlopRoom {
         let Some(phase) = self.phase()? else {
             return Response::error("Unknown room", 404);
         };
-        if phase == RoomPhase::Live && self.text("last_active")?.is_none() {
-            // Rooms created before idle expiry get their first deadline on access.
-            self.active().await?;
-        }
         if phase == RoomPhase::Ended && self.text("owner_uid")?.is_none() {
             return Response::error("Sharing ended", 410);
         }
@@ -870,34 +787,20 @@ impl DurableObject for SlopRoom {
                     return creator_response(decision)?.ok_or_else(|| fail("Unexpected creator authorization"));
                 }
             }
-            let required =
-                req.url()?.query_pairs().find(|(key, _)| key == "phase").map(|(_, value)| value.into_owned());
-            if let Some(required) = required {
-                if required != "uploading" {
-                    return Response::error("Invalid cancellation phase", 400);
-                }
-                match self.phase()? {
-                    Some(RoomPhase::Uploading) => {}
-                    Some(RoomPhase::Ended) => return self.stop_room(room, Metric::RoomEndedStop).await,
-                    _ => return Response::error("Room already activated", 409),
-                }
-            }
-            if self.handoff()?.is_some() {
-                return Response::error("Finalize the frozen handoff", 409);
-            }
-            // No await separates the conditional phase read above from stop_room's
-            // first synchronous Ended write. A competing activation cannot slip in.
-            return self.stop_room(room, Metric::RoomEndedStop).await;
+            return self.stop_room(room, Metric::DocumentDeleted).await;
         }
         if phase == RoomPhase::Ended {
-            return Response::error("Sharing ended", 410);
+            return Response::error("Document deleted", 410);
         }
-        if matches!(route, "epoch" | "epochs" | "handoff") {
+        if route.is_empty() && req.method() == Method::Patch {
+            return self.access_route(&mut req, "metadata").await;
+        }
+        if matches!(route, "sharing" | "members" | "metadata") {
+            return self.access_route(&mut req, route).await;
+        }
+        if matches!(route, "epoch" | "epochs") {
             let guest = self.authorized_guest(&req).await?;
-            if guest && self.handoff()?.is_some() {
-                return Response::error("Sharing ended", 410);
-            }
-            if route == "handoff" || !guest {
+            if !guest {
                 match self.authorize_creator(&req).await? {
                     crate::auth::CreatorAuthorization::Allowed => {}
                     decision => {
@@ -918,31 +821,16 @@ impl DurableObject for SlopRoom {
                 ("epoch", None, Method::Get) => Response::error("Seed not ready", 409),
                 ("epoch", None, Method::Post) => self.publish_epoch(&mut req, room).await,
                 ("epochs", Some(hash), Method::Put) => self.stage_epoch(&mut req, room, hash).await,
-                ("epochs", Some(hash), Method::Delete) => self.release_epoch(room, hash).await,
-                ("handoff", Some("begin"), Method::Post) => self.begin_handoff(&mut req).await,
-                ("handoff", Some("finalize"), Method::Post) => self.finalize_handoff(&mut req, room).await,
-                ("handoff", Some("history"), Method::Get) => self.handoff_history(&req),
+                ("epochs", Some(hash), Method::Delete) => self.release_epoch(&req, room, hash).await,
                 _ => Response::error("Not found", 404),
             };
         }
-        let frozen_creator = if self.handoff()?.is_some() {
-            if self.authorized_guest(&req).await? {
-                return Response::error("Sharing ended", 410);
-            }
-            match self.authorize_creator(&req).await? {
-                crate::auth::CreatorAuthorization::Allowed => {}
-                decision => return creator_response(decision)?.ok_or_else(|| fail("Unexpected creator authorization")),
-            }
-            if req.method() != Method::Get || !matches!(route, "" | "seed" | "resources" | "blobs" | "blob") {
-                return Response::error("Handoff frozen", 409);
-            }
-            true
-        } else {
-            false
-        };
         if route.is_empty() && req.method() == Method::Get {
             let guest = self.authorized_guest(&req).await?;
-            let owner = if guest {
+            let owner = if self.identity_role(&req).await? == Some(pop_sharing_protocol::document::DocumentRole::Owner)
+            {
+                true
+            } else if guest {
                 false
             } else {
                 match self.authorize_creator(&req).await? {
@@ -958,7 +846,7 @@ impl DurableObject for SlopRoom {
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
-            if guest && self.phase()? != Some(RoomPhase::Live) {
+            if !owner && self.phase()? != Some(RoomPhase::Live) {
                 return Response::error("Publication pending", 409);
             }
             return Response::from_json(&self.info(owner)?);
@@ -968,9 +856,7 @@ impl DurableObject for SlopRoom {
             ("open", Method::Post) | ("seed", Method::Put) | ("resources", Method::Post) | ("asset", Method::Put)
         );
         let blob_upload = route == "blob" && req.method() == Method::Put;
-        let owner = if frozen_creator {
-            true
-        } else if owner_write
+        let owner = if owner_write
             || (blob_upload && phase == RoomPhase::Uploading)
             || (req.method() == Method::Get
                 && matches!(route, "seed" | "resources" | "blobs" | "blob")
@@ -1025,8 +911,8 @@ impl DurableObject for SlopRoom {
                 return Response::error("Sharing ended", 410);
             }
             self.set_phase(RoomPhase::Live)?;
-            self.active().await?;
-            record(&self.env, Metric::RoomOpened);
+            self.state.storage().sync().await?;
+            record(&self.env, Metric::DocumentReady);
             return Response::from_json(&self.info(true)?);
         }
         if owner_write && phase != RoomPhase::Uploading {
@@ -1039,7 +925,7 @@ impl DurableObject for SlopRoom {
             return self.resource_api(&mut req, room, route).await;
         }
         if route == "compact" && req.method() == Method::Post {
-            return self.compact(&mut req, room).await;
+            return self.compact(&mut req).await;
         }
         if route == "seed" {
             let bucket = self.env.bucket("SEEDS")?;
@@ -1102,10 +988,30 @@ impl DurableObject for SlopRoom {
             if count >= ROOM_IP_CONNECTIONS {
                 return Response::error("Room IP connection limit", 429);
             }
+            let claims = crate::auth::identity(&req, &self.env).await.ok();
+            let uid = claims.map(|claims| claims.sub).unwrap_or_default();
+            let owner = self.text("owner_uid")?.as_deref() == Some(uid.as_str());
+            let generation = self.generation()?;
+            let member = !uid.is_empty()
+                && self
+                    .sql
+                    .exec(
+                        "SELECT count(*) AS n FROM members WHERE uid=? AND generation=?",
+                        vec![uid.clone().into(), (generation as i64).into()],
+                    )?
+                    .one::<NumberRow>()?
+                    .n
+                    > 0;
+            if self.phase()? != Some(RoomPhase::Live) || (!owner && !member && !self.capability_access(&req).await?) {
+                return Response::error("Access revoked", 403);
+            }
             let pair = WebSocketPair::new()?;
             self.state.accept_web_socket(&pair.server);
             pair.server.serialize_attachment(SocketState {
                 joined: false,
+                owner,
+                generation,
+                uid,
                 epoch: String::new(),
                 ip,
                 window_start: now(),
@@ -1118,61 +1024,22 @@ impl DurableObject for SlopRoom {
         Response::error("Not found", 404)
     }
     async fn alarm(&self) -> Result<Response> {
-        if self.phase()? == Some(RoomPhase::Ended) && self.text("owner_uid")?.is_none() {
-            if let Some(room) = self.text("room")? {
-                let _guard = self.uploads.lock().await;
-                self.sweep_epochs(&room).await?;
-                if self.sql.exec("SELECT count(*) AS n FROM epoch_seeds", None)?.one::<NumberRow>()?.n == 0 {
-                    self.sql.exec("DELETE FROM meta WHERE key='room'", None)?;
-                }
-            }
-            let ended = self.text("ended_at")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(0);
-            if now() >= ended + ENDED_TOMBSTONE_DAYS * DAY_MS {
-                self.state.storage().delete_all().await?;
-                initialize(&self.sql);
-            } else {
-                self.state
-                    .storage()
-                    .set_alarm(std::time::Duration::from_millis(
-                        self.epoch_alarm_delay(ended + ENDED_TOMBSTONE_DAYS * DAY_MS - now())?,
-                    ))
-                    .await?;
-            }
-            return Response::ok("ended");
+        if self.phase()? == Some(RoomPhase::Ended) {
+            let room = self.text("room")?.ok_or_else(|| fail("Missing document"))?;
+            self.stop_room(&room, Metric::DocumentDeleted).await?;
         }
-        if matches!(self.phase()?, Some(RoomPhase::Uploading | RoomPhase::Ended)) {
-            let room = self.text("room")?.ok_or_else(|| fail("Missing room"))?;
-            return self.stop_room(&room, Metric::RoomEndedAlarm).await;
-        }
-        if self.phase()? == Some(RoomPhase::Live) {
+        {
             let _guard = self.uploads.lock().await;
-            self.sweep_epochs(&self.text("room")?.ok_or_else(|| fail("Missing room"))?).await?;
-            self.sweep_archives().await?;
-            if self.handoff()?.is_some() {
-                self.state
-                    .storage()
-                    .set_alarm(std::time::Duration::from_millis(self.epoch_alarm_delay(DAY_MS)?))
-                    .await?;
-                return Response::ok("handoff");
+            if let Some(room) = self.text("room")? {
+                self.sweep_epochs(&room).await?;
             }
-            let last = self.text("last_active")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or_else(now);
-            if self.state.get_websockets().is_empty() && now() >= last + ROOM_IDLE_DAYS * DAY_MS {
-                return self
-                    .stop_room(&self.text("room")?.ok_or_else(|| fail("Missing room"))?, Metric::RoomEndedIdle)
-                    .await;
-            }
-            self.state
-                .storage()
-                .set_alarm(std::time::Duration::from_millis(self.epoch_alarm_delay(
-                    if self.state.get_websockets().is_empty() {
-                        (last + ROOM_IDLE_DAYS * DAY_MS).saturating_sub(now()).clamp(1, DAY_MS)
-                    } else {
-                        DAY_MS
-                    },
-                )?))
-                .await?;
         }
-        Response::ok("live")
+        self.flush_registry().await?;
+        let pending=self.sql.exec("SELECT ((SELECT count(*) FROM pending_registry)+(SELECT count(*) FROM epoch_seeds)+(SELECT count(*) FROM epoch_garbage)) AS n",None)?.one::<NumberRow>()?.n>0;
+        if pending {
+            self.schedule_cleanup(self.epoch_alarm_delay(60_000)?).await?;
+        }
+        Response::ok("retained")
     }
     async fn websocket_message(&self, ws: WebSocket, message: WebSocketIncomingMessage) -> Result<()> {
         if let Err(error) = self.message(&ws, message).await {

@@ -38,7 +38,7 @@ fn local_blobs(owner: &Owner) -> std::result::Result<Vec<Resource>, transport::H
         .collect())
 }
 pub(crate) fn remote_blobs(key: &RoomKey) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
-    let list = transport::http_typed(key, "GET", "blobs", Some(&key.capability), &[], &[])?;
+    let list = transport::http_typed(key, "GET", "blobs", Some(key.bearer()), &[], &[])?;
     let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
     resource_types::validate(&items, true).map_err(fail)?;
     Ok(items)
@@ -57,7 +57,7 @@ pub(crate) fn upload_blobs(
             key,
             "PUT",
             &format!("blob/{}", item.hash),
-            Some(&key.capability),
+            Some(key.bearer()),
             &bytes,
             &[("Content-Type", &item.media_type)],
         )?;
@@ -70,7 +70,7 @@ pub(crate) fn download_blobs(
     key: &RoomKey,
     uploaded: &mut Vec<Resource>,
 ) -> std::result::Result<(), transport::HttpFailure> {
-    download_blobs_authenticated(owner, key, uploaded, &key.capability)
+    download_blobs_authenticated(owner, key, uploaded, key.bearer())
 }
 pub(crate) fn download_blobs_authenticated(
     owner: &Owner,

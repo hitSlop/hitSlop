@@ -508,7 +508,11 @@ async function main() {
   await cleanup();
   const fragment = location.hash;
   if (hosted && location.pathname === "/join") {
-    if (!/^#[0-9a-f]{32}\.[0-9a-f]{64}$/.test(fragment))
+    if (
+      !/^#[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{64}$/.test(
+        fragment,
+      )
+    )
       throw new Error("Sharing link is no longer valid");
     const invitation = config.host + "/join" + fragment;
     const existing = (await listCopies()).find(
@@ -544,7 +548,9 @@ async function main() {
       const link = new URL(input.value);
       if (
         link.href !== `${config.host}/join${link.hash}` ||
-        !/^#[0-9a-f]{32}\.[0-9a-f]{64}$/.test(link.hash)
+        !/^#[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{64}$/.test(
+          link.hash,
+        )
       )
         throw new Error("Paste a pop sharing link");
       location.assign(link.href);

@@ -59,7 +59,7 @@ The Mac catalog combines immutable bundled starters, `~/.pop/templates`, and Rec
 
 ## File layout
 
-A `.pop` file is one SQLite database (application ID `0x54494E59`; storage version in
+A `.pop` file is one SQLite database (application ID `0x504F5000`; storage version in
 `user_version`). Rust defines internal wires and package-format acceptance. `pop.ts`
 declares identity, window, ordered theme, capabilities and optional artwork. `schema.ts`
 supplies the descriptor and initial values; fixed root component and command files

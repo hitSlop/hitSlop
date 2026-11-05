@@ -104,7 +104,7 @@ struct CatalogDetail: View {
         if let identity = entry.documentIdentity {
           Text(entry.title).font(.body).foregroundStyle(.secondary)
           Label(
-            entry.inCloud ? "iCloud" : folderName(identity.folderPath),
+            entry.inCloud ? "Synced" : folderName(identity.folderPath),
             systemImage: entry.inCloud ? "icloud" : "folder"
           )
           .font(.callout).foregroundStyle(.secondary)
@@ -159,7 +159,7 @@ struct CatalogDetail: View {
       CatalogFact(
         title: "Source",
         value: entry.inCloud
-          ? "iCloud"
+          ? "Synced"
           : entry.isRecent ? "Local document" : entry.isBundled ? "Included with pop" : "Installed locally")
     ]
     if entry.isRecent, let date = entry.createdAt {

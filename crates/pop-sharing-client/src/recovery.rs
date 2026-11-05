@@ -62,7 +62,7 @@ pub(crate) fn paths(state_directory: &Path) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 /// Discover every accepted independent recovery, including copies completed before
-/// an interrupted canonical installation. This never imports them into CloudKit.
+/// an interrupted canonical installation. Discovery does not enable cloud sync for these local files.
 pub fn recovered_documents(state_directory: &Path) -> Result<Vec<String>> {
     Ok(paths(state_directory)?
         .into_iter()

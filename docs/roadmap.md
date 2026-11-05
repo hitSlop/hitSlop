@@ -8,9 +8,8 @@ live with others, and export PNG and PDF.
 The iPhone app (iOS 26+) is in TestFlight. It opens, edits and creates pop,
 bundles the Popular templates and imports from Files. The current
 iPhone host is portrait-only; per-pop orientation declarations remain future work. The Mac/iPhone Synced Library
-keeps managed pop in sync through the person's iCloud account. The Mac app
-includes the Synced Library on CloudKit Production, matching TestFlight/App Store
-iPhones. iPhone Home Screen
+is being replaced by Firestore discovery and persistent Cloudflare documents;
+see the [cloud document specification](cloud-documents.md) for the approved cutover. iPhone Home Screen
 widgets render library pop with a widget view locally, open them on tap, and refresh
 in the background when iOS allows.
 [Architecture](architecture.md#synced-library) owns the library design.
@@ -101,7 +100,7 @@ Local qualification completed on `rust-foundation-redesign`, based on `ed2e8560`
   measured results are below. No timing bounds were added to correctness tests.
 
 This is local engineering qualification. The full shipping `release:check`, Linux
-matrix, real CloudKit/two-device account transitions and physical iPhone/TestFlight
+matrix, real multi-device account transitions and physical iPhone/TestFlight
 qualification remain release work. Phone commands and embedded-app updating remain
 deferred features.
 
@@ -450,9 +449,9 @@ web reopening remain later work. Keep qualifying
 as collaboration grows. Keep the existing Rust owner and relay boundaries described in
 [architecture](architecture.md#relay).
 
-**Sync beyond Apple devices.** The implemented CloudKit Synced Library uses a person's
-iCloud account. Relay-based replication of a person's own documents remains an option
-for platforms without CloudKit ([proposal](ideas.md#sync-between-your-own-devices)).
+**Sync beyond Apple devices.** Persistent document replication uses Cloudflare; personal
+references use Firestore. Future native platforms can reuse the Rust document client
+and add their own account/catalog adapter. See the [cloud specification](cloud-documents.md).
 
 ## Deferred
 
@@ -461,3 +460,21 @@ direct editing of loose files in iCloud Drive and other synced folders (the Sync
 pulling additive schema changes and undoing an agent's change forward. Historical source
 may be kept in the optional, Git-ignored `deferred/` archive; it is not in fresh clones.
 Pre-launch documents are not migrated.
+
+## Persistent cloud documents
+
+Approved replacement of CloudKit with Firestore discovery and persistent Cloudflare
+document state is implemented on `cloud-document-sync`, stacked over the Rust foundation
+PR. The [cloud document specification](cloud-documents.md) owns identity, permissions,
+local/offline behavior, clean cutover and future template boundaries. The document
+service and client catalog rules were deployed on 2026-11-04. A physical Mac–iPhone
+proof passed discovery, bidirectional edits, concurrent offline merge and reopen
+persistence. Full release qualification remains open; see the
+[deployment evidence](evidence/cloud-documents-2026-11-04.md).
+
+The [Apple catalog refresh](apple-catalog.md) adds responsive iPhone icon grids,
+matching native document badges and a per-device Inbox with a count. Its state is
+cached in the Rust library index. Native verification and the physical iPhone Inbox,
+download, compact Recents and Templates checks passed; the additional dark-mode and
+larger-text hands-on review was deferred. See the
+[qualification evidence](evidence/cloud-documents-2026-11-04.md).

@@ -249,7 +249,7 @@ membership under a fresh writer lease (the browser's existing copy lock remains 
 
 ### Private catalog retention
 
-The private CloudKit payload limit is 16 MiB; it is a transport limit, not a smaller
+The cloud seed payload limit is 16 MiB; it is a transport limit, not a smaller
 `.pop` acceptance limit. Private library membership does not authorize discarding history
 before publication. Large retained history, storage pressure, or a SQLite file too large
 to upload can trigger a clean candidate. Merely having a large immutable app does not

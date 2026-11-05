@@ -161,7 +161,7 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
 
 @Test func incomingSharingActivityPreservesTheCapabilityAndReportsMissingFragments() throws {
   let link =
-    "https://share.dotpop.click/join#" + String(repeating: "a", count: 32) + "." + String(repeating: "b", count: 64)
+    "https://share.dotpop.click/join#aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa." + String(repeating: "b", count: 64)
   let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
   activity.webpageURL = try #require(URL(string: link))
   #expect(try SharingLinks.incomingLink(#require(activity.webpageURL)) == link)
@@ -177,4 +177,45 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
   for value in ["https://example.com/join", "https://share.dotpop.click/", "dotpop://widgets"] {
     #expect(try SharingLinks.incomingLink(#require(URL(string: value))) == nil)
   }
+}
+
+@Test func catalogBadgesPrioritizeAttentionAndDownloadWithoutLosingSharingAccessibility() {
+  let cases: [(Bool, Bool, CatalogSharingRelationship, CatalogDocumentBadge?, String)] = [
+    (true, false, .sharedWithYou, .attention, "Needs attention, Shared with you"),
+    (true, true, .sharedByYou, .attention, "Needs attention, Sharing enabled"),
+    (false, false, .sharedWithYou, .undownloaded, "Not downloaded, Shared with you"),
+    (false, true, .sharedByYou, .shared, "Sync across devices, Sharing enabled"),
+    (false, true, .none, nil, "Sync across devices"),
+  ]
+  for (attention, downloaded, sharing, badge, accessibility) in cases {
+    let presentation = CatalogDocumentPresentation(
+      needsAttention: attention, downloaded: downloaded, localOnly: false, sharing: sharing)
+    #expect(presentation.badge == badge)
+    #expect(presentation.accessibilityValue == accessibility)
+  }
+  let guest = CatalogDocumentPresentation(
+    needsAttention: false, downloaded: true, localOnly: true, sharing: .sharedWithYou)
+  #expect(guest.badge == .shared)
+  #expect(guest.accessibilityValue == "Saved on this device, Shared with you")
+  let unavailableGuest = CatalogDocumentPresentation(
+    needsAttention: false, downloaded: false, localOnly: false, sharing: .sharedWithYou
+  ).requiringAttention()
+  #expect(unavailableGuest.badge == .attention)
+  #expect(unavailableGuest.accessibilityValue == "Needs attention, Shared with you")
+}
+
+@Test func catalogOwnerSharingRequiresAnExplicitKnownEnabledValue() {
+  func entry(role: DocumentRole?, sharingEnabled: Bool?) -> LibraryEntry {
+    LibraryEntry(
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", title: "Document", template: "fixture", path: "/document.pop",
+      version: "saved", assetRevision: "", artworkVersion: "", dirty: true, deleted: false,
+      localOnly: false, accountBound: true, downloaded: true, problem: nil, role: role, revision: 1,
+      sharingEnabled: sharingEnabled, inbox: false)
+  }
+  #expect(entry(role: .owner, sharingEnabled: nil).catalogPresentation.badge == nil)
+  #expect(entry(role: .owner, sharingEnabled: false).catalogPresentation.badge == nil)
+  #expect(entry(role: .owner, sharingEnabled: true).catalogPresentation.badge == .shared)
+  #expect(
+    entry(role: .editor, sharingEnabled: nil).catalogPresentation.accessibilityValue
+      == "Sync across devices, Shared with you")
 }

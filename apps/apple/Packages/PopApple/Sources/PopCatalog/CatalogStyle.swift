@@ -5,9 +5,9 @@ import SwiftUI
 enum CatalogStyle {
   // Colors come from `PopBrand`; these are the catalog's derived roles.
   /// Soft tint behind the selected row.
-  static let selection = PopBrand.accent.opacity(0.10)
+  static let selection = PopBrand.accent.opacity(0.07)
   /// Thin accent outline for the selected row.
-  static let selectionStroke = PopBrand.accent.opacity(0.30)
+  static let selectionStroke = PopBrand.accent.opacity(0.16)
   static let hover = PopBrand.ink.opacity(0.05)
   static let hairline = PopBrand.ink.opacity(0.09)
   static let fill = PopBrand.ink.opacity(0.05)

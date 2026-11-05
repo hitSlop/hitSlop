@@ -7,6 +7,7 @@ struct CatalogSidebar: View {
   let filter: CatalogFilter
   let categories: [PopCategory]
   let recentCount: Int
+  var inboxCount: Int = 0
   let select: (CatalogFilter) -> Void
 
   var body: some View {
@@ -17,6 +18,9 @@ struct CatalogSidebar: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 2) {
           SidebarSection("Library")
+          SidebarButton(title: "Inbox", icon: .symbol("tray"), count: inboxCount, selected: filter == .inbox) {
+            select(.inbox)
+          }
           SidebarButton(title: "Recents", icon: .symbol("clock"), count: recentCount, selected: filter == .recents) {
             select(.recents)
           }

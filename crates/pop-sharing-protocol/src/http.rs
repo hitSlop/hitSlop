@@ -33,14 +33,6 @@ pub struct CreatedRoom {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AccountRoom {
-    pub room: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RoomInit {
     pub owner_uid: String,
     pub document: String,
@@ -166,7 +158,7 @@ impl Invitation {
     pub fn parse(link: &str) -> Result<Self, String> {
         let prefix = format!("{}/join#", crate::TRUSTED_ORIGIN);
         let link = link.trim();
-        if link.len() != prefix.len() + 32 + 1 + 64 {
+        if link.len() != prefix.len() + 36 + 1 + 64 {
             return Err("Sharing link is no longer valid".into());
         }
         let fragment = link.strip_prefix(&prefix).ok_or("Sharing link is no longer valid")?;
@@ -182,7 +174,7 @@ mod tests {
     use super::*;
     #[test]
     fn invitations_pin_the_host_identity_limits_and_keep_capabilities_in_the_fragment() {
-        let key = Invitation { room: "a".repeat(32), capability: "b".repeat(64) };
+        let key = Invitation { room: "00000000-0000-4000-8000-000000000001".into(), capability: "b".repeat(64) };
         let link = key.link().unwrap();
         assert_eq!(link.split('#').next(), Some("https://share.dotpop.click/join"));
         assert_eq!(Invitation::parse(&link).unwrap().capability, key.capability);
@@ -218,243 +210,84 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     #[openapi(components(schemas(
         CreateRoom,
         CreatedRoom,
-        AccountRoom,
         RoomInfo,
         RoomPhase,
         ResourceGrant,
         ApiFailure,
+        crate::document::DocumentEntry,
+        crate::document::DocumentRole,
+        crate::document::AccessState,
+        crate::document::JoinDocument,
+        crate::document::UpdateDocument,
+        crate::document::RegisteredDocument,
+        crate::document::RegisteredDocuments,
+        crate::document::DocumentMetadata,
         crate::resources::Manifest,
         crate::resources::Resource,
         crate::lifecycle::EpochBase,
         crate::lifecycle::EpochState,
         crate::lifecycle::StagedSeed,
-        crate::lifecycle::PublishEpoch,
-        crate::lifecycle::Handoff,
-        crate::lifecycle::BeginHandoff,
-        crate::lifecycle::FinalizeHandoff
+        crate::lifecycle::PublishEpoch
     )))]
     struct Description;
-    let mut doc = Description::openapi();
-    doc.info.title = "pop sharing".into();
-    doc.info.version = "1".into();
-    // Binary files and the negotiated WebSocket remain transports of their own;
-    // all JSON request and response schemas come from these Rust DTOs.
+    let mut value = serde_json::to_value(Description::openapi()).expect("OpenAPI components");
+    value["info"] = serde_json::json!({"title":"pop persistent document service","version":"1"});
     let mut paths = serde_json::Map::new();
     for (path, methods) in [
+        ("/v1/documents", vec![("post", Some("CreateRoom"), Some("CreatedRoom"))]),
+        ("/v1/account", vec![("delete", None, None)]),
+        ("/v1/account/documents", vec![("get", None, Some("RegisteredDocuments"))]),
+        ("/v1/documents/{document}/metadata", vec![("get", None, Some("DocumentMetadata"))]),
+        ("/v1/account/documents/{document}", vec![("get", None, Some("AccessState"))]),
         (
-            "/v1/rooms",
-            vec![("post", Some("CreateRoom"), Some("CreatedRoom"), "Create or recover the document's current room")],
-        ),
-        (
-            "/v1/account",
-            vec![(
-                "delete",
-                None,
-                None,
-                "End every indexed room and remove the signed-in relay account; retryable and idempotent",
-            )],
-        ),
-        (
-            "/v1/account/rooms/{document}",
-            vec![("get", None, Some("AccountRoom"), "Look up the signed-in owner's current room, or null")],
-        ),
-        (
-            "/v1/rooms/{room}",
+            "/v1/documents/{document}",
             vec![
-                ("get", None, Some("RoomInfo"), "Read room metadata; only its owner receives the capability"),
-                ("delete", None, None, "End the room and purge retained files"),
+                ("get", None, Some("RoomInfo")),
+                ("patch", Some("UpdateDocument"), Some("AccessState")),
+                ("delete", None, None),
             ],
         ),
         (
-            "/v1/rooms/{room}/open",
-            vec![("post", None, Some("RoomInfo"), "Open a room after its seed and app resources are uploaded")],
-        ),
-        (
-            "/v1/rooms/{room}/epoch",
+            "/v1/documents/{document}/sharing",
             vec![
-                ("get", None, Some("EpochState"), "Read the current checkpoint epoch and optional frozen handoff"),
-                (
-                    "post",
-                    Some("PublishEpoch"),
-                    Some("EpochState"),
-                    "Conditionally publish a staged seed and exact resource inventory",
-                ),
+                ("get", None, Some("AccessState")),
+                ("post", None, Some("AccessState")),
+                ("delete", None, Some("AccessState")),
             ],
         ),
+        ("/v1/documents/{document}/members", vec![("post", Some("JoinDocument"), Some("AccessState"))]),
+        ("/v1/documents/{document}/members/me", vec![("delete", None, None)]),
+        ("/v1/documents/{document}/open", vec![("post", None, Some("RoomInfo"))]),
         (
-            "/v1/rooms/{room}/epochs/{hash}",
-            vec![
-                ("put", None, Some("StagedSeed"), "Stage an immutable bounded checkpoint seed for ten minutes"),
-                (
-                    "delete",
-                    None,
-                    None,
-                    "Release an unpublished stage immediately; never deletes the current checkpoint",
-                ),
-            ],
+            "/v1/documents/{document}/epoch",
+            vec![("get", None, Some("EpochState")), ("post", Some("PublishEpoch"), Some("EpochState"))],
         ),
-        (
-            "/v1/rooms/{room}/epochs/{seed}/blobs/{hash}",
-            vec![("put", None, None, "Stage an immutable attachment within a checkpoint seed's bounded lease")],
-        ),
-        (
-            "/v1/rooms/{room}/handoff/begin",
-            vec![(
-                "post",
-                Some("BeginHandoff"),
-                Some("Handoff"),
-                "Creator freezes the exact epoch frontier; guests immediately lose access",
-            )],
-        ),
-        (
-            "/v1/rooms/{room}/handoff/finalize",
-            vec![(
-                "post",
-                Some("FinalizeHandoff"),
-                None,
-                "Creator finalizes a frozen handoff after its durable destination receipt",
-            )],
-        ),
-        (
-            "/v1/rooms/{room}/handoff/history",
-            vec![(
-                "get",
-                None,
-                None,
-                "Creator reads one bounded plain Records frame; after cursor and X-Sharing-Next/Done headers paginate frozen history",
-            )],
-        ),
-        (
-            "/v1/rooms/{room}/compact",
-            vec![("post", None, None, "Replace covered updates with an opaque full-history base")],
-        ),
-        (
-            "/v1/rooms/{room}/seed",
-            vec![
-                ("get", None, None, "Download the canonical SQLite seed"),
-                ("put", None, None, "Replace the SQLite seed while Uploading (owner only)"),
-            ],
-        ),
-        (
-            "/v1/rooms/{room}/resources",
-            vec![
-                ("get", None, Some("Manifest"), "Read accepted app inventory"),
-                ("post", Some("Manifest"), None, "Replace app inventory while Uploading (owner only)"),
-            ],
-        ),
-        (
-            "/v1/rooms/{room}/asset/{hash}",
-            vec![("put", None, None, "Publish an immutable app resource (creator only)")],
-        ),
-        (
-            "/v1/rooms/{room}/blob/{hash}",
-            vec![("get", None, None, "Download an attachment"), ("put", None, None, "Publish an immutable attachment")],
-        ),
-        ("/v1/rooms/{room}/blobs", vec![("get", None, Some("ResourceList"), "Read retained attachment inventory")]),
-        (
-            "/_resources/{room}",
-            vec![(
-                "post",
-                Some("ResourceGrant"),
-                None,
-                "Grant a short lived host-bound resource cookie on a UUID.dotslop.com origin",
-            )],
-        ),
+        ("/v1/documents/{document}/epochs/{hash}", vec![("put", None, Some("StagedSeed")), ("delete", None, None)]),
+        ("/v1/documents/{document}/epochs/{seed}/blobs/{hash}", vec![("put", None, None)]),
+        ("/v1/documents/{document}/seed", vec![("get", None, None), ("put", None, None)]),
+        ("/v1/documents/{document}/resources", vec![("get", None, Some("Manifest")), ("post", Some("Manifest"), None)]),
+        ("/v1/documents/{document}/asset/{hash}", vec![("put", None, None)]),
+        ("/v1/documents/{document}/blob/{hash}", vec![("get", None, None), ("put", None, None)]),
+        ("/v1/documents/{document}/blobs", vec![("get", None, None)]),
+        ("/v1/documents/{document}/compact", vec![("post", None, None)]),
     ] {
         let mut operations = serde_json::Map::new();
-        for (method, input, output, summary) in methods {
-            let mut parameters = vec![];
-            if path.contains("{room}") {
-                parameters.push(serde_json::json!({"name":"room","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{32}$"}}));
+        for (method, input, output) in methods {
+            let mut op = serde_json::json!({"responses":{"200":{"description":"Accepted"},"403":{"description":"Permission denied; local copy retained"},"409":{"description":"Conditional conflict"},"410":{"description":"Document deleted"}},"security":[{"firebaseIdentity":[]},{"capability":[]}]});
+            if let Some(input) = input {
+                op["requestBody"] = serde_json::json!({"required":true,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{input}")}}}});
             }
-            if path.contains("{hash}") {
-                parameters.push(serde_json::json!({"name":"hash","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}));
-            }
-            if path.contains("{seed}") {
-                parameters.push(serde_json::json!({"name":"seed","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}));
+            if let Some(output) = output {
+                op["responses"]["200"]["content"] = serde_json::json!({"application/json":{"schema":{"$ref":format!("#/components/schemas/{output}")}}});
             }
             if path.contains("{document}") {
-                parameters.push(serde_json::json!({"name":"document","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}));
+                op["parameters"] = serde_json::json!([{"name":"document","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}]);
             }
-            if method == "delete" && path == "/v1/rooms/{room}" {
-                parameters.push(serde_json::json!({"name":"phase","in":"query","required":false,"description":"Use uploading to cancel preparation only; refuses a room that activated meanwhile","schema":{"type":"string","enum":["uploading"]}}));
-            }
-            if method == "put" && path.ends_with("/seed") {
-                for header in ["X-Sharing-SHA256", "X-Sharing-App", "X-Sharing-Version"] {
-                    parameters.push(
-                        serde_json::json!({"name":header,"in":"header","required":true,"schema":{"type":"string"}}),
-                    );
-                }
-            }
-            if path.ends_with("/compact") {
-                for (header, description) in [
-                    ("X-Sharing-SHA256", "Lowercase 64-digit hex SHA-256 digest of the body"),
-                    ("X-Sharing-Version", "F: JSON array of [16-digit hex peer, non-negative i32 counter] pairs"),
-                    (
-                        "X-Sharing-Root",
-                        "Seed version in the same encoding; required only without a stored root, otherwise ignored",
-                    ),
-                ] {
-                    parameters.push(serde_json::json!({"name":header,"in":"header","required":header != "X-Sharing-Root","description":description,"schema":{"type":"string"}}));
-                }
-            }
-            let mut operation = serde_json::json!({"summary":summary,"parameters":parameters,"security":[{"capability":[]}],"responses":{
-                "200":{"description":"Accepted"},"403":{"$ref":"#/components/responses/Refused"},"409":{"$ref":"#/components/responses/Refused"},"410":{"$ref":"#/components/responses/Refused"},"413":{"$ref":"#/components/responses/Refused"},"429":{"$ref":"#/components/responses/Refused"}
-            }});
-            if path.ends_with("/compact") {
-                operation["responses"].as_object_mut().unwrap().remove("200");
-                operation["responses"]["204"] = serde_json::json!({"description":"Base installed"});
-                for status in ["400", "404"] {
-                    operation["responses"][status] = serde_json::json!({"$ref":"#/components/responses/Refused"});
-                }
-                operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary","maxLength":crate::BASE_BYTES}}}});
-            }
-            if method == "put" && path.contains("/epochs/") {
-                let limit =
-                    if path.contains("/blobs/") { crate::limits::ATTACHMENT_FILE_BYTES } else { crate::SEED_BYTES };
-                operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary","maxLength":limit}}}});
-            }
-            let creator = path.starts_with("/v1/account/")
-                || path == "/v1/rooms"
-                || path.ends_with("/open")
-                || path.contains("/handoff/")
-                || (method == "delete" && !path.contains("/epochs/"))
-                || (method == "put" && (path.ends_with("/seed") || path.contains("/asset/")))
-                || (method == "post" && path.ends_with("/resources"));
-            if creator {
-                operation["security"] = serde_json::json!([{"firebaseIdentity":[]}]);
-                operation["responses"]["401"] = serde_json::json!({"$ref":"#/components/responses/Refused"});
-            }
-            if (method == "get" && path == "/v1/rooms/{room}")
-                || (method == "put" && path.contains("/blob/"))
-                || path.ends_with("/epoch")
-                || path.contains("/epochs/")
-            {
-                operation["security"] = serde_json::json!([{"firebaseIdentity":[]},{"capability":[]}]);
-            }
-            if path == "/v1/account" {
-                operation["responses"]["200"]["content"] =
-                    serde_json::json!({"application/json":{"schema":{"type":"null"}}});
-            }
-            if let Some(name) = input {
-                operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{name}")}}}});
-            }
-            if let Some(name) = output {
-                operation["responses"]["200"]["content"] = serde_json::json!({"application/json":{"schema":if name=="ResourceList"{serde_json::json!({"type":"array","items":{"$ref":"#/components/schemas/Resource"}})}else{serde_json::json!({"$ref":format!("#/components/schemas/{name}")})}}});
-                if path.starts_with("/v1/account/rooms/") {
-                    operation["responses"]["200"]["content"]["application/json"]["schema"] =
-                        serde_json::json!({"anyOf":[{"type":"null"},{"$ref":"#/components/schemas/AccountRoom"}]});
-                }
-            }
-            operations.insert(method.into(), operation);
+            operations.insert(method.into(), op);
         }
         paths.insert(path.into(), operations.into());
     }
-    doc.paths = serde_json::from_value(paths.into()).expect("static HTTP paths");
-    let mut value = serde_json::to_value(doc).expect("OpenAPI document");
-    value["components"]["securitySchemes"] = serde_json::json!({"capability":{"type":"http","scheme":"bearer","description":"Room edit capability for guest data access. Creator administration requires a verified Firebase identity."}});
-    value["components"]["securitySchemes"]["firebaseIdentity"] = serde_json::json!({"type":"http","scheme":"bearer","bearerFormat":"JWT","description":"Firebase ID token, not a room capability"});
-    value["components"]["responses"] = serde_json::json!({"Refused":{"description":"Request refused; the local document is retained","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiFailure"}}}}});
-    let doc = serde_json::from_value(value).expect("complete OpenAPI document");
-    doc
+    value["paths"] = paths.into();
+    value["components"]["securitySchemes"] = serde_json::json!({"firebaseIdentity":{"type":"http","scheme":"bearer","bearerFormat":"JWT"},"capability":{"type":"http","scheme":"bearer"}});
+    serde_json::from_value(value).expect("document OpenAPI")
 }

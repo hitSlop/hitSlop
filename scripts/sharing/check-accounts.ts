@@ -3,7 +3,7 @@
  * has no test key, token bypass, configurable certificate URL or asserted UID path.
  * Run through `bun run verify sharing` after installing worker-build (README). */
 import assert from "node:assert/strict";
-import { checkCompaction, relayHarness } from "./check-compaction";
+import { checkCompaction, relayHarness, decode } from "./check-compaction";
 import host from "../../apps/sharing/http";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
@@ -28,7 +28,7 @@ if (process.versions.bun) {
   process.exit(await child.exited);
 }
 import { SharingHost } from "../../packages/pop/src/wire/constants.generated";
-import type { AccountRoom, CreatedRoom, RoomInfo } from "../../packages/pop/src/wire/sharing.generated";
+import type { AccessState, CreatedRoom, RegisteredDocuments } from "../../packages/pop/src/wire/sharing.generated";
 
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const root = await mkdtemp(join(tmpdir(), "pop-account-relay-"));
@@ -42,7 +42,7 @@ const uid = (name: string, provider = "apple.com") => {
 };
 const a = uid("creator-a"), secondSession = uid("creator-a"), b = uid("creator-b");
 const document = "00000000-0000-4000-8000-000000000001";
-const seed = Buffer.alloc(512, 42), asset = Buffer.from("export default {};");
+const seed = Buffer.alloc(512, 42);
 const app = "a".repeat(64);
 const relayConfig = ts.parseConfigFileTextToJson("wrangler.jsonc", await readFile(join(repository, "apps/sharing/wrangler.jsonc"), "utf8")).config as {
   ratelimits: { name: string; simple: { limit: number; period: 60 } }[];
@@ -56,7 +56,7 @@ function runtime(roomsAvailable = true) {
       name: "relay", modules: true, scriptPath: harness, modulesRoot: "/",
       compatibilityDate: "2025-11-05", modulesRules: [{ type: "ESModule", include: ["**/*.js"], fallthrough: true }, { type: "CompiledWasm", include: ["**/*.wasm"], fallthrough: true }],
       bindings: { BROWSER_ORIGIN: "https://share.dotpop.click", FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
-      durableObjects: { ...(roomsAvailable ? { ROOMS: { className: "SlopRoom", useSQLite: true } } : {}), ACCOUNTS: { className: "SharingAccount", useSQLite: true } },
+      durableObjects: { ...(roomsAvailable ? { DOCUMENTS: { className: "CloudDocument", useSQLite: true } } : {}), ACCOUNTS: { className: "DocumentAccount", useSQLite: true } },
       r2Buckets: ["SEEDS"],
       analyticsEngineDatasets: { METRICS: { dataset: "hitslop_sharing" } },
       ratelimits: Object.fromEntries(relayConfig.ratelimits.map(({ name, simple }) => [name, { simple: name === "ACCOUNT_CREATE_LIMIT" ? { ...simple, limit: 1000 } : simple }])),
@@ -64,7 +64,7 @@ function runtime(roomsAvailable = true) {
     }, {
       name: "certificates", modules: true,
       script: `export default { fetch(request) {
-        if (request.url !== "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com") return new Response(null,{status:502});
+        if(request.url!=='https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com')return new Response(null,{status:502});
         return Response.json(${JSON.stringify({ "local-runtime-only": pem })},{headers:{"Cache-Control":"public,max-age=3600"}});
       } }`,
     }],
@@ -136,7 +136,7 @@ try {
     const bytes = await readFile(join(repository, "generated/sharing/assets", path));
     return new Response(bytes, { headers: { "Content-Type": path.endsWith(".png") ? "image/png" : "text/html" } });
   } };
-  const invitation = `${SharingHost.origin}/join#${"a".repeat(32)}.${"b".repeat(64)}`;
+  const invitation = `${SharingHost.origin}/join#${document}.${"b".repeat(64)}`;
   let preview: string | undefined;
   for (const url of [SharingHost.origin + "/", SharingHost.origin + "/join", invitation]) {
     const response = await host.fetch(new Request(url), { ASSETS: assets, RELAY: unused });
@@ -170,211 +170,80 @@ try {
   assert.equal((await host.fetch(new Request(`${SharingHost.origin}/share-icon.png`, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
   for (const url of [`${SharingHost.origin}/unlisted.png`, `https://copy.${SharingHost.domain}/share-icon.png`])
     assert.equal((await host.fetch(new Request(url), { ASSETS: unused, RELAY: unused })).status, 404);
-  assert.equal((await call("account", undefined, "DELETE")).status, 401);
-  assert.equal((await call("account", "not-an-identity", "DELETE")).status, 401);
-  assert.equal((await call("rooms", undefined, "POST", { document })).status, 401);
-  for (const token of ["malformed", uid("untrusted").slice(0, -8) + "invalid"]) {
-    assert.equal((await call("account/rooms/" + document, token)).status, 401);
-  }
-  const rooms = await Promise.all([1, 2].map(() => json<CreatedRoom>("rooms", a, "POST", { document })));
-  const r = rooms[0]!;
-  assert.equal(r.phase, "uploading");
-  assert(r.room === rooms[1]!.room && r.capability === rooms[1]!.capability, "Concurrent create must be idempotent");
-  assert.equal(await json("account/rooms/" + document, b), null);
-  const other = await json<CreatedRoom>("rooms", b, "POST", { document });
-  assert.notEqual(other.room, r.room);
-  const base = "rooms/" + r.room;
-  assert.equal((await call(base, b)).status, 403);
-  assert.equal((await call(base, b, "DELETE")).status, 403);
-  assert.equal((await call(base, r.capability, "DELETE")).status, 403);
-  assert.equal((await call(base + "/open", r.capability, "POST")).status, 403);
-  assert.equal((await call(base + "/open", a, "POST")).status, 409);
-  assert.equal((await call(base, r.capability)).status, 409);
-  assert.equal((await call(base + "/seed", r.capability, "PUT", seed, seedHeaders(seed))).status, 403);
-  assert.equal((await call(base + "/seed", a, "PUT", seed, { ...seedHeaders(seed), "X-Sharing-SHA256": "f".repeat(64) })).status, 422);
-  assert.equal((await call(base + "/seed", a, "PUT", seed, seedHeaders(seed))).status, 200);
-  const replacement = Buffer.alloc(768, 43);
-  assert.equal((await call(base + "/seed", secondSession, "PUT", replacement, seedHeaders(replacement))).status, 200);
-  const info = await json<RoomInfo>(base, secondSession);
-  assert.equal(info.seedHash, hash(replacement));
-  assert.equal(info.seedSize, replacement.length);
-  assert.equal(info.capability, r.capability);
-  const manifest = { app, resources: [{ key: "ui.js", hash: hash(asset), size: asset.length, media_type: "text/javascript" }] };
-  assert.equal((await call(base + "/resources", a, "POST", { app, resources: [] })).status, 200);
-  assert.equal((await call(base + "/resources", a, "POST", manifest)).status, 200);
-  assert.equal((await call(base + "/asset/" + hash(asset), r.capability, "PUT", asset)).status, 403);
-  assert.equal((await call(base + "/open", a, "POST")).status, 409);
-  assert.equal((await call(base + "/seed", r.capability)).status, 409);
-  assert.equal((await call(base + "/asset/" + hash(asset), a, "PUT", asset)).status, 200);
-  const live = await json<RoomInfo>(base + "/open", a, "POST");
-  assert.equal(live.phase, "live");
-  assert.equal((await json<CreatedRoom>("rooms", a, "POST", { document })).room, r.room);
-  const guest = await json<RoomInfo>(base, r.capability);
-  assert(!guest.capability, "Guest metadata must not return the owner capability field");
-  assert.equal(guest.seedHash, hash(replacement));
-  const downloaded = await call(base + "/seed", r.capability);
-  assert.equal(downloaded.status, 200);
-  assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), replacement);
-  assert.equal((await call(base + "/resources", r.capability)).status, 200);
-  assert.equal((await call("auth/probe", a)).status, 404);
-  assert.equal((await call(base + "/stats", r.capability)).status, 404);
-  assert.equal((await call("account/reserve", a, "POST", { document })).status, 404);
-  const joined = await worker.dispatchFetch("https://share.dotpop.click/v1/" + base + "/sync", {
-    headers: { Upgrade: "websocket", Origin: "https://share.dotpop.click", "Sec-WebSocket-Protocol": SharingHost.socketProtocol + ", cap." + r.capability },
-  });
-  assert.equal(joined.status, 101, "A capability guest can connect to the live room");
-  joined.webSocket!.accept();
-  joined.webSocket!.close();
-  assert.equal((await call(base + "/seed", a, "PUT", seed, seedHeaders(seed))).status, 409);
-  assert.equal((await call(base + "/resources", a, "POST", manifest)).status, 409);
-  await worker.dispose();
-  worker = runtime();
-  const lookup = await json<AccountRoom>("account/rooms/" + document, secondSession);
-  assert.equal(lookup.room, r.room);
-  assert.equal((await json<RoomInfo>("rooms/" + lookup.room, secondSession)).capability, r.capability);
-  assert.equal((await call(base, secondSession, "DELETE")).status, 200);
-  assert.equal((await call(base, r.capability)).status, 410);
-  assert.equal((await call(base + "/seed", r.capability)).status, 410);
-  const next = await json<CreatedRoom>("rooms", a, "POST", { document });
-  assert.notEqual(next.room, r.room, "Re-share creates a fresh random room");
-  assert.equal((await json<AccountRoom>("account/rooms/" + document, a)).room, next.room);
-  const rejoinedRoom = await json<CreatedRoom>("rooms", b, "POST", { document: "00000000-0000-4000-8000-000000000002" });
-  const rejoinedBase = "rooms/" + rejoinedRoom.room;
-  assert.equal((await call(rejoinedBase + "/seed", b, "PUT", seed, seedHeaders(seed))).status, 200);
-  assert.equal((await call(rejoinedBase + "/resources", b, "POST", { app, resources: [] })).status, 200);
-  assert.equal((await call(rejoinedBase + "/open", b, "POST")).status, 200);
-  await call(rejoinedBase, b, "DELETE");
-  const replacementRoom = await json<CreatedRoom>("rooms", b, "POST", { document: "00000000-0000-4000-8000-000000000002" });
-  const replacementBase = "rooms/" + replacementRoom.room;
-  assert.notEqual(replacementRoom.room, rejoinedRoom.room);
-  assert.equal((await call(rejoinedBase, rejoinedRoom.capability)).status, 410);
-  assert.equal((await call(replacementBase + "/seed", b, "PUT", seed, seedHeaders(seed))).status, 200);
-  assert.equal((await call(replacementBase + "/resources", b, "POST", { app, resources: [] })).status, 200);
-  assert.equal((await call(replacementBase + "/open", b, "POST")).status, 200);
-  assert.equal((await json<RoomInfo>(replacementBase, replacementRoom.capability)).document,
-    "00000000-0000-4000-8000-000000000002");
-  const rejoined = await worker.dispatchFetch("https://share.dotpop.click/v1/" + replacementBase + "/sync", {
-    headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol, Authorization: "Bearer " + replacementRoom.capability },
-  });
-  assert.equal(rejoined.status, 101, "A guest can reconnect with the new room for the same document");
-  rejoined.webSocket!.accept();
-  rejoined.webSocket!.close();
-  await call(replacementBase, b, "DELETE");
-  // Hold an Uploading seed body across Stop, then complete its delayed write.
-  let release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  let started!: () => void;
-  const ready = new Promise<void>(resolve => { started = resolve; });
-  let firstChunk = true;
-  const body = new ReadableStream({ async pull(controller) {
-    if (firstChunk) {
-      firstChunk = false;
-      controller.enqueue(seed.subarray(0, 1));
-      started();
-    } else {
-      await gate;
-      controller.enqueue(seed.subarray(1));
-      controller.close();
-    }
-  } }, { highWaterMark: 0 });
-  const lateInit = { method: "PUT", headers: { Authorization: "Bearer " + a, ...seedHeaders(seed) }, body, duplex: "half" as const };
-  const lateUpload = worker.dispatchFetch("https://share.dotpop.click/v1/rooms/" + next.room + "/seed", lateInit);
-  await ready;
-  try {
-    assert.equal((await call("rooms/" + next.room, a, "DELETE")).status, 200);
-  } finally { release(); }
-  assert.equal((await lateUpload).status, 410, "An upload spanning Stop must be refused");
-  const bucket = await worker.getR2Bucket("SEEDS", "relay");
-  assert.equal((await bucket.list({ prefix: next.room + "/" })).objects.length, 0, "Stop must remove late writes");
-  assert.equal((await call("rooms/" + next.room + "/open", a, "POST")).status, 410);
-  assert.equal((await call(base, a, "DELETE")).status, 410, "A cleaned tombstone no longer retains owner identity");
-  await call("rooms/" + other.room, b, "DELETE");
-  // Quota counts only rooms that have not ended; retrying an indexed room uses no slot.
-  const quota = [] as CreatedRoom[];
-  for (let n = 1; n <= 10; n++) {
-    quota.push(await json<CreatedRoom>("rooms", a, "POST", { document: `00000000-0000-4000-9000-${String(n).padStart(12, "0")}` }));
-  }
-  assert.equal((await call("rooms", a, "POST", { document })).status, 429);
-  assert.equal((await json<CreatedRoom>("rooms", secondSession, "POST", { document: "00000000-0000-4000-9000-000000000001" })).room, quota[0]!.room);
-  await call("rooms/" + quota[0]!.room, a, "DELETE");
-  const freed = await json<CreatedRoom>("rooms", a, "POST", { document });
-  const liveBase = "rooms/" + freed.room;
-  assert.equal((await call(liveBase + "/seed", a, "PUT", seed, seedHeaders(seed))).status, 200);
-  assert.equal((await call(liveBase + "/resources", a, "POST", { app, resources: [] })).status, 200);
-  assert.equal((await call(liveBase + "/open", a, "POST")).status, 200);
-  // Uploading rooms can already hold private data and need the same purge as Live.
-  assert.equal((await call("rooms/" + quota[1]!.room + "/seed", a, "PUT", seed, seedHeaders(seed))).status, 200);
-  const unrelated = await json<CreatedRoom>("rooms", b, "POST", { document });
-  const socket = await worker.dispatchFetch("https://share.dotpop.click/v1/" + liveBase + "/sync", {
-    headers: { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol, Authorization: "Bearer " + freed.capability },
-  });
-  assert.equal(socket.status, 101);
-  socket.webSocket!.accept();
-  const closed = new Promise<void>(resolve => socket.webSocket!.addEventListener("close", () => resolve()));
-  const caughtUp = new Promise<void>(resolve => socket.webSocket!.addEventListener("message", event => {
-    if (new Uint8Array(event.data as ArrayBuffer)[0] === 3) resolve();
-  }));
-  socket.webSocket!.send(new Uint8Array([0,1,...Array.from({length:32},()=>0xaa),0]));
-  await caughtUp;
-  // Each endpoint has an independent per-IP budget; changing IP gets a fresh one.
-  for (const [route, method, body, headers] of [
-    [liveBase, "GET", undefined, {}],
-    [liveBase + "/seed", "GET", undefined, {}],
-    [liveBase + "/sync", "GET", undefined, { Upgrade: "websocket", "Sec-WebSocket-Protocol": SharingHost.socketProtocol }],
-    [liveBase + "/blob/" + hash(seed), "PUT", seed, {}],
-    [liveBase + "/compact", "POST", seed, {}],
-  ] as const) {
-    let limited = false;
-    // A burst can straddle one fixed minute boundary in the local limiter.
-    const attempts = 2 * Math.max(...relayConfig.ratelimits.map(limit => limit.simple.limit)) + 1;
-    for (let n = 0; n < attempts; n++) {
-      // Refused socket credentials exercise the edge budget without filling the room.
-      const token = route.endsWith("/sync") ? "f".repeat(64) : freed.capability;
-      const response = await call(route, token, method, body, { ...headers, "CF-Connecting-IP": "192.0.2.10" });
-      if (response.status === 101) { response.webSocket!.accept(); response.webSocket!.close(); }
-      if (response.status === 429) {
-        assert.equal((await response.json() as { code: string }).code, "limited");
-        limited = true;
-        break;
-      }
-    }
-    assert(limited, route + " must enforce its guest budget");
-    const fresh = await call(route, route.endsWith("/sync") ? "f".repeat(64) : freed.capability, method, body, { ...headers, "CF-Connecting-IP": "192.0.2.11" });
-    assert.notEqual(fresh.status, 429, "Budgets are per client IP");
-    if (fresh.status === 101) { fresh.webSocket!.accept(); fresh.webSocket!.close(); }
-  }
-  assert.equal((await call("account", a, "DELETE")).status, 200);
-  assert.equal((await call(liveBase, freed.capability)).status,410,"Account deletion ends the socket room");
-  await Promise.race([closed, new Promise((_, reject) => setTimeout(() => reject(new Error("Account deletion must close guest sockets")), 5000))]);
-  for (const room of [freed, ...quota.slice(1)]) {
-    assert.equal((await call("rooms/" + room.room, room.capability)).status, 410);
-    assert.equal((await call("rooms/" + room.room + "/seed", room.capability)).status, 410);
-    assert.equal((await bucket.list({ prefix: room.room + "/" })).objects.length, 0);
-  }
-  assert.equal((await json<RoomInfo>("rooms/" + unrelated.room, b)).phase, "uploading", "Deletion is scoped to the verified account");
-  await call("account", b, "DELETE");
-  assert.equal(await json("account/rooms/" + document, secondSession), null);
-  assert.equal((await call("account", secondSession, "DELETE")).status, 200, "Account deletion is idempotent");
-  // Persisted deletion survives a cold restart, and a new sign-in gets all quota back.
-  await worker.dispose();
-  worker = runtime();
-  const signedInAgain = uid("creator-a");
-  for (let n = 0; n < 10; n++) {
-    const created = await json<CreatedRoom>("rooms", signedInAgain, "POST", { document: `00000000-0000-4000-9000-${String(n).padStart(12, "0")}` });
-    assert(!quota.some(r => r.room === created.room));
-  }
-  assert.equal((await call("account", signedInAgain, "DELETE")).status, 200);
-  // A failed Room init may reserve an account slot without ever creating a Room.
-  // Remove the binding only in this disposable runtime to force that network failure.
-  await worker.dispose();
-  worker = runtime(false);
-  assert.equal((await call("rooms", a, "POST", { document })).status, 500);
-  const orphan = await json<AccountRoom>("account/rooms/" + document, a);
-  assert(orphan.room);
-  await worker.dispose();
-  worker = runtime();
-  assert.equal((await call("account", a, "DELETE")).status, 200, "Delete must clean slots left by failed Room initialization");
-  assert.equal(await json("account/rooms/" + document, a), null);
-  assert.equal((await call("account", a, "DELETE")).status, 200);
-  console.log("Passed: verified identities, create/idempotent retry, replaceable seed/manifest, open, guest join, second-session cold recovery, other-UID/guest-admin refusal, Stop/upload cleanup, quota release, re-share, stale-room 410, account deletion of Live/Uploading rooms, socket revocation, cold re-sign-in, failed-init cleanup and per-IP guest limits.");
-} finally { await worker.dispose(); await rm(root, { recursive: true, force: true }); }
+
+  assert.equal((await call("account", undefined, "DELETE")).status,401);
+  assert.equal((await call("documents", uid("anonymous","anonymous"), "POST",{document})).status,401);
+  const [first,retry]=await Promise.all([json<CreatedRoom>("documents",a,"POST",{document}),json<CreatedRoom>("documents",secondSession,"POST",{document})]);
+  assert.equal(first.room,document);assert.equal(retry.room,document);assert.equal(first.capability,"");
+  assert.equal((await call("documents",b,"POST",{document})).status,403,"UUID cannot be claimed by another account");
+  const base="documents/"+document;
+  assert.equal((await call(base+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
+  assert.equal((await call(base+"/resources",a,"POST",{app,resources:[]})).status,200);
+  assert.equal((await call(base+"/open",a,"POST")).status,200);
+  assert.equal((await call(base+"/seed",b)).status,403,"private bytes require owner identity");
+  assert.equal((await call(base+"/sharing","not-a-valid-identity")).status,401,"invalid identity is retryable authentication, not lost membership");
+  assert.equal((await call(base+"/sharing",b)).status,403,"a valid nonmember is denied access");
+  assert.equal((await call(base+"/seed",secondSession)).status,200,"same account on another device shares private bytes");
+  assert.equal((await json<AccessState>("account/documents/"+document,secondSession)).role,"owner");
+  const enabled=await json<AccessState>(base+"/sharing",a,"POST");assert(enabled.capability);assert(enabled.sharing);
+  assert.equal((await call(base+"/seed",enabled.capability!)).status,200);
+  const member=await json<AccessState>(base+"/members",b,"POST",{capability:enabled.capability});assert.equal(member.role,"editor");
+  assert.equal((await call(base+"/seed",b)).status,200);
+  const connect=async(token:string)=>{
+    const response=await call(base+"/sync",token,"GET",undefined,{Upgrade:"websocket","Sec-WebSocket-Protocol":SharingHost.socketProtocol});
+    assert.equal(response.status,101);const socket=response.webSocket;assert(socket);socket.accept();
+    const queue:ReturnType<typeof decode>[]=[];const waiters:((frame:ReturnType<typeof decode>)=>void)[]=[];
+    socket.addEventListener("message",(event:any)=>{const frame=decode(event.data);const resolve=waiters.shift();if(resolve)resolve(frame);else queue.push(frame);});
+    const next=async()=>queue.shift()??await new Promise<ReturnType<typeof decode>>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Expected socket frame")),5000);waiters.push(frame=>{clearTimeout(timer);resolve(frame);});});
+    socket.send(new Uint8Array([0,1,...Array(32).fill(0xaa),0]));
+    assert.equal((await next()).tag,1);assert.equal((await next()).tag,3);
+    return {socket,next};
+  };
+  const ownerConnection=await connect(a),guestConnection=await connect(enabled.capability!);
+  const ownerSocket=ownerConnection.socket,guestSocket=guestConnection.socket;let ownerClosed=false;
+  ownerSocket.addEventListener("close",()=>ownerClosed=true);
+  const guestEnded=new Promise<void>(resolve=>guestSocket.addEventListener("close",()=>resolve()));
+  const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert(revoked.generation>enabled.generation);
+  assert.equal((await call(base+"/seed",enabled.capability!)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
+  assert.equal((await call(base+"/seed",a)).status,200);assert(!ownerClosed,"revocation does not close private owner connection");
+  assert.equal((await guestConnection.next()).code,3,"revocation delivers the real access-ended frame");
+  try { guestSocket.send(new Uint8Array([4,2,1,2,0,1,1,8])); } catch { /* Peer is already closing. */ }
+  guestSocket.close(); // Acknowledge the server close, as the native/browser client does.
+  await Promise.race([guestEnded,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Guest close handshake did not complete")),5000))]);
+  ownerSocket.send(new Uint8Array([4,1,1,1,0,1,1,7]));
+  const ownerAck=await ownerConnection.next();assert.equal(ownerAck.tag,5);assert.equal(ownerAck.status,0,"owner still writes after invitation revocation");
+  assert.equal((await ownerConnection.next()).tag,2,"owner still receives live accepted updates");
+  const frontier=await (await call(base+"/epoch",a)).json() as {heads:[string,number][]};
+  assert.deepEqual(frontier.heads,[["0000000000000001",1]],"a revoked guest push never enters the accepted frontier");
+  ownerSocket.close();
+  const reopened=await json<AccessState>(base+"/sharing",a,"POST");assert.notEqual(reopened.capability,enabled.capability);
+  await json(base+"/members",b,"POST",{capability:reopened.capability});
+  assert.equal((await call(base+"/members/me",b,"DELETE")).status,200);
+  assert.equal((await call(base+"/seed",b)).status,403,"leave removes identity membership without deleting canonical bytes");
+  assert.equal((await call(base+"/seed",a)).status,200);
+  assert.equal((await call(base,a,"PATCH",{title:"Repairable private document",templateId:"fixture"})).status,200);
+  const repairDocument="00000000-0000-4000-8000-000000000098";
+  const repairBase="documents/"+repairDocument;
+  assert.equal((await call("documents",a,"POST",{document:repairDocument})).status,200);
+  assert.equal((await call(repairBase+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
+  assert.equal((await call(repairBase+"/resources",a,"POST",{app,resources:[]})).status,200);
+  assert.equal((await call(repairBase+"/open",a,"POST")).status,200);
+  await worker.dispose();worker=runtime();
+  const registry=await (await call("account/documents",secondSession)).json() as RegisteredDocuments;
+  assert(registry.documents.some(row=>row.document===document&&row.role==="owner"));
+  assert(registry.documents.some(row=>row.document===repairDocument&&row.role==="owner"),"an acknowledged cloud upload remains discoverable for client catalog repair");
+  const metadata=await (await call(base+"/metadata",secondSession)).json();
+  assert.deepEqual(metadata,{title:"Repairable private document",templateId:"fixture"});
+  assert.deepEqual(await (await call("account/documents",b)).json(),{documents:[]},"leave removes the guest registry hint");
+  assert.equal((await call(base+"/seed",secondSession)).status,200,"restart retains private document bytes");
+  assert.equal((await call(base,secondSession,"DELETE")).status,200);
+  assert.equal((await call(base+"/seed",secondSession)).status,410);
+  assert.equal((await call("documents",secondSession,"POST",{document})).status,410,"deleted UUID cannot be resurrected");
+  assert.equal((await call("documents",b,"POST",{document})).status,410,"deleted UUID cannot be stolen");
+  const deletionDocument="00000000-0000-4000-8000-000000000099";
+  assert.equal((await call("documents",a,"POST",{document:deletionDocument})).status,200);
+  assert.equal((await call("account",a,"DELETE")).status,200,"account deletion handles integer owner registration and purges owned documents");
+  assert.equal((await call("documents/"+deletionDocument,a)).status,410);
+  assert.equal((await call("account",a,"DELETE")).status,200,"account deletion retry is idempotent");
+  console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
+} finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

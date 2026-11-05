@@ -44,7 +44,7 @@ public enum PopDocumentFailure: Error, Equatable, Sendable {
     } else if PopFailureContext.isCancellation(error) {
       self = .cancelled
     } else {
-      self = .other(error.localizedDescription)
+      self = .other(libraryMessage(error))
     }
   }
 }

@@ -113,6 +113,14 @@ public struct AppClient {
     if let now { work.run { await self.run(now, for: id) } }
   }
 
+  /// Account changes use the same command queues and save/draft barriers as Close.
+  public func closeDocuments(at paths: Set<String>) async -> Bool {
+    let closing = documents.filter { paths.contains($0.url.path) }.map(\.id)
+    for id in closing { send(.close, to: id) }
+    await settled()
+    return !documents.contains { closing.contains($0.id) }
+  }
+
   /// AppKit asked to terminate. Quit waits until nothing is opening, creating or running,
   /// prepares every document to close, then closes each; `replyToQuit` gets the answer
   /// once. A request while quitting is ignored.

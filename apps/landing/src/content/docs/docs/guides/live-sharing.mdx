@@ -19,7 +19,7 @@ Chrome at [share.dotpop.click](https://share.dotpop.click) to use the browser co
 browsers remain unqualified. Each person edits their own copy; changes flow between
 connected copies. Edits made while a copy is open offline merge when it reconnects.
 
-A link nobody opens for 90 days ends.
+Synced documents remain in your cloud library until you delete them.
 
 ## Keep a browser copy
 
@@ -35,8 +35,7 @@ explains that the link stops working and everyone keeps their own copy. Those co
 remain editable independently. Sharing again creates a new link; the old link stays ended.
 
 Open the new link to rejoin. A matching local document keeps its identity and current
-edits, then merges with the new share. If pop can't confirm that the previous link
-ended, retry when connected.
+edits, then merges with the new share. Access is checked against the current invitation; an old invitation cannot reconnect.
 
 ## Save an independent copy
 
@@ -46,12 +45,14 @@ referenced attachments, without the shared history. It does not stop the origina
 
 ## Delete your sharing account
 
-In the account panel, choose **Delete Account…** and confirm. Deletion ends your live
-links and removes their relay data and your sharing account. Documents on your devices
-and in iCloud stay. The app also attempts to revoke Apple access; if that cannot finish,
+In the account panel, choose **Delete Account…** and confirm. Deletion revokes your live
+links, deletes your owned cloud documents, removes joined memberships and deletes your
+account. Downloaded local copies remain on devices. The app also attempts to revoke Apple access; if that cannot finish,
 it directs you to remove pop in Apple Account settings. Guests' downloaded and local
 copies remain theirs. Signing out alone does not end existing links.
 
 For an independent file, image or PDF instead, see
 [build and share](/docs/guides/build-and-share/). For your own Mac and iPhone,
-[Synced Library](/docs/availability/) uses your iCloud account separately from live links.
+[Synced Library](/docs/availability/) discovers documents through your account and
+syncs them through the same cloud document service. Stopping collaboration keeps your
+own devices syncing.

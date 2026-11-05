@@ -65,6 +65,19 @@ import SwiftUI
 
   }
 
+  public func concealAccountDocuments(_ paths: [String], concealed: Bool) {
+    for controller in documentControllers where paths.contains(controller.session.file.url.path) {
+      if concealed { controller.window?.orderOut(nil) } else { controller.showWindow(nil) }
+    }
+    if concealed { showCatalog() }
+  }
+
+  public func closeAccountDocuments(_ paths: [String]) async throws {
+    guard await model.closeDocuments(at: Set(paths)) else {
+      throw PopFailure("Some documents could not close. Save or recover their text, then retry signing out.")
+    }
+  }
+
   public var hasOpenDocuments: Bool { !model.documents.isEmpty }
   public var documentControllers: [PopDocumentWindowController] { Array(windows.controllers.values) }
   /// The key or main document window's controller: which commands it can run
@@ -242,7 +255,6 @@ private struct CatalogLaunchCover: View {
   /// Each document still opening's progress panel, which focus brings forward.
   private var openings: [UUID: PopOpeningProgress] = [:]
   private var quitCopies = QuitDraftCopies()
-  private var adoptedSources: [URL: (URL, String)] = [:]
   var client: AppClient {
     AppClient(
       open: { [self] id, url in
@@ -301,14 +313,6 @@ private struct CatalogLaunchCover: View {
     let controller = try await PopDocumentWindowController.open(
       url: url, routing: routing, progress: progress, telemetry: telemetry)
     controllers[id] = controller
-    if let (source, documentID) = adoptedSources.removeValue(forKey: url) {
-      do { try await PopLibrary.shared.trashAdopted(source: source, id: documentID) } catch {
-        coordinator?.present(
-          .failure(
-            "Your iCloud pop is at \(url.path). The original is still at \(source.path). \(error.localizedDescription)"
-          ), for: id)
-      }
-    }
     if presentsWindows {
       if RecentDocumentHistory.usesSystemRecents { NSDocumentController.shared.noteNewRecentDocumentURL(url) }
       NSApp.activate()
@@ -349,22 +353,13 @@ private struct CatalogLaunchCover: View {
   private func perform(_ id: UUID, command: PopDocumentCommand) async throws -> URL? {
     let controller = try controller(id)
     if command == .moveToCloud {
-      guard controller.canMoveToCloud else { throw PopFailure("This pop cannot be moved right now.") }
-      let source = controller.session.file.url
-      // The normal close path flushes text, saves artwork and releases the writer lock.
-      _ = try await controller.perform(.close)
-      controllers.removeValue(forKey: id)
-      do {
-        let entry = try await PopLibrary.shared.adopt(
-          source: source, title: source.deletingPathExtension().lastPathComponent)
-        let destination = URL(fileURLWithPath: entry.path)
-        adoptedSources[destination] = (source, entry.id)
-        return destination
-      } catch {
-        coordinator?.present(
-          .failure("The original is still at \(source.path). \(error.localizedDescription)"), for: nil)
-        return source
-      }
+      guard controller.canMoveToCloud else { throw PopFailure("Sign in to enable sync for this pop.") }
+      try await controller.session.saveAccepted()
+      try await PopLibrary.shared.enableSync(
+        source: controller.session.file.url,
+        title: controller.session.file.url.deletingPathExtension().lastPathComponent)
+      controller.session.sharing?.refresh()
+      return nil
     }
     let result = try await controller.perform(command)
     if command == .duplicate || command == .saveUnsharedCopy, result != nil { telemetry.send(.duplicated) }

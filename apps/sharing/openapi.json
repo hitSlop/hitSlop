@@ -1,109 +1,71 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "pop sharing",
-    "description": "",
-    "license": {
-      "name": ""
-    },
+    "title": "pop persistent document service",
     "version": "1"
   },
   "paths": {
-    "/_resources/{room}": {
-      "post": {
-        "summary": "Grant a short lived host-bound resource cookie on a UUID.dotslop.com origin",
-        "parameters": [
-          {
-            "name": "room",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ResourceGrant"
-              }
-            }
-          },
-          "required": true
-        },
+    "/v1/account": {
+      "delete": {
         "responses": {
           "200": {
             "description": "Accepted"
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
+          {
+            "firebaseIdentity": []
+          },
           {
             "capability": []
           }
         ]
       }
     },
-    "/v1/account": {
-      "delete": {
-        "summary": "End every indexed room and remove the signed-in relay account; retryable and idempotent",
-        "parameters": [],
+    "/v1/account/documents": {
+      "get": {
         "responses": {
           "200": {
             "description": "Accepted",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "null"
+                  "$ref": "#/components/schemas/RegisteredDocuments"
                 }
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
     },
-    "/v1/account/rooms/{document}": {
+    "/v1/account/documents/{document}": {
       "get": {
-        "summary": "Look up the signed-in owner's current room, or null",
         "parameters": [
           {
             "name": "document",
@@ -121,48 +83,33 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "anyOf": [
-                    {
-                      "type": "null"
-                    },
-                    {
-                      "$ref": "#/components/schemas/AccountRoom"
-                    }
-                  ]
+                  "$ref": "#/components/schemas/AccessState"
                 }
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
     },
-    "/v1/rooms": {
+    "/v1/documents": {
       "post": {
-        "summary": "Create or recover the document's current room",
-        "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
@@ -184,43 +131,36 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
     },
-    "/v1/rooms/{room}": {
+    "/v1/documents/{document}": {
       "get": {
-        "summary": "Read room metadata; only its owner receives the capability",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
@@ -236,19 +176,13 @@
             }
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
@@ -261,27 +195,14 @@
         ]
       },
       "delete": {
-        "summary": "End the room and purge retained files",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "phase",
-            "in": "query",
-            "description": "Use uploading to cancel preparation only; refuses a room that activated meanwhile",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "uploading"
-              ]
+              "format": "uuid"
             }
           }
         ],
@@ -289,334 +210,271 @@
           "200": {
             "description": "Accepted"
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          }
-        ]
-      }
-    },
-    "/v1/rooms/{room}/asset/{hash}": {
-      "put": {
-        "summary": "Publish an immutable app resource (creator only)",
-        "parameters": [
-          {
-            "name": "room",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
           },
-          {
-            "name": "hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          }
-        ]
-      }
-    },
-    "/v1/rooms/{room}/blob/{hash}": {
-      "get": {
-        "summary": "Download an attachment",
-        "parameters": [
-          {
-            "name": "room",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
           {
             "capability": []
           }
         ]
       },
-      "put": {
-        "summary": "Publish an immutable attachment",
+      "patch": {
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          },
-          {
-            "capability": []
-          }
-        ]
-      }
-    },
-    "/v1/rooms/{room}/blobs": {
-      "get": {
-        "summary": "Read retained attachment inventory",
-        "parameters": [
-          {
-            "name": "room",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Resource"
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
-          {
-            "capability": []
-          }
-        ]
-      }
-    },
-    "/v1/rooms/{room}/compact": {
-      "post": {
-        "summary": "Replace covered updates with an opaque full-history base",
-        "parameters": [
-          {
-            "name": "room",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "X-Sharing-SHA256",
-            "in": "header",
-            "description": "Lowercase 64-digit hex SHA-256 digest of the body",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Sharing-Version",
-            "in": "header",
-            "description": "F: JSON array of [16-digit hex peer, non-negative i32 counter] pairs",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Sharing-Root",
-            "in": "header",
-            "description": "Seed version in the same encoding; required only without a stored root, otherwise ignored",
-            "required": false,
-            "schema": {
-              "type": "string"
+              "format": "uuid"
             }
           }
         ],
         "requestBody": {
           "content": {
-            "application/octet-stream": {
+            "application/json": {
               "schema": {
-                "type": "string",
-                "format": "binary",
-                "maxLength": 16777216
+                "$ref": "#/components/schemas/UpdateDocument"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "Base installed"
-          },
-          "400": {
-            "$ref": "#/components/responses/Refused"
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessState"
+                }
+              }
+            }
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "404": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
+          {
+            "firebaseIdentity": []
+          },
           {
             "capability": []
           }
         ]
       }
     },
-    "/v1/rooms/{room}/epoch": {
-      "get": {
-        "summary": "Read the current checkpoint epoch and optional frozen handoff",
+    "/v1/documents/{document}/asset/{hash}": {
+      "put": {
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/{document}/blob/{hash}": {
+      "get": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/{document}/blobs": {
+      "get": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/{document}/compact": {
+      "post": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/{document}/epoch": {
+      "get": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -632,19 +490,13 @@
             }
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
@@ -657,15 +509,14 @@
         ]
       },
       "post": {
-        "summary": "Conditionally publish a staged seed and exact resource inventory",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
@@ -691,19 +542,13 @@
             }
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
@@ -716,41 +561,19 @@
         ]
       }
     },
-    "/v1/rooms/{room}/epochs/{hash}": {
+    "/v1/documents/{document}/epochs/{hash}": {
       "put": {
-        "summary": "Stage an immutable bounded checkpoint seed for ten minutes",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
+              "format": "uuid"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/octet-stream": {
-              "schema": {
-                "type": "string",
-                "format": "binary",
-                "maxLength": 16777216
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "description": "Accepted",
@@ -763,19 +586,13 @@
             }
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
@@ -788,24 +605,14 @@
         ]
       },
       "delete": {
-        "summary": "Release an unpublished stage immediately; never deletes the current checkpoint",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
+              "format": "uuid"
             }
           }
         ],
@@ -814,19 +621,13 @@
             "description": "Accepted"
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
@@ -839,68 +640,31 @@
         ]
       }
     },
-    "/v1/rooms/{room}/epochs/{seed}/blobs/{hash}": {
+    "/v1/documents/{document}/epochs/{seed}/blobs/{hash}": {
       "put": {
-        "summary": "Stage an immutable attachment within a checkpoint seed's bounded lease",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "hash",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
-            }
-          },
-          {
-            "name": "seed",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{64}$"
+              "format": "uuid"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/octet-stream": {
-              "schema": {
-                "type": "string",
-                "format": "binary",
-                "maxLength": 10485760
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "description": "Accepted"
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
@@ -913,17 +677,16 @@
         ]
       }
     },
-    "/v1/rooms/{room}/handoff/begin": {
+    "/v1/documents/{document}/members": {
       "post": {
-        "summary": "Creator freezes the exact epoch frontier; guests immediately lose access",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
@@ -931,7 +694,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BeginHandoff"
+                "$ref": "#/components/schemas/JoinDocument"
               }
             }
           },
@@ -943,146 +706,122 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Handoff"
+                  "$ref": "#/components/schemas/AccessState"
                 }
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
     },
-    "/v1/rooms/{room}/handoff/finalize": {
-      "post": {
-        "summary": "Creator finalizes a frozen handoff after its durable destination receipt",
+    "/v1/documents/{document}/members/me": {
+      "delete": {
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/FinalizeHandoff"
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/{document}/metadata": {
+      "get": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentMetadata"
+                }
               }
             }
           },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
     },
-    "/v1/rooms/{room}/handoff/history": {
-      "get": {
-        "summary": "Creator reads one bounded plain Records frame; after cursor and X-Sharing-Next/Done headers paginate frozen history",
-        "parameters": [
-          {
-            "name": "room",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "403": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "409": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          }
-        ]
-      }
-    },
-    "/v1/rooms/{room}/open": {
+    "/v1/documents/{document}/open": {
       "post": {
-        "summary": "Open a room after its seed and app resources are uploaded",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
@@ -1097,43 +836,36 @@
               }
             }
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
     },
-    "/v1/rooms/{room}/resources": {
+    "/v1/documents/{document}/resources": {
       "get": {
-        "summary": "Read accepted app inventory",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
@@ -1149,37 +881,33 @@
             }
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
+          {
+            "firebaseIdentity": []
+          },
           {
             "capability": []
           }
         ]
       },
       "post": {
-        "summary": "Replace app inventory while Uploading (owner only)",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
@@ -1197,43 +925,36 @@
           "200": {
             "description": "Accepted"
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
     },
-    "/v1/rooms/{room}/seed": {
+    "/v1/documents/{document}/seed": {
       "get": {
-        "summary": "Download the canonical SQLite seed",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
+              "format": "uuid"
             }
           }
         ],
@@ -1242,61 +963,33 @@
             "description": "Accepted"
           },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
+          {
+            "firebaseIdentity": []
+          },
           {
             "capability": []
           }
         ]
       },
       "put": {
-        "summary": "Replace the SQLite seed while Uploading (owner only)",
         "parameters": [
           {
-            "name": "room",
+            "name": "document",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "pattern": "^[0-9a-f]{32}$"
-            }
-          },
-          {
-            "name": "X-Sharing-SHA256",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Sharing-App",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Sharing-Version",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
+              "format": "uuid"
             }
           }
         ],
@@ -1304,28 +997,150 @@
           "200": {
             "description": "Accepted"
           },
-          "401": {
-            "$ref": "#/components/responses/Refused"
-          },
           "403": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Permission denied; local copy retained"
           },
           "409": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Conditional conflict"
           },
           "410": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "413": {
-            "$ref": "#/components/responses/Refused"
-          },
-          "429": {
-            "$ref": "#/components/responses/Refused"
+            "description": "Document deleted"
           }
         },
         "security": [
           {
             "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      }
+    },
+    "/v1/documents/{document}/sharing": {
+      "get": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessState"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      },
+      "post": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessState"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
+          }
+        ]
+      },
+      "delete": {
+        "parameters": [
+          {
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessState"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied; local copy retained"
+          },
+          "409": {
+            "description": "Conditional conflict"
+          },
+          "410": {
+            "description": "Document deleted"
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
+          },
+          {
+            "capability": []
           }
         ]
       }
@@ -1333,14 +1148,34 @@
   },
   "components": {
     "schemas": {
-      "AccountRoom": {
+      "AccessState": {
         "type": "object",
         "required": [
-          "room"
+          "document",
+          "sharing",
+          "generation",
+          "role"
         ],
         "properties": {
-          "room": {
+          "capability": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "document": {
             "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "role": {
+            "$ref": "#/components/schemas/DocumentRole"
+          },
+          "sharing": {
+            "type": "boolean"
           }
         }
       },
@@ -1355,21 +1190,6 @@
             "type": "string"
           },
           "message": {
-            "type": "string"
-          }
-        }
-      },
-      "BeginHandoff": {
-        "type": "object",
-        "required": [
-          "token",
-          "expected"
-        ],
-        "properties": {
-          "expected": {
-            "$ref": "#/components/schemas/EpochBase"
-          },
-          "token": {
             "type": "string"
           }
         }
@@ -1403,6 +1223,85 @@
             "type": "string"
           }
         }
+      },
+      "DocumentEntry": {
+        "type": "object",
+        "required": [
+          "documentId",
+          "title",
+          "templateId",
+          "modifiedAt",
+          "role",
+          "accessGeneration",
+          "catalogRevision",
+          "deleted"
+        ],
+        "properties": {
+          "accessGeneration": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "appRevision": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "catalogRevision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "modifiedAt": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "previewRef": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/DocumentRole"
+          },
+          "templateId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "DocumentMetadata": {
+        "type": "object",
+        "required": [
+          "title",
+          "templateId"
+        ],
+        "properties": {
+          "templateId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "DocumentRole": {
+        "type": "string",
+        "enum": [
+          "owner",
+          "editor"
+        ]
       },
       "EpochBase": {
         "type": "object",
@@ -1445,16 +1344,6 @@
           "heads"
         ],
         "properties": {
-          "handoff": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/Handoff"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "heads": {
             "type": "array",
             "items": {
@@ -1502,72 +1391,13 @@
           }
         }
       },
-      "FinalizeHandoff": {
+      "JoinDocument": {
         "type": "object",
         "required": [
-          "token"
+          "capability"
         ],
         "properties": {
-          "token": {
-            "type": "string"
-          }
-        }
-      },
-      "Handoff": {
-        "type": "object",
-        "required": [
-          "token",
-          "seedHash",
-          "root",
-          "heads"
-        ],
-        "properties": {
-          "heads": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": false,
-              "prefixItems": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{16}$"
-                },
-                {
-                  "type": "integer",
-                  "maximum": 2147483647,
-                  "minimum": 0
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            },
-            "description": "Unique peer pairs in ascending canonical peer order"
-          },
-          "root": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": false,
-              "prefixItems": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{16}$"
-                },
-                {
-                  "type": "integer",
-                  "maximum": 2147483647,
-                  "minimum": 0
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            },
-            "description": "Unique peer pairs in ascending canonical peer order"
-          },
-          "seedHash": {
-            "type": "string"
-          },
-          "token": {
+          "capability": {
             "type": "string"
           }
         }
@@ -1635,6 +1465,36 @@
           },
           "seedHash": {
             "type": "string"
+          }
+        }
+      },
+      "RegisteredDocument": {
+        "type": "object",
+        "description": "Registry hints for repairing a missing personal catalog reference. Authorization\nis always checked by the document before any bytes are returned.",
+        "required": [
+          "document",
+          "role"
+        ],
+        "properties": {
+          "document": {
+            "type": "string"
+          },
+          "role": {
+            "$ref": "#/components/schemas/DocumentRole"
+          }
+        }
+      },
+      "RegisteredDocuments": {
+        "type": "object",
+        "required": [
+          "documents"
+        ],
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegisteredDocument"
+            }
           }
         }
       },
@@ -1748,16 +1608,19 @@
             "minimum": 0
           }
         }
-      }
-    },
-    "responses": {
-      "Refused": {
-        "description": "Request refused; the local document is retained",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/ApiFailure"
-            }
+      },
+      "UpdateDocument": {
+        "type": "object",
+        "required": [
+          "title",
+          "templateId"
+        ],
+        "properties": {
+          "templateId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
           }
         }
       }
@@ -1765,14 +1628,12 @@
     "securitySchemes": {
       "capability": {
         "type": "http",
-        "scheme": "bearer",
-        "description": "Room edit capability for guest data access. Creator administration requires a verified Firebase identity."
+        "scheme": "bearer"
       },
       "firebaseIdentity": {
         "type": "http",
         "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "Firebase ID token, not a room capability"
+        "bearerFormat": "JWT"
       }
     }
   }

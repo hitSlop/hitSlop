@@ -1,5 +1,6 @@
 import Foundation
 import PopCore
+import PopCoreBinding
 import PopDocument
 import PopFeatures
 
@@ -98,7 +99,9 @@ actor CatalogScanner {
         Self.dates(url, &entry)
         return entry
       }
-      return Self.entry(file, source: .recent(url), id: "recent:\(url.path)")
+      var entry = Self.entry(file, source: .recent(url), id: "recent:\(url.path)")
+      entry.savedDocumentID = try? sharingLocalDocument(path: url.path)
+      return entry
     }
   }
 

@@ -188,8 +188,9 @@ impl Socket {
 }
 fn upgrade(key: &RoomKey) -> TransportResult<Socket> {
     let client = network()?.http.clone();
-    let url = format!("{}/v1/rooms/{}/sync", key.origin, key.room);
-    let capability = key.capability.clone();
+    let url = format!("{}/v1/documents/{}/sync", key.origin, key.room);
+    let capability = key.bearer().to_owned();
+    let anonymous = key.capability().is_some();
     run_network(async move {
         let nonce = tungstenite::handshake::client::generate_key();
         let response = client
@@ -207,6 +208,9 @@ fn upgrade(key: &RoomKey) -> TransportResult<Socket> {
             // trustworthy status. Once headers are accepted, body errors keep status.
             .map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
         let status = response.status().as_u16();
+        if status == 403 && anonymous {
+            return Err(HttpFailure::Ended);
+        }
         if status != 101 {
             let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
             return Err(refusal(status, &bytes, Route::of(&url)));
@@ -289,7 +293,15 @@ pub(crate) fn http_typed(
     } else {
         format!("/{route}")
     };
-    http_request_typed(method, &format!("{}/v1/rooms/{}{suffix}", key.origin, key.room), token, body, headers, limit)
+    http_request_authorized(
+        method,
+        &format!("{}/v1/documents/{}{suffix}", key.origin, key.room),
+        token,
+        body,
+        headers,
+        limit,
+        key.capability().is_some(),
+    )
 }
 #[derive(Debug)]
 pub(crate) enum HttpFailure {
@@ -384,6 +396,17 @@ pub(crate) fn http_request_typed(
     headers: &[(&str, &str)],
     limit: u64,
 ) -> std::result::Result<Vec<u8>, HttpFailure> {
+    http_request_authorized(method, url, token, body, headers, limit, false)
+}
+fn http_request_authorized(
+    method: &str,
+    url: &str,
+    token: Option<&str>,
+    body: &[u8],
+    headers: &[(&str, &str)],
+    limit: u64,
+    anonymous: bool,
+) -> std::result::Result<Vec<u8>, HttpFailure> {
     let client = network()?.http.clone();
     let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(fail)?;
     let url = url.to_owned();
@@ -397,6 +420,9 @@ pub(crate) fn http_request_typed(
     run_network(async move {
         let response = request.send().await.map_err(|_| HttpFailure::from("Sharing service is unavailable"))?;
         let status = response.status().as_u16();
+        if status == 403 && anonymous {
+            return Err(HttpFailure::Ended);
+        }
         if !matches!(status, 200 | 204) {
             let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
             return match refusal(status, &bytes, Route::of(&url)) {
@@ -419,60 +445,13 @@ pub(crate) fn room_control(
 ) -> TransportResult<Vec<u8>> {
     http_request_typed(
         method,
-        &format!("{origin}/v1/rooms/{room}/{route}"),
+        &format!("{origin}/v1/documents/{room}/{route}"),
         Some(identity),
         body,
         &[("Content-Type", "application/json")],
         pop_sharing_protocol::CONTROL_BYTES as u64,
     )
 }
-pub(crate) fn history_page(
-    key: &RoomKey,
-    token: &str,
-    after: Option<u64>,
-) -> TransportResult<(Vec<u8>, Option<u64>, bool)> {
-    let client = network()?.http.clone();
-    let mut url = format!("{}/v1/rooms/{}/handoff/history", key.origin, key.room);
-    if let Some(after) = after {
-        url.push_str(&format!("?after={after}"));
-    }
-    let token = token.to_owned();
-    run_network(async move {
-        let response = client
-            .get(&url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|_| HttpFailure::from("Frozen history unavailable"))?;
-        if response.status().as_u16() != 200 {
-            let status = response.status().as_u16();
-            let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
-            return Err(refusal(status, &bytes, Route::of(&url)));
-        }
-        let done = match response.headers().get("X-Sharing-Done").and_then(|v| v.to_str().ok()) {
-            Some("0") => false,
-            Some("1") => true,
-            _ => return Err("Invalid frozen history completion".into()),
-        };
-        let next = response
-            .headers()
-            .get("X-Sharing-Next")
-            .map(|value| {
-                value
-                    .to_str()
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .ok_or_else(|| HttpFailure::from("Invalid frozen history cursor"))
-            })
-            .transpose()?;
-        if !done && next.is_none_or(|next| after.is_some_and(|after| next <= after)) {
-            return Err("Frozen history did not advance".into());
-        }
-        let bytes = response_body(response, MAX_FRAME as u64).await?;
-        Ok((bytes, next, done))
-    })
-}
-
 #[derive(Default)]
 struct Queue {
     events: VecDeque<SyncEvent>,
@@ -557,20 +536,6 @@ impl Connection {
                     let ended = matches!(&attempt, Err(HttpFailure::Ended))
                         || matches!(&attempt, Ok(true)) && output.value.lock().unwrap().0 == Phase::Ended;
                     if ended && access.identity.is_none() {
-                        match access.journal.frozen_handoff() {
-                            Ok(true) => {
-                                output.paused(
-                                    PauseKind::Refused,
-                                    "Sign in to the creator's sharing account to finish this frozen handoff.".into(),
-                                );
-                                break;
-                            }
-                            Err(error) => {
-                                output.paused(PauseKind::Refused, error);
-                                break;
-                            }
-                            Ok(false) => {}
-                        }
                         // A guest keeps the existing canonical file. Clearing membership
                         // first permits the ordinary unshared save policy to reclaim space.
                         let retained = epochs::retry_busy(&owner, || Request::Unshare)
@@ -743,7 +708,7 @@ fn connected(
                 }
                 if action == MaintenanceAction::ReadBase {
                     if files_waiting && deep {
-                        let epoch = resolution::epoch(key, access.identity.as_deref().unwrap_or(&key.capability))?;
+                        let epoch = resolution::epoch(key, access.identity.as_deref().unwrap_or(key.bearer()))?;
                         epochs::publish(
                             owner,
                             key,
@@ -920,7 +885,7 @@ pub(crate) fn compact(key: &RoomKey, base: &pop_core::sync::Base) -> std::result
         key,
         "POST",
         "compact",
-        Some(&key.capability),
+        Some(key.bearer()),
         &base.bytes,
         &[
             ("Content-Type", "application/octet-stream"),
@@ -998,8 +963,8 @@ mod tests {
     fn upgrade_refusal(headers: &str, body: &[u8], status: u16) -> HttpFailure {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let key = RoomKey {
-            room: "a".repeat(32),
-            capability: "b".repeat(64),
+            room: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_owned(),
+            authorization: Authorization::Capability("b".repeat(64)),
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let headers = headers.to_owned();
@@ -1080,7 +1045,10 @@ mod tests {
         request(
             &owner,
             Request::Share {
-                share: Share { room: "a".repeat(32), endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() },
+                share: Share {
+                    room: owner.app().document_uuid.clone().unwrap(),
+                    endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
+                },
             },
         )
         .unwrap();
@@ -1115,8 +1083,8 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let key = RoomKey {
-            room: "a".repeat(32),
-            capability: "b".repeat(64),
+            room: owner.app().document_uuid.clone().unwrap(),
+            authorization: Authorization::Capability("b".repeat(64)),
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let stop = Arc::new(AtomicBool::new(false));
@@ -1235,12 +1203,17 @@ mod tests {
     /// Answer the socket upgrade with `answer` (or hang up) and report what `connected` made of it.
     fn handshake(
         answer: Option<(u16, &'static str)>,
+        identity: bool,
     ) -> (std::result::Result<bool, HttpFailure>, Phase, Option<PauseKind>) {
         let (_dir, owner) = crate::tests::fixture();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let key = RoomKey {
-            room: "a".repeat(32),
-            capability: "b".repeat(64),
+            room: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_owned(),
+            authorization: if identity {
+                Authorization::Identity("identity-token".into())
+            } else {
+                Authorization::Capability("b".repeat(64))
+            },
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let serving = thread::spawn(move || {
@@ -1251,7 +1224,10 @@ mod tests {
                 stream.read_exact(&mut byte).unwrap();
                 header.push(byte[0]);
             }
-            assert!(String::from_utf8(header).unwrap().starts_with(&format!("GET /v1/rooms/{}/sync ", "a".repeat(32))));
+            assert!(String::from_utf8(header).unwrap().starts_with(&format!(
+                "GET /v1/documents/{}/sync ",
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_owned()
+            )));
             if let Some((code, body)) = answer {
                 write!(
                     stream,
@@ -1283,18 +1259,21 @@ mod tests {
             (404, "", PauseKind::Refused),
             (400, r#"{"code":"requires_update","message":"Update pop to keep sharing"}"#, PauseKind::NeedsUpdate),
         ] {
-            let (result, phase, paused) = handshake(Some((code, body)));
+            let (result, phase, paused) = handshake(Some((code, body)), true);
             assert!(matches!(result, Ok(true)), "{code} is terminal: {result:?}");
             assert_eq!((phase, paused), (Phase::Paused, Some(kind)), "{code}");
         }
-        let (result, phase, paused) = handshake(Some((410, "")));
+        let (result, phase, paused) = handshake(Some((403, "")), false);
+        assert!(matches!(result, Ok(true)));
+        assert_eq!((phase, paused), (Phase::Ended, None));
+        let (result, phase, paused) = handshake(Some((410, "")), false);
         assert!(matches!(result, Ok(true)));
         assert_eq!((phase, paused), (Phase::Ended, None));
     }
     #[test]
     fn transient_handshake_failures_stay_retryable() {
         for answer in [Some((503, "")), Some((429, "")), None] {
-            let (result, phase, paused) = handshake(answer);
+            let (result, phase, paused) = handshake(answer, false);
             assert!(matches!(result, Err(HttpFailure::Other(_))), "{answer:?} retries: {result:?}");
             assert_ne!(phase, Phase::Paused);
             assert_eq!(paused, None);

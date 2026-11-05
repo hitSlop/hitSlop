@@ -388,7 +388,7 @@ requests approximate refresh while the app runs; authoring accepts 15–1440 min
 
 The iPhone app renders placed library pop locally with the same
 `Widget.svelte` views and canvases; taps open the pop. Foreground saves and library
-changes refresh images. CloudKit notifications and scheduled background work also
+changes refresh images. Catalog notifications and scheduled background work also
 refresh placed widgets when iOS allows; neither gives an exact refresh time. See the
 [widget architecture](../architecture.md#macos-image-widgets).
 

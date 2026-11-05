@@ -1,4 +1,4 @@
-//! Opaque checkpoint publication and creator handoff. The relay validates metadata,
+//! Opaque persistent checkpoint publication. The service validates metadata,
 //! hashes and conditional frontiers; only document owners interpret checkpoint bytes.
 use crate::resources::{Manifest, Resource, hash_id};
 use serde::{Deserialize, Serialize};
@@ -64,36 +64,12 @@ impl EpochBase {
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct Handoff {
-    pub token: String,
-    pub seed_hash: String,
-    #[cfg_attr(feature = "openapi", schema(schema_with = wire_version_schema))]
-    pub root: WireVersion,
-    #[cfg_attr(feature = "openapi", schema(schema_with = wire_version_schema))]
-    pub heads: WireVersion,
-}
-impl Handoff {
-    pub fn validate(&self) -> Result<(), String> {
-        if !crate::valid_room(&self.token) || !hash_id(&self.seed_hash) {
-            return Err("Invalid handoff".into());
-        }
-        validate_frontier(&self.root, &self.heads)?;
-        Ok(())
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EpochState {
     pub seed_hash: String,
     #[cfg_attr(feature = "openapi", schema(schema_with = wire_version_schema))]
     pub root: WireVersion,
     #[cfg_attr(feature = "openapi", schema(schema_with = wire_version_schema))]
     pub heads: WireVersion,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub handoff: Option<Handoff>,
 }
 
 impl EpochState {
@@ -102,12 +78,6 @@ impl EpochState {
             return Err("Invalid seed hash".into());
         }
         validate_frontier(&self.root, &self.heads)?;
-        if let Some(handoff) = &self.handoff {
-            handoff.validate()?;
-            if handoff.seed_hash != self.seed_hash || handoff.root != self.root || handoff.heads != self.heads {
-                return Err("Handoff does not match the current epoch".into());
-            }
-        }
         Ok(())
     }
 }
@@ -148,21 +118,4 @@ impl PublishEpoch {
         }
         Ok(())
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct BeginHandoff {
-    pub token: String,
-    pub expected: EpochBase,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct FinalizeHandoff {
-    pub token: String,
 }

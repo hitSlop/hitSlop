@@ -32,19 +32,23 @@ pub(crate) struct Transaction<'a> {
 }
 impl Journal {
     pub fn new(directory: &Path, key: &RoomKey, document: &str) -> Result<Self> {
-        if !directory.is_absolute() || !pop_sharing_protocol::valid_copy(document) {
+        Self::at(directory, &key.origin, &key.room, document)
+    }
+    pub fn at(directory: &Path, origin: &str, room: &str, document: &str) -> Result<Self> {
+        if !directory.is_absolute()
+            || directory.components().any(|part| matches!(part, std::path::Component::ParentDir))
+            || !pop_sharing_protocol::valid_copy(document)
+        {
             return Err("Invalid relay state location".into());
         }
         use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory).map_err(fail)?;
-        let name = hex(&Sha256::digest(
-            serde_json::to_vec(&(key.origin.as_str(), key.room.as_str(), document)).map_err(fail)?,
-        ));
+        let name = hex(&Sha256::digest(serde_json::to_vec(&(origin, room, document)).map_err(fail)?));
         Ok(Self {
             directory: directory.into(),
             name,
-            endpoint: key.origin.clone(),
-            room: key.room.clone(),
+            endpoint: origin.into(),
+            room: room.into(),
             document: document.into(),
             checked_recovery: Mutex::new(None),
         })
@@ -74,25 +78,6 @@ impl Journal {
         }
         *self.checked_recovery.lock().unwrap() = Some((path.to_owned(), stamp));
         true
-    }
-    pub fn frozen_handoff(&self) -> Result<bool> {
-        let transaction = self.transaction()?;
-        Ok([transaction.pending()?, transaction.current()?]
-            .into_iter()
-            .flatten()
-            .any(|receipt| receipt.epoch.handoff.is_some()))
-    }
-    pub fn retire_handoff(&self, freeze: &str) -> Result<()> {
-        let frozen: pop_sharing_protocol::lifecycle::Handoff = serde_json::from_str(freeze).map_err(fail)?;
-        frozen.validate()?;
-        let transaction = self.transaction()?;
-        if let Some(mut receipt) = transaction.current()?
-            && receipt.epoch.handoff.as_ref() == Some(&frozen)
-        {
-            receipt.epoch.handoff = None;
-            transaction.confirm(&receipt)?;
-        }
-        Ok(())
     }
     pub fn completed_recovery(&self) -> Option<PathBuf> {
         if let Ok(transaction) = self.transaction() {
@@ -143,6 +128,41 @@ impl Journal {
             recovery,
         }
     }
+    fn owned_recovery(path: &Path) -> bool {
+        use std::path::Component;
+        let mut parts = path.components();
+        matches!(parts.next(), Some(Component::Normal(name)) if name == "Recovered")
+            && matches!(parts.next(), Some(Component::Normal(_)))
+            && parts.next().is_none()
+            && path.extension().is_some_and(|extension| extension == "pop")
+    }
+    fn resolve_recovery(&self, path: &Path) -> Result<PathBuf> {
+        if path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
+            return Err("Invalid recovery location".into());
+        }
+        if !path.is_absolute() {
+            if !Self::owned_recovery(path) {
+                return Err("Invalid recovery location".into());
+            }
+            return Ok(self.directory.join(path));
+        }
+        if let Some(rebased) = pop_storage::file::rebase_ios_container_path(path, &self.directory)
+            && rebased.strip_prefix(&self.directory).is_ok_and(Self::owned_recovery)
+        {
+            return Ok(rebased);
+        }
+        // Genuine external files are not relocated by a filename or suffix guess.
+        Ok(path.to_owned())
+    }
+    fn stored_recovery(&self, path: &Path) -> Result<PathBuf> {
+        let resolved = self.resolve_recovery(path)?;
+        if let Ok(relative) = resolved.strip_prefix(&self.directory)
+            && Self::owned_recovery(relative)
+        {
+            return Ok(relative.to_owned());
+        }
+        Ok(resolved)
+    }
     fn read(&self, extension: &str) -> Result<Option<Receipt>> {
         let file = match File::open(self.path(extension)) {
             Ok(file) => file,
@@ -154,17 +174,20 @@ impl Journal {
         if bytes.len() > pop_sharing_protocol::CONTROL_BYTES {
             return Err("Relay authority receipt exceeds its limit".into());
         }
-        let receipt: Receipt = serde_json::from_slice(&bytes).map_err(fail)?;
+        let mut receipt: Receipt = serde_json::from_slice(&bytes).map_err(fail)?;
         receipt.epoch.validate()?;
         if receipt.endpoint != self.endpoint || receipt.room != self.room || receipt.document != self.document {
             return Err("Relay authority receipt belongs to another connection".into());
         }
+        receipt.recovery = receipt.recovery.as_deref().map(|path| self.resolve_recovery(path)).transpose()?;
         Ok(Some(receipt))
     }
     fn write(&self, extension: &str, receipt: &Receipt) -> Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         receipt.epoch.validate()?;
-        let bytes = serde_json::to_vec(receipt).map_err(fail)?;
+        let mut stored = receipt.clone();
+        stored.recovery = receipt.recovery.as_deref().map(|path| self.stored_recovery(path)).transpose()?;
+        let bytes = serde_json::to_vec(&stored).map_err(fail)?;
         if bytes.len() > pop_sharing_protocol::CONTROL_BYTES {
             return Err("Relay authority receipt exceeds its limit".into());
         }

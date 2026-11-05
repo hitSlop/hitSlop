@@ -416,7 +416,7 @@ test("Chrome epoch adoption preserves dirty edits in an independent recovery cop
         copy.importFinish(); return copy;
       };
       const local = await load(input.initial);
-      local.openJoined("https://share.dotpop.click/join#" + "a".repeat(32) + "." + "b".repeat(64),
+      local.openJoined("https://share.dotpop.click/join#" + input.uuid + "." + "b".repeat(64),
         "https://share.dotpop.click", info(initialHash, input.initial.length));
       local.page("dirty", JSON.stringify({ method: "apply", batch: { intents: [{ type: "set", path: ["title"], value: "Offline edits to recover" }] } }));
       local.poll(1, Date.now());

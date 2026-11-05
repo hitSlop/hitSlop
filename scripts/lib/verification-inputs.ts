@@ -44,7 +44,7 @@ export const tierInputs = {
   render: [...rustInputs, /^packages\/pop\/(src|shell)\//, /^packages\/pop\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/pop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^pop\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
   browser: [...rustInputs, /^packages\/pop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/pop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
   rust: [/^scripts\/compat\//, ...rustInputs, /^packages\/pop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
-  sharing: [...rustInputs, /^apps\/sharing\//, /^scripts\/sharing\//, /^scripts\/build\/sharing\.ts$/, /^apps\/apple\/App\/Shared\/Assets\.xcassets\/AppIcon\.appiconset\/appicon-1024\.png$/],
+  sharing: [/^\.github\/workflows\/sharing\.yml$/, /^firestore\.(rules|indexes\.json)$/, /^firebase\.json$/, ...rustInputs, /^apps\/sharing\//, /^scripts\/sharing\//, /^scripts\/build\/sharing\.ts$/, /^apps\/apple\/App\/Shared\/Assets\.xcassets\/AppIcon\.appiconset\/appicon-1024\.png$/],
   landing: [/^apps\/landing\//],
   packed: [...rustInputs, /^packages\/pop\/(src|templates|skills)\//, /^packages\/[^/]+\/package\.json$/, /^scripts\/(build|lib|templates)\//, /^tests\/packed\//],
   swift: nativeInputs,

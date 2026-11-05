@@ -29,39 +29,39 @@ struct PhoneArtworkView: View {
     }
   }
 }
-struct PhonePopRow: View {
-  let url: URL, title: String, subtitle: String
+struct PhonePopTile: View {
+  let url: URL, title: String
   var revision = ""
-  /// A synced row shows a small iCloud mark instead of a status line.
-  var synced = false
-  var downloaded = true
+  var presentation: CatalogDocumentPresentation?
+  var artworkSize: CGFloat = 96
+  @Environment(\.dynamicTypeSize) private var typeSize
   var body: some View {
-    HStack(spacing: 12) {
-      PhoneArtworkView(url: url, revision: revision + (downloaded ? "|local" : "|cloud")).padding(3).frame(
-        width: 44, height: 46
-      )
-      .background(PopBrand.card, in: RoundedRectangle(cornerRadius: 12))
-      .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(PopBrand.heading(16)).foregroundStyle(.primary).lineLimit(1)
-        if !synced { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-      }.frame(maxWidth: .infinity, alignment: .leading)
-      if synced {
-        Image(systemName: "checkmark.icloud").font(.footnote).foregroundStyle(.tertiary)
-          .accessibilityLabel(subtitle)
-      }
-      Image(systemName: downloaded ? "chevron.right" : "icloud.and.arrow.down")
-        .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-    }.padding(.vertical, 6).padding(.horizontal, 8).contentShape(Rectangle())
-      .overlay(alignment: .bottom) {
-        Rectangle().fill(Color.primary.opacity(0.065)).frame(height: 0.5).padding(.leading, 64)
-      }
+    VStack(spacing: 7) {
+      PhoneArtworkView(url: url, revision: revision)
+        .padding(5).frame(width: artworkSize, height: artworkSize)
+        .background(PopBrand.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: .black.opacity(0.09), radius: 7, y: 4)
+        .overlay(alignment: .bottomTrailing) {
+          if let badge = presentation?.badge {
+            CatalogDocumentBadgeView(badge: badge).offset(x: 3, y: 3)
+          }
+        }
+      Text(title).font(.system(.subheadline, design: .rounded).weight(.semibold)).foregroundStyle(.primary)
+        .multilineTextAlignment(.center)
+        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+        .frame(maxWidth: .infinity, minHeight: typeSize.isAccessibilitySize ? nil : 38, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .top)
+    .contentShape(Rectangle())
   }
 }
 struct PhoneTemplateDetail: View {
   let template: PhoneTemplate
-  let creating: Bool, canCreate: Bool
-  let create: (String) -> Void
+  let creating: Bool, canSync: Bool
+  let create: (String, Bool) -> Void
+  @State private var syncAcrossDevices = false
   @State private var showName = false
   /// The name chosen in the sheet, created once the sheet has closed: navigation and any
   /// error alert cannot present from behind a sheet.
@@ -99,7 +99,7 @@ struct PhoneTemplateDetail: View {
       onDismiss: {
         guard let chosen = chosenName else { return }
         chosenName = nil
-        create(chosen)
+        create(chosen, syncAcrossDevices)
       }
     ) {
       PhoneNameSheet(template: template, creating: creating, name: $name) { chosen in
@@ -111,6 +111,10 @@ struct PhoneTemplateDetail: View {
     .navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 8) {
+        Picker("Keep this pop", selection: $syncAcrossDevices) {
+          Text("This device").tag(false)
+          Text("Sync across devices").tag(true)
+        }.pickerStyle(.segmented)
         Button {
           taps += 1
           name = template.title
@@ -125,10 +129,11 @@ struct PhoneTemplateDetail: View {
           PopBrand.accent, in: RoundedRectangle(cornerRadius: 18)
         )
         .accessibilityIdentifier("create-pop")
-        .disabled(creating || !canCreate).opacity(canCreate ? 1 : 0.55)
+        .disabled(creating || (syncAcrossDevices && !canSync))
         Text(
-          canCreate
-            ? "Saved on this iPhone. Synced with your Mac." : "Connect to iCloud in Settings to create a synced pop."
+          syncAcrossDevices
+            ? (canSync ? "Saved here and synced with your Mac and iPhone." : "Sign in to sync across devices.")
+            : "Saved on this device. You can enable sync later."
         )
         .font(.caption).foregroundStyle(.secondary)
       }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8).background(.regularMaterial)

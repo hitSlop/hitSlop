@@ -52,7 +52,7 @@ async function restrict(page:Page,context:BrowserContext){
 let contexts:BrowserContext[]=[];
 let stopped=false;
 try {
-  const lookup="https://share.dotpop.click/v1/account/rooms/00000000-0000-4000-8000-000000000000";
+  const lookup="https://share.dotpop.click/v1/account/documents/00000000-0000-4000-8000-000000000000";
   const unknownKey=[{alg:"RS256",kid:"pop-deliberately-unknown-test-key"},{sub:"test-user"}].map(part=>Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")+"."+Buffer.alloc(256).toString("base64url");
   for(const token of [undefined,"malformed",unknownKey]) {
     const response=await fetch(lookup,{headers:token?{Authorization:"Bearer "+token}:{}});
@@ -110,7 +110,7 @@ try {
   // Hold all blob reads after the first failure. CaughtUp queued behind failed Records
   // must never publish a reference to a file which the owner has not installed.
   let blocked=false,release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});
-  await first.route("**/rooms/*/blob/*",async route=>{
+  await first.route("**/documents/*/blob/*",async route=>{
     if(route.request().method()!=="GET"){await route.continue();return;}
     if(!blocked){blocked=true;await route.abort("failed");return;}
     await gate;await route.continue();
@@ -126,7 +126,7 @@ try {
   } finally {release();}
   await app.getByAltText(name,{exact:true}).waitFor({timeout:45_000});
   await until(async()=>app.getByAltText(name,{exact:true}).evaluate(img=>(img as HTMLImageElement).naturalWidth>0),"Delivered photo could not render");
-  await first.unroute("**/rooms/*/blob/*");
+  await first.unroute("**/documents/*/blob/*");
   note("An interrupted receive fences queued CaughtUp; reconnect installs the verified image before publishing its reference");
   await page.evaluate(async()=>{
     const root=await navigator.storage.getDirectory();const file=await root.getFileHandle("sharing-download.pop",{create:true});
@@ -144,7 +144,7 @@ try {
   const reopen=page.url();await first.close();contexts=contexts.filter(context=>context!==first);
   const restored=await chromium.launchPersistentContext(join(root,"chrome-a"),{channel:"chrome",headless:true});contexts.push(restored);
   let resumedBlobPuts=0;
-  restored.on("request",request=>{if(request.method()==="PUT"&&/\/rooms\/[^/]+\/blob\//.test(new URL(request.url()).pathname))resumedBlobPuts++;});
+  restored.on("request",request=>{if(request.method()==="PUT"&&/\/documents\/[^/]+\/blob\//.test(new URL(request.url()).pathname))resumedBlobPuts++;});
   const reopened=await restored.newPage();await restrict(reopened,restored);await reopened.goto(reopen);
   await reopened.frameLocator("iframe").getByText(label,{exact:true}).waitFor({timeout:45_000});
   note("Connected process reopen retains the browser copy and its edits");
