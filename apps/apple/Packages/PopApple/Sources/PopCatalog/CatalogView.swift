@@ -24,7 +24,7 @@ public struct CatalogView: View {
     self.model = model
   }
 
-  public var body: some View {
+  private var navigation: some View {
     NavigationSplitView {
       CatalogSidebar(
         filter: model.filter, categories: model.categories, recentCount: model.recents.count,
@@ -85,79 +85,89 @@ public struct CatalogView: View {
       .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
       .ignoresSafeArea(.container, edges: .top)
     }
-    .navigationSplitViewStyle(.balanced)
-    .tint(PopBrand.accent)
-    .background {
-      Button("Focus template search") { searchFocused = true }
-        .keyboardShortcut("k", modifiers: .command)
-        .frame(width: 1, height: 1).opacity(0)
-    }
-    .onAppear {
-      model.chooseStorage = chooseStorage
-      model.start()
-      library.start()
-    }
-    .onReceive(NotificationCenter.default.publisher(for: .popJoinSharedPop)) { notification in
-      if let link = notification.object as? String {
-        Task {
-          do { try await joinSharedLink(link) } catch { sharingError = sharingMessage(error) }
-        }
-      } else {
-        showJoin = true
+  }
+
+  private var observedCatalog: some View {
+    navigation
+      .navigationSplitViewStyle(.balanced)
+      .tint(PopBrand.accent)
+      .background {
+        Button("Focus template search") { searchFocused = true }
+          .keyboardShortcut("k", modifiers: .command)
+          .frame(width: 1, height: 1).opacity(0)
       }
-    }
-    .onChange(of: library.accountBoundPaths) { _, _ in updateLibrary() }
-    .onChange(of: library.entries, initial: true) { _, _ in updateLibrary() }
-    .onChange(of: library.issues) { _, _ in updateLibrary() }
-    .onChange(of: library.isReady) { _, _ in updateLibrary() }
-    .onChange(of: library.lastSuccess) { _, _ in updateLibrary() }
-    .onChange(of: library.foregroundAt) { _, _ in updateLibrary() }
-    .onChange(of: library.lastError) { _, _ in updateLibrary() }
-    .onChange(of: scenePhase) { _, phase in if phase == .active { model.activated() } }
-    .onReceive(NotificationCenter.default.publisher(for: .popPreviewDidChange)) { notification in
-      if let url = notification.object as? URL { model.artworkChanged(url) }
-    }
-    .alert(
-      "Could not create pop",
-      isPresented: Binding(
-        get: { model.creationError != nil }, set: { if !$0 { model.creationError = nil } }
-      )
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(model.creationError ?? "")
-    }
-    .alert(
-      "Could not open shared pop",
-      isPresented: Binding(get: { sharingError != nil }, set: { if !$0 { sharingError = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(sharingError ?? "")
-    }
-    .alert(
-      "Sync across devices", isPresented: Binding(get: { libraryError != nil }, set: { if !$0 { libraryError = nil } })
-    ) {
-      Button("OK", role: .cancel) {}
-    } message: {
-      Text(libraryError ?? "")
-    }
-    .alert("Name your pop", isPresented: $showLibraryName) {
-      TextField("Name", text: $libraryName)
-      Button("Cancel", role: .cancel) { finishStorage(.cancelled) }
-      Button("Create") { createSynced() }.disabled(libraryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-    .confirmationDialog(
-      "Where do you want to keep this pop?", isPresented: $showStorageChoice, titleVisibility: .visible
-    ) {
-      Button("This device…") { finishStorage(.local) }
-      Button("Sync across devices") { showLibraryName = true }.disabled(library.accountIdentity.isEmpty)
-      Button("Cancel", role: .cancel) { finishStorage(.cancelled) }
-    }
-    .preferredColorScheme(.light)
-    .sheet(isPresented: $showJoin) {
-      SharingJoinView { link in try await joinSharedLink(link) }
-    }
+      .onAppear {
+        model.chooseStorage = chooseStorage
+        model.start()
+        library.start()
+      }
+      .onReceive(NotificationCenter.default.publisher(for: .popJoinSharedPop)) { notification in
+        if let link = notification.object as? String {
+          Task {
+            do { try await joinSharedLink(link) } catch { sharingError = sharingMessage(error) }
+          }
+        } else {
+          showJoin = true
+        }
+      }
+      .onChange(of: library.accountBoundPaths) { _, _ in updateLibrary() }
+      .onChange(of: library.entries, initial: true) { _, _ in updateLibrary() }
+      .onChange(of: library.issues) { _, _ in updateLibrary() }
+      .onChange(of: library.isReady) { _, _ in updateLibrary() }
+      .onChange(of: library.lastSuccess) { _, _ in updateLibrary() }
+      .onChange(of: library.foregroundAt) { _, _ in updateLibrary() }
+      .onChange(of: library.lastError) { _, _ in updateLibrary() }
+      .onChange(of: scenePhase) { _, phase in if phase == .active { model.activated() } }
+      .onReceive(NotificationCenter.default.publisher(for: .popPreviewDidChange)) { notification in
+        if let url = notification.object as? URL { model.artworkChanged(url) }
+      }
+  }
+
+  public var body: some View {
+    observedCatalog
+      .alert(
+        "Could not create pop",
+        isPresented: Binding(
+          get: { model.creationError != nil }, set: { if !$0 { model.creationError = nil } }
+        )
+      ) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        Text(model.creationError ?? "")
+      }
+      .alert(
+        "Could not open shared pop",
+        isPresented: Binding(get: { sharingError != nil }, set: { if !$0 { sharingError = nil } })
+      ) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        Text(sharingError ?? "")
+      }
+      .alert(
+        "Sync across devices",
+        isPresented: Binding(get: { libraryError != nil }, set: { if !$0 { libraryError = nil } })
+      ) {
+        Button("OK", role: .cancel) {}
+      } message: {
+        Text(libraryError ?? "")
+      }
+      .alert("Name your pop", isPresented: $showLibraryName) {
+        TextField("Name", text: $libraryName)
+        Button("Cancel", role: .cancel) { finishStorage(.cancelled) }
+        Button("Create") { createSynced() }.disabled(
+          libraryName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      }
+      .confirmationDialog(
+        "Where do you want to keep this pop?", isPresented: $showStorageChoice, titleVisibility: .visible
+      ) {
+        Button("This device…") { finishStorage(.local) }
+        Button("Sync across devices") { showLibraryName = true }.disabled(library.accountIdentity.isEmpty)
+        Button("Cancel", role: .cancel) { finishStorage(.cancelled) }
+      }
+      .preferredColorScheme(.light)
+      .sheet(isPresented: $showJoin) {
+        SharingJoinView { link in try await joinSharedLink(link) }
+      }
   }
   private func libraryAction(_ entry: CatalogEntry, _ action: @escaping @MainActor (SyncedPop) async throws -> Void) {
     guard let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) else { return }
