@@ -1,0 +1,26 @@
+name: Select Apple toolchain
+description: Select the stable Xcode used by Apple checks and release builds
+runs:
+  using: composite
+  steps:
+    - name: Require Xcode 26.2
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        export DEVELOPER_DIR=/Applications/Xcode_26.2.app/Contents/Developer
+        if [[ ! -d "$DEVELOPER_DIR" ]]; then
+          echo '::error::Xcode 26.2 is required at /Applications/Xcode_26.2.app; no runner-default fallback is allowed.'
+          exit 1
+        fi
+        version=$(xcodebuild -version)
+        if [[ "${version%%$'\n'*}" != 'Xcode 26.2' ]]; then
+          echo '::error::The selected developer directory did not provide Xcode 26.2.'
+          exit 1
+        fi
+        printf '%s\n' "$version"
+        swift_version=$(xcrun swift --version)
+        printf '%s\n' "$swift_version"
+        toolchain_key=$(printf '%s\n' "$version" "$swift_version" | shasum -a 256 | cut -d ' ' -f 1)
+        echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
+        echo "APPLE_TOOLCHAIN_CACHE_KEY=$toolchain_key-" >> "$GITHUB_ENV"

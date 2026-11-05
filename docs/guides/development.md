@@ -2,7 +2,10 @@
 
 ## Set up the checkout
 
-Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGen on macOS. The shipped Mac app supports Apple silicon on macOS 15.2 or newer. The iPhone app
+Use the Bun version in root `package.json` (currently 1.4.2), Xcode 26.2 or newer
+(Swift 6.2+), and XcodeGen on macOS. Apple CI and release builds explicitly select
+Xcode 26.2 before restoring build caches; a missing installation fails rather than
+falling back to the runner default. The shipped Mac app supports Apple silicon on macOS 15.2 or newer. The iPhone app
 supports iOS 26+ in TestFlight; see [current availability](../../apps/landing/src/content/docs/docs/availability.mdx).
 
 ```sh

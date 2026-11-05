@@ -78,6 +78,7 @@ export const sharingGateInputs = [...tierInputs.sharing, /^packages\/pop\/src\/(
 export const sharedInputs = [
   /^\.github\/workflows\/ci\.yml$/,
   /^\.github\/actions\/prepare-checks\//,
+  /^\.github\/actions\/select-xcode\//,
   /^scripts\/ci\/select\.ts$/,
   /^scripts\/lib\/(verification(?:-inputs)?|test-process|artifacts)\.ts$/,
   /^scripts\/verify\.ts$/,
