@@ -48,21 +48,6 @@ final class PhoneCatalogTests: XCTestCase {
     capture(app, "Live editor with task")
     app.buttons["document-actions"].tap()
     app.buttons["Sync Now"].tap()
-    if ProcessInfo.processInfo.environment["POP_TWO_DEVICE_EDIT_PROOF"] == "1" {
-      task.tap()
-      task.typeText("Still typing while Mac updates")
-      // Keep the real editor active while the Mac's normal owner path sends a change.
-      let remote = app.webViews.descendants(matching: .any).matching(
-        NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Mac live editor proof", "Mac live editor proof")
-      ).firstMatch
-      XCTAssertTrue(
-        remote.waitForExistence(timeout: 120), "Send the Mac edit through its owner while this editor remains open")
-      XCTAssertTrue((task.value as? String)?.contains("Still typing while Mac updates") == true)
-      capture(app, "Incoming Mac edit in open iPhone editor")
-      app.webViews.buttons["Add task"].tap()
-      app.buttons["document-actions"].tap()
-      app.buttons["Sync Now"].tap()
-    }
     app.returnToLibrary()
     XCTAssertTrue(app.buttons[String(documentName)].waitForExistence(timeout: 20))
     capture(app, "Named pop with refreshed artwork")

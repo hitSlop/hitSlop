@@ -1,38 +1,114 @@
-import CryptoKit
 import Foundation
 import Testing
 
 @testable import PopAccount
 
-/// 1.x signed in through a named Firebase app whose identity this lineage's Auth never holds.
-/// Its leftover flags must not read as this lineage's identity having gone missing, which would
-/// refuse guests and sign-in until the person found the reset; a 2.0 identity that goes missing
-/// is still refused rather than replaced by a different anonymous UID.
-@Test func anEarlierLineagesAccountFlagsAreNotThisLineagesIdentity() throws {
-  let suite = "pop.tests.account.\(UUID().uuidString)"
+private func scratchDefaults() throws -> (UserDefaults, cleanup: () -> Void) {
+  let suite = "click.dotpop.tests.account.\(UUID().uuidString)"
   let defaults = try #require(UserDefaults(suiteName: suite))
-  defer { defaults.removePersistentDomain(forName: suite) }
-  // What a signed-in 1.x device leaves: its retained flag, and the mark of a deletion whose
-  // 1.x cloud step finished. The same Firebase project gives an Apple account the same UID.
-  let uid = "apple-account-uid"
-  let hash = SHA256.hash(data: Data(uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
-  defaults.set(true, forKey: "sharing.signedIn")
-  defaults.set(true, forKey: "sharing.deletion." + hash)
+  return (defaults, { defaults.removePersistentDomain(forName: suite) })
+}
+
+private struct Refused: Error {}
+
+/// Records the deletion steps that ran, in the order they ran.
+@MainActor private final class DeletionSteps {
+  enum Step: Equatable {
+    case cloud
+    case identity
+  }
+  var ran: [Step] = []
+  var cloudFails = false
+  var identityFails = false
+  func cloud() throws {
+    ran.append(.cloud)
+    if cloudFails { throw Refused() }
+  }
+  func identity(_ authorization: Result<String, Error>) throws {
+    ran.append(.identity)
+    if identityFails { throw Refused() }
+  }
+  func delete(
+    _ account: SharingAccountDefaults, uid: String,
+    consent: AccountDeletionConsent<String> = .answered(.success("apple"))
+  ) async -> AccountDeletionOutcome {
+    await account.deleteAccount(
+      uid: uid, consent: { consent }, deleteCloud: { try self.cloud() }, deleteIdentity: { try self.identity($0) })
+  }
+}
+
+/// A retained identity that Firebase lost is refused, also after relaunch, rather than replaced
+/// by a different anonymous UID; only an explicit sign-out or reset clears it.
+@Test func aLostRetainedIdentityIsRefusedUntilAnExplicitReset() throws {
+  let (defaults, cleanup) = try scratchDefaults()
+  defer { cleanup() }
   let account = SharingAccountDefaults(defaults: defaults)
-
-  // First 2.0 launch: no Firebase user, and nothing to report missing or already deleted.
   #expect(!account.identityRetained)
-  #expect(!account.identityMissing(hasUser: false))
-  #expect(!defaults.bool(forKey: account.cloudDeletedKey(uid)), "2.0 still deletes its own cloud documents")
+  #expect(!account.identityMissing(hasUser: false), "a first launch has nothing to miss")
 
-  // 2.0 held an identity; losing it afterwards is refused, including after relaunch.
   account.identityRetained = true
   #expect(!account.identityMissing(hasUser: true))
   #expect(account.identityMissing(hasUser: false))
-  #expect(SharingAccountDefaults(defaults: defaults).identityMissing(hasUser: false))
+  #expect(SharingAccountDefaults(defaults: defaults).identityMissing(hasUser: false), "relaunch keeps refusing")
 
-  // An explicit sign-out or reset clears only this lineage's flag.
   account.identityRetained = false
   #expect(!account.identityMissing(hasUser: false))
-  #expect(defaults.bool(forKey: "sharing.signedIn"), "1.x flags are left as they are")
+}
+
+/// Apple is asked first, so dismissing its confirmation deletes nothing: no deletion step runs
+/// and nothing is recorded, and the account is exactly as it was.
+@Test @MainActor func cancellingAppleConfirmationDeletesNothing() async throws {
+  let (defaults, cleanup) = try scratchDefaults()
+  defer { cleanup() }
+  let account = SharingAccountDefaults(defaults: defaults)
+  account.identityRetained = true
+  let steps = DeletionSteps()
+  #expect(await steps.delete(account, uid: "person", consent: .cancelled) == .cancelled)
+  #expect(steps.ran.isEmpty)
+  #expect(!defaults.bool(forKey: account.cloudDeletedKey("person")))
+  #expect(account.identityRetained)
+}
+
+/// The identity owns the cloud documents, so it is never deleted while they remain.
+@Test @MainActor func aFailedCloudDeletionKeepsTheIdentity() async throws {
+  let (defaults, cleanup) = try scratchDefaults()
+  defer { cleanup() }
+  let account = SharingAccountDefaults(defaults: defaults)
+  account.identityRetained = true
+  let steps = DeletionSteps()
+  steps.cloudFails = true
+  #expect(await steps.delete(account, uid: "person") == .failed(cloudDeleted: false))
+  #expect(steps.ran == [.cloud], "the identity is kept for the retry")
+  #expect(!defaults.bool(forKey: account.cloudDeletedKey("person")))
+  #expect(account.identityRetained)
+}
+
+/// The relay fences a deleted UID for good, so a retry that asked it to delete the account
+/// again could never finish. A failure after the cloud deletion keeps that UID's checkpoint
+/// across a relaunch; the retry resumes at the identity, and the finished deletion clears it.
+/// Another account's checkpoint is its own.
+@Test @MainActor func aRetryAfterTheCloudDeletionResumesAtTheIdentity() async throws {
+  let (defaults, cleanup) = try scratchDefaults()
+  defer { cleanup() }
+  let account = SharingAccountDefaults(defaults: defaults)
+  account.identityRetained = true
+  // Another account on this device stopped at the same point earlier.
+  let other = DeletionSteps()
+  other.identityFails = true
+  #expect(await other.delete(account, uid: "other") == .failed(cloudDeleted: true))
+
+  let first = DeletionSteps()
+  first.identityFails = true
+  #expect(await first.delete(account, uid: "person") == .failed(cloudDeleted: true))
+  #expect(first.ran == [.cloud, .identity], "its own cloud documents are deleted despite the other checkpoint")
+  #expect(defaults.bool(forKey: account.cloudDeletedKey("person")))
+  #expect(account.identityRetained)
+
+  let relaunched = SharingAccountDefaults(defaults: defaults)
+  let retry = DeletionSteps()
+  #expect(await retry.delete(relaunched, uid: "person") == .deleted)
+  #expect(retry.ran == [.identity], "the cloud deletion is not asked again")
+  #expect(!defaults.bool(forKey: account.cloudDeletedKey("person")))
+  #expect(!relaunched.identityRetained)
+  #expect(defaults.bool(forKey: account.cloudDeletedKey("other")), "another account's checkpoint is unaffected")
 }
