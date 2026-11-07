@@ -283,7 +283,7 @@ mod tests {
     #[test]
     fn a_poisoned_shared_owner_can_reload_saved_state_and_close() {
         let (_dir, store) = fixture();
-        store.set_share(&store::Share { room: "poisoned".into(), endpoint: "https://relay.example".into() }).unwrap();
+        store.set_share(&store::Share { endpoint: "https://relay.example".into() }).unwrap();
         let (persist, storage) = mpsc::channel();
         let mut actor = Actor::new(store.clone(), store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
         actor.view = Some("old-page".into());

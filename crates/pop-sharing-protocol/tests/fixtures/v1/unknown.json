@@ -11,5 +11,40 @@
     "020200",
     "060000000000000001ff"
   ],
-  "unknownErrorFrame": "07ff00"
+  "unknownErrorFrame": "07ff00",
+  "incomplete": [
+    {
+      "type": "RoomInfo",
+      "name": "metadata without the compaction hint",
+      "input": {
+        "document": "00000000-0000-4000-8000-000000000001",
+        "phase": "live",
+        "seedHash": null,
+        "seedSize": null,
+        "app": null
+      }
+    },
+    {
+      "type": "SharingEvent",
+      "name": "sync without its phase",
+      "input": {
+        "type": "sync",
+        "status": "Synced"
+      }
+    },
+    {
+      "type": "SharingControl",
+      "name": "join without an invitation",
+      "input": {
+        "type": "joinInvitation"
+      }
+    },
+    {
+      "type": "ConnectionPlan",
+      "name": "connection without its size",
+      "input": {
+        "document": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  ]
 }

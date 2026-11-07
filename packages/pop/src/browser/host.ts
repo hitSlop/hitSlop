@@ -363,13 +363,16 @@ async function own() {
               toFrame({ type: "error", id: data.id, error: data.error });
           }
         };
-        if (hosted)
-          worker!.postMessage({
-            type: "joinCredential",
-            credential: existing?.local
-              ? ""
-              : (localStorage.getItem("sharing.invitation." + id) ?? ""),
-          } satisfies SharingControl);
+        if (hosted) {
+          // A copy without its stored invitation is refused by the worker, never opened locally.
+          const control: SharingControl = existing?.local
+            ? { type: "openLocal" }
+            : {
+                type: "joinInvitation",
+                invitation: localStorage.getItem("sharing.invitation." + id) ?? "",
+              };
+          worker!.postMessage(control);
+        }
         send({ type: "open", copy: id!, source });
       };
       launch(0);

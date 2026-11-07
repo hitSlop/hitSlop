@@ -78,22 +78,24 @@ pub enum HelloSuccess {
     Hello {
         #[serde(rename = "ok")]
         _ok: super::engine::True,
-        #[serde(default, rename = "documentLineage", skip_serializing_if = "Option::is_none")]
-        document_lineage: Option<u32>,
+        #[serde(rename = "documentLineage")]
+        document_lineage: u32,
     },
 }
 
 impl HelloSuccess {
-    /// A protocol-compatible owner must also belong to this product's document lineage.
-    /// Missing lineage identifies an older owner, never permission to send a payload.
+    /// A protocol-compatible owner must also belong to this product's document lineage;
+    /// an owner of any other lineage never receives a payload.
     pub fn check_lineage(&self) -> Result<(), Error> {
         let Self::Hello { document_lineage, .. } = self;
-        match *document_lineage {
-            Some(lineage) if lineage == crate::lineage::DOCUMENT_LINEAGE => Ok(()),
-            Some(lineage) if lineage > crate::lineage::DOCUMENT_LINEAGE => {
+        match document_lineage.cmp(&crate::lineage::DOCUMENT_LINEAGE) {
+            std::cmp::Ordering::Equal => Ok(()),
+            std::cmp::Ordering::Greater => {
                 Err(err(Code::RequiresUpdate, "This live document needs a newer pop CLI; update pop"))
             }
-            _ => Err(err(Code::InvalidRequest, "This live document belongs to an unsupported older pop lineage")),
+            std::cmp::Ordering::Less => {
+                Err(err(Code::InvalidRequest, "This live document belongs to an unsupported older pop lineage"))
+            }
         }
     }
 }

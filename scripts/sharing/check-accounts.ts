@@ -28,7 +28,7 @@ if (process.versions.bun) {
   process.exit(await child.exited);
 }
 import { SharingHost } from "../../packages/pop/src/wire/constants.generated";
-import type { AccessState, CreatedRoom, RegisteredDocuments } from "../../packages/pop/src/wire/sharing.generated";
+import type { AccessState, RegisteredDocuments, RoomInfo } from "../../packages/pop/src/wire/sharing.generated";
 
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const root = await mkdtemp(join(tmpdir(), "pop-account-relay-"));
@@ -203,8 +203,11 @@ try {
 
   assert.equal((await call("account", undefined, "DELETE")).status,401);
   assert.equal((await call("documents", uid("anonymous","anonymous"), "POST",{document})).status,401);
-  const [first,retry]=await Promise.all([json<CreatedRoom>("documents",a,"POST",{document}),json<CreatedRoom>("documents",secondSession,"POST",{document})]);
-  assert.equal(first.room,document);assert.equal(retry.room,document);assert.equal(first.capability,"");
+  const [first,retry]=await Promise.all([call("documents",a,"POST",{document}),call("documents",secondSession,"POST",{document})]);
+  for (const created of [first,retry]) {
+    assert.equal(created.status,204,"Creation is idempotent across one account's sessions");
+    assert.equal(await created.text(),"","Creation replies with no body");
+  }
   assert.equal((await call("documents",b,"POST",{document})).status,403,"UUID cannot be claimed by another account");
   const base="documents/"+document;
   assert.equal((await call(base+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
@@ -214,8 +217,16 @@ try {
   assert.equal((await call(base+"/sharing","not-a-valid-identity")).status,401,"invalid identity is retryable authentication, not lost membership");
   assert.equal((await call(base+"/sharing",b)).status,403,"a valid nonmember is denied access");
   assert.equal((await call(base+"/seed",secondSession)).status,200,"same account on another device shares private bytes");
-  assert.equal((await json<AccessState>("account/documents/"+document,secondSession)).role,"owner");
+  assert.equal((await json<AccessState>(base+"/sharing",secondSession)).role,"owner");
   const enabled=await json<AccessState>(base+"/sharing",a,"POST");assert(enabled.capability);assert(enabled.sharing);
+  // Only the authorized access reply carries the invitation secret; document metadata never does,
+  // even for the owner while sharing is on.
+  for (const info of [await json<RoomInfo>(base,a), await json<RoomInfo>(base+"/open",a,"POST")]) {
+    assert.equal(info.document,document);
+    assert.equal(info.phase,"live");
+    assert.equal(typeof info.compact,"boolean","Every reply states whether compaction is due");
+    assert.ok(!("capability" in info) && !JSON.stringify(info).includes(enabled.capability!),"Document metadata never carries the invitation");
+  }
   const guest = uid("guest", "anonymous");
   await json(base+"/members",guest,"POST",{capability:enabled.capability});
   assert.equal((await call(base+"/seed",guest)).status,200,"Verified anonymous identities may join");
@@ -291,9 +302,35 @@ try {
   assert.equal((await call(base+"/seed",b)).status,403,"leave removes identity membership without deleting canonical bytes");
   assert.equal((await call(base+"/seed",a)).status,200);
   assert.equal((await call(base,a,"PATCH",{title:"Repairable private document",templateId:"fixture"})).status,200);
+  // A metadata write still reading its body when the owner deletes the document is refused
+  // and stores nothing: deletion is final even for a request admitted before it.
+  const lateDocument="00000000-0000-4000-8000-000000000097";
+  assert.equal((await call("documents",a,"POST",{document:lateDocument})).status,204);
+  const lateStub=documents.get(documents.idFromName(documentName(lateDocument)));
+  let finishPatch!: () => void;
+  const patchBody=new ReadableStream<Uint8Array>({ start(controller) {
+    controller.enqueue(new TextEncoder().encode(JSON.stringify({title:"Written after deletion",templateId:"late"})));
+    finishPatch=()=>controller.close();
+  } });
+  const delayedPatch=worker.dispatchFetch(`https://share.dotpop.click/v1/documents/${lateDocument}`,{method:"PATCH",
+    headers:{Authorization:`Bearer ${a}`,"Content-Type":"application/json","X-Test-Observe-Body":"1"},body:patchBody,duplex:"half" as const});
+  let patchReading=false;
+  for (let attempt=0; attempt<500; attempt++) {
+    if (Number(await (await lateStub.fetch("https://test/__test/body-reads")).text()) > 0) { patchReading=true; break; }
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.ok(patchReading,"The metadata write is waiting for its body after authorization");
+  assert.equal((await call("documents/"+lateDocument,a,"DELETE")).status,200);
+  finishPatch();
+  const late=await delayedPatch;
+  assert.equal(late.status,410,"A metadata write that outlives deletion is refused");
+  assert.equal((await late.json() as {code:string}).code,"sharing_ended");
+  const lateMeta=await (await lateStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT key FROM meta WHERE key IN ('title','template_id')"})})).json();
+  assert.deepEqual(lateMeta,[],"A deleted document keeps no metadata written after deletion");
+  assert.equal((await call("documents/"+lateDocument+"/metadata",a)).status,410);
   const repairDocument="00000000-0000-4000-8000-000000000098";
   const repairBase="documents/"+repairDocument;
-  assert.equal((await call("documents",a,"POST",{document:repairDocument})).status,200);
+  assert.equal((await call("documents",a,"POST",{document:repairDocument})).status,204);
   assert.equal((await call(repairBase+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
   assert.equal((await call(repairBase+"/resources",a,"POST",{app,resources:[]})).status,200);
   assert.equal((await call(repairBase+"/open",a,"POST")).status,200);
@@ -310,14 +347,14 @@ try {
   assert.equal((await call("documents",secondSession,"POST",{document})).status,410,"deleted UUID cannot be resurrected");
   assert.equal((await call("documents",b,"POST",{document})).status,410,"deleted UUID cannot be stolen");
   const deletionDocument="00000000-0000-4000-8000-000000000099";
-  assert.equal((await call("documents",a,"POST",{document:deletionDocument})).status,200);
+  assert.equal((await call("documents",a,"POST",{document:deletionDocument})).status,204);
   assert.equal((await call("account",a,"DELETE")).status,200,"account deletion handles integer owner registration and purges owned documents");
   assert.equal((await call("documents/"+deletionDocument,a)).status,410);
   assert.equal((await call("account",a,"DELETE")).status,200,"account deletion retry is idempotent");
   const prolific = uid("prolific");
   for (let index = 0; index < 12; index++) {
     const id = `00000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`;
-    assert.equal((await call("documents", prolific, "POST", { document: id })).status, 200, "no account document cap: " + index);
+    assert.equal((await call("documents", prolific, "POST", { document: id })).status, 204, "no account document cap: " + index);
   }
   const listed = (await (await call("account/documents", prolific)).json()) as RegisteredDocuments;
   assert.equal(listed.documents.length, 12);
@@ -326,7 +363,36 @@ try {
   const rest = (await (await call("account/documents?after=" + after, prolific)).json()) as RegisteredDocuments;
   assert.deepEqual(rest.documents, listed.documents.slice(5), "a cursor lists the registrations after it in document order");
   assert.equal((await call("account/documents?after=invalid", prolific)).status, 400, "an invalid cursor is refused");
-  for (const path of ["documents/" + document + "/blob/" + "b".repeat(64) + "/extra", "account/documents/" + document + "/extra", "account/extra"]) {
+  // Past one page (ACCOUNT_DOCUMENTS_PAGE = 1000), the real handler pages by cursor: every
+  // registration exactly once, in document order. Rows go straight into the account's
+  // registry; account creation's own rate limit would otherwise bound the fixture.
+  const pagedName = "paged-account";
+  const paged = uid(pagedName);
+  const accounts = await worker.getDurableObjectNamespace("ACCOUNTS");
+  const pagedAccount = accounts.get(accounts.idFromName(hash(Buffer.from(pagedName))));
+  const registrations = 2345;
+  const accountSQL = async (sql: string, args: unknown[] = []) =>
+    (await pagedAccount.fetch("https://test/__test/sql", { method: "POST", body: JSON.stringify({ sql, args }) })).json() as Promise<{ n: number }[]>;
+  await accountSQL("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<?) INSERT INTO documents SELECT printf('00000000-0000-4000-8000-%012x',i), CASE WHEN i%3=0 THEN 0 ELSE 1 END, 0 FROM n", [registrations]);
+  assert.equal((await accountSQL("SELECT count(*) AS n FROM documents"))[0]!.n, registrations);
+  const expected = Array.from({ length: registrations }, (_, index) => ({
+    document: `00000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, "0")}`,
+    role: (index + 1) % 3 === 0 ? "editor" : "owner",
+  }));
+  const pages: RegisteredDocuments[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await json<RegisteredDocuments>("account/documents" + (cursor ? "?after=" + cursor : ""), paged);
+    pages.push(page);
+    cursor = page.next;
+    assert.ok(pages.length <= 4, "the cursor reaches the last page");
+  } while (cursor);
+  assert.deepEqual(pages.map((page) => page.documents.length), [1000, 1000, 345], "full pages, then the remainder");
+  for (const page of pages.slice(0, -1))
+    assert.equal(page.next, page.documents.at(-1)!.document, "a full page's cursor is its last document");
+  assert.equal(pages.at(-1)!.next, undefined, "the last page has no cursor");
+  assert.deepEqual(pages.flatMap((page) => page.documents), expected, "every registration once, in order");
+  for (const path of ["documents/" + document + "/blob/" + "b".repeat(64) + "/extra", "account/documents/" + document, "account/documents/" + document + "/extra", "account/extra"]) {
     assert.equal((await call(path, undefined, "GET")).status, 404, "unlisted routes never reach a handler: " + path);
   }
   assert.equal((await call("documents/" + document + "/members", prolific, "DELETE")).status, 404, "only members/me leaves");

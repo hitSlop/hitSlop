@@ -59,7 +59,8 @@ export async function removeCopy(id: string) {
     await removeRecord(id);
   });
 }
-/** Check before installing sahpool or deleting its files. Pre-launch unmarked pools are unsupported. */
+/** Check before installing sahpool or deleting its files. A pool without the current container
+ * marker is refused and left unchanged. */
 export async function checkContainer(id: string, create = false) {
   const root = await navigator.storage.getDirectory();
   const copies = await root.getDirectoryHandle("copies", { create: true });

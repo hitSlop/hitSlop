@@ -106,7 +106,7 @@ error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports a
 unrecognized outcome and tells the user to inspect state before retrying; the engine relay
 forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--pop-*`,
 `data-pop-root`, the embed relay, and capture program requests and replies.
-The pop sharing `/v1` HTTP/link/socket contract grows only additively; its [immutable fixtures](../crates/pop-sharing-protocol/tests/fixtures/v1/README.md), including the binary frame codec, remain valid and are never replaced, regenerated or deleted. Breaking changes require `/v2` while `/v1` continues serving old pop clients. The npm package ships the document engine; the Mac app contains its linked core
+The pop sharing `/v1` HTTP/link/socket contract starts from its [2.0.0 baseline fixtures](../crates/pop-sharing-protocol/tests/fixtures/v1/README.md), including the binary frame codec. From the first public release it grows only additively: those fixtures remain valid and are never replaced, regenerated or deleted, and a breaking change requires `/v2` while `/v1` continues serving released pop clients. The npm package ships the document engine; the Mac app contains its linked core
 and restricted evaluator. Release acceptance checks that the engine and the app contain
 the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
 

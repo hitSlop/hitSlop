@@ -16,7 +16,8 @@ pub(super) fn fixture() -> (tempfile::TempDir, Arc<Owner>) {
 }
 pub(super) fn test_journal(owner: &Owner, key: &RoomKey, confirmed: bool) -> Arc<journal::Journal> {
     let document = owner.app().document_uuid.as_deref().unwrap();
-    let journal = journal::Journal::new(&owner.path().parent().unwrap().join("relay-state"), key, document).unwrap();
+    let journal =
+        journal::Journal::new(&owner.path().parent().unwrap().join("relay-state"), &key.origin, document).unwrap();
     if confirmed {
         let store = Store::open(owner.path(), Mode::Snapshot).unwrap();
         let receipt = journal.receipt(store.document().unwrap().version());
@@ -51,11 +52,7 @@ fn failed_receipt_confirmation_keeps_the_previous_receipt() {
     let (_directory, owner) = fixture();
     let document = owner.app().document_uuid.as_deref().unwrap();
     let key = RoomKey::identity(document, "test-token").unwrap();
-    request(
-        &owner,
-        Request::Share { share: pop_storage::store::Share { room: document.into(), endpoint: key.origin.clone() } },
-    )
-    .unwrap();
+    request(&owner, Request::Share { share: pop_storage::store::Share { endpoint: key.origin.clone() } }).unwrap();
     let journal = test_journal(&owner, &key, true);
     let previous = journal.transaction().unwrap().current().unwrap().unwrap().owner_version;
     request(

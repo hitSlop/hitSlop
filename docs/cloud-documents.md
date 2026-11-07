@@ -38,22 +38,21 @@ JSON bodies over their limit are 413 and malformed ones 400. Sockets negotiate
 | Route | Who | Effect |
 |---|---|---|
 | `GET /health` | public | Liveness. |
-| `POST /v1/documents` | named identity | Idempotently reserve the UUID. |
+| `POST /v1/documents` | named identity | Idempotently reserve the UUID; 204 with no body. |
 | `GET /v1/account/documents` | identity | Registered UUIDs and roles, a hint for repairing a missing catalog entry. Paged: up to 1,000 per reply, `?after=<last uuid>` continues and `next` marks another page; the client follows every page. |
-| `GET /v1/account/documents/{document}` | identity | Current access resolved from the document. |
 | `DELETE /v1/account` | identity | Fence the account, delete owned documents, leave joined ones. |
-| `GET /v1/documents/{document}` | member | Seed and app metadata. |
+| `GET /v1/documents/{document}` | member | Phase, seed and app metadata, and whether compaction is due. It never carries the invitation. |
 | `PATCH /v1/documents/{document}` | owner | Store title and template ID. |
 | `DELETE /v1/documents/{document}` | owner | Revoke everyone, purge payloads, keep a tombstone. |
 | `GET /v1/documents/{document}/metadata` | member | Title and template ID. |
-| `GET`, `POST`, `DELETE …/sharing` | member (read), owner | Read status; enable (idempotent); revoke the invitation and its memberships. Only the owner receives the capability. |
+| `GET`, `POST`, `DELETE …/sharing` | member (read), owner | The caller's current access, read from the document; enable (idempotent); revoke the invitation and its memberships. Only the owner receives the capability. |
 | `POST …/members` | identity | Exchange the invitation secret for editor membership. |
 | `DELETE …/members/me` | member | Leave without deleting the document. |
-| `PUT …/seed`, `GET …/seed` | owner, member | The seed snapshot; immutable once live. |
+| `PUT …/seed`, `GET …/seed` | owner, member | The seed snapshot, uploaded with its SHA-256, app digest and version in `X-Sharing-*` headers; immutable once live. Its version is the document's root. |
 | `GET`, `POST …/resources`; `PUT …/asset/{hash}` | member, owner | App resource manifest and its files. |
-| `POST …/open` | owner | Make a fully uploaded document live. |
+| `POST …/open` | owner | Make a fully uploaded document live; replies with the document metadata. |
 | `GET …/blobs`; `GET`, `PUT …/blob/{hash}` | member | Immutable attachments. |
-| `POST …/compact` | member | Replace the retained updates with one base. |
+| `POST …/compact` | member | Replace the retained updates with one base; 204 with no body. |
 | `GET …/sync` | member | WebSocket carrying opaque update frames. |
 
 The invitation is `https://share.dotpop.click/join#{uuid}.{capability}`; the capability
@@ -70,7 +69,8 @@ who joins receives everything the saved file holds, including content since remo
 (**Share a Copy** sends a sanitized copy instead).
 
 The cloud keeps one opaque **base** plus the updates since. **Compaction folds only**:
-a client posts `/compact` and the retained updates are replaced by one base; nothing
+a client posts `/compact` with the base and its frontier, and the retained updates it
+covers are replaced by one base that starts at the root stored with the seed; nothing
 replaces history. Clients may compact once retained updates reach 4 MiB or 8,192 records.
 The relay keeps at most 16 MiB or 32,768 records of updates and a base of at most
 16 MiB (`BASE_BYTES`, a transport limit: the base travels as one WebSocket frame under

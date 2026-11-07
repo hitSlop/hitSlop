@@ -2,7 +2,7 @@
 use super::*;
 use pop_sharing_protocol::{
     document::{AccessState, JoinDocument, RegisteredDocument, RegisteredDocuments, UpdateDocument},
-    http::{CreateRoom, CreatedRoom},
+    http::CreateRoom,
 };
 pub(crate) fn control(method: &str, route: &str, token: &str, body: &[u8]) -> Result<Vec<u8>> {
     control_at(pop_sharing_protocol::TRUSTED_ORIGIN, method, route, token, body)
@@ -23,9 +23,11 @@ fn control_at(origin: &str, method: &str, route: &str, token: &str, body: &[u8])
 fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
     serde_json::from_slice(bytes).map_err(fail)
 }
+/// The caller's current access, read from the document. Any refusal is an error; see
+/// `authorized_access` for the reading that distinguishes a removed permission.
 pub fn access(document: &str, token: &str) -> Result<AccessState> {
     RoomKey::identity(document, token)?;
-    decode(&control("GET", &format!("account/documents/{document}"), token, &[])?)
+    decode(&control("GET", &format!("documents/{document}/sharing"), token, &[])?)
 }
 /// Bounds one repair's reads, not the account: a million registrations.
 const ACCOUNT_DOCUMENT_PAGES: usize = 1_000;
@@ -115,16 +117,12 @@ pub fn update_document(document: &str, title: &str, template_id: &str, token: &s
 /// The uploaded seed is this document as saved; later edits sync on top of it.
 pub fn bootstrap(owner: &Owner, token: &str, state_directory: &Path) -> Result<()> {
     let document = owner.app().document_uuid.as_deref().ok_or("Only documents synchronize")?;
-    let _created: CreatedRoom = decode(&control(
-        "POST",
-        "documents",
-        token,
-        &serde_json::to_vec(&CreateRoom { document: document.into() }).map_err(fail)?,
-    )?)?;
+    // An empty acknowledgement: the document's phase is read next.
+    control("POST", "documents", token, &serde_json::to_vec(&CreateRoom { document: document.into() }).map_err(fail)?)?;
     let key = RoomKey::identity(document, token)?;
     let info = room_info(&key, Some(token))?;
     if info.phase == RoomPhase::Uploading {
-        let journal = journal::Journal::new(state_directory, &key, document)?;
+        let journal = journal::Journal::new(state_directory, &key.origin, document)?;
         let seed = stage(owner)?;
         let result: Result<()> = (|| {
             let bytes = std::fs::read(&seed.path).map_err(fail)?;

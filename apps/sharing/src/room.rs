@@ -3,7 +3,7 @@ use crate::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
 use crate::metrics::{Metric, record};
 use pop_sharing_protocol::{
     CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL, hex,
-    http::{CreatedRoom, RoomInfo, RoomInit, RoomPhase},
+    http::{RoomInfo, RoomPhase},
     routes::{self, Op, Scope},
 };
 use serde::{Deserialize, Serialize};
@@ -130,7 +130,7 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         response.headers_mut().set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE")?;
         response.headers_mut().set(
             "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, X-Sharing-SHA256, X-Sharing-App, X-Sharing-Version, X-Sharing-Root",
+            "Authorization, Content-Type, X-Sharing-SHA256, X-Sharing-App, X-Sharing-Version",
         )?;
         response.headers_mut().set("Vary", "Origin")?;
         return Ok(response);
@@ -312,7 +312,7 @@ impl CloudDocument {
     fn set_phase(&self, phase: RoomPhase) -> Result<()> {
         self.put("phase", &serde_json::to_string(&phase)?)
     }
-    fn info(&self, owner: bool) -> Result<RoomInfo> {
+    fn info(&self) -> Result<RoomInfo> {
         Ok(RoomInfo {
             document: self.text("document")?.ok_or_else(|| fail("Missing document"))?,
             phase: self.phase()?.ok_or_else(|| fail("Missing phase"))?,
@@ -320,7 +320,6 @@ impl CloudDocument {
             seed_size: self.text("seed_size")?.map(|s| s.parse().map_err(|_| fail("Invalid seed size"))).transpose()?,
             app: self.text("app")?,
             compact: self.compact_due()?,
-            capability: if owner { self.text("capability")? } else { None },
         })
     }
     fn update_usage(&self) -> Result<(usize, usize)> {
@@ -360,13 +359,9 @@ impl CloudDocument {
         let Some(frontier) = parse(req.headers().get("X-Sharing-Version")?) else {
             return Response::error("Invalid version", 400);
         };
-        let root = match self.text("root")? {
-            Some(root) => parse(Some(root)),
-            None => parse(req.headers().get("X-Sharing-Root")?),
-        };
-        let Some(root) = root else {
-            return Response::error("Root version required", 400);
-        };
+        // Every live document stored its root with its seed; a missing or unreadable root is
+        // a fault in this document, never something a client may supply.
+        let root = parse(self.text("root")?).ok_or_else(|| fail("Missing stored root version"))?;
         let previous_json = self.text("base_version")?;
         let previous = match &previous_json {
             Some(value) => parse(Some(value.clone())).ok_or_else(|| fail("Invalid stored base version"))?,
@@ -762,7 +757,7 @@ impl DurableObject for CloudDocument {
             && req.method() == Method::Post
         {
             let room = parts[3];
-            let input: RoomInit = match crate::input::body(&mut req, CONTROL_BYTES).await {
+            let input: crate::account::DocumentInit = match crate::input::body(&mut req, CONTROL_BYTES).await {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
@@ -790,11 +785,7 @@ impl DurableObject for CloudDocument {
                 return Response::error("Denied", 403);
             }
             self.state.storage().sync().await?;
-            return Response::from_json(&CreatedRoom {
-                room: room.into(),
-                capability: self.text("capability")?.unwrap_or_default(),
-                phase: self.phase()?.ok_or_else(|| fail("Missing phase"))?,
-            });
+            return Response::empty().map(|r| r.with_status(204));
         }
         let Some(matched) = routes::find(req.method().as_ref(), &path) else {
             return Response::error("Not found", 404);
@@ -856,7 +847,7 @@ impl DurableObject for CloudDocument {
             if !owner && self.phase()? != Some(RoomPhase::Live) {
                 return Response::error("Publication pending", 409);
             }
-            return Response::from_json(&self.info(owner)?);
+            return Response::from_json(&self.info()?);
         }
         let owner_write = matches!(op, Op::Open | Op::PutSeed | Op::PutResources | Op::PutAsset);
         let blob_upload = op == Op::PutBlob;
@@ -887,7 +878,7 @@ impl DurableObject for CloudDocument {
         }
         if op == Op::Open {
             if phase == RoomPhase::Live {
-                return Response::from_json(&self.info(true)?);
+                return Response::from_json(&self.info()?);
             }
             if self.text("seed_hash")?.is_none() {
                 return Response::error("Seed not ready", 409);
@@ -920,7 +911,7 @@ impl DurableObject for CloudDocument {
             self.set_phase(RoomPhase::Live)?;
             self.state.storage().sync().await?;
             record(&self.env, Metric::DocumentReady);
-            return Response::from_json(&self.info(true)?);
+            return Response::from_json(&self.info()?);
         }
         if owner_write && phase != RoomPhase::Uploading {
             return Response::error("Room is live", 409);
@@ -939,11 +930,7 @@ impl DurableObject for CloudDocument {
             let bucket = self.env.bucket("SEEDS")?;
             let key = object_key(room, "seed");
             if op == Op::PutSeed {
-                let digest = req
-                    .headers()
-                    .get("X-Sharing-SHA256")?
-                    .or_else(|| req.url().ok()?.query_pairs().find(|(k, _)| k == "sha256").map(|(_, v)| v.into_owned()))
-                    .unwrap_or_default();
+                let digest = req.headers().get("X-Sharing-SHA256")?.unwrap_or_default();
                 let app = req.headers().get("X-Sharing-App")?.unwrap_or_default();
                 let seed: Vec<(String, u32)> =
                     match req.headers().get("X-Sharing-Version")?.and_then(|v| serde_json::from_str(&v).ok()) {

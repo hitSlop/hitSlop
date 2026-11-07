@@ -118,8 +118,8 @@ pub enum Request {
     PutAttachment {
         bytes: Vec<u8>,
     },
-    /// Shares the document through a room: from then on it keeps its whole history and
-    /// every attachment, and the host may attach a connection to the room's relay.
+    /// Shares the document through a relay endpoint: from then on it keeps its whole
+    /// history and every attachment, and the host may attach a connection to that relay.
     Share {
         share: store::Share,
     },

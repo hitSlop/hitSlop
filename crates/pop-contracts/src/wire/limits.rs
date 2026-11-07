@@ -77,7 +77,6 @@ pub const CATEGORIES_MIN: usize = 1;
 pub const CATEGORIES_MAX: usize = 2;
 /// Conservative SQLite row overhead reserved when saving a checkpoint.
 pub const STORAGE_ROW_OVERHEAD: usize = 512;
-pub const SHARE_ROOM_BYTES: usize = 128;
 pub const SHARE_ENDPOINT_BYTES: usize = 2048;
 pub const WEBM_HEADER_BYTES: u64 = 4096;
 /// A batch's most intents and an intent's longest path; a page request's largest payload.
@@ -277,7 +276,6 @@ pub fn open_limits() -> Vec<Limit> {
     bound!(DEFINITION_BYTES, Max);
     bound!(OPEN_WINDOW_MAX, Max);
     bound!(CATEGORIES_MAX, Max);
-    bound!(SHARE_ROOM_BYTES, Max);
     bound!(SHARE_ENDPOINT_BYTES, Max);
     bound!(WEBM_HEADER_BYTES, Max);
     bound!(OPEN_WINDOW_MIN_WIDTH, Min);

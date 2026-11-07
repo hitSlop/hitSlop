@@ -44,7 +44,6 @@ interface BrowserCopy extends LocalCopy {
     | {
         bytes(): Uint8Array;
         frontier(): string;
-        root(): string;
         tooLarge(): boolean;
         free(): void;
       }
@@ -120,6 +119,8 @@ let lastStatus = "";
 let sending = 0;
 let receiving = 0;
 let connection: ConnectionPlan;
+/** A route of the joined document. Rust checked `connection.document` against its invitation. */
+const documentURL = (route = "") => `${config.relay}/v1/documents/${connection.document}${route}`;
 let networkAbort: AbortController | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let ended = false;
@@ -170,14 +171,7 @@ async function compactRoom(attempt: number, full: boolean) {
   try {
     const info = async () =>
       JSON.parse(
-        await metadata(
-          await checkedFetch(
-            connection.url.replace(/\/seed$/, ""),
-            { headers: connection.headers },
-            attempt,
-          ),
-          attempt,
-        ),
+        await metadata(await checkedFetch(documentURL(), {}, attempt), attempt),
       ) as RoomInfo;
     const runtime = (await owner.initialized) as BrowserRuntime;
     supervisors(runtime);
@@ -186,7 +180,7 @@ async function compactRoom(attempt: number, full: boolean) {
     const first = await info();
     checkedRoomAt = Date.now();
     let action = decide(
-      { step: "probe", compact: first.compact ?? false },
+      { step: "probe", compact: first.compact },
       crypto.getRandomValues(new Uint16Array(1))[0]!,
     );
     if (action.action === "outgrown") {
@@ -203,7 +197,7 @@ async function compactRoom(attempt: number, full: boolean) {
     });
     assertCurrent(attempt);
     const latest = await info();
-    action = decide({ step: "recheck", compact: latest.compact ?? false });
+    action = decide({ step: "recheck", compact: latest.compact });
     if (action.action === "reconnect") {
       retriedFull = true;
       reconnectAfterCompaction(attempt);
@@ -227,15 +221,13 @@ async function compactRoom(attempt: number, full: boolean) {
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
       assertCurrent(attempt);
       await checkedFetch(
-        connection.url.replace(/seed$/, "compact"),
+        documentURL("/compact"),
         {
           method: "POST",
           headers: {
-            ...connection.headers,
             "Content-Type": "application/octet-stream",
             "X-Sharing-SHA256": Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join(""),
             "X-Sharing-Version": base.frontier(),
-            "X-Sharing-Root": base.root(),
           },
           body: bytes,
         },
@@ -369,19 +361,15 @@ async function metadata(response: Response, attempt: number) {
   return new TextDecoder().decode(await boundedBody(response, SharingHost.controlBytes, attempt));
 }
 async function resourceSession(attempt: number) {
-  const manifest = await checkedFetch(
-    connection.url.replace(/seed$/, "resources"),
-    { headers: connection.headers },
-    attempt,
-  );
+  const manifest = await checkedFetch(documentURL("/resources"), {}, attempt);
   const app = owner.copy!.verifyResources(await metadata(manifest, attempt));
   const grant: ResourceGrant = { app };
   await checkedFetch(
-    frameOrigin(owner.copyID) + "/_resources/" + new URL(connection.url).pathname.split("/").at(-2),
+    frameOrigin(owner.copyID) + "/_resources/" + connection.document,
     {
       method: "POST",
       credentials: "include",
-      headers: { ...connection.headers, "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(grant),
     },
     attempt,
@@ -409,10 +397,10 @@ async function uploadFiles(attempt: number) {
         ),
       );
     await checkedFetch(
-      connection.url.replace(/seed$/, "blob/" + item.hash),
+      documentURL("/blob/" + item.hash),
       {
         method: "PUT",
-        headers: { ...connection.headers, "Content-Type": item.media_type },
+        headers: { "Content-Type": item.media_type },
         body: new Blob(chunks.map((chunk) => new Uint8Array(chunk).buffer)),
       },
       attempt,
@@ -432,21 +420,13 @@ async function receiveFiles(attempt: number) {
 async function receiveInventory(attempt: number) {
   reportSync("Receiving files", "syncing");
   sharingEvent({ type: "files", status: "Receiving files" });
-  const list = await checkedFetch(
-    connection.url.replace(/seed$/, "blobs"),
-    { headers: connection.headers },
-    attempt,
-  );
+  const list = await checkedFetch(documentURL("/blobs"), {}, attempt);
   const inventory = await metadata(list, attempt);
   const missing = JSON.parse(owner.copy!.missingAttachments(inventory)) as Resource[];
   // Rust validated the complete inventory, including metadata for existing hashes.
   for (const item of JSON.parse(inventory) as Resource[]) remoteAttachments.set(item.hash, item);
   for (const item of missing) {
-    const response = await checkedFetch(
-      connection.url.replace(/seed$/, "blob/" + item.hash),
-      { headers: connection.headers },
-      attempt,
-    );
+    const response = await checkedFetch(documentURL("/blob/" + item.hash), {}, attempt);
     const bytes = await boundedBody(response, item.size, attempt);
     if (bytes.length !== item.size) throw new Error("Incomplete attachment");
     assertCurrent(attempt);
@@ -527,7 +507,10 @@ async function connectSocket() {
     return;
   }
   pushBudget = new runtime.SocketPushBudget(monotonic());
-  const ws = new WebSocket(connection.socket, [SharingHost.socketProtocol, `jwt.${token}`]);
+  const ws = new WebSocket(documentURL("/sync").replace(/^https:/, "wss:"), [
+    SharingHost.socketProtocol,
+    `jwt.${token}`,
+  ]);
   socket = ws;
   ws.binaryType = "arraybuffer";
   // Each connection owns its queue and counters. An abandoned HTTP read never blocks
@@ -691,12 +674,14 @@ let roomInfo = "";
 const owner = new WorkerOwner<BrowserCopy>({
   async control(input) {
     const control = input as Partial<SharingControl> | null;
-    if (control?.type !== "joinCredential") return false;
-    const candidate = control.credential;
-    if (candidate === "" && !owner.copy) {
+    if (control?.type === "openLocal") {
+      if (owner.copy) throw new Error("This copy is already open");
       localRecovery = true;
       return true;
     }
+    if (control?.type !== "joinInvitation") return false;
+    // A shared copy without its invitation (cleared site data) is refused, never opened locally.
+    const candidate = control.invitation;
     if (
       owner.copy ||
       typeof candidate !== "string" ||
@@ -735,10 +720,7 @@ const owner = new WorkerOwner<BrowserCopy>({
     if (request.source) {
       if (identityUnavailable) throw identityFailure!;
       if (ended) throw new TransportError(410);
-      const response = await checkedFetch(connection.url, {
-        headers: connection.headers,
-        credentials: "omit",
-      });
+      const response = await checkedFetch(documentURL("/seed"), { credentials: "omit" });
       if (!response.ok || !response.body)
         throw new Error("Seed download refused: " + response.status);
       const size = connection.size;

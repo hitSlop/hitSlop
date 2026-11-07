@@ -30,7 +30,7 @@ pub(crate) fn preflight(input: &str) -> Option<String> {
         Ok(()) if input.len() <= 1024 && serde_json::from_str::<wire::socket::Hello>(input).is_ok() => {
             crate::encode(&wire::socket::HelloSuccess::Hello {
                 _ok: True,
-                document_lineage: Some(pop_contracts::lineage::DOCUMENT_LINEAGE),
+                document_lineage: pop_contracts::lineage::DOCUMENT_LINEAGE,
             })
         }
         Ok(()) => failure(invalid("Invalid protocol preflight"), false, false),

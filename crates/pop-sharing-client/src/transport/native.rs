@@ -730,8 +730,7 @@ mod tests {
             identity: "fixture-identity".into(),
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
-        request(&owner, Request::Share { share: Share { room: key.room.clone(), endpoint: key.origin.clone() } })
-            .unwrap();
+        request(&owner, Request::Share { share: Share { endpoint: key.origin.clone() } }).unwrap();
         let journal = crate::tests::test_journal(&owner, &key, true);
         let route = format!("GET /v1/documents/{}/blobs ", key.room);
         let (observed, controls) = mpsc::channel();

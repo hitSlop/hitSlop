@@ -12,16 +12,13 @@ impl ResolvedRoom {
     pub fn document(&self) -> &str {
         &self.info.document
     }
-    pub fn room(&self) -> &str {
-        &self.key.room
-    }
     /// Installs only a missing file; existing local state is never replaced. The relay
     /// already holds the seed, so the new replica starts confirmed.
     pub fn install(&self, destination: &Path, state_directory: &Path) -> Result<()> {
         if destination.exists() {
             return Err("A local document already exists; resolve it through its owner".into());
         }
-        let journal = journal::Journal::new(state_directory, &self.key, self.document())?;
+        let journal = journal::Journal::new(state_directory, &self.key.origin, self.document())?;
         let source = Store::open(&self.seed.path, Mode::Snapshot).map_err(fail)?;
         let version = source.document().map_err(fail)?.version();
         source.close().map_err(fail)?;

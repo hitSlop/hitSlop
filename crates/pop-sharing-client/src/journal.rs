@@ -73,15 +73,14 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Receipt {
     endpoint: String,
-    room: String,
     document: String,
     pub owner_version: String,
 }
+/// One receipt per relay endpoint and cloud document; the relay names a document by its UUID.
 pub(crate) struct Journal {
     directory: PathBuf,
     name: String,
     endpoint: String,
-    room: String,
     document: String,
 }
 pub(crate) struct Transaction<'a> {
@@ -95,30 +94,22 @@ pub(crate) struct Inspection<'a> {
     _lock: File,
 }
 impl Journal {
-    pub fn new(directory: &Path, key: &RoomKey, document: &str) -> Result<Self> {
-        Self::at(directory, &key.origin, &key.room, document)
-    }
-    pub fn at(directory: &Path, origin: &str, room: &str, document: &str) -> Result<Self> {
-        let journal = Self::inspect(directory, origin, room, document)?;
+    /// The journal for `document` at `origin`, creating its private directory.
+    pub fn new(directory: &Path, origin: &str, document: &str) -> Result<Self> {
+        let journal = Self::inspect(directory, origin, document)?;
         use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory).map_err(Error::from)?;
         Ok(journal)
     }
-    pub fn inspect(directory: &Path, origin: &str, room: &str, document: &str) -> Result<Self> {
+    pub fn inspect(directory: &Path, origin: &str, document: &str) -> Result<Self> {
         if !directory.is_absolute()
             || directory.components().any(|part| matches!(part, std::path::Component::ParentDir))
             || !pop_sharing_protocol::valid_copy(document)
         {
             return Err("Invalid relay state location".into());
         }
-        let name = hex(&Sha256::digest(serde_json::to_vec(&(origin, room, document)).map_err(Error::from)?));
-        Ok(Self {
-            directory: directory.into(),
-            name,
-            endpoint: origin.into(),
-            room: room.into(),
-            document: document.into(),
-        })
+        let name = hex(&Sha256::digest(serde_json::to_vec(&(origin, document)).map_err(Error::from)?));
+        Ok(Self { directory: directory.into(), name, endpoint: origin.into(), document: document.into() })
     }
     fn path(&self, extension: &str) -> PathBuf {
         self.directory.join(format!("{}.{extension}", self.name))
@@ -154,12 +145,7 @@ impl Journal {
         Ok(Transaction { journal: self, _lock: file })
     }
     pub fn receipt(&self, owner_version: String) -> Receipt {
-        Receipt {
-            endpoint: self.endpoint.clone(),
-            room: self.room.clone(),
-            document: self.document.clone(),
-            owner_version,
-        }
+        Receipt { endpoint: self.endpoint.clone(), document: self.document.clone(), owner_version }
     }
     fn read(&self, extension: &str) -> Result<Option<Receipt>> {
         let file = match File::open(self.path(extension)) {
@@ -173,7 +159,7 @@ impl Journal {
             return Err("Relay authority receipt exceeds its limit".into());
         }
         let receipt: Receipt = serde_json::from_slice(&bytes).map_err(Error::from)?;
-        if receipt.endpoint != self.endpoint || receipt.room != self.room || receipt.document != self.document {
+        if receipt.endpoint != self.endpoint || receipt.document != self.document {
             return Err("Relay authority receipt belongs to another connection".into());
         }
         Ok(Some(receipt))

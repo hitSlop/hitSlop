@@ -401,7 +401,6 @@ fn peer_reply(hello: Value, response: &str) -> (String, usize) {
 fn live_owner_lineage_is_checked_before_any_document_payload_is_sent() {
     let current = pop_contracts::lineage::DOCUMENT_LINEAGE;
     for (hello, reason) in [
-        (json!({"ok":true,"method":"hello"}), "invalid_request"),
         (json!({"ok":true,"method":"hello","documentLineage":current - 1}), "invalid_request"),
         (json!({"ok":true,"method":"hello","documentLineage":current + 1}), "requires_update"),
     ] {
@@ -413,6 +412,10 @@ fn live_owner_lineage_is_checked_before_any_document_payload_is_sent() {
         assert_eq!(refusal["code"], "rejected");
         assert_eq!(refusal["reason"], reason);
     }
+    // A hello that does not state its lineage proves nothing: it is refused, payload unsent.
+    let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello"}), r#"{"ok":true,"method":"batch"}"#);
+    assert_eq!(commands, 0, "an owner of unproven lineage received a document payload");
+    assert_eq!(checked(answer)["ok"], false);
 }
 
 #[test]

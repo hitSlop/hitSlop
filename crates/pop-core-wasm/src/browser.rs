@@ -21,7 +21,8 @@ fn invitation(link: &str, origin: &str) -> Result<Invitation, JsValue> {
     Invitation::parse(link).map_err(error)
 }
 /// Room metadata comes from an authenticated GET, never from the link or authored frame.
-fn room_info(json: &str) -> Result<RoomInfo, JsValue> {
+/// It must describe the document the invitation names.
+fn room_info(json: &str, invitation: &Invitation) -> Result<RoomInfo, JsValue> {
     let info: RoomInfo = serde_json::from_str(json).map_err(error)?;
     if info.phase != RoomPhase::Live
         || !pop_sharing_protocol::valid_copy(&info.document)
@@ -30,6 +31,9 @@ fn room_info(json: &str) -> Result<RoomInfo, JsValue> {
         || !info.seed_size.is_some_and(|size| size >= 100 && size as usize <= pop_sharing_protocol::SEED_BYTES)
     {
         return Err(error("Room is not live or has invalid metadata"));
+    }
+    if info.document != invitation.room {
+        return Err(error("Room metadata belongs to another document"));
     }
     Ok(info)
 }
@@ -335,9 +339,10 @@ impl BrowserCopy {
         self.open()?;
         let driver = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?;
         let share = driver.owner().share().map_err(error)?;
+        let document = driver.owner().app().document_uuid.as_deref();
         // A prior terminal-room cleanup may have cleared membership before its
         // flush/catalog acknowledgment was interrupted. Keep that local copy open.
-        if share.is_some_and(|share| share.endpoint != origin || share.room != key.room) {
+        if share.is_some_and(|share| share.endpoint != origin || document != Some(key.room.as_str())) {
             self.driver = None;
             self.events.lock().unwrap().clear();
             return Err(error("Saved membership mismatch"));
@@ -347,29 +352,27 @@ impl BrowserCopy {
     #[wasm_bindgen(js_name = openJoined)]
     pub fn open_joined(&mut self, link: &str, origin: &str, metadata: &str) -> Result<(), JsValue> {
         let key = invitation(link, origin)?;
-        let info = room_info(metadata)?;
+        let info = room_info(metadata, &key)?;
         if self.fresh && self.imported_hash.as_deref() != info.seed_hash.as_deref() {
             return Err(error("Seed checksum mismatch"));
         }
         // An ordinary local import still calls open(), renewing identity. Joining is
         // a separate operation preserving document identity and binding the validated room.
-        let imported = self.fresh;
         self.fresh = false;
         self.open()?;
         let driver = self.driver.as_mut().ok_or_else(|| error("Copy missing"))?;
         let share = driver.owner().share().map_err(error)?;
-        if driver.owner().app().document_uuid.as_deref() != Some(info.document.as_str())
+        // The invitation's UUID names the room (`room_info`); the copy must be that document.
+        if driver.owner().app().document_uuid.as_deref() != Some(key.room.as_str())
             || Some(hex(&driver.store().app_digest().map_err(error)?)).as_deref() != info.app.as_deref()
-            || share.is_some_and(|share| share.endpoint != origin || (!imported && share.room != key.room))
+            || share.is_some_and(|share| share.endpoint != origin)
         {
             self.driver = None;
             self.events.lock().unwrap().clear();
             return Err(error("Seed identity or membership mismatch"));
         }
         driver
-            .request(owner::Request::Share {
-                share: pop_storage::store::Share { room: key.room, endpoint: origin.into() },
-            })
+            .request(owner::Request::Share { share: pop_storage::store::Share { endpoint: origin.into() } })
             .map_err(error)?;
         Ok(())
     }
@@ -473,15 +476,11 @@ impl BrowserCopy {
 #[wasm_bindgen(js_name = invitationRequest)]
 pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<String, JsValue> {
     let key = invitation(link, origin)?;
-    let info = room_info(metadata)?;
+    let info = room_info(metadata, &key)?;
+    // Authentication belongs to the trusted host, which refreshes its ID token per request.
     serde_json::to_string(&pop_sharing_protocol::http::ConnectionPlan {
         document: info.document,
         size: info.seed_size.expect("validated size"),
-        url: format!("{origin}/v1/documents/{}/seed", key.room),
-        // Authentication belongs to the trusted host, which refreshes its ID token per request.
-        headers: std::collections::BTreeMap::new(),
-        socket: format!("{}/v1/documents/{}/sync", origin.replacen("https://", "wss://", 1), key.room),
-        protocols: vec![pop_sharing_protocol::SOCKET_PROTOCOL.into()],
     })
     .map_err(error)
 }
@@ -538,9 +537,6 @@ impl SharingBase {
     }
     pub fn frontier(&self) -> Result<String, JsValue> {
         Ok(frame::version_json(self.base()?.frontier.iter().map(|(&p, &n)| (p, n as u32))))
-    }
-    pub fn root(&self) -> Result<String, JsValue> {
-        Ok(frame::version_json(self.base()?.start.iter().map(|(&p, &n)| (p, n as u32))))
     }
 }
 

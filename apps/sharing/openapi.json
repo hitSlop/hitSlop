@@ -126,70 +126,6 @@
         ]
       }
     },
-    "/v1/account/documents/{document}": {
-      "get": {
-        "summary": "Resolve the caller's current access from the authoritative document.",
-        "operationId": "AccountAccess",
-        "parameters": [
-          {
-            "name": "document",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessState"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Sign in required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiFailure"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Permission denied; local copy retained",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiFailure"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate or quota limit",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiFailure"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          }
-        ]
-      }
-    },
     "/v1/documents": {
       "post": {
         "summary": "Idempotently reserve a document UUID. Requires a non-anonymous Firebase identity; anonymous identities join through the members exchange.",
@@ -205,15 +141,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Accepted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreatedRoom"
-                }
-              }
-            }
+          "204": {
+            "description": "Accepted; no content"
           },
           "400": {
             "description": "Invalid request",
@@ -1051,8 +980,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "Accepted"
+          "204": {
+            "description": "Accepted; no content"
           },
           "400": {
             "description": "Invalid request",
@@ -2386,25 +2315,6 @@
           }
         }
       },
-      "CreatedRoom": {
-        "type": "object",
-        "required": [
-          "room",
-          "capability",
-          "phase"
-        ],
-        "properties": {
-          "capability": {
-            "type": "string"
-          },
-          "phase": {
-            "$ref": "#/components/schemas/RoomPhase"
-          },
-          "room": {
-            "type": "string"
-          }
-        }
-      },
       "DocumentEntry": {
         "type": "object",
         "required": [
@@ -2571,9 +2481,11 @@
       },
       "RoomInfo": {
         "type": "object",
+        "description": "A document's seed and app, read by any member. Access and the invitation secret are\nonly in `AccessState`.",
         "required": [
           "document",
-          "phase"
+          "phase",
+          "compact"
         ],
         "properties": {
           "app": {
@@ -2582,14 +2494,9 @@
               "null"
             ]
           },
-          "capability": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "compact": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether retained updates have reached the size at which a member may compact."
           },
           "document": {
             "type": "string"

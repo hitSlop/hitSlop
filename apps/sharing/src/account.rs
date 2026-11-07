@@ -4,12 +4,19 @@ pub(crate) struct RegistryRequest {
     pub document: String,
     pub generation: Option<u64>,
 }
+/// The account's request that a document DO record its owner, internal to the Worker.
+#[cfg(target_arch = "wasm32")]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct DocumentInit {
+    pub owner_uid: String,
+    pub document: String,
+}
 // Per-account registration/quota and deletion coordination; Document DO owns permissions.
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use crate::room::{hash, identity_response};
     use pop_sharing_protocol::{
-        http::{CreateRoom, RoomInit},
+        http::CreateRoom,
         routes::{self, Op},
     };
     use serde::Deserialize;
@@ -146,11 +153,6 @@ mod runtime {
                     .collect();
                 return Response::from_json(&RegisteredDocuments::page(rows));
             }
-            if let (Op::AccountAccess, Some(id)) = (op, matched.document) {
-                return self
-                    .document(id, &format!("/v1/documents/{id}/sharing"), Method::Get, req.headers().clone(), None)
-                    .await;
-            }
             if op != Op::CreateDocument {
                 return Response::error("Not found", 404);
             }
@@ -195,7 +197,7 @@ mod runtime {
                 )?;
                 self.state.storage().sync().await?;
             }
-            let init = RoomInit { owner_uid: claims.sub, document: input.document.clone() };
+            let init = super::DocumentInit { owner_uid: claims.sub, document: input.document.clone() };
             let result = self
                 .document(
                     &input.document,

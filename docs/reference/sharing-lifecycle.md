@@ -6,8 +6,9 @@ routes and limits are in [cloud documents](../cloud-documents.md).
 
 ## The confirmed receipt
 
-Each device keeps a small receipt per cloud document, in its local state directory, naming
-the one document version that **both** the cloud holds and the local save holds. The
+Each device keeps a small receipt per relay endpoint and cloud document, in its local state
+directory, naming the one document version that **both** the cloud holds and the local save
+holds. The
 owner writes it only when the cloud has acknowledged every push, the session is caught
 up and not paused, and the saved file's exact history matches. A seed upload or
 download also writes it. The receipt is replaced atomically under an OS lock; a failed

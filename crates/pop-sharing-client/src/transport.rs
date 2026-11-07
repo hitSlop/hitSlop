@@ -536,7 +536,6 @@ pub(crate) fn compact(key: &RoomKey, base: &pop_core::sync::Base) -> std::result
             ("Content-Type", "application/octet-stream"),
             ("X-Sharing-SHA256", &hex(&Sha256::digest(&base.bytes))),
             ("X-Sharing-Version", &version(&base.frontier)),
-            ("X-Sharing-Root", &version(&base.start)),
         ],
     )?;
     Ok(())
@@ -728,16 +727,8 @@ mod tests {
     #[allow(clippy::result_large_err, reason = "tungstenite fixes the handshake callback error type")]
     fn local_connection(close: CloseCode) -> (bool, Phase, Option<PauseKind>) {
         let (_dir, owner) = crate::tests::fixture();
-        request(
-            &owner,
-            Request::Share {
-                share: Share {
-                    room: owner.app().document_uuid.clone().unwrap(),
-                    endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
-                },
-            },
-        )
-        .unwrap();
+        request(&owner, Request::Share { share: Share { endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() } })
+            .unwrap();
         let store = Store::open(owner.path(), Mode::Snapshot).unwrap();
         let checkpoint = store.document().unwrap().checkpoint().unwrap();
         let vv = loro::LoroDoc::decode_import_blob_meta(&checkpoint, false).unwrap().partial_end_vv;
@@ -748,7 +739,6 @@ mod tests {
             seed_hash: None,
             seed_size: None,
             app: None,
-            capability: None,
             compact: false,
         })
         .unwrap();

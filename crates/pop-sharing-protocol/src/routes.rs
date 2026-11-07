@@ -12,7 +12,6 @@ pub enum Op {
     CreateDocument,
     DeleteAccount,
     ListAccountDocuments,
-    AccountAccess,
     GetDocument,
     PatchDocument,
     DeleteDocument,
@@ -83,7 +82,10 @@ impl Limit {
 /// A request or response body, by schema name in the generated components.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Payload {
+    /// No body the client reads; a reply is 200 with a short plain-text status.
     None,
+    /// A 204 reply with no body.
+    Empty,
     Json(&'static str),
     JsonArray(&'static str),
     Bytes,
@@ -141,7 +143,7 @@ pub static ROUTES: &[Route] = &[
         Named,
         L::None,
         Json("CreateRoom"),
-        Json("CreatedRoom"),
+        Payload::Empty,
         "Idempotently reserve a document UUID. Requires a non-anonymous Firebase identity; anonymous identities join through the members exchange.",
     ),
     route(
@@ -167,17 +169,6 @@ pub static ROUTES: &[Route] = &[
         "List registered document UUIDs and roles, a hint for repairing a missing catalog reference. Pages in document order: pass a page's `next` as `after` until it is absent.",
     )
     .with_query(&["after"]),
-    route(
-        Op::AccountAccess,
-        "GET",
-        "/v1/account/documents/{document}",
-        Account,
-        Identity,
-        L::None,
-        NO,
-        Json("AccessState"),
-        "Resolve the caller's current access from the authoritative document.",
-    ),
     route(
         Op::GetDocument,
         "GET",
@@ -384,7 +375,7 @@ pub static ROUTES: &[Route] = &[
         Member,
         L::Compact,
         Bytes,
-        NO,
+        Payload::Empty,
         "Replace the retained base with a client-built one.",
     ),
     route(
@@ -459,7 +450,7 @@ mod tests {
         for (method, path) in [
             ("GET", "/v1/documents/invalid"),
             ("GET", "/v1/account"),
-            ("GET", "/v1/account/documents/invalid"),
+            ("GET", format!("/v1/account/documents/{DOCUMENT}").as_str()),
             ("POST", format!("/v1/documents/{DOCUMENT}/members/me").as_str()),
             ("DELETE", format!("/v1/documents/{DOCUMENT}/members").as_str()),
             ("PUT", format!("/v1/documents/{DOCUMENT}/blob/").as_str()),

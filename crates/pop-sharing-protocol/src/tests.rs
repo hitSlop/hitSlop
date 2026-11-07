@@ -1,5 +1,5 @@
-//! Frozen DTO and Frame examples, retained unchanged.
-use crate::{envelope, frame::*, hex, http::*, resources::*};
+//! The 2.0.0 baseline DTO, link and Frame examples (`tests/fixtures/v1`).
+use crate::{document::*, envelope, frame::*, hex, http::*, resources::*};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
@@ -36,35 +36,43 @@ fn frame_json(frame: &Frame) -> Value {
     }
 }
 
-fn canonical<T: DeserializeOwned + Serialize>(input: &Value) -> Value {
-    serde_json::to_value(serde_json::from_value::<T>(input.clone()).unwrap()).unwrap()
+fn decoded<T: DeserializeOwned + Serialize>(input: &Value) -> Result<Value, serde_json::Error> {
+    Ok(serde_json::to_value(serde_json::from_value::<T>(input.clone())?).unwrap())
+}
+/// Decodes `input` as the fixture type `kind` and encodes it again.
+fn decode_as(kind: &str, input: &Value) -> Result<Value, serde_json::Error> {
+    match kind {
+        "EmptyReply" => decoded::<()>(input),
+        "CreateRoom" => decoded::<CreateRoom>(input),
+        "JoinDocument" => decoded::<JoinDocument>(input),
+        "UpdateDocument" => decoded::<UpdateDocument>(input),
+        "RoomInfo" => decoded::<RoomInfo>(input),
+        "RoomPhase" => decoded::<RoomPhase>(input),
+        "AccessState" => decoded::<AccessState>(input),
+        "DocumentRole" => decoded::<DocumentRole>(input),
+        "DocumentMetadata" => decoded::<DocumentMetadata>(input),
+        "DocumentEntry" => decoded::<DocumentEntry>(input),
+        "RegisteredDocument" => decoded::<RegisteredDocument>(input),
+        "RegisteredDocuments" => decoded::<RegisteredDocuments>(input),
+        "ConnectionPlan" => decoded::<ConnectionPlan>(input),
+        "SharingControl" => decoded::<SharingControl>(input),
+        "SharingEvent" => decoded::<SharingEvent>(input),
+        "ResourceGrant" => decoded::<ResourceGrant>(input),
+        "ApiFailure" => decoded::<ApiFailure>(input),
+        "Manifest" => decoded::<Manifest>(input),
+        "Resource" => decoded::<Resource>(input),
+        "ResourceList" => decoded::<Vec<Resource>>(input),
+        other => panic!("Uncovered DTO {other}"),
+    }
+}
+fn http_cases() -> Vec<Value> {
+    serde_json::from_str(include_str!("../tests/fixtures/v1/http.json")).unwrap()
 }
 #[test]
-fn frozen_http_dtos_and_extra_reply_fields() {
-    let cases: Vec<Value> = serde_json::from_str(include_str!("../tests/fixtures/v1/http.json")).unwrap();
-    for case in cases {
-        let input = &case["input"];
-        let output = match case["type"].as_str().unwrap() {
-            "EmptyReply" => canonical::<()>(input),
-            "CreateRoom" => canonical::<CreateRoom>(input),
-            "CreatedRoom" => canonical::<CreatedRoom>(input),
-            "AccountRoom" => continue, // Retired temporary-room discovery is not an active contract.
-            "RoomInit" => canonical::<RoomInit>(input),
-            "RoomInfo" => canonical::<RoomInfo>(input),
-            "RoomPhase" => canonical::<RoomPhase>(input),
-            "ConnectionPlan" => {
-                let plan: ConnectionPlan = serde_json::from_value(input.clone()).unwrap();
-                serde_json::to_value(plan).unwrap()
-            }
-            "SharingControl" => canonical::<SharingControl>(input),
-            "SharingEvent" => canonical::<SharingEvent>(input),
-            "ResourceGrant" => canonical::<ResourceGrant>(input),
-            "ApiFailure" => canonical::<ApiFailure>(input),
-            "Manifest" => canonical::<Manifest>(input),
-            "Resource" => canonical::<Resource>(input),
-            "ResourceList" => canonical::<Vec<Resource>>(input),
-            other => panic!("Uncovered DTO {other}"),
-        };
+fn baseline_http_dtos_and_extra_reply_fields() {
+    for case in http_cases() {
+        let output = decode_as(case["type"].as_str().unwrap(), &case["input"])
+            .unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
         assert_eq!(output, case["canonical"], "{}", case["name"]);
         if let Some(statuses) = case["statuses"].as_array() {
             for status in statuses {
@@ -75,10 +83,27 @@ fn frozen_http_dtos_and_extra_reply_fields() {
             }
         }
     }
+}
+/// Every schema the service publishes has an example a reader must decode.
+#[cfg(feature = "openapi")]
+#[test]
+fn every_published_schema_has_a_fixture() {
+    let covered: std::collections::HashSet<String> =
+        http_cases().iter().map(|case| case["type"].as_str().unwrap().to_owned()).collect();
+    let description = serde_json::to_value(crate::http::openapi()).unwrap();
+    let schemas = description["components"]["schemas"].as_object().unwrap();
+    assert!(!schemas.is_empty());
+    for name in schemas.keys() {
+        assert!(covered.contains(name), "OpenAPI component {name} has no fixture in http.json");
+    }
+}
+#[test]
+fn baseline_invitation_round_trips_exactly() {
     let link = include_str!("../tests/fixtures/v1/invitation.txt").trim();
-    assert!(Invitation::parse(link).is_err(), "temporary room links do not name persistent documents");
-    let invitation = Invitation { room: "00000000-0000-4000-8000-000000000001".into(), capability: "b".repeat(64) };
-    assert_eq!(Invitation::parse(&invitation.link().unwrap()).unwrap().room, invitation.room);
+    let invitation = Invitation::parse(link).unwrap();
+    assert_eq!(invitation.room, "00000000-0000-4000-8000-000000000001");
+    assert_eq!(invitation.capability, "b".repeat(64));
+    assert_eq!(invitation.link().unwrap(), link);
 }
 #[test]
 fn frozen_frame_codec_is_also_the_current_transport_codec() {
@@ -119,11 +144,14 @@ fn unknown_variants_fail_closed_but_error_codes_remain_opaque() {
     let frame = envelope::decode(&bytes).unwrap();
     assert_eq!(frame, Frame::Error { code: 255, message: String::new() });
     assert_eq!(envelope::encode(frame).unwrap(), bytes);
+    // Required fields have no defaults: a value without one is refused, not completed.
+    for case in cases["incomplete"].as_array().unwrap() {
+        assert!(decode_as(case["type"].as_str().unwrap(), &case["input"]).is_err(), "{}", case["name"]);
+    }
 }
 
 #[test]
 fn an_account_listing_beyond_one_control_reply_is_many_pages_far_below_it() {
-    use crate::document::{DocumentRole, RegisteredDocument, RegisteredDocuments};
     use crate::limits::ACCOUNT_DOCUMENTS_PAGE;
     let all: Vec<_> = (0..16_000u32)
         .map(|n| RegisteredDocument {
@@ -148,17 +176,11 @@ fn an_account_listing_beyond_one_control_reply_is_many_pages_far_below_it() {
     assert_eq!(pages, 16);
     assert_eq!(listed, all);
     let last: Value = serde_json::to_value(RegisteredDocuments::page(vec![])).unwrap();
-    assert_eq!(last, json!({"documents": []}), "the last page keeps the original shape");
+    assert_eq!(last, json!({"documents": []}), "the last page has no cursor");
 }
 
 #[test]
-fn compaction_hint_defaults_and_limits_allow_a_base_frame() {
-    let old = json!({"document":"fixture", "phase":"live", "seedHash":null,"seedSize":null,"app":null});
-    let mut info: RoomInfo = serde_json::from_value(old.clone()).unwrap();
-    assert!(!info.compact);
-    assert_eq!(serde_json::to_value(&info).unwrap(), old);
-    info.compact = true;
-    assert_eq!(serde_json::to_value(info).unwrap()["compact"], true);
+fn limits_allow_a_full_base_in_one_frame() {
     let frame = Frame::Records(vec![Record {
         spans: vec![Span { peer: 1, start: 0, end: 1 }],
         bytes: vec![0; crate::BASE_BYTES],

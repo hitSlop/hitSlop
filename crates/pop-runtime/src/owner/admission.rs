@@ -151,7 +151,7 @@ fn retained_bytes(request: &Request) -> usize {
             source_version.capacity().saturating_add(artwork_bytes(preview, icon))
         }
         Request::ReadAttachment { id } => id.capacity(),
-        Request::Share { share } => share.room.capacity().saturating_add(share.endpoint.capacity()),
+        Request::Share { share } => share.endpoint.capacity(),
     };
     std::mem::size_of::<Request>().saturating_add(payload)
 }

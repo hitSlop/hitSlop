@@ -12,8 +12,14 @@ export function relayHarness(source: string) {
   return `import relay, {CloudDocument as Room, DocumentAccount as Account} from ${JSON.stringify(source)};
 export default relay;
 export class DocumentAccount {
-  constructor(state,env){this.inner=new Account(state,env);}
-  async fetch(req){try{return await this.inner.fetch(req);}catch(error){console.error('Test account failure:',String(error));throw error;}}
+  constructor(state,env){this.state=state;this.inner=new Account(state,env);}
+  async fetch(req){
+    if (new URL(req.url).pathname === '/__test/sql') {
+      const {sql,args=[]} = await req.json();
+      return Response.json(this.state.storage.sql.exec(sql,...args).toArray());
+    }
+    try{return await this.inner.fetch(req);}catch(error){console.error('Test account failure:',String(error));throw error;}
+  }
 }
 export class CloudDocument {
   constructor(state, env) {
@@ -160,11 +166,11 @@ export async function checkCompaction(
   );
   const namespace = await worker.getDurableObjectNamespace("DOCUMENTS", "relay");
   const bucket = await worker.getR2Bucket("SEEDS", "relay");
-  const created = await call("documents", owner, "POST", {
-    document: "00000000-0000-4000-a000-000000000001",
-  });
-  assert.equal(created.status, 200, "Document creation: "+await created.clone().text());
-  const room = await created.json();
+  const room: { room: string; capability?: string; access?: string } = {
+    room: "00000000-0000-4000-a000-000000000001",
+  };
+  const created = await call("documents", owner, "POST", { document: room.room });
+  assert.equal(created.status, 204, "Document creation: " + (await created.clone().text()));
   room.capability = (await (await call("documents/"+room.room+"/sharing",owner,"POST")).json()).capability;
   const base = "documents/" + room.room;
   const stub = namespace.get(namespace.idFromName(documentName(room.room)));
@@ -233,7 +239,7 @@ export async function checkCompaction(
     });
   await fixture(1);
   assert.equal((await compact(1)).status, 409, "Valid frontier but not due");
-  assert.equal((await (await call(base, room.access)).json()).compact, undefined);
+  assert.equal((await (await call(base, room.access)).json()).compact, false, "Every reply states whether compaction is due");
   await fixture(4, 1 << 20);
   assert.equal((await compact(5)).status, 409, "F cannot exceed heads");
   assert.equal(
@@ -311,13 +317,18 @@ export async function checkCompaction(
   stage = "connected";
   const connected = await socket();
   await connected.joined(4);
+  // The seed upload stored the document's root with its heads. A live document without it
+  // is a fault in the document, never something a member supplies: nothing is installed.
+  const [storedRoot] = await sql("SELECT value FROM meta WHERE key='root'");
+  assert.equal(storedRoot.value, '[["0000000000000002",5]]', "The seed upload stores the root");
   await sql("DELETE FROM meta WHERE key='root'");
-  assert.equal((await compact(3)).status, 400, "Legacy room needs a root header");
-  assert.equal(
-    (await compact(3, body, { "X-Sharing-Root": '[["0000000000000002",5]]' })).status,
-    204,
-    "Install partial base",
-  );
+  const rootless = await compact(3);
+  assert.equal(rootless.status, 500, "Compaction without a stored root is an internal failure");
+  assert.equal((await rootless.json()).code, "unavailable");
+  assert.equal((await sql("SELECT count(*) AS n FROM records WHERE seq=0"))[0].n, 0, "A rootless document installs no base");
+  assert.deepEqual(await sql("SELECT key FROM meta WHERE key IN ('root','base_version')"), [], "A refused base records no versions");
+  await sql("INSERT INTO meta VALUES('root',?)", [storedRoot.value]);
+  assert.equal((await compact(3)).status, 204, "Install partial base");
   assert.equal(connected.messages.length, 0, "Base is never broadcast");
   const rows = await sql("SELECT seq,spans FROM records ORDER BY seq");
   assert.deepEqual(
@@ -355,7 +366,7 @@ export async function checkCompaction(
   ]);
   assert.equal((await compact(2)).status, 409, "Nonmonotonic base");
   assert.equal((await compact(3)).status, 409, "Base must strictly advance");
-  assert.equal((await compact(4, body, { "X-Sharing-Root": "invalid-but-ignored" })).status, 204);
+  assert.equal((await compact(4)).status, 204, "A later base advances from the previous one");
   assert.deepEqual(
     (await sql("SELECT seq FROM records ORDER BY seq")).map((row) => row.seq),
     [0, 5],
@@ -504,9 +515,10 @@ export async function checkCompaction(
   assert.equal((await call(base,owner)).status,410);
   await test("alarm");
   assert.equal((await call(base,owner)).status,410,"deletion tombstone preserves UUID ownership");
-  const idleRoom = await (
-    await call("documents", owner, "POST", { document: "00000000-0000-4000-a000-000000000003" })
-  ).json();
+  const idleRoom: { room: string; capability?: string; access?: string } = {
+    room: "00000000-0000-4000-a000-000000000003",
+  };
+  assert.equal((await call("documents", owner, "POST", { document: idleRoom.room })).status, 204);
   const idleBase = "documents/" + idleRoom.room;
   idleRoom.capability = (await (await call(idleBase+"/sharing",owner,"POST")).json()).capability;
   assert.equal(

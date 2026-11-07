@@ -19,29 +19,8 @@ pub struct CreateRoom {
     pub document: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct CreatedRoom {
-    pub room: String,
-    pub capability: String,
-    pub phase: RoomPhase,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct RoomInit {
-    pub owner_uid: String,
-    pub document: String,
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
+/// A document's seed and app, read by any member. Access and the invitation secret are
+/// only in `AccessState`.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
@@ -52,28 +31,25 @@ pub struct RoomInfo {
     pub seed_hash: Option<String>,
     pub seed_size: Option<u32>,
     pub app: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub capability: Option<String>,
-    #[serde(default, skip_serializing_if = "is_false")]
-    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    /// Whether retained updates have reached the size at which a member may compact.
     pub compact: bool,
 }
+/// What a browser copy joins: the invitation's document, checked against its metadata,
+/// and the seed's declared size. Routes are `/v1/documents/{document}/...`.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct ConnectionPlan {
     pub document: String,
     pub size: u32,
-    pub url: String,
-    pub headers: std::collections::BTreeMap<String, String>,
-    pub socket: String,
-    pub protocols: Vec<String>,
 }
+/// How the trusted host opens a browser copy: through its invitation, or as a local copy
+/// that no longer syncs.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum SharingControl {
-    JoinCredential { credential: String },
+    JoinInvitation { invitation: String },
+    OpenLocal,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -86,12 +62,10 @@ pub enum SharingEvent {
     Files {
         status: String,
     },
-    /// `status` is for people. `phase` is what a host routes on; older workers omit it.
+    /// `status` is for people. `phase` is what a host routes on.
     Sync {
         status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts", ts(optional))]
-        phase: Option<SyncPhase>,
+        phase: SyncPhase,
     },
 }
 /// Where a replica stands with its room, apart from the words shown for it.
@@ -180,7 +154,7 @@ fn openapi_paths() -> serde_json::Map<String, serde_json::Value> {
     let failure = |description: &str| json!({"description":description,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiFailure"}}}});
     let content = |payload: Payload| -> Option<serde_json::Value> {
         let schema = match payload {
-            Payload::None => return None,
+            Payload::None | Payload::Empty => return None,
             Payload::Json(name) => json!({"$ref":format!("#/components/schemas/{name}")}),
             Payload::JsonArray(name) => json!({"type":"array","items":{"$ref":format!("#/components/schemas/{name}")}}),
             Payload::Bytes => {
@@ -194,6 +168,8 @@ fn openapi_paths() -> serde_json::Map<String, serde_json::Value> {
         let mut responses = serde_json::Map::new();
         if route.op == crate::routes::Op::Sync {
             responses.insert("101".into(), json!({"description":"Switching Protocols to opaque update frames"}));
+        } else if route.response == Payload::Empty {
+            responses.insert("204".into(), json!({"description":"Accepted; no content"}));
         } else {
             let mut ok = json!({"description":"Accepted"});
             if let Some(content) = content(route.response) {
@@ -245,7 +221,6 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     #[derive(OpenApi)]
     #[openapi(components(schemas(
         CreateRoom,
-        CreatedRoom,
         RoomInfo,
         RoomPhase,
         ResourceGrant,
@@ -306,6 +281,8 @@ mod tests {
                 .collect();
             assert_eq!(declared, expected, "{}", route.path);
         }
+        let created = &value["paths"]["/v1/documents"]["post"]["responses"];
+        assert!(created["204"].is_object() && created["200"].is_null(), "creation replies with no body");
         let upload = &value["paths"]["/v1/documents/{document}/blob/{hash}"]["put"]["responses"];
         for status in ["200", "401", "413", "429"] {
             assert!(upload[status].is_object(), "{status}");

@@ -96,8 +96,9 @@ fn room_info(key: &RoomKey, token: Option<&str>) -> std::result::Result<RoomInfo
     }
     Ok(info)
 }
+/// The owner's document UUID names the relay's document; the share names the relay.
 fn validate_membership(share: Option<Share>, key: &RoomKey) -> Result<()> {
-    if share.is_some_and(|share| share.endpoint != key.origin || share.room != key.room) {
+    if share.is_some_and(|share| share.endpoint != key.origin) {
         return Err("Conflicting cloud document membership".into());
     }
     Ok(())
@@ -107,7 +108,7 @@ fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
         return Err("Different cloud document".into());
     }
     validate_membership(owner.share().map_err(fail)?, key)?;
-    retry_busy(owner, || Request::Share { share: Share { room: key.room.clone(), endpoint: key.origin.clone() } })?;
+    retry_busy(owner, || Request::Share { share: Share { endpoint: key.origin.clone() } })?;
     Ok(())
 }
 /// The saved document as uploaded once, before the room goes live. Its history is the
@@ -180,7 +181,7 @@ impl Client {
             return Err("Different cloud document".into());
         }
         validate_membership(owner.share().map_err(fail)?, &key)?;
-        let journal = Arc::new(journal::Journal::new(state_directory, &key, document)?);
+        let journal = Arc::new(journal::Journal::new(state_directory, &key.origin, document)?);
         Ok(Self {
             owner,
             key: Mutex::new(key),
@@ -288,8 +289,7 @@ fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]
         // A re-share seed may still contain its predecessor's membership. Bind the
         // new replica through its owner before callers restore the new credential.
         let owner = Owner::open(&stage, Mode::Document, Arc::new(|_| {})).map_err(fail)?;
-        let binding =
-            request(&owner, Request::Share { share: Share { room: key.room.clone(), endpoint: key.origin.clone() } });
+        let binding = request(&owner, Request::Share { share: Share { endpoint: key.origin.clone() } });
         let closed = request(&owner, Request::Close { preview: None, icon: None });
         binding?;
         closed?;
@@ -302,7 +302,7 @@ fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]
 
 /// Bounded receipt metadata for catalog status; this does not open document state.
 pub fn confirmed_saved_version(state_directory: &Path, document: &str) -> Result<Option<String>> {
-    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
+    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document)?;
     let Some(transaction) = journal.inspection()? else { return Ok(None) };
     Ok(transaction.current()?.map(|receipt| receipt.owner_version))
 }
@@ -315,7 +315,7 @@ pub fn saved_confirmed(path: &Path, state_directory: &Path, document: &str) -> R
     }
     let version = store.document().map_err(fail)?.version();
     store.close().map_err(fail)?;
-    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
+    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document)?;
     let Some(transaction) = journal.inspection()? else { return Ok(false) };
     Ok(transaction.current()?.is_some_and(|receipt| receipt.owner_version == version))
 }

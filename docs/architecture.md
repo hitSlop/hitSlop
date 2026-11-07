@@ -375,7 +375,7 @@ The SQLite schema has seven tables:
 | `artwork` | Preview and icon PNGs | Pack; refreshed at close or supplied for a clean copy |
 | `document` | Identity singleton: UUID | Document creation and independent copies |
 | `history` | Loro snapshot, then updates: the saved state | Pack seeds it; saves, checkpoints and close-time trims update it; clean copies replace it with current state |
-| `share` | Singleton room and relay endpoint of a shared document | The live sync path; empty when unshared, cleared on clean copies |
+| `share` | Singleton relay endpoint of a shared document, which the relay names by the document's UUID | The live sync path; empty when unshared, cleared on clean copies |
 | `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unshared documents reclaim unreferenced blobs |
 
 The schema check is exact. A new table or column requires a storage version bump and a

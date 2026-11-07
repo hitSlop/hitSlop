@@ -11,11 +11,13 @@ export type BudgetDecision = { "action": "ready" } | { "action": "wait", millise
  */
 export type Confirmation = { version: string, };
 
-export type ConnectionPlan = { document: string, size: number, url: string, headers: { [key in string]: string }, socket: string, protocols: Array<string>, };
+/**
+ * What a browser copy joins: the invitation's document, checked against its metadata,
+ * and the seed's declared size. Routes are `/v1/documents/{document}/...`.
+ */
+export type ConnectionPlan = { document: string, size: number, };
 
 export type CreateRoom = { document: string, };
-
-export type CreatedRoom = { room: string, capability: string, phase: RoomPhase, };
 
 export type DocumentEntry = { documentId: string, title: string, templateId: string, modifiedAt: number, role: DocumentRole, catalogRevision: number, deleted: boolean, };
 
@@ -74,13 +76,25 @@ export type Resource = { key: string, hash: string, size: number, media_type: st
 
 export type ResourceGrant = { app: string, };
 
-export type RoomInfo = { document: string, phase: RoomPhase, seedHash: string | null, seedSize: number | null, app: string | null, capability?: string, compact?: boolean, };
+/**
+ * A document's seed and app, read by any member. Access and the invitation secret are
+ * only in `AccessState`.
+ */
+export type RoomInfo = { document: string, phase: RoomPhase, seedHash: string | null, seedSize: number | null, app: string | null,
+/**
+ * Whether retained updates have reached the size at which a member may compact.
+ */
+compact: boolean, };
 
 export type RoomPhase = "uploading" | "live" | "ended";
 
-export type SharingControl = { "type": "joinCredential", credential: string, };
+/**
+ * How the trusted host opens a browser copy: through its invitation, or as a local copy
+ * that no longer syncs.
+ */
+export type SharingControl = { "type": "joinInvitation", invitation: string, } | { "type": "openLocal" };
 
-export type SharingEvent = { "type": "identityAttention", message: string, } | { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, phase?: SyncPhase, };
+export type SharingEvent = { "type": "identityAttention", message: string, } | { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, phase: SyncPhase, };
 
 /**
  * The observation made by a transport at one compaction boundary.

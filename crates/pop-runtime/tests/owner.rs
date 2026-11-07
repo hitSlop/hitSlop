@@ -303,13 +303,8 @@ fn autosave_is_bounded_while_edits_continue() {
 fn full_shared_document() -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<Event>) {
     let (dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
-    call(
-        &owner,
-        Request::Share {
-            share: pop_runtime::store::Share { room: "room".into(), endpoint: "wss://relay.example".into() },
-        },
-    )
-    .unwrap();
+    call(&owner, Request::Share { share: pop_runtime::store::Share { endpoint: "wss://relay.example".into() } })
+        .unwrap();
     let mut seed = 5u64;
     let mut full = false;
     for _ in 0..64 {
@@ -930,11 +925,7 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
     for frame in [vec![0; pop_runtime::sync::MAX_FRAME], Vec::new()] {
         let (_dir, path) = fixture();
         let (owner, _) = open(&path, Mode::Document);
-        call(
-            &owner,
-            Request::Share { share: Share { room: "bounded-room".into(), endpoint: "https://relay.example".into() } },
-        )
-        .unwrap();
+        call(&owner, Request::Share { share: Share { endpoint: "https://relay.example".into() } }).unwrap();
         let (sink, events) = sync_sink();
         let old = owner.sync_connection(sink);
         call(&owner, Request::State).unwrap();
@@ -1063,7 +1054,7 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
         panic!("an unshared document sends nothing")
     };
     assert!(matches!(paused, Status::Paused { .. }), "{paused:?}");
-    let share = Share { room: "room-1".into(), endpoint: "wss://relay.example".into() };
+    let share = Share { endpoint: "wss://relay.example".into() };
     call(&a, Request::Share { share: share.clone() }).unwrap();
     assert_eq!(a.share().unwrap(), Some(share.clone()));
     let refused = call(&a, Request::Discard).unwrap_err();
@@ -1137,12 +1128,7 @@ fn discard_waits_for_membership_outcome_without_retracting_shared_edits() {
     lock.execute_batch("BEGIN IMMEDIATE").unwrap();
     let sharing = submit(
         &owner,
-        Request::Share {
-            share: pop_runtime::store::Share {
-                room: "membership-race".into(),
-                endpoint: "https://relay.example".into(),
-            },
-        },
+        Request::Share { share: pop_runtime::store::Share { endpoint: "https://relay.example".into() } },
     );
     let discarded = submit(&owner, Request::Discard);
     call(&owner, Request::State).unwrap();
@@ -1164,13 +1150,8 @@ fn an_outgrown_shared_document_keeps_editing_and_saving_without_pushing() {
     };
     let (_dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);
-    call(
-        &owner,
-        Request::Share {
-            share: pop_runtime::store::Share { room: "outgrown".into(), endpoint: "https://relay.example".into() },
-        },
-    )
-    .unwrap();
+    call(&owner, Request::Share { share: pop_runtime::store::Share { endpoint: "https://relay.example".into() } })
+        .unwrap();
     let (sink, events) = sync_sink();
     let connection = owner.sync_connection(sink);
     let version = loop {
@@ -1235,16 +1216,8 @@ fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
     for save_first in [false, true] {
         let (_dir, path) = fixture();
         let (owner, _) = open(&path, Mode::Document);
-        call(
-            &owner,
-            Request::Share {
-                share: pop_runtime::store::Share {
-                    room: "durability".into(),
-                    endpoint: "https://relay.example".into(),
-                },
-            },
-        )
-        .unwrap();
+        call(&owner, Request::Share { share: pop_runtime::store::Share { endpoint: "https://relay.example".into() } })
+            .unwrap();
         let (send, events) = mpsc::channel();
         let connection = owner.sync_connection(Arc::new(move |event| {
             let _ = send.send(event);
