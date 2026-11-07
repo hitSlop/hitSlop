@@ -3,7 +3,7 @@ import ImageIO
 
 /// Image output only. The extension never opens a document or participates in its owner.
 public struct WidgetCache: Sendable {
-  public static let kind = "HitSlopDocumentWidget"
+  public static let kind = "click.dotpop.DocumentWidget"
   #if os(macOS)
     public static let group = "78UAXU8QG8.com.hitslop.widgets"
   #else
@@ -16,7 +16,7 @@ public struct WidgetCache: Sendable {
     guard let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else {
       throw CocoaError(.fileNoSuchFile)
     }
-    return WidgetCache(root: group.appendingPathComponent("widgets-v1", isDirectory: true))
+    return WidgetCache(root: group.appendingPathComponent("widgets", isDirectory: true))
   }
   public func records() -> [WidgetRecord] {
     let directories = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []

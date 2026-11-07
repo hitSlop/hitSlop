@@ -20,7 +20,6 @@ extension DocumentSession: WKNavigationDelegate, WKUIDelegate {
     )
   }
 
-  @available(iOS 18.4, *)
   public func webView(
     _ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters,
     initiatedByFrame frame: WKFrameInfo,

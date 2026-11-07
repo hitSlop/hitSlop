@@ -131,11 +131,13 @@ enum PhoneClosing: Equatable {
   private var pendingLibraryID: String?
   /// Opens in flight by document; a document reopened at once waits for the open it left.
   private var opens: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+  /// Opens a document's owner. Tests hold an open in flight here.
+  var openSession: @MainActor (URL) async throws -> DocumentSession = { try await DocumentSession.open(url: $0) }
   private(set) lazy var widgets = PhoneWidgetPublisher { [weak self] in self?.session(showing: $0) }
   private var backgroundID: UIBackgroundTaskIdentifier = .invalid
   private var backgroundSave: Task<Void, Never>?
   private var refreshTask: Task<Void, Never>?
-  private static let recentsKey = "phone.recents.openedAt"
+  private static let recentsKey = "click.dotpop.phone.recents.openedAt"
   private let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     .appendingPathComponent("Documents", isDirectory: true)
 
@@ -479,7 +481,7 @@ enum PhoneClosing: Equatable {
       try await PopLibrary.shared.download(entry)
     }
     try Task.checkCancellation()
-    let opened = try await DocumentSession.open(url: url)
+    let opened = try await openSession(url)
     opened.delegate = self
     guard !Task.isCancelled, presented.map(PhoneRecent.key) == key, session == nil else {
       // The person left while it opened. Release it the usual way, unseen.
@@ -647,12 +649,19 @@ enum PhoneClosing: Equatable {
     perform {
       let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
       try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
-      let output = staging.appendingPathComponent(session.file.url.lastPathComponent)
+      let output = staging.appendingPathComponent(Self.backupName(session.file.url))
       do { self.exported = try await session.exportFile(to: output) } catch {
         try? FileManager.default.removeItem(at: staging)
         throw error
       }
     }
+  }
+  /// A backup in Files carries the name its tile shows; a library pop's file is named by its ID.
+  static func backupName(_ url: URL) -> String {
+    let title = PopLibrary.shared.entry(at: url)?.title ?? PhoneRecent.localTitle(url)
+    let name = title.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
+      .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+    return (name.isEmpty ? "pop" : String(name.prefix(120))) + ".pop"
   }
   /// Moves a full shared document to an unshared copy of its accepted state, with accepted
   /// page edits. The owner publishes the copy at a new path and releases the original

@@ -150,8 +150,8 @@ mod tests {
         };
         for (path, location, destination) in [
             (root.join("notes"), false, false),
-            (root.join("legacy.slop"), false, false),
-            (root.join("legacy.tiny"), false, false),
+            (root.join("unsupported.txt"), false, false),
+            (root.join("unsupported.pop.zip"), false, false),
             (root.join("Notes.POP"), false, false),
             (cloud.clone(), false, false),
             (cloud.join("new/Doc.pop"), false, false),

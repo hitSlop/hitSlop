@@ -90,14 +90,28 @@ import SwiftUI
   }
 #endif
 
+/// The person's answer when Apple is asked to confirm an account deletion.
+enum AccountDeletionConsent<Credential> {
+  /// The person dismissed Apple's sheet: nothing is deleted.
+  case cancelled
+  /// Apple answered; a failure still deletes, without revoking Apple's access.
+  case answered(Result<Credential, Error>)
+}
+
+/// How an account deletion attempt ended.
+enum AccountDeletionOutcome: Equatable {
+  case cancelled
+  case deleted
+  /// Nothing more was deleted; `cloudDeleted` says the cloud documents are already gone.
+  case failed(cloudDeleted: Bool)
+}
+
 /// This device's account flags. Firebase keeps an identity in the Keychain; the retained flag
 /// outlives its loss, so a missing identity is refused rather than replaced by a different
-/// anonymous UID. Keys name the document lineage: 1.x kept its identity in a named Firebase app
-/// and its cloud documents in other infrastructure, so its flags (`sharing.signedIn`,
-/// `sharing.deletion.*`) describe nothing this lineage holds, and are left as they are.
+/// anonymous UID. Keys name the document lineage, so another lineage starts with its own.
 struct SharingAccountDefaults {
   var defaults: UserDefaults = .standard
-  private static let prefix = "sharing.lineage\(documentLineage())."
+  private static let prefix = "click.dotpop.sharing.lineage\(documentLineage())."
   private static let retainedKey = prefix + "signedIn"
   /// This device has held an identity in this lineage's Auth.
   var identityRetained: Bool {
@@ -116,7 +130,37 @@ struct SharingAccountDefaults {
   func cloudDeletedKey(_ uid: String) -> String {
     Self.prefix + "deletion." + SHA256.hash(data: Data(uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
   }
+  /// Deletes `uid`'s account in order. Apple is asked first, so cancelling deletes nothing.
+  /// The cloud documents go before the identity that owns them, once: a failure after they
+  /// are gone keeps this UID's checkpoint, so a retry (or a relaunch) resumes at the identity.
+  @MainActor func deleteAccount<Credential>(
+    uid: String,
+    consent: () async -> AccountDeletionConsent<Credential>,
+    deleteCloud: () async throws -> Void,
+    deleteIdentity: (Result<Credential, Error>) async throws -> Void
+  ) async -> AccountDeletionOutcome {
+    guard case .answered(let authorization) = await consent() else { return .cancelled }
+    let checkpoint = cloudDeletedKey(uid)
+    var cloudDeleted = defaults.bool(forKey: checkpoint)
+    do {
+      if !cloudDeleted {
+        try await deleteCloud()
+        cloudDeleted = true
+        defaults.set(true, forKey: checkpoint)
+      }
+      try await deleteIdentity(authorization)
+      defaults.removeObject(forKey: checkpoint)
+      identityRetained = false
+      return .deleted
+    } catch {
+      return .failed(cloudDeleted: cloudDeleted)
+    }
+  }
 }
+
+/// Apple's answer for this account: Firebase's credential, Apple's user, and the code that
+/// revokes Apple's access.
+private typealias AppleAuthorization = (credential: AuthCredential, appleUser: String, code: String?)
 
 /// Retained anonymous identities accept invitations; Apple links the same UID for cloud creation.
 /// Auth runs on the one default Firebase app, which the host configures at launch (`PopFirebase.configure()`).
@@ -238,9 +282,7 @@ struct SharingAccountDefaults {
     } catch { message = "Could not prepare sign-in. Try again." }
   }
   /// The native button supplies its result on iPhone; deletion requests a fresh authorization.
-  private func appleCredential(_ result: Result<ASAuthorization, Error>? = nil) async throws -> (
-    credential: AuthCredential, appleUser: String, code: String?
-  ) {
+  private func appleCredential(_ result: Result<ASAuthorization, Error>? = nil) async throws -> AppleAuthorization {
     #if os(macOS)
       let raw = try randomValue()
       let state = try randomValue()
@@ -345,57 +387,57 @@ struct SharingAccountDefaults {
       nonce = nil
       updateIdentity()
     }
-    // Apple is asked first: cancelling its sheet must not stop links or delete anything.
-    let appleAuthorization: Result<(credential: AuthCredential, appleUser: String, code: String?), Error>
-    do {
-      appleAuthorization = .success(try await appleCredential())
-    } catch AppleWebCallback.Failure.cancelled {
-      return
-    } catch ASAuthorizationError.canceled {
-      return
-    } catch {
-      appleAuthorization = .failure(error)
-    }
-    let checkpoint = stored.cloudDeletedKey(user.uid)
-    var cloudDeleted = stored.defaults.bool(forKey: checkpoint)
     var note = ""
-    do {
-      if !cloudDeleted {
+    let outcome = await stored.deleteAccount(
+      uid: user.uid,
+      consent: { () async -> AccountDeletionConsent<AppleAuthorization> in
+        // Cancelling Apple's sheet must not stop links or delete anything.
+        do { return .answered(.success(try await appleCredential())) } catch AppleWebCallback.Failure.cancelled {
+          return .cancelled
+        } catch ASAuthorizationError.canceled {
+          return .cancelled
+        } catch {
+          return .answered(.failure(error))
+        }
+      },
+      deleteCloud: {
         let token = try await user.getIDToken(forcingRefresh: true)
         try await PopLibrary.shared.setAccount("")
         try await Task.detached(priority: .utility) { try sharingDeleteAccount(token: token) }.value
-        cloudDeleted = true
-        stored.defaults.set(true, forKey: checkpoint)
-      }
-      var apple: AuthCredential?
-      do {
-        let authorization = try appleAuthorization.get()
-        // Never revoke an Apple account different from the one being deleted.
-        guard user.providerData.contains(where: { $0.providerID == "apple.com" && $0.uid == authorization.appleUser })
-        else { throw PopFailure("Apple sign-in did not match this account.") }
-        apple = authorization.credential
-        if let code = authorization.code {
-          do { try await auth.revokeToken(withAuthorizationCode: code) } catch {
+      },
+      deleteIdentity: { authorization in
+        var apple: AuthCredential?
+        do {
+          let authorization = try authorization.get()
+          // Never revoke an Apple account different from the one being deleted.
+          guard
+            user.providerData.contains(where: { $0.providerID == "apple.com" && $0.uid == authorization.appleUser })
+          else { throw PopFailure("Apple sign-in did not match this account.") }
+          apple = authorization.credential
+          if let code = authorization.code {
+            do { try await auth.revokeToken(withAuthorizationCode: code) } catch {
+              note = " Apple access could not be revoked. Remove pop in your Apple Account settings."
+            }
+          } else {
             note = " Apple access could not be revoked. Remove pop in your Apple Account settings."
           }
-        } else {
-          note = " Apple access could not be revoked. Remove pop in your Apple Account settings."
+        } catch {
+          note = " Apple access was not revoked. Remove pop in your Apple Account settings."
         }
-      } catch {
-        note = " Apple access was not revoked. Remove pop in your Apple Account settings."
-      }
-      do { try await user.delete() } catch {
-        guard (error as NSError).code == AuthErrorCode.requiresRecentLogin.rawValue, let apple else {
-          throw error
+        do { try await user.delete() } catch {
+          guard (error as NSError).code == AuthErrorCode.requiresRecentLogin.rawValue, let apple else {
+            throw error
+          }
+          _ = try await user.reauthenticate(with: apple)
+          try await user.delete()
         }
-        _ = try await user.reauthenticate(with: apple)
-        try await user.delete()
-      }
-      stored.defaults.removeObject(forKey: checkpoint)
-      stored.identityRetained = false
-      updateIdentity()
+      })
+    switch outcome {
+    case .cancelled:
+      return
+    case .deleted:
       message = "Account deleted." + note
-    } catch {
+    case .failed(let cloudDeleted):
       message =
         cloudDeleted
         ? "Your cloud documents were deleted. Could not finish deleting the account. Try again." + note

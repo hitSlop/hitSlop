@@ -2,10 +2,10 @@ import Foundation
 import PopCoreBinding
 
 extension Notification.Name {
-  public static let popDocumentSaveStatusChanged = Notification.Name("pop.documentSaveStatusChanged")
-  public static let popSharingAccountChanged = Notification.Name("pop.sharingAccountChanged")
-  public static let popSharingForeground = Notification.Name("pop.sharingForeground")
-  public static let popJoinSharedPop = Notification.Name("pop.joinSharedPop")
+  public static let popDocumentSaveStatusChanged = Notification.Name("click.dotpop.document-save-status-changed")
+  public static let popSharingAccountChanged = Notification.Name("click.dotpop.sharing-account-changed")
+  public static let popSharingForeground = Notification.Name("click.dotpop.sharing-foreground")
+  public static let popJoinSharedPop = Notification.Name("click.dotpop.join-shared-pop")
 }
 
 /// Parses live collaboration invitations on Mac and iPhone.

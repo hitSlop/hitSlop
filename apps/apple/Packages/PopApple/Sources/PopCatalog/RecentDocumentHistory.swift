@@ -37,7 +37,7 @@ struct RecentDocumentHistory: Sendable {
 
   static var usesSystemRecents: Bool { ProcessInfo.processInfo.environment["POP_TEST_RECENTS_FILE"] == nil }
 
-  private let queue = DispatchQueue(label: "pop.recents", qos: .utility)
+  private let queue = DispatchQueue(label: "click.dotpop.recents", qos: .utility)
   private let storage: Storage
 
   /// A nil location is an isolated in-memory history, used by hidden native test hosts.

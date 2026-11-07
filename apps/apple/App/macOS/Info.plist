@@ -55,7 +55,7 @@
 				<string>pop</string>
 			</array>
 			<key>CFBundleTypeName</key>
-			<string>Pop document</string>
+			<string>dotpop document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
@@ -72,7 +72,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>click.dotpop.document</string>
 			<key>UTTypeDescription</key>
-			<string>Pop document</string>
+			<string>dotpop document</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>

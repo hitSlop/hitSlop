@@ -6,7 +6,7 @@ public enum PopPreparation {
   /// Opening documents, at the priority of a person waiting for a window.
   public static let documents = DispatchQueue(label: "click.dotpop.preparation", qos: .userInitiated)
   /// The catalog's file work, away from document opening.
-  public static let catalog = DispatchQueue(label: "pop.catalog", qos: .utility)
+  public static let catalog = DispatchQueue(label: "click.dotpop.catalog", qos: .utility)
 
   /// Runs `work` on `queue`, off the main actor.
   public static func run<T: Sendable>(on queue: DispatchQueue = documents, _ work: @escaping @Sendable () throws -> T)

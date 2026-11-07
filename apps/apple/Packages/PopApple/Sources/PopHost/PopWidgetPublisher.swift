@@ -23,7 +23,7 @@ import WidgetKit
   private var lifetime = UUID()
   var refreshLocation: (WidgetCache, String, URL) throws -> Bool = { try $0.refreshLocation(id: $1, url: $2) }
   private var reload: () -> Void = { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
-  private let logger = Logger(subsystem: "click.dotpop.app", category: "widgets")
+  private let logger = Logger(subsystem: "click.dotpop", category: "widgets")
 
   public func start(
     activeSelections: @escaping () async -> Set<String>, openSession: @escaping (String) -> DocumentSession?

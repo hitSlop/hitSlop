@@ -3,7 +3,7 @@
 
   /// Native save-panel policy. Document acceptance and relocation remain in the core.
   public enum PopSaveLocation {
-    private static let key = "lastLocalDocumentFolder"
+    private static let key = "click.dotpop.lastLocalDocumentFolder"
 
     public static func folder(
       home: URL = FileManager.default.homeDirectoryForCurrentUser,
