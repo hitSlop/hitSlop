@@ -194,10 +194,6 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
     }
     return token
   }
-  /// Background retries reuse the retained identity, including anonymous guests.
-  public func recoveryToken() async -> String? {
-    return try? await token()
-  }
   @Published var fingerprint: String?
   @Published public private(set) var message = ""
   @Published var busy = false

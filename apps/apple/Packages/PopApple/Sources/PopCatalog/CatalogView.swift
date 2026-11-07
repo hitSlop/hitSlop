@@ -201,11 +201,7 @@ public struct CatalogView: View {
   }
 
   private func joinSharedLink(_ link: String) async throws {
-    let candidates = model.recents.compactMap { entry -> URL? in
-      if case .recent(let url) = entry.source { return url }
-      return nil
-    }
-    let url = try await DocumentSharing.join(link, candidates: candidates)
+    let url = try await DocumentSharing.join(link)
     model.primaryAction(CatalogEntry(id: url.path, source: .recent(url), title: "Shared Pop"))
   }
 

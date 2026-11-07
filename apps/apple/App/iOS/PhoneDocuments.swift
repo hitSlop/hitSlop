@@ -405,7 +405,7 @@ enum PhoneClosing: Equatable {
         throw PopFailure("Close your current document before joining another.")
       }
     }
-    let url = try await DocumentSharing.join(link, candidates: documents)
+    let url = try await DocumentSharing.join(link)
     refresh()
     if session?.file.url != url { present(url) }
     successFeedback += 1

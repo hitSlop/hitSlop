@@ -1,4 +1,5 @@
-//! Native cloud transport and explicit invitation capability boundaries.
+//! Cloud connection status and explicit invitation capability boundaries; the library owns
+//! native connections.
 use super::*;
 use pop_sharing_client::{Client, ClientStatus, PauseKind, Phase};
 use pop_sharing_protocol::document::AccessState;
@@ -47,27 +48,11 @@ pub struct AccessState {
 pub trait SharingListener: Send + Sync {
     fn changed(&self);
 }
+/// A library-owned document connection, observed by the host (`NativeLibrary::connection`).
 #[derive(uniffi::Object)]
 pub struct NativeSharing(pub(crate) Arc<Client>);
 #[uniffi::export]
 impl NativeSharing {
-    #[uniffi::constructor]
-    pub fn cloud(
-        owner: Arc<crate::owner::NativeOwner>,
-        document: String,
-        token: String,
-        state_directory: String,
-    ) -> Result<Arc<Self>, SharingError> {
-        Ok(Arc::new(Self(Arc::new(
-            Client::cloud(owner.0.clone(), &document, &token, Path::new(&state_directory)).map_err(failure)?,
-        ))))
-    }
-    pub fn connect(&self) -> Result<(), SharingError> {
-        self.0.connect().map_err(failure)
-    }
-    pub fn pause(&self) {
-        self.0.pause();
-    }
     pub fn status(&self) -> ClientStatus {
         self.0.status()
     }
