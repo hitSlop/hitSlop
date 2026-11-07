@@ -88,104 +88,32 @@ fn theme(color: &str, origin: Origin) -> Request {
     }
 }
 
-// An authority refresh must never overwrite unconfirmed local content. Recovery is an
-// independently openable document, with only its visible blobs and no sharing binding.
+// A seed reaches every member: the saved document under its own identity, with no
+// attachment its state does not reference. The owner keeps every blob for its undo.
 #[test]
-fn epoch_refresh_preserves_dirty_state_before_installing_the_canonical_snapshot() {
+fn a_sharing_seed_is_the_saved_document_with_only_what_it_references() {
     let (dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);
-    call(&owner, set("Canonical")).unwrap();
-    call(&owner, Request::Flush).unwrap();
-    let confirmed = state(&owner)["version"].as_str().unwrap().to_owned();
-    let canonical = dir.path().join("canonical.pop");
-    let Reply::EpochCandidate { source_version, path: staged, .. } = call(
-        &owner,
-        Request::PrepareEpoch {
-            destination: canonical.clone().into(),
-            expected_version: confirmed.clone(),
-            required_heads: None,
-        },
-    )
-    .unwrap() else {
-        panic!("epoch candidate")
+    let attachment = |bytes: &[u8]| {
+        let Reply::Attachment { item } = call(&owner, Request::PutAttachment { bytes: bytes.to_vec() }).unwrap() else {
+            panic!("attachment")
+        };
+        item.id
     };
-    assert_eq!(source_version, confirmed);
-    assert_eq!(staged.native_path(), canonical);
-    let identity = owner.app().document_uuid.clone();
-    assert_eq!(Store::open(&canonical, Mode::Snapshot).unwrap().app().document_uuid, identity);
-    let offline_bytes = b"Unconfirmed local attachment";
-    let Reply::Attachment { item } = call(&owner, Request::PutAttachment { bytes: offline_bytes.to_vec() }).unwrap()
-    else {
-        panic!("attachment")
-    };
-    call(&owner, set(&item.id)).unwrap();
-    call(&owner, Request::Flush).unwrap();
-    let before = std::fs::read(&path).unwrap();
-    let refused = call(
-        &owner,
-        Request::AdoptEpoch {
-            source: canonical.clone().into(),
-            expected_version: confirmed.clone(),
-            recovery_destination: None,
-        },
-    )
-    .unwrap_err();
-    assert_eq!(refused.reason, Some(pop_runtime::Code::StaleBase));
-    assert_eq!(std::fs::read(&path).unwrap(), before);
-    assert_eq!(state(&owner)["value"]["title"], item.id);
-    let parent_file = dir.path().join("not-a-directory");
-    std::fs::write(&parent_file, b"occupied").unwrap();
-    let failed = call(
-        &owner,
-        Request::AdoptEpoch {
-            source: canonical.clone().into(),
-            expected_version: confirmed.clone(),
-            recovery_destination: Some(parent_file.join("recovery.pop").into()),
-        },
-    );
-    assert!(failed.is_err());
-    assert!(
-        call(&owner, Request::State).is_ok(),
-        "a recovery failure before canonical installation keeps the original owner usable for retry"
-    );
-    assert_eq!(std::fs::read(&path).unwrap(), before);
-    let recovery = dir.path().join("recovery.pop");
-    let canonical_lock = rusqlite::Connection::open(&path).unwrap();
-    canonical_lock.execute_batch("BEGIN IMMEDIATE").unwrap();
-    let installing = submit(
-        &owner,
-        Request::AdoptEpoch {
-            source: canonical.into(),
-            expected_version: confirmed,
-            recovery_destination: Some(recovery.clone().into()),
-        },
-    );
-    // The accepted snapshot remains readable while the persistence worker is
-    // waiting to install the replacement. Edits cannot enter that old epoch.
-    assert_eq!(state(&owner)["value"]["title"], item.id);
-    assert_eq!(call(&owner, set("Must not enter the old epoch")).unwrap_err().kind, FailureKind::Busy);
-    canonical_lock.execute_batch("ROLLBACK").unwrap();
-    drop(canonical_lock);
-    let Reply::EpochAdopted { recovery_path: Some(saved) } =
-        installing.recv_timeout(Duration::from_secs(30)).unwrap().unwrap()
-    else {
-        panic!("recovered epoch")
-    };
-    assert_eq!(saved.native_path(), recovery);
-    assert_eq!(state(&owner)["value"]["title"], "Canonical");
-    assert!(
-        matches!(Store::open(&path, Mode::Document), Err(pop_runtime::store::Error::Locked)),
-        "epoch adoption retains the live writer lease"
-    );
-    let recovered = Store::open(&recovery, Mode::Snapshot).unwrap();
-    assert_ne!(recovered.app().document_uuid, identity);
-    assert!(recovered.share().unwrap().is_none());
-    assert_eq!(recovered.document().unwrap().reading().unwrap().value["title"], item.id);
-    assert_eq!(recovered.attachment(&item.id).unwrap(), offline_bytes);
+    let removed = attachment(b"removed before sharing");
+    let kept = attachment(b"kept for members");
+    call(&owner, set(&removed)).unwrap();
+    call(&owner, set(&kept)).unwrap();
+    let seed = dir.path().join("seed.pop");
+    call(&owner, Request::StageSeed { destination: seed.clone() }).unwrap();
+    let staged = Store::open(&seed, Mode::Snapshot).unwrap();
+    assert_eq!(staged.app().document_uuid, owner.app().document_uuid);
+    assert_eq!(staged.document().unwrap().reading().unwrap().value["title"], kept);
+    let ids: Vec<_> = staged.attachments().unwrap().into_iter().map(|item| item.id).collect();
+    assert_eq!(ids, vec![kept], "a seed carries no unreferenced attachment");
+    staged.close().unwrap();
+    assert!(matches!(call(&owner, Request::ReadAttachment { id: removed }).unwrap(), Reply::Bytes { bytes: Some(_) }));
     close(&owner);
-    let reopened = Store::open(&path, Mode::Snapshot).unwrap();
-    assert_eq!(reopened.app().document_uuid, identity);
-    assert_eq!(reopened.document().unwrap().reading().unwrap().value["title"], "Canonical");
 }
 
 #[test]
@@ -378,7 +306,7 @@ fn full_shared_document() -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<
     call(
         &owner,
         Request::Share {
-            share: pop_runtime::store::Share { room: "library".into(), endpoint: "cloudkit://library".into() },
+            share: pop_runtime::store::Share { room: "room".into(), endpoint: "wss://relay.example".into() },
         },
     )
     .unwrap();
@@ -1062,20 +990,17 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
         old.confirmed_version(move |receipt| sent.send(receipt).unwrap());
         assert!(
             old_receipt.recv_timeout(Duration::from_secs(5)).unwrap().is_none(),
-            "an old connection cannot confirm a replacement's state under its former epoch"
+            "an old connection cannot confirm a replacement's state under its former connection"
         );
         let (sent, confirmed) = mpsc::channel();
         replacement.confirmed_version(move |receipt| sent.send(receipt).unwrap());
         let receipt = confirmed.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
         assert_eq!(receipt.version, current["version"]);
         call(&owner, Request::Flush).unwrap();
-        assert!(
-            Store::open(&path, Mode::Snapshot)
-                .unwrap()
-                .document()
-                .unwrap()
-                .covers_wire_history(&receipt.heads)
-                .unwrap()
+        assert_eq!(
+            Store::open(&path, Mode::Snapshot).unwrap().document().unwrap().version(),
+            receipt.version,
+            "the confirmed version is the saved one after a flush"
         );
         close(&owner);
     }
@@ -1179,4 +1104,186 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
     call(&a, Request::Close { preview: None, icon: None }).unwrap();
     let (reopened, _) = open(&path, Mode::Document);
     assert_eq!(title(&reopened), "From B");
+}
+
+// An accepted immutable blob write can finish before Discard's reload. Its reply
+// must describe that committed write, even though the page generation changed.
+#[test]
+fn discard_does_not_relabel_an_applied_attachment_as_not_applied() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let attachment = submit(&owner, Request::PutAttachment { bytes: b"kept immutable blob".to_vec() });
+    let discarded = submit(&owner, Request::Discard);
+    // The actor has admitted both requests; storage still cannot commit.
+    call(&owner, Request::State).unwrap();
+    lock.execute_batch("ROLLBACK").unwrap();
+    let reply = attachment.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+    let Reply::Attachment { item } = reply else { panic!("the applied attachment must return its identity") };
+    discarded.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+    let Reply::Bytes { bytes: Some(bytes) } = call(&owner, Request::ReadAttachment { id: item.id }).unwrap() else {
+        panic!("the immutable attachment must remain readable");
+    };
+    assert_eq!(bytes, b"kept immutable blob");
+    close(&owner);
+}
+
+#[test]
+fn discard_waits_for_membership_outcome_without_retracting_shared_edits() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    let lock = rusqlite::Connection::open(&path).unwrap();
+    lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let sharing = submit(
+        &owner,
+        Request::Share {
+            share: pop_runtime::store::Share {
+                room: "membership-race".into(),
+                endpoint: "https://relay.example".into(),
+            },
+        },
+    );
+    let discarded = submit(&owner, Request::Discard);
+    call(&owner, Request::State).unwrap();
+    lock.execute_batch("ROLLBACK").unwrap();
+    sharing.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+    assert_eq!(discarded.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Busy);
+    let refusal = call(&owner, Request::Discard).unwrap_err();
+    assert_eq!(refusal.reason, Some(pop_runtime::Code::InvalidRequest));
+    close(&owner);
+}
+
+// Folding cannot make the room fit, so the transport pauses sharing as outgrown. The
+// owner keeps accepting and saving edits, and pushes none of them.
+#[test]
+fn an_outgrown_shared_document_keeps_editing_and_saving_without_pushing() {
+    use pop_runtime::{
+        owner::SyncEvent,
+        sync::{Frame, PauseKind, Permission, Status},
+    };
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    call(
+        &owner,
+        Request::Share {
+            share: pop_runtime::store::Share { room: "outgrown".into(), endpoint: "https://relay.example".into() },
+        },
+    )
+    .unwrap();
+    let (sink, events) = sync_sink();
+    let connection = owner.sync_connection(sink);
+    let version = loop {
+        if let SyncEvent::Send { bytes } = events.recv_timeout(Duration::from_secs(5)).unwrap()
+            && let Frame::Hello { version, .. } = Frame::decode(&bytes).unwrap()
+        {
+            break version;
+        }
+    };
+    assert!(connection.frame(Frame::Welcome { permission: Permission::Write, version }.encode()));
+    assert!(connection.frame(Frame::CaughtUp.encode()));
+    connection.pause(PauseKind::Outgrown, "This document has outgrown sharing".into());
+    loop {
+        if matches!(
+            events.recv_timeout(Duration::from_secs(5)).unwrap(),
+            SyncEvent::Status { status: Status::Paused { kind: PauseKind::Outgrown, .. } }
+        ) {
+            break;
+        }
+    }
+    call(&owner, set("Kept locally")).unwrap();
+    call(&owner, Request::Flush).unwrap();
+    while let Ok(event) = events.try_recv() {
+        assert!(!matches!(event, SyncEvent::Send { .. }), "an outgrown document pushes nothing: {event:?}");
+    }
+    close(&owner);
+    let (reopened, _) = open(&path, Mode::Document);
+    assert_eq!(state(&reopened)["value"]["title"], "Kept locally");
+    close(&reopened);
+}
+
+#[test]
+fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
+    use pop_runtime::{
+        owner::{SyncConnection, SyncEvent},
+        sync::{Ack, Frame, Permission, Status},
+    };
+    fn confirmed(connection: &SyncConnection) -> Option<pop_runtime::sync::Confirmation> {
+        let (send, result) = mpsc::channel();
+        connection.durable_confirmed_version(move |version| {
+            let _ = send.send(version);
+        });
+        result.recv_timeout(Duration::from_secs(5)).unwrap()
+    }
+    fn frame(events: &mpsc::Receiver<SyncEvent>) -> Frame {
+        loop {
+            if let SyncEvent::Send { bytes } = events.recv_timeout(Duration::from_secs(5)).unwrap() {
+                return Frame::decode(&bytes).unwrap();
+            }
+        }
+    }
+    fn synced(events: &mpsc::Receiver<SyncEvent>) {
+        loop {
+            if matches!(
+                events.recv_timeout(Duration::from_secs(5)).unwrap(),
+                SyncEvent::Status { status: Status::Synced }
+            ) {
+                return;
+            }
+        }
+    }
+    for save_first in [false, true] {
+        let (_dir, path) = fixture();
+        let (owner, _) = open(&path, Mode::Document);
+        call(
+            &owner,
+            Request::Share {
+                share: pop_runtime::store::Share {
+                    room: "durability".into(),
+                    endpoint: "https://relay.example".into(),
+                },
+            },
+        )
+        .unwrap();
+        let (send, events) = mpsc::channel();
+        let connection = owner.sync_connection(Arc::new(move |event| {
+            let _ = send.send(event);
+        }));
+        let Frame::Hello { version, .. } = frame(&events) else { panic!("expected Hello") };
+        connection.frame(Frame::Welcome { permission: Permission::Write, version }.encode());
+        connection.frame(Frame::CaughtUp.encode());
+        synced(&events);
+        assert!(confirmed(&connection).is_some());
+        let lock = rusqlite::Connection::open(&path).unwrap();
+        if !save_first {
+            lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+        }
+        call(&owner, set("Acknowledged and saved")).unwrap();
+        let expected = state(&owner)["version"].as_str().unwrap().to_owned();
+        let Frame::Push { id, .. } = frame(&events) else { panic!("expected Push") };
+        if save_first {
+            call(&owner, Request::Flush).unwrap();
+            assert!(confirmed(&connection).is_none(), "a save without relay acknowledgement is insufficient");
+        }
+        connection.frame(Frame::Ack { id, status: Ack::Stored }.encode());
+        synced(&events);
+        if !save_first {
+            assert!(confirmed(&connection).is_none(), "a relay acknowledgement must not confirm unsaved state");
+            lock.execute_batch("ROLLBACK").unwrap();
+            // Ordinary save completion must notify sync even though it was already Synced.
+            synced(&events);
+        }
+        assert_eq!(confirmed(&connection).unwrap().version, expected);
+        let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
+        assert_eq!(snapshot.document().unwrap().version(), expected);
+        snapshot.close().unwrap();
+        // A clean flush must not repeat the durable-version notification.
+        call(&owner, Request::Flush).unwrap();
+        call(&owner, Request::State).unwrap();
+        assert!(!events.try_iter().any(|event| matches!(event, SyncEvent::Status { status: Status::Synced })));
+        connection.detach();
+        assert!(confirmed(&connection).is_none(), "a detached connection cannot confirm");
+        close(&owner);
+        assert!(confirmed(&connection).is_none(), "a closed owner cannot confirm");
+    }
 }

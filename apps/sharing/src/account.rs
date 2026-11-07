@@ -8,7 +8,10 @@ pub(crate) struct RegistryRequest {
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use crate::room::{hash, identity_response};
-    use pop_sharing_protocol::http::{CreateRoom, RoomInit};
+    use pop_sharing_protocol::{
+        http::{CreateRoom, RoomInit},
+        routes::{self, Op},
+    };
     use serde::Deserialize;
     use worker::*;
     #[derive(Deserialize)]
@@ -49,7 +52,11 @@ mod runtime {
         }
         async fn serve(&self, mut req: Request) -> Result<Response> {
             if req.path() == "/internal/release" && req.method() == Method::Post {
-                let input: super::RegistryRequest = req.json().await?;
+                let input: super::RegistryRequest =
+                    match crate::input::body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await {
+                        Ok(input) => input,
+                        Err(error) => return error.response(),
+                    };
                 if let Some(generation) = input.generation {
                     self.sql.exec(
                         "DELETE FROM documents WHERE document=? AND owned=0 AND generation<=?",
@@ -62,7 +69,11 @@ mod runtime {
                 return Response::ok("released");
             }
             if req.path() == "/internal/member" && req.method() == Method::Post {
-                let input: super::RegistryRequest = req.json().await?;
+                let input: super::RegistryRequest =
+                    match crate::input::body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await {
+                        Ok(input) => input,
+                        Err(error) => return error.response(),
+                    };
                 if !pop_sharing_protocol::valid_copy(&input.document) || input.generation.is_none() {
                     return Response::error("Invalid document", 400);
                 }
@@ -73,6 +84,11 @@ mod runtime {
                 self.state.storage().sync().await?;
                 return Response::ok("registered");
             }
+            let path = req.path();
+            let Some(matched) = routes::find(req.method().as_ref(), &path) else {
+                return Response::error("Not found", 404);
+            };
+            let op = matched.route.op;
             let claims = match crate::auth::identity(&req, &self.env).await {
                 Ok(c) => c,
                 Err(e) => return identity_response(e),
@@ -83,14 +99,14 @@ mod runtime {
                 return Response::error("Denied", 403);
             }
             let _guard = self.operations.lock().await;
-            if req.path() == "/v1/account" && req.method() == Method::Delete {
+            if op == Op::DeleteAccount {
                 self.sql.exec("INSERT OR IGNORE INTO deleting VALUES(1)", None)?;
                 self.state.storage().sync().await?;
                 for row in self.sql.exec("SELECT document,owned FROM documents", None)?.to_array::<Registration>()? {
                     let path = if row.owned != 0 {
                         format!("/v1/documents/{}", row.document)
                     } else {
-                        format!("/v1/documents/{}/members", row.document)
+                        format!("/v1/documents/{}/members/me", row.document)
                     };
                     let response =
                         self.document(&row.document, &path, Method::Delete, req.headers().clone(), None).await?;
@@ -106,11 +122,21 @@ mod runtime {
             if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n > 0 {
                 return Response::error("Account deleted", 410);
             }
-            if req.path() == "/v1/account/documents" && req.method() == Method::Get {
+            if op == Op::ListAccountDocuments {
                 use pop_sharing_protocol::document::{DocumentRole, RegisteredDocument, RegisteredDocuments};
-                let documents = self
+                // Keyset pages: every UUID sorts after the empty first cursor.
+                let after = match req.url()?.query_pairs().find(|(key, _)| key == "after") {
+                    Some((_, after)) if pop_sharing_protocol::valid_copy(&after) => after.into_owned(),
+                    Some(_) => return Response::error("Invalid cursor", 400),
+                    None => String::new(),
+                };
+                let limit = pop_sharing_protocol::limits::ACCOUNT_DOCUMENTS_PAGE as i64 + 1;
+                let rows = self
                     .sql
-                    .exec("SELECT document,owned FROM documents ORDER BY document", None)?
+                    .exec(
+                        "SELECT document,owned FROM documents WHERE document>? ORDER BY document LIMIT ?",
+                        vec![after.into(), limit.into()],
+                    )?
                     .to_array::<Registration>()?
                     .into_iter()
                     .map(|row| RegisteredDocument {
@@ -118,22 +144,22 @@ mod runtime {
                         role: if row.owned != 0 { DocumentRole::Owner } else { DocumentRole::Editor },
                     })
                     .collect();
-                return Response::from_json(&RegisteredDocuments { documents });
+                return Response::from_json(&RegisteredDocuments::page(rows));
             }
-            if let Some(id) = req.path().strip_prefix("/v1/account/documents/") {
-                if req.method() != Method::Get || !pop_sharing_protocol::valid_copy(id) {
-                    return Response::error("Invalid document", 400);
-                }
+            if let (Op::AccountAccess, Some(id)) = (op, matched.document) {
                 return self
                     .document(id, &format!("/v1/documents/{id}/sharing"), Method::Get, req.headers().clone(), None)
                     .await;
             }
-            if req.path() != "/v1/documents" || req.method() != Method::Post {
+            if op != Op::CreateDocument {
                 return Response::error("Not found", 404);
             }
-            let body = crate::room::bounded_body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await?;
-            let Ok(input) = serde_json::from_slice::<CreateRoom>(&body) else {
-                return Response::error("Invalid document", 400);
+            if !claims.may_create() {
+                return Response::error("Sign in to create a cloud document", 401);
+            }
+            let input: CreateRoom = match crate::input::body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await {
+                Ok(input) => input,
+                Err(error) => return error.response(),
             };
             if !pop_sharing_protocol::valid_copy(&input.document) {
                 return Response::error("Invalid document", 400);
@@ -162,11 +188,6 @@ mod runtime {
                 }
                 if !self.env.rate_limiter("ACCOUNT_CREATE_LIMIT")?.limit(hash(&claims.sub)).await?.success {
                     return Response::error("Limited", 429);
-                }
-                if self.sql.exec("SELECT count(*) AS n FROM documents WHERE owned=1", None)?.one::<Number>()?.n
-                    >= pop_sharing_protocol::limits::ACCOUNT_DOCUMENTS as i64
-                {
-                    return Response::error("Document quota reached", 429);
                 }
                 self.sql.exec(
                     "INSERT INTO documents VALUES(?,1,0) ON CONFLICT(document) DO UPDATE SET owned=1",

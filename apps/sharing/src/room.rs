@@ -2,8 +2,9 @@
 use crate::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
 use crate::metrics::{Metric, record};
 use pop_sharing_protocol::{
-    CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL,
+    CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL, hex,
     http::{CreatedRoom, RoomInfo, RoomInit, RoomPhase},
+    routes::{self, Op, Scope},
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -11,11 +12,11 @@ use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
 use worker::*;
 #[path = "access.rs"]
 mod access;
-#[path = "epochs.rs"]
-mod epochs;
 #[path = "resources.rs"]
 mod resources;
 
+// A SQLite snapshot must contain the complete fixed-size database header.
+const SQLITE_HEADER_BYTES: usize = 100;
 const CHUNK: usize = 1_800_000;
 const BACKFILL: usize = 1 << 20;
 use pop_sharing_protocol::limits::*;
@@ -38,8 +39,10 @@ fn refused(code: u8, message: &str) -> SocketFailure {
     SocketFailure::Refused(code, message.into())
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+/// R2 keys are the plain document UUID and a suffix; isolation from other deployments
+/// comes from separate bucket names at deploy time.
+pub(crate) fn object_key(document: &str, suffix: &str) -> String {
+    format!("{document}/{suffix}")
 }
 pub(crate) fn hash(key: &str) -> String {
     hex(&Sha256::digest(key.as_bytes()))
@@ -66,7 +69,17 @@ fn wire_version(vv: &Version) -> Vec<(String, u32)> {
 pub async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
     let response = match serve(req, env.clone()).await {
         Ok(r) => r,
-        Err(_) => Response::error("Request failed", 500)?,
+        Err(error) => {
+            // Never log payloads, bearer tokens, or arbitrary exception messages.
+            let kind = match error {
+                worker::Error::SerdeJsonError(_) => "stored_json",
+                worker::Error::BindingError(_) => "binding",
+                worker::Error::Io(_) => "io",
+                _ => "internal",
+            };
+            console_error!("Sharing request failed ({})", kind);
+            Response::error("Request failed", 500)?
+        }
     };
     let headers = response.headers().clone();
     let mut response = response.with_headers(headers);
@@ -79,9 +92,20 @@ pub async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
         record(&env, Metric::Limited);
     }
     let headers = response.headers().clone();
-    let mut response = Response::from_json(&pop_sharing_protocol::http::ApiFailure::refused(status))?
-        .with_status(status)
-        .with_headers(headers);
+    let mut failure = pop_sharing_protocol::http::ApiFailure::refused(status);
+    if status < 500 {
+        // Refusal bodies originate in our handlers and contain fixed public messages.
+        // Internal failures always keep the generic message above.
+        let message = response.text().await?;
+        if message.len() <= 1024 {
+            if let Ok(public) = serde_json::from_str::<pop_sharing_protocol::http::ApiFailure>(&message) {
+                failure = public;
+            } else if !message.is_empty() {
+                failure.message = message;
+            }
+        }
+    }
+    let mut response = Response::from_json(&failure)?.with_status(status).with_headers(headers);
     response.headers_mut().set("Content-Type", "application/json")?;
     Ok(response)
 }
@@ -116,16 +140,19 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         req = req.clone_mut()?;
         let protocols = req.headers().get("Sec-WebSocket-Protocol")?.unwrap_or_default();
         let values: Vec<_> = protocols.split(',').map(str::trim).collect();
-        if values.len() != 2 || values[0] != SOCKET_PROTOCOL {
+        if values.first().copied() != Some(SOCKET_PROTOCOL) {
+            return requires_update(origin.as_deref());
+        }
+        if values.len() != 2 {
             return Response::error("Protocol refused", 403);
         }
-        let Some(cap) = values[1].strip_prefix("cap.") else {
+        let Some(token) = values[1].strip_prefix("jwt.") else {
             return Response::error("Denied", 403);
         };
-        if !crate::resource_types::hash_id(cap) {
+        if crate::auth::key_id(token).is_err() {
             return Response::error("Denied", 403);
         }
-        req.headers_mut()?.set("Authorization", &format!("Bearer {cap}"))?;
+        req.headers_mut()?.set("Authorization", &format!("Bearer {token}"))?;
         // Only the public protocol is selected; never echo credentials in replies.
         req.headers_mut()?.delete("Sec-WebSocket-Protocol")?;
     }
@@ -133,13 +160,18 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         && !browser_socket
         && req.headers().get("Sec-WebSocket-Protocol")?.as_deref() != Some(SOCKET_PROTOCOL)
     {
-        return Response::error("Protocol refused", 403);
+        return requires_update(origin.as_deref());
     }
+    // One table decides what exists: an unlisted method, path or extra segment is a 404
+    // before any limiter, identity check or Durable Object is reached.
     let path = req.path();
-    if path == "/health" {
-        return Response::ok("hitslop-sharing");
+    let Some(matched) = routes::find(req.method().as_ref(), &path) else {
+        return Response::error("Not found", 404);
+    };
+    if matched.route.op == Op::Health {
+        return Response::ok("pop-sharing");
     }
-    if let Some(binding) = crate::abuse::guest_limit(req.method().as_ref(), &path) {
+    if let Some(binding) = matched.route.limit.binding() {
         // Cloudflare sets this header. Missing IPs share a conservative fallback budget.
         let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "unknown".into());
         if !env.rate_limiter(binding)?.limit(ip).await?.success {
@@ -151,24 +183,18 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
             return Ok(response);
         }
     }
-    let mut response = if matches!(path.as_str(), "/v1/documents" | "/v1/account" | "/v1/account/documents")
-        || path.starts_with("/v1/account/documents/")
-    {
-        let claims = match crate::auth::identity(&req, &env).await {
-            Ok(c) => c,
-            Err(e) => return identity_response(e),
-        };
-        env.durable_object("ACCOUNTS")?.get_by_name(&hash(&claims.sub))?.fetch_with_request(req).await?
-    } else {
-        let parts: Vec<_> = path.split('/').collect();
-        if !(4..=8).contains(&parts.len())
-            || parts[1] != "v1"
-            || parts[2] != "documents"
-            || !pop_sharing_protocol::valid_copy(parts[3])
-        {
-            return Response::error("Not found", 404);
+    let mut response = match (matched.route.scope, matched.document) {
+        (Scope::Account, _) => {
+            let claims = match crate::auth::identity(&req, &env).await {
+                Ok(c) => c,
+                Err(e) => return identity_response(e),
+            };
+            env.durable_object("ACCOUNTS")?.get_by_name(&hash(&claims.sub))?.fetch_with_request(req).await?
         }
-        env.durable_object("DOCUMENTS")?.get_by_name(parts[3])?.fetch_with_request(req).await?
+        (Scope::Document, Some(document)) => {
+            env.durable_object("DOCUMENTS")?.get_by_name(document)?.fetch_with_request(req).await?
+        }
+        _ => return Response::error("Not found", 404),
     };
     let headers = response.headers().clone();
     response = response.with_headers(headers);
@@ -178,6 +204,19 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
     }
     if response.status_code() == 101 {
         response.headers_mut().set("Sec-WebSocket-Protocol", SOCKET_PROTOCOL)?;
+    }
+    Ok(response)
+}
+
+fn requires_update(origin: Option<&str>) -> Result<Response> {
+    let response = Response::from_json(&pop_sharing_protocol::http::ApiFailure {
+        code: "requires_update".into(),
+        message: "Update pop to use this document service".into(),
+    })?;
+    let mut response = response.with_status(426);
+    if let Some(origin) = origin {
+        response.headers_mut().set("Access-Control-Allow-Origin", origin)?;
+        response.headers_mut().set("Vary", "Origin")?;
     }
     Ok(response)
 }
@@ -200,8 +239,6 @@ struct SocketState {
     generation: u64,
     #[serde(default)]
     uid: String,
-    #[serde(default)]
-    epoch: String,
     #[serde(default)]
     ip: String,
     #[serde(default)]
@@ -300,12 +337,9 @@ impl CloudDocument {
     async fn compact(&self, req: &mut Request) -> Result<Response> {
         // Serialize competing archives; Push and Stop may still progress across the R2 await.
         let _guard = self.uploads.lock().await;
-        let body = match bounded_body(req, BASE_BYTES).await {
-            Ok(body) => body,
-            Err(worker::Error::RustError(message)) if message == "Request exceeds its byte limit" => {
-                return Response::error(message, 413);
-            }
-            Err(error) => return Err(error),
+        let body = match crate::input::bytes(req, BASE_BYTES).await {
+            Ok(bytes) => bytes,
+            Err(error) => return error.response(),
         };
         match self.phase()? {
             Some(RoomPhase::Live) => {}
@@ -442,9 +476,6 @@ impl CloudDocument {
         Ok(crate::auth::creator_authorization(identity, &owner_uid))
     }
     async fn authorized_guest(&self, req: &Request) -> Result<bool> {
-        if self.capability_access(req).await? {
-            return Ok(true);
-        }
         Ok(self.identity_role(req).await?.is_some())
     }
     async fn stop_room(&self, room: &str, reason: Metric) -> Result<Response> {
@@ -462,7 +493,7 @@ impl CloudDocument {
             self.state.storage().sync().await?;
             self.end_connections(crate::frame::ERROR_ENDED, "Document deleted", 1008);
             let bucket = self.env.bucket("SEEDS")?;
-            for prefix in [format!("{room}/")] {
+            for prefix in [object_key(room, "")] {
                 loop {
                     let objects = bucket.list().prefix(prefix.clone()).execute().await?.objects();
                     if objects.is_empty() {
@@ -473,7 +504,7 @@ impl CloudDocument {
                     }
                 }
             }
-            self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key IN ('seed_hash','seed_key','seed_size','resources','root','heads','base_version')",None)?;
+            self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key IN ('seed_hash','seed_size','resources','root','heads','base_version')",None)?;
             self.state.storage().sync().await?;
             if let Some(uid) = self.text("owner_uid")?
                 && !self.release_registration(&uid, None).await?
@@ -501,22 +532,29 @@ impl CloudDocument {
     fn send(&self, ws: &WebSocket, frame: Frame) -> Result<()> {
         ws.send_with_bytes(crate::envelope::encode(frame).map_err(fail)?)
     }
+    /// The immutable seed uploaded before the room went live.
+    async fn read_seed(&self, req: &Request, room: &str) -> Result<Response> {
+        let object = self.env.bucket("SEEDS")?.get(object_key(room, "seed")).execute().await?;
+        if self.phase()? == Some(RoomPhase::Ended) || !self.authorized_guest(req).await? {
+            return Response::error("Sharing ended", 410);
+        }
+        match object {
+            Some(object) => {
+                Response::from_body(object.body().ok_or_else(|| fail("Missing seed body"))?.response_body()?)
+            }
+            None => Response::error("Seed missing", 404),
+        }
+    }
+    pub(super) fn end_connections(&self, code: u8, message: &str, close: u16) {
+        for ws in self.state.get_websockets() {
+            let _ = ws.serialize_attachment(SocketState::default());
+            let _ = self.send(&ws, Frame::Error { code, message: message.into() });
+            let _ = ws.close(Some(close), Some(message));
+        }
+    }
     fn hello(&self, ws: &WebSocket, protocol: u8, app: &[u8], vv: Version) -> Result<()> {
         if protocol != PROTOCOL || self.text("app")?.as_deref() != Some(&hex(app)) {
             return Err(fail("Different app or protocol"));
-        }
-        if self.text("epoch_required")?.is_some() {
-            let root = version(&serde_json::from_str::<Vec<(String, u32)>>(
-                &self.text("root")?.unwrap_or_else(|| "[]".into()),
-            )?)?;
-            if root.iter().any(|(peer, end)| vv.get(peer).copied().unwrap_or(0) < *end) {
-                self.send(
-                    ws,
-                    Frame::Error { code: crate::frame::ERROR_EPOCH, message: "Current checkpoint required".into() },
-                )?;
-                ws.close(Some(1008), Some("Current checkpoint required"))?;
-                return Ok(());
-            }
         }
         self.send(ws, Frame::Welcome { permission: Permission::Write, version: self.heads()? })?;
         let mut batch = vec![];
@@ -546,7 +584,6 @@ impl CloudDocument {
         self.send(ws, Frame::CaughtUp)?;
         let mut s = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
         s.joined = true;
-        s.epoch = self.text("seed_hash")?.unwrap_or_default();
         ws.serialize_attachment(s)
     }
     async fn push(&self, ws: &WebSocket, id: u64, records: Vec<Record>, wire_bytes: usize) -> Result<()> {
@@ -567,17 +604,6 @@ impl CloudDocument {
         if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.joined) {
             return Err(fail("Hello required"));
         }
-        let connection_epoch = ws.deserialize_attachment::<SocketState>()?.map(|s| s.epoch).unwrap_or_default();
-        if self.text("epoch_required")?.is_some()
-            && self.text("seed_hash")?.as_deref() != Some(connection_epoch.as_str())
-        {
-            self.send(
-                ws,
-                Frame::Error { code: crate::frame::ERROR_EPOCH, message: "Current checkpoint required".into() },
-            )?;
-            ws.close(Some(1008), Some("Current checkpoint required"))?;
-            return Ok(());
-        }
         let mut heads = self.heads()?;
         let mut added = vec![];
         // Validate every record before storing any of the push.
@@ -594,6 +620,11 @@ impl CloudDocument {
             added.push(record);
         }
         let (stored, rows) = self.update_usage()?;
+        // Lost acknowledgements are retried even when later writes filled the room.
+        // The socket budget above still charges duplicates to prevent abuse.
+        if added.is_empty() {
+            return self.send(ws, Frame::Ack { id, status: Ack::Stored });
+        }
         if stored + added.iter().map(|r| r.bytes.len()).sum::<usize>() > ROOM_RECORD_BYTES
             || rows >= ROOM_RECORDS
             || rows + added.len() > ROOM_RECORDS
@@ -624,11 +655,8 @@ impl CloudDocument {
             Ok(())
         })?;
         self.state.storage().sync().await?;
-        if self.phase()? == Some(RoomPhase::Ended)
-            || (self.text("epoch_required")?.is_some()
-                && self.text("seed_hash")?.as_deref() != Some(connection_epoch.as_str()))
-        {
-            return Err(fail("Sharing epoch changed"));
+        if self.phase()? == Some(RoomPhase::Ended) {
+            return Err(fail("Sharing ended"));
         }
         self.send(ws, Frame::Ack { id, status: Ack::Stored })?;
         for other in self.state.get_websockets() {
@@ -648,16 +676,16 @@ impl CloudDocument {
         let access = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
         if !access.owner
             && (access.generation != self.generation()?
-                || (!access.uid.is_empty()
-                    && self
-                        .sql
-                        .exec(
-                            "SELECT count(*) AS n FROM members WHERE uid=? AND generation=?",
-                            vec![access.uid.into(), (self.generation()? as i64).into()],
-                        )?
-                        .one::<NumberRow>()?
-                        .n
-                        == 0))
+                || access.uid.is_empty()
+                || (self
+                    .sql
+                    .exec(
+                        "SELECT count(*) AS n FROM members WHERE uid=? AND generation=?",
+                        vec![access.uid.into(), (self.generation()? as i64).into()],
+                    )?
+                    .one::<NumberRow>()?
+                    .n
+                    == 0))
         {
             let _ = ws.close(Some(1008), Some("Access revoked"));
             return Ok(());
@@ -696,7 +724,7 @@ impl CloudDocument {
 
 fn initialize(sql: &SqlStorage) {
     sql.exec("CREATE TABLE IF NOT EXISTS pending_registry(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS members(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL)",None).expect("document access tables");
-    sql.exec("CREATE TABLE IF NOT EXISTS epoch_seeds(hash TEXT PRIMARY KEY,size INTEGER NOT NULL,expires INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS epoch_blobs(seed TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(seed,id)); CREATE TABLE IF NOT EXISTS epoch_garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
+    sql.exec("CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
 }
 
 fn decode_hex(text: &str) -> Result<Vec<u8>> {
@@ -734,8 +762,10 @@ impl DurableObject for CloudDocument {
             && req.method() == Method::Post
         {
             let room = parts[3];
-            let body = bounded_body(&mut req, CONTROL_BYTES).await?;
-            let input: RoomInit = serde_json::from_slice(&body)?;
+            let input: RoomInit = match crate::input::body(&mut req, CONTROL_BYTES).await {
+                Ok(input) => input,
+                Err(error) => return error.response(),
+            };
             if !pop_sharing_protocol::valid_copy(&input.document) || input.owner_uid.is_empty() {
                 return Response::error("Invalid metadata", 400);
             }
@@ -766,21 +796,19 @@ impl DurableObject for CloudDocument {
                 phase: self.phase()?.ok_or_else(|| fail("Missing phase"))?,
             });
         }
-        if !(4..=8).contains(&parts.len()) {
+        let Some(matched) = routes::find(req.method().as_ref(), &path) else {
             return Response::error("Not found", 404);
-        }
-        let room = parts[3];
-        let route = parts.get(4).copied().unwrap_or("");
-        if parts.len() > 6 && !(route == "epochs" && parts.len() == 8 && parts[6] == "blobs") {
+        };
+        let (Some(room), op) = (matched.document, matched.route.op) else {
             return Response::error("Not found", 404);
-        }
+        };
         let Some(phase) = self.phase()? else {
             return Response::error("Unknown room", 404);
         };
         if phase == RoomPhase::Ended && self.text("owner_uid")?.is_none() {
             return Response::error("Sharing ended", 410);
         }
-        if route.is_empty() && req.method() == Method::Delete {
+        if op == Op::DeleteDocument {
             match self.authorize_creator(&req).await? {
                 crate::auth::CreatorAuthorization::Allowed => {}
                 decision => {
@@ -792,40 +820,19 @@ impl DurableObject for CloudDocument {
         if phase == RoomPhase::Ended {
             return Response::error("Document deleted", 410);
         }
-        if route.is_empty() && req.method() == Method::Patch {
-            return self.access_route(&mut req, "metadata").await;
+        if matches!(
+            op,
+            Op::PatchDocument
+                | Op::GetSharing
+                | Op::EnableSharing
+                | Op::DisableSharing
+                | Op::Join
+                | Op::Leave
+                | Op::GetMetadata
+        ) {
+            return self.access_route(&mut req, op).await;
         }
-        if matches!(route, "sharing" | "members" | "metadata") {
-            return self.access_route(&mut req, route).await;
-        }
-        if matches!(route, "epoch" | "epochs") {
-            let guest = self.authorized_guest(&req).await?;
-            if !guest {
-                match self.authorize_creator(&req).await? {
-                    crate::auth::CreatorAuthorization::Allowed => {}
-                    decision => {
-                        return creator_response(decision)?.ok_or_else(|| fail("Unexpected creator authorization"));
-                    }
-                }
-            }
-            if route == "epochs" && parts.len() == 8 && parts[6] == "blobs" && req.method() == Method::Put {
-                return self.stage_epoch_blob(&mut req, room, parts[5], parts[7]).await;
-            }
-            if parts.len() > 6 {
-                return Response::error("Not found", 404);
-            }
-            return match (route, parts.get(5).copied(), req.method()) {
-                ("epoch", None, Method::Get) if self.text("seed_hash")?.is_some() => {
-                    Response::from_json(&self.epoch_state()?)
-                }
-                ("epoch", None, Method::Get) => Response::error("Seed not ready", 409),
-                ("epoch", None, Method::Post) => self.publish_epoch(&mut req, room).await,
-                ("epochs", Some(hash), Method::Put) => self.stage_epoch(&mut req, room, hash).await,
-                ("epochs", Some(hash), Method::Delete) => self.release_epoch(&req, room, hash).await,
-                _ => Response::error("Not found", 404),
-            };
-        }
-        if route.is_empty() && req.method() == Method::Get {
+        if op == Op::GetDocument {
             let guest = self.authorized_guest(&req).await?;
             let owner = if self.identity_role(&req).await? == Some(pop_sharing_protocol::document::DocumentRole::Owner)
             {
@@ -851,15 +858,11 @@ impl DurableObject for CloudDocument {
             }
             return Response::from_json(&self.info(owner)?);
         }
-        let owner_write = matches!(
-            (route, req.method()),
-            ("open", Method::Post) | ("seed", Method::Put) | ("resources", Method::Post) | ("asset", Method::Put)
-        );
-        let blob_upload = route == "blob" && req.method() == Method::Put;
+        let owner_write = matches!(op, Op::Open | Op::PutSeed | Op::PutResources | Op::PutAsset);
+        let blob_upload = op == Op::PutBlob;
         let owner = if owner_write
             || (blob_upload && phase == RoomPhase::Uploading)
-            || (req.method() == Method::Get
-                && matches!(route, "seed" | "resources" | "blobs" | "blob")
+            || (matches!(op, Op::GetSeed | Op::GetResources | Op::ListBlobs | Op::GetBlob)
                 && !self.authorized_guest(&req).await?)
         {
             match self.authorize_creator(&req).await? {
@@ -882,7 +885,7 @@ impl DurableObject for CloudDocument {
         if phase == RoomPhase::Ended {
             return Response::error("Sharing ended", 410);
         }
-        if route == "open" && req.method() == Method::Post {
+        if op == Op::Open {
             if phase == RoomPhase::Live {
                 return Response::from_json(&self.info(true)?);
             }
@@ -899,11 +902,15 @@ impl DurableObject for CloudDocument {
             let bucket = self.env.bucket("SEEDS")?;
             let seed_size: u64 =
                 self.text("seed_size")?.unwrap_or_default().parse().map_err(|_| fail("Invalid seed size"))?;
-            if bucket.head(format!("{room}/seed")).await?.is_none_or(|o| o.size() != seed_size) {
+            if bucket.head(object_key(room, "seed")).await?.is_none_or(|o| o.size() != seed_size) {
                 return Response::error("Seed not ready", 409);
             }
             for item in manifest.resources {
-                if bucket.head(format!("{room}/assets/{}", item.hash)).await?.is_none_or(|o| o.size() != item.size) {
+                if bucket
+                    .head(object_key(room, &format!("assets/{}", item.hash)))
+                    .await?
+                    .is_none_or(|o| o.size() != item.size)
+                {
                     return Response::error("App not ready", 409);
                 }
             }
@@ -921,16 +928,17 @@ impl DurableObject for CloudDocument {
         if !owner && phase != RoomPhase::Live {
             return Response::error("Publication pending", 409);
         }
-        if matches!(route, "resources" | "asset" | "blobs" | "blob") {
-            return self.resource_api(&mut req, room, route).await;
+        if matches!(op, Op::GetResources | Op::PutResources | Op::PutAsset | Op::ListBlobs | Op::GetBlob | Op::PutBlob)
+        {
+            return self.resource_api(&mut req, room, op, matched.hash).await;
         }
-        if route == "compact" && req.method() == Method::Post {
+        if op == Op::Compact {
             return self.compact(&mut req).await;
         }
-        if route == "seed" {
+        if matches!(op, Op::GetSeed | Op::PutSeed) {
             let bucket = self.env.bucket("SEEDS")?;
-            let key = format!("{room}/seed");
-            if req.method() == Method::Put {
+            let key = object_key(room, "seed");
+            if op == Op::PutSeed {
                 let digest = req
                     .headers()
                     .get("X-Sharing-SHA256")?
@@ -942,15 +950,21 @@ impl DurableObject for CloudDocument {
                         Some(v) => v,
                         None => return Response::error("Seed version required", 400),
                     };
-                let heads = version(&seed)?;
+                let heads = match version(&seed) {
+                    Ok(heads) => heads,
+                    Err(_) => return Response::error("Invalid seed version", 400),
+                };
                 if !crate::resource_types::hash_id(&digest)
                     || !crate::resource_types::hash_id(&app)
                     || heads.len() != seed.len()
                 {
                     return Response::error("Invalid seed metadata", 400);
                 }
-                let body = bounded_body(&mut req, SEED_BYTES).await?;
-                if body.len() < 100 || hex(&Sha256::digest(&body)) != digest {
+                let body = match crate::input::bytes(&mut req, SEED_BYTES).await {
+                    Ok(bytes) => bytes,
+                    Err(error) => return error.response(),
+                };
+                if body.len() < SQLITE_HEADER_BYTES || hex(&Sha256::digest(&body)) != digest {
                     return Response::error("Seed checksum mismatch", 422);
                 }
                 if self.phase()? == Some(RoomPhase::Ended) {
@@ -969,12 +983,9 @@ impl DurableObject for CloudDocument {
                 self.put("heads", &serde_json::to_string(&wire_version(&heads))?)?;
                 return Response::ok("ready");
             }
-            if req.method() == Method::Get {
-                return self.read_seed(&req, room).await;
-            }
-            return Response::error("Method refused", 405);
+            return self.read_seed(&req, room).await;
         }
-        if route == "sync" && req.headers().get("Upgrade")?.as_deref() == Some("websocket") {
+        if op == Op::Sync && req.headers().get("Upgrade")?.as_deref() == Some("websocket") {
             if self.state.get_websockets().len() >= pop_sharing_protocol::limits::ROOM_CONNECTIONS {
                 return Response::error("Room connection limit", 429);
             }
@@ -988,8 +999,11 @@ impl DurableObject for CloudDocument {
             if count >= ROOM_IP_CONNECTIONS {
                 return Response::error("Room IP connection limit", 429);
             }
-            let claims = crate::auth::identity(&req, &self.env).await.ok();
-            let uid = claims.map(|claims| claims.sub).unwrap_or_default();
+            let claims = match crate::auth::identity(&req, &self.env).await {
+                Ok(claims) => claims,
+                Err(error) => return identity_response(error),
+            };
+            let uid = claims.sub;
             let owner = self.text("owner_uid")?.as_deref() == Some(uid.as_str());
             let generation = self.generation()?;
             let member = !uid.is_empty()
@@ -1002,7 +1016,7 @@ impl DurableObject for CloudDocument {
                     .one::<NumberRow>()?
                     .n
                     > 0;
-            if self.phase()? != Some(RoomPhase::Live) || (!owner && !member && !self.capability_access(&req).await?) {
+            if self.phase()? != Some(RoomPhase::Live) || (!owner && !member) {
                 return Response::error("Access revoked", 403);
             }
             let pair = WebSocketPair::new()?;
@@ -1012,7 +1026,6 @@ impl DurableObject for CloudDocument {
                 owner,
                 generation,
                 uid,
-                epoch: String::new(),
                 ip,
                 window_start: now(),
                 bytes: 0,
@@ -1031,13 +1044,18 @@ impl DurableObject for CloudDocument {
         {
             let _guard = self.uploads.lock().await;
             if let Some(room) = self.text("room")? {
-                self.sweep_epochs(&room).await?;
+                self.sweep_garbage(&room).await?;
             }
         }
         self.flush_registry().await?;
-        let pending=self.sql.exec("SELECT ((SELECT count(*) FROM pending_registry)+(SELECT count(*) FROM epoch_seeds)+(SELECT count(*) FROM epoch_garbage)) AS n",None)?.one::<NumberRow>()?.n>0;
+        let pending = self
+            .sql
+            .exec("SELECT ((SELECT count(*) FROM pending_registry)+(SELECT count(*) FROM garbage)) AS n", None)?
+            .one::<NumberRow>()?
+            .n
+            > 0;
         if pending {
-            self.schedule_cleanup(self.epoch_alarm_delay(60_000)?).await?;
+            self.schedule_cleanup(60_000).await?;
         }
         Response::ok("retained")
     }
@@ -1064,20 +1082,6 @@ impl DurableObject for CloudDocument {
         let _ = ws.close(Some(1011), None::<String>);
         Ok(())
     }
-}
-
-pub(crate) async fn bounded_body(req: &mut Request, limit: usize) -> Result<Vec<u8>> {
-    use futures_util::StreamExt;
-    let mut stream = req.stream()?;
-    let mut body = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        if body.len().saturating_add(chunk.len()) > limit {
-            return Err(fail("Request exceeds its byte limit"));
-        }
-        body.extend(chunk);
-    }
-    Ok(body)
 }
 
 pub(crate) fn random_hex(size: usize) -> Result<String> {

@@ -34,6 +34,11 @@ pub(crate) struct Claims {
     pub iat: u64,
     pub auth_time: u64,
 }
+impl Claims {
+    pub(crate) fn may_create(&self) -> bool {
+        self.firebase.sign_in_provider != "anonymous"
+    }
+}
 #[derive(Clone, Deserialize)]
 pub(crate) struct Firebase {
     sign_in_provider: String,
@@ -58,10 +63,9 @@ pub(crate) fn verify(token: &str, project: &str, key: &DecodingKey, now: u64) ->
     policy.validate_exp = false;
     policy.leeway = 0;
     let claims = decode::<Claims>(token, key, &policy).map_err(|_| "Invalid identity")?.claims;
-    // Any Firebase provider may own links (Apple today; Google or others later), but an
-    // anonymous account is free to mint and must not reach the room quota.
-    if claims.firebase.sign_in_provider == "anonymous"
-        || claims.sub.is_empty()
+    // Verification establishes identity. Endpoint policy separately limits creation
+    // to named accounts; anonymous identities may exchange invitations for membership.
+    if claims.sub.is_empty()
         || claims.sub.chars().count() > 128
         || claims.exp <= now
         || claims.iat > now
@@ -227,15 +231,15 @@ mod tests {
         assert!(verify(&forged.join("."), "hitslopapp", &keys().1, NOW).is_err());
     }
     #[test]
-    fn owner_identity_accepts_named_providers_but_not_anonymous_accounts() {
+    fn verified_anonymous_identity_may_join_but_cannot_create() {
         for provider in ["apple.com", "google.com", "password"] {
             let mut changed = claims();
             changed["firebase"]["sign_in_provider"] = json!(provider);
-            assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_ok());
+            assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap().may_create());
         }
         let mut changed = claims();
         changed["firebase"]["sign_in_provider"] = json!("anonymous");
-        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());
+        assert!(!verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap().may_create());
         let mut changed = claims();
         changed.as_object_mut().unwrap().remove("firebase");
         assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());

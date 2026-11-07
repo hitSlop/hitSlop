@@ -115,12 +115,6 @@ impl Store {
         Pressure::from_usage(meta.stored() as u64, meta.rows as u64)
     }
 
-    /// The frozen history budget used by private snapshot publication policy.
-    pub fn retained_history_bytes(&self) -> Result<u64> {
-        self.check(false)?;
-        self.read(|connection| Ok(bounds(connection)?.stored().max(0) as u64))
-    }
-
     /// The next write, or none when already durable. Exports only updates since the
     /// last save, or a checkpoint once the log is long or full.
     pub fn job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
@@ -165,9 +159,8 @@ impl Store {
     }
 
     /// The checkpoint to write as the owner closes, after its last save: a session that
-    /// edited a document larger than `TRIM_BYTES` trims its history. Layout 1 preserves
-    /// its legacy lineage; layout 2 can rebuild an independent epoch. None when nothing
-    /// would shrink. The still-live document keeps its session undo until close succeeds.
+    /// edited a document larger than `TRIM_BYTES` trims its history, rebuilding an
+    /// independent one. None when nothing would shrink. The still-live document keeps its session undo until close succeeds.
     pub fn close_job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
         let (meta, changed, shared) = {
             let account = lock(&self.account);
@@ -177,18 +170,13 @@ impl Store {
         if !changed || shared || stored <= TRIM_BYTES {
             return Ok(None);
         }
-        // Only a final unshared close may start an independent history epoch.
+        // Only a final unshared close may start an independent history.
         // Ordinary saves and explicit checkpoints retain the live CRDT identities.
-        let deep = doc.supports_deep_compaction();
-        let bytes = if deep { doc.clean_checkpoint() } else { doc.current_history_checkpoint() }.map_err(failed)?;
+        let bytes = doc.clean_checkpoint().map_err(failed)?;
         if bytes.len() as i64 >= stored || !within(0, checkpoint_row(bytes.len())) {
             return Ok(None);
         }
-        let version = if deep {
-            Document::open(self.app.app.spec(), &bytes, &[]).map_err(failed)?.history_version()
-        } else {
-            doc.history_version()
-        };
+        let version = Document::open(self.app.app.spec(), &bytes, &[]).map_err(failed)?.history_version();
         Ok(Some(SaveJob { rows: Rows::Checkpoint(bytes), version }))
     }
 }

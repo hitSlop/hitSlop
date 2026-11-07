@@ -34,19 +34,29 @@ impl BrowserDriver {
     }
     /// Drive the shared save barrier before a synchronous export. No authored work runs here.
     pub fn flush(&mut self) -> Result<()> {
+        self.request(Request::Flush)?;
+        Ok(())
+    }
+    /// Run a trusted host operation through the same serial queue and disk effects.
+    /// One drain returns its completion; an absent completion is never a retryable refusal.
+    pub fn request(&mut self, request: Request) -> Result<Reply> {
+        if self.stopped {
+            return Err(Failure::new(FailureKind::Closed, "The document is closed"));
+        }
         let (send, receive) = mpsc::channel();
         self.owner.submit(
-            Request::Flush,
+            request,
             None,
             Box::new(move |reply| {
                 let _ = send.send(reply);
             }),
         );
+        self.drain();
+        receive.try_recv().map_err(|_| Failure::new(FailureKind::Failed, "The owner result could not be confirmed"))?
+    }
+    /// Drain queued callbacks and persistence without changing the host clock.
+    pub fn drain(&mut self) {
         self.poll(self.actor.now.as_millis() as u64, self.actor.unix_ms);
-        receive
-            .try_recv()
-            .map_err(|_| Failure::new(FailureKind::Busy, "The document is still busy; retry export"))??;
-        Ok(())
     }
     pub fn owner(&self) -> &Owner {
         &self.owner

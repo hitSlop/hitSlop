@@ -5,7 +5,7 @@ pop ships a macOS app and a matching Bun authoring CLI and SDK. The iPhone app
 Home Screen widgets that refresh in the background when iOS allows. The Mac app
 includes the Synced Library.
 The [Synced Library and live sharing](architecture.md#sync) extend local
-documents across Apple devices and between people; [direction](roadmap.md) tracks rollout.
+documents across a person's devices and between people; [direction](roadmap.md) tracks rollout.
 The Mac catalog combines bundled templates, installed templates and Recents.
 
 Authors, including us, start with the
@@ -15,6 +15,8 @@ published on dotpop.click. The pages here cover how the platform works and how t
 | Task | Page |
 | --- | --- |
 | Where pop is going, and what's open now | [Direction](roadmap.md) |
+| Cloud documents: identity, authority, sync and operations | [Cloud documents](cloud-documents.md) |
+| Apple catalog: Inbox, Recents and document badges | [Apple catalog](apple-catalog.md) |
 | Proposals and the reasoning behind them | [Ideas](ideas.md) |
 | Understand how an edit, a save and a close move | [Architecture](architecture.md) |
 | Rules for platform changes | [Engineering contract](engineering-contract.md) |
@@ -30,9 +32,7 @@ published on dotpop.click. The pages here cover how the platform works and how t
 
 Packaged agent guidance lives in [packages/pop/skills](../packages/pop/skills).
 Measurements live in [`evidence/`](evidence/). They are frozen snapshots of the
-builds and environments named in each report, not current release acceptance. The
-[pre-launch simplification summary](evidence/prelaunch-simplification-2026-10-04.md)
-retains the decisions and integration findings from that work. Superseded measurements
-stay in the local `archive/docs/evidence/` directory. Historical studies, spikes and
-working plans are not contracts; the architecture, direction
-and ideas above are the shared sources of truth.
+builds and environments named in each report, not current release acceptance.
+Superseded measurements, historical studies, spikes and working plans stay in the
+local, untracked `archive/` directory and are not contracts; the architecture,
+direction and ideas above are the shared sources of truth.

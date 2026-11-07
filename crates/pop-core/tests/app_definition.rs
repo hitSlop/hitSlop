@@ -97,14 +97,12 @@ fn state_contract_identity_tracks_replica_semantics_and_ignores_presentation() {
     cases.push(("absent versus present numeric bound", metadata.clone(), absent_bound, false));
     for (label, metadata, definition, expected) in cases {
         let other = read(&metadata, &definition).unwrap();
-        assert_eq!(original.replica_compatible(&other), expected, "{label}");
         assert_eq!(original.state_contract_id() == other.state_contract_id(), expected, "{label}");
     }
     let encoded = definition.to_string();
     let reordered = encoded.replace(r#""max":10.0,"min":-0.0"#, r#""min":-0.0,"max":10.0"#);
     assert_ne!(encoded, reordered, "fixture must change JSON property order");
     let reordered = AppDefinition::decode(1, 1, &metadata.to_string(), &reordered).unwrap();
-    assert!(original.replica_compatible(&reordered));
     assert_eq!(original.state_contract_id(), reordered.state_contract_id());
 }
 

@@ -28,6 +28,7 @@ import {
   EngineProtocol,
   PackageFormat,
   RuntimeABI,
+  DocumentLineage,
 } from "../../packages/pop/src/schema/constants";
 import {
   documentEngine,
@@ -497,6 +498,7 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
     commit,
     captured: new Date().toISOString(),
     markers: {
+      documentLineage: DocumentLineage,
       packageFormat: PackageFormat,
       runtimeABI: RuntimeABI,
       storage: Number(

@@ -170,12 +170,12 @@ private struct PopShareView: View {
         Toggle(isOn: .constant(false)) {
           VStack(alignment: .leading, spacing: 5) {
             Text("Live collaboration").font(.subheadline.weight(.medium))
-            Text("Coming soon").font(.caption)
+            Text("Documents only").font(.caption)
               .padding(.horizontal, 7).padding(.vertical, 3)
               .background(.quaternary, in: Capsule())
           }
         }.toggleStyle(.switch).controlSize(.small).disabled(true)
-          .accessibilityLabel("Live collaboration, coming soon")
+          .accessibilityLabel("Live collaboration, available for documents only")
       }
     }
     .padding(18).frame(width: 320)

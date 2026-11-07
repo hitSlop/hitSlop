@@ -123,9 +123,9 @@ Test locations, including `tests/release`, `tests/presentation`, `tests/verifica
 
 ## Change discipline
 
-Read AGENTS and the template's `pop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter historical compatibility fixtures or release hashes to make a check pass.
+Read AGENTS and the template's `pop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter frozen compatibility fixtures or release hashes to make a check pass.
 
-`archive/`, `spikes/`, `plans/`, `POP.todo`, `apps/promo/inspo/`,
+`archive/`, `spikes/`, `POP.todo`, `apps/promo/inspo/`,
 `_docs/`, `_vibe/` and `deferred/` stay local and are ignored by
 Git. They are not active contracts. Keep shared decisions in the architecture, roadmap
 and ideas pages. Restore an old project only after updating its source to the current

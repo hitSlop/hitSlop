@@ -54,7 +54,6 @@ impl Actor {
     }
     pub(super) fn pump(&mut self) {
         if self.writing
-            || self.installing_epoch()
             || self.discarding
             || self.invalidated
             || matches!(self.lifecycle, Lifecycle::Releasing | Lifecycle::Closed)
@@ -118,6 +117,7 @@ impl Actor {
         }
     }
     pub(super) fn storage(&mut self, action: StorageAction, callback: Completion) {
+        self.pending_membership += usize::from(matches!(action, StorageAction::Share(_) | StorageAction::Unshare));
         self.persist(Work::Store { generation: self.generation, action, callback });
     }
     pub(super) fn persist(&mut self, work: Work) {
@@ -127,17 +127,16 @@ impl Actor {
             if matches!(self.lifecycle, Lifecycle::Closing | Lifecycle::Releasing) {
                 self.lifecycle = Lifecycle::Open;
             }
-            if self.lifecycle == Lifecycle::InstallingEpoch {
-                self.lifecycle = Lifecycle::Open;
-            }
             self.fail(poisoned(), u64::MAX);
+            if matches!(&work, Work::Store { action: StorageAction::Share(_) | StorageAction::Unshare, .. }) {
+                self.pending_membership -= 1;
+            }
             match work {
                 Work::Store { callback, .. } | Work::Restore { callback, .. } | Work::Close { callback, .. } => {
                     complete(callback, Err(poisoned()))
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 Work::Handoff { callback, .. } => complete(callback, Err(poisoned())),
-                Work::AdoptEpoch { callback, .. } => complete(callback, Err(poisoned())),
                 Work::Save { .. } => {}
             }
         }

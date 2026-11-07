@@ -18,7 +18,7 @@ pub(super) fn replace(
     if path.len() > crate::wire::PATH_SEGMENTS {
         return Err(err(Code::InvalidPath, "Path length"));
     }
-    let mut to = Reconcile { layout: Layout::of(doc), ids };
+    let mut to = Reconcile { ids };
     if path.is_empty() {
         schema.validate(value, false)?;
         return to.object(&doc.get_map("data"), schema, value);
@@ -56,8 +56,8 @@ pub(super) fn replace(
 
 /// The present object `map` becomes the fully validated `value`, written as its
 /// differences so surviving text, lists and rows retain their identities.
-pub(super) fn object(layout: Layout, map: &LoroMap, node: &Node, value: &Value, ids: &mut Vec<String>) -> Result<()> {
-    Reconcile { layout, ids }.object(map, node, value)
+pub(super) fn object(map: &LoroMap, node: &Node, value: &Value, ids: &mut Vec<String>) -> Result<()> {
+    Reconcile { ids }.object(map, node, value)
 }
 
 /// A stored scalar as the snapshot shows it, or none when it is not one.
@@ -69,27 +69,21 @@ fn stored(kind: &Node, value: &ValueOrContainer) -> Option<Value> {
 }
 
 struct Reconcile<'a> {
-    layout: Layout,
     ids: &'a mut Vec<String>,
 }
 impl Reconcile<'_> {
     /// `map[key]` becomes `value`; an absent field or entry is created.
     fn field(&mut self, map: &LoroMap, key: &str, node: &Node, value: &Value, entry: bool) -> Result<()> {
         let kind = unwrap_optional(node);
-        let Some(current) = layout::field(self.layout, map, key, node, entry) else {
-            if self.layout.generations()
-                && is_scalar(node)
+        let Some(current) = layout::field(map, key, node, entry) else {
+            if is_scalar(node)
                 && node
                     .default_value()
                     .is_some_and(|default| project(Some(node), default) == project(Some(node), value.clone()))
             {
                 return Ok(());
             }
-            return if entry {
-                execute::put_entry(self.layout, map, key, node, value)
-            } else {
-                put(self.layout, map, key, node, value)
-            };
+            return if entry { execute::put_entry(map, key, node, value) } else { put(map, key, node, value) };
         };
         match (kind, current) {
             (scalar, current) if is_scalar(scalar) => {
@@ -113,7 +107,7 @@ impl Reconcile<'_> {
                 rewrite_list(&list, item, value.as_array().expect("validated list"))?;
             }
             (Node::List { item }, current) => {
-                self.list(&RowList::of(self.layout, &current)?, item, value.as_array().expect("validated list"))?;
+                self.list(&RowList::of(&current)?, item, value.as_array().expect("validated list"))?;
             }
             _ => return Err(unexpected()),
         }
@@ -127,7 +121,7 @@ impl Reconcile<'_> {
         for (key, child) in properties {
             match value.get(key) {
                 Some(value) => self.field(map, key, child, value, false)?,
-                None if map.get(key).is_some() => layout::clear_field(self.layout, map, key, child, false)?,
+                None if map.get(key).is_some() => layout::clear_field(map, key, child, false)?,
                 None => {}
             }
         }
@@ -138,7 +132,7 @@ impl Reconcile<'_> {
         let wanted = value.as_object().expect("validated record");
         let gone: Vec<String> = map.keys().map(|key| key.to_string()).filter(|key| !wanted.contains_key(key)).collect();
         for key in gone {
-            layout::clear_field(self.layout, map, &key, entry, true)?;
+            layout::clear_field(map, &key, entry, true)?;
         }
         for (key, value) in wanted {
             self.field(map, key, entry, value, true)?;

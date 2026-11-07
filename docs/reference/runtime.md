@@ -93,11 +93,6 @@ Assets are inserted first and the single app row last. The app row seals assets:
 
 ## Persistence and ownership
 
-The canonical SQL is [storage-1.sql](../../crates/pop-storage/src/file/storage-1.sql).
-The separate account-scoped device index (`cloud-index.sqlite`) caches discovery and
-presentation metadata and pending Firestore writes; its additive migrations do not
-change the `.pop` schema. Document layouts 1 and 2 share that storage schema.
-
 The Rust store (`pop-storage`, on the platform SQLite) owns a document's saved state: the `document`, `history` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque Loro bytes. Replacing the history with a checkpoint and freeing the pages it covered are atomic. File access goes through `pop-storage`, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.pop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
@@ -112,19 +107,17 @@ Opaque imported attachments live in the file's `attachments` table by SHA-256, o
 
 After the final save of a changed, unshared document, the owner can delete blobs whose
 ID appears in no visible string, text or map key (`Store::reclaim_attachments`). An
-unchanged session does no reclamation. Ordinary shared saves retain blobs that another
-replica or live undo can still reference. Explicit cloud-document epoch
-maintenance can instead publish a sanitized latest-state file containing only visible
-references, after the conditional publication and recovery checks in the
-[sharing lifecycle](sharing-lifecycle.md). A no-op adoption preserves undo and its hidden
-blobs. Removing a reference alone does not promise immediate reclamation.
+unchanged session does no reclamation. A shared document retains blobs that another
+replica or live undo can still reference. Removing a reference alone does not promise
+immediate reclamation.
 
 The store enforces the [attachment limits](../../apps/landing/src/content/docs/docs/guides/files-and-web.mdx#attachments)
 (10 MiB per file, 100 MiB and 256 files per document) and verifies hashes on read. The
-cloud checkpoint seed has a separate 16 MiB bound; a valid local
-document can exceed those transport limits. Duplicate and Share Pop File carry only
-referenced attachments, fresh accepted state and artwork rendered for the copy
-(`Store::copy_clean`); templates contain no attachments.
+relay's folded base has a separate 16 MiB bound, a transport limit; a valid local
+document can exceed it, which pauses sharing without stopping local saves. Duplicate and
+Share Pop File carry only referenced attachments, fresh accepted state and artwork
+rendered for the copy (`Store::copy_clean`); the sharing seed is staged the same way
+(`Store::stage_seed`). Templates contain no attachments.
 
 Theme overrides are limited to 256 declared colors, checked on write and on open. Their storage, publication and undo behavior are described in [themes and attachments](../architecture.md#themes-and-attachments). Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
 
@@ -332,7 +325,7 @@ closed export takes no writer lock and can render while another process holds th
 
 ## Telemetry
 
-Release enables Firebase Analytics and Crashlytics after configuration; Debug/tests do not initialize the default Firebase app. Collection defaults off in the app plist. Live collaboration uses Sign in with Apple through a separately named Firebase app (Analytics and Crashlytics initialization is unchanged). It starts only when the person signs in or opens an account or sharing panel, or on a device that has signed in before, so documents never shared start no Firebase, including in Debug and test builds; App Check remains deferred. Existing Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
+One default Firebase app serves Auth, Firestore, Crashlytics and Analytics on macOS and iOS. Telemetry collection is on only in Release: the Info.plist flags keep it off until configuration runs, and Debug and test builds never collect. App Check remains deferred. Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
 
 Non-fatals carry a fixed operation, classification (platform/authored/rejection), and reason. Native storage and WebKit callbacks supply diagnostic categories before error text is flattened. Fixed category-specific domains and stable numeric codes distinguish issue groups; per-event keys can include export format. No document IDs, paths, titles, contents, guest codes, authored error strings, or raw error userInfo enter reports. Document context never uses global Crashlytics keys.
 

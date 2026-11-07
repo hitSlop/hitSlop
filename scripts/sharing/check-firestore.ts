@@ -14,7 +14,8 @@ async function account() {
   return await response.json() as { localId: string; idToken: string };
 }
 const owner = await account(), other = await account();
-const path = `/users/${owner.localId}/documents/00000000-0000-4000-8000-000000000001`;
+const catalog = `/users/${owner.localId}/pops`;
+const path = `${catalog}/00000000-0000-4000-8000-000000000001`;
 const fields = {
   documentId: { stringValue: "00000000-0000-4000-8000-000000000001" },
   title: { stringValue: "Shared document" },
@@ -26,6 +27,9 @@ const request = (suffix: string, token: string, method = "GET", body?: unknown) 
   method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
+const empty = await request(catalog, owner.idToken);
+assert.equal(empty.status, 200);
+assert.equal(((await empty.json()) as { documents?: unknown[] }).documents?.length ?? 0, 0);
 assert.equal((await request(path, owner.idToken, "PATCH", { fields })).status, 200);
 assert.equal((await request(path, owner.idToken)).status, 200);
 assert.equal((await request(path, other.idToken)).status, 403);
@@ -34,8 +38,9 @@ assert.equal((await request(path, owner.idToken, "PATCH", { fields })).status, 2
 assert.equal((await request(path, other.idToken, "PATCH", { fields })).status, 403);
 assert.equal((await request(path, other.idToken, "DELETE")).status, 403);
 assert.equal((await request(path, owner.idToken, "DELETE")).status, 200);
-assert.equal((await request(`/users/${other.localId}/documents/forged`, owner.idToken, "PATCH", { fields })).status, 403);
-assert.equal((await request(`/users/${owner.localId}/documents`, owner.idToken)).status, 200);
-assert.equal((await request(`/users/${owner.localId}/documents`, other.idToken)).status, 403);
+assert.equal((await request(`/users/${other.localId}/pops/forged`, owner.idToken, "PATCH", { fields })).status, 403);
+assert.equal((await request(catalog, owner.idToken)).status, 200);
+assert.equal((await request(catalog, other.idToken)).status, 403);
 assert.equal((await request("/templates/private", owner.idToken)).status, 403);
+assert.equal((await request(`/syncRooms/room`, owner.idToken)).status, 403);
 console.log("Firestore client catalog ownership and account isolation passed");

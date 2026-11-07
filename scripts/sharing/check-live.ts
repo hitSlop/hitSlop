@@ -22,7 +22,7 @@ const note=(value:string)=>{checks.push(value);console.log(value);};
 const report=join(root,"report.json");
 const template=await buildTemplate(join(repository,"tests/apps/sharing"),join(root,"fixture.pop"),{renderViews:false});
 const invitationFile=process.env.POP_SHARING_INVITATION_FILE;
-const child=spawn(join(repository,"target/debug/examples/sharing"),[template,root,invitationFile ?? process.env.POP_SHARING_TOKEN_FILE ?? join(repository,".pop/sharing/identity-token"),...(invitationFile?["--guest"]:[])],{stdio:["pipe","pipe","pipe"]});
+const child=spawn(join(repository,"target/debug/examples/sharing"),[template,root,process.env.POP_SHARING_TOKEN_FILE ?? join(repository,".pop/sharing/identity-token"),...(invitationFile?[invitationFile]:[])],{stdio:["pipe","pipe","pipe"]});
 let failure="";child.stderr.on("data",bytes=>{failure+=String(bytes);});
 const messages:any[]=[];let waiting:((value:any)=>void)|undefined;
 createInterface({input:child.stdout}).on("line",line=>{const value=JSON.parse(line);if(waiting){const next=waiting;waiting=undefined;next(value);}else messages.push(value);});

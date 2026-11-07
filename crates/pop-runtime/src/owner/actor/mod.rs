@@ -6,7 +6,6 @@ mod barrier;
 mod browser;
 #[cfg(not(target_arch = "wasm32"))]
 mod commands;
-mod epochs;
 mod persistence;
 mod saving;
 mod sync;
@@ -38,13 +37,13 @@ pub(super) fn spawn(
         .name("pop.persistence".into())
         .spawn(move || persistence(disk, work, completion))
         .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
-    // Without an evaluator there is no worker: commands are refused when called.
-    let evaluate = match evaluator {
+    // Capture-only hosts never allocate an authored-command worker.
+    let evaluate = match evaluator.filter(Evaluator::supports_commands) {
         Some(evaluator) => {
             let (evaluate, evaluations) = mpsc::channel();
             let completion = sender.clone();
             std::thread::Builder::new()
-                .name("dotpop.clickmands".into())
+                .name("pop.commands".into())
                 .spawn(move || {
                     commands::worker(|abi, bundle, input| evaluator.run(abi, bundle, input), evaluations, completion)
                 })
@@ -53,15 +52,15 @@ pub(super) fn spawn(
         }
         None => None,
     };
-    let epoch = Instant::now();
+    let started = Instant::now();
     let mut actor = Actor::new(store, mode, listener, persist)?;
     let admission = actor.admission.clone();
     actor.evaluate = evaluate;
     std::thread::Builder::new()
         .name("pop.owner".into())
-        .spawn(move || actor.run(receive, epoch))
+        .spawn(move || actor.run(receive, started))
         .map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))?;
-    Ok((sender, epoch, admission))
+    Ok((sender, started, admission))
 }
 
 pub(super) enum Message {
@@ -101,11 +100,6 @@ pub(super) enum Message {
         refresh_status: bool,
     },
     Stop,
-    EpochInstalled {
-        generation: u64,
-        result: std::result::Result<epochs::Installed, epochs::InstallFailure>,
-        callback: Completion,
-    },
 }
 #[derive(PartialEq, Eq)]
 enum Lifecycle {
@@ -113,7 +107,6 @@ enum Lifecycle {
     Closing,
     /// A handoff is writing its copy: nothing more is saved, and edits are refused.
     Releasing,
-    InstallingEpoch,
     Closed,
 }
 enum AfterSave {
@@ -137,7 +130,8 @@ struct Actor {
     core: Document,
     store: Arc<store::Store>,
     mode: store::Mode,
-    /// Advances when a discard reloads saved state, so work begun before it is dropped.
+    /// Fences session-bound work when Discard reloads saved state. Committed storage
+    /// operations retain their actual outcomes across that boundary.
     generation: u64,
     persist: mpsc::Sender<Work>,
     listener: Listener,
@@ -145,6 +139,7 @@ struct Actor {
     lifecycle: Lifecycle,
     invalidated: bool,
     discarding: bool,
+    pending_membership: usize,
     /// The publication sequence the page orders its stream by.
     sequence: u64,
     /// Save progress, independent of the sequence: `revision` counts accepted changes
@@ -188,6 +183,7 @@ impl Actor {
             lifecycle: Lifecycle::Open,
             invalidated: false,
             discarding: false,
+            pending_membership: 0,
             sequence,
             saved: 0,
             revision: 0,
@@ -214,18 +210,20 @@ impl Actor {
         self.unix_ms = unix_ms;
     }
     fn tick(&mut self) {
+        self.begin_sync_step();
         if self.deadline.is_some_and(|deadline| deadline <= self.now) {
             self.deadline = None;
             self.requested = true;
             self.pump();
         }
+        self.report_durable_sync();
     }
     fn wake(&self) -> Option<Duration> {
         self.deadline
     }
     fn step(&mut self, message: Message) -> bool {
+        self.begin_sync_step();
         match message {
-            Message::EpochInstalled { generation, result, callback } => self.finish_epoch(generation, result, callback),
             Message::Stop => return false,
             #[cfg(not(target_arch = "wasm32"))]
             Message::Evaluated { invocation, result } => self.command_finished(invocation, result),
@@ -274,6 +272,7 @@ impl Actor {
                         self.status(SaveStatus::Saved);
                         self.refresh_undo();
                         self.emit(Event::ThemeChanged);
+                        self.reconnect_after_reload();
                         complete(callback, Ok(Reply::Unit));
                     }
                     Err(error) => {
@@ -289,8 +288,13 @@ impl Actor {
                 {
                     failure.kind = FailureKind::SaveFailed;
                 }
+                if refresh_status {
+                    self.pending_membership -= 1;
+                }
                 if generation != self.generation {
-                    complete(callback, Err(replaced()));
+                    // Storage has already completed. A view/session replacement cannot
+                    // turn an applied attachment, copy or membership write into a refusal.
+                    complete(callback, result);
                     return true;
                 }
                 if closing {
@@ -306,6 +310,7 @@ impl Actor {
                 complete(callback, result);
             }
         }
+        self.report_durable_sync();
         true
     }
     fn shutdown(&mut self) {
@@ -313,13 +318,13 @@ impl Actor {
         self.fail_held(closed());
     }
     #[cfg(not(target_arch = "wasm32"))]
-    fn run(mut self, messages: mpsc::Receiver<Message>, epoch: Instant) {
+    fn run(mut self, messages: mpsc::Receiver<Message>, started: Instant) {
         self.start();
         loop {
-            self.clock(epoch.elapsed(), native_unix_ms());
+            self.clock(started.elapsed(), native_unix_ms());
             self.tick();
             let message = match self.wake() {
-                Some(wake) => match messages.recv_timeout(wake.saturating_sub(epoch.elapsed())) {
+                Some(wake) => match messages.recv_timeout(wake.saturating_sub(started.elapsed())) {
                     Ok(message) => message,
                     Err(mpsc::RecvTimeoutError::Timeout) => continue,
                     Err(_) => break,
@@ -329,7 +334,7 @@ impl Actor {
                     Err(_) => break,
                 },
             };
-            self.clock(epoch.elapsed(), native_unix_ms());
+            self.clock(started.elapsed(), native_unix_ms());
             if !self.step(message) {
                 break;
             }
@@ -392,9 +397,6 @@ impl Actor {
         }
         Ok(())
     }
-    fn installing_epoch(&self) -> bool {
-        self.lifecycle == Lifecycle::InstallingEpoch
-    }
     fn retain_derived(&self, bytes: usize, control: bool, callback: &mut Option<Completion>) -> Result<()> {
         let lease = self.admission.reserve_bytes(bytes, control).ok_or_else(busy)?;
         let original = take(callback);
@@ -412,9 +414,6 @@ impl Actor {
         callback: &mut Option<Completion>,
     ) -> Result<Option<Reply>> {
         self.admit(matches!(request, Request::Discard), view.as_deref())?;
-        if self.lifecycle == Lifecycle::InstallingEpoch && !matches!(request, Request::State) {
-            return Err(Failure::new(FailureKind::Busy, "Installing the confirmed shared snapshot"));
-        }
         if barrier::edits(&request) && self.barrier.closing() {
             return Err(Failure::new(FailureKind::Closing, "Document is closing"));
         }
@@ -423,14 +422,6 @@ impl Actor {
             return Ok(None);
         }
         let reply = match request {
-            Request::PrepareEpoch { destination, expected_version, required_heads } => {
-                self.prepare_epoch(destination, expected_version, required_heads, callback)?;
-                return Ok(None);
-            }
-            Request::AdoptEpoch { source, expected_version, recovery_destination } => {
-                self.adopt_epoch(source, expected_version, recovery_destination, callback)?;
-                return Ok(None);
-            }
             #[cfg(target_arch = "wasm32")]
             Request::Command { .. } => {
                 return Err(Failure::rejected(Code::EngineError, "This pop has no command evaluator"));
@@ -491,6 +482,11 @@ impl Actor {
                 self.wait(callback, AfterSave::Storage(StorageAction::Backup(destination)))?;
                 return Ok(None);
             }
+            Request::StageSeed { destination } => {
+                self.mutation()?;
+                self.wait(callback, AfterSave::Storage(StorageAction::StageSeed(destination)))?;
+                return Ok(None);
+            }
             #[cfg(not(target_arch = "wasm32"))]
             Request::SetArtwork { source_version, preview, icon } => {
                 self.mutation()?;
@@ -542,7 +538,12 @@ impl Actor {
                 if self.discarding || self.lifecycle != Lifecycle::Open {
                     return Err(replaced());
                 }
-                if self.store.is_shared() {
+                if self.pending_membership != 0 {
+                    return Err(busy());
+                }
+                // Recovery reloads durable state after a fault; it never retracts edits
+                // already replicated. Ordinary shared documents still cannot discard.
+                if self.store.is_shared() && !self.invalidated {
                     return Err(Failure::rejected(
                         Code::InvalidRequest,
                         "A shared document keeps its edits: other copies may already have them",
@@ -550,6 +551,7 @@ impl Actor {
                 }
                 self.generation += 1;
                 self.discarding = true;
+                self.clear_sync_for_restore();
                 self.deadline = None;
                 self.reject_waiters(replaced());
                 self.persist(Work::Restore { generation: self.generation, callback: take(callback) });

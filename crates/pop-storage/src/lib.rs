@@ -17,9 +17,7 @@ fn err(code: Code, message: impl ToString) -> Error {
 fn encode(value: &impl Serialize) -> String {
     serde_json::to_string(value).expect("core values encode as JSON")
 }
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
+use pop_contracts::hex;
 fn random(buffer: &mut [u8]) {
     getrandom::getrandom(buffer).expect("random bytes");
 }
@@ -32,6 +30,3 @@ fn random_hex(bytes: usize) -> String {
 fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
-
-/// Share-row endpoint retaining history for the personal library.
-pub const LIBRARY_SHARE_ENDPOINT: &str = "cloudkit://library";

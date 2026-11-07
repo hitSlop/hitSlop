@@ -53,6 +53,9 @@ struct RecentDocumentHistory: Sendable {
 
   func clear() async -> Snapshot { await run { $0.update(clear: true) } }
 
+  /// Forgets one document; its file is untouched.
+  func remove(_ id: UUID) async -> Snapshot { await run { $0.update(removing: id) } }
+
   func resolve(_ id: UUID) async throws -> URL {
     let storage = storage
     return try await withCheckedThrowingContinuation { continuation in
@@ -91,7 +94,9 @@ struct RecentDocumentHistory: Sendable {
       loaded = fileURL == nil
     }
 
-    func update(importing urls: [URL] = [], opened: (URL, Date)? = nil, clear: Bool = false) -> Snapshot {
+    func update(
+      importing urls: [URL] = [], opened: (URL, Date)? = nil, removing: UUID? = nil, clear: Bool = false
+    ) -> Snapshot {
       var failure: PopFailureContext?
       if clear {
         // Explicit clearing may replace an unreadable history. An ordinary refresh or
@@ -101,6 +106,10 @@ struct RecentDocumentHistory: Sendable {
         dirty = true
       } else {
         do { try load(importing: urls) } catch { failure = .classify(error) }
+      }
+      if let removing, let index = records.firstIndex(where: { $0.id == removing }) {
+        records.remove(at: index)
+        dirty = true
       }
       if let (url, date) = opened {
         do { try remember(url, at: date) } catch { failure = .classify(error) }

@@ -17,7 +17,7 @@ import UniformTypeIdentifiers
     return try CaptureRuntime(evaluatorPath: path)
   }
 
-  public static func libraryIndex(entries: [SyncedPop]) async throws -> [WidgetLibraryEntry] {
+  public static func libraryIndex(entries: [LibraryEntry]) async throws -> [WidgetLibraryEntry] {
     try await PopPreparation.run(on: queue) {
       // Only documents that declare a widget view can render one; an unreadable (busy) file stays listed.
       entries.filter {

@@ -22,7 +22,7 @@ pub use pop_core::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use pop_storage::registry;
-pub use pop_storage::{LIBRARY_SHARE_ENDPOINT, file, images, media, store};
+pub use pop_storage::{file, images, media, store};
 
 type Result<T> = std::result::Result<T, Error>;
 #[cfg(not(target_arch = "wasm32"))]

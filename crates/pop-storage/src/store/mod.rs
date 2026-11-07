@@ -18,8 +18,6 @@ mod attachments;
 mod browser;
 #[cfg(not(target_arch = "wasm32"))]
 mod copy;
-mod epoch;
-pub use epoch::EpochLocation;
 mod save;
 pub use crate::error::{Error, Result};
 use crate::error::{failed, rejected, sqlite};
@@ -41,10 +39,10 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// A core failure while loading: a document this build is too old for is a refusal the
-/// host names; anything else is a storage failure.
+/// Core acceptance failures are definite refusals, including damaged or incomplete
+/// history. Keep their codes distinct from SQLite/I/O failures with unknown outcomes.
 fn load_failure(e: crate::Error) -> Error {
-    if e.code == crate::Code::RequiresUpdate { Error::Rejected(e) } else { failed(e) }
+    Error::Rejected(e)
 }
 
 /// The store's connection and, for the writer, its lock. Field order matters: the
@@ -297,6 +295,17 @@ impl Store {
         account.shared = false;
         account.changed = true;
         Ok(())
+    }
+
+    /// Whether the last acknowledged save covers exactly this history. An uncertain
+    /// commit cannot prove durability until a replacement checkpoint succeeds.
+    /// This reads bookkeeping only; the owner still holds its writer lease.
+    pub fn confirms_saved(&self, version: &HistoryVersion) -> bool {
+        if !self.owned.load(Ordering::Acquire) {
+            return false;
+        }
+        let account = lock(&self.account);
+        !account.checkpoint_required && account.saved == *version
     }
 
     /// Writes a job in one transaction. An ambiguous error fences future appends

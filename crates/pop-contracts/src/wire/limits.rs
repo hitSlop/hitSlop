@@ -36,15 +36,15 @@ pub const JSON_BYTES: usize = if APP_TEXT_BYTES > PAGE_PAYLOAD { APP_TEXT_BYTES 
 pub const PNG_DECODER_BYTES: usize = 8 << 20;
 pub const ICON_SIDE: u32 = 512;
 pub const ASSET_PATH_BYTES: usize = 240;
-pub use pop_sharing_protocol::limits::ASSET_BYTES;
-pub use pop_sharing_protocol::limits::ASSET_COUNT;
-pub use pop_sharing_protocol::limits::ASSET_FILE_BYTES;
+pub const ASSET_BYTES: usize = 52_428_800;
+pub const ASSET_COUNT: usize = 256;
+pub const ASSET_FILE_BYTES: usize = 26_214_400;
 pub const IMAGE_SIDE: usize = 16384;
 pub const IMAGE_PIXELS: usize = 24000000;
-pub use pop_sharing_protocol::limits::ATTACHMENT_BYTES;
-pub use pop_sharing_protocol::limits::ATTACHMENT_COUNT;
+pub const ATTACHMENT_BYTES: usize = 104_857_600;
+pub const ATTACHMENT_COUNT: usize = 256;
 /// A document's attachments: one file's bytes, their total bytes and their count.
-pub use pop_sharing_protocol::limits::ATTACHMENT_FILE_BYTES;
+pub const ATTACHMENT_FILE_BYTES: usize = 10_485_760;
 /// An attachment display name, in UTF-8 bytes.
 pub const ATTACHMENT_NAME_BYTES: usize = 255;
 /// A file downloaded by an authored page, independent of document attachment storage.

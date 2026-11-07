@@ -2,8 +2,11 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileDigest } from "../lib/artifacts";
 import { releaseNotesNames } from "./notes";
+import { DocumentLineage } from "../../packages/pop/src/schema/constants";
 
 export type ReleaseRecord = {
+  /** Absent on historical releases predating the current document lineage. */
+  documentLineage?: number;
   commit: string; tag: string; macVersion: string; macBuild: string; run: string;
   attempt: string;
   npmIntegrity: string;
@@ -13,6 +16,8 @@ export type ReleaseRecord = {
 };
 
 export function validateRecord(record: ReleaseRecord, tag: string, commit: string) {
+  if (record.documentLineage !== undefined && (!Number.isSafeInteger(record.documentLineage) || record.documentLineage < 1))
+    throw new Error("Invalid document lineage");
   if (!/^pop-v\d+\.\d+\.\d+$/.test(tag) || !/^[a-f0-9]{40}$/.test(commit)) throw new Error("Invalid release tag or commit");
   if (record.tag !== tag || record.macVersion !== tag.slice("pop-v".length) || record.commit !== commit)
     throw new Error("Recorded release is from a different tag or commit");
@@ -39,6 +44,7 @@ export function assertQualified(qualified: Record<string, string>, published: Re
 }
 
 export function validateCandidate(record: ReleaseRecord, workflow: { id: number; head_sha: string; event: string; path: string }, jobs: { name: string; conclusion: string | null }[]) {
+  if (record.documentLineage !== DocumentLineage) throw new Error("Candidate belongs to an unsupported document lineage");
   if (record.attempt !== "1") throw new Error("A rebuilt candidate requires a new workflow dispatch");
   if (String(workflow.id) !== record.run || workflow.head_sha !== record.commit || workflow.event !== "workflow_dispatch" || workflow.path !== ".github/workflows/macos-release.yml")
     throw new Error("Candidate workflow identity mismatch");

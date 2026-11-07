@@ -12,6 +12,7 @@ use crate::error::{Result, sqlite};
 use rusqlite::{Connection, OptionalExtension, params};
 
 /// Stable inventory of app resource keys; host policy filters private programs.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn asset_keys(conn: &Connection) -> Result<Vec<String>> {
     conn.prepare_cached("SELECT key FROM assets ORDER BY key")
         .map_err(sqlite("list app resources"))?
@@ -162,6 +163,7 @@ pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Resul
     .map_err(sqlite("write artwork"))
 }
 /// Deletes every artwork image.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clear_artwork(conn: &Connection) -> Result<()> {
     conn.execute_batch("DELETE FROM artwork").map_err(sqlite("clear artwork"))
 }

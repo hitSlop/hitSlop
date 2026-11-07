@@ -3,65 +3,64 @@ use layout::RowList;
 
 /// Initializes an object from a fully validated value. Canonical scalar defaults write
 /// nothing, so concurrent creation cannot overwrite another writer's explicit fields.
-pub(super) fn fill(layout: Layout, map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
+pub(super) fn fill(map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
     let Node::Object { properties } = node else {
         return Err(err(Code::TypeMismatch, "Expected object"));
     };
     for (key, child) in properties {
         match value.get(key) {
             Some(value)
-                if layout.generations()
-                    && is_scalar(child)
+                if is_scalar(child)
                     && child.default_value().is_some_and(|default| {
                         project(Some(child), default) == project(Some(child), value.clone())
                     }) => {}
-            Some(value) => put(layout, map, key, child, value)?,
+            Some(value) => put(map, key, child, value)?,
             None if matches!(child, Node::Optional { .. }) => {
-                layout::clear_field(layout, map, key, child, false)?;
+                layout::clear_field(map, key, child, false)?;
             }
             None => return Err(err(Code::TypeMismatch, format!("Missing {key}"))),
         }
     }
     Ok(())
 }
-/// Stores a validated value at `map[key]` in the representation its kind uses (`layout`):
+/// Stores a validated value at `map[key]` in the representation its kind uses:
 /// a plain value for scalars, a mergeable child for text, counters, objects, records and
 /// lists. Present children keep their identity while their content is replaced.
-pub(super) fn put(layout: Layout, map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
+pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
     match node {
-        Node::Optional { inner } if layout.generations() && !is_scalar(inner) => {
+        Node::Optional { inner } if !is_scalar(inner) => {
             let (slot, current) = layout::slot_parent(map, key)?;
-            put(layout, &slot, &current, inner, value)
+            put(&slot, &current, inner, value)
         }
-        Node::Optional { inner } => put(layout, map, key, inner, value),
+        Node::Optional { inner } => put(map, key, inner, value),
         scalar if is_scalar(scalar) => map.insert(key, loro_scalar(scalar, value)).map_err(engine),
         Node::Counter {} => {
-            let counter = layout::ensure_child(layout, map, key)?;
+            let counter = layout::ensure_child(map, key)?;
             layout::set_counter(&counter, value.as_i64().expect("validated counter"))
         }
         Node::Text {} => {
-            let text = layout::ensure_child(layout, map, key)?;
+            let text = layout::ensure_child(map, key)?;
             layout::set_text(&text, value.as_str().expect("validated text"))
         }
-        Node::Object { .. } => fill(layout, &layout::ensure_child(layout, map, key)?, node, value),
+        Node::Object { .. } => fill(&layout::ensure_child(map, key)?, node, value),
         Node::Record { value: entry } => {
-            let record: LoroMap = layout::ensure_child(layout, map, key)?;
+            let record: LoroMap = layout::ensure_child(map, key)?;
             let wanted = value.as_object().expect("validated record");
             let gone: Vec<String> = record.keys().map(|k| k.to_string()).filter(|k| !wanted.contains_key(k)).collect();
             for key in gone {
-                layout::clear_field(layout, &record, &key, entry, true)?;
+                layout::clear_field(&record, &key, entry, true)?;
             }
             for (key, value) in wanted {
-                put_entry(layout, &record, key, entry, value)?;
+                put_entry(&record, key, entry, value)?;
             }
             Ok(())
         }
         Node::List { item } if is_scalar(item) => {
-            let list = layout::ensure_child(layout, map, key)?;
+            let list = layout::ensure_child(map, key)?;
             rewrite_list(&list, item, value.as_array().expect("validated list"))
         }
         Node::List { item } => {
-            let list = RowList::ensure(layout, map, key)?;
+            let list = RowList::ensure(map, key)?;
             list.clear()?;
             for (index, row) in value.as_array().expect("validated list").iter().enumerate() {
                 let id = row.get("$id").and_then(Value::as_str).map(String::from).unwrap_or_else(application_id);
@@ -74,12 +73,12 @@ pub(super) fn put(layout: Layout, map: &LoroMap, key: &str, node: &Node, value: 
     }
 }
 /// Creates an entry; container entries use the same generation slots as optional fields.
-pub(super) fn put_entry(layout: Layout, map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
-    if layout::slotted(layout, node, true) {
+pub(super) fn put_entry(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
+    if layout::slotted(node, true) {
         let (slot, current) = layout::slot_parent(map, key)?;
-        put(layout, &slot, &current, node, value)
+        put(&slot, &current, node, value)
     } else {
-        put(layout, map, key, node, value)
+        put(map, key, node, value)
     }
 }
 pub(super) struct Location<'a> {
@@ -95,7 +94,6 @@ pub(super) struct Location<'a> {
     pub(super) element: Option<(LoroMovableList, usize)>,
 }
 pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> Result<Location<'a>> {
-    let layout = Layout::of(doc);
     if path.is_empty() || path.len() > crate::wire::PATH_SEGMENTS {
         return Err(err(Code::InvalidPath, "Path length"));
     }
@@ -116,7 +114,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
         match (segment, current, &value) {
             (Segment::Key(key), Node::Object { properties }, ValueOrContainer::Container(Container::Map(map))) => {
                 let next = properties.get(key).ok_or_else(|| err(Code::PathNotFound, "Unknown field"))?;
-                let child = match layout::field(layout, map, key, next, false) {
+                let child = match layout::field(map, key, next, false) {
                     Some(child) => child,
                     None if matches!(next, Node::Optional { .. }) => {
                         absent = true;
@@ -135,7 +133,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
                 if !valid_key(key) {
                     return Err(err(Code::InvalidKey, "Record keys are 1–256 characters and not reserved"));
                 }
-                let child = match layout::field(layout, map, key, next, true) {
+                let child = match layout::field(map, key, next, true) {
                     Some(child) => child,
                     None => {
                         absent = true;
@@ -159,7 +157,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
                 parent = None;
             }
             (Segment::Id { id }, Node::List { item }, list) if !is_scalar(item) => {
-                let row = RowList::of(layout, list)?.row(id).ok_or_else(|| err(Code::PathNotFound, "Row is absent"))?;
+                let row = RowList::of(list)?.row(id).ok_or_else(|| err(Code::PathNotFound, "Row is absent"))?;
                 node = item;
                 value = ValueOrContainer::Container(Container::Map(row));
                 parent = None;
@@ -180,7 +178,6 @@ pub(super) fn execute(
     ids: &mut Vec<String>,
     typed: &mut Option<text::Typed>,
 ) -> Result<()> {
-    let layout = Layout::of(doc);
     let schema = &app.schema;
     match op {
         Intent::SetTheme { values, replace } => {
@@ -194,7 +191,7 @@ pub(super) fn execute(
             let kind = unwrap_optional(at.node);
             // A text set from what the writer saw merges with what changed since.
             if matches!(kind, Node::Text {}) && at.element.is_none() && (from.is_some() || selection.is_some()) {
-                return text::set(layout, op.path(), at, value, from.as_deref(), *selection, typed);
+                return text::set(op.path(), at, value, from.as_deref(), *selection, typed);
             }
             if from.is_some() || selection.is_some() {
                 return Err(err(Code::TypeMismatch, "`from` and `selection` apply to text"));
@@ -243,14 +240,14 @@ pub(super) fn execute(
                 // A present object takes the value field by field: unchanged fields write
                 // nothing, so concurrent edits to them survive.
                 if let (true, ValueOrContainer::Container(Container::Map(object))) = (replaces_object, &at.value) {
-                    return replace::object(layout, object, kind, value, ids);
+                    return replace::object(object, kind, value, ids);
                 }
             }
             let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Cannot replace a row"))?;
             if at.entry {
-                put_entry(layout, &map, &key, at.node, value)?;
+                put_entry(&map, &key, at.node, value)?;
             } else {
-                put(layout, &map, &key, at.node, value)?;
+                put(&map, &key, at.node, value)?;
             }
         }
         Intent::Clear { .. } => {
@@ -260,7 +257,7 @@ pub(super) fn execute(
             }
             if !at.absent {
                 let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Cannot clear a row"))?;
-                layout::clear_field(layout, &map, &key, at.node, at.entry)?;
+                layout::clear_field(&map, &key, at.node, at.entry)?;
             }
         }
         Intent::Insert { id, value, at: anchor, index, .. } => {
@@ -283,7 +280,7 @@ pub(super) fn execute(
                 list.insert(index, loro_scalar(item, value)).map_err(engine)?;
                 return Ok(());
             }
-            let list = RowList::of(layout, &at.value)?;
+            let list = RowList::of(&at.value)?;
             if index.is_some() {
                 return Err(err(Code::InvalidRequest, "Rows insert by anchor, not index"));
             }
@@ -340,7 +337,7 @@ pub(super) fn execute(
                 list.delete(*index, count).map_err(engine)?;
                 return Ok(());
             }
-            let list = RowList::of(layout, &at.value)?;
+            let list = RowList::of(&at.value)?;
             let (Some(id), None, None) = (id, index, count) else {
                 return Err(err(Code::InvalidRequest, "Rows are removed by id"));
             };
@@ -355,7 +352,7 @@ pub(super) fn execute(
             if is_scalar(item) {
                 return Err(err(Code::TypeMismatch, "Scalar lists are edited by index"));
             }
-            let list = RowList::of(layout, &at.value)?;
+            let list = RowList::of(&at.value)?;
             list.row(id).ok_or_else(|| err(Code::PathNotFound, "Row is absent"))?;
             if let Some(Anchor::Before { before: other } | Anchor::After { after: other }) = anchor {
                 list.row(other).ok_or_else(|| err(Code::PathNotFound, "Row is absent"))?;

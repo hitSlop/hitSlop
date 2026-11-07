@@ -38,32 +38,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let template = Path::new(args.get(1).ok_or("template required")?);
     let root = Path::new(args.get(2).ok_or("output folder required")?);
     let secret = Path::new(args.get(3).ok_or("Firebase token file required")?);
-    let guest = args.get(4).is_some_and(|value| value == "--guest");
+    let token = std::fs::read_to_string(secret)?;
+    let invitation = args.get(4).map(std::fs::read_to_string).transpose()?;
+    let guest = invitation.is_some();
     std::fs::create_dir_all(root)?;
     pop_storage::registry::use_folder(&root.join("registry"))?;
     let path = root.join("native.pop");
-    let invitation = if guest { Some(std::fs::read_to_string(secret)?) } else { None };
     if let Some(link) = &invitation {
-        pop_sharing_client::install(&path, link.trim(), &root.join("relay-state"))?;
+        let access = pop_sharing_client::join_member(link.trim(), token.trim())?;
+        pop_sharing_client::resolve(&access.document, token.trim())?
+            .ok_or("Shared document is unavailable")?
+            .install(&path, &root.join("relay-state"))?;
     } else {
         file::create_document(template, &path)?;
     }
     let owner = Arc::new(Owner::open(&path, Mode::Document, Arc::new(|_| {}))?);
-    let token = if guest { String::new() } else { std::fs::read_to_string(secret)? };
-    let client = if let Some(link) = &invitation {
-        Client::restore(owner.clone(), &pop_sharing_client::joined_credential(link.trim())?, &root.join("relay-state"))?
-    } else {
+    if !guest {
         pop_sharing_client::bootstrap(&owner, token.trim(), &root.join("relay-state"))?;
-        Client::cloud(
-            owner.clone(),
-            owner.app().document_uuid.as_deref().unwrap(),
-            token.trim(),
-            &root.join("relay-state"),
-        )?
+    }
+    let document = owner.app().document_uuid.as_deref().unwrap();
+    let client = Client::cloud(owner.clone(), document, token.trim(), &root.join("relay-state"))?;
+    let link = if let Some(link) = invitation {
+        link
+    } else {
+        pop_sharing_client::sharing_link(&pop_sharing_client::set_sharing(document, true, token.trim())?)?
+            .ok_or("No invitation")?
     };
-    client.set_creator(!guest);
-    let link = client.status().link.ok_or("No invitation")?;
-    save(&root.join("invitation.txt"), link.as_bytes())?;
+    save(&root.join("invitation.txt"), link.trim().as_bytes())?;
     client.connect()?;
     reply(serde_json::json!({"ready":true,"document":owner.app().document_uuid,"path":path}));
     for line in std::io::stdin().lock().lines() {

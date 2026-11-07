@@ -7,19 +7,12 @@ use pop_sharing_protocol::{
     envelope,
     failure::{self, Outcome, Route},
     frame::Frame,
-    limits,
-    maintenance::{self, FullState, MaintenanceAction, Step},
 };
 use std::{
     cell::RefCell,
     collections::VecDeque,
     future::Future,
-    sync::{
-        OnceLock,
-        atomic::{AtomicBool, Ordering},
-        mpsc,
-    },
-    thread,
+    sync::{OnceLock, mpsc},
     time::Duration,
 };
 use tokio_tungstenite::{
@@ -27,6 +20,9 @@ use tokio_tungstenite::{
     tungstenite::{self, Message},
 };
 use tokio_util::sync::CancellationToken;
+
+mod native;
+pub(crate) use native::Connection;
 
 type TransportResult<T> = std::result::Result<T, HttpFailure>;
 struct Network {
@@ -58,21 +54,31 @@ fn network() -> TransportResult<&'static Network> {
         .map_err(|error| HttpFailure::Other(error.clone()))
 }
 thread_local! {
-    // A supervisor's synchronous helpers all share its cancellation scope. Public
-    // synchronous entry points outside a supervisor use independent operations.
-    static OPERATION: RefCell<Option<CancellationToken>> = const { RefCell::new(None) };
+    // Context for bounded blocking-pool effects. The async supervisor owns
+    // cancellation explicitly; one-shot FFI calls are independent.
+    static OPERATION: RefCell<Option<Operation>> = const { RefCell::new(None) };
+}
+struct Operation {
+    cancellation: CancellationToken,
+    identity: tokio::sync::watch::Receiver<Option<String>>,
 }
 fn cancellation() -> CancellationToken {
-    OPERATION.with(|operation| operation.borrow().clone().unwrap_or_default())
+    OPERATION
+        .with(|operation| operation.borrow().as_ref().map(|context| context.cancellation.clone()).unwrap_or_default())
 }
-fn scoped<T>(token: CancellationToken, run: impl FnOnce() -> T) -> T {
-    struct Reset(Option<CancellationToken>);
+fn fresh_identity(token: Option<&str>) -> Option<String> {
+    OPERATION
+        .with(|operation| operation.borrow().as_ref().and_then(|context| context.identity.borrow().clone()))
+        .or_else(|| token.map(str::to_owned))
+}
+fn scoped<T>(context: Operation, run: impl FnOnce() -> T) -> T {
+    struct Reset(Option<Operation>);
     impl Drop for Reset {
         fn drop(&mut self) {
             OPERATION.with(|operation| *operation.borrow_mut() = self.0.take());
         }
     }
-    let previous = OPERATION.with(|operation| operation.replace(Some(token)));
+    let previous = OPERATION.with(|operation| operation.replace(Some(context)));
     let _reset = Reset(previous);
     run()
 }
@@ -128,7 +134,7 @@ pub(crate) fn owner_request(owner: &Owner, request: Request) -> TransportResult<
     if cancellation().is_cancelled() {
         return Err("Sharing stopped".into());
     }
-    let attachment = matches!(&request, Request::PutAttachment { .. });
+    let effect = owner_effect(&request);
     let (send, reply) = mpsc::channel();
     owner.submit(
         request,
@@ -137,7 +143,7 @@ pub(crate) fn owner_request(owner: &Owner, request: Request) -> TransportResult<
             let _ = send.send(result);
         }),
     );
-    wait_reply(&reply, Duration::from_secs(20))?.map_err(|failure| owner_failure(failure, attachment))
+    wait_reply(&reply, Duration::from_secs(20))?.map_err(|failure| owner_failure(failure, effect))
 }
 async fn response_body(mut response: reqwest::Response, limit: u64) -> TransportResult<Vec<u8>> {
     let mut bytes = Vec::new();
@@ -150,95 +156,52 @@ async fn response_body(mut response: reqwest::Response, limit: u64) -> Transport
     Ok(bytes)
 }
 type AsyncSocket = WebSocketStream<reqwest::Upgraded>;
-struct Socket(Option<AsyncSocket>);
-impl Socket {
-    fn send(&mut self, message: Message) -> TransportResult<()> {
-        let mut socket = self.0.take().ok_or("Socket closed")?;
-        let (socket, result) = run_network(async move {
-            let result = tokio::time::timeout(Duration::from_secs(10), socket.send(message))
-                .await
-                .map_err(|_| HttpFailure::from("Socket send timed out"))?
-                .map_err(|_| HttpFailure::from("Socket send failed"));
-            Ok((socket, result))
-        })?;
-        self.0 = Some(socket);
-        result
-    }
-    fn read(&mut self) -> TransportResult<Option<Message>> {
-        let mut socket = self.0.take().ok_or("Socket closed")?;
-        let (socket, result) = run_network(async move {
-            let result = match tokio::time::timeout(Duration::from_millis(5), socket.next()).await {
-                Err(_) => Ok(None),
-                Ok(Some(Ok(message))) => Ok(Some(message)),
-                Ok(Some(Err(_))) | Ok(None) => Err("Socket closed".into()),
-            };
-            Ok((socket, result))
-        })?;
-        self.0 = Some(socket);
-        result
-    }
-    fn close(&mut self) {
-        if let Some(mut socket) = self.0.take() {
-            let _ = run_network(async move {
-                let _ = tokio::time::timeout(Duration::from_millis(100), socket.close(None)).await;
-                Ok(())
-            });
-        }
-    }
-}
-fn upgrade(key: &RoomKey) -> TransportResult<Socket> {
+async fn upgrade_async(key: &RoomKey) -> TransportResult<AsyncSocket> {
     let client = network()?.http.clone();
     let url = format!("{}/v1/documents/{}/sync", key.origin, key.room);
     let capability = key.bearer().to_owned();
-    let anonymous = key.capability().is_some();
-    run_network(async move {
-        let nonce = tungstenite::handshake::client::generate_key();
-        let response = client
-            .get(&url)
-            .header("Connection", "Upgrade")
-            .header("Upgrade", "websocket")
-            .header("Sec-WebSocket-Version", "13")
-            .header("Sec-WebSocket-Key", &nonce)
-            .header("Sec-WebSocket-Protocol", pop_sharing_protocol::SOCKET_PROTOCOL)
-            .bearer_auth(capability)
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await
-            // Invalid HTTP headers are network failures: Hyper cannot expose a
-            // trustworthy status. Once headers are accepted, body errors keep status.
-            .map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
-        let status = response.status().as_u16();
-        if status == 403 && anonymous {
-            return Err(HttpFailure::Ended);
-        }
-        if status != 101 {
-            let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
-            return Err(refusal(status, &bytes, Route::of(&url)));
-        }
-        let headers = response.headers();
-        let token = |name: &str, expected: &str| {
-            headers
-                .get(name)
-                .and_then(|h| h.to_str().ok())
-                .is_some_and(|value| value.split(',').any(|v| v.trim().eq_ignore_ascii_case(expected)))
-        };
-        if !token("Connection", "upgrade")
-            || !token("Upgrade", "websocket")
-            || headers.get("Sec-WebSocket-Accept").map(|h| h.as_bytes())
-                != Some(tungstenite::handshake::derive_accept_key(nonce.as_bytes()).as_bytes())
-            || headers.get("Sec-WebSocket-Protocol").map(|h| h.as_bytes())
-                != Some(pop_sharing_protocol::SOCKET_PROTOCOL.as_bytes())
-        {
-            return Err("Invalid relay socket upgrade".into());
-        }
-        let upgraded = response.upgrade().await.map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
-        let mut config = tungstenite::protocol::WebSocketConfig::default();
-        config.max_message_size = Some(MAX_FRAME);
-        config.max_frame_size = Some(MAX_FRAME);
-        let socket =
-            WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Client, Some(config)).await;
-        Ok(Socket(Some(socket)))
-    })
+    let nonce = tungstenite::handshake::client::generate_key();
+    let response = client
+        .get(&url)
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket")
+        .header("Sec-WebSocket-Version", "13")
+        .header("Sec-WebSocket-Key", &nonce)
+        .header("Sec-WebSocket-Protocol", pop_sharing_protocol::SOCKET_PROTOCOL)
+        .bearer_auth(capability)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        // Invalid HTTP headers are network failures: Hyper cannot expose a
+        // trustworthy status. Once headers are accepted, body errors keep status.
+        .map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
+    let status = response.status().as_u16();
+    if status != 101 {
+        let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
+        return Err(refusal(status, &bytes, Route::of(&url)));
+    }
+    let headers = response.headers();
+    let token = |name: &str, expected: &str| {
+        headers
+            .get(name)
+            .and_then(|h| h.to_str().ok())
+            .is_some_and(|value| value.split(',').any(|v| v.trim().eq_ignore_ascii_case(expected)))
+    };
+    if !token("Connection", "upgrade")
+        || !token("Upgrade", "websocket")
+        || headers.get("Sec-WebSocket-Accept").map(|h| h.as_bytes())
+            != Some(tungstenite::handshake::derive_accept_key(nonce.as_bytes()).as_bytes())
+        || headers.get("Sec-WebSocket-Protocol").map(|h| h.as_bytes())
+            != Some(pop_sharing_protocol::SOCKET_PROTOCOL.as_bytes())
+    {
+        return Err("Invalid relay socket upgrade".into());
+    }
+    let upgraded = response.upgrade().await.map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
+    let mut config = tungstenite::protocol::WebSocketConfig::default();
+    config.max_message_size = Some(MAX_FRAME);
+    config.max_frame_size = Some(MAX_FRAME);
+    let socket = WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Client, Some(config)).await;
+    Ok(socket)
 }
 
 fn trace(event: &str) {
@@ -300,7 +263,6 @@ pub(crate) fn http_typed(
         body,
         headers,
         limit,
-        key.capability().is_some(),
     )
 }
 #[derive(Debug)]
@@ -319,14 +281,28 @@ impl From<pop_core::Error> for HttpFailure {
 }
 impl From<pop_runtime::owner::Failure> for HttpFailure {
     fn from(error: pop_runtime::owner::Failure) -> Self {
-        owner_failure(error, false)
+        owner_failure(error, OwnerEffect::Other)
     }
 }
-fn owner_failure(error: pop_runtime::owner::Failure, attachment: bool) -> HttpFailure {
+#[derive(Clone, Copy)]
+enum OwnerEffect {
+    Other,
+    Attachment,
+}
+fn owner_effect(request: &Request) -> OwnerEffect {
+    match request {
+        Request::PutAttachment { .. } => OwnerEffect::Attachment,
+        _ => OwnerEffect::Other,
+    }
+}
+fn owner_failure(error: pop_runtime::owner::Failure, effect: OwnerEffect) -> HttpFailure {
     let kind = match error.reason {
+        Some(pop_core::Code::StaleBase) if error.kind == pop_runtime::owner::FailureKind::Rejected => {
+            return HttpFailure::Conflict;
+        }
         Some(pop_core::Code::RequiresUpdate) => PauseKind::NeedsUpdate,
         Some(pop_core::Code::MissingDependencies) => PauseKind::MissingHistory,
-        Some(pop_core::Code::TooLarge) if attachment => PauseKind::FilesFull,
+        Some(pop_core::Code::TooLarge) if matches!(effect, OwnerEffect::Attachment) => PauseKind::FilesFull,
         Some(_) => PauseKind::Refused,
         None if error.kind == pop_runtime::owner::FailureKind::Busy => return HttpFailure::Busy(error.message),
         // Full also represents local disk exhaustion, not just format capacity.
@@ -396,7 +372,7 @@ pub(crate) fn http_request_typed(
     headers: &[(&str, &str)],
     limit: u64,
 ) -> std::result::Result<Vec<u8>, HttpFailure> {
-    http_request_authorized(method, url, token, body, headers, limit, false)
+    http_request_authorized(method, url, token, body, headers, limit)
 }
 fn http_request_authorized(
     method: &str,
@@ -405,13 +381,12 @@ fn http_request_authorized(
     body: &[u8],
     headers: &[(&str, &str)],
     limit: u64,
-    anonymous: bool,
 ) -> std::result::Result<Vec<u8>, HttpFailure> {
     let client = network()?.http.clone();
     let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(fail)?;
     let url = url.to_owned();
     let mut request = client.request(method.clone(), &url).body(body.to_vec());
-    if let Some(token) = token {
+    if let Some(token) = fresh_identity(token) {
         request = request.bearer_auth(token);
     }
     for (name, value) in headers {
@@ -420,9 +395,6 @@ fn http_request_authorized(
     run_network(async move {
         let response = request.send().await.map_err(|_| HttpFailure::from("Sharing service is unavailable"))?;
         let status = response.status().as_u16();
-        if status == 403 && anonymous {
-            return Err(HttpFailure::Ended);
-        }
         if !matches!(status, 200 | 204) {
             let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
             return match refusal(status, &bytes, Route::of(&url)) {
@@ -451,6 +423,23 @@ pub(crate) fn room_control(
         &[("Content-Type", "application/json")],
         pop_sharing_protocol::CONTROL_BYTES as u64,
     )
+}
+
+/// An access lookup keeps HTTP status until deciding whether access was denied.
+/// Bad requests, missing routes and expired credentials cannot authorize local removal.
+pub(crate) fn access_request(url: &str, identity: &str) -> TransportResult<Option<Vec<u8>>> {
+    let client = network()?.http.clone();
+    let request = client.get(url).bearer_auth(fresh_identity(Some(identity)).unwrap_or_else(|| identity.to_owned()));
+    run_network(async move {
+        let response = request.send().await.map_err(|_| HttpFailure::from("Sharing service is unavailable"))?;
+        let status = response.status().as_u16();
+        let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await?;
+        match status {
+            200 => Ok(Some(bytes)),
+            403 | 410 => Ok(None),
+            _ => Err(refusal(status, &bytes, Route::Other)),
+        }
+    })
 }
 #[derive(Default)]
 struct Queue {
@@ -482,6 +471,7 @@ impl Queue {
 struct Status {
     value: Mutex<(Phase, String, Option<PauseKind>)>,
     notice: Notice,
+    cancellation: CancellationToken,
 }
 impl Status {
     fn set(&self, phase: Phase, detail: String) {
@@ -491,6 +481,9 @@ impl Status {
         self.update(Phase::Paused, reason, Some(kind));
     }
     fn update(&self, phase: Phase, detail: String, kind: Option<PauseKind>) {
+        if self.cancellation.is_cancelled() {
+            return;
+        }
         let changed = {
             let mut old = self.value.lock().unwrap();
             let value = (phase, detail, kind);
@@ -503,378 +496,30 @@ impl Status {
         };
         if changed {
             let callback = self.notice.lock().unwrap().clone();
-            if let Some(callback) = callback {
-                callback();
+            if let Some(callback) = callback
+                && !self.cancellation.is_cancelled()
+            {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback()));
             }
         }
     }
 }
-pub(crate) struct Connection {
-    stop: Arc<AtomicBool>,
-    cancellation: CancellationToken,
-    status: Arc<Status>,
-    thread: Option<thread::JoinHandle<()>>,
+// The synchronous fixture entry points drive the actual async implementation.
+#[cfg(test)]
+fn upgrade(key: &RoomKey) -> TransportResult<AsyncSocket> {
+    let key = key.clone();
+    run_network(async move { upgrade_async(&key).await })
 }
-impl Connection {
-    pub fn start(owner: Arc<Owner>, key: RoomKey, notice: Notice, access: Arc<epochs::Access>) -> Self {
-        let stop = Arc::new(AtomicBool::new(false));
-        let cancellation = CancellationToken::new();
-        let scope = cancellation.clone();
-        let status = Arc::new(Status { value: Mutex::new((Phase::Offline, "Connecting".into(), None)), notice });
-        let (running, output) = (stop.clone(), status.clone());
-        let thread = thread::spawn(move || {
-            scoped(scope, || {
-                let mut backoff = Duration::from_millis(limits::BACKOFF_MIN_MS);
-                let mut retried_full = false;
-                while !running.load(Ordering::Relaxed) {
-                    let attempt = (|| {
-                        trace("bootstrap_start");
-                        epochs::bootstrap(&owner, &key, &access)?;
-                        trace("bootstrap_done");
-                        connected(&owner, &key, &running, &output, &mut retried_full, &access)
-                    })();
-                    let ended = matches!(&attempt, Err(HttpFailure::Ended))
-                        || matches!(&attempt, Ok(true)) && output.value.lock().unwrap().0 == Phase::Ended;
-                    if ended && access.identity.is_none() {
-                        // A guest keeps the existing canonical file. Clearing membership
-                        // first permits the ordinary unshared save policy to reclaim space.
-                        let retained = epochs::retry_busy(&owner, || Request::Unshare)
-                            .and_then(|_| epochs::retry_busy(&owner, || Request::Flush));
-                        let detail = match retained {
-                            Ok(_) => "Sharing ended. You keep your local copy.".into(),
-                            Err(error) => format!(
-                                "Sharing ended. Your local edits remain open; retry saving: {}",
-                                String::from(error)
-                            ),
-                        };
-                        output.set(Phase::Ended, detail);
-                        break;
-                    }
-                    match attempt {
-                        Ok(true) => break,
-                        Ok(false) => output.set(Phase::Offline, "Offline; reconnecting".into()),
-                        Err(HttpFailure::Ended) => {
-                            output.set(Phase::Ended, "Ended".into());
-                            break;
-                        }
-                        Err(HttpFailure::Paused(pause)) => {
-                            output.paused(pause.kind, pause.reason);
-                            break;
-                        }
-                        Err(error) => {
-                            let error: String = error.into();
-                            output.set(Phase::Offline, format!("Offline; reconnecting: {error}"))
-                        }
-                    }
-                    let until = Instant::now() + backoff;
-                    while Instant::now() < until && !running.load(Ordering::Relaxed) {
-                        thread::sleep(Duration::from_millis(25));
-                    }
-                    backoff = (backoff * 2).min(Duration::from_millis(limits::BACKOFF_MAX_MS));
-                }
-                trace("supervisor_stopped");
-            })
-        });
-        Self { stop, cancellation, status, thread: Some(thread) }
-    }
-    pub fn status(&self) -> (Phase, String, Option<PauseKind>) {
-        self.status.value.lock().unwrap().clone()
-    }
-    pub fn stop(mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        self.cancellation.cancel();
-        if let Some(thread) = self.thread.take()
-            && thread.thread().id() != thread::current().id()
-        {
-            let _ = thread.join();
-        }
-    }
-}
-fn full_state(waiting: bool, retried: bool) -> FullState {
-    if !waiting {
-        FullState::Available
-    } else if retried {
-        FullState::Retried
-    } else {
-        FullState::Waiting
-    }
-}
-struct Attached<'a>(&'a SyncConnection);
-impl Drop for Attached<'_> {
-    fn drop(&mut self) {
-        self.0.detach();
-    }
-}
+#[cfg(test)]
 fn connected(
     owner: &Arc<Owner>,
     key: &RoomKey,
-    stop: &AtomicBool,
+    _stop: &AtomicBool,
     status: &Status,
     retried_full: &mut bool,
-    access: &epochs::Access,
-) -> std::result::Result<bool, HttpFailure> {
-    let mut confirmed_epoch = access
-        .journal
-        .transaction()
-        .map_err(epochs::local)?
-        .current()
-        .map_err(epochs::local)?
-        .ok_or_else(|| epochs::local("The relay epoch has not been installed"))?
-        .epoch;
-    let mut socket = match upgrade(key) {
-        Ok(socket) => socket,
-        Err(error) => {
-            match error {
-                HttpFailure::Ended => status.set(Phase::Ended, "Ended".into()),
-                HttpFailure::Paused(pause) => status.paused(pause.kind, pause.reason),
-                error => return Err(error),
-            }
-            return Ok(true);
-        }
-    };
-    trace("socket_opened");
-    let queue = Arc::new(Mutex::new(Queue::default()));
-    let sink = queue.clone();
-    let admission = owner.sync_connection(Arc::new(move |e| sink.lock().unwrap().enqueue(e)));
-    let attached = Attached(&admission);
-    request(owner, Request::State)?;
-    trace("owner_attached");
-    let mut core_status = (Phase::Syncing, "Syncing".to_owned());
-    let mut uploaded = Vec::new();
-    let mut check_at = Instant::now();
-    let mut compact_at = None;
-    let mut waiting = false;
-    let mut files_waiting = false;
-    let deep = {
-        let saved = Store::open(owner.path(), Mode::Snapshot).map_err(HttpFailure::from)?;
-        let deep = saved.document().map_err(HttpFailure::from)?.supports_deep_compaction();
-        saved.close().map_err(HttpFailure::from)?;
-        deep
-    };
-
-    let ping_every = Duration::from_millis(limits::PING_MS);
-    let mut ping_at = Instant::now() + ping_every;
-    let result = (|| {
-        trace("inventory_start");
-        uploaded = resources::remote_blobs(key)?;
-        trace("inventory_done");
-        while !stop.load(Ordering::Relaxed) {
-            let now = Instant::now();
-            if now >= ping_at {
-                socket.send(Message::Text("ping".into())).map_err(|_| fail("Socket send failed"))?;
-                ping_at = now + ping_every;
-            }
-            if now >= check_at {
-                let info = room_info(key, None)?;
-                check_at = now + Duration::from_millis(limits::ROOM_RECHECK_MS);
-                let full = if files_waiting {
-                    if *retried_full { FullState::FilesRetried } else { FullState::FilesWaiting }
-                } else {
-                    full_state(waiting, *retried_full)
-                };
-                let step = Step::Probe { compact: info.compact };
-                let mut action = maintenance::decide(full, step, 0);
-                if matches!(action, MaintenanceAction::Jitter { .. }) {
-                    let mut random = [0u8; 2];
-                    getrandom::getrandom(&mut random).map_err(|_| fail("Cannot schedule compaction"))?;
-                    action = maintenance::decide(full, step, u16::from_le_bytes(random));
-                }
-                match action {
-                    MaintenanceAction::Outgrown => {
-                        status.paused(PauseKind::Outgrown, "This document has outgrown sharing".into());
-                        return Ok(true);
-                    }
-                    MaintenanceAction::Jitter { milliseconds } => {
-                        compact_at = Some(now + Duration::from_millis(milliseconds));
-                    }
-                    _ => {}
-                }
-            }
-            if compact_at.is_some_and(|at| now >= at) {
-                // Recheck after jitter: another writer may already have compacted.
-                let info = room_info(key, None)?;
-                let full = if files_waiting {
-                    if *retried_full { FullState::FilesRetried } else { FullState::FilesWaiting }
-                } else {
-                    full_state(waiting, *retried_full)
-                };
-                let action = maintenance::decide(full, Step::Recheck { compact: info.compact }, 0);
-                if action == MaintenanceAction::Reconnect {
-                    *retried_full = true;
-                    return Ok(false);
-                }
-                if action == MaintenanceAction::Idle {
-                    compact_at = None;
-                }
-                if action == MaintenanceAction::ReadBase {
-                    if files_waiting && deep {
-                        let epoch = resolution::epoch(key, access.identity.as_deref().unwrap_or(key.bearer()))?;
-                        epochs::publish(
-                            owner,
-                            key,
-                            access,
-                            pop_sharing_protocol::lifecycle::EpochBase {
-                                seed_hash: epoch.seed_hash,
-                                heads: epoch.heads,
-                            },
-                        )?;
-                        *retried_full = true;
-                        return Ok(false);
-                    }
-                    let (send, receive) = std::sync::mpsc::channel();
-                    admission.base(move |base| {
-                        let _ = send.send(base);
-                    });
-                    match wait_reply(&receive, Duration::from_secs(30))? {
-                        Err(pause) => {
-                            status.paused(pause.kind, pause.reason);
-                            return Ok(true);
-                        }
-                        Ok(None) => {
-                            // Not eligible yet (edits in flight); each retry re-reads RoomInfo,
-                            // so stay well inside the guest metadata budget.
-                            if let MaintenanceAction::RetryBase { milliseconds } =
-                                maintenance::decide(full, Step::BaseUnavailable, 0)
-                            {
-                                compact_at = Some(now + Duration::from_millis(milliseconds));
-                            }
-                        }
-                        Ok(Some(base)) => {
-                            compact_at = None;
-                            let result = if deep {
-                                epochs::publish(
-                                    owner,
-                                    key,
-                                    access,
-                                    pop_sharing_protocol::lifecycle::EpochBase {
-                                        seed_hash: confirmed_epoch.seed_hash.clone(),
-                                        heads: pop_sharing_protocol::frame::version_pairs(
-                                            base.frontier.iter().map(|(&peer, &end)| (peer, end as u32)),
-                                        ),
-                                    },
-                                )
-                            } else {
-                                compact(key, &base)
-                            };
-                            match result {
-                                Ok(()) | Err(HttpFailure::Conflict) => {
-                                    if deep {
-                                        *retried_full = waiting;
-                                        return Ok(false);
-                                    }
-                                    if maintenance::decide(full, Step::Compacted, 0) == MaintenanceAction::Reconnect {
-                                        *retried_full = true;
-                                        return Ok(false);
-                                    }
-                                }
-                                // Pauses, an outgrown room among them, end the connection below.
-                                Err(error) => return Err(error),
-                            }
-                        }
-                    }
-                }
-            }
-            let pending = std::mem::take(&mut *queue.lock().unwrap());
-            if pending.overflow {
-                return Err(fail("Socket queue budget exceeded").into());
-            }
-            for event in pending.events {
-                match event {
-                    SyncEvent::Reconnect => return Ok(false),
-                    SyncEvent::Status { status: s } => {
-                        if let pop_core::sync::Status::Paused { kind, reason } = &s {
-                            status.paused(*kind, reason.clone());
-                            if *kind == PauseKind::RoomFull {
-                                waiting = true;
-                                check_at = Instant::now();
-                                continue;
-                            }
-                            return Ok(true);
-                        }
-                        if s == pop_core::sync::Status::Synced
-                            && epochs::confirm(owner, &admission, access, &mut confirmed_epoch)?
-                        {
-                            *retried_full = false;
-                            waiting = false;
-                            files_waiting = false;
-                        }
-                        let phase = match &s {
-                            pop_core::sync::Status::Offline => Phase::Offline,
-                            pop_core::sync::Status::Syncing => Phase::Syncing,
-                            pop_core::sync::Status::Synced => Phase::Synced,
-                            pop_core::sync::Status::Paused { .. } => Phase::Paused,
-                        };
-                        core_status = (phase, format!("{s:?}"));
-                        if !waiting {
-                            status.set(core_status.0.clone(), core_status.1.clone());
-                        }
-                    }
-                    SyncEvent::Send { bytes } => {
-                        let frame = Frame::decode(&bytes).map_err(fail)?;
-                        trace_frame(&frame, false);
-                        if matches!(&frame, Frame::Push { .. }) {
-                            status.set(Phase::Syncing, "Syncing files".into());
-                            trace("upload_blobs_start");
-                            match resources::upload_blobs(owner, key, &mut uploaded) {
-                                Err(HttpFailure::Paused(pause)) if deep && pause.kind == PauseKind::FilesFull => {
-                                    files_waiting = true;
-                                    waiting = true;
-                                    check_at = Instant::now();
-                                    status.paused(pause.kind, pause.reason);
-                                    continue;
-                                }
-                                result => result?,
-                            }
-                            trace("upload_blobs_done");
-                        }
-                        let message = envelope::encode(frame).map_err(fail)?;
-                        socket.send(Message::Binary(message.into())).map_err(|_| fail("Socket send failed"))?;
-                    }
-                }
-            }
-            match socket.read() {
-                Ok(Some(Message::Binary(bytes))) => {
-                    let frame = envelope::decode(&bytes).map_err(|e| {
-                        HttpFailure::Paused(pop_core::sync::Pause { kind: PauseKind::Refused, reason: fail(e) })
-                    })?;
-                    trace_frame(&frame, true);
-                    if matches!(&frame,Frame::Error{code,..} if *code == pop_sharing_protocol::frame::ERROR_ENDED) {
-                        status.set(Phase::Ended, "Ended".into());
-                        return Ok(true);
-                    }
-                    if matches!(frame, Frame::Records(_)) {
-                        status.set(Phase::Syncing, "Receiving files".into());
-                        trace("download_blobs_start");
-                        resources::download_blobs(owner, key, &mut uploaded)?;
-                        trace("download_blobs_done");
-                    }
-                    if !admission.frame(frame.encode()) {
-                        return Ok(false);
-                    }
-                    request(owner, Request::State)?;
-                    if !waiting {
-                        status.set(core_status.0.clone(), core_status.1.clone());
-                    }
-                }
-                Ok(Some(Message::Close(_))) => return Ok(false),
-                Ok(_) => {}
-                Err(_) => return Ok(false),
-            }
-        }
-        Ok(false)
-    })();
-    socket.close();
-    drop(attached);
-    trace("socket_detached");
-    let _ = request(owner, Request::State);
-    match result {
-        // Any pause (a refusal, an outgrown room, full attachments) ends this connection for good.
-        Err(HttpFailure::Paused(pause)) => {
-            status.paused(pause.kind, pause.reason);
-            Ok(true)
-        }
-        result => result,
-    }
+    journal: &Arc<journal::Journal>,
+) -> TransportResult<bool> {
+    native::connected_fixture(owner, key, status, retried_full, journal)
 }
 
 /// Versions use the seed route's canonical peer encoding.
@@ -898,10 +543,44 @@ pub(crate) fn compact(key: &RoomKey, base: &pop_core::sync::Base) -> std::result
 }
 
 #[cfg(test)]
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    thread,
+};
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+
+    #[test]
+    fn access_lookup_requires_an_explicit_permission_denial() {
+        for status in [200, 400, 401, 403, 404, 410, 422, 429, 503] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/sharing", listener.local_addr().unwrap());
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    if stream.read(&mut byte).unwrap() == 0 {
+                        break;
+                    }
+                    request.push(byte[0]);
+                }
+                write!(stream, "HTTP/1.1 {status} Result\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}")
+                    .unwrap();
+            });
+            let result = access_request(&url, "identity");
+            server.join().unwrap();
+            match status {
+                200 => assert_eq!(result.unwrap(), Some(b"{}".to_vec())),
+                403 | 410 => assert_eq!(result.unwrap(), None),
+                _ => assert!(result.is_err(), "HTTP {status} cannot authorize removal: {result:?}"),
+            }
+        }
+    }
     use tungstenite::protocol::{CloseFrame, frame::coding::CloseCode};
 
     #[test]
@@ -955,16 +634,23 @@ mod tests {
             op_index: None,
         };
         assert!(matches!(
-            owner_failure(attachment, true),
+            owner_failure(attachment, OwnerEffect::Attachment),
             HttpFailure::Paused(pop_core::sync::Pause { kind: PauseKind::FilesFull, .. })
         ));
+        let stale = Failure {
+            kind: FailureKind::Rejected,
+            reason: Some(Code::StaleBase),
+            message: "frontier advanced".into(),
+            op_index: None,
+        };
+        assert!(matches!(HttpFailure::from(stale), HttpFailure::Conflict));
     }
 
     fn upgrade_refusal(headers: &str, body: &[u8], status: u16) -> HttpFailure {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let key = RoomKey {
             room: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_owned(),
-            authorization: Authorization::Capability("b".repeat(64)),
+            identity: "memory-only-test-token".into(),
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let headers = headers.to_owned();
@@ -1040,8 +726,8 @@ mod tests {
 
     /// Exercise the actual socket loop and HTTP attachment barrier over loopback.
     #[allow(clippy::result_large_err, reason = "tungstenite fixes the handshake callback error type")]
-    fn local_connection(files_full: bool, close: CloseCode) -> (bool, Phase, Option<PauseKind>) {
-        let (_dir, owner) = if files_full { crate::tests::legacy_fixture() } else { crate::tests::fixture() };
+    fn local_connection(close: CloseCode) -> (bool, Phase, Option<PauseKind>) {
+        let (_dir, owner) = crate::tests::fixture();
         request(
             &owner,
             Request::Share {
@@ -1056,20 +742,6 @@ mod tests {
         let checkpoint = store.document().unwrap().checkpoint().unwrap();
         let vv = loro::LoroDoc::decode_import_blob_meta(&checkpoint, false).unwrap().partial_end_vv;
         let version: pop_core::sync::Version = vv.iter().map(|(&p, &n)| (p, n as u32)).collect();
-        if files_full {
-            request(&owner, Request::PutAttachment { bytes: b"file".to_vec() }).unwrap();
-            request(
-                &owner,
-                Request::Apply {
-                    batch: serde_json::from_value(
-                        serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}),
-                    )
-                    .unwrap(),
-                    origin: pop_core::Origin::Page,
-                },
-            )
-            .unwrap();
-        }
         let info = serde_json::to_vec(&RoomInfo {
             document: owner.app().document_uuid.clone().unwrap(),
             phase: RoomPhase::Live,
@@ -1084,7 +756,7 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let key = RoomKey {
             room: owner.app().document_uuid.clone().unwrap(),
-            authorization: Authorization::Capability("b".repeat(64)),
+            identity: "memory-only-test-token".into(),
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let stop = Arc::new(AtomicBool::new(false));
@@ -1125,17 +797,15 @@ mod tests {
                         }
                         ws.send(Message::Text("pong".into())).unwrap();
                         ws.send(Message::Pong(vec![1, 2].into())).unwrap();
-                        if !files_full {
-                            if close == CloseCode::Error {
-                                assert_eq!(
-                                    ws.read().unwrap(),
-                                    Message::Text("ping".into()),
-                                    "idle connections keep the relay socket alive"
-                                );
-                                ws.send(Message::Text("pong".into())).unwrap();
-                            }
-                            ws.close(Some(CloseFrame { code: close, reason: "retry".into() })).unwrap();
+                        if close == CloseCode::Error {
+                            assert_eq!(
+                                ws.read().unwrap(),
+                                Message::Text("ping".into()),
+                                "idle connections keep the relay socket alive"
+                            );
+                            ws.send(Message::Text("pong".into())).unwrap();
                         }
+                        ws.close(Some(CloseFrame { code: close, reason: "retry".into() })).unwrap();
                         // Read the client's close/flush so the stream remains live through its barrier.
                         let _ = ws.read();
                     } else {
@@ -1174,9 +844,13 @@ mod tests {
                 handler.join().unwrap();
             }
         });
-        let status = Status { value: Mutex::new((Phase::Offline, String::new(), None)), notice: Arc::default() };
+        let status = Status {
+            value: Mutex::new((Phase::Offline, String::new(), None)),
+            notice: Arc::default(),
+            cancellation: CancellationToken::new(),
+        };
         let result =
-            connected(&owner, &key, &stop, &status, &mut false, &crate::tests::test_access(&owner, &key, true));
+            connected(&owner, &key, &stop, &status, &mut false, &crate::tests::test_journal(&owner, &key, true));
         stop.store(true, Ordering::Relaxed);
         serving.join().unwrap();
         request(&owner, Request::Close { preview: None, icon: None }).unwrap();
@@ -1186,34 +860,22 @@ mod tests {
     #[test]
     fn keepalive_pong_and_transient_closes_reconnect_without_pausing() {
         for code in [CloseCode::Error, CloseCode::Again] {
-            let (terminal, phase, kind) = local_connection(false, code);
+            let (terminal, phase, kind) = local_connection(code);
             assert!(!terminal);
             assert_ne!(phase, Phase::Paused);
             assert_eq!(kind, None);
         }
     }
-    #[test]
-    fn legacy_attachment_capacity_is_a_terminal_files_full_pause() {
-        let (terminal, phase, kind) = local_connection(true, CloseCode::Normal);
-        assert!(terminal);
-        assert_eq!(phase, Phase::Paused);
-        assert_eq!(kind, Some(PauseKind::FilesFull));
-    }
 
     /// Answer the socket upgrade with `answer` (or hang up) and report what `connected` made of it.
     fn handshake(
         answer: Option<(u16, &'static str)>,
-        identity: bool,
     ) -> (std::result::Result<bool, HttpFailure>, Phase, Option<PauseKind>) {
         let (_dir, owner) = crate::tests::fixture();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let key = RoomKey {
             room: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_owned(),
-            authorization: if identity {
-                Authorization::Identity("identity-token".into())
-            } else {
-                Authorization::Capability("b".repeat(64))
-            },
+            identity: "identity-token".into(),
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let serving = thread::spawn(move || {
@@ -1237,14 +899,18 @@ mod tests {
                 .unwrap();
             }
         });
-        let status = Status { value: Mutex::new((Phase::Offline, String::new(), None)), notice: Arc::default() };
+        let status = Status {
+            value: Mutex::new((Phase::Offline, String::new(), None)),
+            notice: Arc::default(),
+            cancellation: CancellationToken::new(),
+        };
         let result = connected(
             &owner,
             &key,
             &AtomicBool::new(false),
             &status,
             &mut false,
-            &crate::tests::test_access(&owner, &key, true),
+            &crate::tests::test_journal(&owner, &key, true),
         );
         // The relay saw one upgrade: a terminal answer does not loop back for another.
         serving.join().unwrap();
@@ -1259,21 +925,18 @@ mod tests {
             (404, "", PauseKind::Refused),
             (400, r#"{"code":"requires_update","message":"Update pop to keep sharing"}"#, PauseKind::NeedsUpdate),
         ] {
-            let (result, phase, paused) = handshake(Some((code, body)), true);
+            let (result, phase, paused) = handshake(Some((code, body)));
             assert!(matches!(result, Ok(true)), "{code} is terminal: {result:?}");
             assert_eq!((phase, paused), (Phase::Paused, Some(kind)), "{code}");
         }
-        let (result, phase, paused) = handshake(Some((403, "")), false);
-        assert!(matches!(result, Ok(true)));
-        assert_eq!((phase, paused), (Phase::Ended, None));
-        let (result, phase, paused) = handshake(Some((410, "")), false);
+        let (result, phase, paused) = handshake(Some((410, "")));
         assert!(matches!(result, Ok(true)));
         assert_eq!((phase, paused), (Phase::Ended, None));
     }
     #[test]
     fn transient_handshake_failures_stay_retryable() {
         for answer in [Some((503, "")), Some((429, "")), None] {
-            let (result, phase, paused) = handshake(answer, false);
+            let (result, phase, paused) = handshake(answer);
             assert!(matches!(result, Err(HttpFailure::Other(_))), "{answer:?} retries: {result:?}");
             assert_ne!(phase, Phase::Paused);
             assert_eq!(paused, None);

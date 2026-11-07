@@ -1,7 +1,7 @@
 //! Typed app interpretation. Storage checks resources separately before publishing an
 //! opened app. A summary uses only the scalar metadata checker, never this decoder.
+pub(crate) mod format;
 mod identity;
-pub(crate) mod package_format_1;
 
 use crate::arguments::Arguments;
 use crate::build::BuildDeclaration;
@@ -22,7 +22,7 @@ pub struct CommandDefinition {
 #[derive(Clone, Debug)]
 pub struct AppDefinition {
     metadata: AppMetadata,
-    stored: package_format_1::Definition,
+    stored: format::Definition,
     window: WindowDefinition,
     theme: Vec<ThemeInput>,
     views: Views,
@@ -33,20 +33,17 @@ pub struct AppDefinition {
 }
 
 impl AppDefinition {
-    /// Dispatch before decoding either current metadata or the recursive definition.
-    /// Keeping the decoder in its format module lets a future host model evolve.
+    /// Refuses newer requirements before decoding either the metadata or the recursive
+    /// definition. Keeping the decoder in its format module lets the host model evolve.
     pub fn decode(package_format: u64, runtime_abi: u64, metadata: &str, definition: &str) -> Result<Self> {
         requirements(package_format.into(), runtime_abi.into())?;
-        match package_format {
-            1 => package_format_1::decode(metadata, definition),
-            _ => unreachable!("requirements dispatch covers every admitted format"),
-        }
+        format::decode(metadata, definition)
     }
 
     /// Authoring and pack use the stored format's checks. The caller resolves the
     /// imported skin URL to a resource key; the URL itself never enters stored JSON.
     pub fn from_declaration(declaration: &BuildDeclaration, skin: Option<&str>) -> Result<Self> {
-        let app = package_format_1::from_declaration(declaration, skin)?;
+        let app = format::from_declaration(declaration, skin)?;
         app.spec.schema.validate(&app.spec.schema.with_defaults(&declaration.initial), false)?;
         Ok(app)
     }
@@ -71,12 +68,6 @@ impl AppDefinition {
     pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
     }
-    /// Whether replicas share the data schema and theme defaults required for edits.
-    /// UI resources and descriptions may differ without changing that contract.
-    pub fn replica_compatible(&self, other: &Self) -> bool {
-        self.state_contract_id() == other.state_contract_id()
-    }
-
     /// Identity of the interpreted schema, slug, and unordered theme defaults.
     /// Presentation, commands, descriptions, and embedded resources are not part of it.
     pub fn state_contract_id(&self) -> StateContractId {
@@ -98,7 +89,7 @@ impl AppDefinition {
     /// CLI inspection retains authored geometry. Hosts use `window()` for resolved
     /// semantics and the normalized silhouette. Skin references are package URLs.
     pub fn page_window(&self) -> crate::build::WindowInput {
-        use package_format_1::Window;
+        use format::Window;
         match &self.stored.window {
             Window::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
                 crate::build::WindowInput::Standard {
@@ -138,7 +129,7 @@ impl AppDefinition {
 
 /// The current authoring rules for a new app's metadata (`pop init`); never a saved file's.
 pub fn validate_metadata(metadata: &AppMetadata) -> Result<()> {
-    package_format_1::authoring_metadata(metadata)
+    format::authoring_metadata(metadata)
 }
 
 // Freeze this module when format 1 releases. Pre-launch fixtures may start fresh.

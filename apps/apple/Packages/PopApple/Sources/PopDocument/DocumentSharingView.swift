@@ -39,7 +39,7 @@ public struct LiveCollaborationSection: View {
   }
 
   private var live: Bool { model.sharingEnabled }
-  private var joined: Bool { live && model.status?.creator == false }
+  private var joined: Bool { model.joined }
   private var holdingOpen: Bool { model.acting || signingIn || pendingStart || confirmingStop }
 
   public var body: some View {
@@ -104,10 +104,6 @@ public struct LiveCollaborationSection: View {
             : "Edit together in real time. Anyone with the link can edit.")
       }
 
-      if model.status?.recoveryPath != nil {
-        caption("Your earlier local edits were kept in a separate recovered copy.")
-        Button("Open Recovered Copy") { model.openRecovery() }.disabled(model.busy)
-      }
       if live, let kind = model.status?.pauseKind {
         switch kind {
         case .roomFull:

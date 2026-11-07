@@ -42,16 +42,6 @@ pub fn theme_request(change: ThemeChange) -> Request {
 pub enum Request {
     /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
-    PrepareEpoch {
-        destination: store::EpochLocation,
-        expected_version: String,
-        required_heads: Option<pop_sharing_protocol::lifecycle::WireVersion>,
-    },
-    AdoptEpoch {
-        source: store::EpochLocation,
-        expected_version: String,
-        recovery_destination: Option<store::EpochLocation>,
-    },
     #[cfg(not(target_arch = "wasm32"))]
     MergeSnapshot {
         bytes: Vec<u8>,
@@ -69,6 +59,8 @@ pub enum Request {
         origin: Origin,
     },
     Flush,
+    /// Reload durable state and replace the page session. Shared documents refuse
+    /// ordinary discard; an invalidated owner may explicitly recover its saved state.
     Discard,
     Close {
         preview: Option<Vec<u8>>,
@@ -103,6 +95,12 @@ pub enum Request {
     Backup {
         destination: PathBuf,
     },
+    /// The saved document as a sharing seed, copied after a flush: its identity, its
+    /// history as one checkpoint, only the attachments it references and no artwork
+    /// (`Store::stage_seed`). The live document and its file are untouched. Native hosts only.
+    StageSeed {
+        destination: PathBuf,
+    },
     Artwork {
         name: Artwork,
     },
@@ -132,14 +130,6 @@ pub enum Request {
 }
 #[derive(Debug)]
 pub enum Reply {
-    EpochCandidate {
-        source_version: String,
-        version: String,
-        path: store::EpochLocation,
-    },
-    EpochAdopted {
-        recovery_path: Option<store::EpochLocation>,
-    },
     Command {
         sequence: u64,
         ids: Vec<String>,
@@ -253,7 +243,7 @@ pub struct Owner {
     store: Arc<store::Store>,
     path: PathBuf,
     #[cfg(not(target_arch = "wasm32"))]
-    epoch: Instant,
+    started: Instant,
 }
 impl Owner {
     #[cfg(not(target_arch = "wasm32"))]
@@ -279,7 +269,7 @@ impl Owner {
         listener: Listener,
         evaluator: Option<Evaluator>,
     ) -> Result<Self> {
-        let (sender, epoch, admission) = match actor::spawn(store.clone(), mode, listener, evaluator) {
+        let (sender, started, admission) = match actor::spawn(store.clone(), mode, listener, evaluator) {
             Ok(started) => started,
             Err(failure) => {
                 // No actor admitted work. A worker may still hold an Arc while its
@@ -288,7 +278,7 @@ impl Owner {
                 return Err(failure);
             }
         };
-        Ok(Self { sender, store, path, epoch, sync_admission: Arc::default(), admission })
+        Ok(Self { sender, store, path, started, sync_admission: Arc::default(), admission })
     }
     /// Serial admission for host actions, including immutable page configuration.
     /// The host still fences the WebView when the asynchronous result arrives.
@@ -332,7 +322,7 @@ impl Owner {
     /// The deadline is checked on the edit worker, before the command is admitted.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn submit_until(&self, request: Request, view: Option<String>, deadline: Instant, callback: Completion) {
-        self.enqueue(request, view, Some(deadline.saturating_duration_since(self.epoch)), callback);
+        self.enqueue(request, view, Some(deadline.saturating_duration_since(self.started)), callback);
     }
     fn enqueue(&self, request: Request, view: Option<String>, deadline: Option<Duration>, callback: Completion) {
         let Some(permit) = self.admission.reserve(&request, &view) else {

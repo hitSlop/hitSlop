@@ -1,22 +1,81 @@
-//! Device-local authority receipts, never document state or credentials. One current
-//! receipt and one pending candidate survive uncertain installation acknowledgments.
+//! The device-local receipt of the last version the relay and the local save both hold,
+//! never document state or credentials.
 use super::*;
-use pop_sharing_protocol::lifecycle::EpochState;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
     path::PathBuf,
 };
 
+/// Local journal failures retain retryability and their underlying cause.
+#[derive(Debug)]
+pub(crate) enum Error {
+    Busy,
+    Storage(pop_storage::store::Error),
+    Io(std::io::Error),
+    Json(serde_json::Error),
+    Invalid(String),
+}
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Busy => f.write_str("relay journal is busy"),
+            Self::Storage(error) => std::fmt::Display::fmt(error, f),
+            Self::Io(error) => write!(f, "relay journal: {error}"),
+            Self::Json(error) => write!(f, "invalid relay journal: {error}"),
+            Self::Invalid(message) => f.write_str(message),
+        }
+    }
+}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Storage(error) => Some(error),
+            Self::Io(error) => Some(error),
+            Self::Json(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+impl From<pop_storage::store::Error> for Error {
+    fn from(error: pop_storage::store::Error) -> Self {
+        Self::Storage(error)
+    }
+}
+impl From<std::io::Error> for Error {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
+    }
+}
+impl From<serde_json::Error> for Error {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error)
+    }
+}
+impl From<String> for Error {
+    fn from(message: String) -> Self {
+        Self::Invalid(message)
+    }
+}
+impl From<&str> for Error {
+    fn from(message: &str) -> Self {
+        Self::Invalid(message.into())
+    }
+}
+impl From<Error> for String {
+    fn from(error: Error) -> Self {
+        error.to_string()
+    }
+}
+type Result<T> = std::result::Result<T, Error>;
+
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Receipt {
     endpoint: String,
     room: String,
     document: String,
-    pub epoch: EpochState,
     pub owner_version: String,
-    pub recovery: Option<PathBuf>,
 }
 pub(crate) struct Journal {
     directory: PathBuf,
@@ -24,9 +83,14 @@ pub(crate) struct Journal {
     endpoint: String,
     room: String,
     document: String,
-    checked_recovery: Mutex<Option<(PathBuf, recovery::FileStamp)>>,
 }
 pub(crate) struct Transaction<'a> {
+    journal: &'a Journal,
+    _lock: File,
+}
+/// The existing receipt held under the same OS lock as writers, without creating a
+/// directory or lock file. This type deliberately exposes no write methods.
+pub(crate) struct Inspection<'a> {
     journal: &'a Journal,
     _lock: File,
 }
@@ -35,75 +99,43 @@ impl Journal {
         Self::at(directory, &key.origin, &key.room, document)
     }
     pub fn at(directory: &Path, origin: &str, room: &str, document: &str) -> Result<Self> {
+        let journal = Self::inspect(directory, origin, room, document)?;
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory).map_err(Error::from)?;
+        Ok(journal)
+    }
+    pub fn inspect(directory: &Path, origin: &str, room: &str, document: &str) -> Result<Self> {
         if !directory.is_absolute()
             || directory.components().any(|part| matches!(part, std::path::Component::ParentDir))
             || !pop_sharing_protocol::valid_copy(document)
         {
             return Err("Invalid relay state location".into());
         }
-        use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory).map_err(fail)?;
-        let name = hex(&Sha256::digest(serde_json::to_vec(&(origin, room, document)).map_err(fail)?));
+        let name = hex(&Sha256::digest(serde_json::to_vec(&(origin, room, document)).map_err(Error::from)?));
         Ok(Self {
             directory: directory.into(),
             name,
             endpoint: origin.into(),
             room: room.into(),
             document: document.into(),
-            checked_recovery: Mutex::new(None),
-        })
-    }
-    pub fn recovery_destination(&self, source_version: &str) -> Result<PathBuf> {
-        let directory = recovery::directory(&self.directory)?;
-        let mut hash = Sha256::new();
-        hash.update(b"pop.recovery-source.v1\0");
-        hash.update(self.name.as_bytes());
-        hash.update([0]);
-        hash.update(source_version.as_bytes());
-        Ok(directory.join(format!("{}-recovery-{}.pop", self.document, hex(&hash.finalize()))))
-    }
-    fn completed(&self, path: &Path) -> bool {
-        let Some(stamp) = recovery::stamp(path) else { return false };
-        if self
-            .checked_recovery
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|(checked_path, checked_stamp)| checked_path == path && checked_stamp == &stamp)
-        {
-            return true;
-        }
-        if !recovery::accepted(path, Some(&self.document)) {
-            return false;
-        }
-        *self.checked_recovery.lock().unwrap() = Some((path.to_owned(), stamp));
-        true
-    }
-    pub fn completed_recovery(&self) -> Option<PathBuf> {
-        if let Ok(transaction) = self.transaction() {
-            for receipt in
-                [transaction.pending().ok().flatten(), transaction.current().ok().flatten()].into_iter().flatten()
-            {
-                if let Some(path) = receipt.recovery
-                    && self.completed(&path)
-                {
-                    return Some(path);
-                }
-            }
-        }
-        // The receipt can already have rolled over, or still be locked by an
-        // uncertain install. Completed files remain independently discoverable.
-        let mut paths = recovery::paths(&self.directory).ok()?;
-        paths.sort_by_key(|path| std::cmp::Reverse(std::fs::metadata(path).and_then(|meta| meta.modified()).ok()));
-        paths.into_iter().find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with(&format!("{}-recovery-", self.document)))
-                && self.completed(path)
         })
     }
     fn path(&self, extension: &str) -> PathBuf {
         self.directory.join(format!("{}.{extension}", self.name))
+    }
+    pub fn inspection(&self) -> Result<Option<Inspection<'_>>> {
+        let file = match File::open(self.path("lock")) {
+            Ok(file) => file,
+            // Without the writer's stable lock, no receipt can be trusted.
+            // Missing state remains unconfirmed.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(Error::Io(error)),
+        };
+        file.try_lock_shared().map_err(|error| match error {
+            std::fs::TryLockError::WouldBlock => Error::Busy,
+            std::fs::TryLockError::Error(error) => Error::Io(error),
+        })?;
+        Ok(Some(Inspection { journal: self, _lock: file }))
     }
     pub fn transaction(&self) -> Result<Transaction<'_>> {
         use std::os::unix::fs::OpenOptionsExt;
@@ -114,80 +146,41 @@ impl Journal {
             .write(true)
             .mode(0o600)
             .open(self.path("lock"))
-            .map_err(fail)?;
-        file.try_lock().map_err(fail)?;
+            .map_err(Error::from)?;
+        file.try_lock().map_err(|error| match error {
+            std::fs::TryLockError::WouldBlock => Error::Busy,
+            std::fs::TryLockError::Error(error) => Error::Io(error),
+        })?;
         Ok(Transaction { journal: self, _lock: file })
     }
-    pub fn receipt(&self, epoch: EpochState, owner_version: String, recovery: Option<PathBuf>) -> Receipt {
+    pub fn receipt(&self, owner_version: String) -> Receipt {
         Receipt {
             endpoint: self.endpoint.clone(),
             room: self.room.clone(),
             document: self.document.clone(),
-            epoch,
             owner_version,
-            recovery,
         }
-    }
-    fn owned_recovery(path: &Path) -> bool {
-        use std::path::Component;
-        let mut parts = path.components();
-        matches!(parts.next(), Some(Component::Normal(name)) if name == "Recovered")
-            && matches!(parts.next(), Some(Component::Normal(_)))
-            && parts.next().is_none()
-            && path.extension().is_some_and(|extension| extension == "pop")
-    }
-    fn resolve_recovery(&self, path: &Path) -> Result<PathBuf> {
-        if path.components().any(|part| matches!(part, std::path::Component::ParentDir)) {
-            return Err("Invalid recovery location".into());
-        }
-        if !path.is_absolute() {
-            if !Self::owned_recovery(path) {
-                return Err("Invalid recovery location".into());
-            }
-            return Ok(self.directory.join(path));
-        }
-        if let Some(rebased) = pop_storage::file::rebase_ios_container_path(path, &self.directory)
-            && rebased.strip_prefix(&self.directory).is_ok_and(Self::owned_recovery)
-        {
-            return Ok(rebased);
-        }
-        // Genuine external files are not relocated by a filename or suffix guess.
-        Ok(path.to_owned())
-    }
-    fn stored_recovery(&self, path: &Path) -> Result<PathBuf> {
-        let resolved = self.resolve_recovery(path)?;
-        if let Ok(relative) = resolved.strip_prefix(&self.directory)
-            && Self::owned_recovery(relative)
-        {
-            return Ok(relative.to_owned());
-        }
-        Ok(resolved)
     }
     fn read(&self, extension: &str) -> Result<Option<Receipt>> {
         let file = match File::open(self.path(extension)) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(fail(error)),
+            Err(error) => return Err(Error::from(error)),
         };
         let mut bytes = Vec::new();
-        file.take(pop_sharing_protocol::CONTROL_BYTES as u64 + 1).read_to_end(&mut bytes).map_err(fail)?;
+        file.take(pop_sharing_protocol::CONTROL_BYTES as u64 + 1).read_to_end(&mut bytes).map_err(Error::from)?;
         if bytes.len() > pop_sharing_protocol::CONTROL_BYTES {
             return Err("Relay authority receipt exceeds its limit".into());
         }
-        let mut receipt: Receipt = serde_json::from_slice(&bytes).map_err(fail)?;
-        receipt.epoch.validate()?;
+        let receipt: Receipt = serde_json::from_slice(&bytes).map_err(Error::from)?;
         if receipt.endpoint != self.endpoint || receipt.room != self.room || receipt.document != self.document {
             return Err("Relay authority receipt belongs to another connection".into());
         }
-        receipt.recovery = receipt.recovery.as_deref().map(|path| self.resolve_recovery(path)).transpose()?;
         Ok(Some(receipt))
     }
     fn write(&self, extension: &str, receipt: &Receipt) -> Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
-        receipt.epoch.validate()?;
-        let mut stored = receipt.clone();
-        stored.recovery = receipt.recovery.as_deref().map(|path| self.stored_recovery(path)).transpose()?;
-        let bytes = serde_json::to_vec(&stored).map_err(fail)?;
+        let bytes = serde_json::to_vec(receipt).map_err(Error::from)?;
         if bytes.len() > pop_sharing_protocol::CONTROL_BYTES {
             return Err("Relay authority receipt exceeds its limit".into());
         }
@@ -196,15 +189,15 @@ impl Journal {
         match std::fs::remove_file(&temporary) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(fail(error)),
+            Err(error) => return Err(Error::from(error)),
         }
         let result = (|| {
             let mut file =
-                OpenOptions::new().create_new(true).write(true).mode(0o600).open(&temporary).map_err(fail)?;
-            file.write_all(&bytes).map_err(fail)?;
-            file.sync_all().map_err(fail)?;
-            std::fs::rename(&temporary, self.path(extension)).map_err(fail)?;
-            File::open(&self.directory).and_then(|directory| directory.sync_all()).map_err(fail)
+                OpenOptions::new().create_new(true).write(true).mode(0o600).open(&temporary).map_err(Error::from)?;
+            file.write_all(&bytes).map_err(Error::from)?;
+            file.sync_all().map_err(Error::from)?;
+            std::fs::rename(&temporary, self.path(extension)).map_err(Error::from)?;
+            File::open(&self.directory).and_then(|directory| directory.sync_all()).map_err(Error::from)
         })();
         if result.is_err() {
             let _ = std::fs::remove_file(&temporary);
@@ -212,25 +205,73 @@ impl Journal {
         result
     }
 }
+impl Inspection<'_> {
+    pub fn current(&self) -> Result<Option<Receipt>> {
+        self.journal.read("json")
+    }
+}
 impl Transaction<'_> {
     pub fn current(&self) -> Result<Option<Receipt>> {
         self.journal.read("json")
     }
-    pub fn pending(&self) -> Result<Option<Receipt>> {
-        self.journal.read("pending")
-    }
-    pub fn prepare(&self, receipt: &Receipt) -> Result<()> {
-        self.journal.write("pending", receipt)
-    }
-    pub fn promote(&self, expected: &Receipt) -> Result<()> {
-        if self.pending()?.as_ref() != Some(expected) {
-            return Err("The pending relay receipt changed".into());
-        }
-        std::fs::rename(self.journal.path("pending"), self.journal.path("json")).map_err(fail)?;
-        File::open(&self.journal.directory).and_then(|directory| directory.sync_all()).map_err(fail)
-    }
+    /// Atomically replaces the receipt; a failed write keeps the previous one.
     pub fn confirm(&self, receipt: &Receipt) -> Result<()> {
-        self.prepare(receipt)?;
-        self.promote(receipt)
+        self.journal.write("json", receipt)
     }
+}
+
+/// Journal failures as transport outcomes: contention retries, storage keeps its kind.
+pub(crate) fn local(error: impl Into<Error>) -> transport::HttpFailure {
+    let error = error.into();
+    match error {
+        Error::Storage(error) => transport::HttpFailure::from(error),
+        Error::Busy => transport::HttpFailure::Busy(error.to_string()),
+        Error::Io(_) => transport::HttpFailure::Other(error.to_string()),
+        _ => transport::HttpFailure::Paused(pop_core::sync::Pause {
+            kind: PauseKind::Refused,
+            reason: error.to_string(),
+        }),
+    }
+}
+fn transaction(journal: &Journal) -> std::result::Result<Transaction<'_>, transport::HttpFailure> {
+    let deadline = Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match journal.transaction() {
+            Err(Error::Busy) if Instant::now() < deadline => {
+                transport::pause(std::time::Duration::from_millis(25))?;
+            }
+            result => return result.map_err(local),
+        }
+    }
+}
+/// Record the exact local version that the relay acknowledged and the local save holds.
+pub(crate) fn confirm(
+    owner: &Owner,
+    connection: &pop_runtime::owner::SyncConnection,
+    journal: &Journal,
+) -> std::result::Result<bool, transport::HttpFailure> {
+    let (send, receive) = std::sync::mpsc::channel();
+    connection.durable_confirmed_version(move |confirmed| {
+        let _ = send.send(confirmed);
+    });
+    let Some(confirmed) = transport::wait_reply(&receive, std::time::Duration::from_secs(20))? else {
+        return Ok(false);
+    };
+    // The owner checked both relay acknowledgement and its exact durable history.
+    // A normal save completion wakes the connection if Synced arrived first.
+    let Reply::State { reading, .. } = request(owner, Request::State)? else {
+        return Err(local("Owner state unavailable"));
+    };
+    if reading.version != confirmed.version {
+        return Ok(false);
+    }
+    transaction(journal)?.confirm(&journal.receipt(confirmed.version)).map_err(local)?;
+    Ok(true)
+}
+/// Record a version the relay already holds: an uploaded or downloaded seed.
+pub(crate) fn confirm_seed(
+    journal: &Journal,
+    owner_version: String,
+) -> std::result::Result<(), transport::HttpFailure> {
+    transaction(journal)?.confirm(&journal.receipt(owner_version)).map_err(local)
 }

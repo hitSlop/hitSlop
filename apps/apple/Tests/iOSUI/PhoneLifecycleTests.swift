@@ -9,33 +9,86 @@ final class PhoneLifecycleTests: XCTestCase {
     let document = app.buttons["Editor fixture with icon"]
     XCTAssertTrue(document.waitForExistence(timeout: 30))
     document.tap()
+    app.waitForDocument()
     let page = app.descendants(matching: .any)["document-page"].firstMatch
-    XCTAssertTrue(page.waitForExistence(timeout: 30))
     let actions = app.buttons["document-actions"]
-    let actionsReady = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "exists == true AND enabled == true AND hittable == true"), object: actions)
-    XCTAssertEqual(XCTWaiter.wait(for: [actionsReady], timeout: 20), .completed)
     XCTAssertLessThan(page.frame.minY, actions.frame.minY, "The page begins alongside native actions")
     XCTAssertFalse(app.navigationBars.buttons["Recents"].exists)
-    let originalPage = page.frame
+    XCTAssertFalse(document.exists, "The open document covers the library")
+    let original = page.frame
     let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+    // A pull from the edge that is let go: the page follows the finger, then springs back.
+    // XCUITest waits for the app to settle after a gesture, so the pulled page cannot be
+    // observed here; the full swipe below, from the same edge, proves the gesture begins.
     edge.press(
-      forDuration: 0.05,
-      thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.5)),
-      withVelocity: .slow, thenHoldForDuration: 0.2)
+      forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.5)),
+      withVelocity: .slow, thenHoldForDuration: 0.3)
+    // The cancelled transition settles (library removed again, page back in place, actions
+    // usable) and stays settled before the next gesture can begin.
     let settled = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in page.exists && abs(page.frame.minX - originalPage.minX) < 1 }, object: nil)
+      predicate: NSPredicate { _, _ in
+        !document.exists && page.exists && page.frame == original && actions.exists && actions.isHittable
+      }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 10), .completed)
-    XCTAssertTrue(actions.isHittable)
+    sleep(1)
+    XCTAssertEqual(page.frame, original)
+    XCTAssertTrue(actions.isHittable, "Cancelling leaves the document open and usable")
+    // A swipe across, released moving (with Reduce Motion a slow drag springs back).
     edge.press(
-      forDuration: 0.05,
-      thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
-      withVelocity: .slow, thenHoldForDuration: 0.2)
+      forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
+      withVelocity: .default, thenHoldForDuration: 0)
     XCTAssertTrue(document.waitForExistence(timeout: 30))
+    XCTAssertTrue(actions.waitForNonExistence(timeout: 10))
+    // The library is usable at once: reopening while the close may still be saving waits for it.
     document.tap()
-    XCTAssertTrue(page.waitForExistence(timeout: 30))
+    app.waitForDocument()
     app.returnToLibrary()
     XCTAssertTrue(document.waitForExistence(timeout: 30))
+  }
+
+  @MainActor func testEdgeSwipeLeavesAPopCreatedFromATemplate() throws {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launch()
+    app.tabBars.buttons["Templates"].tap()
+    let template = app.buttons["Quick Checklist"]
+    XCTAssertTrue(template.waitForExistence(timeout: 30))
+    template.tap()
+    let create = app.buttons["create-pop"]
+    XCTAssertTrue(create.waitForExistence(timeout: 15))
+    create.tap()
+    let name = app.textFields["pop-name"]
+    XCTAssertTrue(name.waitForExistence(timeout: 10))
+    if !app.keyboards.firstMatch.waitForExistence(timeout: 5) { name.tap() }
+    // The template's title is selected, ready to type over; clearing covers either way.
+    let title = "Edge swipe " + UUID().uuidString.prefix(8)
+    let current = (name.value as? String)?.count ?? 0
+    name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current) + title)
+    app.buttons["create-named-pop"].tap()
+    app.waitForDocument()
+    XCTAssertTrue(app.descendants(matching: .any)["document-page"].firstMatch.waitForExistence(timeout: 30))
+    let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+    edge.press(
+      forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
+      withVelocity: .default, thenHoldForDuration: 0)
+    // Back on Recents with the new pop's tile, never on the template it came from.
+    let tile = app.buttons[title]
+    XCTAssertTrue(tile.waitForExistence(timeout: 30), "Swiping back from a new pop returns to the library")
+    XCTAssertTrue(app.buttons["document-actions"].waitForNonExistence(timeout: 10))
+    XCTAssertFalse(create.exists, "Leaving a new pop never lands on its template")
+    // The library is usable at once, and the new pop reopens from its tile.
+    tile.tap()
+    app.waitForDocument()
+    app.returnToLibrary()
+    // Removal waits for the close to finish saving; then the new pop is deleted.
+    let closed = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND NOT (value CONTAINS 'Saving')"), object: tile)
+    XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 30), .completed)
+    tile.press(forDuration: 1)
+    let delete = app.buttons["Delete from This iPhone"]
+    XCTAssertTrue(delete.waitForExistence(timeout: 10))
+    delete.tap()
+    XCTAssertTrue(tile.waitForNonExistence(timeout: 30))
   }
 
   @MainActor func testKeyboardCanBeDismissedWithoutLeavingTheDocument() throws {
@@ -123,7 +176,9 @@ final class PhoneLifecycleTests: XCTestCase {
     let importAction = app.buttons["Import from Files"]
     XCTAssertTrue(importAction.waitForExistence(timeout: 15))
     importAction.tap()
-    if app.buttons["Recents"].waitForExistence(timeout: 3) { app.buttons["Recents"].tap() }
+    // The Files picker's own Recents tab, not the library's behind it.
+    let pickerRecents = app.tabBars["DOC.browsingModeTabBar"].buttons["Recents"]
+    if pickerRecents.waitForExistence(timeout: 3) { pickerRecents.tap() }
     let exported = app.cells.matching(NSPredicate(format: "label BEGINSWITH %@", "Editor fixture with icon")).firstMatch
     XCTAssertTrue(exported.waitForExistence(timeout: 15))
     exported.tap()

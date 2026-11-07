@@ -24,35 +24,27 @@ pub mod envelope;
 pub mod failure;
 pub mod frame;
 pub mod http;
-pub mod lifecycle;
 pub mod limits;
-pub mod maintenance;
-pub mod policy;
 pub mod resources;
+pub mod routes;
 pub const TRUSTED_ORIGIN: &str = "https://share.dotpop.click";
 pub const AUTHORED_DOMAIN: &str = "dotslop.com";
-pub const SOCKET_PROTOCOL: &str = "pop.sync.v1";
+pub const SOCKET_PROTOCOL: &str = "pop.sync.v2";
 pub const SEED_BYTES: usize = 16 << 20;
 pub const QUEUED_BYTES: usize = 2 * frame::MAX_FRAME;
 pub const QUEUED_FRAMES: usize = 256;
 pub const CONTROL_BYTES: usize = 1 << 20;
 pub const RESOURCE_TTL_MS: u64 = 600_000;
 pub const RESOURCE_RENEW_MS: u64 = RESOURCE_TTL_MS / 2;
-pub fn valid_copy(copy: &str) -> bool {
-    copy.len() == 36
-        && copy.bytes().enumerate().all(|(i, b)| {
-            if [8, 13, 18, 23].contains(&i) { b == b'-' } else { b.is_ascii_digit() || (b'a'..=b'f').contains(&b) }
-        })
-}
-pub fn authored_origin(copy: &str) -> Option<String> {
-    valid_copy(copy).then(|| format!("https://{copy}.{AUTHORED_DOMAIN}"))
-}
+pub use pop_contracts::hex;
+/// Canonical lowercase document UUID.
+pub use pop_contracts::wire::browser::valid_copy;
 pub fn is_authored_origin(origin: &str) -> bool {
     origin.strip_prefix("https://").and_then(|s| s.strip_suffix(&format!(".{AUTHORED_DOMAIN}"))).is_some_and(valid_copy)
 }
 pub fn host_policy() -> String {
     format!(
-        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self' wss://share.dotpop.click https://*.dotslop.com; worker-src 'self'; img-src 'self' blob:; frame-src https://*.{AUTHORED_DOMAIN}; base-uri 'none'; frame-ancestors 'none'"
+        "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src 'self' wss://share.dotpop.click https://*.dotslop.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; worker-src 'self'; img-src 'self' blob:; frame-src https://*.{AUTHORED_DOMAIN}; base-uri 'none'; frame-ancestors 'none'"
     )
 }
 pub fn page_policy() -> String {

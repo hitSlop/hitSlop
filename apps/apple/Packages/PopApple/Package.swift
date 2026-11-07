@@ -49,6 +49,7 @@ let package = Package(
         .product(name: "FirebaseFirestore", package: "firebase-ios-sdk"),
       ]
     ),
+    .testTarget(name: "PopAccountTests", dependencies: ["PopAccount"]),
     .target(
       name: "PopFirebase",
       dependencies: [

@@ -21,6 +21,8 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
 pub enum PauseKind {
     RoomFull,
+    /// Folding cannot make the room fit, or one retained change cannot be relayed.
+    /// Local edits keep saving; the person can save an unshared copy.
     Outgrown,
     NeedsUpdate,
     Refused,
@@ -42,13 +44,19 @@ pub struct Base {
     pub start: VersionVector,
     pub bytes: Vec<u8>,
 }
+/// What compaction can read: nothing yet, a base, or a frontier over `BASE_BYTES`.
+#[derive(Debug)]
+pub enum BaseRead {
+    Pending,
+    Ready(Base),
+    TooLarge,
+}
 /// One acknowledged local state, exported by the serial owner for a bounded receipt.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct Confirmation {
     pub version: String,
-    pub heads: pop_sharing_protocol::lifecycle::WireVersion,
 }
 
 /// What a person sees about sync.
@@ -137,10 +145,7 @@ impl Session {
             && self.in_flight.is_none()
             && !matches!(self.status, Status::Paused { .. })
             && self.relay.as_ref().is_some_and(|relay| *relay == doc.doc.state_vv()))
-        .then(|| Confirmation {
-            version: doc.version(),
-            heads: pop_sharing_protocol::frame::version_pairs(to_wire(&doc.doc.state_vv())),
-        })
+        .then(|| Confirmation { version: doc.version() })
     }
     /// A connection opened: the Hello to send first.
     pub fn connect(&mut self, doc: &Document) -> Vec<u8> {
@@ -169,31 +174,32 @@ impl Session {
             return None;
         }
         let relay = self.relay.as_ref()?;
-        let local = doc.version_vector();
-        let spans: Vec<Span> = local
+        let (end, bytes) = match doc.bounded_updates(relay) {
+            Ok(Some(batch)) => batch,
+            Ok(None) => return None,
+            Err(error) => {
+                self.pause(
+                    match error.code {
+                        Code::TooLarge => PauseKind::Outgrown,
+                        Code::MissingDependencies => PauseKind::MissingHistory,
+                        _ => PauseKind::Refused,
+                    },
+                    format!("This document's changes could not be exported: {}", error.message),
+                );
+                return None;
+            }
+        };
+        let spans: Vec<Span> = end
             .iter()
             .filter_map(|(&peer, &end)| {
                 let start = relay.get(&peer).copied().unwrap_or(0);
                 (end > start).then_some(Span { peer, start: start as u32, end: end as u32 })
             })
             .collect();
-        if spans.is_empty() {
-            return None;
-        }
-        let bytes = match doc.updates_since(relay) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                self.pause(
-                    PauseKind::Refused,
-                    format!("This document's changes could not be exported: {}", error.message),
-                );
-                return None;
-            }
-        };
         let id = self.next_id;
         let frame = Frame::Push { id, records: vec![Record { spans: spans.clone(), bytes }] }.encode();
-        if frame.len() > MAX_FRAME {
-            self.pause(PauseKind::Outgrown, "A change is too large to sync".into());
+        if frame.len() > pop_sharing_protocol::limits::SOCKET_PUSH_BYTES_PER_MINUTE {
+            self.pause(PauseKind::Outgrown, "This change is too large to share".into());
             return None;
         }
         self.sent = spans;
@@ -292,8 +298,6 @@ impl Session {
             Frame::Error { code, message } => self.pause(
                 if code == pop_sharing_protocol::frame::ERROR_PROTOCOL {
                     PauseKind::NeedsUpdate
-                } else if code == pop_sharing_protocol::frame::ERROR_EPOCH {
-                    PauseKind::MissingHistory
                 } else if code == pop_sharing_protocol::frame::ERROR_ENDED {
                     PauseKind::Ended
                 } else {
@@ -310,30 +314,45 @@ impl Session {
     }
     /// Normal compaction requires all local operations to be acknowledged. After Quota,
     /// compact only the confirmed relay frontier, excluding the rejected local push.
+    /// A base over `BASE_BYTES` is the `Outgrown` pause.
     pub fn base(&self, doc: &Document) -> Result<Option<Base>, Pause> {
+        match self.maintenance_base(doc)? {
+            BaseRead::Pending => Ok(None),
+            BaseRead::Ready(base) => Ok(Some(base)),
+            BaseRead::TooLarge => {
+                Err(Pause { kind: PauseKind::Outgrown, reason: "This document has outgrown sharing".into() })
+            }
+        }
+    }
+    pub fn maintenance_base(&self, doc: &Document) -> Result<BaseRead, Pause> {
         let waiting = matches!(self.status, Status::Paused { kind: PauseKind::RoomFull, .. });
         if !self.write
             || !self.caught_up
             || self.in_flight.is_some()
             || (matches!(self.status, Status::Paused { .. }) && !waiting)
         {
-            return Ok(None);
+            return Ok(BaseRead::Pending);
         }
-        let Some(frontier) = &self.relay else { return Ok(None) };
+        let Some(frontier) = &self.relay else { return Ok(BaseRead::Pending) };
         if (!waiting && doc.version_vector() != *frontier) || !doc.version_vector().includes_vv(frontier) {
-            return Ok(None);
+            return Ok(BaseRead::Pending);
         }
-        let bytes = doc.base(frontier).map_err(|error| Pause {
-            kind: if error.code == Code::TooLarge { PauseKind::Outgrown } else { PauseKind::Refused },
-            reason: error.message,
-        })?;
-        Ok(Some(Base { frontier: frontier.clone(), start: doc.base_start(), bytes }))
+        match doc.base(frontier) {
+            Ok(bytes) => Ok(BaseRead::Ready(Base { frontier: frontier.clone(), start: doc.base_start(), bytes })),
+            Err(error) if error.code == Code::TooLarge => Ok(BaseRead::TooLarge),
+            Err(error) => Err(Pause { kind: PauseKind::Refused, reason: error.message }),
+        }
     }
     /// Stops syncing until the next connection, for `reason`.
     pub fn pause(&mut self, kind: PauseKind, reason: String) {
-        self.relay = None;
+        // Room-full pressure keeps the accepted relay frontier usable for catch-up and
+        // compaction. A terminal refusal discards that admission.
+        if kind != PauseKind::RoomFull {
+            self.relay = None;
+            self.caught_up = false;
+        }
         self.in_flight = None;
-        self.caught_up = false;
+        self.sent.clear();
         self.status = Status::Paused { kind, reason };
     }
     /// While connected: synced once caught up with nothing unacknowledged. A push sends

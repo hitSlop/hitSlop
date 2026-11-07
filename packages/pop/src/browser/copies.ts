@@ -3,10 +3,8 @@ export type Copy = {
   id: string;
   title: string;
   created: number;
-  state: "importing" | "recovering" | "ready" | "missing";
-  epoch?: string;
+  state: "importing" | "ready" | "missing";
   local?: boolean;
-  recovery?: { source: string; document: string; epoch: string; version: string };
 };
 let database: Promise<IDBDatabase> | undefined;
 function openDatabase() {
@@ -32,7 +30,7 @@ async function transaction<T>(
 export const listCopies = () => transaction<Copy[]>("readonly", (store) => store.getAll());
 export const putCopy = (copy: Copy) => transaction("readwrite", (store) => store.put(copy));
 /** Merge catalog metadata in one transaction; a concurrent Ready event must not
- * erase an epoch receipt or turn a ready canonical copy back into an import. */
+ * erase another field or turn a ready canonical copy back into an import. */
 export async function updateCopy(id: string, changes: Partial<Copy>): Promise<void> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -140,32 +138,4 @@ export async function cleanup() {
         });
       }
     });
-}
-
-/** Reserve discovery before Rust can replace the canonical file. Unlike an ordinary
- * interrupted import, this record survives cleanup and is retried with the same UUID. */
-export async function reserveRecovery(
-  source: string,
-  document: string,
-  epoch: string,
-  version: string,
-): Promise<Copy> {
-  const entries = await listCopies();
-  const found = entries.find(
-    (entry) =>
-      entry.recovery?.source === source &&
-      entry.recovery.epoch === epoch &&
-      entry.recovery.version === version,
-  );
-  if (found) return found;
-  const original = entries.find((entry) => entry.id === source);
-  const copy: Copy = {
-    id: crypto.randomUUID(),
-    title: `${original?.title ?? "Document"} — recovered edits`,
-    created: Date.now(),
-    state: "recovering",
-    recovery: { source, document, epoch, version },
-  };
-  await putCopy(copy);
-  return copy;
 }

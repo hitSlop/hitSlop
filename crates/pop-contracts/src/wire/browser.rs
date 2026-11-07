@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub const PORT: u16 = 41238;
 pub const PROTOCOL: u64 = 1;
-pub const CONTAINER_FORMAT: u64 = 1;
+pub const CONTAINER_FORMAT: u64 = 2;
 pub const TRANSFER_BYTES: usize = 1 << 20;
 pub const FILE_BYTES: u64 = 256 << 20;
 
@@ -37,7 +37,7 @@ pub enum BrowserEvent {
     Publication { json: String },
     Save { status: BrowserSaveStatus, error: Option<String> },
     Exported { id: String, file: String },
-    ResourcePlan { id: String, size: u64, plan: pop_sharing_protocol::policy::ResponsePlan },
+    ResourcePlan { id: String, size: u64, plan: crate::resources::ResponsePlan },
     Resource { id: String, size: u64, media_type: String, offset: u32 },
     Error { id: Option<String>, error: String },
 }

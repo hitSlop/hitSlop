@@ -17,7 +17,7 @@ public struct CatalogDocumentBadgeView: View {
   private var symbol: String {
     switch badge {
     case .attention: "exclamationmark.triangle.fill"
-    case .undownloaded: "icloud.and.arrow.down"
+    case .undownloaded: "arrow.down.circle"
     case .shared: "person.2.fill"
     }
   }

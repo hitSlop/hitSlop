@@ -6,16 +6,13 @@ use serde::Serialize;
 pub enum Route {
     Other,
     Compact,
-    Epoch,
     Blob,
 }
 impl Route {
     /// The route a room URL addresses.
     pub fn of(url: &str) -> Self {
         let path = url.split(['?', '#']).next().unwrap_or_default();
-        if path.contains("/epochs/") {
-            Self::Epoch
-        } else if path.ends_with("/compact") {
+        if path.ends_with("/compact") {
             Self::Compact
         } else if path.contains("/blob/") {
             Self::Blob
@@ -60,7 +57,7 @@ pub fn classify(status: u16, code: Option<&str>, route: Route) -> Outcome {
     }
     match (status, route) {
         (410, _) => Outcome::Ended,
-        (413, Route::Compact | Route::Epoch) => Outcome::Outgrown,
+        (413, Route::Compact) => Outcome::Outgrown,
         (413, Route::Blob) => Outcome::FilesFull,
         (401, _) => Outcome::SignIn,
         (409, _) => Outcome::Conflict,
@@ -91,7 +88,6 @@ mod tests {
         use Outcome::*;
         use Route::*;
         for (status, code, route, expected) in [
-            (413, None, Epoch, Outgrown),
             (400, None, Other, Refused),
             (403, None, Other, Refused),
             (404, None, Blob, Refused),
@@ -102,6 +98,8 @@ mod tests {
             (410, None, Other, Ended),
             (410, None, Compact, Ended),
             (413, None, Compact, Outgrown),
+            // The relay's refusal of a base over `BASE_BYTES`: sharing pauses as outgrown.
+            (413, Some("invalid_request"), Compact, Outgrown),
             (413, None, Blob, FilesFull),
             (413, None, Other, Failed),
             (409, None, Other, Conflict),
@@ -118,8 +116,6 @@ mod tests {
     fn routes_follow_the_room_url() {
         let room = "https://share.dotpop.click/v1/documents/00000000-0000-4000-8000-000000000001";
         assert_eq!(Route::of(&format!("{room}/compact")), Route::Compact);
-        assert_eq!(Route::of(&format!("{room}/epochs/{}", "b".repeat(64))), Route::Epoch);
-        assert_eq!(Route::of(&format!("{room}/epochs/{}/blobs/{}", "b".repeat(64), "c".repeat(64))), Route::Epoch);
         assert_eq!(Route::of(&format!("{room}/blob/{}", "b".repeat(64))), Route::Blob);
         for other in ["", "/seed", "/blobs", "/resources", "/sync"] {
             assert_eq!(Route::of(&format!("{room}{other}")), Route::Other, "{other}");

@@ -118,11 +118,15 @@ pub fn call(path: &Path, input: &str) -> Result<String> {
         serde_json::from_str(input).map_err(|_| Failure::rejected(Code::InvalidRequest, "Invalid socket request"))?;
     let hello = crate::encode(&crate::wire::socket::Hello::Hello { protocol: header.protocol });
     let response = exchange(path, &hello, Some(4096))?;
-    if serde_json::from_str::<crate::wire::socket::HelloSuccess>(&response).is_err() {
-        // Return a refusal unchanged. The command router validates the failure header;
-        // no document payload has been sent, even if its limit changed across versions.
-        return Ok(response);
-    }
+    let hello = match serde_json::from_str::<crate::wire::socket::HelloSuccess>(&response) {
+        Ok(hello) => hello,
+        Err(_) => {
+            // Return a refusal unchanged. The command router validates the failure header;
+            // no document payload has been sent, even if its limit changed across versions.
+            return Ok(response);
+        }
+    };
+    hello.check_lineage().map_err(Failure::from)?;
     if input.len() > command::MAX_REQUEST_BYTES {
         return Err(Failure::rejected(Code::InvalidRequest, "Oversized socket request"));
     }

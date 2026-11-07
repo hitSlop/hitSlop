@@ -1,10 +1,15 @@
 //! Read-only discovery shared by command-line presentations. Descriptor metadata stays
 //! intact; operations describe the actual storage kinds rather than another schema DSL.
-use serde_json::{Value, json};
+use crate::{
+    Reading, Segment,
+    app::AppMetadata,
+    engine::{DescribeState, DescribedField},
+};
+use serde_json::Value;
 
-pub fn describe(metadata: Value, state: Value, commands: Value) -> Value {
+pub fn describe(metadata: AppMetadata, schema: Value, reading: Reading, commands: Value) -> DescribeState {
     let mut fields = Vec::new();
-    fn visit(node: &Value, path: Vec<Value>, fields: &mut Vec<Value>) {
+    fn visit(node: &Value, path: Vec<Segment>, fields: &mut Vec<DescribedField>) {
         let kind = node["kind"].as_str().unwrap_or("");
         let operations: &[&str] = match kind {
             "counter" => &["increment"],
@@ -16,14 +21,19 @@ pub fn describe(metadata: Value, state: Value, commands: Value) -> Value {
             _ => &["set"],
         };
         if !path.is_empty() {
-            fields.push(json!({"path":path,"kind":kind,"description":node.get("description"),"operations":operations}));
+            fields.push(DescribedField {
+                path: path.clone(),
+                kind: kind.into(),
+                description: node.get("description").and_then(Value::as_str).map(str::to_owned),
+                operations: operations.iter().map(|operation| (*operation).into()).collect(),
+            });
         }
         match kind {
             "object" => {
                 if let Some(properties) = node["properties"].as_object() {
                     for (key, child) in properties {
                         let mut at = path.clone();
-                        at.push(key.clone().into());
+                        at.push(Segment::Key(key.clone()));
                         visit(child, at, fields);
                     }
                 }
@@ -31,17 +41,29 @@ pub fn describe(metadata: Value, state: Value, commands: Value) -> Value {
             "optional" => visit(&node["inner"], path, fields),
             "list" => {
                 let mut at = path;
-                at.push(if node["item"]["kind"] == "object" { json!({"id":"$id"}) } else { json!({"index":0}) });
+                at.push(if node["item"]["kind"] == "object" {
+                    Segment::Id { id: "$id".into() }
+                } else {
+                    Segment::Index { index: 0 }
+                });
                 visit(&node["item"], at, fields);
             }
             "record" => {
                 let mut at = path;
-                at.push("<key>".into());
+                at.push(Segment::Key("<key>".into()));
                 visit(&node["value"], at, fields);
             }
             _ => {}
         }
     }
-    visit(&state["schema"], vec![], &mut fields);
-    json!({"metadata":metadata,"schema":state["schema"],"version":state["version"],"value":state["value"],"theme":state["theme"],"fields":fields,"commands":commands})
+    visit(&schema, vec![], &mut fields);
+    DescribeState {
+        metadata,
+        schema,
+        version: reading.version,
+        value: reading.value,
+        theme: reading.theme,
+        fields,
+        commands,
+    }
 }

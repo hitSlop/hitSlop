@@ -96,7 +96,15 @@ fn dispatch(request: EngineRequest) -> String {
             EngineRequest::Open { document_path } => {
                 EngineSuccess::Open { ok: True, document_path: open::document(Path::new(&document_path))? }
             }
-            _ => unreachable!("routed before file dispatch"),
+            EngineRequest::Get { .. }
+            | EngineRequest::Batch { .. }
+            | EngineRequest::Copy { .. }
+            | EngineRequest::Export { .. }
+            | EngineRequest::ThemeExport { .. }
+            | EngineRequest::AttachmentsList { .. }
+            | EngineRequest::AttachmentsRead { .. }
+            | EngineRequest::Describe { .. }
+            | EngineRequest::Call { .. } => unreachable!("document requests route to the owner"),
         })
     })();
     match result {

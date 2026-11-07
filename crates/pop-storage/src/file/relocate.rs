@@ -77,68 +77,6 @@ fn relocate(source: &Path, folder: &Path, access: &dyn Access) -> Result<Relocat
     Ok(RelocatedDocument { path: destination, cleanup_error: cleanup.err().map(|error| error.to_string()) })
 }
 
-/// Trashes an adopted original only while it still matches the saved replica.
-/// Coordinated access and the writer lease retain either copy if either file changes.
-pub fn trash_replica_original(source: &Path, destination: &Path, expected_id: &str) -> Result<()> {
-    struct ReplicaIdentity {
-        id: String,
-        fingerprint: String,
-        version: String,
-        app_digest: [u8; 32],
-        artwork_digest: String,
-    }
-    fn identity(path: &Path) -> Result<ReplicaIdentity> {
-        use sha2::{Digest, Sha256};
-        let store = crate::store::Store::open(path, crate::store::Mode::Snapshot)?;
-        let reading = store.document()?.reading().map_err(failed)?;
-        let attachments: Vec<_> = store.attachments()?.into_iter().map(|item| item.id).collect();
-        let state = serde_json::json!({"value": reading.value, "theme": reading.theme, "attachments": attachments});
-        let mut artwork = Sha256::new();
-        for name in super::Artwork::ALL {
-            artwork.update(name.as_str().as_bytes());
-            if let Some(bytes) = store.artwork(name)? {
-                artwork.update((bytes.len() as u64).to_le_bytes());
-                artwork.update(bytes);
-            }
-        }
-        Ok(ReplicaIdentity {
-            id: store.app().document_uuid.clone().ok_or_else(|| failed("Not a document"))?,
-            fingerprint: crate::hex(&Sha256::digest(crate::encode(&state))),
-            version: reading.version,
-            app_digest: store.app_digest()?,
-            artwork_digest: crate::hex(&artwork.finalize()),
-        })
-    }
-    trash_verified(source, destination, |resolved| {
-        let original = identity(resolved)?;
-        let saved = identity(destination)?;
-        if original.id != expected_id
-            || original.fingerprint != saved.fingerprint
-            || original.version != saved.version
-            || original.app_digest != saved.app_digest
-            || original.artwork_digest != saved.artwork_digest
-            || crate::store::Store::open(resolved, crate::store::Mode::Snapshot)?.share()?.is_some()
-        {
-            return Err(failed("The original or iCloud copy changed; both copies were kept"));
-        }
-        Ok(())
-    })
-}
-
-fn trash_verified(source: &Path, destination: &Path, verify: impl Fn(&Path) -> Result<()>) -> Result<()> {
-    Foundation.run(source, true, &mut |resolved| {
-        let lease = Lease::acquire(resolved)?;
-        let before = stamp(resolved)?;
-        let saved = stamp(destination)?;
-        verify(resolved)?;
-        lease.check()?;
-        if stamp(resolved)? != before || stamp(destination)? != saved {
-            return Err(Error::Moved);
-        }
-        Foundation.trash(resolved)
-    })
-}
-
 struct Foundation;
 unsafe extern "C" {
     fn pop_relocation_access(

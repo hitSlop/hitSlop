@@ -10,6 +10,30 @@ import WebKit
 @testable import PopDocument
 
 @Suite(.serialized) struct DocumentSessionTests {
+  @Test @MainActor func openingTimesOutWithoutAReadinessWaiter() async throws {
+    let stage = try Fixtures.stage()
+    try Fixtures.writeApp(
+      """
+      export default { mount() {
+        Object.defineProperty(document, 'fonts', {value: {
+          size: 1, status: 'loading', forEach(){}, ready: new Promise(() => {})
+        }});
+      }};
+      """, to: stage)
+    let root = try Fixtures.document(stage: stage)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let session = try await DocumentSession.open(url: root)
+    session.readyTimeout = .milliseconds(300)
+    session.load()
+    // Phone hosts do not call waitUntilReady. The session must own its deadline.
+    let timedOut = await eventually(timeout: .seconds(5)) { session.rendererDead }
+    #expect(timedOut)
+    #expect(session.currentWebView == nil)
+    #expect(Fixtures.isLocked(root))
+    try await session.close()
+    #expect(!Fixtures.isLocked(root))
+  }
+
   // Rust tests cover publishing a full owner's live state. This crosses the real page
   // barrier too: unsent text must reach that owner without saving the full source first.
   @Test @MainActor func aFullSharedSessionHandsOffUnsentPageText() async throws {

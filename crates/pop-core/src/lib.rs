@@ -27,7 +27,6 @@ use descriptor::{Node, is_scalar, loro_scalar, unwrap_optional, valid_key};
 pub use document::{AppSpec, Applied, Document, HistoryVersion, LAYOUT, Origin, TextEdit};
 use execute::{put, resolve};
 use identity::application_id;
-use layout::Layout;
 use loro::{
     Container, ContainerID, ContainerTrait, Index, LoroDoc, LoroMap, LoroMovableList, LoroText, LoroValue,
     ValueOrContainer,

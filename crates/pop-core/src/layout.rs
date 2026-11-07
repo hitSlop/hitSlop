@@ -1,28 +1,9 @@
-//! Layout 2 uses mergeable containers. Deletable containers live in stable slots whose
-//! current generation selects a payload; clearing advances the generation without
-//! deleting history, so stale edits stay hidden and undo can restore the old payload.
+//! The document layout uses mergeable containers. Deletable containers live in stable
+//! slots whose current generation selects a payload; clearing advances the generation
+//! without deleting history, so stale edits stay hidden and undo can restore the old payload.
 use super::*;
 use loro::LoroCounter;
 use std::collections::HashSet;
-
-/// Persisted representations share one engine and operation path. Legacy documents
-/// keep ordinary child identities and their original concurrent-creation semantics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Layout {
-    Legacy,
-    Generations,
-}
-impl Layout {
-    pub(crate) fn of(doc: &LoroDoc) -> Self {
-        match doc.get_map("meta").get("layout") {
-            Some(ValueOrContainer::Value(LoroValue::I64(1))) => Self::Legacy,
-            _ => Self::Generations,
-        }
-    }
-    pub(crate) fn generations(self) -> bool {
-        self == Self::Generations
-    }
-}
 
 /// The two children of a row list's map.
 const ROWS: &str = "rows";
@@ -30,11 +11,10 @@ const ORDER: &str = "order";
 
 /// Gets a present child or creates the deterministic child shared by concurrent writers.
 /// Reads never call this helper.
-pub(crate) fn ensure_child<C: ContainerTrait + Default>(layout: Layout, parent: &LoroMap, key: &str) -> Result<C> {
+pub(crate) fn ensure_child<C: ContainerTrait + Default>(parent: &LoroMap, key: &str) -> Result<C> {
     let container = match parent.get(key) {
         Some(ValueOrContainer::Container(container)) => container,
         Some(_) => return Err(err(Code::TypeMismatch, "Expected container")),
-        None if !layout.generations() => return parent.insert_container(key, C::default()).map_err(engine),
         None => match C::default().to_container() {
             Container::Map(_) => parent.ensure_mergeable_map(key).map(Container::Map),
             Container::Text(_) => parent.ensure_mergeable_text(key).map(Container::Text),
@@ -50,10 +30,8 @@ pub(crate) fn ensure_child<C: ContainerTrait + Default>(layout: Layout, parent: 
 pub(crate) const CURRENT: &str = "current";
 pub(crate) const INITIAL: &str = "initial";
 
-pub(crate) fn slotted(layout: Layout, node: &Node, entry: bool) -> bool {
-    layout.generations()
-        && (matches!(node, Node::Optional { inner } if !is_scalar(inner))
-            || (entry && matches!(node, Node::Object { .. })))
+pub(crate) fn slotted(node: &Node, entry: bool) -> bool {
+    matches!(node, Node::Optional { inner } if !is_scalar(inner)) || (entry && matches!(node, Node::Object { .. }))
 }
 pub(crate) fn valid_generation(key: &str) -> bool {
     key == INITIAL || key.strip_prefix("g:").is_some_and(valid_id)
@@ -69,7 +47,7 @@ pub(crate) fn generation(slot: &LoroMap) -> Result<String> {
 }
 /// The selected generation's parent and key. Creation never rewrites the selector.
 pub(crate) fn slot_parent(parent: &LoroMap, key: &str) -> Result<(LoroMap, String)> {
-    let slot = ensure_child(Layout::Generations, parent, key)?;
+    let slot = ensure_child(parent, key)?;
     let current = generation(&slot)?;
     Ok((slot, current))
 }
@@ -77,39 +55,38 @@ pub(crate) fn slot_value(value: &ValueOrContainer) -> Option<ValueOrContainer> {
     let ValueOrContainer::Container(Container::Map(slot)) = value else { return None };
     slot.get(&generation(slot).ok()?)
 }
-pub(crate) fn field(layout: Layout, map: &LoroMap, key: &str, node: &Node, entry: bool) -> Option<ValueOrContainer> {
+pub(crate) fn field(map: &LoroMap, key: &str, node: &Node, entry: bool) -> Option<ValueOrContainer> {
     let value = map.get(key)?;
-    if slotted(layout, node, entry) { slot_value(&value) } else { Some(value) }
+    if slotted(node, entry) { slot_value(&value) } else { Some(value) }
 }
 pub(crate) fn clear_slot(map: &LoroMap, key: &str) -> Result<()> {
     let (slot, _) = slot_parent(map, key)?;
     slot.insert(CURRENT, format!("g:{}", application_id())).map_err(engine)
 }
-pub(crate) fn clear_field(layout: Layout, map: &LoroMap, key: &str, node: &Node, entry: bool) -> Result<()> {
-    if field(layout, map, key, node, entry).is_none() {
+pub(crate) fn clear_field(map: &LoroMap, key: &str, node: &Node, entry: bool) -> Result<()> {
+    if field(map, key, node, entry).is_none() {
         return Ok(());
     }
-    if slotted(layout, node, entry) { clear_slot(map, key) } else { map.delete(key).map_err(engine) }
+    if slotted(node, entry) { clear_slot(map, key) } else { map.delete(key).map_err(engine) }
 }
 
 /// A list of rows: `rows` maps each `$id` to its generation slot; `order` lists the IDs.
 /// Merged edits can leave an ID in `order` twice (two restores of one row) or name a row
 /// that is gone, and a row can be missing from `order`; `ids` reads every such state.
 pub(crate) struct RowList {
-    layout: Layout,
     pub(crate) map: LoroMap,
     rows: LoroMap,
     order: LoroMovableList,
 }
 impl RowList {
     /// The row list stored in `value`, which holds the list field.
-    pub(crate) fn of(layout: Layout, value: &ValueOrContainer) -> Result<Self> {
+    pub(crate) fn of(value: &ValueOrContainer) -> Result<Self> {
         let ValueOrContainer::Container(Container::Map(map)) = value else {
             return Err(err(Code::TypeMismatch, "Expected list"));
         };
-        Self::in_map(layout, map).ok_or_else(|| err(Code::TypeMismatch, "Expected list"))
+        Self::in_map(map).ok_or_else(|| err(Code::TypeMismatch, "Expected list"))
     }
-    pub(crate) fn in_map(layout: Layout, map: &LoroMap) -> Option<Self> {
+    pub(crate) fn in_map(map: &LoroMap) -> Option<Self> {
         let rows = match map.get(ROWS) {
             Some(ValueOrContainer::Container(Container::Map(rows))) => rows,
             _ => return None,
@@ -118,14 +95,14 @@ impl RowList {
             Some(ValueOrContainer::Container(Container::MovableList(order))) => order,
             _ => return None,
         };
-        Some(Self { layout, map: map.clone(), rows, order })
+        Some(Self { map: map.clone(), rows, order })
     }
     /// The row list at `parent[key]`, created when absent.
-    pub(crate) fn ensure(layout: Layout, parent: &LoroMap, key: &str) -> Result<Self> {
-        let map = ensure_child(layout, parent, key)?;
-        let rows = ensure_child(layout, &map, ROWS)?;
-        let order = ensure_child(layout, &map, ORDER)?;
-        Ok(Self { layout, map, rows, order })
+    pub(crate) fn ensure(parent: &LoroMap, key: &str) -> Result<Self> {
+        let map = ensure_child(parent, key)?;
+        let rows = ensure_child(&map, ROWS)?;
+        let order = ensure_child(&map, ORDER)?;
+        Ok(Self { map, rows, order })
     }
     /// The rows as the application sees them (`visible`).
     pub(crate) fn ids(&self) -> Vec<String> {
@@ -146,11 +123,7 @@ impl RowList {
         out
     }
     pub(crate) fn row(&self, id: &str) -> Option<LoroMap> {
-        match if self.layout.generations() {
-            self.rows.get(id).as_ref().and_then(slot_value)
-        } else {
-            self.rows.get(id)
-        } {
+        match self.rows.get(id).as_ref().and_then(slot_value) {
             Some(ValueOrContainer::Container(Container::Map(row))) => Some(row),
             _ => None,
         }
@@ -184,13 +157,9 @@ impl RowList {
     }
     /// Inserts a validated row with `id` at `at` in `order`.
     pub(crate) fn insert(&self, at: usize, id: &str, item: &Node, value: &Value) -> Result<()> {
-        let row = if self.layout.generations() {
-            let (slot, generation) = slot_parent(&self.rows, id)?;
-            ensure_child(self.layout, &slot, &generation)?
-        } else {
-            self.rows.insert_container(id, LoroMap::new()).map_err(engine)?
-        };
-        execute::fill(self.layout, &row, item, value)?;
+        let (slot, generation) = slot_parent(&self.rows, id)?;
+        let row = ensure_child(&slot, &generation)?;
+        execute::fill(&row, item, value)?;
         self.order.insert(at, id).map_err(engine)
     }
     /// Hides a row behind a fresh generation and removes every place `order` names it.
@@ -204,11 +173,7 @@ impl RowList {
             return Ok(());
         }
         for id in ids {
-            if self.layout.generations() {
-                clear_slot(&self.rows, id)?;
-            } else {
-                self.rows.delete(id).map_err(engine)?;
-            }
+            clear_slot(&self.rows, id)?;
         }
         let removed: HashSet<&str> = ids.iter().copied().collect();
         let places: Vec<usize> = self
@@ -278,11 +243,7 @@ impl RowList {
     /// Removes every row.
     pub(crate) fn clear(&self) -> Result<()> {
         for id in self.ids() {
-            if self.layout.generations() {
-                clear_slot(&self.rows, &id)?;
-            } else {
-                self.rows.delete(&id).map_err(engine)?;
-            }
+            clear_slot(&self.rows, &id)?;
         }
         if !self.order.is_empty() {
             self.order.delete(0, self.order.len()).map_err(engine)?;

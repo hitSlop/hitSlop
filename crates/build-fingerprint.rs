@@ -41,12 +41,12 @@ pub fn emit(variable: &str, packages: &[&str], extra_directories: &[&str]) {
     }
     files.sort();
     files.dedup();
-    let mut hash: u64 = 0xcbf29ce484222325;
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for file in files {
         println!("cargo:rerun-if-changed={}", file.display());
         let name = file.strip_prefix(workspace).expect("workspace input").to_string_lossy();
         for byte in name.bytes().chain([0]).chain(fs::read(&file).expect("implementation bytes")) {
-            hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3);
         }
     }
     println!("cargo:rustc-env={variable}={hash:016x}");

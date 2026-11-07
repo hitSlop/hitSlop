@@ -7,7 +7,7 @@ use pop_core::Origin;
 use pop_core::{STORAGE_BYTES, STORAGE_ROWS};
 use pop_storage::file;
 use pop_storage::registry::Lease;
-use pop_storage::store::{EpochLocation, Error, Mode, Share, Store};
+use pop_storage::store::{Error, Mode, Share, Store};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -133,6 +133,29 @@ fn opening_refuses_saved_updates_without_a_checkpoint() {
 fn opening_refuses_a_document_with_no_checkpoint_or_updates() {
     missing_checkpoint_is_refused(Mode::Document, false);
     missing_checkpoint_is_refused(Mode::Snapshot, false);
+}
+
+// Damaged stored Loro bytes are a definite refusal, not an unknown storage outcome.
+// Both opening modes must keep the file intact and preserve the core's error code.
+#[test]
+fn damaged_history_is_refused_with_its_code_without_writing() {
+    for update in [false, true] {
+        for mode in [Mode::Document, Mode::Snapshot] {
+            let (_dir, path) = document();
+            if update {
+                sql(&path).execute("INSERT INTO history(bytes) VALUES(?1)", [b"invalid Loro".as_slice()]).unwrap();
+            } else {
+                sql(&path).execute("UPDATE history SET bytes=?1", [b"invalid Loro".as_slice()]).unwrap();
+            }
+            let before = std::fs::read(&path).unwrap();
+            let error = Store::open(&path, mode).and_then(|store| store.document().map(drop)).unwrap_err();
+            assert!(
+                matches!(&error, Error::Rejected(error) if error.code == pop_core::Code::InvalidBytes),
+                "damaged history must retain invalid_bytes: {error:?}"
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), before, "refusal never rewrites stored history");
+        }
+    }
 }
 
 #[test]
@@ -265,7 +288,8 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
     let (second, second_token) = session(&path, &mut seed, 100);
     let (store, mut doc) = open(&path);
     assert!(
-        !doc.includes_history(&first) && !doc.includes_history(&second),
+        !doc.history_version().includes(&first.history_version())
+            && !doc.history_version().includes(&second.history_version()),
         "close discards the previous physical lineages"
     );
     assert_eq!(doc.value(), second.value(), "close preserves values and row IDs");
@@ -305,53 +329,6 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
     assert!(stale(&doc, &edited), "compaction keeps no history");
     assert!(!stale(&doc, &latest));
     assert_eq!(title(&doc), "Compacted");
-}
-
-// Published layout-1 files may trim storage, but never rebuild their sync lineage.
-#[test]
-fn a_large_legacy_close_preserves_identity_and_accepts_descendant_updates() {
-    let schema = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
-    let (_dir, path) = document_with(schema, r#"{"title":"Saved"}"#);
-    let legacy = loro::LoroDoc::new();
-    legacy.get_map("meta").insert("layout", 1).unwrap();
-    legacy.get_map("data").insert("title", "Saved").unwrap();
-    let snapshot = legacy.export(loro::ExportMode::Snapshot).unwrap();
-    sql(&path).execute("UPDATE history SET bytes=?1", [&snapshot]).unwrap();
-    let (store, mut source) = open(&path);
-    let identity = store.app().document_uuid.clone();
-    assert!(!source.supports_deep_compaction());
-    let mut seed = 17;
-    for _ in 0..170 {
-        set_title(&mut source, &noise(&mut seed, 32 * 1024));
-        save(&store, &mut source);
-    }
-    let lineage = source.history_version();
-    let visible = source.value();
-    assert_eq!(close(store, &mut source), Some(true));
-    let (reopened, mut receiver) = open(&path);
-    assert!(!receiver.supports_deep_compaction(), "closing never upgrades the saved representation");
-    assert_eq!(receiver.history_version(), lineage, "legacy close retains its sync lineage");
-    assert_eq!(receiver.value(), visible);
-    assert_eq!(reopened.app().document_uuid, identity);
-    let recovery_path = path.with_file_name("legacy-independent-recovery.pop");
-    reopened
-        .ensure_recovery(
-            &pop_storage::store::EpochLocation::Path(recovery_path.clone()),
-            &receiver.clean_checkpoint().unwrap(),
-        )
-        .unwrap();
-    let recovery = Store::open(&recovery_path, Mode::Snapshot).unwrap();
-    assert_ne!(recovery.app().document_uuid, identity);
-    assert_eq!(recovery.document().unwrap().value(), visible);
-    assert!(recovery.share().unwrap().is_none());
-    assert!(!reopened.document().unwrap().supports_deep_compaction(), "independent recovery never upgrades its source");
-    let size = stored(&path);
-    assert!(size.checkpoint_bytes + size.update_bytes <= 2 * visible.len() as i64 + 4096, "{size:?}");
-    set_title(&mut source, "Legacy descendant");
-    let updates = source.history_updates_since(&lineage).unwrap();
-    receiver.import_remote(&[&updates]).unwrap();
-    assert_eq!(title(&receiver), "Legacy descendant");
-    assert!(!receiver.supports_deep_compaction());
 }
 
 // Failure: a cut at the session's start kept every row deleted before it, so a document
@@ -399,7 +376,10 @@ fn session_too_large_to_keep(schema: &str) {
     let after = stored(&path);
     assert!(after.checkpoint_bytes + after.update_bytes < 64 * 1024, "{after:?}");
     let opened_doc = Document::open(_store.app().app.spec(), &opened_snapshot, &[]).unwrap();
-    assert!(!doc.includes_history(&opened_doc), "the previous physical history is unavailable");
+    assert!(
+        !doc.history_version().includes(&opened_doc.history_version()),
+        "the previous physical history is unavailable"
+    );
     assert_eq!(doc.value(), opened_doc.value(), "close preserves the accepted visible state");
     assert_eq!(_store.app().document_uuid, identity, "close keeps the document identity");
     let before = doc.state().unwrap();
@@ -793,18 +773,6 @@ fn checkpoints_reclaim_free_pages() {
 fn a_copy_preserves_visible_state_and_theme_with_independent_identity_and_history() {
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
-    let template_stage = dir.path().join("recovery-template-stage");
-    std::fs::create_dir_all(template_stage.join("assets")).unwrap();
-    std::fs::write(template_stage.join("assets/ui.js"), "export default {}").unwrap();
-    write_app(&template_stage, App::new(SCHEMA, INITIAL));
-    let template_destination = dir.path().join("recovery-template.pop");
-    support::pack(&template_stage, &template_destination).unwrap();
-    let template_bytes = std::fs::read(&template_destination).unwrap();
-    assert!(
-        store.ensure_recovery(&EpochLocation::Path(template_destination.clone()), &doc.checkpoint().unwrap()).is_err(),
-        "a matching template is not an independent recovery document"
-    );
-    assert_eq!(std::fs::read(&template_destination).unwrap(), template_bytes);
     set_title(&mut doc, "Copied");
     set_accent(&mut doc, "#123456");
     save(&store, &mut doc);
@@ -912,36 +880,7 @@ fn a_copy_keeps_the_current_state_and_only_what_it_references() {
     assert_eq!(copied.artwork(file::Artwork::Preview).unwrap(), None, "no artwork given, none copied");
     assert_eq!(title(&copied.document().unwrap()), "Kept");
     assert_eq!(store.attachments().unwrap().len(), 3, "the original keeps every blob");
-    let recovery_location = EpochLocation::Path(copy.clone());
-    let recovery_state = doc.checkpoint().unwrap();
-    assert!(
-        matches!(store.ensure_recovery(&recovery_location, &recovery_state), Err(Error::Locked)),
-        "a live recovery cannot be reused behind its owner"
-    );
     copied.close().unwrap();
-    store.ensure_recovery(&recovery_location, &recovery_state).unwrap();
-    let copied_id = file::open(&copy, true).unwrap().document_uuid;
-    let blob = referenced[0].clone();
-    let original_blob = store.attachment(&blob).unwrap();
-    sql(&copy).execute("DELETE FROM attachments WHERE id=?1", [&blob]).unwrap();
-    assert!(
-        store.ensure_recovery(&recovery_location, &recovery_state).is_err(),
-        "a matching visible value without its blob is not a recovery"
-    );
-    sql(&copy)
-        .execute(
-            "INSERT INTO attachments(id,media_type,bytes) VALUES(?1,'application/octet-stream',?2)",
-            rusqlite::params![blob, original_blob],
-        )
-        .unwrap();
-    sql(&copy).execute("UPDATE attachments SET bytes=x'00' WHERE id=?1", [&blob]).unwrap();
-    assert!(
-        store.ensure_recovery(&recovery_location, &recovery_state).is_err(),
-        "an attachment's identity alone cannot certify its bytes"
-    );
-    let unchanged_id: Option<String> = sql(&copy).query_row("SELECT uuid FROM document", [], |row| row.get(0)).unwrap();
-    assert_eq!(unchanged_id, copied_id);
-    assert_eq!(store.attachment(&blob).unwrap(), original_blob, "refusal leaves the original recovery source intact");
     assert!(doc.undo().unwrap().publication.is_some(), "the session's undo is untouched");
     assert!(doc.undo().unwrap().publication.is_some());
     assert_eq!(title(&doc), replaced);

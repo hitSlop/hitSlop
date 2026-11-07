@@ -29,6 +29,8 @@ fn restricted_commands_collect_intents_with_only_host_time_and_seed() {
 #[test]
 fn explicit_capture_and_process_providers_keep_distinct_command_authority() {
     let capture = Evaluator::in_process_capture(env!("CARGO_BIN_EXE_pop-evaluator").into()).unwrap();
+    assert!(!capture.supports_commands());
+    assert!(Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap().supports_commands());
     assert!(capture.run(1, "", "{}").is_err(), "capture does not acquire commands from feature unification");
     let output = evaluate("return [typeof process,typeof Bun,typeof fetch,typeof require,typeof WebSocket]");
     assert_eq!(output["ok"], true, "{output}");

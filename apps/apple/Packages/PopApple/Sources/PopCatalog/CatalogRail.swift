@@ -17,6 +17,7 @@ struct CatalogRail: View {
   var onRemoveDownload: (CatalogEntry) -> Void = { _ in }
   var onLocalCopy: (CatalogEntry) -> Void = { _ in }
   var onEnableSync: (CatalogEntry) -> Void = { _ in }
+  var onRemoveRecent: (CatalogEntry) -> Void = { _ in }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -98,6 +99,9 @@ struct CatalogRail: View {
                         ? "Delete from This Device"
                         : document.role == .editor ? "Leave Shared Document" : "Delete Everywhere", role: .destructive
                     ) { onDelete(entry) }
+                  }
+                  if entry.recentHistoryID != nil {
+                    Button("Remove from Recents") { onRemoveRecent(entry) }
                   }
                 }
               }
@@ -246,10 +250,10 @@ private struct CatalogRow: View {
   private var presentation: CatalogDocumentPresentation? {
     guard entry.isRecent else { return nil }
     if let presentation = entry.documentPresentation {
-      return entry.isUnavailable ? presentation.requiringAttention() : presentation
+      return entry.needsAttention ? presentation.requiringAttention() : presentation
     }
     return CatalogDocumentPresentation(
-      needsAttention: entry.isUnavailable, downloaded: true, localOnly: true,
+      needsAttention: entry.needsAttention, downloaded: true, localOnly: true,
       sharing: isGuest ? .sharedWithYou : .none)
   }
 }

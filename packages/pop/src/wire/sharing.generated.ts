@@ -4,10 +4,12 @@ export type AccessState = { document: string, sharing: boolean, generation: numb
 
 export type ApiFailure = { code: string, message: string, };
 
+export type BudgetDecision = { "action": "ready" } | { "action": "wait", milliseconds: number, } | { "action": "tooLarge" };
+
 /**
  * One acknowledged local state, exported by the serial owner for a bounded receipt.
  */
-export type Confirmation = { version: string, heads: Array<[string, number]>, };
+export type Confirmation = { version: string, };
 
 export type ConnectionPlan = { document: string, size: number, url: string, headers: { [key in string]: string }, socket: string, protocols: Array<string>, };
 
@@ -15,15 +17,11 @@ export type CreateRoom = { document: string, };
 
 export type CreatedRoom = { room: string, capability: string, phase: RoomPhase, };
 
-export type DocumentEntry = { documentId: string, title: string, templateId: string, appRevision: string | null, previewRef: string | null, modifiedAt: number, role: DocumentRole, accessGeneration: number, catalogRevision: number, deleted: boolean, };
+export type DocumentEntry = { documentId: string, title: string, templateId: string, modifiedAt: number, role: DocumentRole, catalogRevision: number, deleted: boolean, };
 
 export type DocumentMetadata = { title: string, templateId: string, };
 
 export type DocumentRole = "owner" | "editor";
-
-export type EpochBase = { seedHash: string, heads: Array<[string, number]>, };
-
-export type EpochState = { seedHash: string, root: Array<[string, number]>, heads: Array<[string, number]>, };
 
 /**
  * The browser-facing projection of a classified relay failure.
@@ -33,7 +31,7 @@ export type Failure = { outcome: Outcome, message: string, };
 /**
  * Whether a room-full connection has already retried after compaction.
  */
-export type FullState = "available" | "waiting" | "retried" | "filesWaiting" | "filesRetried";
+export type FullState = "available" | "waiting" | "retried";
 
 export type JoinDocument = { capability: string, };
 
@@ -56,15 +54,21 @@ export type Pause = { kind: PauseKind, reason: string, };
  */
 export type PauseKind = "roomFull" | "outgrown" | "needsUpdate" | "refused" | "missingHistory" | "filesFull" | "ended";
 
-export type PublishEpoch = { expected: EpochBase, seedHash: string, root: Array<[string, number]>, resources: Manifest, attachments: Array<Resource>, };
-
 /**
  * Registry hints for repairing a missing personal catalog reference. Authorization
  * is always checked by the document before any bytes are returned.
  */
 export type RegisteredDocument = { document: string, role: DocumentRole, };
 
-export type RegisteredDocuments = { documents: Array<RegisteredDocument>, };
+/**
+ * One page of the account's registrations in document order. An account has no
+ * document cap, so the list is read with `?after=<next>` until `next` is absent.
+ */
+export type RegisteredDocuments = { documents: Array<RegisteredDocument>,
+/**
+ * The cursor for the following page: this page's last document. Absent on the last page.
+ */
+next?: string, };
 
 export type Resource = { key: string, hash: string, size: number, media_type: string, };
 
@@ -76,14 +80,12 @@ export type RoomPhase = "uploading" | "live" | "ended";
 
 export type SharingControl = { "type": "joinCredential", credential: string, };
 
-export type SharingEvent = { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, phase?: SyncPhase, };
-
-export type StagedSeed = { seedHash: string, size: number, expiresAt: number, };
+export type SharingEvent = { "type": "identityAttention", message: string, } | { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, phase?: SyncPhase, };
 
 /**
  * The observation made by a transport at one compaction boundary.
  */
-export type Step = { "step": "probe", compact: boolean, } | { "step": "recheck", compact: boolean, } | { "step": "baseUnavailable" } | { "step": "compacted" };
+export type Step = { "step": "probe", compact: boolean, } | { "step": "recheck", compact: boolean, } | { "step": "baseUnavailable" } | { "step": "baseTooLarge" } | { "step": "compacted" };
 
 /**
  * Where a replica stands with its room, apart from the words shown for it.

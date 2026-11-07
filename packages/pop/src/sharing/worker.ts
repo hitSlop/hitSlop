@@ -1,18 +1,11 @@
+import { GuestIdentity, GuestIdentityAttention } from "./identity";
 import { config, frameOrigin } from "./config";
 import {
   WorkerOwner,
   type BrowserCopy as LocalCopy,
   type BrowserRuntime as LocalRuntime,
 } from "../browser/worker-owner";
-import {
-  checkContainer,
-  listCopies,
-  lockName,
-  putCopy,
-  updateCopy,
-  removeCopy,
-  reserveRecovery,
-} from "../browser/copies";
+import { updateCopy } from "../browser/copies";
 import { BrowserHost } from "../schema/constants";
 import type {
   ConnectionPlan,
@@ -24,31 +17,18 @@ import type {
   RoomInfo,
   Resource,
   ResourceGrant,
-  PublishEpoch,
-  EpochState,
   SharingControl,
   SharingEvent,
   SyncPhase,
   SyncState,
+  BudgetDecision,
 } from "../wire/sharing.generated";
 import { SharingHost } from "../wire/constants.generated";
 
 interface BrowserCopy extends LocalCopy {
   openLocal(): void;
   leaveRoom(): void;
-  supportsEpoch(): boolean;
-  confirmEpoch(receipt: string): void;
-  hasEpoch(epoch: string): boolean;
-  prepareEpoch(candidate: BrowserCopy, expected: string): string;
-  exportEpoch(write: (bytes: Uint8Array) => void): void;
-  epochAttachment(id: string): Uint8Array;
-  currentVersion(): string;
-  documentIdentity(): string;
   confirmedVersion(): string | undefined;
-  validateEpoch(metadata: string, epoch: string): void;
-  adoptEpoch(candidate: BrowserCopy, recovery: BrowserCopy, confirmed: string): boolean;
-  releaseStorage(): void;
-  abortImport(): void;
   openJoined(invitation: string, origin: string, info: string): void;
   openSavedJoined(invitation: string, origin: string): void;
   syncAttach(): void;
@@ -60,7 +40,15 @@ interface BrowserCopy extends LocalCopy {
   syncBase(
     monotonic: bigint,
     unix: bigint,
-  ): { bytes(): Uint8Array; frontier(): string; root(): string; free(): void } | undefined;
+  ):
+    | {
+        bytes(): Uint8Array;
+        frontier(): string;
+        root(): string;
+        tooLarge(): boolean;
+        free(): void;
+      }
+    | undefined;
   resourceRange(attachment: boolean, key: string, offset: number, length: number): Uint8Array;
   verifyResources(json: string): string;
   attachmentInventory(): string;
@@ -68,20 +56,66 @@ interface BrowserCopy extends LocalCopy {
   missingUploads(json: string): string;
   installAttachment(item: string, bytes: Uint8Array, monotonic: number, unix: number): void;
 }
+interface SocketBudget {
+  admit(monotonic: bigint, bytes: Uint8Array): string;
+  acknowledge(monotonic: bigint, bytes: Uint8Array): void;
+  free(): void;
+}
+interface SharingSupervisor {
+  connect(): boolean;
+  live(): boolean;
+  retry(): number | undefined;
+  stop(): void;
+  free(): void;
+}
 interface BrowserRuntime extends LocalRuntime<BrowserCopy> {
+  SocketPushBudget: new (monotonic: bigint) => SocketBudget;
+  SharingSupervisor: new () => SharingSupervisor;
   invitationRequest(link: string, origin: string, info: string): string;
   frameOperation(bytes: Uint8Array): string;
   classifyFailure(status: number, code: string | undefined, url: string): string;
   maintenanceAction(full: string, step: string, random: number): string;
 }
+const identity = new GuestIdentity();
+let identityUnavailable = false;
+let identityFailure: Error | undefined;
 let invitation = "";
 let localRecovery = false;
-let refreshing = false;
 let ending = false;
-let confirmedVersion = "";
 let socket: WebSocket | undefined;
-let generation = 0,
-  backoff: number = SharingHost.backoffMinMs;
+let pushBudget: SocketBudget | undefined;
+let pendingPush: Uint8Array | undefined;
+let pushWakeAt = 0;
+let pushTimer: ReturnType<typeof setTimeout> | undefined;
+const monotonic = () => BigInt(Math.floor(performance.now()));
+function clearPushBudget() {
+  clearTimeout(pushTimer);
+  pendingPush = undefined;
+  pushWakeAt = 0;
+  pushBudget?.free();
+  pushBudget = undefined;
+}
+let generation = 0;
+let connectionRetry: SharingSupervisor | undefined;
+let maintenanceRetry: SharingSupervisor | undefined;
+function supervisors(runtime: BrowserRuntime) {
+  connectionRetry ??= new runtime.SharingSupervisor();
+  maintenanceRetry ??= new runtime.SharingSupervisor();
+}
+function stopSupervisors() {
+  connectionRetry?.stop();
+  maintenanceRetry?.stop();
+}
+function scheduleReconnect() {
+  const milliseconds = connectionRetry?.retry();
+  if (milliseconds === undefined) return;
+  const attempt = generation;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    if (attempt !== generation || ended) return;
+    void connectSocket().catch((error) => resourceFailure(error));
+  }, milliseconds);
+}
 let lastStatus = "";
 let sending = 0;
 let receiving = 0;
@@ -95,10 +129,8 @@ let compactAfter = 0;
 let checkedRoomAt = 0;
 let retriedFull = false;
 /** Room-full waits for compaction, which this worker runs, so only the other pauses stop it. */
-const stops = (pause: Pause | undefined) =>
-  pause !== undefined &&
-  pause.kind !== "roomFull" &&
-  !(pause.kind === "filesFull" && owner.copy?.supportsEpoch());
+const stops = (pause: Pause | undefined) => pause !== undefined && pause.kind !== "roomFull";
+const outgrown: Pause = { kind: "outgrown", reason: "This document has outgrown sharing" };
 function copyState(): SyncState | undefined {
   const state = owner.copy?.syncState();
   return state ? (JSON.parse(state) as SyncState) : undefined;
@@ -121,10 +153,20 @@ function pauseSync(pause: Pause) {
   owner.copy?.pauseSync(JSON.stringify(pause));
   owner.poll();
 }
-async function compactRoom(epoch: number, full: boolean) {
+function maintenanceDecision(
+  runtime: BrowserRuntime,
+  step: Step,
+  random = 0,
+  full = false,
+): MaintenanceAction {
+  const kind = copyState()?.pause?.kind;
+  const state: FullState =
+    full || kind === "roomFull" ? (retriedFull ? "retried" : "waiting") : "available";
+  return JSON.parse(runtime.maintenanceAction(JSON.stringify(state), JSON.stringify(step), random));
+}
+async function compactRoom(attempt: number, full: boolean) {
   if (compacting || Date.now() < compactAfter) return;
-  compacting = epoch;
-  const filesFull = copyState()?.pause?.kind === "filesFull" && owner.copy!.supportsEpoch();
+  compacting = attempt;
   try {
     const info = async () =>
       JSON.parse(
@@ -132,26 +174,15 @@ async function compactRoom(epoch: number, full: boolean) {
           await checkedFetch(
             connection.url.replace(/\/seed$/, ""),
             { headers: connection.headers },
-            epoch,
+            attempt,
           ),
-          epoch,
+          attempt,
         ),
       ) as RoomInfo;
     const runtime = (await owner.initialized) as BrowserRuntime;
-    const decide = (step: Step, random = 0): MaintenanceAction => {
-      const fullState: FullState = filesFull
-        ? retriedFull
-          ? "filesRetried"
-          : "filesWaiting"
-        : full
-          ? retriedFull
-            ? "retried"
-            : "waiting"
-          : "available";
-      return JSON.parse(
-        runtime.maintenanceAction(JSON.stringify(fullState), JSON.stringify(step), random),
-      );
-    };
+    supervisors(runtime);
+    if (!maintenanceRetry!.connect()) return;
+    const decide = (step: Step, random = 0) => maintenanceDecision(runtime, step, random, full);
     const first = await info();
     checkedRoomAt = Date.now();
     let action = decide(
@@ -159,37 +190,26 @@ async function compactRoom(epoch: number, full: boolean) {
       crypto.getRandomValues(new Uint16Array(1))[0]!,
     );
     if (action.action === "outgrown") {
-      pauseSync({ kind: "outgrown", reason: "This document has outgrown sharing" });
+      pauseSync(outgrown);
       return;
     }
     if (action.action !== "jitter") return;
     const delay = action.milliseconds;
-    await new Promise((resolve) => setTimeout(resolve, delay));
-    currentEpoch(epoch);
+    const signal = networkAbort?.signal;
+    await new Promise<void>((resolve) => {
+      if (!signal || signal.aborted) return resolve();
+      const timer = setTimeout(resolve, delay);
+      signal.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+    });
+    assertCurrent(attempt);
     const latest = await info();
     action = decide({ step: "recheck", compact: latest.compact ?? false });
     if (action.action === "reconnect") {
       retriedFull = true;
-      reconnectAfterCompaction(epoch);
+      reconnectAfterCompaction(attempt);
       return;
     }
     if (action.action !== "readBase") return;
-    if (filesFull) {
-      const canonical = JSON.parse(
-        await metadata(
-          await checkedFetch(
-            connection.url.replace(/seed$/, "epoch"),
-            {
-              headers: connection.headers,
-            },
-            epoch,
-          ),
-          epoch,
-        ),
-      ) as EpochState;
-      await publishFreshEpoch(canonical.seedHash, JSON.stringify(canonical.heads));
-      return;
-    }
     const base = owner.copy!.syncBase(BigInt(Math.floor(performance.now())), BigInt(Date.now()));
     if (!base) {
       // Not eligible yet; each retry re-reads RoomInfo inside the guest metadata budget.
@@ -197,16 +217,15 @@ async function compactRoom(epoch: number, full: boolean) {
       if (action.action === "retryBase") compactAfter = Date.now() + action.milliseconds;
       return;
     }
-    if (owner.copy!.supportsEpoch()) {
-      const heads = base.frontier();
+    if (base.tooLarge()) {
       base.free();
-      await publishFreshEpoch(latest.seedHash!, heads);
+      if (decide({ step: "baseTooLarge" }).action === "outgrown") pauseSync(outgrown);
       return;
     }
     try {
       const bytes = new Uint8Array(base.bytes());
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-      currentEpoch(epoch);
+      assertCurrent(attempt);
       await checkedFetch(
         connection.url.replace(/seed$/, "compact"),
         {
@@ -220,32 +239,35 @@ async function compactRoom(epoch: number, full: boolean) {
           },
           body: bytes,
         },
-        epoch,
+        attempt,
       );
     } catch (error) {
-      // A 413 here is an `outgrown` pause, which the outer catch applies.
+      // A 413 here is an `outgrown` pause, which the outer catch applies. Another
+      // writer's fold conflicts: reconnect to catch up, as the native client does.
       if (!(error instanceof TransportError) || error.status !== 409) throw error;
+      reconnectAfterCompaction(attempt);
+      return;
     } finally {
       base.free();
     }
     if (decide({ step: "compacted" }).action === "reconnect") {
       retriedFull = true;
-      reconnectAfterCompaction(epoch);
+      reconnectAfterCompaction(attempt);
     }
   } catch (error) {
-    if (epoch !== generation) return;
+    if (attempt !== generation) return;
     checkedRoomAt = 0;
     if (error instanceof TransportError && error.pause) {
       pauseSync(error.pause);
       return;
     }
     console.warn("Room compaction failed; retrying", error);
-    compactAfter = Date.now() + backoff;
-    backoff = Math.min(SharingHost.backoffMaxMs, backoff * 2);
+    const milliseconds = maintenanceRetry?.retry();
+    if (milliseconds !== undefined) compactAfter = Date.now() + milliseconds;
     if (error instanceof TransportError && (error.status === 410 || error.status === 403))
-      resourceFailure(error, epoch);
+      resourceFailure(error, attempt);
   } finally {
-    if (compacting === epoch) compacting = 0;
+    if (compacting === attempt) compacting = 0;
   }
 }
 const remoteAttachments = new Map<string, Resource>();
@@ -264,23 +286,39 @@ class TransportError extends Error {
     super("File transport refused: " + status);
   }
 }
-function currentEpoch(epoch: number) {
-  if (epoch !== generation) throw new DOMException("Connection replaced", "AbortError");
+function assertCurrent(attempt: number) {
+  if (attempt !== generation) throw new DOMException("Connection replaced", "AbortError");
 }
-async function checkedFetch(url: string, init: RequestInit = {}, epoch = generation) {
-  currentEpoch(epoch);
+async function checkedFetch(url: string, init: RequestInit = {}, attempt = generation) {
+  assertCurrent(attempt);
   const signal = networkAbort?.signal;
+  const headers = new Headers(init.headers);
+  try {
+    headers.set("Authorization", `Bearer ${await identity.token()}`);
+    identityUnavailable = false;
+    identityFailure = undefined;
+  } catch (error) {
+    identityUnavailable = true;
+    identityFailure =
+      error instanceof Error ? error : new Error("Guest session is unavailable; retry later");
+    if (error instanceof GuestIdentityAttention) {
+      sharingEvent({ type: "identityAttention", message: error.message });
+    }
+    throw error;
+  }
+  assertCurrent(attempt);
   const response = await fetch(url, {
     ...init,
+    headers,
     signal: signal
       ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
       : AbortSignal.timeout(30_000),
   });
-  currentEpoch(epoch);
+  assertCurrent(attempt);
   if (!response.ok) {
     let body: { code: string; message: string } | undefined;
     try {
-      body = JSON.parse(await metadata(response, epoch));
+      body = JSON.parse(await metadata(response, attempt));
     } catch (error) {
       // A missing error body still carries the HTTP status.
       console.warn("Sharing error reply unreadable (" + response.status + ")", error);
@@ -300,14 +338,14 @@ async function checkedFetch(url: string, init: RequestInit = {}, epoch = generat
   }
   return response;
 }
-async function boundedBody(response: Response, limit: number, epoch: number) {
+async function boundedBody(response: Response, limit: number, attempt: number) {
   if (!response.body) throw new Error("Missing response body");
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     while (true) {
-      currentEpoch(epoch);
+      assertCurrent(attempt);
       const { done, value } = await reader.read();
       if (done) break;
       size += value.length;
@@ -318,7 +356,7 @@ async function boundedBody(response: Response, limit: number, epoch: number) {
     await reader.cancel().catch((cancel) => console.warn("Sharing response not cancelled", cancel));
     throw error;
   }
-  currentEpoch(epoch);
+  assertCurrent(attempt);
   const bytes = new Uint8Array(size);
   let at = 0;
   for (const chunk of chunks) {
@@ -327,16 +365,16 @@ async function boundedBody(response: Response, limit: number, epoch: number) {
   }
   return bytes;
 }
-async function metadata(response: Response, epoch: number) {
-  return new TextDecoder().decode(await boundedBody(response, SharingHost.controlBytes, epoch));
+async function metadata(response: Response, attempt: number) {
+  return new TextDecoder().decode(await boundedBody(response, SharingHost.controlBytes, attempt));
 }
-async function resourceSession(epoch: number) {
+async function resourceSession(attempt: number) {
   const manifest = await checkedFetch(
     connection.url.replace(/seed$/, "resources"),
     { headers: connection.headers },
-    epoch,
+    attempt,
   );
-  const app = owner.copy!.verifyResources(await metadata(manifest, epoch));
+  const app = owner.copy!.verifyResources(await metadata(manifest, attempt));
   const grant: ResourceGrant = { app };
   await checkedFetch(
     frameOrigin(owner.copyID) + "/_resources/" + new URL(connection.url).pathname.split("/").at(-2),
@@ -346,20 +384,20 @@ async function resourceSession(epoch: number) {
       headers: { ...connection.headers, "Content-Type": "application/json" },
       body: JSON.stringify(grant),
     },
-    epoch,
+    attempt,
   );
   if (!resourcesReady) {
     resourcesReady = true;
     sharingEvent({ type: "resourcesReady" });
   }
 }
-async function uploadFiles(epoch: number) {
+async function uploadFiles(attempt: number) {
   reportSync("Syncing files", "syncing");
   sharingEvent({ type: "files", status: "Uploading files" });
   for (const item of JSON.parse(
     owner.copy!.missingUploads(JSON.stringify([...remoteAttachments.values()])),
   ) as Resource[]) {
-    currentEpoch(epoch);
+    assertCurrent(attempt);
     const chunks: Uint8Array[] = [];
     for (let at = 0; at < item.size; at += BrowserHost.chunkBytes)
       chunks.push(
@@ -377,29 +415,29 @@ async function uploadFiles(epoch: number) {
         headers: { ...connection.headers, "Content-Type": item.media_type },
         body: new Blob(chunks.map((chunk) => new Uint8Array(chunk).buffer)),
       },
-      epoch,
+      attempt,
     );
-    currentEpoch(epoch);
+    assertCurrent(attempt);
     remoteAttachments.set(item.hash, item);
   }
 }
-async function receiveFiles(epoch: number) {
-  receiving = epoch;
+async function receiveFiles(attempt: number) {
+  receiving = attempt;
   try {
-    await receiveInventory(epoch);
+    await receiveInventory(attempt);
   } finally {
-    if (receiving === epoch) receiving = 0;
+    if (receiving === attempt) receiving = 0;
   }
 }
-async function receiveInventory(epoch: number) {
+async function receiveInventory(attempt: number) {
   reportSync("Receiving files", "syncing");
   sharingEvent({ type: "files", status: "Receiving files" });
   const list = await checkedFetch(
     connection.url.replace(/seed$/, "blobs"),
     { headers: connection.headers },
-    epoch,
+    attempt,
   );
-  const inventory = await metadata(list, epoch);
+  const inventory = await metadata(list, attempt);
   const missing = JSON.parse(owner.copy!.missingAttachments(inventory)) as Resource[];
   // Rust validated the complete inventory, including metadata for existing hashes.
   for (const item of JSON.parse(inventory) as Resource[]) remoteAttachments.set(item.hash, item);
@@ -407,11 +445,11 @@ async function receiveInventory(epoch: number) {
     const response = await checkedFetch(
       connection.url.replace(/seed$/, "blob/" + item.hash),
       { headers: connection.headers },
-      epoch,
+      attempt,
     );
-    const bytes = await boundedBody(response, item.size, epoch);
+    const bytes = await boundedBody(response, item.size, attempt);
     if (bytes.length !== item.size) throw new Error("Incomplete attachment");
-    currentEpoch(epoch);
+    assertCurrent(attempt);
     owner.copy!.installAttachment(JSON.stringify(item), bytes, performance.now(), Date.now());
   }
   sharingEvent({ type: "files", status: "Files ready" });
@@ -419,6 +457,7 @@ async function receiveInventory(epoch: number) {
 function detachConnection(code: number, reason: string) {
   // Fence the generation before any queued work can follow the detached connection.
   ++generation;
+  clearPushBudget();
   networkAbort?.abort();
   const target = socket;
   socket = undefined;
@@ -426,74 +465,69 @@ function detachConnection(code: number, reason: string) {
   owner.copy?.syncDetach();
   if (owner.opened) owner.poll();
 }
-function reconnectAfterCompaction(epoch: number) {
-  if (epoch !== generation || ended) return;
+function reconnectAfterCompaction(attempt: number) {
+  if (attempt !== generation || ended) return;
   detachConnection(1000, "Room compacted");
   reportSync("Syncing", "syncing");
-  clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(() => {
-    void connectSocket().catch((error) => resourceFailure(error));
-  }, backoff);
+  scheduleReconnect();
 }
-function resourceFailure(error: unknown, epoch = generation) {
-  if (epoch !== generation || refreshing) return;
+function resourceFailure(error: unknown, attempt = generation) {
+  if (attempt !== generation) return;
+  if (error instanceof GuestIdentityAttention) {
+    identityUnavailable = true;
+    detachConnection(4011, "Guest session needs attention");
+    clearTimeout(reconnectTimer);
+    stopSupervisors();
+    sharingEvent({ type: "identityAttention", message: error.message });
+    reportSync("Guest session needs attention; this browser copy is kept", "paused");
+    return;
+  }
   if (error instanceof TransportError && (error.status === 410 || error.status === 403)) {
     ended = true;
     void settleEndedCopy();
     return;
   }
-  if (copyState()?.pause?.kind === "missingHistory") {
-    void refreshEpoch();
-    return;
-  }
   if (error instanceof TransportError && error.pause && owner.copy) pauseSync(error.pause);
   sharingEvent({ type: "files", status: "File transfer pending: " + String(error) });
   const state = copyState();
-  if (state?.pause?.kind === "filesFull" && owner.copy?.supportsEpoch()) {
-    void compactRoom(epoch, true);
-    return;
-  }
   if (stops(state?.pause)) {
     ended = true;
+    stopSupervisors();
     reportState(state);
   }
   detachConnection(4011, "File transfer interrupted");
   if (ended) return;
   reportSync("Offline; reconnecting", "offline");
-  clearTimeout(reconnectTimer);
-  if (!ended)
-    reconnectTimer = setTimeout(() => {
-      void connectSocket().catch((error) => resourceFailure(error));
-    }, backoff);
-  backoff = Math.min(SharingHost.backoffMaxMs, backoff * 2);
+  scheduleReconnect();
 }
 async function connectSocket() {
   if (ended) return;
+  const runtime = (await owner.initialized) as BrowserRuntime;
+  supervisors(runtime);
+  if (ended || !connectionRetry!.connect()) return;
+  clearPushBudget();
   networkAbort?.abort();
   networkAbort = new AbortController();
-  const epoch = ++generation;
+  const attempt = ++generation;
   checkedRoomAt = 0;
   compactAfter = 0;
   remoteAttachments.clear();
-  await owner.copy!.recoverStorage();
-  const canonical = await metadata(
-    await checkedFetch(
-      connection.url.replace(/seed$/, "epoch"),
-      {
-        headers: connection.headers,
-      },
-      epoch,
-    ),
-    epoch,
-  );
-  if (!owner.copy!.hasEpoch(canonical)) {
-    await refreshEpoch();
+  let token: string;
+  try {
+    await owner.copy!.recoverStorage();
+    await resourceSession(attempt);
+    await receiveFiles(attempt);
+    assertCurrent(attempt);
+    token = await identity.token();
+    assertCurrent(attempt);
+  } catch (error) {
+    // Attribute the failure to this attempt: a replaced attempt's abort must not run
+    // recovery (backoff, detach, events) against the newer one.
+    resourceFailure(error, attempt);
     return;
   }
-  await resourceSession(epoch);
-  await receiveFiles(epoch);
-  currentEpoch(epoch);
-  const ws = new WebSocket(connection.socket, connection.protocols);
+  pushBudget = new runtime.SocketPushBudget(monotonic());
+  const ws = new WebSocket(connection.socket, [SharingHost.socketProtocol, `jwt.${token}`]);
   socket = ws;
   ws.binaryType = "arraybuffer";
   // Each connection owns its queue and counters. An abandoned HTTP read never blocks
@@ -502,29 +536,33 @@ async function connectSocket() {
     incomingBytes = 0,
     incomingFrames = 0;
   ws.onopen = () => {
-    if (epoch !== generation) {
+    if (attempt !== generation) {
       ws.close();
       return;
     }
-    backoff = SharingHost.backoffMinMs;
+    if (!connectionRetry!.live()) {
+      ws.close(1000, "Sharing stopped");
+      return;
+    }
+    maintenanceRetry!.live();
     owner.copy!.syncAttach();
     owner.poll();
   };
   ws.onmessage = ({ data }) => {
-    if (epoch !== generation) return;
+    if (attempt !== generation) return;
     if (!(data instanceof ArrayBuffer)) return;
     incomingBytes += data.byteLength;
     incomingFrames++;
     if (incomingBytes > SharingHost.queueBytes || incomingFrames > SharingHost.queueFrames) {
-      resourceFailure(new Error("Incoming queue budget exceeded"), epoch);
+      resourceFailure(new Error("Incoming queue budget exceeded"), attempt);
       return;
     }
     incoming = incoming
       .then(async () => {
         try {
-          currentEpoch(epoch);
+          assertCurrent(attempt);
           const runtime = (await owner.initialized) as BrowserRuntime;
-          currentEpoch(epoch);
+          assertCurrent(attempt);
           const bytes = new Uint8Array(data);
           let operation: string;
           try {
@@ -534,11 +572,12 @@ async function connectSocket() {
             throw error;
           }
           if (operation === "ended") {
-            resourceFailure(new TransportError(410), epoch);
+            resourceFailure(new TransportError(410), attempt);
             return;
           }
-          if (operation === "download") await receiveFiles(epoch);
-          currentEpoch(epoch);
+          if (operation === "download") await receiveFiles(attempt);
+          assertCurrent(attempt);
+          if (operation === "acknowledge") pushBudget?.acknowledge(monotonic(), bytes);
           owner.copy!.syncFrame(bytes);
           owner.poll();
         } finally {
@@ -546,70 +585,79 @@ async function connectSocket() {
           incomingFrames--;
         }
       })
-      .catch((error) => resourceFailure(error, epoch));
+      .catch((error) => resourceFailure(error, attempt));
   };
   // Browsers give no detail here and always follow with `close`, which retries.
   ws.onerror = () => console.warn("Sharing socket error");
   ws.onclose = () => {
-    if (epoch !== generation || ended) return;
-    resourceFailure(new Error("Connection interrupted"), epoch);
+    if (attempt !== generation || ended) return;
+    resourceFailure(new Error("Connection interrupted"), attempt);
   };
 }
 function flushSocket() {
-  if (refreshing || localRecovery) return;
+  if (localRecovery) return;
   if (!owner.copy || socket?.readyState !== WebSocket.OPEN || sending === generation) return;
   const state = copyState();
   const pause = state?.pause;
-  if (pause?.kind === "missingHistory") {
-    void refreshEpoch();
-    return;
-  }
   if (stops(pause)) {
     ended = true;
-    socket.close(1000, "Sharing paused");
+    stopSupervisors();
+    detachConnection(1000, "Sharing paused");
     reportState(state);
     return;
   }
-  if (state?.phase === "synced") {
-    const confirmation = owner.copy.confirmedVersion();
-    if (confirmation !== undefined) {
-      retriedFull = false;
-      confirmedVersion = confirmation;
-    }
-  }
-  if (
-    pause?.kind === "roomFull" ||
-    pause?.kind === "filesFull" ||
-    Date.now() - checkedRoomAt >= SharingHost.recheckMs
-  )
-    void compactRoom(generation, pause?.kind === "roomFull" || pause?.kind === "filesFull");
+  if (state?.phase === "synced" && owner.copy.confirmedVersion() !== undefined) retriedFull = false;
+  if (pause?.kind === "roomFull" || Date.now() - checkedRoomAt >= SharingHost.recheckMs)
+    void compactRoom(generation, pause?.kind === "roomFull");
   if (receiving !== generation) reportState(state);
   let frame: Uint8Array | undefined;
   try {
     frame = owner.copy.nextSyncFrame();
+    if (!frame && pendingPush && performance.now() >= pushWakeAt) frame = pendingPush;
   } catch (error) {
     resourceFailure(error);
     return;
   }
   if (!frame) return;
   const bytes = frame,
-    epoch = generation,
+    attempt = generation,
     target = socket;
-  sending = epoch;
+  sending = attempt;
   void (async () => {
     const runtime = (await owner.initialized) as BrowserRuntime;
-    currentEpoch(epoch);
-    if (runtime.frameOperation(bytes) === "upload") await uploadFiles(epoch);
-    currentEpoch(epoch);
+    assertCurrent(attempt);
+    if (runtime.frameOperation(bytes) === "upload") {
+      const decision = JSON.parse(pushBudget!.admit(monotonic(), bytes)) as BudgetDecision;
+      if (decision.action === "wait") {
+        pendingPush = bytes;
+        pushWakeAt = performance.now() + decision.milliseconds;
+        clearTimeout(pushTimer);
+        pushTimer = setTimeout(() => {
+          pushWakeAt = 0;
+          flushSocket();
+        }, decision.milliseconds);
+        reportSync("Syncing; waiting for the next upload window", "syncing");
+        return;
+      }
+      pendingPush = undefined;
+      pushWakeAt = 0;
+      clearTimeout(pushTimer);
+      if (decision.action === "tooLarge") {
+        pauseSync({ kind: "outgrown", reason: "This change is too large to share" });
+        return;
+      }
+      await uploadFiles(attempt);
+    }
+    assertCurrent(attempt);
     if (target.readyState !== WebSocket.OPEN) return;
     if (target.bufferedAmount + bytes.length > SharingHost.queueBytes)
       throw new Error("Outgoing queue budget exceeded");
     target.send(new Uint8Array(bytes));
     sharingEvent({ type: "files", status: "Files ready" });
   })()
-    .catch((error) => resourceFailure(error, epoch))
+    .catch((error) => resourceFailure(error, attempt))
     .finally(() => {
-      if (sending === epoch) sending = 0;
+      if (sending === attempt) sending = 0;
       flushSocket();
     });
 }
@@ -619,6 +667,7 @@ async function settleEndedCopy() {
   if (ending || !owner.opened || !owner.copy) return;
   ending = true;
   ended = true;
+  stopSupervisors();
   reportSync("Sharing ended; keeping this browser copy", "ended");
   detachConnection(1000, "Sharing ended");
   clearTimeout(reconnectTimer);
@@ -638,298 +687,6 @@ async function settleEndedCopy() {
   }
 }
 
-/** Same eligibility policy as legacy /compact, but layout 2 publishes a bounded
- * latest SQLite seed. The relay CAS is the authority change; local adoption follows it. */
-async function publishFreshEpoch(seedHash: string, heads: string) {
-  if (refreshing || ended || !owner.copy) return;
-  refreshing = true;
-  detachConnection(1000, "Publishing shared snapshot");
-  clearTimeout(reconnectTimer);
-  networkAbort = new AbortController();
-  const epoch = generation,
-    scratch = crypto.randomUUID();
-  let reconnect = true;
-  try {
-    await owner.serialize(async () => {
-      const runtime = (await owner.initialized) as BrowserRuntime;
-      await putCopy({
-        id: scratch,
-        title: "Preparing shared snapshot…",
-        created: Date.now(),
-        state: "importing",
-      });
-      await navigator.locks.request(lockName(scratch), async () => {
-        await checkContainer(scratch, true);
-        const candidate = await runtime.installCopy(scratch);
-        const endpoint = connection.url.replace(/seed$/, "");
-        const cleanupHeaders = connection.headers;
-        let stagedHash: string | undefined;
-        try {
-          const prepared = JSON.parse(
-            owner.copy!.prepareEpoch(
-              candidate,
-              JSON.stringify({ seedHash, heads: JSON.parse(heads) }),
-            ),
-          ) as {
-            sourceVersion: string;
-            size: number;
-            publish: PublishEpoch;
-          };
-          const root = await navigator.storage.getDirectory();
-          const folder = await (
-            await root.getDirectoryHandle("exports", { create: true })
-          ).getDirectoryHandle(scratch, { create: true });
-          const file = await folder.getFileHandle("epoch.pop", { create: true });
-          const handle = await (file as any).createSyncAccessHandle();
-          try {
-            handle.truncate(0);
-            let offset = 0;
-            candidate.exportEpoch((bytes) => {
-              if (handle.write(bytes, { at: offset }) !== bytes.byteLength)
-                throw new Error("Incomplete epoch export");
-              offset += bytes.byteLength;
-            });
-            if (offset !== prepared.size) throw new Error("Epoch export size changed");
-            handle.flush();
-          } finally {
-            handle.close();
-          }
-          stagedHash = prepared.publish.seedHash;
-          await checkedFetch(
-            endpoint + "epochs/" + prepared.publish.seedHash,
-            {
-              method: "PUT",
-              headers: { ...connection.headers, "Content-Type": "application/octet-stream" },
-              body: await file.getFile(),
-            },
-            epoch,
-          );
-          // Candidate inventory contains only referenced blobs. Existing immutable app
-          // resources belong to the same embedded app and are checked again at commit.
-          const inventory = JSON.parse(
-            await metadata(
-              await checkedFetch(
-                endpoint + "blobs",
-                {
-                  headers: connection.headers,
-                },
-                epoch,
-              ),
-              epoch,
-            ),
-          ) as Resource[];
-          const present = new Set(inventory.map((item) => item.hash));
-          for (const item of prepared.publish.attachments) {
-            if (present.has(item.hash)) continue;
-            await checkedFetch(
-              endpoint + "epochs/" + prepared.publish.seedHash + "/blobs/" + item.hash,
-              {
-                method: "PUT",
-                headers: { ...connection.headers, "Content-Type": item.media_type },
-                body: new Uint8Array(candidate.epochAttachment(item.key)),
-              },
-              epoch,
-            );
-          }
-          const receipt = await checkedFetch(
-            endpoint + "epoch",
-            {
-              method: "POST",
-              headers: { ...connection.headers, "Content-Type": "application/json" },
-              body: JSON.stringify(prepared.publish),
-            },
-            epoch,
-          );
-          candidate.confirmEpoch(await metadata(receipt, epoch));
-          await adoptCandidate(
-            runtime,
-            candidate,
-            prepared.publish.seedHash,
-            prepared.sourceVersion,
-            epoch,
-          );
-          confirmedVersion = "";
-          retriedFull = true;
-          owner.poll();
-        } finally {
-          try {
-            candidate.abortImport();
-            candidate.releaseStorage();
-          } finally {
-            // A lost publication response is safe: DELETE refuses the current hash.
-            // Cleanup has its own timeout rather than the abandoned socket's signal.
-            if (stagedHash)
-              await fetch(endpoint + "epochs/" + stagedHash, {
-                method: "DELETE",
-                headers: cleanupHeaders,
-                signal: AbortSignal.timeout(5000),
-              }).catch(() => {});
-          }
-        }
-      });
-    });
-  } catch (error) {
-    if (
-      (error instanceof TransportError && error.pause?.kind === "outgrown") ||
-      (error instanceof Error && "code" in error && error.code === "outgrown")
-    ) {
-      reconnect = false;
-      reportSync("This document has outgrown sharing", "paused");
-    } else if (!(error instanceof TransportError && error.status === 409)) {
-      // A lost commit acknowledgment is resolved by the next epoch handshake; the
-      // local owner is unchanged unless its durable adoption already succeeded.
-      reportSync("Shared maintenance interrupted: " + String(error), "offline");
-    }
-  } finally {
-    refreshing = false;
-    await removeCopy(scratch).catch(() => {});
-  }
-  if (reconnect && !ended) await connectSocket().catch((error) => resourceFailure(error));
-}
-
-/** Called inside the serialized owner queue after its sync connection is detached. */
-async function adoptCandidate(
-  runtime: BrowserRuntime,
-  candidate: BrowserCopy,
-  seedHash: string,
-  expected: string,
-  epoch: number,
-) {
-  const source = (await listCopies()).find((copy) => copy.id === owner.copyID);
-  const version = owner.copy!.currentVersion();
-  const recovery = await reserveRecovery(
-    owner.copyID,
-    owner.copy!.documentIdentity(),
-    source?.epoch ?? "unknown",
-    version,
-  );
-  let unused = false;
-  try {
-    await navigator.locks.request(lockName(recovery.id), { ifAvailable: true }, async (lock) => {
-      if (!lock) throw new Error("The recovery copy is open in another tab");
-      await checkContainer(recovery.id, true);
-      const installed = await runtime.installCopy(recovery.id);
-      try {
-        currentEpoch(epoch);
-        const recovered = owner.copy!.adoptEpoch(candidate, installed, expected);
-        // A failed catalog acknowledgment retains the discoverable reservation.
-        if (recovered) await updateCopy(recovery.id, { state: "ready" });
-        else unused = true;
-        await updateCopy(owner.copyID, { epoch: seedHash });
-      } finally {
-        installed.releaseStorage();
-      }
-    });
-  } finally {
-    if (unused) await removeCopy(recovery.id).catch(() => {});
-  }
-}
-
-/** Download into a separate OPFS pool. Old state remains editable until this
- * operation joins the owner queue; no relay snapshot is merged across epochs. */
-async function refreshEpoch() {
-  if (refreshing || ended || !owner.copy) return;
-  refreshing = true;
-  // Fence remote imports before the first await and before reserving a source version.
-  detachConnection(1000, "Refreshing shared snapshot");
-  clearTimeout(reconnectTimer);
-  networkAbort = new AbortController();
-  const epoch = generation;
-  const scratch = crypto.randomUUID();
-  try {
-    await owner.serialize(async () => {
-      const runtime = (await owner.initialized) as BrowserRuntime;
-      const base = connection.url.replace(/seed$/, "");
-      const info = await metadata(
-        await checkedFetch(
-          base.slice(0, -1),
-          {
-            headers: connection.headers,
-            credentials: "omit",
-          },
-          epoch,
-        ),
-        epoch,
-      );
-      const canonical = await metadata(
-        await checkedFetch(
-          base + "epoch",
-          {
-            headers: connection.headers,
-            credentials: "omit",
-          },
-          epoch,
-        ),
-        epoch,
-      );
-      const plan = JSON.parse(
-        runtime.invitationRequest(invitation, config.relay, info),
-      ) as ConnectionPlan;
-      const remote = JSON.parse(canonical) as { seedHash: string };
-      await putCopy({
-        id: scratch,
-        title: "Refreshing shared snapshot…",
-        created: Date.now(),
-        state: "importing",
-      });
-      await navigator.locks.request(lockName(scratch), async () => {
-        await checkContainer(scratch, true);
-        const candidate = await runtime.installCopy(scratch);
-        try {
-          const response = await checkedFetch(
-            plan.url + "?hash=" + encodeURIComponent(remote.seedHash),
-            {
-              headers: plan.headers,
-              credentials: "omit",
-            },
-            epoch,
-          );
-          if (!response.body || plan.size < 100 || plan.size > BrowserHost.fileBytes)
-            throw new Error("Invalid epoch seed");
-          candidate.importBegin(plan.size);
-          const reader = response.body.getReader();
-          let received = 0;
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              currentEpoch(epoch);
-              if (done) break;
-              received += value.length;
-              if (received > plan.size) throw new Error("Epoch seed exceeds declared size");
-              for (let offset = 0; offset < value.length; offset += BrowserHost.chunkBytes)
-                candidate.importWrite(value.subarray(offset, offset + BrowserHost.chunkBytes));
-            }
-            if (received !== plan.size) throw new Error("Incomplete epoch seed");
-            candidate.importFinish();
-          } finally {
-            await reader.cancel().catch(() => {});
-          }
-          candidate.validateEpoch(info, canonical);
-          await adoptCandidate(runtime, candidate, remote.seedHash, confirmedVersion, epoch);
-          roomInfo = info;
-          connection = plan;
-          confirmedVersion = "";
-          owner.poll();
-        } finally {
-          candidate.abortImport();
-          candidate.releaseStorage();
-        }
-      });
-    });
-    refreshing = false;
-    await connectSocket();
-  } catch (error) {
-    // Refusal, quota and uncertain writes keep the old copy and its recovery reservation.
-    // No automatic retry may overwrite either one while authority is uncertain.
-    if (error instanceof TransportError && (error.status === 410 || error.status === 403)) {
-      ended = true;
-      void settleEndedCopy();
-    } else reportSync("Shared refresh paused: " + String(error), "paused");
-  } finally {
-    refreshing = false;
-    await removeCopy(scratch).catch(() => {});
-  }
-}
 let roomInfo = "";
 const owner = new WorkerOwner<BrowserCopy>({
   async control(input) {
@@ -953,11 +710,17 @@ const owner = new WorkerOwner<BrowserCopy>({
     const [room, capability] = candidate.split("#")[1]!.split(".");
     let response: Response;
     try {
+      await checkedFetch(`${config.relay}/v1/documents/${room}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ capability }),
+        credentials: "omit",
+      });
       response = await checkedFetch(`${config.relay}/v1/documents/${room}`, {
-        headers: { Authorization: `Bearer ${capability}` },
         credentials: "omit",
       });
     } catch (error) {
+      if (identityFailure) return true;
       if (!(error instanceof TransportError) || (error.status !== 410 && error.status !== 403))
         throw error;
       ended = true;
@@ -970,6 +733,7 @@ const owner = new WorkerOwner<BrowserCopy>({
   },
   async importCopy(installed, request) {
     if (request.source) {
+      if (identityUnavailable) throw identityFailure!;
       if (ended) throw new TransportError(410);
       const response = await checkedFetch(connection.url, {
         headers: connection.headers,
@@ -1005,6 +769,10 @@ const owner = new WorkerOwner<BrowserCopy>({
       installed.openLocal();
       return;
     }
+    if (identityUnavailable) {
+      installed.openSavedJoined(invitation, config.relay);
+      return;
+    }
     if (ended) {
       installed.openSavedJoined(invitation, config.relay);
       reportSync("Sharing ended; keeping this browser copy", "ended");
@@ -1012,6 +780,11 @@ const owner = new WorkerOwner<BrowserCopy>({
   },
   afterPoll: flushSocket,
   afterOpen() {
+    if (identityUnavailable) {
+      reportSync("Guest session needs attention; this browser copy is kept", "paused");
+      sharingEvent({ type: "resourcesReady" });
+      return;
+    }
     if (localRecovery) {
       reportSync("Local browser copy", "ended");
       sharingEvent({ type: "resourcesReady" });
@@ -1029,8 +802,9 @@ const owner = new WorkerOwner<BrowserCopy>({
       }
     }, SharingHost.pingMs);
     setInterval(() => {
-      const epoch = generation;
-      if (!ended) void resourceSession(epoch).catch((error) => resourceFailure(error, epoch));
+      const attempt = generation;
+      if (!ended && !identityUnavailable)
+        void resourceSession(attempt).catch((error) => resourceFailure(error, attempt));
     }, SharingHost.resourceRenewMs);
     void connectSocket().catch((error) => resourceFailure(error));
   },

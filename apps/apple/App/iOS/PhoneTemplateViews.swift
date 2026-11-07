@@ -7,11 +7,33 @@ struct PhoneTemplate: Identifiable, Hashable {
   let url: URL, title: String, description: String, categories: [String]
   var id: URL { url }
 }
+/// Decoded tile artwork by file, so a document opening shows its tile's image in the
+/// first frame of the zoom, and a tile keeps its image while its file is busy.
+@MainActor enum PhoneArtworkCache {
+  private static let images = NSCache<NSString, UIImage>()
+  static func image(_ url: URL, preview: Bool) -> UIImage? { images.object(forKey: key(url, preview)) }
+  static func store(_ image: UIImage?, _ url: URL, preview: Bool) {
+    if let image {
+      images.setObject(image, forKey: key(url, preview))
+    } else {
+      images.removeObject(forKey: key(url, preview))
+    }
+  }
+  private static func key(_ url: URL, _ preview: Bool) -> NSString {
+    ((preview ? "preview|" : "tile|") + url.standardizedFileURL.path) as NSString
+  }
+}
 struct PhoneArtworkView: View {
   let url: URL
   var preview = false
   var revision = ""
   @State private var image: UIImage?
+  init(url: URL, preview: Bool = false, revision: String = "") {
+    self.url = url
+    self.preview = preview
+    self.revision = revision
+    _image = State(initialValue: PhoneArtworkCache.image(url, preview: preview))
+  }
   var body: some View {
     Group {
       if let image {
@@ -22,10 +44,13 @@ struct PhoneArtworkView: View {
       }
     }.task(id: url.path + "|" + revision) {
       let preview = preview
-      let data = await Task.detached(priority: .utility) {
-        try? PopArtwork.first(url, preview ? [.preview] : [.icon, .preview])?.png
+      let read = await Task.detached(priority: .utility) {
+        Result { try PopArtwork.first(url, preview ? [.preview] : [.icon, .preview])?.png }
       }.value
+      // A busy file (its owner is saving) keeps the image already shown.
+      guard case .success(let data) = read else { return }
       image = data.flatMap(UIImage.init(data:))
+      PhoneArtworkCache.store(image, url, preview: preview)
     }
   }
 }
@@ -34,16 +59,25 @@ struct PhonePopTile: View {
   var revision = ""
   var presentation: CatalogDocumentPresentation?
   var artworkSize: CGFloat = 96
+  var zoom: (id: String, namespace: Namespace.ID)?
+  var closing: PhoneClosing?
   @Environment(\.dynamicTypeSize) private var typeSize
   var body: some View {
     VStack(spacing: 7) {
       PhoneArtworkView(url: url, revision: revision)
         .frame(width: artworkSize, height: artworkSize)
         .compositingGroup()
+        .modifier(PhoneZoomSource(zoom: zoom))
         .shadow(color: .black.opacity(0.1), radius: 6, y: 3)
         .overlay(alignment: .bottomTrailing) {
           if let badge = presentation?.badge {
             CatalogDocumentBadgeView(badge: badge).offset(x: 3, y: 3)
+          }
+        }
+        .overlay(alignment: .bottom) {
+          if let closing {
+            closingLabel(closing).offset(y: 8)
+              .transition(.opacity.animation(.easeIn(duration: 0.2).delay(closing == .saving ? 0.3 : 0)))
           }
         }
       Text(title).font(.system(.subheadline, design: .rounded).weight(.semibold)).foregroundStyle(.primary)
@@ -54,6 +88,35 @@ struct PhonePopTile: View {
     }
     .frame(maxWidth: .infinity, alignment: .top)
     .contentShape(Rectangle())
+  }
+  /// A document that just left saves quietly here; one that could not save says so.
+  private func closingLabel(_ closing: PhoneClosing) -> some View {
+    HStack(spacing: 4) {
+      if closing == .saving {
+        ProgressView().controlSize(.mini)
+        Text("Saving")
+      } else {
+        Image(systemName: "exclamationmark.triangle.fill")
+        Text("Not saved")
+      }
+    }
+    .font(.caption2.weight(.semibold))
+    .foregroundStyle(closing == .saving ? Color.secondary : PopBrand.accent)
+    .padding(.horizontal, 7).padding(.vertical, 3)
+    .background(.regularMaterial, in: Capsule())
+    .accessibilityHidden(true)
+  }
+}
+private struct PhoneZoomSource: ViewModifier {
+  let zoom: (id: String, namespace: Namespace.ID)?
+  func body(content: Content) -> some View {
+    if let zoom {
+      content.matchedTransitionSource(id: zoom.id, in: zoom.namespace) { source in
+        source.background(PopBrand.card).clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+      }
+    } else {
+      content
+    }
   }
 }
 struct PhoneTemplateDetail: View {

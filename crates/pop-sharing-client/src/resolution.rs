@@ -1,13 +1,11 @@
-//! Creator recovery before a local file or document owner exists. Validated seed bytes
+//! Creator downloads before a local file or document owner exists. Validated seed bytes
 //! stay in Rust-owned private staging; native callers receive only an opaque plan.
 use super::*;
-use pop_sharing_protocol::lifecycle::EpochState;
 use std::path::PathBuf;
 
 pub struct ResolvedRoom {
     pub(crate) key: RoomKey,
     pub(crate) info: RoomInfo,
-    pub(crate) epoch: EpochState,
     pub(crate) seed: PrivateSeed,
 }
 impl ResolvedRoom {
@@ -17,36 +15,20 @@ impl ResolvedRoom {
     pub fn room(&self) -> &str {
         &self.key.room
     }
-    pub fn seed_hash(&self) -> &str {
-        &self.epoch.seed_hash
-    }
-    /// Installs only a missing canonical file. Existing local state is never replaced by
-    /// resolution; its owner must explicitly adopt an epoch with recovery safeguards.
+    /// Installs only a missing file; existing local state is never replaced. The relay
+    /// already holds the seed, so the new replica starts confirmed.
     pub fn install(&self, destination: &Path, state_directory: &Path) -> Result<()> {
+        if destination.exists() {
+            return Err("A local document already exists; resolve it through its owner".into());
+        }
         let journal = journal::Journal::new(state_directory, &self.key, self.document())?;
-        let transaction = journal.transaction()?;
         let source = Store::open(&self.seed.path, Mode::Snapshot).map_err(fail)?;
         let version = source.document().map_err(fail)?.version();
         source.close().map_err(fail)?;
-        let receipt = journal.receipt(self.epoch.clone(), version.clone(), None);
-        if destination.exists() {
-            // Only finish our own interrupted installation; arbitrary existing edits require an owner.
-            if transaction.pending()?.as_ref() != Some(&receipt) {
-                return Err("A local document already exists; resolve it through its owner".into());
-            }
-            let local = Store::open(destination, Mode::Snapshot).map_err(fail)?;
-            if local.app().document_uuid.as_deref() != Some(self.document())
-                || local.document().map_err(fail)?.version() != version
-            {
-                return Err("The local document changed during installation".into());
-            }
-            local.close().map_err(fail)?;
-        } else {
-            transaction.prepare(&receipt)?;
-            let bytes = std::fs::read(&self.seed.path).map_err(fail)?;
-            install_seed(destination, &self.key, &self.info, &bytes)?;
-        }
-        transaction.promote(&receipt)
+        let bytes = std::fs::read(&self.seed.path).map_err(fail)?;
+        install_seed(destination, &self.key, &self.info, &bytes)?;
+        journal::confirm_seed(&journal, version)?;
+        Ok(())
     }
 }
 pub(crate) struct PrivateSeed {
@@ -69,57 +51,27 @@ impl Drop for PrivateSeed {
 }
 
 /// Resolve creator access by account identity, without a local file or Owner. An
-/// unfinished upload has no accepted live plan yet; its catalog Preparing state resumes it.
+/// unfinished upload has no live seed yet; its catalog Preparing state resumes it.
 pub fn resolve(document: &str, token: &str) -> Result<Option<ResolvedRoom>> {
     let key = RoomKey::identity(document, token)?;
     let info = room_info(&key, Some(token))?;
     if info.phase != RoomPhase::Live {
         return Ok(None);
     }
-    let epoch = epoch(&key, token)?;
-    download(key, info, epoch, token).map(Some).map_err(Into::into)
-}
-pub(crate) fn download(
-    key: RoomKey,
-    info: RoomInfo,
-    epoch: EpochState,
-    token: &str,
-) -> std::result::Result<ResolvedRoom, transport::HttpFailure> {
-    if info.seed_hash.as_deref() != Some(epoch.seed_hash.as_str()) {
-        return Err("The relay epoch changed while resolving; retry".into());
-    }
-    let bytes = transport::http_typed(&key, "GET", &format!("seed?hash={}", epoch.seed_hash), Some(token), &[], &[])?;
+    let bytes = transport::http_typed(&key, "GET", "seed", Some(token), &[], &[])?;
     if bytes.len() > pop_sharing_protocol::SEED_BYTES
         || Some(bytes.len() as u32) != info.seed_size
-        || hex(&Sha256::digest(&bytes)) != epoch.seed_hash
+        || Some(hex(&Sha256::digest(&bytes))) != info.seed_hash
     {
         return Err("Seed checksum mismatch".into());
     }
     let seed = PrivateSeed::write(&bytes)?;
-    let store = Store::open(&seed.path, Mode::Snapshot).map_err(transport::HttpFailure::from)?;
+    let store = Store::open(&seed.path, Mode::Snapshot).map_err(fail)?;
     if store.app().document_uuid.as_deref() != Some(info.document.as_str())
-        || Some(hex(store.app_revision_id().map_err(transport::HttpFailure::from)?.as_bytes())) != info.app
+        || Some(hex(store.app_revision_id().map_err(fail)?.as_bytes())) != info.app
     {
         return Err("Resolved seed document/app mismatch".into());
     }
-    let root = store.document().map_err(transport::HttpFailure::from)?.wire_history();
-    if root != epoch.root {
-        return Err("Resolved seed frontier mismatch".into());
-    }
-    store.close().map_err(transport::HttpFailure::from)?;
-    Ok(ResolvedRoom { key, info, epoch, seed })
-}
-
-pub(crate) fn epoch(key: &RoomKey, identity: &str) -> std::result::Result<EpochState, transport::HttpFailure> {
-    epoch_at(&key.origin, &key.room, identity)
-}
-pub(crate) fn epoch_at(
-    origin: &str,
-    room: &str,
-    identity: &str,
-) -> std::result::Result<EpochState, transport::HttpFailure> {
-    let bytes = transport::room_control(origin, room, "GET", "epoch", identity, &[])?;
-    let epoch: EpochState = serde_json::from_slice(&bytes).map_err(fail)?;
-    epoch.validate()?;
-    Ok(epoch)
+    store.close().map_err(fail)?;
+    Ok(Some(ResolvedRoom { key, info, seed }))
 }

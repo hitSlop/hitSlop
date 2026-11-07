@@ -62,3 +62,18 @@ pub fn pack_rendering(
 ) -> Result<pop_runtime::engine::PackedArtwork, pop_storage::store::Error> {
     pop_storage::file::pack(&std::fs::read_to_string(stage.join("input.json")).unwrap(), stage, destination, render)
 }
+
+pub fn fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+    isolate_registry();
+    let dir = tempfile::tempdir().unwrap();
+    let stage = dir.path().join("stage");
+    std::fs::create_dir_all(stage.join("assets")).unwrap();
+    std::fs::write(stage.join("assets/ui.js"), "export default {}").unwrap();
+    write_app(
+        &stage,
+        App::new(r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#, r#"{"title":"Initial"}"#),
+    );
+    let template = dir.path().join("template.pop");
+    pack(&stage, &template).unwrap();
+    (dir, template)
+}

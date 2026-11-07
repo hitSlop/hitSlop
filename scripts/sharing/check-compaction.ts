@@ -3,6 +3,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { Miniflare } from "miniflare";
+import { SharingHost } from "../../packages/pop/src/wire/constants.generated";
+
+export const documentName = (id: string) => id;
+export const objectKey = (id: string, suffix: string) => `${id}/${suffix}`;
 
 export function relayHarness(source: string) {
   return `import relay, {CloudDocument as Room, DocumentAccount as Account} from ${JSON.stringify(source)};
@@ -12,9 +16,38 @@ export class DocumentAccount {
   async fetch(req){try{return await this.inner.fetch(req);}catch(error){console.error('Test account failure:',String(error));throw error;}}
 }
 export class CloudDocument {
-  constructor(state, env) { this.state = state; this.inner = new Room(state, env); }
+  constructor(state, env) {
+    this.state = state;
+    this.failDeletes = false;
+    const bucket = new Proxy(env.SEEDS, {get: (target, key) => {
+      if (key === 'delete') return (...args) => {
+        if (this.failDeletes) throw new Error('Injected R2 delete failure');
+        return target.delete(...args);
+      };
+      const value = Reflect.get(target, key, target);
+      return typeof value === 'function' && key !== 'constructor' ? value.bind(target) : value;
+    }});
+    this.inner = new Room(state, {...env, SEEDS: bucket});
+  }
   async fetch(req) {
     const path = new URL(req.url).pathname;
+    if (path === '/__test/body-reads') return Response.json(this.bodyReads ?? 0);
+    if (req.headers.get('X-Test-Observe-Body') === '1' && req.body) {
+      const reader = req.body.getReader();
+      const body = new ReadableStream({
+        pull: async controller => {
+          this.bodyReads = (this.bodyReads ?? 0) + 1;
+          const next = await reader.read();
+          if (next.done) controller.close(); else controller.enqueue(next.value);
+        },
+        cancel: reason => reader.cancel(reason),
+      }, {highWaterMark:0});
+      req = new Request(req.url, {method:req.method, headers:req.headers, body});
+    }
+    if (path === '/__test/delete-failure') {
+      this.failDeletes = (await req.json()).enabled;
+      return new Response('ready');
+    }
     if (path === '/__test/sql') {
       const {sql,args=[]} = await req.json();
       return Response.json(this.state.storage.sql.exec(sql,...args).toArray());
@@ -58,55 +91,51 @@ const uint = (n: number | bigint): number[] => {
   }
   return [...bytes, Number(value)];
 };
-const vv = (n: number) => (n ? [2, 1, ...uint(n), 2, 5] : [1, 2, 5]);
-const hello = (n = 0, protocol = 1) =>
-  new Uint8Array([0, protocol, ...Array.from({ length: 32 }, () => 0xaa), ...vv(n)]);
-const push = (id: number, start: number, end: number, bytes = new Uint8Array([7])) =>
-  new Uint8Array([
-    4,
-    ...uint(id),
-    1,
-    1,
-    ...uint(start),
-    ...uint(end),
-    ...uint(bytes.length),
-    ...bytes,
-  ]);
-export function decode(bytes: ArrayBuffer, current = false) {
+const u64 = (n: number | bigint): number[] => {
+  const value = BigInt(n);
+  return Array.from({ length: 8 }, (_, i) => Number((value >> BigInt((7 - i) * 8)) & 255n));
+};
+export const helloFrame = (version: [number, number][] = [], protocol = 1) =>
+  new Uint8Array([1, protocol, ...Array(32).fill(0xaa), ...uint(version.length),
+    ...version.flatMap(([peer, counter]) => [...u64(peer), ...uint(counter)])]);
+const hello = (n = 0, protocol = 1) => helloFrame(n ? [[1, n], [2, 5]] : [[2, 5]], protocol);
+export const push = (id: number, start: number, end: number, bytes = new Uint8Array([7])) =>
+  new Uint8Array([5, ...u64(id), 1, 1, ...u64(1), ...uint(start), ...uint(end), ...uint(bytes.length), ...bytes]);
+export function decode(bytes: ArrayBuffer) {
   const b = new Uint8Array(bytes);
+  const view = new DataView(bytes);
   let pos = 0;
+  const byte = () => { assert(pos < b.length, "Truncated relay reply"); return b[pos++]!; };
   const read = () => {
-    let n = 0,
-      scale = 1;
+    let n = 0, scale = 1;
     for (;;) {
-      const v = b[pos++]!;
-      n += (v & 127) * scale;
+      const v = byte(); n += (v & 127) * scale;
       if (!(v & 128)) return n;
       scale *= 128;
+      assert(scale <= 2 ** 63, "Invalid relay integer");
     }
   };
+  const peer = () => { const n = Number(view.getBigUint64(pos)); pos += 8; return n; };
   const version = () => {
     const v = [];
-    for (let count = read(); count; count--) v.push([read(), read()]);
+    for (let count = read(); count; count--) v.push([peer(), read()]);
     return v;
   };
-  const tag = read();
-  if (tag === 1) return { tag, write: read(), version: version() };
-  if (tag === 5) return { tag, id: read(), status: read() };
-  if (tag === 6) return { tag, code: read() };
-  if (tag === (current ? 3 : 2)) {
+  const tag = byte();
+  if (tag === 2) return { tag, write: byte(), version: version() };
+  if (tag === 6) return { tag, id: peer(), status: byte() };
+  if (tag === 7) return { tag, code: byte() };
+  if (tag === 3) {
     const records = [];
     for (let count = read(); count; count--) {
       const spans = [];
-      for (let count = read(); count; count--) spans.push([read(), read(), read()]);
-      const size = read();
-      const bytes = b.slice(pos, pos + size);
-      pos += size;
-      records.push({ spans, bytes });
+      for (let count = read(); count; count--) spans.push([peer(), read(), read()]);
+      const size = read(), bytes = b.slice(pos, pos + size);
+      pos += size; records.push({ spans, bytes });
     }
     return { tag, records };
   }
-  assert.equal(tag, 3);
+  assert.equal(tag, 4);
   return { tag };
 }
 export async function checkCompaction(
@@ -138,7 +167,7 @@ export async function checkCompaction(
   const room = await created.json();
   room.capability = (await (await call("documents/"+room.room+"/sharing",owner,"POST")).json()).capability;
   const base = "documents/" + room.room;
-  const stub = namespace.get(namespace.idFromName(room.room));
+  const stub = namespace.get(namespace.idFromName(documentName(room.room)));
   async function test(path: string, body?: unknown) {
     const response = await stub.fetch("https://test/__test/" + path, {
       method: "POST",
@@ -151,6 +180,9 @@ export async function checkCompaction(
     (await test("sql", { sql, args })).json() as Promise<any[]>;
   const fixture = async (count: number, size = 1) => test("fixture", { count, size });
   const seed = new Uint8Array(512).fill(42);
+  const invalidManifestBytes = new TextEncoder().encode("{");
+  const malformedManifest = await call(base + "/resources", owner, "POST", invalidManifestBytes);
+  assert.equal(malformedManifest.status, 400, "Malformed app inventory is a request refusal");
   assert.equal(
     (
       await call(base + "/seed", owner, "PUT", seed, {
@@ -167,10 +199,30 @@ export async function checkCompaction(
     200,
   );
   assert.equal((await call(base + "/open", owner, "POST")).status, 200);
+  room.access = identity("room-guest", "anonymous");
+  assert.equal((await call(base+"/members",room.access,"POST",{capability:room.capability})).status,200);
+  const unlistedBlob = new Uint8Array([23, 24, 25]);
+  const unlistedHash = hash(unlistedBlob);
+  await bucket.put(objectKey(room.room, "blobs/" + unlistedHash), unlistedBlob);
+  assert.equal((await call(base + "/blob/" + unlistedHash, room.access)).status, 404,
+    "An R2 object outside the accepted inventory is not readable");
+  // An upload interrupted after its R2 write leaves only a registered cleanup key.
+  await sql("INSERT INTO garbage VALUES(?)", [objectKey(room.room, "blobs/" + unlistedHash)]);
+  await test("delete-failure", {enabled: true});
+  await test("alarm");
+  assert.equal((await sql("SELECT count(*) AS n FROM garbage"))[0].n, 1,
+    "Failed blob cleanup remains registered for retry");
+  await test("delete-failure", {enabled: false});
+  await test("alarm");
+  assert.equal((await sql("SELECT count(*) AS n FROM garbage"))[0].n, 0);
+  assert.equal(await bucket.get(objectKey(room.room, "blobs/" + unlistedHash)), null);
+  for (const suffix of ["/seed/extra", "/sync/extra", "/metadata/extra", "/sharing/extra", "/members/other"]) {
+    assert.equal((await call(base + suffix, owner)).status, 404, "Extra route segments are refused: " + suffix);
+  }
   let request = 0;
   const body = new Uint8Array(2_000_000).fill(9);
   const compact = (end: number, data = body, extra: Record<string, string> = {}) =>
-    call(base + "/compact", room.capability, "POST", data, {
+    call(base + "/compact", room.access, "POST", data, {
       "X-Sharing-SHA256": hash(data),
       "X-Sharing-Version": JSON.stringify([
         ["0000000000000001", end],
@@ -181,7 +233,7 @@ export async function checkCompaction(
     });
   await fixture(1);
   assert.equal((await compact(1)).status, 409, "Valid frontier but not due");
-  assert.equal((await (await call(base, room.capability)).json()).compact, undefined);
+  assert.equal((await (await call(base, room.access)).json()).compact, undefined);
   await fixture(4, 1 << 20);
   assert.equal((await compact(5)).status, 409, "F cannot exceed heads");
   assert.equal(
@@ -194,13 +246,17 @@ export async function checkCompaction(
     '[["0000000000000001",4],["0000000000000002",5]]',
   ]);
   assert.equal((await compact(4, body, { "X-Sharing-SHA256": "f".repeat(64) })).status, 400);
-  assert.equal((await compact(4, new Uint8Array((16 << 20) + 1))).status, 413);
+  // Fold only: a base over BASE_BYTES is the typed refusal the client pauses as outgrown.
+  const oversized = await compact(4, new Uint8Array((16 << 20) + 1));
+  assert.equal(oversized.status, 413, "A base over its byte limit is refused");
+  assert.equal((await oversized.json()).code, "invalid_request", "The refusal the client classifies as outgrown");
+  assert.equal((await sql("SELECT count(*) AS n FROM records WHERE seq=0"))[0].n, 0, "A refused base leaves no record");
   let stage = "initial backfill";
   const sockets: any[] = [];
-  async function socket(ip = "203.0.113.1", endpoint = base, capability = room.capability) {
-    const response = await call(endpoint + "/sync", capability, "GET", undefined, {
+  async function socket(ip = "203.0.113.1", endpoint = base, token = room.access) {
+    const response = await call(endpoint + "/sync", token, "GET", undefined, {
       Upgrade: "websocket",
-      "Sec-WebSocket-Protocol": "pop.sync.v1",
+      "Sec-WebSocket-Protocol": SharingHost.socketProtocol,
       "CF-Connecting-IP": ip,
     });
     assert.equal(response.status, 101);
@@ -246,12 +302,12 @@ export async function checkCompaction(
       for (;;) {
         const frame = await next();
         frames.push(frame);
-        if (frame.tag === 3) return frames;
+        if (frame.tag === 4) return frames;
       }
     };
     return { ws, next, joined, closed, messages };
   }
-  assert.equal((await (await call(base, room.capability)).json()).compact, true);
+  assert.equal((await (await call(base, room.access)).json()).compact, true);
   stage = "connected";
   const connected = await socket();
   await connected.joined(4);
@@ -273,20 +329,20 @@ export async function checkCompaction(
     [["0000000000000001", 0, 3]],
     "Seed-only peers produce no empty spans",
   );
-  assert.equal((await bucket.list({prefix:`rooms/${room.room}/compacted/`})).objects.length,0,"compaction retains no history archive");
+  assert.equal((await bucket.list({prefix:objectKey(room.room, "compacted/")})).objects.length,0,"compaction retains no history archive");
   await test("alarm");
   assert.equal((await call(base,owner)).status,200,"offline retention is persistent");
   stage = "behind base";
   const behind = await socket("203.0.113.2");
   const frames = await behind.joined();
   assert.deepEqual(
-    frames.filter((f) => f.tag === 2).map((f) => f.records.map((r: any) => r.bytes.length)),
+    frames.filter((f) => f.tag === 3).map((f) => f.records.map((r: any) => r.bytes.length)),
     [[body.length], [1 << 20]],
     "Large base first and alone",
   );
   stage = "current backfill";
   const current = await socket("203.0.113.3");
-  assert.equal((await current.joined(4)).filter((f) => f.tag === 2).length, 0);
+  assert.equal((await current.joined(4)).filter((f) => f.tag === 3).length, 0);
   await fixture(4, 1 << 20); // Keep the previous base version but refill updates.
   await sql("INSERT INTO records(seq,spans,size) VALUES(5,?,0)", [
     JSON.stringify([
@@ -339,11 +395,13 @@ export async function checkCompaction(
   assert(sequences[1].seq > 0, "Normal seq allocation remains positive");
   await fixture(32768, 0);
   assert.equal(
-    (await (await call(base, room.capability)).json()).compact,
+    (await (await call(base, room.access)).json()).compact,
     true,
     "Row threshold triggers compaction with zero update bytes",
   );
   stage = "row quota";
+  limited.ws.send(push(120, 32767, 32768));
+  assert.equal((await limited.next()).status, 0, "A duplicate at row quota is already stored");
   limited.ws.send(push(12, 32768, 32769));
   assert.equal((await limited.next()).status, 4, "Row quota");
   await fixture(0);
@@ -358,10 +416,11 @@ export async function checkCompaction(
   const largePush = new Uint8Array((512 << 10) - 1000);
   const large = (id: number, start = 0, end = 1) => {
     const header = new Uint8Array([
-      4,
-      ...uint(id),
+      5,
+      ...u64(id),
       1,
       1,
+      ...u64(1),
       ...uint(start),
       ...uint(end),
       ...uint(largePush.length),
@@ -383,7 +442,7 @@ export async function checkCompaction(
     0,
     "Over-budget new updates are not stored",
   );
-  assert(!budget.messages.some((m) => m.tag === 6));
+  assert(!budget.messages.some((m) => m.tag === 7));
   const countBudget = await socket("203.0.113.21");
   await countBudget.joined(1);
   await test("freeze-windows", { pushes: 1799 });
@@ -392,7 +451,7 @@ export async function checkCompaction(
   assert.equal((await countBudget.next()).status, 0);
   countBudget.ws.send(push(1801, 0, 1));
   assert.equal(await countBudget.closed, 1013);
-  assert(!countBudget.messages.some((m) => m.tag === 6));
+  assert(!countBudget.messages.some((m) => m.tag === 7));
   const resetBudget = await socket("203.0.113.24");
   await resetBudget.joined(1);
   await test("freeze-windows", { window_start: 0, bytes: 8 << 20, pushes: 1800 });
@@ -402,9 +461,9 @@ export async function checkCompaction(
   for (let n = 0; n < 8; n++) perIP.push(await socket("203.0.113.20"));
   assert.equal(
     (
-      await call(base + "/sync", room.capability, "GET", undefined, {
+      await call(base + "/sync", room.access, "GET", undefined, {
         Upgrade: "websocket",
-        "Sec-WebSocket-Protocol": "pop.sync.v1",
+        "Sec-WebSocket-Protocol": SharingHost.socketProtocol,
         "CF-Connecting-IP": "203.0.113.20",
       })
     ).status,
@@ -439,7 +498,7 @@ export async function checkCompaction(
   assert.equal(await ended.closed, 1008);
   assert.equal((await unjoinedEnd.next()).code, 3);
   assert.equal(await unjoinedEnd.closed, 1008);
-  assert.equal((await bucket.list({ prefix: `rooms/${room.room}/compacted/` })).objects.length, 0);
+  assert.equal((await bucket.list({ prefix: objectKey(room.room, "compacted/") })).objects.length, 0);
   assert.equal((await sql("SELECT count(*) AS n FROM records"))[0].n, 0);
   assert.equal((await sql("SELECT count(*) AS n FROM chunks"))[0].n, 0);
   assert.equal((await call(base,owner)).status,410);
@@ -466,125 +525,15 @@ export async function checkCompaction(
     200,
   );
   assert.equal((await call(idleBase + "/open", owner, "POST")).status, 200);
-  const idleStub = namespace.get(namespace.idFromName(idleRoom.room));
+  idleRoom.access = identity("idleRoom-guest", "anonymous");
+  assert.equal((await call(idleBase+"/members",idleRoom.access,"POST",{capability:idleRoom.capability})).status,200);
+  const idleStub = namespace.get(namespace.idFromName(documentName(idleRoom.room)));
   const idleTest = (path: string, body = {}) =>
     idleStub.fetch("https://test/__test/" + path, { method: "POST", body: JSON.stringify(body) });
   await idleTest("alarm");
-  assert.equal((await call(idleBase, idleRoom.capability)).status, 200, "Recent room remains Live");
+  assert.equal((await call(idleBase, idleRoom.access)).status, 200, "Recent room remains Live");
   await idleTest("sql", { sql: "UPDATE meta SET value='0' WHERE key='last_active'" });
   await idleTest("alarm");
   assert.equal((await call(idleBase, owner)).status,200,"persistent document never idle expires");
-  // These are independent behavioral scenarios. Keep their real per-IP rate
-  // budgets separate; rate-limit exhaustion has its own owning check.
-  const fromIP = (ip: string): typeof call => (path, token, method, body, headers) =>
-    call(path, token, method, body, { ...headers, "CF-Connecting-IP": ip });
-  const publicationCall = fromIP("198.51.100.240");
-  const releaseCall = fromIP("198.51.100.241");
-  const expiryCall = fromIP("198.51.100.242");
-  // Fresh epochs replace the bootstrap seed and inventory together, not only record 0.
-  const epochRoom = await (await publicationCall("documents", owner, "POST", {
-    document: "00000000-0000-4000-a000-000000000004",
-  })).json();
-  const epochBase = "documents/" + epochRoom.room;
-  epochRoom.capability = (await (await publicationCall(epochBase+"/sharing",owner,"POST")).json()).capability;
-  const manifest = { app: "aa".repeat(32), resources: [] };
-  assert.equal((await publicationCall(epochBase + "/seed", owner, "PUT", seed, {
-    "X-Sharing-SHA256": hash(seed), "X-Sharing-App": manifest.app, "X-Sharing-Version": "[]",
-  })).status, 200);
-  assert.equal((await publicationCall(epochBase + "/resources", owner, "POST", manifest)).status, 200);
-  assert.equal((await publicationCall(epochBase + "/open", owner, "POST")).status, 200);
-  const epochStub = namespace.get(namespace.idFromName(epochRoom.room));
-  const epochSql = (sql: string, args: unknown[] = []) => epochStub.fetch("https://test/__test/sql", {
-    method: "POST", body: JSON.stringify({sql, args}),
-  });
-  const latest = new Uint8Array(512).fill(17), latestHash = hash(latest);
-  assert.equal((await publicationCall(epochBase + "/epochs/" + latestHash, epochRoom.capability, "PUT", latest)).status, 200,
-    "an immutable fresh seed can be staged while the room is live");
-  const oldBlob = new Uint8Array([1, 2, 3]);
-  assert.equal((await publicationCall(epochBase + "/blob/" + hash(oldBlob), epochRoom.capability, "PUT", oldBlob, {
-    "Content-Type": "application/octet-stream", "Content-Length": String(oldBlob.length),
-  })).status, 200);
-  // Occupied accepted inventory at the normal room budget must not prevent a
-  // bounded staged replacement from uploading its new referenced attachment.
-  // The existing SQL harness models old retained occupancy without allocating 100 MiB.
-  const oldResource = { key: hash(oldBlob), hash: hash(oldBlob), size: oldBlob.length, media_type: "application/octet-stream" };
-  for (let n = 0; n < 10; n++) {
-    const id = n === 0 ? hash(oldBlob) : n.toString(16).padStart(64, "0");
-    await epochSql("INSERT OR REPLACE INTO resource_blobs VALUES(?,?)", [id, JSON.stringify({ ...oldResource, key: id, hash: id, size: 10485760 })]);
-  }
-  const replacementBlob = new Uint8Array([4, 5, 6, 7]);
-  const replacement = { key: hash(replacementBlob), hash: hash(replacementBlob), size: replacementBlob.length, media_type: "application/octet-stream" };
-  const replacementHeaders = { "Content-Type": replacement.media_type, "Content-Length": String(replacement.size) };
-  assert.equal((await publicationCall(epochBase + "/blob/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 413,
-    "ordinary uploads retain their existing room quota");
-  assert.equal((await publicationCall(epochBase + "/epochs/" + latestHash + "/blobs/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 200,
-    "an epoch stage has a separate bounded blob budget");
-  assert.equal((await (await publicationCall(epochBase + "/blobs", epochRoom.capability)).json()).length, 10,
-    "staged blobs do not enter the current visible inventory");
-  await epochSql("DELETE FROM resource_blobs");
-  await epochSql("INSERT INTO resource_blobs VALUES(?,?)", [oldResource.hash, JSON.stringify(oldResource)]);
-  const beforeEpochSocket = await socket("203.0.113.31", epochBase, epochRoom.capability);
-  await beforeEpochSocket.joined(0);
-  const expected = {seedHash: hash(seed), heads: []};
-  const publication = {expected, seedHash: latestHash, root: [["000000000000000a", 5]], resources: manifest, attachments: [replacement]};
-  assert.equal((await publicationCall(epochBase + "/epoch", epochRoom.capability, "POST", {
-    ...publication, expected: {...expected, heads: [["0000000000000001", 1]]},
-  })).status, 409);
-  assert.equal(hash(new Uint8Array(await (await publicationCall(epochBase + "/seed", epochRoom.capability)).arrayBuffer())), hash(seed));
-  assert.equal((await (await publicationCall(epochBase + "/blobs", epochRoom.capability)).json()).length, 1);
-  assert.equal((await publicationCall(epochBase + "/epoch", epochRoom.capability, "POST", publication)).status, 200);
-  assert.equal((await beforeEpochSocket.next()).code, 6, "old epoch connections must refresh before pushing");
-  const staleEpochSocket = await socket("203.0.113.32", epochBase, epochRoom.capability);
-  staleEpochSocket.ws.send(hello());
-  assert.equal((await staleEpochSocket.next()).code, 6, "a new connection cannot push without the current seed root");
-  assert.equal(hash(new Uint8Array(await (await publicationCall(epochBase + "/seed", epochRoom.capability)).arrayBuffer())), latestHash);
-  assert.deepEqual(await (await publicationCall(epochBase + "/blobs", epochRoom.capability)).json(), [replacement]);
-  const currentEpoch = await (await publicationCall(epochBase + "/epoch", epochRoom.capability)).json();
-  assert.deepEqual(currentEpoch, {seedHash: latestHash, root: publication.root, heads: publication.root});
-  assert.equal((await publicationCall(epochBase + "/epoch", epochRoom.capability, "POST", publication)).status, 200,
-    "a lost publication receipt can be retried");
-  assert.equal((await publicationCall(epochBase + "/seed?hash=" + hash(seed), epochRoom.capability)).status, 409,
-    "a raced seed read does not return a different epoch");
-  const abandonedSeed = new Uint8Array(512).fill(20), abandonedSeedHash = hash(abandonedSeed);
-  const abandonedLeaseBlob = new Uint8Array([20, 21, 22]), abandonedLeaseBlobHash = hash(abandonedLeaseBlob);
-  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash, epochRoom.capability, "PUT", abandonedSeed)).status, 200);
-  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash + "/blobs/" + abandonedLeaseBlobHash, epochRoom.capability, "PUT", abandonedLeaseBlob, {
-    "Content-Type": "application/octet-stream", "Content-Length": String(abandonedLeaseBlob.length),
-  })).status, 200);
-  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash, epochRoom.capability, "DELETE")).status, 200,
-    "a losing candidate can release its slot immediately instead of blocking maintenance for ten minutes");
-  assert.equal(await bucket.get(`${epochRoom.room}/epochs/${abandonedSeedHash}`), null);
-  assert.equal(await bucket.get(`${epochRoom.room}/blobs/${abandonedLeaseBlobHash}`), null);
-  assert.equal((await releaseCall(epochBase + "/epochs/" + abandonedSeedHash, epochRoom.capability, "DELETE")).status, 200);
-  assert.equal((await releaseCall(epochBase + "/epochs/" + latestHash, epochRoom.capability, "DELETE")).status, 409,
-    "lost publication acknowledgments cannot cause cleanup to delete the current seed");
-  assert.equal(hash(new Uint8Array(await (await releaseCall(epochBase + "/seed", epochRoom.capability)).arrayBuffer())), latestHash);
-  const pending = new Uint8Array(512).fill(18), pendingHash = hash(pending);
-  assert.equal((await expiryCall(epochBase + "/epochs/" + pendingHash, epochRoom.capability, "PUT", pending)).status, 200);
-  const otherPending = new Uint8Array(512).fill(19), otherHash = hash(otherPending);
-  assert.equal((await expiryCall(epochBase + "/epochs/" + otherHash, epochRoom.capability, "PUT", otherPending)).status, 200);
-  const abandoned = new Uint8Array([9, 8, 7]), abandonedHash = hash(abandoned);
-  for (const stage of [pendingHash, otherHash]) {
-    assert.equal((await expiryCall(epochBase + "/epochs/" + stage + "/blobs/" + abandonedHash, epochRoom.capability, "PUT", abandoned, {
-      "Content-Type": "application/octet-stream", "Content-Length": String(abandoned.length),
-    })).status, 200);
-  }
-  assert.equal((await expiryCall(epochBase + "/epochs/" + pendingHash + "/blobs/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 200);
-  // One candidate cannot reserve more raw blob bytes than the maximum seed size.
-  for (const id of ["d".repeat(64), "e".repeat(64)])
-    await epochSql("INSERT INTO epoch_blobs VALUES(?,?,?)", [otherHash, id, JSON.stringify({ ...replacement, key: id, hash: id, size: 8388608 })]);
-  assert.equal((await expiryCall(epochBase + "/epochs/" + otherHash + "/blobs/" + replacement.hash, epochRoom.capability, "PUT", replacementBlob, replacementHeaders)).status, 413);
-  await epochSql("DELETE FROM epoch_blobs WHERE id IN (?,?)", ["d".repeat(64), "e".repeat(64)]);
-  await epochSql("UPDATE epoch_seeds SET expires=0 WHERE hash=?", [pendingHash]);
-  await epochStub.fetch("https://test/__test/alarm", {method:"POST"});
-  assert.equal(await bucket.get(`${epochRoom.room}/epochs/${pendingHash}`), null, "expired unpublished seeds are reclaimed");
-  assert.ok(await bucket.get(`${epochRoom.room}/blobs/${abandonedHash}`), "another unexpired stage keeps the shared immutable blob");
-  await epochSql("UPDATE epoch_seeds SET expires=0 WHERE hash=?", [otherHash]);
-  await epochStub.fetch("https://test/__test/alarm", {method:"POST"});
-  assert.equal(await bucket.get(`${epochRoom.room}/blobs/${abandonedHash}`), null, "unclaimed staged blobs expire with their last lease");
-  assert.ok(await bucket.get(`${epochRoom.room}/blobs/${replacement.hash}`), "stage expiry never deletes a current epoch's attachment");
-  assert.equal((await publicationCall(epochBase+"/sharing",owner,"DELETE")).status,200);
-  assert.equal((await publicationCall(epochBase+"/seed",epochRoom.capability)).status,403);
-  assert.equal((await publicationCall(epochBase+"/seed",owner)).status,200,"revocation retains private canonical bytes");
-  console.log("Passed: opaque compaction, bounded epochs/resources, socket quotas/refusals, persistent retention and sharing revocation.");
+  console.log("Passed: opaque fold-only compaction, the base limit, blob cleanup, socket quotas/refusals and persistent retention.");
 }

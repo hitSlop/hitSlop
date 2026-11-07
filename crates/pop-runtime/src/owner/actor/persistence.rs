@@ -2,12 +2,6 @@
 use super::*;
 
 pub(super) enum Work {
-    AdoptEpoch {
-        generation: u64,
-        source: store::EpochLocation,
-        recovery: Option<(store::EpochLocation, Vec<u8>)>,
-        callback: Completion,
-    },
     Save {
         generation: u64,
         target: u64,
@@ -56,12 +50,6 @@ fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) ->
     expect(dead_code, reason = "native path payloads reach the persistence queue but are refused in the browser")
 )]
 pub(super) enum StorageAction {
-    PrepareEpoch {
-        destination: store::EpochLocation,
-        state: Vec<u8>,
-        source_version: String,
-    },
-    ReclaimEpoch(String),
     Copy {
         path: PathBuf,
         state: Vec<u8>,
@@ -70,6 +58,7 @@ pub(super) enum StorageAction {
     },
     CaptureSource(PathBuf),
     Backup(PathBuf),
+    StageSeed(PathBuf),
     Artwork(Artwork),
     #[cfg(not(target_arch = "wasm32"))]
     SetArtwork {
@@ -87,11 +76,8 @@ pub(super) enum StorageAction {
 pub(super) fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for work in work {
         let done = perform(&store, work);
-        if let Err(mpsc::SendError(
-            Message::Stored { callback, .. }
-            | Message::Restored { callback, .. }
-            | Message::EpochInstalled { callback, .. },
-        )) = sender.send(done)
+        if let Err(mpsc::SendError(Message::Stored { callback, .. } | Message::Restored { callback, .. })) =
+            sender.send(done)
         {
             complete(callback, Err(closed()))
         }
@@ -100,34 +86,6 @@ pub(super) fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, 
 /// One serial storage effect, driven by a native thread or a browser worker.
 pub(super) fn perform(store: &store::Store, work: Work) -> Message {
     match work {
-        Work::AdoptEpoch { generation, source, recovery, callback } => {
-            let mut attempted = false;
-            let result = contained(|| {
-                let recovery_path = if let Some((path, state)) = recovery {
-                    store.ensure_recovery(&path, &state)?;
-                    Some(path)
-                } else {
-                    None
-                };
-                let saved = store.document()?.version();
-                attempted = true;
-                let document = store.adopt_epoch(&source, &saved)?;
-                Ok(super::epochs::Installed { checkpoint: document.checkpoint()?, recovery_path })
-            })
-            .map_err(|failure| {
-                let uncertain = attempted
-                    && matches!(
-                        failure.kind,
-                        FailureKind::Failed
-                            | FailureKind::SaveFailed
-                            | FailureKind::Full
-                            | FailureKind::Moved
-                            | FailureKind::Invalidated
-                    );
-                super::epochs::InstallFailure { failure, uncertain }
-            });
-            Message::EpochInstalled { generation, result, callback }
-        }
         Work::Save { generation, target, job } => {
             Message::Saved { generation, target, result: contained(|| store.write(&job).map_err(Failure::from)) }
         }
@@ -140,14 +98,6 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
             let refresh_status = matches!(action, StorageAction::Share(_) | StorageAction::Unshare);
             let result = contained(|| {
                 Ok(match action {
-                    StorageAction::PrepareEpoch { destination, state, source_version } => {
-                        let version = store.stage_epoch(&destination, &state)?;
-                        Reply::EpochCandidate { source_version, version, path: destination }
-                    }
-                    StorageAction::ReclaimEpoch(version) => {
-                        let _ = store.reclaim_epoch(&version);
-                        Reply::Unit
-                    }
                     #[cfg(not(target_arch = "wasm32"))]
                     StorageAction::Copy { path, state, preview, icon } => {
                         store.copy_clean(&path, &state, &named_artwork(&preview, &icon))?;
@@ -163,8 +113,16 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                         store.backup(&path)?;
                         Reply::Unit
                     }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    StorageAction::StageSeed(path) => {
+                        store.stage_seed(&path)?;
+                        Reply::Unit
+                    }
                     #[cfg(target_arch = "wasm32")]
-                    StorageAction::Copy { .. } | StorageAction::CaptureSource(_) | StorageAction::Backup(_) => {
+                    StorageAction::Copy { .. }
+                    | StorageAction::CaptureSource(_)
+                    | StorageAction::Backup(_)
+                    | StorageAction::StageSeed(_) => {
                         return Err(Failure::rejected(
                             Code::InvalidRequest,
                             "Native path operation is unavailable in the browser",

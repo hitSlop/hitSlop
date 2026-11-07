@@ -64,10 +64,11 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
   expect(affected("docs/architecture.md")).toEqual([]);
   expect(affected(".gitignore", "AGENTS.md", ".vscode/launch.json", ".agents/skills/pop-native/SKILL.md")).toEqual([]);
   expect(affected("packages/pop/skills/pop/SKILL.md")).not.toContain("contracts");
-  for (const path of ["scripts/compat/required-history.json", "scripts/compat/check.ts", "crates/pop-core/src/app/package_format_1.rs", "crates/pop-storage/src/file/storage-1.sql"])
+  for (const path of ["scripts/compat/dotpop-required-history.json", "scripts/compat/check.ts", "crates/pop-core/src/app/format.rs", "crates/pop-storage/src/file/storage-1.sql"])
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/PopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
+  expect(affected("tools/pop-bindgen/src/main.rs")).toEqual(affected("crates/pop-storage/src/store/mod.rs"));
   expect(affected("crates/pop-storage/src/store/mod.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "sharing", "packed", "swift", "native"]);
   for (const path of ["packages/pop/src/sdk/context.ts", "packages/pop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
@@ -141,7 +142,7 @@ test("required CI keeps document compatibility and packaging, without browser qu
   for (const event of ["schedule", "workflow_dispatch"])
     expect(ciJobs([], event).app).toBe("app");
   expect(ciJobs([], "pull_request", false, true).app).toBe("app");
-  const corpus = jobs(["scripts/compat/required-history.json"]);
+  const corpus = jobs(["scripts/compat/dotpop-required-history.json"]);
   expect(corpus.fast.split(",")).toContain("compat");
   expect(corpus.native).toBe("swift,native");
   const none = { app: "", native: "", nativeRust: "", rust: "", deferred: "", qualification: "" };
@@ -166,7 +167,7 @@ test("a pull request defers Swift/native tiers unless it affects a critical boun
   expect(deferred.native).toBe("");
   expect(deferred.deferred.split(",")).toContain("native");
   for (const path of ["crates/pop-storage/src/file/open.rs", "apps/apple/Packages/PopApple/Sources/PopHost/PopWindow.swift",
-    "packages/pop/src/shell/owner.ts", "scripts/compat/required-history.json", "tests/native/crash.native.test.ts",
+    "packages/pop/src/shell/owner.ts", "scripts/compat/dotpop-required-history.json", "tests/native/crash.native.test.ts",
     "tests/apps/fixture-checklist/pop.ts", "scripts/lib/native.ts", "scripts/lib/native-fixtures.ts", "scripts/lib/swift-tests.ts",
     "packages/pop/src/sdk/index.ts"]) {
     expect(touchesNativeGate([path])).toBe(true);

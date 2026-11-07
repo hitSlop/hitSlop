@@ -40,8 +40,8 @@ export async function serve(slug: string) {
 }
 
 export async function openPop(browser: Browser, slug: string, scale = 2) {
-  const manifest = await Bun.file(join(repo, "pop", slug, "manifest.json")).json();
-  const { width, height } = manifest.presentation;
+  const { default: definition } = await import(join(repo, "pop", slug, "pop.ts"));
+  const { width, height } = definition.window;
   const server = await serve(slug);
   const page = await browser.newPage({ viewport: { width, height }, userAgent });
   // Playwright's deviceScaleFactor does not reach this Chromium build, so set it directly.
@@ -51,6 +51,7 @@ export async function openPop(browser: Browser, slug: string, scale = 2) {
   page.on("pageerror", (e) => console.warn(`[${slug}]`, e.message));
   await page.goto(server.url);
   await page.waitForLoadState("networkidle").catch(() => {});
+  await page.waitForFunction(() => Boolean(document.body.innerText.trim()), { timeout: 30000 });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(800);
   return {
@@ -85,9 +86,12 @@ export async function record({ page, cdp }: { page: Page; cdp: CDPSession }, nam
       shots.push({ t, png: Buffer.from(data, "base64") });
     }
   })();
-  await script((label) => (marks[label] = Math.round(((performance.now() - start) / 1000) * FPS)));
-  running = false;
-  await grabber;
+  try {
+    await script((label) => (marks[label] = Math.round(((performance.now() - start) / 1000) * FPS)));
+  } finally {
+    running = false;
+    await grabber;
+  }
   const total = Math.floor((shots.at(-1)!.t / 1000) * FPS);
   let j = 0;
   for (let f = 0; f <= total; f++) {

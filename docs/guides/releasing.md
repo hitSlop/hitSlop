@@ -1,8 +1,9 @@
 # Releasing pop
 
 The latest host must open, render, edit, save and reopen every document a public
-release wrote. Downgrades are unsupported. The public v1.0.0 corpus starts the frozen
-compatibility history; retain it and every later release's original evidence.
+release in document lineage 2 wrote. Downgrades are unsupported. The promise starts with
+the first public lineage-2 release; retain its corpus and every later release's original
+evidence.
 
 ## Release flow
 
@@ -38,13 +39,13 @@ workflow run/attempt, all artifact hashes and `qualified` (every prior corpus ve
 and SHA-256 actually replayed). Frozen evidence is never imported into Git, edited,
 deleted or recaptured. GitHub allows whole-release deletion even with immutability;
 do not delete public releases. The secondary copy lives on the maintainer's Mac, under
-`~/.cache/pop/compat-corpora/releases/`, and is retained by Time Machine. Keep this
+`~/.cache/pop/compat-corpora/lineage-2/releases/`, and is retained by Time Machine. Keep this
 folder when cleaning build caches. Recovery requires original retained bytes;
 rebuilding from a tag creates new evidence. See [Local release backup](#local-release-backup).
 
 `bun run compat:resolve` discovers published releases with pagination, verifies their
 immutable status and history closure, downloads missing archives and verifies hashes,
-then extracts each archive once under `~/.cache/pop/compat-corpora/trees/<sha>/`.
+then extracts each archive once under `~/.cache/pop/compat-corpora/lineage-2/trees/<sha>/`.
 A verified snapshot of version links is activated atomically at `.pop/compat/current`.
 Standalone Rust, Swift and TypeScript tests use that pointer; run `bun run compat:resolve`
 before them on a fresh checkout and whenever published history changes. The verifier
@@ -83,14 +84,15 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-dotpop starts a separate release lineage in the original repository, renamed to `hitSlop/dotpop`. Release tags use `pop-vX.Y.Z`; legacy `vX.Y.Z` tags remain unchanged and are excluded from pop discovery. Legacy public releases may be retired only through the verified offline archival procedure in [the launch checklist](pop-transition.md); their original assets and attestations stay immutable in that archive. Before its first publication,
-ordinary development permits empty history; release qualification still requires a frozen
-candidate corpus. After publishing pop-v1.0.0, permanently pin its `corpus.sha256` from the
-retained release record in `scripts/compat/pop-required-history.json` before another
-release. Missing or changed published history must then fail on a cold machine.
-The original hitSlop pin in `scripts/compat/required-history.json` and its archived release assets
-remain immutable historical evidence. They are not pop acceptance inputs. This one-time
-public retirement does not permit deleting any published dotpop corpus or release.
+Release tags are `pop-vX.Y.Z` under `@hitslop/pop`, with increasing release
+versions and Mac build numbers. The record's Rust-generated `documentLineage` must equal
+this build's lineage: discovery skips published releases of an earlier lineage and refuses
+a newer one. Before the first lineage-2 publication,
+`scripts/compat/dotpop-required-history.json` is `{}`; ordinary development permits empty
+history, and release qualification still requires a frozen candidate corpus. After that
+first publication, permanently pin its `corpus.sha256` from the retained release record in
+that file before another release. Missing or changed public history must then fail on a
+cold machine.
 
 ## Publication and recovery
 
@@ -239,9 +241,9 @@ Replace `X.Y.Z` with the published version:
 ```sh
 bun run compat:resolve
 gh release download pop-vX.Y.Z --repo hitSlop/dotpop --skip-existing \
-  --dir "$HOME/.cache/pop/compat-corpora/releases/vX.Y.Z"
-(cd "$HOME/.cache/pop/compat-corpora/releases/vX.Y.Z" && shasum -a 256 -c SHA256SUMS)
-tmutil isexcluded "$HOME/.cache/pop/compat-corpora/releases/vX.Y.Z"
+  --dir "$HOME/.cache/pop/compat-corpora/lineage-2/releases/vX.Y.Z"
+(cd "$HOME/.cache/pop/compat-corpora/lineage-2/releases/vX.Y.Z" && shasum -a 256 -c SHA256SUMS)
+tmutil isexcluded "$HOME/.cache/pop/compat-corpora/lineage-2/releases/vX.Y.Z"
 ```
 
 Require every checksum to pass and the folder to report `Included`. `--skip-existing`
@@ -387,7 +389,10 @@ Mac's Time Machine backup alongside the retained release assets.
   confirm the app receives its complete capability fragment.
 - Update from the previous supported signed release through Sparkle. Confirm publisher,
   resulting version and that its existing documents still work. For the first public
-  release, record this as unavailable and exercise an isolated appcast instead.
+  release, record this as unavailable and exercise an isolated appcast instead. For the
+  first lineage-2 release (2.0.0), the previous release's documents must instead be
+  refused unchanged ("made by an older version"): open a 1.x document and confirm the
+  message, that the file is byte-identical afterwards, and that Recents offers Remove.
 
 ### When the change touches the area
 

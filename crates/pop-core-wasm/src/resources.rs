@@ -108,6 +108,7 @@ pub fn frame_operation(bytes: &[u8]) -> Result<String, JsValue> {
         pop_core::sync::Frame::Error { code, .. } if code == pop_sharing_protocol::frame::ERROR_ENDED => "ended",
         pop_core::sync::Frame::Push { .. } => "upload",
         pop_core::sync::Frame::Records(_) => "download",
+        pop_core::sync::Frame::Ack { .. } => "acknowledge",
         _ => "control",
     }
     .into())

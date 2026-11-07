@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import { overridePop } from "./source-fixture";
 import { PackageFormat, RuntimeABI } from "../../src/schema/constants";
 import { buildTemplate } from "../../src/cli/template";
+import { version } from "../../package.json";
 
 /** What the engine reads in a built file. */
 const inspect = async (file: string) => (await execute({ method: "inspect", file })).info;
@@ -102,17 +103,18 @@ test("a portable build refuses templates the app would refuse and keeps the prev
 // The CLI validates and previews only the runtimes it knows, so it refuses a newer SDK
 // before building anything.
 test("build refuses a different project package and directs pinned authoring", async () => {
+  const foreignVersion = `${version}-fixture`;
   const root = await mkdtemp(join(process.cwd(), ".build-test-"));
   try {
     const source = join(root, "source");
     await cp("tests/apps/document", source, { recursive: true });
     const sdk = join(source, "node_modules/@hitslop/pop");
     await mkdir(sdk, { recursive: true });
-    await writeFile(join(sdk, "package.json"), JSON.stringify({ name: "@hitslop/pop", version: "2.0.0", type: "module", exports: { ".": "./index.js", "./package.json": "./package.json" } }));
+    await writeFile(join(sdk, "package.json"), JSON.stringify({ name: "@hitslop/pop", version: foreignVersion, type: "module", exports: { ".": "./index.js", "./package.json": "./package.json" } }));
     await writeFile(join(sdk, "index.js"), `export * from ${JSON.stringify(resolve("packages/pop/src/sdk/schema.ts"))};`);
     await writeFile(join(sdk, "abi.js"), `export const RuntimeABI = ${RuntimeABI + 1};`);
     const output = join(root, "out.pop");
-    await expect(buildTemplate(source, output)).rejects.toThrow("This project pins pop 2.0.0");
+    await expect(buildTemplate(source, output)).rejects.toThrow(`This project pins pop ${foreignVersion}`);
     expect(await readdir(root)).toEqual(["source"]);
   } finally {
     await rm(root, { recursive: true, force: true });

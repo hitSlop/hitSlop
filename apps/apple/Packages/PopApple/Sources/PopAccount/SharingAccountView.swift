@@ -58,7 +58,7 @@ import SwiftUI
     func request(_ url: URL) async throws -> URL {
       try await withCheckedThrowingContinuation { continuation in
         self.continuation = continuation
-        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "dotpop") { url, error in
+        let session = ASWebAuthenticationSession(url: url, callbackURLScheme: "dotpop") { @Sendable url, error in
           Task { @MainActor in
             if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
               self.finish(.failure(AppleWebCallback.Failure.cancelled))
@@ -90,24 +90,68 @@ import SwiftUI
   }
 #endif
 
-/// Sign in with Apple through a named Firebase app, started only by an account action or for a
-/// device that has signed in before. It never enables the default app's Analytics/Crashlytics
-/// collection in Debug or on the phone.
+/// This device's account flags. Firebase keeps an identity in the Keychain; the retained flag
+/// outlives its loss, so a missing identity is refused rather than replaced by a different
+/// anonymous UID. Keys name the document lineage: 1.x kept its identity in a named Firebase app
+/// and its cloud documents in other infrastructure, so its flags (`sharing.signedIn`,
+/// `sharing.deletion.*`) describe nothing this lineage holds, and are left as they are.
+struct SharingAccountDefaults {
+  var defaults: UserDefaults = .standard
+  private static let prefix = "sharing.lineage\(documentLineage())."
+  private static let retainedKey = prefix + "signedIn"
+  /// This device has held an identity in this lineage's Auth.
+  var identityRetained: Bool {
+    get { defaults.bool(forKey: Self.retainedKey) }
+    nonmutating set {
+      if newValue {
+        defaults.set(true, forKey: Self.retainedKey)
+      } else {
+        defaults.removeObject(forKey: Self.retainedKey)
+      }
+    }
+  }
+  /// A retained identity that Firebase no longer has.
+  func identityMissing(hasUser: Bool) -> Bool { !hasUser && identityRetained }
+  /// Only this UID's identity is left to delete. Sign-out keeps the mark: the relay fences a deleted UID for good.
+  func cloudDeletedKey(_ uid: String) -> String {
+    Self.prefix + "deletion." + SHA256.hash(data: Data(uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+  }
+}
+
+/// Retained anonymous identities accept invitations; Apple links the same UID for cloud creation.
+/// Auth runs on the one default Firebase app, which the host configures at launch (`PopFirebase.configure()`).
 @MainActor public final class SharingAccount: ObservableObject {
   public static let shared = SharingAccount()
   private init() {}
   @Published public private(set) var signedIn = false
-  private static let signedInKey = "sharing.signedIn"
-  /// For an explicit action such as creating or stopping a link: starts Firebase if needed.
+  @Published public private(set) var hasIdentity = false
+  public var identityID: String? { auth?.currentUser?.uid }
+  private var observedUID: String?
+  private var identityTask: Task<User, Error>?
+  fileprivate var retainedIdentityMissing = false
+  private let stored = SharingAccountDefaults()
+  /// Creates a guest identity only when none is retained; credential failures preserve the current UID.
   public func token() async throws -> String {
     configure()
     guard !deleting else { throw PopFailure("Account deletion is in progress.") }
-    guard let user = auth?.currentUser else { throw PopFailure("Sign in with Apple first.") }
-    return try await user.getIDToken()
+    let user = try await identity()
+    guard let auth else { throw PopFailure("Sign-in is unavailable in this app.") }
+    await CloudCatalog.shared.connect(auth: auth, user: user)
+    guard auth.currentUser?.uid == user.uid, PopLibrary.shared.isReady,
+      PopLibrary.shared.accountIdentity == user.uid, !deleting
+    else {
+      throw PopFailure("The account changed. Try again.")
+    }
+    let token = try await user.getIDToken()
+    guard auth.currentUser?.uid == user.uid, PopLibrary.shared.accountIdentity == user.uid,
+      PopLibrary.shared.isReady, !deleting
+    else {
+      throw PopFailure("The account changed. Try again.")
+    }
+    return token
   }
-  /// For background recovery: nil, without starting Firebase, until this device has signed in.
+  /// Background retries reuse the retained identity, including anonymous guests.
   public func recoveryToken() async -> String? {
-    guard auth != nil || UserDefaults.standard.bool(forKey: Self.signedInKey) else { return nil }
     return try? await token()
   }
   @Published var fingerprint: String?
@@ -118,33 +162,61 @@ import SwiftUI
   private var nonce: String?
   public func configure() {
     guard auth == nil else { return }
-    let name = "sharing-auth"
-    if FirebaseApp.app(name: name) == nil {
-      guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-        let options = FirebaseOptions(contentsOfFile: path)
-      else {
-        message = "Sign-in is unavailable in this app."
-        return
-      }
-      FirebaseApp.configure(name: name, options: options)
+    guard let app = FirebaseApp.app() else {
+      message = "Sign-in is unavailable in this app."
+      return
     }
-    guard let app = FirebaseApp.app(name: name) else { return }
     let auth = Auth.auth(app: app)
     self.auth = auth
+    retainedIdentityMissing = stored.identityMissing(hasUser: auth.currentUser != nil)
     PopLibrary.shared.tokenProvider = { try await SharingAccount.shared.token() }
-    tokenListener = auth.addIDTokenDidChangeListener { auth, user in
+    tokenListener = auth.addIDTokenDidChangeListener { @Sendable _, user in
+      let uid = user?.uid
       Task { @MainActor in
-        guard !self.deleting else { return }
+        guard let auth = self.auth, !self.deleting, auth.currentUser?.uid == uid else { return }
+        let previous = self.observedUID
         self.updateIdentity()
-        CloudCatalog.shared.connect(auth: auth, user: user)
+        if previous != self.observedUID {
+          NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
+        }
+        await CloudCatalog.shared.connect(auth: auth, user: auth.currentUser)
+        // Firebase refreshes the retained identity; push its latest token into
+        // existing Rust connections even when no document sharing panel is open.
+        await PopLibrary.shared.syncNow()
         NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
       }
     }
     updateIdentity()
+    Task {
+      do { _ = try await token() } catch {
+        message =
+          retainedIdentityMissing
+          ? "Your saved cloud identity could not be restored. Local documents remain available. Reset the identity explicitly before switching accounts."
+          : "Cloud connection is unavailable. Your local documents remain available. Try again when online."
+      }
+    }
+  }
+  /// A retained credential failure is never replaced with a different anonymous UID.
+  private func identity() async throws -> User {
+    guard let auth else { throw PopFailure("Sign-in is unavailable in this app.") }
+    if let user = auth.currentUser { return user }
+    guard !retainedIdentityMissing, !stored.identityRetained else {
+      throw PopFailure(
+        "This device's cloud identity could not be restored. Your local documents are retained. Sign out explicitly to reset the identity."
+      )
+    }
+    if let identityTask { return try await identityTask.value }
+    let task = Task { try await auth.signInAnonymously().user }
+    identityTask = task
+    defer { identityTask = nil }
+    return try await task.value
   }
   private func updateIdentity() {
-    signedIn = auth?.currentUser != nil
-    UserDefaults.standard.set(signedIn, forKey: Self.signedInKey)
+    hasIdentity = auth?.currentUser != nil
+    signedIn = auth?.currentUser?.isAnonymous == false
+    if hasIdentity { stored.identityRetained = true }
+    retainedIdentityMissing = stored.identityMissing(hasUser: hasIdentity)
+    observedUID = auth?.currentUser?.uid
     fingerprint = auth?.currentUser.map { user in
       SHA256.hash(data: Data(user.uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
@@ -217,16 +289,35 @@ import SwiftUI
       nonce = nil
     }
     do {
+      configure()
       guard let auth else { throw PopFailure("Sign-in is unavailable in this app.") }
+      guard !retainedIdentityMissing else {
+        throw PopFailure("Sign out explicitly before replacing an identity that could not be restored.")
+      }
+      _ = try await identityTask?.value
       let apple = try await appleCredential(result)
-      _ = try await auth.signIn(with: apple.credential)
+      guard auth.currentUser != nil || !stored.identityRetained else {
+        throw PopFailure("Sign out explicitly before replacing an identity that could not be restored.")
+      }
+      if let user = auth.currentUser, user.isAnonymous {
+        // Linking preserves the UID that owns this device's accepted invitations.
+        _ = try await user.link(with: apple.credential)
+      } else {
+        _ = try await auth.signIn(with: apple.credential)
+      }
       updateIdentity()
       NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
       try await verify()
+      await CloudCatalog.shared.connect(auth: auth, user: auth.currentUser)
       return true
     } catch AppleWebCallback.Failure.cancelled {
       return false
     } catch {
+      if (error as NSError).code == AuthErrorCode.credentialAlreadyInUse.rawValue {
+        message =
+          "This Apple account is already linked elsewhere. Your guest identity and local documents are retained. Sign out explicitly before switching accounts."
+        return false
+      }
       // Auth errors can carry provider response data. Keep the UI/logs generic.
       message = "Could not finish signing in. Try again."
       return false
@@ -242,12 +333,6 @@ import SwiftUI
     updateIdentity()
   }
   private var deleting = false
-  private var deletionStarted = false
-  /// Owned document ids, read once before the relay deletion and kept per account across restarts:
-  /// a relay that is mid-deletion refuses ownership lookups, so a retry must not repeat them.
-  private static func deletionSnapshotKey(_ uid: String) -> String {
-    "sharing.deletion." + SHA256.hash(data: Data(uid.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
-  }
 
   public func deleteAccount() async {
     guard !busy, let auth, let user = auth.currentUser else { return }
@@ -260,34 +345,31 @@ import SwiftUI
       nonce = nil
       updateIdentity()
     }
+    // Apple is asked first: cancelling its sheet must not stop links or delete anything.
+    let appleAuthorization: Result<(credential: AuthCredential, appleUser: String, code: String?), Error>
+    do {
+      appleAuthorization = .success(try await appleCredential())
+    } catch AppleWebCallback.Failure.cancelled {
+      return
+    } catch ASAuthorizationError.canceled {
+      return
+    } catch {
+      appleAuthorization = .failure(error)
+    }
+    let checkpoint = stored.cloudDeletedKey(user.uid)
+    var cloudDeleted = stored.defaults.bool(forKey: checkpoint)
     var note = ""
     do {
-      #if os(macOS)
-        // Cancelling the browser sheet must not stop links or delete the account.
-        let webAuthorization: Result<(credential: AuthCredential, appleUser: String, code: String?), Error>
-        do {
-          webAuthorization = .success(try await appleCredential())
-        } catch AppleWebCallback.Failure.cancelled {
-          return
-        } catch {
-          webAuthorization = .failure(error)
-        }
-      #endif
-      deletionStarted = deletionStarted || UserDefaults.standard.bool(forKey: Self.deletionSnapshotKey(user.uid))
-      if !deletionStarted {
+      if !cloudDeleted {
         let token = try await user.getIDToken(forcingRefresh: true)
         try await PopLibrary.shared.setAccount("")
         try await Task.detached(priority: .utility) { try sharingDeleteAccount(token: token) }.value
-        deletionStarted = true
-        UserDefaults.standard.set(true, forKey: Self.deletionSnapshotKey(user.uid))
+        cloudDeleted = true
+        stored.defaults.set(true, forKey: checkpoint)
       }
       var apple: AuthCredential?
       do {
-        #if os(macOS)
-          let authorization = try webAuthorization.get()
-        #else
-          let authorization = try await appleCredential()
-        #endif
+        let authorization = try appleAuthorization.get()
         // Never revoke an Apple account different from the one being deleted.
         guard user.providerData.contains(where: { $0.providerID == "apple.com" && $0.uid == authorization.appleUser })
         else { throw PopFailure("Apple sign-in did not match this account.") }
@@ -309,12 +391,13 @@ import SwiftUI
         _ = try await user.reauthenticate(with: apple)
         try await user.delete()
       }
-      deletionStarted = false
-      UserDefaults.standard.removeObject(forKey: Self.deletionSnapshotKey(user.uid))
+      stored.defaults.removeObject(forKey: checkpoint)
+      stored.identityRetained = false
+      updateIdentity()
       message = "Account deleted." + note
     } catch {
       message =
-        deletionStarted
+        cloudDeleted
         ? "Your cloud documents were deleted. Could not finish deleting the account. Try again." + note
         : "Could not delete the account. Try again."
     }
@@ -325,10 +408,14 @@ import SwiftUI
     Task {
       defer { busy = false }
       do {
+        // Finish an in-flight first identity before resetting it, so its late
+        // completion cannot sign this device back in after an explicit sign-out.
+        _ = try? await identityTask?.value
         // Flush and fence Rust transport before changing identity. Failure keeps ownership.
         try await PopLibrary.shared.setAccount("")
         try auth?.signOut()
-        deletionStarted = false
+        stored.identityRetained = false
+        retainedIdentityMissing = false
         updateIdentity()
         message = ""
       } catch { message = "Could not save and sign out. Your documents remain open. Retry." }
@@ -343,7 +430,7 @@ public struct SharingAccountView: View {
   public var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Account").font(.title2.bold())
-      if let fingerprint = account.fingerprint {
+      if account.signedIn, let fingerprint = account.fingerprint {
         Text("Signed in with Apple")
         Text("Account code: \(fingerprint.prefix(8))").font(.footnote).textSelection(.enabled)
         Button("Sign Out") { account.signOut() }
@@ -356,7 +443,12 @@ public struct SharingAccountView: View {
             Task { _ = await account.complete(result) }
           }.frame(height: 44)
         #endif
-        Text("Sign in to start live links. Opening a shared link doesn't need an account.")
+        if account.hasIdentity || account.retainedIdentityMissing {
+          Button(account.retainedIdentityMissing ? "Reset Missing Cloud Identity" : "Sign Out of Guest Identity") {
+            account.signOut()
+          }
+        }
+        Text("Sign in to start live links. Shared links use a guest identity on this device.")
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       if !account.message.isEmpty {

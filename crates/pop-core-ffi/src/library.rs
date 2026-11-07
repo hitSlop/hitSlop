@@ -1,7 +1,15 @@
 //! Typed device-local index and persistent cloud document composition.
 use super::*;
-use core::{DocumentEntry, DocumentRole, Entry, Issue};
+use core::{CatalogOutcome, DocumentEntry, DocumentRole, Entry, Issue};
 use pop_library as core;
+
+/// The document lineage this build reads and writes. Swift scopes per-account flags to it so a
+/// new lineage starts them fresh.
+#[uniffi::export]
+pub fn document_lineage() -> u32 {
+    pop_contracts::lineage::DOCUMENT_LINEAGE
+}
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum LibraryError {
     #[error("{message}")]
@@ -27,15 +35,18 @@ pub enum DocumentRole {
     Editor,
 }
 #[uniffi::remote(Record)]
+pub struct CatalogOutcome {
+    pub applied: u32,
+    pub rejected: u32,
+    pub deferred: u32,
+}
+#[uniffi::remote(Record)]
 pub struct DocumentEntry {
     pub document_id: String,
     pub title: String,
     pub template_id: String,
-    pub app_revision: Option<String>,
-    pub preview_ref: Option<String>,
     pub modified_at: u64,
     pub role: core::DocumentRole,
-    pub access_generation: u64,
     pub catalog_revision: u64,
     pub deleted: bool,
 }
@@ -59,6 +70,10 @@ pub struct Entry {
     pub sharing_enabled: Option<bool>,
     pub inbox: bool,
 }
+#[uniffi::export(callback_interface)]
+pub trait LibraryListener: Send + Sync {
+    fn changed(&self);
+}
 #[derive(uniffi::Object)]
 pub struct NativeLibrary(Arc<core::Library>);
 #[uniffi::export]
@@ -66,6 +81,12 @@ impl NativeLibrary {
     #[uniffi::constructor]
     pub fn open(root: String, account: String) -> Result<Arc<Self>, LibraryError> {
         Ok(Arc::new(Self(core::Library::open(Path::new(&root), &account)?)))
+    }
+    pub fn listen(&self, listener: Box<dyn LibraryListener>) {
+        self.0.listen(Arc::new(move || listener.changed()));
+    }
+    pub fn reconcile(&self) -> Result<(), LibraryError> {
+        Ok(self.0.reconcile()?)
     }
     pub fn pending_catalog_writes(&self) -> Result<Vec<core::DocumentEntry>, LibraryError> {
         Ok(self.0.pending_catalog_writes()?)
@@ -79,7 +100,7 @@ impl NativeLibrary {
     pub fn entries(&self) -> Result<Vec<core::Entry>, LibraryError> {
         Ok(self.0.entries()?)
     }
-    pub fn receive_catalog(&self, entries: Vec<core::DocumentEntry>) -> Result<(), LibraryError> {
+    pub fn receive_catalog(&self, entries: Vec<core::DocumentEntry>) -> Result<core::CatalogOutcome, LibraryError> {
         Ok(self.0.receive_catalog(&entries)?)
     }
     pub fn register_owner(&self, owner: Arc<crate::owner::NativeOwner>) -> Result<(), LibraryError> {
@@ -93,9 +114,6 @@ impl NativeLibrary {
     }
     pub fn adopt(&self, source: String, title: String) -> Result<core::Entry, LibraryError> {
         Ok(self.0.adopt(Path::new(&source), &title)?)
-    }
-    pub fn adopt_local_cache(&self, source: String, title: String) -> Result<Option<core::Entry>, LibraryError> {
-        Ok(self.0.adopt_local_cache(Path::new(&source), &title)?)
     }
     pub fn enable_sync(&self, id: String, token: String) -> Result<core::Entry, LibraryError> {
         Ok(self.0.enable_sync(&id, &token)?)

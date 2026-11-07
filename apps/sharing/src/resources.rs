@@ -2,7 +2,7 @@
 use super::*;
 use crate::resource_types::{self, Manifest, Resource};
 use policy::{ResourceInfo, ResourceRoute};
-use pop_sharing_protocol::policy;
+use pop_contracts::resources as policy;
 
 #[derive(Deserialize)]
 struct SessionRow {
@@ -95,10 +95,19 @@ impl CloudDocument {
             if req.method() != Method::Post || !self.authorized_guest(&req).await? {
                 return denied();
             }
-            let bytes = bounded_body(&mut req, CONTROL_BYTES).await?;
-            let input: pop_sharing_protocol::http::ResourceGrant = serde_json::from_slice(&bytes)?;
+            let input: pop_sharing_protocol::http::ResourceGrant =
+                match crate::input::body(&mut req, CONTROL_BYTES).await {
+                    Ok(input) => input,
+                    Err(error) => return error.response(),
+                };
+            // Reading the body may yield while membership is revoked without
+            // changing Live. Recheck authority before creating a delegated grant.
+            let authorized = self.authorized_guest(&req).await?;
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
+            }
+            if !authorized || self.phase()? != Some(RoomPhase::Live) {
+                return denied();
             }
             let app = self.text("app")?.ok_or_else(|| fail("Missing app"))?;
             if input.app != app || self.text("resources")?.is_none() {
@@ -117,8 +126,12 @@ impl CloudDocument {
                 vec![hash(&token).into(), host.into(), app.into(), expires.into()],
             )?;
             self.state.storage().sync().await?;
+            let authorized = self.authorized_guest(&req).await?;
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
+            }
+            if !authorized || self.phase()? != Some(RoomPhase::Live) {
+                return denied();
             }
             let room = req.path().trim_start_matches("/_resources/").to_string();
             let mut response = Response::ok("ready")?;
@@ -145,13 +158,13 @@ impl CloudDocument {
             let Some(item) = manifest.resources.into_iter().find(|i| i.key == key) else {
                 return Response::error("Not found", 404);
             };
-            let key = format!("{}/assets/{}", cookie(&req).unwrap().0, item.hash);
+            let key = object_key(&cookie(&req).unwrap().0, &format!("assets/{}", item.hash));
             (item, ResourceRoute::App, key)
         } else if let Some(id) = path.strip_prefix("/attachments/") {
             let Some(item) = self.blobs()?.into_iter().find(|i| i.hash == id) else {
                 return Response::error("Not found", 404);
             };
-            (item, ResourceRoute::Attachment, format!("{}/blobs/{id}", cookie(&req).unwrap().0))
+            (item, ResourceRoute::Attachment, object_key(&cookie(&req).unwrap().0, &format!("blobs/{id}")))
         } else {
             return Response::error("Not found", 404);
         };
@@ -181,6 +194,30 @@ impl CloudDocument {
         }
         Ok(response)
     }
+    /// Uploads register their R2 key here before writing it. Caller holds uploads, so
+    /// no blob write can repopulate a deleted object.
+    pub(super) async fn sweep_garbage(&self, room: &str) -> Result<()> {
+        #[derive(Deserialize)]
+        struct KeyRow {
+            key: String,
+        }
+        let bucket = self.env.bucket("SEEDS")?;
+        for entry in self.sql.exec("SELECT key FROM garbage", None)?.to_array::<KeyRow>()? {
+            let id = entry.key.strip_prefix(&object_key(room, "blobs/")).unwrap_or_default();
+            let retained = self
+                .sql
+                .exec("SELECT EXISTS(SELECT 1 FROM resource_blobs WHERE id=?) AS n", vec![id.into()])?
+                .one::<NumberRow>()?
+                .n
+                != 0;
+            if !retained && let Err(error) = bucket.delete(&entry.key).await {
+                console_error!("Blob cleanup failed: {}", error);
+                continue;
+            }
+            self.sql.exec("DELETE FROM garbage WHERE key=?", vec![entry.key.into()])?;
+        }
+        Ok(())
+    }
     pub(super) fn blobs(&self) -> Result<Vec<Resource>> {
         #[derive(Deserialize)]
         struct Row {
@@ -193,9 +230,15 @@ impl CloudDocument {
             .map(|r| serde_json::from_str(&r.value).map_err(Into::into))
             .collect()
     }
-    pub(super) async fn resource_api(&self, req: &mut Request, room: &str, route: &str) -> Result<Response> {
-        if route == "resources" {
-            if req.method() == Method::Get {
+    pub(super) async fn resource_api(
+        &self,
+        req: &mut Request,
+        room: &str,
+        op: Op,
+        hash: Option<&str>,
+    ) -> Result<Response> {
+        if matches!(op, Op::GetResources | Op::PutResources) {
+            if op == Op::GetResources {
                 return match self.text("resources")? {
                     Some(body) => Response::ok(body).map(|mut r| {
                         r.headers_mut().set("Content-Type", "application/json").expect("static header");
@@ -204,11 +247,10 @@ impl CloudDocument {
                     None => Response::error("Resources not ready", 409),
                 };
             }
-            if req.method() != Method::Post {
-                return denied();
-            }
-            let body = bounded_body(req, CONTROL_BYTES).await?;
-            let input: Manifest = serde_json::from_slice(&body)?;
+            let input: Manifest = match crate::input::body(req, CONTROL_BYTES).await {
+                Ok(input) => input,
+                Err(error) => return error.response(),
+            };
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
@@ -223,46 +265,45 @@ impl CloudDocument {
             self.state.storage().sync().await?;
             return Response::ok("ready");
         }
-        if route == "blobs" && req.method() == Method::Get {
+        if op == Op::ListBlobs {
             return Response::from_json(&self.blobs()?);
         }
-        let path = req.path();
-        let parts: Vec<_> = path.split('/').collect();
-        if parts.len() != 6 || !resource_types::hash_id(parts[5]) {
-            return Response::error("Not found", 404);
-        }
-        let id = parts[5];
-        let blob = route == "blob";
-        let key = format!("{room}/{}/{id}", if blob { "blobs" } else { "assets" });
+        let id = match hash {
+            Some(id) if resource_types::hash_id(id) => id,
+            _ => return Response::error("Not found", 404),
+        };
+        let blob = matches!(op, Op::GetBlob | Op::PutBlob);
+        let key = object_key(room, &format!("{}/{id}", if blob { "blobs" } else { "assets" }));
         let bucket = self.env.bucket("SEEDS")?;
-        if req.method() == Method::Put {
-            // Serialize blob uploads with epoch swaps; Stop/freeze remain independent.
+        if matches!(op, Op::PutAsset | Op::PutBlob) {
+            // Serialize blob uploads with garbage sweeps; Stop/freeze remain independent.
             let _upload = if blob { Some(self.uploads.lock().await) } else { None };
             if blob {
-                self.sweep_epochs(room).await?;
+                self.sweep_garbage(room).await?;
                 if !self.authorized_guest(req).await? {
                     return Response::error("Access revoked", 403);
                 }
             }
-            let epoch = self.text("seed_hash")?;
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
             let item = if blob {
+                let Some(size) = req.headers().get("Content-Length")?.and_then(|value| value.parse().ok()) else {
+                    return Response::error("Content length required", 411);
+                };
                 Resource {
                     key: id.into(),
                     hash: id.into(),
-                    size: req
-                        .headers()
-                        .get("Content-Length")?
-                        .and_then(|v| v.parse().ok())
-                        .ok_or_else(|| fail("Missing length"))?,
+                    size,
                     media_type: req.headers().get("Content-Type")?.unwrap_or_else(|| "application/octet-stream".into()),
                 }
             } else {
                 let manifest: Manifest =
                     serde_json::from_str(&self.text("resources")?.ok_or_else(|| fail("Missing manifest"))?)?;
-                manifest.resources.into_iter().find(|r| r.hash == id).ok_or_else(|| fail("Unknown app resource"))?
+                let Some(item) = manifest.resources.into_iter().find(|item| item.hash == id) else {
+                    return Response::error("Unknown app resource", 404);
+                };
+                item
             };
             if resource_types::validate(std::slice::from_ref(&item), blob).is_err() {
                 return Response::error("Invalid resource metadata", 400);
@@ -282,7 +323,13 @@ impl CloudDocument {
                 }
             }
             // Probe-sized files are bounded by Rust limits; R2 verifies the supplied digest.
-            let body = bounded_body(req, item.size as usize).await?;
+            let Ok(limit) = usize::try_from(item.size) else {
+                return Response::error("Resource exceeds its byte limit", 413);
+            };
+            let body = match crate::input::bytes(req, limit).await {
+                Ok(bytes) => bytes,
+                Err(error) => return error.response(),
+            };
             if body.len() as u64 != item.size || hex(&Sha256::digest(&body)) != id {
                 return Response::error("Resource checksum or length mismatch", 422);
             }
@@ -294,16 +341,13 @@ impl CloudDocument {
             if blob {
                 // Register bounded cleanup before R2: a crash after PUT must not
                 // leave bytes outside both quota inventory and garbage tracking.
-                self.sql.exec("INSERT OR IGNORE INTO epoch_garbage VALUES(?)", vec![key.clone().into()])?;
+                self.sql.exec("INSERT OR IGNORE INTO garbage VALUES(?)", vec![key.clone().into()])?;
                 self.schedule_cleanup(60_000).await?;
                 self.state.storage().sync().await?;
             }
             bucket.put(key, body).sha256(decode_hex(id)?).execute().await?;
-            if self.phase()? == Some(RoomPhase::Ended)
-                || self.text("seed_hash")? != epoch
-                || (blob && !self.authorized_guest(req).await?)
-            {
-                bucket.delete(format!("{room}/{}/{id}", if blob { "blobs" } else { "assets" })).await?;
+            if self.phase()? == Some(RoomPhase::Ended) || (blob && !self.authorized_guest(req).await?) {
+                bucket.delete(object_key(room, &format!("{}/{id}", if blob { "blobs" } else { "assets" }))).await?;
                 return Response::error("Sharing ended", 410);
             }
             if blob {
@@ -312,7 +356,7 @@ impl CloudDocument {
                     current.push(item.clone());
                 }
                 if resource_types::validate(&current, true).is_err() {
-                    bucket.delete(format!("{room}/blobs/{id}")).await?;
+                    bucket.delete(object_key(room, &format!("blobs/{id}"))).await?;
                     return Response::error("Room file limit reached", 413);
                 }
             }
@@ -321,20 +365,27 @@ impl CloudDocument {
                     "INSERT OR IGNORE INTO resource_blobs VALUES(?,?)",
                     vec![id.into(), serde_json::to_string(&item)?.into()],
                 )?;
-                self.sql.exec("DELETE FROM epoch_garbage WHERE key=?", vec![format!("{room}/blobs/{id}").into()])?;
+                self.sql
+                    .exec("DELETE FROM garbage WHERE key=?", vec![object_key(room, &format!("blobs/{id}")).into()])?;
                 self.state.storage().sync().await?;
             }
             return Response::ok("stored");
         }
-        if req.method() == Method::Get {
+        if op == Op::GetBlob {
+            if !self.blobs()?.iter().any(|item| item.hash == id) {
+                return Response::error("Not found", 404);
+            }
             if let Some(object) = bucket.get(key).execute().await? {
                 if self.phase()? == Some(RoomPhase::Ended) || !self.authorized_guest(req).await? {
                     return Response::error("Sharing ended", 410);
+                }
+                if !self.blobs()?.iter().any(|item| item.hash == id) {
+                    return Response::error("Not found", 404);
                 }
                 return Response::from_body(object.body().ok_or_else(|| fail("Missing body"))?.response_body()?);
             }
             return Response::error("Not found", 404);
         }
-        Response::error("Method refused", 405)
+        Response::error("Not found", 404)
     }
 }

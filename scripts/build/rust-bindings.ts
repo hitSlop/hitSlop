@@ -8,8 +8,7 @@ import { repository, writeIfChanged } from "../lib/artifacts";
 export async function rustBindings(check: boolean) {
   const stage = await mkdtemp(join(tmpdir(), "pop-bindings-"));
   try {
-    const child = Bun.spawn(["cargo", "run", "--quiet", "--locked", "-p", "pop-core", "--features", "ts",
-      "--example", "export_bindings", "--", stage], { cwd: repository, stdout: "inherit", stderr: "inherit" });
+    const child = Bun.spawn(["cargo", "run", "--quiet", "--locked", "-p", "pop-bindgen", "--", stage], { cwd: repository, stdout: "inherit", stderr: "inherit" });
     if (await child.exited) throw new Error("Rust contract export failed");
     const destination = join(repository, "packages/pop/src/wire");
     const generated = (await readdir(stage)).sort();

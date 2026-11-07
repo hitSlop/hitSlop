@@ -1,4 +1,4 @@
-import { checkContainer, listCopies } from "./copies";
+import { checkContainer } from "./copies";
 import type { BrowserRequest, BrowserEvent } from "../wire/browser.generated";
 
 /** The part of the WASM module this worker calls. wasm-bindgen declares the module in
@@ -12,7 +12,6 @@ export interface BrowserCopy {
   importFinish(): void;
   importWrite(bytes: Uint8Array): void;
   open(): void;
-  openRecovery(originalDocument: string): void;
   /** A negative delay means there is no pending timer. */
   poll(monotonicMs: number, unixMs: number): number;
   recoverStorage(): Promise<void>;
@@ -74,10 +73,7 @@ export class WorkerOwner<C extends BrowserCopy = BrowserCopy> {
     }
     this.copy = installed;
     if (request.source) await this.options.importCopy(installed, request);
-    const record = (await listCopies()).find((copy) => copy.id === this.copyID);
-    if (record?.state === "recovering" && record.recovery)
-      installed.openRecovery(record.recovery.document);
-    else await this.options.openCopy(installed);
+    await this.options.openCopy(installed);
     this.opened = true;
     this.poll();
     await this.options.afterOpen?.(request);

@@ -174,7 +174,7 @@ pub(super) fn index_all(doc: &LoroDoc, schema: &Node) -> Lists {
 }
 /// Records every row list inside `value`, which `node` describes.
 fn index(doc: &LoroDoc, node: &Node, value: &ValueOrContainer, lists: &mut Lists) {
-    if layout::slotted(Layout::of(doc), node, false) {
+    if layout::slotted(node, false) {
         if let Some(value) = layout::slot_value(value) {
             index(doc, unwrap_optional(node), &value, lists);
         }
@@ -190,7 +190,7 @@ fn index(doc: &LoroDoc, node: &Node, value: &ValueOrContainer, lists: &mut Lists
         }
         (Node::Record { value: entry }, ValueOrContainer::Container(Container::Map(map))) => {
             map.for_each(|_, value| {
-                if layout::slotted(Layout::of(doc), entry, true) {
+                if layout::slotted(entry, true) {
                     if let Some(value) = layout::slot_value(&value) {
                         index(doc, entry, &value, lists);
                     }
@@ -200,7 +200,7 @@ fn index(doc: &LoroDoc, node: &Node, value: &ValueOrContainer, lists: &mut Lists
             });
         }
         (Node::List { item }, value) if !is_scalar(item) => {
-            if let Ok(list) = RowList::of(Layout::of(doc), value) {
+            if let Ok(list) = RowList::of(value) {
                 let ids = list.ids();
                 for id in &ids {
                     if let Some(row) = list.row(id) {
@@ -268,7 +268,7 @@ fn place<'s>(doc: &LoroDoc, schema: &'s Node, path: &[(ContainerID, Index)]) -> 
                     _ => return None,
                 };
                 out.push(Segment::Key(key.to_string()));
-                if layout::slotted(Layout::of(doc), node, entry) {
+                if layout::slotted(node, entry) {
                     In::Slot(child.clone())
                 } else {
                     match unwrap_optional(node) {
@@ -289,18 +289,7 @@ fn place<'s>(doc: &LoroDoc, schema: &'s Node, path: &[(ContainerID, Index)]) -> 
                 "order" => In::Order(list),
                 _ => return None,
             },
-            In::Rows(list) => {
-                if Layout::of(doc).generations() {
-                    In::RowSlot { list, slot: child.clone(), id: key.to_string() }
-                } else {
-                    node = match unwrap_optional(node) {
-                        Node::List { item } => item,
-                        _ => return None,
-                    };
-                    out.push(Segment::Id { id: key.to_string() });
-                    In::Field
-                }
-            }
+            In::Rows(list) => In::RowSlot { list, slot: child.clone(), id: key.to_string() },
             In::RowSlot { list: _, slot, id } => {
                 if !selected(&slot, key)? {
                     return Some(Place::Hidden);
@@ -352,10 +341,10 @@ fn visible_field(
     previous: Option<&PreviousMaps>,
 ) -> Option<Slot> {
     let value = map_slot(doc, map, key, previous);
-    if layout::slotted(Layout::of(doc), node, entry) {
+    if layout::slotted(node, entry) {
         return selected_payload(doc, value, previous);
     }
-    if Layout::of(doc).generations() && value.is_none() && !entry && is_scalar(node) {
+    if value.is_none() && !entry && is_scalar(node) {
         return node.default_value().map(|value| Slot::Value(loro_scalar(node, &value)));
     }
     value
@@ -421,9 +410,6 @@ pub(super) fn affects_view(
                     })
                 }
                 Some(Place::List { rows: true, .. }) => updates.iter().any(|(key, _)| {
-                    if !Layout::of(doc).generations() {
-                        return map_slot(doc, &event.target, key, old) != map_slot(doc, &event.target, key, None);
-                    }
                     selected_payload(doc, map_slot(doc, &event.target, key, old), old)
                         != selected_payload(doc, map_slot(doc, &event.target, key, None), None)
                 }),
@@ -435,8 +421,7 @@ pub(super) fn affects_view(
         } else {
             match place {
                 Some(Place::List { list, .. }) => {
-                    let Some(rows) = container(doc, &list).and_then(|value| RowList::of(Layout::of(doc), &value).ok())
-                    else {
+                    let Some(rows) = container(doc, &list).and_then(|value| RowList::of(&value).ok()) else {
                         return Ok(true);
                     };
                     if lists.get(&list) != Some(&rows.ids()) {
@@ -537,11 +522,7 @@ pub(super) fn publish(
                     index(doc, unwrap_optional(node), &value, lists);
                     ops.push(PatchOp::Set {
                         path,
-                        value: project::with_layout(
-                            Layout::of(doc),
-                            Some(unwrap_optional(node)),
-                            json(value.get_deep_value()),
-                        ),
+                        value: project(Some(unwrap_optional(node)), json(value.get_deep_value())),
                     });
                 } else {
                     ops.push(PatchOp::Remove { path });
@@ -572,10 +553,7 @@ pub(super) fn publish(
                 }
             }
             (Place::Field { path, node }, Change::Counter | Change::List) => {
-                ops.push(PatchOp::Set {
-                    path,
-                    value: project::with_layout(Layout::of(doc), Some(node), deep(doc, &e.target)),
-                });
+                ops.push(PatchOp::Set { path, value: project(Some(node), deep(doc, &e.target)) });
             }
             (Place::Field { path, node }, Change::Map(updates)) => {
                 // Object fields are declared by name; every record key has the record's kind.
@@ -594,8 +572,7 @@ pub(super) fn publish(
                     };
                     match s {
                         None => {
-                            if Layout::of(doc).generations()
-                                && entries.is_none()
+                            if entries.is_none()
                                 && let Some(default) = declared.default_value()
                             {
                                 ops.push(PatchOp::Set { path, value: declared.with_defaults(&default) });
@@ -604,7 +581,7 @@ pub(super) fn publish(
                             }
                         }
                         Some(s) => {
-                            let slotted = layout::slotted(Layout::of(doc), declared, entries.is_some());
+                            let slotted = layout::slotted(declared, entries.is_some());
                             if let Slot::Container(c) = s
                                 && let Some(value) = container(doc, c)
                             {
@@ -617,9 +594,9 @@ pub(super) fn publish(
                                 }
                             }
                             let value = if slotted {
-                                project::slot(Layout::of(doc), declared, materialize(doc, s))
+                                project::slot(declared, materialize(doc, s))
                             } else {
-                                Some(project::with_layout(Layout::of(doc), Some(declared), materialize(doc, s)))
+                                Some(project(Some(declared), materialize(doc, s)))
                             };
                             if let Some(value) = value {
                                 ops.push(PatchOp::Set { path, value });
@@ -634,7 +611,7 @@ pub(super) fn publish(
         }
     }
     for (path, node, list) in touched {
-        let Some(rows) = container(doc, &list).and_then(|value| RowList::of(Layout::of(doc), &value).ok()) else {
+        let Some(rows) = container(doc, &list).and_then(|value| RowList::of(&value).ok()) else {
             return Ok(Some(everything(doc, schema, lists)));
         };
         let Node::List { item } = unwrap_optional(node) else {
@@ -643,7 +620,7 @@ pub(super) fn publish(
         let new = rows.ids();
         let Some(old) = lists.get(&list).cloned() else {
             index(doc, node, &ValueOrContainer::Container(Container::Map(rows.map.clone())), lists);
-            ops.push(PatchOp::Set { path, value: project::with_layout(Layout::of(doc), Some(node), deep(doc, &list)) });
+            ops.push(PatchOp::Set { path, value: project(Some(node), deep(doc, &list)) });
             continue;
         };
         let (old_set, new_set): (HashSet<&String>, HashSet<&String>) = (old.iter().collect(), new.iter().collect());
@@ -660,7 +637,7 @@ pub(super) fn publish(
         let mut row_value = |id: &str| {
             let row = rows.row(id)?;
             index(doc, item, &ValueOrContainer::Container(Container::Map(row.clone())), lists);
-            let mut value = project::with_layout(Layout::of(doc), Some(item), deep(doc, &row.id()));
+            let mut value = project(Some(item), deep(doc, &row.id()));
             if let Value::Object(fields) = &mut value {
                 fields.insert("$id".into(), Value::String(id.to_owned()));
             }
@@ -668,7 +645,7 @@ pub(super) fn publish(
         };
         let Some(diff) = diff(&path, &old, &new, &mut row_value) else {
             ops.retain(|op| !op.path().starts_with(&path));
-            ops.push(PatchOp::Set { path, value: project::with_layout(Layout::of(doc), Some(node), deep(doc, &list)) });
+            ops.push(PatchOp::Set { path, value: project(Some(node), deep(doc, &list)) });
             lists.insert(list, new);
             continue;
         };
@@ -727,8 +704,5 @@ fn diff(
 /// The fallback: the whole document as one `set`, with every row list indexed again.
 fn everything(doc: &LoroDoc, schema: &Node, lists: &mut Lists) -> Vec<PatchOp> {
     *lists = index_all(doc, schema);
-    vec![PatchOp::Set {
-        path: vec![],
-        value: project::with_layout(Layout::of(doc), Some(schema), json(doc.get_map("data").get_deep_value())),
-    }]
+    vec![PatchOp::Set { path: vec![], value: project(Some(schema), json(doc.get_map("data").get_deep_value())) }]
 }

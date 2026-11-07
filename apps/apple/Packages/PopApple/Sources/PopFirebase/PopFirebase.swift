@@ -5,14 +5,20 @@ import Foundation
 import PopCore
 
 public enum PopFirebase {
+  /// Configures the one default Firebase app (Auth, Firestore, Crashlytics, Analytics) on macOS and iOS.
+  /// Telemetry collection is on only outside Debug; the Info.plist flags keep it off until this runs.
   public static func configure() {
-    // Debug and test hosts never initialize the default Firebase app, including its startup collection.
-    #if !DEBUG
-      guard FirebaseApp.allApps?.isEmpty != false else { return }
-      FirebaseApp.configure()
-      Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(true)
-      Analytics.setAnalyticsCollectionEnabled(true)
+    guard FirebaseApp.app() == nil,
+      Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil
+    else { return }
+    FirebaseApp.configure()
+    #if DEBUG
+      let collecting = false
+    #else
+      let collecting = true
     #endif
+    Crashlytics.crashlytics().setCrashlyticsCollectionEnabled(collecting)
+    Analytics.setAnalyticsCollectionEnabled(collecting)
   }
 
   @MainActor private static let policy = PopTelemetryPolicy()

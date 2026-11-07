@@ -281,6 +281,64 @@ mod tests {
     }
 
     #[test]
+    fn a_poisoned_shared_owner_can_reload_saved_state_and_close() {
+        let (_dir, store) = fixture();
+        store.set_share(&store::Share { room: "poisoned".into(), endpoint: "https://relay.example".into() }).unwrap();
+        let (persist, storage) = mpsc::channel();
+        let mut actor = Actor::new(store.clone(), store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
+        actor.view = Some("old-page".into());
+        let (reconnect, notices) = mpsc::channel();
+        actor.sync(SyncMessage::Attach {
+            sink: Arc::new(move |notice| {
+                let _ = reconnect.send(notice);
+            }),
+            connection: 0,
+            admission: Arc::default(),
+        });
+        while notices.try_recv().is_ok() {}
+        // Fault injection: the owner has refused further use after a failed rollback.
+        actor.invalidated = true;
+        let (reply, result) = mpsc::channel();
+        actor.dispatch(
+            Request::Discard,
+            None,
+            None,
+            Box::new(move |answer| {
+                let _ = reply.send(answer);
+            }),
+        );
+        if let Ok(answer) = result.try_recv() {
+            assert!(answer.is_ok(), "a poisoned shared owner must allow saved-state recovery: {answer:?}");
+        }
+        let work = storage.recv_timeout(Duration::from_secs(2)).expect("saved-state reload must be scheduled");
+        actor.step(super::super::persistence::perform(&store, work));
+        assert!(result.recv_timeout(Duration::from_secs(2)).unwrap().is_ok());
+        assert!(matches!(notices.recv_timeout(Duration::from_secs(2)).unwrap(), SyncEvent::Reconnect));
+        let (reply, old_page) = mpsc::channel();
+        actor.dispatch(
+            Request::State,
+            Some("old-page".into()),
+            None,
+            Box::new(move |answer| {
+                let _ = reply.send(answer);
+            }),
+        );
+        assert_eq!(old_page.recv_timeout(Duration::from_secs(2)).unwrap().unwrap_err().kind, FailureKind::Replaced);
+        let (reply, closed) = mpsc::channel();
+        actor.dispatch(
+            Request::Close { preview: None, icon: None },
+            None,
+            None,
+            Box::new(move |answer| {
+                let _ = reply.send(answer);
+            }),
+        );
+        let work = storage.recv_timeout(Duration::from_secs(2)).unwrap();
+        actor.step(super::super::persistence::perform(&store, work));
+        assert!(closed.recv_timeout(Duration::from_secs(2)).unwrap().is_ok());
+    }
+
+    #[test]
     fn an_evaluator_panic_completes_and_the_worker_runs_the_next_command() {
         let (_dir, store) = fixture();
         let (persist, _storage) = mpsc::channel();

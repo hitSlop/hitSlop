@@ -14,7 +14,7 @@
 //! 0x07 Error    { code u8, message varString }                    then the relay closes
 //! ```
 //!
-//! `tests/fixtures/v1/frames.json` freezes both frame and socket envelope codecs.
+//! `tests/fixtures/v1/frames.json` freezes this codec's bytes.
 use crate::{Code, Result, err};
 use std::collections::BTreeMap;
 
@@ -29,12 +29,10 @@ pub const ERROR_PROTOCOL: u8 = 1;
 pub const ERROR_APP: u8 = 2;
 /// Permanent refusal: ended or unknown room.
 pub const ERROR_ENDED: u8 = 3;
-/// Permanent refusal: invalid capability.
+/// Permanent refusal: identity or membership is not authorized.
 pub const ERROR_UNAUTHORIZED: u8 = 4;
 /// Permanent refusal: malformed frame or client message sequence.
 pub const ERROR_MALFORMED: u8 = 5;
-/// The room published a fresh checkpoint; recover local edits before refreshing.
-pub const ERROR_EPOCH: u8 = 6;
 
 /// One peer's operations `start..end`: what a record's bytes contain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

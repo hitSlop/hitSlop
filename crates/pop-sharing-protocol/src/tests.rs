@@ -1,11 +1,8 @@
-//! Frozen v1 wire examples: add fixtures, never rewrite existing expectations.
-use crate::{envelope, frame::*, http::*, resources::*};
+//! Frozen DTO and Frame examples, retained unchanged.
+use crate::{envelope, frame::*, hex, http::*, resources::*};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 fn unhex(text: &str) -> Vec<u8> {
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 }
@@ -57,11 +54,6 @@ fn frozen_http_dtos_and_extra_reply_fields() {
             "RoomPhase" => canonical::<RoomPhase>(input),
             "ConnectionPlan" => {
                 let plan: ConnectionPlan = serde_json::from_value(input.clone()).unwrap();
-                assert_eq!(
-                    plan.protocols,
-                    [crate::SOCKET_PROTOCOL],
-                    "Shipped clients must still negotiate the v1 socket"
-                );
                 serde_json::to_value(plan).unwrap()
             }
             "SharingControl" => canonical::<SharingControl>(input),
@@ -89,7 +81,7 @@ fn frozen_http_dtos_and_extra_reply_fields() {
     assert_eq!(Invitation::parse(&invitation.link().unwrap()).unwrap().room, invitation.room);
 }
 #[test]
-fn frozen_binary_codecs() {
+fn frozen_frame_codec_is_also_the_current_transport_codec() {
     let cases: Vec<Value> = serde_json::from_str(include_str!("../tests/fixtures/v1/frames.json")).unwrap();
     for case in cases {
         let bytes = unhex(case["hex"].as_str().unwrap());
@@ -99,7 +91,6 @@ fn frozen_binary_codecs() {
             assert_eq!(*protocol, PROTOCOL, "The relay must still accept shipped Hello frames");
         }
         assert_eq!(frame.encode(), bytes);
-        let bytes = unhex(case["envelopeHex"].as_str().unwrap());
         let decoded = envelope::decode(&bytes).unwrap();
         assert_eq!(decoded, frame);
         assert_eq!(envelope::encode(decoded).unwrap(), bytes);
@@ -121,17 +112,43 @@ fn unknown_variants_fail_closed_but_error_codes_remain_opaque() {
     for bytes in cases["frames"].as_array().unwrap() {
         assert!(Frame::decode(&unhex(bytes.as_str().unwrap())).is_err());
     }
-    for bytes in cases["envelopes"].as_array().unwrap() {
-        assert!(envelope::decode(&unhex(bytes.as_str().unwrap())).is_err());
-    }
     let bytes = unhex(cases["unknownErrorFrame"].as_str().unwrap());
     let frame = Frame::decode(&bytes).unwrap();
     assert_eq!(frame, Frame::Error { code: 255, message: String::new() });
     assert_eq!(frame.encode(), bytes);
-    let bytes = unhex(cases["unknownErrorEnvelope"].as_str().unwrap());
     let frame = envelope::decode(&bytes).unwrap();
     assert_eq!(frame, Frame::Error { code: 255, message: String::new() });
     assert_eq!(envelope::encode(frame).unwrap(), bytes);
+}
+
+#[test]
+fn an_account_listing_beyond_one_control_reply_is_many_pages_far_below_it() {
+    use crate::document::{DocumentRole, RegisteredDocument, RegisteredDocuments};
+    use crate::limits::ACCOUNT_DOCUMENTS_PAGE;
+    let all: Vec<_> = (0..16_000u32)
+        .map(|n| RegisteredDocument {
+            document: format!("00000000-0000-4000-8000-{n:012x}"),
+            role: DocumentRole::Owner,
+        })
+        .collect();
+    let whole = serde_json::to_vec(&RegisteredDocuments { documents: all.clone(), next: None }).unwrap();
+    assert!(whole.len() > crate::CONTROL_BYTES, "one reply would exceed what clients read: {}", whole.len());
+    // Walk the cursor as the account handler's keyset query does.
+    let (mut listed, mut after, mut pages) = (Vec::new(), String::new(), 0);
+    loop {
+        let rows = all.iter().filter(|row| row.document > after).take(ACCOUNT_DOCUMENTS_PAGE + 1).cloned().collect();
+        let page = RegisteredDocuments::page(rows);
+        let bytes = serde_json::to_vec(&page).unwrap();
+        assert!(bytes.len() < crate::CONTROL_BYTES / 8, "page {pages} is {} bytes", bytes.len());
+        pages += 1;
+        listed.extend(page.documents);
+        let Some(next) = page.next else { break };
+        after = next;
+    }
+    assert_eq!(pages, 16);
+    assert_eq!(listed, all);
+    let last: Value = serde_json::to_value(RegisteredDocuments::page(vec![])).unwrap();
+    assert_eq!(last, json!({"documents": []}), "the last page keeps the original shape");
 }
 
 #[test]

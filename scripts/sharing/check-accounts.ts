@@ -3,7 +3,7 @@
  * has no test key, token bypass, configurable certificate URL or asserted UID path.
  * Run through `bun run verify sharing` after installing worker-build (README). */
 import assert from "node:assert/strict";
-import { checkCompaction, relayHarness, decode } from "./check-compaction";
+import { checkCompaction, relayHarness, decode, helloFrame, push, documentName } from "./check-compaction";
 import host from "../../apps/sharing/http";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
@@ -47,6 +47,15 @@ const app = "a".repeat(64);
 const relayConfig = ts.parseConfigFileTextToJson("wrangler.jsonc", await readFile(join(repository, "apps/sharing/wrangler.jsonc"), "utf8")).config as {
   ratelimits: { name: string; simple: { limit: number; period: 60 } }[];
 };
+const environments = ts.parseConfigFileTextToJson("wrangler.jsonc", await readFile(join(repository, "apps/sharing/wrangler.jsonc"), "utf8")).config;
+const staging = environments.env.staging;
+assert.notEqual(staging.name, environments.name, "Staging uses a separate Worker");
+for (const kind of ["ratelimits", "r2_buckets", "analytics_engine_datasets"]) {
+  const key = kind === "ratelimits" ? "namespace_id" : kind === "r2_buckets" ? "bucket_name" : "dataset";
+  const production = new Set(environments[kind].map((binding: Record<string, string>) => binding[key]));
+  assert.ok(staging[kind].every((binding: Record<string, string>) => !production.has(binding[key])),
+    "Staging isolates " + kind);
+}
 const harness = join(root, "relay-harness.mjs");
 await writeFile(harness, relayHarness(join(repository, "generated/sharing/relay/index.js")));
 function runtime(roomsAvailable = true) {
@@ -58,7 +67,7 @@ function runtime(roomsAvailable = true) {
       bindings: { BROWSER_ORIGIN: "https://share.dotpop.click", FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
       durableObjects: { ...(roomsAvailable ? { DOCUMENTS: { className: "CloudDocument", useSQLite: true } } : {}), ACCOUNTS: { className: "DocumentAccount", useSQLite: true } },
       r2Buckets: ["SEEDS"],
-      analyticsEngineDatasets: { METRICS: { dataset: "hitslop_sharing" } },
+      analyticsEngineDatasets: { METRICS: { dataset: "dotpop_documents" } },
       ratelimits: Object.fromEntries(relayConfig.ratelimits.map(({ name, simple }) => [name, { simple: name === "ACCOUNT_CREATE_LIMIT" ? { ...simple, limit: 1000 } : simple }])),
       outboundService: "certificates",
     }, {
@@ -90,8 +99,29 @@ const seedHeaders = (bytes: Uint8Array) => ({
   "X-Sharing-SHA256": hash(bytes), "X-Sharing-App": app, "X-Sharing-Version": "[]",
 });
 try {
+  assert.equal((await call("documents", a, "POST", new Uint8Array((1 << 20) + 1))).status, 413,
+    "Oversized creation body is a bounded request refusal");
+  assert.equal((await call("documents", a, "POST", new TextEncoder().encode("{not json"))).status, 400,
+    "A malformed body is a client error, never a 500");
+  const oldSocket = await call("documents/" + document + "/sync", a, "GET", undefined, {
+    Upgrade: "websocket", "Sec-WebSocket-Protocol": "pop.sync.v1",
+  });
+  assert.equal(oldSocket.status, 426, "Old socket protocols are told to update");
+  assert.equal((await oldSocket.json() as {code:string}).code, "requires_update");
   await checkCompaction(worker, call, uid("compaction-owner"), uid);
   const unused = { async fetch(): Promise<Response> { throw new Error("Static auth/AASA routes must not use assets or relay"); } };
+  const configURL = `${SharingHost.origin}/auth/config`;
+  assert.equal((await host.fetch(new Request(configURL), { ASSETS: unused, RELAY: unused })).status,503,
+    "Missing public Firebase configuration is retryable");
+  const configured = await host.fetch(new Request(configURL), {
+    ASSETS: unused, RELAY: unused, FIREBASE_PROJECT: "test-project", FIREBASE_WEB_API_KEY: "test-public-key",
+  });
+  assert.equal(configured.status,200);
+  assert.deepEqual(await configured.json(),{projectId:"test-project",apiKey:"test-public-key"});
+  assert.equal(configured.headers.get("Cache-Control"),"no-store");
+  assert.equal((await host.fetch(new Request(`https://copy.${SharingHost.domain}/auth/config`), {
+    ASSETS: unused, RELAY: unused, FIREBASE_PROJECT:"test-project", FIREBASE_WEB_API_KEY:"test-public-key",
+  })).status,404,"Authored origins cannot read host identity configuration");
   const callbackURL = "https://share.dotpop.click/auth/apple";
   const callback = await host.fetch(new Request(callbackURL), { ASSETS: unused, RELAY: unused });
   assert.equal(callback.status, 200);
@@ -186,7 +216,10 @@ try {
   assert.equal((await call(base+"/seed",secondSession)).status,200,"same account on another device shares private bytes");
   assert.equal((await json<AccessState>("account/documents/"+document,secondSession)).role,"owner");
   const enabled=await json<AccessState>(base+"/sharing",a,"POST");assert(enabled.capability);assert(enabled.sharing);
-  assert.equal((await call(base+"/seed",enabled.capability!)).status,200);
+  const guest = uid("guest", "anonymous");
+  await json(base+"/members",guest,"POST",{capability:enabled.capability});
+  assert.equal((await call(base+"/seed",guest)).status,200,"Verified anonymous identities may join");
+  assert.equal((await call(base+"/seed",enabled.capability!)).status,403,"Invitation secrets cannot authorize document reads");
   const member=await json<AccessState>(base+"/members",b,"POST",{capability:enabled.capability});assert.equal(member.role,"editor");
   assert.equal((await call(base+"/seed",b)).status,200);
   const connect=async(token:string)=>{
@@ -195,26 +228,62 @@ try {
     const queue:ReturnType<typeof decode>[]=[];const waiters:((frame:ReturnType<typeof decode>)=>void)[]=[];
     socket.addEventListener("message",(event:any)=>{const frame=decode(event.data);const resolve=waiters.shift();if(resolve)resolve(frame);else queue.push(frame);});
     const next=async()=>queue.shift()??await new Promise<ReturnType<typeof decode>>((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Expected socket frame")),5000);waiters.push(frame=>{clearTimeout(timer);resolve(frame);});});
-    socket.send(new Uint8Array([0,1,...Array(32).fill(0xaa),0]));
-    assert.equal((await next()).tag,1);assert.equal((await next()).tag,3);
+    socket.send(helloFrame());
+    assert.equal((await next()).tag,2);assert.equal((await next()).tag,4);
     return {socket,next};
   };
-  const ownerConnection=await connect(a),guestConnection=await connect(enabled.capability!);
+  const browserUpgrade = await call(base+"/sync",undefined,"GET",undefined,{
+    Upgrade:"websocket", Origin:SharingHost.origin,
+    "Sec-WebSocket-Protocol":`${SharingHost.socketProtocol}, jwt.${guest}`,
+  });
+  assert.equal(browserUpgrade.status,101,"Browsers authenticate with a verified JWT subprotocol");
+  assert.equal(browserUpgrade.headers.get("Sec-WebSocket-Protocol"),SharingHost.socketProtocol,"Never echo credentials");
+  assert(browserUpgrade.webSocket);
+  browserUpgrade.webSocket.accept(); browserUpgrade.webSocket.close();
+  assert.equal((await call(base+"/sync",undefined,"GET",undefined,{
+    Upgrade:"websocket", Origin:SharingHost.origin,
+    "Sec-WebSocket-Protocol":`${SharingHost.socketProtocol}, cap.${enabled.capability}`,
+  })).status,403,"Capability socket authentication is refused");
+  const ownerConnection=await connect(a),guestConnection=await connect(guest);
   const ownerSocket=ownerConnection.socket,guestSocket=guestConnection.socket;let ownerClosed=false;
   ownerSocket.addEventListener("close",()=>ownerClosed=true);
   const guestEnded=new Promise<void>(resolve=>guestSocket.addEventListener("close",()=>resolve()));
+  const documents = await worker.getDurableObjectNamespace("DOCUMENTS");
+  const documentStub = documents.get(documents.idFromName(documentName(document)));
+  let finishGrant!: () => void;
+  const grantBody = new ReadableStream<Uint8Array>({ start(controller) {
+    controller.enqueue(new TextEncoder().encode(JSON.stringify({ app })));
+    finishGrant = () => controller.close();
+  } });
+  const grantInit = { method:"POST", headers: { Origin:SharingHost.origin, Authorization:`Bearer ${guest}`,
+    "Content-Type":"application/json", "X-Test-Observe-Body":"1" }, body:grantBody, duplex:"half" as const };
+  const delayedGrant = worker.dispatchFetch(`https://${document}.${SharingHost.domain}/_resources/${document}`, grantInit);
+  let readStarted = false;
+  for (let attempt=0; attempt<500; attempt++) {
+    const progress = await documentStub.fetch("https://test/__test/body-reads");
+    if (Number(await progress.text()) > 0) { readStarted = true; break; }
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.ok(readStarted,"The resource grant is waiting for request body EOF after initial authorization");
   const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert(revoked.generation>enabled.generation);
-  assert.equal((await call(base+"/seed",enabled.capability!)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
+  finishGrant();
+  assert.equal((await delayedGrant).status,403,"Revocation during a resource request body must not mint a fresh cookie");
+  const resourcePreflight = await worker.dispatchFetch(`https://${document}.${SharingHost.domain}/_resources/${document}`, {
+    method:"OPTIONS", headers: { Origin:SharingHost.origin,
+      "Access-Control-Request-Method":"POST", "Access-Control-Request-Headers":"authorization" },
+  });
+  assert.equal(resourcePreflight.status,204);
+  assert.equal((await call(base+"/seed",enabled.capability!)).status,403);assert.equal((await call(base+"/seed",guest)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
   assert.equal((await call(base+"/seed",a)).status,200);assert(!ownerClosed,"revocation does not close private owner connection");
   assert.equal((await guestConnection.next()).code,3,"revocation delivers the real access-ended frame");
-  try { guestSocket.send(new Uint8Array([4,2,1,2,0,1,1,8])); } catch { /* Peer is already closing. */ }
+  try { guestSocket.send(push(2,0,1,new Uint8Array([8]))); } catch { /* Peer is already closing. */ }
   guestSocket.close(); // Acknowledge the server close, as the native/browser client does.
   await Promise.race([guestEnded,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Guest close handshake did not complete")),5000))]);
-  ownerSocket.send(new Uint8Array([4,1,1,1,0,1,1,7]));
-  const ownerAck=await ownerConnection.next();assert.equal(ownerAck.tag,5);assert.equal(ownerAck.status,0,"owner still writes after invitation revocation");
-  assert.equal((await ownerConnection.next()).tag,2,"owner still receives live accepted updates");
-  const frontier=await (await call(base+"/epoch",a)).json() as {heads:[string,number][]};
-  assert.deepEqual(frontier.heads,[["0000000000000001",1]],"a revoked guest push never enters the accepted frontier");
+  ownerSocket.send(push(1,0,1));
+  const ownerAck=await ownerConnection.next();assert.equal(ownerAck.tag,6);assert.equal(ownerAck.status,0,"owner still writes after invitation revocation");
+  assert.equal((await ownerConnection.next()).tag,3,"owner still receives live accepted updates");
+  const heads=await (await documentStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT value FROM meta WHERE key='heads'"})})).json() as {value:string}[];
+  assert.deepEqual(JSON.parse(heads[0]!.value),[["0000000000000001",1]],"a revoked guest push never enters the accepted frontier");
   ownerSocket.close();
   const reopened=await json<AccessState>(base+"/sharing",a,"POST");assert.notEqual(reopened.capability,enabled.capability);
   await json(base+"/members",b,"POST",{capability:reopened.capability});
@@ -245,5 +314,21 @@ try {
   assert.equal((await call("account",a,"DELETE")).status,200,"account deletion handles integer owner registration and purges owned documents");
   assert.equal((await call("documents/"+deletionDocument,a)).status,410);
   assert.equal((await call("account",a,"DELETE")).status,200,"account deletion retry is idempotent");
+  const prolific = uid("prolific");
+  for (let index = 0; index < 12; index++) {
+    const id = `00000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`;
+    assert.equal((await call("documents", prolific, "POST", { document: id })).status, 200, "no account document cap: " + index);
+  }
+  const listed = (await (await call("account/documents", prolific)).json()) as RegisteredDocuments;
+  assert.equal(listed.documents.length, 12);
+  assert.equal(listed.next, undefined, "a listing that fits one page has no cursor");
+  const after = listed.documents[4]!.document;
+  const rest = (await (await call("account/documents?after=" + after, prolific)).json()) as RegisteredDocuments;
+  assert.deepEqual(rest.documents, listed.documents.slice(5), "a cursor lists the registrations after it in document order");
+  assert.equal((await call("account/documents?after=invalid", prolific)).status, 400, "an invalid cursor is refused");
+  for (const path of ["documents/" + document + "/blob/" + "b".repeat(64) + "/extra", "account/documents/" + document + "/extra", "account/extra"]) {
+    assert.equal((await call(path, undefined, "GET")).status, 404, "unlisted routes never reach a handler: " + path);
+  }
+  assert.equal((await call("documents/" + document + "/members", prolific, "DELETE")).status, 404, "only members/me leaves");
   console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
 } finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

@@ -44,9 +44,7 @@ pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) use places::document_destination;
 #[cfg(not(target_arch = "wasm32"))]
-pub use places::{TemplateSource, rebase_ios_container_path, template_roots};
-#[cfg(target_os = "macos")]
-pub use relocate::trash_replica_original;
+pub use places::{TemplateSource, template_roots};
 #[cfg(target_os = "macos")]
 pub use relocate::{RelocatedDocument, relocate_document};
 
@@ -68,7 +66,9 @@ pub fn delete_document(path: &std::path::Path) -> crate::store::Result<()> {
     std::fs::remove_file(path).map_err(crate::error::failed)
 }
 
-pub(crate) const APPLICATION_ID: i64 = 0x504F_5000; // POP
+// A product lineage is distinct from the schema version. Old files with the same
+// schema must never be accepted as new-lineage documents or rewritten on open.
+pub(crate) const APPLICATION_ID: i64 = 0x504F_5000 | pop_contracts::lineage::DOCUMENT_LINEAGE as i64;
 /// These tables. A compatibility requirement, not a release number: a build refuses a
 /// newer one with `requires_update`.
 pub(crate) const STORAGE_VERSION: i64 = 1;

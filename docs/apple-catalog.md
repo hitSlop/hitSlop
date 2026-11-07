@@ -15,8 +15,7 @@ Rust stores the opened flag in the device's library index. Receiving a new remot
 reference creates an unopened entry. Registering its real document owner marks it
 opened; downloading alone does not. Metadata refresh and removing a download never
 reset this flag. Inbox state belongs to this device, not Firestore or the shared
-document. The cache migration treats existing local and previously downloaded entries
-as opened; it marks only reliably never-downloaded remote references as new.
+document.
 
 ## Document badges
 
@@ -25,11 +24,12 @@ One small circular badge sits at the artwork's lower-right corner:
 | Priority | State | SF Symbol |
 | --- | --- | --- |
 | 1 | Needs attention or unavailable | `exclamationmark.triangle.fill` |
-| 2 | Not downloaded | `icloud.and.arrow.down` |
+| 2 | Not downloaded | `arrow.down.circle` |
 | 3 | Shared by the owner or joined as a guest | `person.2.fill` |
 | 4 | Ordinary local or private sync | None |
 
-Routine device badges, sync checkmarks and storage subtitles are omitted. Pending
+The symbols are neutral cloud, download and attention glyphs. Routine device badges, sync
+checkmarks and storage subtitles are omitted. Pending
 sync alone is not an exception badge. Detailed sync status, help and retry remain in
 the existing status sheet. A shared badge describes the saved relationship; it makes
 no claim about connectivity, presence or active editors. VoiceOver retains both the
@@ -40,21 +40,27 @@ owner state does not imply sharing. Successful existing authority access respons
 refresh this hint during sync, download, join, access checks and sharing changes.
 Transient failures retain the last known value. An optional presentation refresh must
 not make an acknowledged upload fail. No authority request runs while rendering a cell
-or polling the local index every two seconds.
+or refreshing the local index.
 
 Standalone guest documents use their accepted document UUID and a matching valid
 credential. Rust interprets the opaque credential, including its ended state; filenames
 do not establish sharing. Native code caches this projection off the main thread at
 startup, foreground and credential changes. Account-generation checks fence late work.
-No cloud API, document format or presence service is added.
+
+## Sync and accounts
+
+Cloud transport is event driven, with no polling of the service: Firestore listeners
+deliver the person's references and each owner's connection reports its sync status. The
+native library also re-reads its local index every two seconds, with no network request,
+to notice changes made by another process. The Mac and iPhone use one default
+Firebase app (Authentication, Firestore, Analytics, Crashlytics); telemetry collection is
+on only in Release builds. Cloud documents are described in [cloud documents](cloud-documents.md).
 
 ## Layout and interaction
 
 iPhone Recents and Templates use lazy icon grids: three columns at ordinary portrait
 text sizes, fewer columns on narrow layouts or at large accessibility sizes. Recents
-artwork is about 90 points, preserving its authored shape and transparency with a soft
-shadow behind the artwork only. No added white backing, inset or rounded-square clip
-surrounds the icon; white surfaces embedded in the artwork remain unchanged. Inbox is a horizontal shelf
+artwork is about 90 points, softly rounded and shadowed. Inbox is a horizontal shelf
 with smaller, roughly 70-point artwork. Names are centered with compact two-line
 leading and more space at accessibility sizes. Header and row gaps stay compact.
 Search is tall and rounded; Settings
@@ -65,12 +71,12 @@ Template categories, preview and creation screens, opening, download, refresh, s
 and haptics remain. Long-press menus and equivalent accessibility actions replace swipe
 actions. First-use and no-search-results states are distinct.
 
-### iPhone document navigation
-
-Documents retain the native NavigationStack opening, closing and edge navigation
-behavior. Save failures retain the editor and writer for retry. Background
-sync status has reserved safe-area space above the floating tab bar so the final grid
-row stays reachable. Templates retain their existing preview and creation flow.
+On iPhone a tapped tile zooms into its document at once, showing the tile's artwork until
+the page is ready and padded for the safe area. Swiping back from the edge, swiping down
+on the page or Back to Library returns to the catalog immediately: the page saves while it
+animates out, and widgets, artwork and release finish in the background behind a quiet
+Saving mark on the tile. A close that cannot save keeps the document's owner and every
+edit, and marks its tile Not saved with Retry Save; tapping the tile brings the page back.
 
 Mac list artwork is modestly larger, with softer tiles and selection. Routine sync and
 storage subtitles are removed. Duplicate document names retain folder disambiguation;

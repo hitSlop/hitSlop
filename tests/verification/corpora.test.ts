@@ -9,6 +9,7 @@ import { corpusFiles, verifyCorpus } from "../../scripts/compat/integrity";
 import { publishedHistory, resolveCorpora, verifyHistory, verifyResolvedCorpora, type HistoricalRelease } from "../../scripts/compat/corpora";
 import { copyCorpusDocument, releases, type Release } from "../../scripts/compat/corpus";
 import { resolveWriter, verifyPackedWriter } from "../../scripts/compat/writers";
+import { DocumentLineage } from "../../packages/pop/src/schema/constants";
 
 test("corpus discovery permits a missing optional directory but surfaces filesystem errors", async () => {
   const root = await mkdtemp(join(tmpdir(), "pop-corpus-discovery-"));
@@ -31,7 +32,7 @@ async function fixture(root: string, version = "1.0.0", id = 1, schema = "crates
   }
   await writeFile(join(directory, "acceptance/vector.json"), "{}");
   const release: Release = { release: version, frozen: true, commit: "c".repeat(40), captured: "2026-10-15",
-    markers: { packageFormat: 1, runtimeABI: 1, storage: 1, layout: 1, protocol: 1 },
+    markers: { documentLineage: DocumentLineage, packageFormat: 1, runtimeABI: 1, storage: 1, layout: 1, protocol: 1 },
     producer: { coreBuildID: "core" }, files: await corpusFiles(directory), storageSchemas: { [schema]: await fileDigest(join(repository, "crates/pop-storage/src/file/storage-1.sql")) },
     limits: [{ name: "example", value: "1", kind: "Max" }], templates: {}, templateAppDigests: {},
     writer: { version, platform: "darwin-arm64", sha256: "a".repeat(64), buildId: "core" }, toolchain: {}, clock: 1,
@@ -45,7 +46,7 @@ async function fixture(root: string, version = "1.0.0", id = 1, schema = "crates
   artifacts[`compat-corpus-${version}.tar.gz`] = sha256(bytes);
   const entry: HistoricalRelease = { release: { id, tag_name: `pop-v${version}`, draft: false, prerelease: false, immutable: true,
     assets: [{ id, name: "release-record.json" }, { id: id + 1, name: `compat-corpus-${version}.tar.gz` }, { id: id + 2, name: `hitslop-pop-${version}.tgz` }] },
-    record: { commit: release.commit, tag: `pop-v${version}`, macVersion: version, macBuild: "1", run: "1", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", qualified: {},
+    record: { documentLineage: DocumentLineage, commit: release.commit, tag: `pop-v${version}`, macVersion: version, macBuild: "1", run: "1", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", qualified: {},
       corpus: { file: `compat-corpus-${version}.tar.gz`, sha256: sha256(bytes) }, artifacts } };
   return { entry, bytes, directory };
 }
@@ -121,6 +122,16 @@ test("a new product lineage ignores preserved hitSlop releases without downloadi
     };
     expect(await publishedHistory({ required: {}, list: async () => [legacy], download })).toEqual([]);
     expect(await publishedHistory({ required: {}, list: async () => [legacy, entry.release], download })).toEqual([entry]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("old document lineages under the same package tags are not acceptance inputs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pop-document-lineage-"));
+  try {
+    const { entry } = await fixture(root);
+    const legacy = { ...entry.record, documentLineage: undefined };
+    expect(await publishedHistory({ required: {}, list: async () => [entry.release],
+      download: async () => Buffer.from(JSON.stringify(legacy)) })).toEqual([]);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

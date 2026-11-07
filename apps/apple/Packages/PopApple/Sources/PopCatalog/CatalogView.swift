@@ -1,5 +1,6 @@
 import AppKit
 import PopCore
+import PopCoreBinding
 import PopDocument
 import PopFeatures
 import PopHost
@@ -50,8 +51,8 @@ public struct CatalogView: View {
         },
         onRemoveDownload: { entry in libraryAction(entry) { try await library.removeDownload($0) } },
         onLocalCopy: { entry in libraryAction(entry) { _ = try await library.localCopy($0) } },
-        onEnableSync: { entry in libraryAction(entry) { _ = try await library.enableSync(id: $0.id) } }
-
+        onEnableSync: { entry in libraryAction(entry) { _ = try await library.enableSync(id: $0.id) } },
+        onRemoveRecent: { model.removeRecent($0) }
       )
       .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
       .navigationSplitViewColumnWidth(min: 250, ideal: 280, max: 320)
@@ -59,15 +60,16 @@ public struct CatalogView: View {
     } detail: {
       CatalogDetail(
         section: model.filter.title, entry: model.selectedEntry,
-        isCreating: model.creating != nil || creatingLibrary, isCopying: model.isCopying, isQuitting: model.isQuitting
+        isCreating: model.creating != nil || creatingLibrary, isCopying: model.isCopying, isQuitting: model.isQuitting,
+        removeRecent: { model.removeRecent($0) }
       ) { entry in
-        if entry.isSynced, let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) {
+        if entry.isManaged, let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) {
           if document.problem != nil, !FileManager.default.fileExists(atPath: document.path) {
             libraryError = "This pop isn’t available on this device. Check Sync needs attention for sync details."
             return
           }
         }
-        if entry.isSynced, let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }),
+        if entry.isManaged, let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }),
           !document.downloaded
         {
           libraryAction(entry) { document in
@@ -169,7 +171,8 @@ public struct CatalogView: View {
         SharingJoinView { link in try await joinSharedLink(link) }
       }
   }
-  private func libraryAction(_ entry: CatalogEntry, _ action: @escaping @MainActor (SyncedPop) async throws -> Void) {
+  private func libraryAction(_ entry: CatalogEntry, _ action: @escaping @MainActor (LibraryEntry) async throws -> Void)
+  {
     guard let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) else { return }
     Task { do { try await action(document) } catch { libraryError = libraryMessage(error) } }
   }
@@ -180,7 +183,7 @@ public struct CatalogView: View {
     model.synced = library.entries.filter { !$0.deleted }.map { entry in
       var item = CatalogEntry(
         id: "library:" + entry.id, source: .recent(URL(fileURLWithPath: entry.path)), title: entry.title)
-      item.isSynced = true
+      item.isManaged = true
       item.inCloud = !entry.localOnly
       item.inbox = entry.inbox
       item.savedDocumentID = entry.id

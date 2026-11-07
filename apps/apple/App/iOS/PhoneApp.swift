@@ -1,6 +1,7 @@
 import BackgroundTasks
 import PopCore
 import PopDocument
+import PopFirebase
 import SwiftUI
 import UIKit
 
@@ -12,16 +13,16 @@ import UIKit
   func application(
     _ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    PopFirebase.configure()
     PopLibrary.shared.concealAccountDocuments = { [weak self] paths, concealed in
       guard let self, let session = self.model.session, paths.contains(session.file.url.path) else { return }
       self.model.accountRequired = concealed
     }
     PopLibrary.shared.closeAccountDocuments = { [weak self] paths in
-      guard let self, let session = self.model.session, paths.contains(session.file.url.path) else { return }
-      let closed = await withCheckedContinuation { continuation in
-        self.model.close { continuation.resume(returning: $0) }
+      guard let self else { return }
+      guard await self.model.leave(paths: Set(paths)) else {
+        throw PopFailure("Save or recover your text, then retry signing out.")
       }
-      guard closed else { throw PopFailure("Save or recover your text, then retry signing out.") }
     }
     DocumentSharing.installLibraryServices()
     BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: .main) { [weak self] task in

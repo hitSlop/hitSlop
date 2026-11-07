@@ -286,7 +286,6 @@ pub(super) struct Typed {
 /// `from` the text the writer started from (the current text when absent). Only the page's
 /// edit, the set carrying `selection`, reports back through `typed`.
 pub(super) fn set(
-    layout: Layout,
     path: &[Segment],
     at: Location,
     value: &Value,
@@ -327,7 +326,7 @@ pub(super) fn set(
         }
         if !to.is_empty() {
             let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Expected a field"))?;
-            put(layout, &map, &key, at.node, value)?;
+            put(&map, &key, at.node, value)?;
         }
         *typed = record(given.unwrap_or_default(), false);
         return Ok(());

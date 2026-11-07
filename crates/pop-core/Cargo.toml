@@ -33,7 +33,7 @@ doctest = false
 [features]
 default = []
 # Code generation only; never enabled by the WASM build or shipped native library.
-ts = ["pop-contracts/ts", "pop-sharing-protocol/ts", "pop-sharing-protocol/openapi", "dep:ts-rs"]
+ts = ["pop-contracts/ts", "pop-sharing-protocol/ts", "dep:ts-rs"]
 acceptance = ["dep:brotli", "dep:data-encoding"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -46,7 +46,3 @@ jsonschema = { version = "=0.58.3", default-features = false }
 [[test]]
 name = "core"
 path = "tests/main.rs"
-
-[[example]]
-name = "export_bindings"
-required-features = ["ts"]

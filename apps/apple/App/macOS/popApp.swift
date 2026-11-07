@@ -406,7 +406,7 @@ private struct AppSettingsView: View {
     } else {
       for entry in documents {
         let recent = menu.addItem(
-          withTitle: entry.displayTitle + (entry.isUnavailable ? " — Unavailable" : ""),
+          withTitle: entry.displayTitle + (entry.needsAttention ? " — Unavailable" : ""),
           action: #selector(openRecent(_:)), keyEquivalent: "")
         recent.representedObject = entry.id
         recent.toolTip = entry.documentIdentity?.path

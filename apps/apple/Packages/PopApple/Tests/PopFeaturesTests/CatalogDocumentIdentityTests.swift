@@ -52,16 +52,14 @@ import Testing
   var opened = CatalogEntry(
     id: "opened", source: .recent(URL(fileURLWithPath: library + "/account/documents/a.pop")), title: "Recipe")
   opened.updatedAt = Date(timeIntervalSince1970: 1)
-  let stale = CatalogEntry(
-    id: "stale", source: .recent(URL(fileURLWithPath: library + "-development-backup/documents/b.pop")), title: "Old")
   let sibling = CatalogEntry(
     id: "sibling", source: .recent(URL(fileURLWithPath: library + "-backup/Plans.pop")), title: "Backup")
   let catalog = Catalog()
-  catalog.recents = { [opened, stale, sibling, local] }
+  catalog.recents = { [opened, sibling, local] }
   let model = CatalogModel(client: catalog.client)
   model.managedFolder = library
   var synced = CatalogEntry(id: "library:a", source: opened.source, title: "Weeknight Recipe")
-  synced.isSynced = true
+  synced.isManaged = true
   model.synced = [synced]
   model.refreshRecents()
   await model.work.settled()
@@ -80,7 +78,7 @@ import Testing
   let model = CatalogModel(client: catalog.client)
   model.accountBoundPaths = ["/Work/Private.pop"]
   var cloud = CatalogEntry(id: "cloud", source: promoted.source, title: "Private cloud document")
-  cloud.isSynced = true
+  cloud.isManaged = true
   model.synced = [cloud]
   model.refreshRecents()
   await model.work.settled()

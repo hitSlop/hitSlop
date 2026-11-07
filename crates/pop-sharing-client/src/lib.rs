@@ -1,9 +1,7 @@
-//! Persistent cloud document synchronization and explicit anonymous invitations.
+//! Persistent cloud document synchronization under one Firebase identity.
 mod cloud;
-mod epochs;
 mod journal;
 pub mod local;
-mod recovery;
 mod resolution;
 mod resources;
 #[cfg(test)]
@@ -14,11 +12,12 @@ pub use cloud::{
     ready_document_metadata, registered_documents, set_sharing, sharing_link, update_document,
 };
 use pop_runtime::owner::{Owner, Reply, Request};
-use pop_sharing_protocol::http::{Invitation, RoomInfo, RoomPhase};
+use pop_sharing_protocol::{
+    hex,
+    http::{Invitation, RoomInfo, RoomPhase},
+};
 use pop_storage::store::{Mode, Share, Store};
-pub use recovery::recovered_documents;
 pub use resolution::{ResolvedRoom, resolve};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     path::Path,
@@ -27,14 +26,32 @@ use std::{
 };
 pub type Result<T> = std::result::Result<T, String>;
 type Notice = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
+fn connection_notices(primary: &Notice, observer: &Notice) -> Notice {
+    let primary = primary.clone();
+    let observer = observer.clone();
+    Arc::new(Mutex::new(Some(Arc::new(move || {
+        let callbacks = [primary.lock().unwrap().clone(), observer.lock().unwrap().clone()];
+        for callback in callbacks.into_iter().flatten() {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback()));
+        }
+    }))))
+}
 fn fail(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 fn request(owner: &Owner, request: Request) -> std::result::Result<Reply, transport::HttpFailure> {
     transport::owner_request(owner, request)
 }
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+fn retry_busy(owner: &Owner, build: impl Fn() -> Request) -> std::result::Result<Reply, transport::HttpFailure> {
+    let deadline = Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        match request(owner, build()) {
+            Err(transport::HttpFailure::Busy(_)) if Instant::now() < deadline => {
+                transport::pause(std::time::Duration::from_millis(25))?
+            }
+            result => return result,
+        }
+    }
 }
 fn random() -> Result<String> {
     let mut bytes = [0; 32];
@@ -48,27 +65,14 @@ fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     file.sync_all().map_err(fail)
 }
 #[derive(Clone)]
-enum Authorization {
-    Capability(String),
-    Identity(String),
-}
-#[derive(Clone)]
 struct RoomKey {
     room: String,
-    authorization: Authorization,
+    identity: String,
     origin: String,
 }
 impl RoomKey {
     fn bearer(&self) -> &str {
-        match &self.authorization {
-            Authorization::Capability(value) | Authorization::Identity(value) => value,
-        }
-    }
-    fn capability(&self) -> Option<&str> {
-        match &self.authorization {
-            Authorization::Capability(value) => Some(value),
-            Authorization::Identity(_) => None,
-        }
+        &self.identity
     }
     fn identity(document: &str, token: &str) -> Result<Self> {
         if !pop_sharing_protocol::valid_copy(document)
@@ -77,54 +81,7 @@ impl RoomKey {
         {
             return Err("Invalid cloud document access".into());
         }
-        Ok(Self {
-            room: document.into(),
-            authorization: Authorization::Identity(token.into()),
-            origin: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
-        })
-    }
-}
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct GuestCredential {
-    link: String,
-    ended: bool,
-}
-#[derive(Clone)]
-enum Credential {
-    Guest(GuestCredential),
-    Cloud { document: String, identity: String },
-}
-impl Credential {
-    fn decode(value: &str) -> Result<Self> {
-        if value.len() > 1024 {
-            return Err("Invalid invitation credential".into());
-        }
-        let guest: GuestCredential = serde_json::from_str(value).map_err(fail)?;
-        Invitation::parse(&guest.link)?;
-        Ok(Self::Guest(guest))
-    }
-    fn runtime(&self) -> Result<RoomKey> {
-        match self {
-            Self::Cloud { document, identity } => RoomKey::identity(document, identity),
-            Self::Guest(guest) => {
-                let invitation = Invitation::parse(&guest.link)?;
-                Ok(RoomKey {
-                    room: invitation.room,
-                    authorization: Authorization::Capability(invitation.capability),
-                    origin: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
-                })
-            }
-        }
-    }
-    fn ended(&self) -> bool {
-        matches!(self, Self::Guest(GuestCredential { ended: true, .. }))
-    }
-    fn link(&self) -> Option<String> {
-        match self {
-            Self::Guest(guest) => Some(guest.link.clone()),
-            Self::Cloud { .. } => None,
-        }
+        Ok(Self { room: document.into(), identity: token.into(), origin: pop_sharing_protocol::TRUSTED_ORIGIN.into() })
     }
 }
 fn room_info(key: &RoomKey, token: Option<&str>) -> std::result::Result<RoomInfo, transport::HttpFailure> {
@@ -134,17 +91,13 @@ fn room_info(key: &RoomKey, token: Option<&str>) -> std::result::Result<RoomInfo
         || info.document != key.room
         || info.seed_hash.as_deref().is_some_and(|hash| !pop_sharing_protocol::resources::hash_id(hash))
         || info.seed_size.is_some_and(|size| size as usize > pop_sharing_protocol::SEED_BYTES)
-        || key.capability().is_some_and(|cap| info.capability.as_deref().is_some_and(|actual| actual != cap))
     {
         return Err("Invalid cloud document metadata".into());
     }
     Ok(info)
 }
 fn validate_membership(share: Option<Share>, key: &RoomKey) -> Result<()> {
-    if share.is_some_and(|share| {
-        share.endpoint != pop_storage::LIBRARY_SHARE_ENDPOINT
-            && (share.endpoint != key.origin || share.room != key.room)
-    }) {
+    if share.is_some_and(|share| share.endpoint != key.origin || share.room != key.room) {
         return Err("Conflicting cloud document membership".into());
     }
     Ok(())
@@ -154,66 +107,41 @@ fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
         return Err("Different cloud document".into());
     }
     validate_membership(owner.share().map_err(fail)?, key)?;
-    epochs::retry_busy(owner, || Request::Share {
-        share: Share { room: key.room.clone(), endpoint: key.origin.clone() },
-    })?;
+    retry_busy(owner, || Request::Share { share: Share { room: key.room.clone(), endpoint: key.origin.clone() } })?;
     Ok(())
 }
-struct SeedBackup {
+/// The saved document as uploaded once, before the room goes live. Its history is the
+/// room's root: the owner keeps editing on top of it and members start from it.
+struct Seed {
     path: std::path::PathBuf,
     version: Vec<(String, u32)>,
+    owner_version: String,
     app: String,
     hash: String,
-    source_version: String,
-    epoch_version: String,
 }
-fn stage(owner: &Owner) -> Result<SeedBackup> {
-    stage_required(owner, None).map_err(Into::into)
-}
-fn stage_required(
-    owner: &Owner,
-    required_heads: Option<pop_sharing_protocol::lifecycle::WireVersion>,
-) -> std::result::Result<SeedBackup, transport::HttpFailure> {
+fn stage(owner: &Owner) -> Result<Seed> {
     let directory = std::env::temp_dir().join(format!("pop-sharing-{}", random()?));
     use std::os::unix::fs::DirBuilderExt;
-    std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(epochs::local)?;
+    std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(fail)?;
     let path = directory.join("seed.pop");
     let result = (|| {
-        let Reply::State { reading, .. } = request(owner, Request::State)? else {
-            return Err(epochs::local("Owner did not provide the epoch source version"));
-        };
-        let Reply::EpochCandidate { path: staged, source_version, version: epoch_version } =
-            epochs::retry_busy(owner, || Request::PrepareEpoch {
-                destination: path.clone().into(),
-                expected_version: reading.version.clone(),
-                required_heads: required_heads.clone(),
-            })?
-        else {
-            return Err(epochs::local("Owner did not prepare an epoch"));
-        };
-        if staged.native_path() != path.as_path() {
-            return Err(epochs::local("Owner returned a different epoch destination"));
-        }
+        retry_busy(owner, || Request::StageSeed { destination: path.clone() })?;
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(epochs::local)?;
-        if std::fs::metadata(&path).map_err(epochs::local)?.len() > pop_sharing_protocol::SEED_BYTES as u64 {
-            return Err(transport::HttpFailure::Paused(pop_core::sync::Pause {
-                kind: PauseKind::Outgrown,
-                reason:
-                    "The latest accepted document exceeds the 16 MiB sharing limit. Your local document is retained."
-                        .into(),
-            }));
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(fail)?;
+        if std::fs::metadata(&path).map_err(fail)?.len() > pop_sharing_protocol::SEED_BYTES as u64 {
+            return Err("This document exceeds the 16 MiB sharing limit. Your local document is retained.".into());
         }
-        let store = Store::open(&path, Mode::Snapshot).map_err(epochs::local)?;
-        let seed = store.document().map_err(epochs::local)?.wire_history();
-        Ok(SeedBackup {
+        let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
+        let document = store.document().map_err(fail)?;
+        let seed = Seed {
             path: path.clone(),
-            source_version,
-            epoch_version,
-            version: seed,
-            app: hex(&store.app_digest().map_err(epochs::local)?),
-            hash: hex(&Sha256::digest(std::fs::read(&path).map_err(epochs::local)?)),
-        })
+            version: document.wire_history(),
+            owner_version: document.version(),
+            app: hex(&store.app_digest().map_err(fail)?),
+            hash: hex(&Sha256::digest(std::fs::read(&path).map_err(fail)?)),
+        };
+        store.close().map_err(fail)?;
+        Ok(seed)
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&path);
@@ -236,56 +164,63 @@ pub struct ClientStatus {
     pub pause_kind: Option<PauseKind>,
     pub phase: Phase,
     pub detail: String,
-    pub link: Option<String>,
-    pub creator: bool,
-    pub recovery_path: Option<String>,
 }
 pub struct Client {
     owner: Arc<Owner>,
-    key: Mutex<Credential>,
+    key: Mutex<RoomKey>,
     connection: Mutex<Option<transport::Connection>>,
-    creator: std::sync::atomic::AtomicBool,
     notice: Notice,
-    access: Arc<epochs::Access>,
+    observer: Notice,
+    journal: Arc<journal::Journal>,
 }
 impl Client {
-    fn new(owner: Arc<Owner>, key: Credential, state_directory: &Path) -> Result<Self> {
-        let runtime = key.runtime()?;
+    fn new(owner: Arc<Owner>, key: RoomKey, state_directory: &Path) -> Result<Self> {
         let document = owner.app().document_uuid.as_deref().ok_or("Only documents can synchronize")?;
-        if document != runtime.room {
+        if document != key.room {
             return Err("Different cloud document".into());
         }
-        validate_membership(owner.share().map_err(fail)?, &runtime)?;
-        let identity = match &key {
-            Credential::Cloud { identity, .. } => Some(identity.clone()),
-            Credential::Guest(_) => None,
-        };
-        let journal = Arc::new(journal::Journal::new(state_directory, &runtime, document)?);
+        validate_membership(owner.share().map_err(fail)?, &key)?;
+        let journal = Arc::new(journal::Journal::new(state_directory, &key, document)?);
         Ok(Self {
             owner,
             key: Mutex::new(key),
             connection: Mutex::new(None),
-            creator: std::sync::atomic::AtomicBool::new(false),
             notice: Arc::new(Mutex::new(None)),
-            access: Arc::new(epochs::Access { journal, identity }),
+            observer: Arc::new(Mutex::new(None)),
+            journal,
         })
     }
     pub fn cloud(owner: Arc<Owner>, document: &str, token: &str, state_directory: &Path) -> Result<Self> {
-        Self::new(owner, Credential::Cloud { document: document.into(), identity: token.into() }, state_directory)
+        Self::new(owner, RoomKey::identity(document, token)?, state_directory)
     }
-    pub fn restore(owner: Arc<Owner>, value: &str, state_directory: &Path) -> Result<Self> {
-        Self::new(owner, Credential::decode(value)?, state_directory)
+    /// Includes transient reconnects and compaction; terminal supervisors are stopped.
+    pub fn is_running(&self) -> bool {
+        self.connection.lock().unwrap().as_ref().is_some_and(transport::Connection::is_running)
+    }
+    /// Refresh credentials within the caller's existing account binding. Account changes
+    /// detach the old library/client rather than transfer its live connection.
+    pub fn set_identity(&self, token: &str) -> Result<()> {
+        {
+            let mut key = self.key.lock().unwrap();
+            RoomKey::identity(&key.room, token)?;
+            key.identity = token.to_owned();
+        }
+        if let Some(connection) = self.connection.lock().unwrap().as_ref() {
+            connection.set_identity(token.to_owned());
+        }
+        Ok(())
     }
     pub fn connect(&self) -> Result<()> {
         self.pause();
         let key = self.key.lock().unwrap().clone();
-        if key.ended() {
-            return Ok(());
-        }
-        let key = key.runtime()?;
         bind_owner(&self.owner, &key, &key.room)?;
-        *self.connection.lock().unwrap() =
-            Some(transport::Connection::start(self.owner.clone(), key, self.notice.clone(), self.access.clone()));
+        let connection = transport::Connection::start(
+            self.owner.clone(),
+            key,
+            connection_notices(&self.notice, &self.observer),
+            self.journal.clone(),
+        );
+        *self.connection.lock().unwrap() = Some(connection);
         Ok(())
     }
     pub fn pause(&self) {
@@ -295,7 +230,7 @@ impl Client {
         }
     }
     pub fn flush(&self) -> Result<()> {
-        epochs::retry_busy(&self.owner, || Request::Flush)?;
+        retry_busy(&self.owner, || Request::Flush)?;
         Ok(())
     }
     pub fn confirmed(&self) -> Result<bool> {
@@ -303,40 +238,23 @@ impl Client {
         let Reply::State { reading, .. } = request(&self.owner, Request::State)? else {
             return Err("Owner state unavailable".into());
         };
-        Ok(self
-            .access
-            .journal
-            .transaction()?
-            .current()?
-            .is_some_and(|receipt| receipt.owner_version == reading.version))
+        Ok(self.journal.transaction()?.current()?.is_some_and(|receipt| receipt.owner_version == reading.version))
     }
-    pub fn set_creator(&self, creator: bool) {
-        self.creator.store(creator, std::sync::atomic::Ordering::Relaxed);
+    /// Internal owner of catalog snapshots; independent from the document UI listener.
+    pub fn observe(&self, observer: Arc<dyn Fn() + Send + Sync>) {
+        *self.observer.lock().unwrap() = Some(observer);
     }
     pub fn listen(&self, notice: Arc<dyn Fn() + Send + Sync>) {
         *self.notice.lock().unwrap() = Some(notice);
     }
     pub fn status(&self) -> ClientStatus {
-        let key = self.key.lock().unwrap();
         let (phase, detail, pause_kind) = self
             .connection
             .lock()
             .unwrap()
             .as_ref()
             .map_or((Phase::Offline, "Offline".into(), None), |connection| connection.status());
-        let (phase, detail) = if key.ended() {
-            (Phase::Ended, "Sharing ended; your local copy is retained".into())
-        } else {
-            (phase, detail)
-        };
-        ClientStatus {
-            phase,
-            detail,
-            pause_kind,
-            link: key.link(),
-            creator: self.creator.load(std::sync::atomic::Ordering::Relaxed),
-            recovery_path: self.access.journal.completed_recovery().map(|path| path.to_string_lossy().into_owned()),
-        }
+        ClientStatus { phase, detail, pause_kind }
     }
 }
 impl Drop for Client {
@@ -344,46 +262,18 @@ impl Drop for Client {
         self.pause();
     }
 }
-pub fn joined_credential(link: &str) -> Result<String> {
-    serde_json::to_string(&GuestCredential { link: Invitation::parse(link)?.link()?, ended: false }).map_err(fail)
-}
-/// The saved anonymous relationship, without contacting the service or claiming
-/// current access. Opaque malformed or already-ended credentials have no relationship.
-pub fn credential_document(value: &str) -> Option<String> {
-    let credential = Credential::decode(value).ok()?;
-    if credential.ended() {
-        return None;
-    }
-    Some(credential.runtime().ok()?.room)
-}
+/// Parse an invitation without using its capability as an ongoing connection identity.
 pub fn invitation_document(link: &str) -> Result<String> {
-    let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
-    Ok(room_info(&key, None)?.document)
+    Ok(Invitation::parse(link)?.room)
 }
 pub fn local_document(path: &Path) -> Result<Option<String>> {
     Ok(Store::open(path, Mode::Snapshot).map_err(fail)?.app().document_uuid.clone())
-}
-pub fn install(destination: &Path, link: &str, state_directory: &Path) -> Result<()> {
-    let key = Credential::decode(&joined_credential(link)?)?.runtime()?;
-    let info = room_info(&key, None)?;
-    if destination.exists() {
-        let local = Store::open(destination, Mode::Snapshot).map_err(fail)?;
-        if local.app().document_uuid.as_deref() != Some(info.document.as_str()) {
-            return Err("Different local document".into());
-        }
-        return validate_membership(local.share().map_err(fail)?, &key);
-    }
-    let epoch = resolution::epoch(&key, key.bearer())?;
-    resolution::download(key.clone(), info, epoch, key.bearer())?.install(destination, state_directory)
 }
 pub fn verify_account(token: &str) -> Result<()> {
     if token.is_empty() { Err("Sign in first".into()) } else { Ok(()) }
 }
 pub fn delete_account(token: &str) -> Result<()> {
     cloud::control("DELETE", "account", token, &[]).map(|_| ())
-}
-pub fn account_owns(document: &str, _credential: &str, token: &str) -> Result<bool> {
-    Ok(access(document, token)?.role == pop_sharing_protocol::document::DocumentRole::Owner)
 }
 fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]) -> Result<()> {
     if Some(hex(&Sha256::digest(bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {
@@ -412,11 +302,8 @@ fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]
 
 /// Bounded receipt metadata for catalog status; this does not open document state.
 pub fn confirmed_saved_version(state_directory: &Path, document: &str) -> Result<Option<String>> {
-    let journal = journal::Journal::at(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
-    let transaction = journal.transaction()?;
-    if transaction.pending()?.is_some() {
-        return Ok(None);
-    }
+    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
+    let Some(transaction) = journal.inspection()? else { return Ok(None) };
     Ok(transaction.current()?.map(|receipt| receipt.owner_version))
 }
 
@@ -428,8 +315,7 @@ pub fn saved_confirmed(path: &Path, state_directory: &Path, document: &str) -> R
     }
     let version = store.document().map_err(fail)?.version();
     store.close().map_err(fail)?;
-    let journal = journal::Journal::at(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
-    let transaction = journal.transaction()?;
-    Ok(transaction.pending()?.is_none()
-        && transaction.current()?.is_some_and(|receipt| receipt.owner_version == version))
+    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document, document)?;
+    let Some(transaction) = journal.inspection()? else { return Ok(false) };
+    Ok(transaction.current()?.is_some_and(|receipt| receipt.owner_version == version))
 }

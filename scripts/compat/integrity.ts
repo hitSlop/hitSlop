@@ -3,6 +3,7 @@ import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileDigest, repository } from "../lib/artifacts";
 import { readJSON, type Expected, type Release } from "./corpus";
+import { DocumentLineage } from "../../packages/pop/src/schema/constants";
 
 export async function corpusFiles(root: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
@@ -23,6 +24,7 @@ export async function corpusFiles(root: string): Promise<Record<string, string>>
 }
 
 export async function verifyCorpus(root: string, release: Release) {
+  assert.equal(release.markers.documentLineage, DocumentLineage, "Unsupported document lineage in corpus");
   assert.ok(
     release.storageSchemas && Object.keys(release.storageSchemas).length >= 1,
     "Missing storage schema records",

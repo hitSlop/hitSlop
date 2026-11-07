@@ -5,34 +5,78 @@
     "version": "1"
   },
   "paths": {
+    "/health": {
+      "get": {
+        "summary": "Liveness probe.",
+        "operationId": "Health",
+        "responses": {
+          "200": {
+            "description": "Accepted"
+          }
+        }
+      }
+    },
     "/v1/account": {
       "delete": {
+        "summary": "Fence the account, then delete owned documents and leave joined ones.",
+        "operationId": "DeleteAccount",
         "responses": {
           "200": {
             "description": "Accepted"
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/account/documents": {
       "get": {
+        "summary": "List registered document UUIDs and roles, a hint for repairing a missing catalog reference. Pages in document order: pass a page's `next` as `after` until it is absent.",
+        "operationId": "ListAccountDocuments",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Accepted",
@@ -44,28 +88,48 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/account/documents/{document}": {
       "get": {
+        "summary": "Resolve the caller's current access from the authoritative document.",
+        "operationId": "AccountAccess",
         "parameters": [
           {
             "name": "document",
@@ -88,28 +152,48 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents": {
       "post": {
+        "summary": "Idempotently reserve a document UUID. Requires a non-anonymous Firebase identity; anonymous identities join through the members exchange.",
+        "operationId": "CreateDocument",
         "requestBody": {
           "content": {
             "application/json": {
@@ -131,28 +215,68 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
-          "409": {
-            "description": "Conditional conflict"
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
-          "410": {
-            "description": "Document deleted"
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}": {
       "get": {
+        "summary": "Current seed and app metadata.",
+        "operationId": "GetDocument",
         "parameters": [
           {
             "name": "document",
@@ -175,26 +299,76 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       },
       "delete": {
+        "summary": "Revoke access, purge payloads and keep a deletion tombstone.",
+        "operationId": "DeleteDocument",
         "parameters": [
           {
             "name": "document",
@@ -210,26 +384,76 @@
           "200": {
             "description": "Accepted"
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       },
       "patch": {
+        "summary": "Store display title and template ID.",
+        "operationId": "PatchDocument",
         "parameters": [
           {
             "name": "document",
@@ -262,28 +486,98 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/asset/{hash}": {
       "put": {
+        "summary": "Upload one manifest resource.",
+        "operationId": "PutAsset",
         "parameters": [
           {
             "name": "document",
@@ -293,34 +587,123 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Accepted"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/blob/{hash}": {
       "get": {
+        "summary": "An attachment listed in the inventory.",
+        "operationId": "GetBlob",
         "parameters": [
           {
             "name": "document",
@@ -330,32 +713,98 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Accepted"
+            "description": "Accepted",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       },
       "put": {
+        "summary": "Upload an immutable attachment (owner while uploading).",
+        "operationId": "PutBlob",
         "parameters": [
           {
             "name": "document",
@@ -365,108 +814,123 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Accepted"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/blobs": {
       "get": {
-        "parameters": [
-          {
-            "name": "document",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "403": {
-            "description": "Permission denied; local copy retained"
-          },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          },
-          {
-            "capability": []
-          }
-        ]
-      }
-    },
-    "/v1/documents/{document}/compact": {
-      "post": {
-        "parameters": [
-          {
-            "name": "document",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "403": {
-            "description": "Permission denied; local copy retained"
-          },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          },
-          {
-            "capability": []
-          }
-        ]
-      }
-    },
-    "/v1/documents/{document}/epoch": {
-      "get": {
+        "summary": "The attachment inventory.",
+        "operationId": "ListBlobs",
         "parameters": [
           {
             "name": "document",
@@ -484,31 +948,86 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EpochState"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Resource"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }
           },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
-      },
+      }
+    },
+    "/v1/documents/{document}/compact": {
       "post": {
+        "summary": "Replace the retained base with a client-built one.",
+        "operationId": "Compact",
         "parameters": [
           {
             "name": "document",
@@ -522,9 +1041,10 @@
         ],
         "requestBody": {
           "content": {
-            "application/json": {
+            "application/octet-stream": {
               "schema": {
-                "$ref": "#/components/schemas/PublishEpoch"
+                "type": "string",
+                "format": "binary"
               }
             }
           },
@@ -532,153 +1052,100 @@
         },
         "responses": {
           "200": {
-            "description": "Accepted",
+            "description": "Accepted"
+          },
+          "400": {
+            "description": "Invalid request",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EpochState"
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }
           },
           "403": {
-            "description": "Permission denied; local copy retained"
-          },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          },
-          {
-            "capability": []
-          }
-        ]
-      }
-    },
-    "/v1/documents/{document}/epochs/{hash}": {
-      "put": {
-        "parameters": [
-          {
-            "name": "document",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted",
+            "description": "Permission denied; local copy retained",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StagedSeed"
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }
           },
-          "403": {
-            "description": "Permission denied; local copy retained"
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
-          {
-            "capability": []
-          }
-        ]
-      },
-      "delete": {
-        "parameters": [
-          {
-            "name": "document",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
             }
           }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "403": {
-            "description": "Permission denied; local copy retained"
-          },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
-          }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
-          }
-        ]
-      }
-    },
-    "/v1/documents/{document}/epochs/{seed}/blobs/{hash}": {
-      "put": {
-        "parameters": [
-          {
-            "name": "document",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accepted"
-          },
-          "403": {
-            "description": "Permission denied; local copy retained"
-          },
-          "409": {
-            "description": "Conditional conflict"
-          },
-          "410": {
-            "description": "Document deleted"
-          }
-        },
-        "security": [
-          {
-            "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/members": {
       "post": {
+        "summary": "Exchange an invitation secret for membership under the verified Firebase identity, including anonymous identities. The secret is not a bearer credential.",
+        "operationId": "Join",
         "parameters": [
           {
             "name": "document",
@@ -711,28 +1178,98 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/members/me": {
       "delete": {
+        "summary": "Leave without deleting the document.",
+        "operationId": "Leave",
         "parameters": [
           {
             "name": "document",
@@ -748,28 +1285,78 @@
           "200": {
             "description": "Accepted"
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/metadata": {
       "get": {
+        "summary": "Title and template ID retained for catalog repair.",
+        "operationId": "GetMetadata",
         "parameters": [
           {
             "name": "document",
@@ -792,28 +1379,78 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/open": {
       "post": {
+        "summary": "Make a fully uploaded document live.",
+        "operationId": "Open",
         "parameters": [
           {
             "name": "document",
@@ -836,28 +1473,78 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/resources": {
       "get": {
+        "summary": "The app resource manifest.",
+        "operationId": "GetResources",
         "parameters": [
           {
             "name": "document",
@@ -880,26 +1567,76 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       },
       "post": {
+        "summary": "Declare the app resource manifest.",
+        "operationId": "PutResources",
         "parameters": [
           {
             "name": "document",
@@ -925,28 +1662,98 @@
           "200": {
             "description": "Accepted"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/seed": {
       "get": {
+        "summary": "The canonical SQLite seed.",
+        "operationId": "GetSeed",
         "parameters": [
           {
             "name": "document",
@@ -960,28 +1767,86 @@
         ],
         "responses": {
           "200": {
-            "description": "Accepted"
+            "description": "Accepted",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       },
       "put": {
+        "summary": "Upload the seed while the document is uploading.",
+        "operationId": "PutSeed",
         "parameters": [
           {
             "name": "document",
@@ -993,32 +1858,113 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Accepted"
           },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds its byte limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       }
     },
     "/v1/documents/{document}/sharing": {
       "get": {
+        "summary": "Current role and sharing status. Only the owner receives the capability.",
+        "operationId": "GetSharing",
         "parameters": [
           {
             "name": "document",
@@ -1041,26 +1987,76 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       },
       "post": {
+        "summary": "Enable an invitation idempotently.",
+        "operationId": "EnableSharing",
         "parameters": [
           {
             "name": "document",
@@ -1083,26 +2079,76 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
-          {
-            "capability": []
           }
         ]
       },
       "delete": {
+        "summary": "Revoke the invitation and its memberships; the document is preserved.",
+        "operationId": "DisableSharing",
         "parameters": [
           {
             "name": "document",
@@ -1125,22 +2171,157 @@
               }
             }
           },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
           "403": {
-            "description": "Permission denied; local copy retained"
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Conditional conflict"
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           },
           "410": {
-            "description": "Document deleted"
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
           }
         },
         "security": [
           {
             "firebaseIdentity": []
-          },
+          }
+        ]
+      }
+    },
+    "/v1/documents/{document}/sync": {
+      "get": {
+        "summary": "WebSocket upgrade for opaque update frames.",
+        "operationId": "Sync",
+        "parameters": [
           {
-            "capability": []
+            "name": "document",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "Switching Protocols to opaque update frames"
+          },
+          "401": {
+            "description": "Sign in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied; local copy retained",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document or route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conditional conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate or quota limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "firebaseIdentity": []
           }
         ]
       }
@@ -1232,22 +2413,10 @@
           "templateId",
           "modifiedAt",
           "role",
-          "accessGeneration",
           "catalogRevision",
           "deleted"
         ],
         "properties": {
-          "accessGeneration": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "appRevision": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "catalogRevision": {
             "type": "integer",
             "format": "int64",
@@ -1263,12 +2432,6 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
-          },
-          "previewRef": {
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "role": {
             "$ref": "#/components/schemas/DocumentRole"
@@ -1303,94 +2466,6 @@
           "editor"
         ]
       },
-      "EpochBase": {
-        "type": "object",
-        "required": [
-          "seedHash",
-          "heads"
-        ],
-        "properties": {
-          "heads": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": false,
-              "prefixItems": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{16}$"
-                },
-                {
-                  "type": "integer",
-                  "maximum": 2147483647,
-                  "minimum": 0
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            },
-            "description": "Unique peer pairs in ascending canonical peer order"
-          },
-          "seedHash": {
-            "type": "string"
-          }
-        }
-      },
-      "EpochState": {
-        "type": "object",
-        "required": [
-          "seedHash",
-          "root",
-          "heads"
-        ],
-        "properties": {
-          "heads": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": false,
-              "prefixItems": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{16}$"
-                },
-                {
-                  "type": "integer",
-                  "maximum": 2147483647,
-                  "minimum": 0
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            },
-            "description": "Unique peer pairs in ascending canonical peer order"
-          },
-          "root": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": false,
-              "prefixItems": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{16}$"
-                },
-                {
-                  "type": "integer",
-                  "maximum": 2147483647,
-                  "minimum": 0
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            },
-            "description": "Unique peer pairs in ascending canonical peer order"
-          },
-          "seedHash": {
-            "type": "string"
-          }
-        }
-      },
       "JoinDocument": {
         "type": "object",
         "required": [
@@ -1420,54 +2495,6 @@
           }
         }
       },
-      "PublishEpoch": {
-        "type": "object",
-        "required": [
-          "expected",
-          "seedHash",
-          "root",
-          "resources",
-          "attachments"
-        ],
-        "properties": {
-          "attachments": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Resource"
-            }
-          },
-          "expected": {
-            "$ref": "#/components/schemas/EpochBase"
-          },
-          "resources": {
-            "$ref": "#/components/schemas/Manifest"
-          },
-          "root": {
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": false,
-              "prefixItems": [
-                {
-                  "type": "string",
-                  "pattern": "^[0-9a-f]{16}$"
-                },
-                {
-                  "type": "integer",
-                  "maximum": 2147483647,
-                  "minimum": 0
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            },
-            "description": "Unique peer pairs in ascending canonical peer order"
-          },
-          "seedHash": {
-            "type": "string"
-          }
-        }
-      },
       "RegisteredDocument": {
         "type": "object",
         "description": "Registry hints for repairing a missing personal catalog reference. Authorization\nis always checked by the document before any bytes are returned.",
@@ -1486,6 +2513,7 @@
       },
       "RegisteredDocuments": {
         "type": "object",
+        "description": "One page of the account's registrations in document order. An account has no\ndocument cap, so the list is read with `?after=<next>` until `next` is absent.",
         "required": [
           "documents"
         ],
@@ -1495,6 +2523,13 @@
             "items": {
               "$ref": "#/components/schemas/RegisteredDocument"
             }
+          },
+          "next": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The cursor for the following page: this page's last document. Absent on the last page."
           }
         }
       },
@@ -1586,29 +2621,6 @@
           "ended"
         ]
       },
-      "StagedSeed": {
-        "type": "object",
-        "required": [
-          "seedHash",
-          "size",
-          "expiresAt"
-        ],
-        "properties": {
-          "expiresAt": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "seedHash": {
-            "type": "string"
-          },
-          "size": {
-            "type": "integer",
-            "format": "int32",
-            "minimum": 0
-          }
-        }
-      },
       "UpdateDocument": {
         "type": "object",
         "required": [
@@ -1626,10 +2638,6 @@
       }
     },
     "securitySchemes": {
-      "capability": {
-        "type": "http",
-        "scheme": "bearer"
-      },
       "firebaseIdentity": {
         "type": "http",
         "scheme": "bearer",

@@ -40,14 +40,13 @@ pub(super) struct ByteLease {
 impl Admission {
     pub(super) fn reserve(self: &Arc<Self>, request: &Request, view: &Option<String>) -> Option<Permit> {
         let control = match request {
-            Request::Flush | Request::Discard | Request::Close { .. } | Request::AdoptEpoch { .. } => true,
+            Request::Flush | Request::Discard | Request::Close { .. } => true,
             #[cfg(not(target_arch = "wasm32"))]
             Request::Handoff { .. } => true,
             _ => false,
         };
         let bytes = retained_bytes(request).saturating_add(view.as_ref().map_or(0, String::capacity));
         let copy = matches!(request, Request::Copy { .. });
-        let copy = copy || matches!(request, Request::PrepareEpoch { .. });
         self.reserve_request(bytes, control, copy)
     }
     pub(super) fn reserve_page(self: &Arc<Self>, view_bytes: usize, payload_bytes: usize) -> Option<Permit> {
@@ -113,14 +112,6 @@ impl Drop for ByteLease {
     }
 }
 
-fn epoch_capacity(location: &crate::store::EpochLocation) -> usize {
-    match location {
-        #[cfg(not(target_arch = "wasm32"))]
-        crate::store::EpochLocation::Path(path) => path.capacity(),
-        #[cfg(target_arch = "wasm32")]
-        crate::store::EpochLocation::Vfs { name, vfs } => name.capacity().saturating_add(vfs.capacity()),
-    }
-}
 fn artwork_bytes(preview: &Option<Vec<u8>>, icon: &Option<Vec<u8>>) -> usize {
     preview.as_ref().map_or(0, Vec::capacity).saturating_add(icon.as_ref().map_or(0, Vec::capacity))
 }
@@ -137,14 +128,6 @@ fn retained_bytes(request: &Request) -> usize {
         Request::Unshare => 0,
         #[cfg(not(target_arch = "wasm32"))]
         Request::MergeSnapshot { bytes } => bytes.capacity(),
-        Request::PrepareEpoch { destination, expected_version, required_heads } => epoch_capacity(destination)
-            .saturating_add(expected_version.capacity())
-            .saturating_add(required_heads.as_ref().map_or(0, |heads| {
-                heads.iter().fold(vector_capacity(heads), |bytes, (peer, _)| bytes.saturating_add(peer.capacity()))
-            })),
-        Request::AdoptEpoch { source, expected_version, recovery_destination } => epoch_capacity(source)
-            .saturating_add(expected_version.capacity())
-            .saturating_add(recovery_destination.as_ref().map_or(0, epoch_capacity)),
         Request::PutAttachment { bytes } => bytes.capacity(),
         Request::Apply { batch, .. } => {
             let mut writer = SizeWriter(0);
@@ -160,7 +143,9 @@ fn retained_bytes(request: &Request) -> usize {
         Request::Copy { destination, preview, icon } => {
             destination.capacity().saturating_add(artwork_bytes(preview, icon))
         }
-        Request::CaptureSource { destination } | Request::Backup { destination } => destination.capacity(),
+        Request::CaptureSource { destination }
+        | Request::Backup { destination }
+        | Request::StageSeed { destination } => destination.capacity(),
         #[cfg(not(target_arch = "wasm32"))]
         Request::SetArtwork { source_version, preview, icon } => {
             source_version.capacity().saturating_add(artwork_bytes(preview, icon))

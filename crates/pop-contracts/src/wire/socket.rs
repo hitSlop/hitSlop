@@ -71,14 +71,31 @@ pub enum Hello {
     #[serde(rename = "hello")]
     Hello { protocol: u64 },
 }
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "method")]
 pub enum HelloSuccess {
     #[serde(rename = "hello")]
     Hello {
         #[serde(rename = "ok")]
         _ok: super::engine::True,
+        #[serde(default, rename = "documentLineage", skip_serializing_if = "Option::is_none")]
+        document_lineage: Option<u32>,
     },
+}
+
+impl HelloSuccess {
+    /// A protocol-compatible owner must also belong to this product's document lineage.
+    /// Missing lineage identifies an older owner, never permission to send a payload.
+    pub fn check_lineage(&self) -> Result<(), Error> {
+        let Self::Hello { document_lineage, .. } = self;
+        match *document_lineage {
+            Some(lineage) if lineage == crate::lineage::DOCUMENT_LINEAGE => Ok(()),
+            Some(lineage) if lineage > crate::lineage::DOCUMENT_LINEAGE => {
+                Err(err(Code::RequiresUpdate, "This live document needs a newer pop CLI; update pop"))
+            }
+            _ => Err(err(Code::InvalidRequest, "This live document belongs to an unsupported older pop lineage")),
+        }
+    }
 }
 
 /// Permanent protocol refusal wording; negotiation precedes payload decoding.

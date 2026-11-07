@@ -1,6 +1,6 @@
 /** Input ownership shared by local verification and CI scheduling. */
 const rustBuildInputs = [/^Cargo\.(toml|lock)$/, /^\.cargo\//, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
-const rustInputs = [/^crates\//, /^apps\/sharing\/src\//, /^apps\/sharing\/Cargo.toml$/, ...rustBuildInputs];
+const rustInputs = [/^tools\/pop-bindgen\//, /^crates\//, /^apps\/sharing\/src\//, /^apps\/sharing\/Cargo.toml$/, ...rustBuildInputs];
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,

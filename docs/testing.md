@@ -1,8 +1,5 @@
 # Testing
 
-dotpop starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not pop acceptance inputs.
-
-
 **Do not create an automated test or test suite for each pop.** Creating, styling,
 animating, or updating a pop does not require new tests. Validate it with existing
 checks/builds and hands-on preview/export review. Shared SDK, storage, or host
@@ -14,7 +11,7 @@ Manual review and temporary diagnostic scripts do not become permanent tests.
 
 Tests live at the boundary that owns the behavior. Delete a test together with the code
 it protects, and never bend production code to keep an old test compiling. The one
-exception is the [compatibility corpus](#compatibility-corpus): released documents stay
+exception is the [compatibility corpus](#compatibility-corpus): once released, documents stay
 openable, so its frozen entries never change.
 
 | Boundary | Where | Proves |
@@ -29,7 +26,7 @@ openable, so its frozen entries never change.
 | Rust owner and commands | `crates/pop-runtime/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/PopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | Chrome durable copies and WebKit native-owner preview, without building Swift |
-| Sharing service | `scripts/sharing/check-accounts.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, room creation/open, replaceable uploads, owner recovery, quota release and Stop/upload races; local certificate substitution only |
+| Sharing service | `scripts/sharing/check-accounts.ts` and `check-compaction.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, persistent UUID/private identity, anonymous links, generation-bound members, owner-preserving revocation and leave, registry repair, deletion tombstones and the relay's fold; local certificate substitution only |
 | Engine renders | `tests/native/{render,landing}.native.test.ts`, `packages/pop/tests/cli/build.native.test.ts`, `bun run verify render` | Engine artwork and PNG/PDF exports on macOS and Linux, without Swift |
 | Native tools | Remaining `tests/native`, `bun run verify native` | Engine or host killed mid-edit and corpus replay on macOS |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
@@ -61,7 +58,7 @@ packs each stage and creates a document from it.
 `EditableText` consumer. They are never shipped as starter templates. Test media
 belongs to fixtures, not examples or the landing page.
 
-## Test value during the foundation redesign
+## Test value
 
 A test earns its place by naming an observable failure, an independent oracle, the
 coverage gap, and its owning boundary. Mechanical moves and new wrappers do not require
@@ -299,9 +296,9 @@ embedded app, edit it, save it, and reopen the result without losing data or att
 Native page replay uses the actual WKWebView host, not Playwright. Keep these checks in
 the required Rust, Swift and native tiers whenever their inputs change.
 
-Capture a separate frozen collection for **each released version**, starting with v1.0.0.
-Before the first pop publication, ordinary development permits empty history; release checks require the frozen candidate. After publication, its corpus hash must be permanently pinned in `scripts/compat/pop-required-history.json`; missing
-or changed public history fails even on a fresh machine. There is no prelaunch fallback.
+Capture a separate frozen collection for **each released version**, starting with the first public document-lineage-2 release.
+Before that first publication the pin file `scripts/compat/dotpop-required-history.json` is `{}`: ordinary development permits empty history, and release checks require the frozen candidate. After publication, its corpus hash is permanently pinned there; missing
+or changed public history fails even on a fresh machine. Published releases of an earlier lineage are skipped by discovery, and one of a newer lineage needs newer tooling. There is no fallback corpus.
 Later builds replay every collection; never
 rebuild old samples with current tools. These artifacts are immutable GitHub release assets, downloaded and verified for testing. The format markers can remain at 1 across
 many releases; release versions and format requirements are different things.
@@ -396,7 +393,7 @@ older file intact.
 The `compat` tier verifies every resolved corpus's content hashes, immutable storage SQL,
 required case inventory and versioned command prelude. `scripts/compat/corpora.ts` discovers
 all public immutable releases, checks history closure, and verifies each archive.
-It extracts once into `~/.cache/pop/compat-corpora/trees/<sha>/`, verifies extracted
+It extracts once into `~/.cache/pop/compat-corpora/lineage-2/trees/<sha>/`, verifies extracted
 files again on reuse and makes them read-only, then atomically activates a snapshot of version links at
 `.pop/compat/current`. Candidate entries live in a separate snapshot. Editing tests explicitly make only
 their disposable document copies writable; templates are read directly from the cache. Preparation
@@ -478,7 +475,7 @@ A successful empty selection reports success without checking out or installing 
 the fast job.
 The required-check policy is `fast`, `native`, `native-rust`, `linux-smoke`, `Gitleaks` and `Attribution`;
 activate it only after the corresponding workflows are installed (see
-[release rules](guides/releasing.md#github-rules-rollout)). The full
+[release rules](guides/releasing.md#repository-and-npm-setup)). The full
 `release:check` runs only in the Release macOS workflow. Reports live in
 `.pop/evidence/` and are uploaded even on failure. Linux jobs have 30-minute
 limits; native has 45 minutes. UniFFI-only and WASM/full generator sets have separate versioned caches, with pins

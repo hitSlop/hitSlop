@@ -89,13 +89,16 @@ actor CatalogScanner {
     return entries
   }
 
-  /// A recent document's entry, or nil once it no longer exists.
+  /// A recent document's entry, or nil once it no longer exists. A file this build refuses,
+  /// such as one an older version made, carries the core's reason.
   func recent(_ url: URL) async throws -> CatalogEntry? {
     try await PopPreparation.run(on: PopPreparation.catalog) {
       guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-      guard let file = try? PopSummary(url: url) else {
+      let file: PopSummary
+      do { file = try PopSummary(url: url) } catch {
         var entry = CatalogEntry(
           id: "recent:\(url.path)", source: .recent(url), title: url.deletingPathExtension().lastPathComponent)
+        entry.refusal = PopFile.refusal(error)
         Self.dates(url, &entry)
         return entry
       }

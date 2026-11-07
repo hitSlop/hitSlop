@@ -115,7 +115,7 @@ fn decode(encoding: Encoding, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
     }
 }
 
-pub use pop_sharing_protocol::policy::{ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, resource_response};
+pub use pop_contracts::resources::{ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, resource_response};
 
 struct ResourceRow {
     id: i64,

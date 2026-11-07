@@ -15,6 +15,35 @@ const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}
 const INITIAL: &str = r#"{"title":"Initial"}"#;
 const APP: App = App::new(SCHEMA, INITIAL);
 
+/// Markers restart at 1, so a file an older product wrote can hold this build's tables and
+/// markers. Only its SQLite application ID tells it apart: it is refused before anything
+/// else is read, and no open, snapshot or import writes a byte of it.
+#[test]
+fn old_product_documents_are_refused_without_writing_or_importing() {
+    // The released pop lineage (0x504F5000), hitSlop's "HSLP", none at all, and a stranger.
+    for (application_id, message) in [
+        (0x504F_5000_i64, "made by an older version of pop"),
+        (0x4853_4C50, "not a pop document"),
+        (0, "not a pop document"),
+        (1, "not a pop document"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = document(dir.path());
+        Connection::open(&path).unwrap().pragma_update(None, "application_id", application_id).unwrap();
+        let before = fs::read(&path).unwrap();
+        let refusal = file::open(&path, true).err().expect("old product bytes must not look like a new document");
+        assert!(refusal.to_string().contains(message), "{application_id:#x}: {refusal}");
+        for mode in [Mode::Document, Mode::Snapshot] {
+            assert!(Store::open(&path, mode).is_err(), "{application_id:#x}");
+        }
+        assert!(file::summary(&path).is_err(), "{application_id:#x}");
+        let destination = dir.path().join("imported.pop");
+        assert!(Store::import_copy(&path, &destination).is_err(), "{application_id:#x}");
+        assert!(!destination.exists(), "{application_id:#x}");
+        assert_eq!(fs::read(&path).unwrap(), before, "{application_id:#x}: the file is unchanged");
+    }
+}
+
 #[test]
 fn deleting_a_document_refuses_a_live_writer_and_preserves_templates() {
     let dir = tempfile::tempdir().unwrap();
@@ -328,7 +357,7 @@ fn a_file_whose_app_is_a_view_is_refused_promptly_and_unchanged() {
     let hostile = dir.path().join("Hostile.pop");
     let conn = Connection::open(&hostile).unwrap();
     conn.execute_batch(
-        "PRAGMA application_id=1347375104; PRAGMA user_version=1;
+        "PRAGMA application_id=1347375106; PRAGMA user_version=1;
          CREATE VIEW app AS WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n)
          SELECT 1 id, 1 package_format, (SELECT max(x) FROM n) runtime_abi;",
     )
@@ -353,7 +382,7 @@ fn freshly_packed_pragmas_and_writer_journal_mode_are_pinned() {
     let packed = template(dir.path());
     let conn = Connection::open(&packed).unwrap();
     for (pragma, expected) in
-        [("application_id", 0x504f_5000), ("user_version", 1), ("page_size", 4096), ("auto_vacuum", 1)]
+        [("application_id", 0x504f_5002), ("user_version", 1), ("page_size", 4096), ("auto_vacuum", 1)]
     {
         assert_eq!(
             conn.query_row(&format!("PRAGMA {pragma}"), [], |r| r.get::<_, i64>(0)).unwrap(),

@@ -7,8 +7,6 @@ use crate::wire::engine::{
 };
 use crate::{file, lock, registry, socket, store};
 use serde::Deserialize;
-#[cfg(feature = "desktop")]
-use serde_json::json;
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
@@ -30,7 +28,10 @@ pub(crate) fn preflight(input: &str) -> Option<String> {
     Some(match wire::socket::check_protocol(input) {
         Err(error) => failure(Failure::from(error), false, false),
         Ok(()) if input.len() <= 1024 && serde_json::from_str::<wire::socket::Hello>(input).is_ok() => {
-            json!({"ok": true, "method": "hello"}).to_string()
+            crate::encode(&wire::socket::HelloSuccess::Hello {
+                _ok: True,
+                document_lineage: Some(pop_contracts::lineage::DOCUMENT_LINEAGE),
+            })
         }
         Ok(()) => failure(invalid("Invalid protocol preflight"), false, false),
     })
@@ -157,16 +158,10 @@ fn dispatch(
                     return Err(unexpected());
                 };
                 let app = &owner.app().app;
-                let mut state = serde_json::to_value(reading).map_err(|e| invalid(e.to_string()))?;
-                state["schema"] = serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?;
+                let schema = serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?;
                 EngineSuccess::Describe {
                     ok: True,
-                    state: serde_json::from_value(crate::describe::describe(
-                        serde_json::to_value(app.metadata()).expect("metadata"),
-                        state,
-                        app.command_metadata(),
-                    ))
-                    .map_err(|e| invalid(e.to_string()))?,
+                    state: crate::describe::describe(app.metadata().clone(), schema, reading, app.command_metadata()),
                 }
             }
             EngineRequest::Get { .. } => {

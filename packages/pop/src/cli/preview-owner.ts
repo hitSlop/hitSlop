@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { execute, findEngine, negotiate } from "./engine";
 import type { ResponsePlan } from "../wire/resources.generated";
-import type { PreviewRequest } from "../wire/preview.generated";
+import type { PreviewEvent, PreviewRequest } from "../wire/preview.generated";
 
 const limit = 64 * 1024 * 1024;
 type Session = {
@@ -19,7 +19,7 @@ type Session = {
     plan?: ResponsePlan | null;
     info: { size: number; mimeType: string } | null;
     /** Base64. */ bytes: string | null;
-    error?: string;
+    error?: string | null;
   }>;
   connect(client: WebSocketClient): void;
   disconnect(client: WebSocketClient): void;
@@ -235,7 +235,7 @@ export class PreviewOwners {
             if (text.length > limit) throw new Error("Oversized preview response");
             let end: number;
             while ((end = text.indexOf("\n")) !== -1) {
-              const frame = JSON.parse(text.slice(0, end));
+              const frame = JSON.parse(text.slice(0, end)) as PreviewEvent;
               text = text.slice(end + 1);
               if (frame.type === "ready") {
                 ready.resolve();

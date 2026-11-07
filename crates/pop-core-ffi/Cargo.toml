@@ -13,6 +13,7 @@ crate-type = ["cdylib", "staticlib"]
 doctest = false
 
 [dependencies]
+pop-contracts = { path = "../pop-contracts" }
 pop-library = { path = "../pop-library" }
 pop-sharing-client = { path = "../pop-sharing-client" }
 pop-sharing-protocol = { path = "../pop-sharing-protocol" }

@@ -24,7 +24,7 @@ struct CatalogSidebar: View {
           SidebarButton(title: "Recents", icon: .symbol("clock"), count: recentCount, selected: filter == .recents) {
             select(.recents)
           }
-          SidebarButton(title: "Synced", icon: .symbol("icloud"), selected: filter == .synced) { select(.synced) }
+          SidebarButton(title: "Synced", icon: .symbol("cloud"), selected: filter == .synced) { select(.synced) }
           SidebarButton(title: "Templates", icon: .symbol("square.grid.2x2"), selected: filter == .all) { select(.all) }
 
           if !categories.isEmpty {

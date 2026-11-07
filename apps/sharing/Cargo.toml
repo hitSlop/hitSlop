@@ -9,6 +9,7 @@ workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 [dependencies]
+pop-contracts = { path = "../../crates/pop-contracts" }
 pop-sharing-protocol = { path = "../../crates/pop-sharing-protocol" }
 serde.workspace = true
 serde_json.workspace = true

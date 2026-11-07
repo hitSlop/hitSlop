@@ -1,6 +1,9 @@
 //! The Document DO is the sole permissions and lifecycle authority.
 use super::*;
-use pop_sharing_protocol::document::{AccessState, DocumentMetadata, DocumentRole, JoinDocument, UpdateDocument};
+use pop_sharing_protocol::{
+    document::{AccessState, DocumentMetadata, DocumentRole, JoinDocument, UpdateDocument},
+    routes::Op,
+};
 #[derive(Deserialize)]
 struct RegistryRow {
     uid: String,
@@ -9,12 +12,6 @@ struct RegistryRow {
 impl CloudDocument {
     pub(super) fn generation(&self) -> Result<u64> {
         Ok(self.text("access_generation")?.and_then(|v| v.parse().ok()).unwrap_or(1))
-    }
-    pub(super) async fn capability_access(&self, req: &Request) -> Result<bool> {
-        let header = req.headers().get("Authorization")?.unwrap_or_default();
-        let Some(key) = header.strip_prefix("Bearer ") else { return Ok(false) };
-        Ok(key.len() == 64
-            && self.text("capability")?.is_some_and(|stored| stored.len() == 64 && hash(&stored) == hash(key)))
     }
     pub(super) async fn identity_role(&self, req: &Request) -> Result<Option<DocumentRole>> {
         let claims = match crate::auth::identity(req, &self.env).await {
@@ -85,21 +82,21 @@ impl CloudDocument {
             role,
         })
     }
-    pub(super) async fn access_route(&self, req: &mut Request, route: &str) -> Result<Response> {
+    pub(super) async fn access_route(&self, req: &mut Request, op: Op) -> Result<Response> {
         if self.phase()? == Some(RoomPhase::Ended) {
             return Response::error("Document deleted", 410);
         }
-        if route == "metadata" && req.method() == Method::Get && self.phase()? != Some(RoomPhase::Live) {
+        if op == Op::GetMetadata && self.phase()? != Some(RoomPhase::Live) {
             return Response::error("Document upload is not ready", 409);
         }
-        if route == "members" && req.method() == Method::Post {
+        if op == Op::Join {
             let claims = match crate::auth::identity(req, &self.env).await {
                 Ok(c) => c,
                 Err(e) => return identity_response(e),
             };
-            let body = bounded_body(req, 4096).await?;
-            let Ok(input) = serde_json::from_slice::<JoinDocument>(&body) else {
-                return Response::error("Invalid membership", 400);
+            let input: JoinDocument = match crate::input::body(req, 4096).await {
+                Ok(input) => input,
+                Err(error) => return error.response(),
             };
             if self.phase()? != Some(RoomPhase::Live)
                 || self
@@ -157,7 +154,7 @@ impl CloudDocument {
                 DocumentRole::Editor
             })?);
         }
-        if route == "members" && req.method() == Method::Delete {
+        if op == Op::Leave {
             let claims = match crate::auth::identity(req, &self.env).await {
                 Ok(c) => c,
                 Err(e) => return identity_response(e),
@@ -184,7 +181,7 @@ impl CloudDocument {
             }
             return Response::ok("left");
         }
-        if route == "metadata" && req.method() == Method::Get {
+        if op == Op::GetMetadata {
             if !self.authorized_guest(req).await? {
                 return Response::error("Denied", 403);
             }
@@ -193,7 +190,7 @@ impl CloudDocument {
                 template_id: self.text("template_id")?.unwrap_or_default(),
             });
         }
-        if route == "sharing" && req.method() == Method::Get {
+        if op == Op::GetSharing {
             let claims = match crate::auth::identity(req, &self.env).await {
                 Ok(claims) => claims,
                 Err(error) => return identity_response(error),
@@ -210,16 +207,15 @@ impl CloudDocument {
         if self.phase()? == Some(RoomPhase::Ended) {
             return Response::error("Document deleted", 410);
         }
-        if route == "sharing" {
-            match req.method() {
-                Method::Get => {}
-                Method::Post => {
+        if matches!(op, Op::EnableSharing | Op::DisableSharing) {
+            match op {
+                Op::EnableSharing => {
                     if self.text("capability")?.is_none() {
                         self.put("capability", &random_hex(32)?)?;
                         self.state.storage().sync().await?;
                     }
                 }
-                Method::Delete => {
+                _ => {
                     if self.text("capability")?.is_some() {
                         let generation = self
                             .generation()?
@@ -245,17 +241,21 @@ impl CloudDocument {
                         }
                     }
                 }
-                _ => return Response::error("Method refused", 405),
             }
             return Response::from_json(&self.access_state(DocumentRole::Owner)?);
         }
-        if route == "metadata" && req.method() == Method::Patch {
-            let body = bounded_body(req, 8192).await?;
-            let Ok(input) = serde_json::from_slice::<UpdateDocument>(&body) else {
-                return Response::error("Invalid metadata", 400);
+        if op == Op::PatchDocument {
+            let input: UpdateDocument = match crate::input::body(req, 8192).await {
+                Ok(input) => input,
+                Err(error) => return error.response(),
             };
             if input.title.len() > 1024 || input.template_id.len() > 256 {
                 return Response::error("Invalid metadata", 400);
+            }
+            // The body read yields; the document may have ended meanwhile. Nothing awaits
+            // between this check and the writes below.
+            if self.phase()? == Some(RoomPhase::Ended) {
+                return Response::error("Document deleted", 410);
             }
             self.put("title", &input.title)?;
             self.put("template_id", &input.template_id)?;

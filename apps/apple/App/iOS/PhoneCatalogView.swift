@@ -9,6 +9,7 @@ struct PhoneCatalogView: View {
   @Binding var showSettings: Bool
   @Binding var query: String
   @Binding var category: String
+  let zoom: Namespace.ID
 
   @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -48,6 +49,8 @@ struct PhoneCatalogView: View {
       GeometryReader { geometry in
         ScrollView {
           VStack(alignment: .leading, spacing: 12) {
+            // Inbox and Recents never share a document, so each document has one zoom source;
+            // one that moves to Recents as it opens zooms back into its new tile.
             let inbox = matchingDocuments.filter { $0.entry?.inbox == true }
             let recents = matchingDocuments.filter { $0.entry?.inbox != true }
             if !inbox.isEmpty {
@@ -137,24 +140,50 @@ struct PhoneCatalogView: View {
       ?? CatalogDocumentPresentation(
         needsAttention: recent.isUnavailable, downloaded: true, localOnly: true,
         sharing: recent.documentID.map { library.guestDocumentIDs.contains($0) } == true ? .sharedWithYou : .none)
-    return Button {
-      model.open(recent.url)
-    } label: {
-      PhonePopTile(
-        url: recent.url, title: recent.title,
-        revision: (recent.entry?.assetRevision ?? "") + (recent.entry?.downloaded == false ? "|cloud" : "|local"),
-        presentation: presentation, artworkSize: artworkSize)
+    let closing = model.closing[recent.id]
+    let value = [presentation.accessibilityValue, closing.map(Self.closingDescription) ?? ""]
+      .filter { !$0.isEmpty }.joined(separator: ", ")
+    return VStack(spacing: 4) {
+      Button {
+        model.open(recent)
+      } label: {
+        PhonePopTile(
+          url: recent.url, title: recent.title,
+          revision: (recent.entry?.assetRevision ?? "") + (recent.entry?.downloaded == false ? "|cloud" : "|local"),
+          presentation: presentation, artworkSize: artworkSize, zoom: (recent.id, zoom), closing: closing)
+      }
+      .buttonStyle(.plain)
+      .contextMenu { removalActions(recent) }
+      .accessibilityActions { removalActions(recent) }
+      .accessibilityLabel(recent.title).accessibilityValue(value)
+      .disabled(model.busy)
+      // A close that failed kept the document's owner and every edit: retry here, or open
+      // the pop to see it.
+      if case .failed = closing {
+        Button {
+          model.retryClose(recent.url)
+        } label: {
+          Label("Retry Save", systemImage: "arrow.clockwise").font(.caption.weight(.semibold))
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(PopBrand.accent.opacity(0.1), in: Capsule())
+        }
+        .buttonStyle(.plain).foregroundStyle(PopBrand.accent)
+      }
     }
-    .buttonStyle(.plain)
-    .contextMenu { removalActions(recent) }
-    .accessibilityActions { removalActions(recent) }
-    .accessibilityLabel(recent.title).accessibilityValue(presentation.accessibilityValue)
-    .disabled(model.busy)
+  }
+  private static func closingDescription(_ closing: PhoneClosing) -> String {
+    switch closing {
+    case .saving: "Saving"
+    case .failed: "Changes not saved"
+    }
   }
   @ViewBuilder private func removalActions(_ recent: PhoneRecent) -> some View {
+    removalMenu(recent).disabled(model.closing[recent.id] != nil)
+  }
+  @ViewBuilder private func removalMenu(_ recent: PhoneRecent) -> some View {
     if let entry = recent.entry, !entry.localOnly {
       if entry.downloaded {
-        Button("Remove Download", systemImage: "icloud.and.arrow.down") { model.removeDownload(entry) }
+        Button("Remove Download", systemImage: "arrow.down.circle") { model.removeDownload(entry) }
           .tint(.gray).disabled(entry.dirty || entry.problem != nil)
       }
       if entry.downloaded {

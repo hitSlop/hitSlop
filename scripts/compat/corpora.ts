@@ -10,17 +10,19 @@ import { validateRecord, type ReleaseRecord } from "../release/record";
 import { verifyCorpus } from "./integrity";
 import { atomicJson } from "../lib/verification";
 import { corpusRoot, readJSON, releases, type Release } from "./corpus";
-import requiredHistory from "./pop-required-history.json";
+import requiredHistory from "./dotpop-required-history.json";
+import { DocumentLineage } from "../../packages/pop/src/schema/constants";
 
 export type HistoricalRelease = { release: PublishedRelease; record: ReleaseRecord };
 export type CorpusInventory = Record<string, string>;
-export const corpusCache = () => resolve(process.env.POP_CORPUS_CACHE ?? join(homedir(), ".cache/pop/compat-corpora"));
+export const corpusCache = () => resolve(process.env.POP_CORPUS_CACHE ?? join(homedir(), `.cache/pop/compat-corpora/lineage-${DocumentLineage}`));
 
 /** Remembered inventory, the checked-in launch baseline and each release's closure
  * detect disappearing history. Never recapture evidence. */
 export function verifyHistory(entries: HistoricalRelease[], known: CorpusInventory = {}): CorpusInventory {
   const inventory: CorpusInventory = {};
   for (const { release, record } of entries) {
+    assert.equal(record.documentLineage, DocumentLineage, "Unsupported document lineage in compatibility history");
     assert.ok(!release.draft && !release.prerelease && release.immutable, `${release.tag_name} must be an immutable stable release`);
     validateRecord(record, release.tag_name, record.commit);
     assert.ok(!inventory[record.macVersion], `Duplicate release: ${record.macVersion}`);
@@ -41,7 +43,14 @@ export async function publishedHistory(options: {
   const entries: HistoricalRelease[] = [];
   for (const release of all.filter(entry => stableTag.test(entry.tag_name) && !entry.draft && !entry.prerelease)) {
     const bytes = await (options.download ?? assetBytes)(requiredAsset(release, "release-record.json").id);
-    entries.push({ release, record: JSON.parse(bytes.toString()) });
+    const record: ReleaseRecord = JSON.parse(bytes.toString());
+    validateRecord(record, release.tag_name, record.commit);
+    if (record.documentLineage !== DocumentLineage) {
+      if (record.documentLineage !== undefined && record.documentLineage > DocumentLineage)
+        throw new Error("Published document lineage requires newer release tooling");
+      continue;
+    }
+    entries.push({ release, record });
   }
   verifyHistory(entries, options.required ?? requiredHistory);
   return entries;

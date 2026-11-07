@@ -126,11 +126,7 @@ payload interpretation; hello preflight and transport limits still apply. Stored
 remain independent; [compatibility](engineering-contract.md#compatibility) and the
 [corpus](testing.md#compatibility-corpus) define the released-file guarantee.
 
-## Foundation redesign
-
-The Rust foundation redesign has passed local integration qualification. The crate
-boundaries below are implemented; the checklist in
-[Direction](roadmap.md#rust-foundation-redesign) records completion and validation.
+## Crates
 
 `pop-contracts` contains passive wire, error and limit types plus app-presentation,
 media-registry and evaluator types; it has no Loro, SQLite or renderer. `pop-core` owns
@@ -140,39 +136,32 @@ generation. `pop-storage` owns SQLite files, file acceptance, registry, attachme
 atomic publication. `pop-capture` owns saved-source capture and widgets. `pop-runtime`
 owns owner, command, socket and persistence orchestration. `pop-renderer` owns Takumi and
 fonts without JavaScript or owner code. `pop-library` owns local library indexing and cloud-document
-coordination over runtime/storage; the native cancellable-I/O sharing client uses runtime.
-The engine and FFI compose these crates; WASM SDK uses pure core, while its browser feature
-adds runtime and storage. Loro remains pinned; there is one owner/edit path and no
-persistent JSON mirror or second document engine.
+coordination over runtime/storage; `pop-sync` holds the pure reconnect, maintenance and
+push-budget decisions, and the native cancellable-I/O sharing client (`pop-sharing-client`)
+uses runtime. The engine and FFI compose these crates; WASM SDK uses pure core, while its
+browser feature adds runtime and storage. Loro remains pinned; there is one owner/edit path
+and no persistent JSON mirror or second document engine.
 
 `BUILD_ID` in core identifies the semantic fingerprint. Runtime's foundation fingerprint
 covers core, storage, capture, runner, renderer, contracts, sharing protocol and fonts;
 engine and FFI report that runtime foundation ID.
 
-The redesign permits breaking internal APIs. New documents use layout 2, while published
-layout-1 documents retain their representation and acceptance through the same engine's
-layout adapter. Historical release assets, expectations, preludes and hash pins remain
-immutable. Mechanical extractions do not raise format markers.
-
-Layout-2 concurrent creation uses generation-aware mergeable slots: creation from the same
+The document layout uses generation-aware mergeable slots: creation from the same
 observed absence shares a payload; clear advances the generation; stale edits cannot
 revive cleared content. Creation defaults are a shared baseline rather than writes
 that overwrite another peer's explicit values. Saved-state acceptance and projection
-share one layout-specific path.
+share one path.
 
 Routine checkpoints preserve CRDT identity and session undo. Deep compaction is a
 separate safe-close or explicit operation: it reconstructs accepted visible state into
-a fresh checkpoint epoch and may reclaim old generations and unreferenced attachments.
-A shallow Loro snapshot alone does not guarantee that hidden mergeable data disappears.
-An outdated replica with unconfirmed work must preserve a recovery document before
-refreshing. Replicated epoch replacement requires a conditional publication; it must
-not make closing depend on network availability. There is no indefinite history archive,
-device registry or permanent acknowledgement protocol. Independent recovery documents
-preserve uncertain local work; their files remain discoverable after interrupted adoption.
+a fresh checkpoint and may reclaim old generations and unreferenced attachments. A
+shallow Loro snapshot alone does not guarantee that hidden mergeable data disappears.
+A shared document never rebuilds its history: the relay folds retained updates into one
+opaque base, and a document that outgrows the base cap pauses sharing (see [Relay](#relay)).
 
 Firestore discovers cloud documents across a person's devices. Persistent Document
 DOs carry private sync and collaboration through one authority; R2 holds immutable
-payloads. Account identity and quotas belong to the control plane; permission checks
+payloads. Account identity belongs to the control plane; permission checks
 and resource limits remain server-enforced. The transport carries opaque Loro bytes.
 
 Named `commands.ts` commands remain an optional Mac CLI/agent automation interface.
@@ -182,37 +171,23 @@ calls, SDK command calls and browser command workers are deferred until a concre
 invocation surface is implemented. In-process iPhone capture remains supported.
 
 Separate Rust `StateContractId` and exact `AppRevisionId` identities prepare future explicit
-bundle updates. Private-library compatibility uses the state contract; the relay still
-requires the exact app digest through its existing wire protocol. Documents continue
-pinning an immutable accepted app; background
+bundle updates. Documents continue pinning an immutable accepted app; background
 updates, mutable partial bundles and schema migration are outside this work.
 
-### Owner admission, callbacks and epoch installation
+### Owner admission and callbacks
 
 The serial owner admits at most 128 ordinary requests retaining up to 56 MiB, with eight
-separate control slots and a shared 64 MiB ceiling. Flush, Discard, Close, epoch adoption
-and native Handoff use control admission. Copy and epoch-preparation requests share a
-two-producer limit. Host dispatches use ordinary admission; derived snapshot/export
-buffers retain byte leases until their work settles. Exhaustion returns typed `busy`
-before mutation. Control payloads can also exceed the shared ceiling. These operational
-budgets account for retained work, not total Loro memory or process RSS.
+separate control slots and a shared 64 MiB ceiling. Flush, Discard, Close and native Handoff
+use control admission. Copy requests share a two-producer limit. Host dispatches use
+ordinary admission; derived snapshot/export buffers retain byte leases until their work
+settles. Exhaustion returns typed `busy` before mutation. Control payloads can also exceed
+the shared ceiling. These operational budgets account for retained work, not total Loro
+memory or process RSS.
 
 Callbacks settle once, including requests queued behind shutdown. Their admission permits
 are released before invocation; a listener, completion or sync-sink panic does not kill
 the owner or leave later requests stranded. Definite Busy/Locked/refusal results keep the
-owner retryable. An uncertain canonical write fences further writes until its outcome is
-reconciled; a failure creating the recovery copy before canonical installation does not
-invalidate the original owner.
-
-`PrepareEpoch` binds a candidate to an exact source version and, for a fresh relay epoch,
-required confirmed heads. Preparation does not replace the live document. `AdoptEpoch`
-installs an accepted candidate under the existing writer lease, with a new-UUID recovery
-first when the live version differs from the last confirmed authority version. During
-installation, immutable `State` reads still return the last accepted snapshot; other
-requests return temporary `busy`, and old sync traffic is fenced. Success emits one
-ordered full publication when history changes. No-op adoption retains undo and its blobs.
-The detailed publication, receipt and recovery rules are in the
-[sharing lifecycle specification](reference/sharing-lifecycle.md).
+owner retryable. An uncertain write fences further writes until its outcome is reconciled.
 
 ## Layers
 
@@ -410,9 +385,9 @@ that need no bump live in open surfaces: definition JSON members, Loro container
 artwork rows. [App identity](engineering-contract.md#app-identity) uses a fixed encoding
 of the sealed app and assets.
 
-A replicated document's ordinary saves retain history and attachments that other replicas
-can reference. Reclaiming them requires a confirmed authority checkpoint; membership
-alone never authorizes a history replacement. A clean independent copy drops the share. Creating a
+A shared document's ordinary saves retain all history and attachments that other replicas
+can reference; membership alone never authorizes discarding them. A clean independent copy
+drops the share. Creating a
 document validates the template's complete saved state in the source read transaction,
 then atomically writes a fresh UUID and initial snapshot before publishing the file.
 The UUID names the logical document, not its writer or its inode-based lease. Open,
@@ -432,19 +407,14 @@ After its final save, a session that saved an edit or stored an attachment to an
 document with more than 4 MiB of saved Loro data attempts one more checkpoint
 (`Store::close_job`) that keeps only current state, when that would shrink the saved data.
 This pruning is best-effort housekeeping: failure does not prevent closing after the
-final save succeeded. Layout 2 may rebuild a fresh epoch; released layout-1 files keep
-their layout and history identity through a shallow checkpoint. A session that only
-reads does not prune.
+final save succeeded. The checkpoint rebuilds the history from accepted visible state. A
+session that only reads does not prune.
 
 While open, an unshared document's checkpoint keeps the whole history when it fits the
 32 MiB limit and only current state otherwise. If neither a checkpoint nor an append fits,
 saving fails and ownership is retained for retry. The live document keeps its own history
-either way, so the session's undo still works. Replicated history replacement is explicit:
-the owner prepares a candidate without changing its live state, the authority publishes it
-conditionally, and only then does the owner install the accepted checkpoint. Changed or
-uncertain local work gets an independent recovery first. A changed history clears undo;
-an idempotent installation of the current version preserves undo and the blobs it needs.
-There is no public live-compaction command. Only the checkpoint may start history late. Files
+either way, so the session's undo still works. There is no public live-compaction command.
+Only the checkpoint may start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
 replaces, the artwork a close replaces), so a file holds no dead space. Storage links the
 platform SQLite, the same library other in-process consumers load, and the Rust storage
@@ -730,16 +700,17 @@ history keeps nothing alive.
 
 ### Synced Library
 
-The [persistent cloud document specification](cloud-documents.md) defines the replacement
-for CloudKit and temporary sharing rooms. Firestore is account-scoped discovery; a
-Document Durable Object keyed by UUID is the single cloud authority for permissions
-and accepted opaque Loro changes. R2 holds immutable snapshots and resources.
+The [persistent cloud document specification](cloud-documents.md) defines cloud
+documents. Firestore is account-scoped discovery; a Document Durable Object keyed by UUID
+is the single cloud authority for permissions and accepted opaque Loro changes. R2 holds
+the seed, app resources and attachments.
 
 A local document requires no account. Enabling sync preserves its UUID and owner and
-stages a durable initial upload. Sign-in retrieves metadata; opening downloads the
-file. Rust owns validation, local installation, merge/recovery and persistence. Swift
-provides Firebase authentication and typed Firestore listener events. Account changes
-fence callbacks, flush owners and retain downloaded files while hiding account entries.
+stages a durable initial upload, a seed copied from the saved document. Sign-in retrieves
+metadata; opening downloads the file. Rust owns validation, local installation, merge
+and persistence. Swift provides Firebase authentication and typed Firestore listener events.
+Account changes fence callbacks, flush owners and retain downloaded files while hiding
+account entries.
 
 The [Apple catalog](apple-catalog.md) uses a device-local Inbox flag and cached nullable
 sharing state. Receiving a remote reference does not make it a recent document until
@@ -751,16 +722,24 @@ change the `.pop` format or grant cloud access.
 Private sync and collaboration use the same persistent cloud document. Sharing enables
 or revokes an invitation; it never transfers byte authority. Signed-in guests discover
 joined documents across devices while the invitation generation is active. Anonymous
-guests open links without an account. Revocation fences guest sockets and membership,
+guests open links with an automatically created Firebase anonymous identity. Revocation
+fences guest sockets and membership,
 while owner sync continues and downloaded guest copies remain usable offline.
 
-Fresh epoch publication remains conditional on the current seed hash and frontier.
-An outdated client preserves unconfirmed work in an independent recovery document
-before refreshing. Current snapshots and bounded updates replace indefinite archives.
-Clients publish their own Firestore references after cloud acknowledgement, with a
+The relay only folds: `/compact` swaps the retained update records for one opaque base.
+The base is capped at 16 MiB, a transport limit (one WebSocket frame under `MAX_FRAME`).
+A document too large to fold pauses its session with `Outgrown`; local edits keep saving
+and the person saves an unshared copy. A full attachment budget (`FilesFull`) stops
+sharing. Clients publish their own Firestore references after cloud acknowledgement, with a
 small durable local retry queue. Stale references are cleaned up when access is checked.
 The Worker never connects to Firestore; the account registry supports discovery repair.
 
+`pop-sync` owns pure reconnect, maintenance and push-budget decisions shared by native
+and browser adapters. Loro replication stays in `pop-core`; the native Tokio transport
+reacts to owner events, socket frames, cancellation and deadlines. Blocking
+resource helpers run off the async runtime while socket controls remain serviced.
+Only durable owner confirmations advance journal receipts. Library invalidation callbacks
+run outside index locks; Swift supplies Firebase IO and publishes native snapshots.
 
 ### Hosted browser isolation
 

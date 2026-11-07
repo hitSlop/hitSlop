@@ -1,3 +1,4 @@
+import { GuestIdentity } from "../sharing/identity";
 import { config } from "../sharing/config";
 import { resourceDelivery } from "./resource-delivery";
 import type { SharingEvent, SharingControl } from "../wire/sharing.generated";
@@ -26,6 +27,8 @@ const title = document.querySelector<HTMLElement>("#title")!;
 const stage = document.querySelector<HTMLElement>("#stage")!;
 const download = document.querySelector<HTMLButtonElement>("#download")!;
 const retry = document.querySelector<HTMLButtonElement>("#retry")!;
+const resetGuest = document.querySelector<HTMLButtonElement>("#reset-guest")!;
+let copyOpened = false;
 const fullscreen = document.querySelector<HTMLButtonElement>("#fullscreen")!;
 const awake = document.querySelector<HTMLButtonElement>("#awake")!;
 const hosted = resourceDelivery.kind === "network";
@@ -265,10 +268,7 @@ async function own() {
           throw new Error("There is not enough browser storage for this copy");
       }
       await putCopy({ id: id!, title: "Importing…", created: Date.now(), state: "importing" });
-    } else if (
-      !existing ||
-      (existing.state !== "ready" && !(existing.state === "recovering" && existing.recovery))
-    )
+    } else if (!existing || existing.state !== "ready")
       throw new Error("This browser copy is missing. Open the original file again.");
     // Keep the Web Lock until the worker dies and this tab releases its handles.
     await new Promise<void>((_, reject) => {
@@ -288,6 +288,11 @@ async function own() {
           );
         worker.onmessage = async ({ data }: MessageEvent<WorkerEvent | SharingEvent>) => {
           if (requests.failure) return;
+          if (data.type === "identityAttention") {
+            resetGuest.hidden = false;
+            fail(data.message);
+            return;
+          }
           if (data.type === "resourcesReady") {
             join.handle(data);
             return;
@@ -303,6 +308,7 @@ async function own() {
           }
           if (data.type === "ready") {
             opened = true;
+            copyOpened = true;
             title.textContent = data.title;
             try {
               await updateCopy(id!, {
@@ -417,6 +423,33 @@ download.onclick = async () => {
   } finally {
     await staged?.folder.removeEntry(staged.name).catch(fail);
     download.disabled = requests.failure !== undefined;
+  }
+};
+resetGuest.onclick = async () => {
+  resetGuest.disabled = true;
+  try {
+    if (page) {
+      await drain();
+      // Stop new authored requests before flushing accepted FIFO work. Identity
+      // renewal may wait on the network; the owner and its export remain available.
+      toFrame({
+        type: "fatal",
+        error: "The guest session is changing; reopen this copy to continue",
+      });
+      page.close();
+      page = undefined;
+      stage.inert = true;
+    }
+    if (copyOpened) {
+      const reply = await request({ type: "flush" });
+      const outcome = JSON.parse(reply.json) as { ok: true } | PageFailure;
+      if (!outcome.ok) throw new Error(outcome.error);
+    }
+    await new GuestIdentity().reset();
+    location.reload();
+  } catch (error) {
+    fail(error);
+    resetGuest.disabled = false;
   }
 };
 retry.onclick = () => {

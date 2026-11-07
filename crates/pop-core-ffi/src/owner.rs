@@ -121,8 +121,6 @@ impl Request {
 /// command path reads, or the failure.
 #[derive(uniffi::Enum)]
 pub enum OwnerReply {
-    EpochCandidate { source_version: String, version: String, path: PathBuf },
-    EpochAdopted { recovery_path: Option<PathBuf> },
     Command { sequence: u64, ids: Vec<String>, result_json: String },
     Unit,
     State { json: String },
@@ -137,12 +135,6 @@ pub enum OwnerReply {
 impl From<core::Reply> for OwnerReply {
     fn from(value: core::Reply) -> Self {
         match value {
-            core::Reply::EpochCandidate { source_version, version, path } => {
-                Self::EpochCandidate { source_version, version, path: path.native_path().to_owned() }
-            }
-            core::Reply::EpochAdopted { recovery_path } => {
-                Self::EpochAdopted { recovery_path: recovery_path.map(|path| path.native_path().to_owned()) }
-            }
             core::Reply::Command { sequence, ids, result_json } => Self::Command { sequence, ids, result_json },
             core::Reply::Unit => Self::Unit,
             core::Reply::State { reading, .. } => Self::State { json: reading.to_json() },

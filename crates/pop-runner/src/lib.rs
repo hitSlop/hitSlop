@@ -71,6 +71,18 @@ impl Evaluator {
                 .map(|provider| Self { provider: Provider::Unavailable(provider) })
         }
     }
+    /// Whether this host explicitly grants authored command execution.
+    pub fn supports_commands(&self) -> bool {
+        match &self.provider {
+            #[cfg(feature = "process")]
+            Provider::Process(_) => true,
+            #[cfg(feature = "capture-in-process")]
+            Provider::InProcessCapture(_) => false,
+            #[cfg(any(not(feature = "process"), not(feature = "capture-in-process")))]
+            Provider::Unavailable(_) => false,
+        }
+    }
+
     /// Host binary used for renderer and font freshness checks.
     pub fn executable_path(&self) -> &std::path::Path {
         match &self.provider {

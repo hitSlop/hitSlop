@@ -292,7 +292,7 @@ fn cleared_generations_hide_stale_writes_and_recreation_starts_fresh() {
 }
 
 #[test]
-fn rebuilt_history_refuses_stale_epochs_and_accepts_descendants_out_of_order() {
+fn rebuilt_history_refuses_stale_histories_and_accepts_descendants_out_of_order() {
     use pop_core::{Code, HistoryVersion};
     let spec = app(r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#);
     let mut old = Document::create(&spec, r#"{"title":"base"}"#).unwrap();
@@ -309,8 +309,8 @@ fn rebuilt_history_refuses_stale_epochs_and_accepts_descendants_out_of_order() {
         let before = receiver.state().unwrap();
         let error = receiver.import_remote(&[&stale]).expect_err("old history must not merge into rebuilt state");
         assert_eq!(error.code, Code::MissingDependencies);
-        assert_eq!(receiver.state().unwrap(), before, "epoch refusal precedes publication");
-        assert!(Document::open(&spec, &fresh, &[stale]).is_err(), "saved updates obey the same epoch boundary");
+        assert_eq!(receiver.state().unwrap(), before, "the refusal precedes publication");
+        assert!(Document::open(&spec, &fresh, &[stale]).is_err(), "saved updates obey the same history boundary");
     }
     let mut writer = Document::open(&spec, &fresh, &[]).unwrap();
     let start = writer.history_version();
@@ -325,7 +325,7 @@ fn rebuilt_history_refuses_stale_epochs_and_accepts_descendants_out_of_order() {
         for update in updates {
             if let Some(applied) = receiver.import_remote(&[update]).unwrap() {
                 view.publish(&applied.publication.unwrap());
-                view.check(&receiver, "same epoch out-of-order delivery");
+                view.check(&receiver, "same history out-of-order delivery");
             }
         }
         assert_eq!(support::value(&receiver), json!({"title":"second"}));

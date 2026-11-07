@@ -1,5 +1,6 @@
 //! Bounded preview pipes. Only this thread touches stdin/stdout; owner callbacks never wait.
-use serde_json::Value;
+use pop_core::preview::PreviewEvent;
+use serde_json::value::RawValue;
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
@@ -46,8 +47,8 @@ pub(super) struct Output {
     wake: Arc<UnixStream>,
 }
 impl Output {
-    pub(super) fn send(&self, frame: Value) {
-        let mut bytes = frame.to_string().into_bytes();
+    pub(super) fn send(&self, frame: PreviewEvent<Box<RawValue>>) {
+        let mut bytes = serde_json::to_vec(&frame).expect("serializable preview event");
         bytes.push(b'\n');
         if self.send.try_send(bytes).is_err() {
             self.failed.store(true, Ordering::Release);

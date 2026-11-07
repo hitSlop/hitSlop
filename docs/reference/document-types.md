@@ -254,11 +254,10 @@ agent's increments all count, where a `set` of a number read earlier would lose 
 - **Optional text:** an unset text reads as `""` in `bindText`, and the first keystroke
   creates it. `set(string)` creates or edits it.
 - `$set` on an object that is already set writes only the fields that differ.
-- In layout 2, clearing selects a new payload generation. Setting after that clear
+- Clearing selects a new payload generation. Setting after that clear
   creates current content there; an edit addressed to the old generation stays hidden.
   Undo can restore the earlier generation and its content. While the field is cleared,
-  its children are `path_not_found`. Released layout-1 documents retain their original
-  in-place clear/recreate semantics through the layout adapter.
+  its children are `path_not_found`.
 - **CLI:** `{"type":"clear","path":["note"]}`.
 
 ## Object
@@ -286,7 +285,7 @@ by `$id`, never by position.
   - `remove(row)`, `move(row, { before | after })`, `item(row)`: row arguments and destinations accept a snapshot row or its `$id`, including inside `change()`.
   - Omitting the destination appends.
 - **Identity:** moving or editing a surviving row keeps its `$id`; a removed row is no
-  longer a valid target. Undo restores that row's identity. In layout 2, removal selects
+  longer a valid target. Undo restores that row's identity. Removal selects
   a new payload generation so stale edits do not recreate the removed content. An
   application `$id` is not a physical Loro container ID.
 - **Moving between lists:** only moves within the same list preserve the Loro row
@@ -335,9 +334,8 @@ widths by column. Values are scalars or objects.
   - `doc.at(doc.current.cells["A1"])` resolves an object entry.
 - **Entries behave like optional fields.** A new object entry receives creation
   defaults; replacing an existing entry requires a complete value and reconciles its
-  surviving children. For layout-2 object entries, delete followed by put uses the
+  surviving children. For object entries, delete followed by put uses the
   generation selected by that deletion; stale edits to an earlier entry remain hidden.
-  Layout 1 retains its original in-place recreation behavior.
 - **Fields:** edits to different fields of an existing object entry both survive.
 - **Snapshot:** a plain object; iterate it with `Object.entries`.
 - **CLI:**
@@ -361,15 +359,9 @@ widths by column. Values are scalars or objects.
 ## Storage layout
 
 How kinds map to Loro containers is a persisted contract: every saved document records
-its layout in the root map `meta` (`{"layout": 2}`), written with the initial values.
-New documents use layout 2. Published layout-1 documents keep ordinary parent-owned
-children, direct row maps, fully materialized defaults and LWW concurrent creation.
-Their adapter reads, edits, saves and syncs that representation without migrating it or
-rebuilding its history. Sanitized copies may start a new layout-2 lineage. A build
-reads every released layout it knows and refuses a newer one
+its layout in the root map `meta` (`{"layout": 1}`), written with the initial values. A
+build reads the layout it has shipped and refuses a newer one
 with `requires_update` ([engineering contract](../engineering-contract.md#compatibility)).
-
-Layout 2:
 
 | Kind | Stored as |
 |---|---|
@@ -410,25 +402,14 @@ Routine checkpoints preserve CRDT identity and session undo. A current-frontier 
 checkpoint removes old operations, but hidden generations may remain. A sanitized copy
 reconstructs accepted visible data and theme with fresh physical history, retains row
 `$id`s, creates a new document UUID, and copies only referenced attachment bytes. It
-clears stale artwork and sharing membership. This is a new independent copy, not a
-layout migration of its source.
+clears stale artwork and sharing membership.
 
-A fresh authority epoch is different from an ordinary checkpoint. It retains the
-canonical document UUID but changes physical history only after a conditional authority
-commit and explicit owner adoption. A divergent local copy is preserved as a findable
-private recovery before canonical replacement. Old-epoch updates cannot be appended to
-the new history; ordinary import refuses missing dependencies. Adoption of changed history
-publishes one full data/theme replacement and resets session undo. Re-adopting the exact
-accepted current history is a no-op and preserves undo, including layout-1 shallow
-candidates. Same-document adoption never changes the persisted layout.
-
-Large edited unshared layout-2 files may use a fresh visible-state epoch at final close;
-layout 1 keeps its existing lineage. The live owner and undo remain available until
-close succeeds. Shared documents use the explicit catalog/relay authority protocol rather
-than silently discarding peer dependencies during an ordinary save. See the
-[checkpoint and recovery contract](../engineering-contract.md#checkpoints-copies-and-authority-epochs)
-and [relay architecture](../architecture.md#relay). Release qualification covers these
-conflicts; measured performance does not change saved-format acceptance.
+A large edited unshared file may rebuild its durable history from accepted visible state at
+final close; the live owner and undo remain available until close succeeds. A shared
+document never rebuilds its history: the relay folds updates into one base, and a document
+that outgrows the base cap pauses sharing (see the
+[checkpoints, copies and sharing seeds](../engineering-contract.md#checkpoints-copies-and-sharing-seeds)
+contract). Measured performance does not change saved-format acceptance.
 
 A row list's application order is `order` read once per row at its first place, then
 rows `order` misses, by `$id`. Merging valid edits from several devices can leave `order`
