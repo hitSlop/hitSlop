@@ -1,13 +1,11 @@
 import { getContext } from "svelte";
-import { createEnvironment, type Environment, type EnvironmentSnapshot } from "../environment";
+import type { Environment, EnvironmentSnapshot } from "../environment";
 
 const key = Symbol("pop.environment");
 export type { EnvironmentSnapshot } from "../environment";
 
-/** One reactive environment per mount, including on hosts predating this optional API. */
-export function environmentContext(source?: Environment) {
-  const fallback = source ? undefined : createEnvironment();
-  const environment = source ?? fallback!.environment;
+/** One reactive view of the host's environment per mount. */
+export function environmentContext(environment: Environment) {
   let snapshot = $state.raw(environment.current);
   const unsubscribe = environment.subscribe(() => {
     snapshot = environment.current;
@@ -19,10 +17,7 @@ export function environmentContext(source?: Environment) {
   });
   return {
     context: new Map([[key, value]]),
-    dispose() {
-      unsubscribe();
-      fallback?.dispose();
-    },
+    dispose: unsubscribe,
   };
 }
 

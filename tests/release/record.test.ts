@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { sha256 } from "../../scripts/lib/artifacts";
 import { stableTag } from "../../scripts/lib/release-assets";
+import { DocumentLineage } from "../../packages/pop/src/schema/constants";
 import { advancesBuild, appcastBuild, assertQualified, legacyAppcast, validateApproval, validateCandidate, validatePublication, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "../../scripts/release/record";
 
 test("pop release tags do not include the preserved hitSlop lineage", () => {
@@ -78,10 +79,11 @@ test("qualification compares exact historical hashes, including disappeared rele
 });
 
 test("only the successful candidate job on the dispatch commit can publish", () => {
-  const record = { commit: "c".repeat(40), run: "123", attempt: "1" } as ReleaseRecord;
+  const record = { documentLineage: DocumentLineage, commit: "c".repeat(40), run: "123", attempt: "1" } as ReleaseRecord;
   const workflow = { id: 123, head_sha: "c".repeat(40), event: "workflow_dispatch", path: ".github/workflows/macos-release.yml" };
   const jobs = [{ name: "Build and test candidate", conclusion: "success" }];
   validateCandidate(record, workflow, jobs);
+  expect(() => validateCandidate({ ...record, documentLineage: undefined }, workflow, jobs)).toThrow("unsupported document lineage");
   for (const changed of [{ id: 456 }, { head_sha: "master-after-candidate" }, { event: "push" }, { path: "other.yml" }])
     expect(() => validateCandidate(record, { ...workflow, ...changed }, jobs)).toThrow("identity mismatch");
   for (const conclusion of ["failure", "cancelled", null])

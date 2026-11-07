@@ -2,14 +2,16 @@
 mod transport;
 use pop_core::{
     Code,
-    command::{self, PageDispatch},
-    file::ResourceRoute,
-    owner::{Event, Owner, Reply, Request},
+    browser_wire::BrowserSaveStatus,
     page_wire::{HostAction, HostReply, SpeechOutcome},
-    preview::PreviewRequest,
-    store::Mode,
+    preview::{PreviewEvent, PreviewRequest, PreviewResource},
 };
-use serde_json::{Value, json};
+use pop_runtime::{
+    command::{self, PageDispatch},
+    owner::{Event, Owner, Reply, Request, SaveStatus},
+};
+use pop_storage::{file::ResourceRoute, store::Mode};
+use serde_json::{Value, value::RawValue};
 use std::{
     path::Path,
     process::ExitCode,
@@ -44,18 +46,35 @@ pub fn serve(path: &Path) -> ExitCode {
     let events = send.clone();
     let result = (|| -> Result<(), String> {
         let evaluator = crate::evaluator()?;
-        let owner = Arc::new(Owner::open_with_evaluator(path, Mode::Document, Arc::new(move |event| {
-            let message = match event {
-                Event::Publication { json: publication } => json!({"type":"push","pushes":[serde_json::from_str::<Value>(&publication).expect("page push")]}),
-                Event::SaveStatus { status, failure, .. } => json!({"type":"save","status":format!("{status:?}"),"error":failure.map(|f| f.message)}),
-                _ => return,
-            };
-            events.send(message);
-        }), Some(evaluator)).map_err(|e| e.to_string())?);
+        let owner = Arc::new(
+            Owner::open_with_evaluator(
+                path,
+                Mode::Document,
+                Arc::new(move |event| {
+                    let message = match event {
+                        Event::Publication { json: publication } => PreviewEvent::Push {
+                            pushes: vec![RawValue::from_string(publication).expect("owner page push")],
+                        },
+                        Event::SaveStatus { status, failure, .. } => PreviewEvent::Save {
+                            status: match status {
+                                SaveStatus::Saved => BrowserSaveStatus::Saved,
+                                SaveStatus::Saving => BrowserSaveStatus::Saving,
+                                SaveStatus::Failed => BrowserSaveStatus::Failed,
+                            },
+                            error: failure.map(|f| f.message),
+                        },
+                        _ => return,
+                    };
+                    events.send(message);
+                }),
+                Some(evaluator),
+            )
+            .map_err(|e| e.to_string())?,
+        );
         let resources = owner.resource_reader().map_err(|e| e.to_string())?;
         let view = "preview";
         owner.attach(view.into());
-        send.send(json!({"type":"ready","pid":std::process::id()}));
+        send.send(PreviewEvent::Ready { pid: std::process::id() });
         let pending = Arc::new(AtomicUsize::new(0));
         let result = (|| -> Result<(), String> {
             while let Some(line) = transport.next()? {
@@ -68,23 +87,59 @@ pub fn serve(path: &Path) -> ExitCode {
                         else {
                             return Err(error.to_string());
                         };
-                        send.send(json!({"type":"reply","id":id,"reply":crate::rejected(Code::InvalidRequest, error)}));
+                        send.send(PreviewEvent::Reply {
+                            id: id.try_into().map_err(|_| "Invalid preview request ID")?,
+                            reply: crate::rejected(Code::InvalidRequest, error),
+                        });
                         continue;
                     }
                 };
                 match request {
                     PreviewRequest::ResourcePlan { id, attachment_id, range } => {
-                        let resource = resources.info(ResourceRoute::Attachment, &attachment_id)
-                            .map(|info| json!({"type":"resource","id":id,"plan":info.map(|info| pop_core::file::resource_response(&info, ResourceRoute::Attachment, range.as_deref()))}))
-                            .unwrap_or_else(|e| json!({"type":"resource","id":id,"error":e.to_string()}));
+                        let resource = resources
+                            .info(ResourceRoute::Attachment, &attachment_id)
+                            .map(|info| PreviewEvent::Resource {
+                                id,
+                                plan: info.map(|info| {
+                                    pop_storage::file::resource_response(
+                                        &info,
+                                        ResourceRoute::Attachment,
+                                        range.as_deref(),
+                                    )
+                                }),
+                                info: None,
+                                bytes: None,
+                                error: None,
+                            })
+                            .unwrap_or_else(|e| PreviewEvent::Resource {
+                                id,
+                                plan: None,
+                                info: None,
+                                bytes: None,
+                                error: Some(e.to_string()),
+                            });
                         send.send(resource);
                     }
                     PreviewRequest::Resource { id, attachment_id, offset, length } => {
                         let resource = (|| {
                             let info = resources.info(ResourceRoute::Attachment, &attachment_id)?;
-                            let bytes = resources.read_range(ResourceRoute::Attachment, &attachment_id, offset, length)?;
-                            Ok::<_,pop_core::store::Error>(json!({"type":"resource","id":id,"info":info.map(|i| json!({"size":i.size,"mimeType":i.media_type})),"bytes":bytes.map(|b| data_encoding::BASE64.encode(&b))}))
-                        })().unwrap_or_else(|e| json!({"type":"resource","id":id,"error":e.to_string()}));
+                            let bytes =
+                                resources.read_range(ResourceRoute::Attachment, &attachment_id, offset, length)?;
+                            Ok::<_, pop_storage::store::Error>(PreviewEvent::Resource {
+                                id,
+                                plan: None,
+                                info: info.map(|i| PreviewResource { size: i.size, mime_type: i.media_type }),
+                                bytes: bytes.map(|b| data_encoding::BASE64.encode(&b)),
+                                error: None,
+                            })
+                        })()
+                        .unwrap_or_else(|e| PreviewEvent::Resource {
+                            id,
+                            plan: None,
+                            info: None,
+                            bytes: None,
+                            error: Some(e.to_string()),
+                        });
                         send.send(resource);
                     }
                     PreviewRequest::Page { id, request } => {
@@ -116,7 +171,7 @@ pub fn serve(path: &Path) -> ExitCode {
                                 }
                                 .to_json(),
                             };
-                            output.send(json!({"type":"reply","id":id,"reply":reply}));
+                            output.send(PreviewEvent::Reply { id, reply });
                             pending.fetch_sub(1, Ordering::SeqCst);
                         });
                     }
@@ -133,9 +188,8 @@ pub fn serve(path: &Path) -> ExitCode {
     })();
     let mut failed = result.is_err();
     if let Err(error) = result {
-        let error = serde_json::value::RawValue::from_string(crate::rejected(Code::InvalidRequest, error))
-            .expect("serialized failure");
-        send.send(json!({"type":"fatal","error":error}));
+        let error = serde_json::from_str(&crate::rejected(Code::InvalidRequest, error)).expect("serialized failure");
+        send.send(PreviewEvent::Fatal { error });
     }
     drop(send);
     failed |= transport.finish(shutdown.unwrap_or_else(|| Instant::now() + Duration::from_secs(10))).is_err();

@@ -116,7 +116,12 @@ public final class DocumentOwner: Sendable {
           return (facts.listener, .saveStatus(saveStatus, pressure, shared))
         }
       }
-      if let forwarded { listener?(forwarded) }
+      if let forwarded {
+        listener?(forwarded)
+        if case .saveStatus = forwarded {
+          NotificationCenter.default.post(name: .popDocumentSaveStatusChanged, object: nil)
+        }
+      }
     }
   }
   private final class Completion: OwnerCompletion {

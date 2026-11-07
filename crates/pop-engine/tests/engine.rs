@@ -6,7 +6,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
 fn protocol() -> String {
-    pop_core::command::protocol().parse::<Value>().unwrap()["version"].to_string()
+    pop_runtime::command::protocol().parse::<Value>().unwrap()["version"].to_string()
 }
 
 #[test]
@@ -144,7 +144,7 @@ fn invalid_requests_are_classified_and_never_publish() {
     ] {
         assert_eq!(reply(input, None)["reason"], "invalid_request", "{input}");
     }
-    let input = " ".repeat(pop_core::command::MAX_REQUEST_BYTES + 1);
+    let input = " ".repeat(pop_runtime::command::MAX_REQUEST_BYTES + 1);
     assert_eq!(reply(&input, None)["reason"], "too_large");
 }
 
@@ -187,7 +187,7 @@ fn app_validation_preserves_marker_order_and_limits() {
     assert_eq!(request(json!({"method":"validateApp","stage":stage,"app":future}))["reason"], "requires_update");
     let future_number = r#"{"method":"validateApp","stage":"/unused","app":{"packageFormat":999,"runtimeABI":1,"declaration":{"future":1e999}}}"#;
     assert_eq!(reply(future_number, None)["reason"], "requires_update");
-    let oversized = "x".repeat(pop_core::file::APP_INPUT_BYTES);
+    let oversized = "x".repeat(pop_storage::file::APP_INPUT_BYTES);
     let refused = request(json!({"method":"validateApp","stage":stage,"app":oversized}));
     assert_eq!(refused["reason"], "too_large");
     assert!(refused["error"].as_str().unwrap().contains("large"));
@@ -573,10 +573,13 @@ fn pack_checks_all_views_and_stores_only_unsupplied_artwork() {
     let template = dir.path().join("Healthy.pop");
     let packed = request(json!({"method":"pack","stage":stage,"file":template,"app":app,"renderViews":true}));
     assert_eq!(packed["artwork"], json!({"preview":"rendered","icon":"supplied"}), "{packed}");
-    let (_, stored) = pop_core::file::artwork(&template, &[pop_core::file::Artwork::Icon]).unwrap().unwrap();
+    let (_, stored) = pop_storage::file::artwork(&template, &[pop_storage::file::Artwork::Icon]).unwrap().unwrap();
     // Supplied artwork is optimized by pack, retaining its pixels.
-    assert_eq!(stored, pop_core::file::artwork(&supplied_only, &[pop_core::file::Artwork::Icon]).unwrap().unwrap().1);
-    assert!(pop_core::file::artwork(&template, &[pop_core::file::Artwork::Preview]).unwrap().is_some());
+    assert_eq!(
+        stored,
+        pop_storage::file::artwork(&supplied_only, &[pop_storage::file::Artwork::Icon]).unwrap().unwrap().1
+    );
+    assert!(pop_storage::file::artwork(&template, &[pop_storage::file::Artwork::Preview]).unwrap().is_some());
 }
 
 #[test]

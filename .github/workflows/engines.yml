@@ -29,6 +29,8 @@ jobs:
       FEATURES: ${{ matrix.features && format('--features {0}', matrix.features) || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/select-xcode
+        if: runner.os == 'macOS'
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: rustup target add ${{ matrix.target }}
@@ -43,8 +45,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: engine-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ matrix.features || 'default' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'Cargo.toml', 'scripts/build/core.ts') }}-${{ hashFiles('crates/**') }}
-          restore-keys: engine-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ matrix.features || 'default' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'Cargo.toml', 'scripts/build/core.ts') }}-
+          key: engine-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.APPLE_TOOLCHAIN_CACHE_KEY }}${{ matrix.target }}-${{ matrix.features || 'default' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'Cargo.toml', 'scripts/build/core.ts') }}-${{ hashFiles('crates/**') }}
+          restore-keys: engine-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.APPLE_TOOLCHAIN_CACHE_KEY }}${{ matrix.target }}-${{ matrix.features || 'default' }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'Cargo.toml', 'scripts/build/core.ts') }}-
       # The engine's own tests run on the binary this runner built, in the profile that ships.
       - run: cargo test --locked --profile dist -p pop-engine --target ${{ matrix.target }} $FEATURES
       - run: cargo build --locked --profile dist -p pop-engine --target ${{ matrix.target }} $FEATURES

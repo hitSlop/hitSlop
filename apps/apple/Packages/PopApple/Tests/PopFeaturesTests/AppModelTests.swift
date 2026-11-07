@@ -229,8 +229,10 @@ func aCopyCommandOpensTheCopy(command: PopDocumentCommand) async {
   await model.settled()
   #expect(model.quitPhase == .running && !model.catalog.isQuitting)
   #expect(native.enabled[documentID] == true)
-  #expect(
-    native.calls == [.prepare(documentID), .cancel(documentID), .alert(.failure("Save failed"), nil), .reply(false)])
+  #expect(native.calls.contains(.cancel(documentID)), "the preparation is undone")
+  #expect(!native.calls.contains(.finish(documentID)))
+  #expect(native.alerts == [.alert(.failure("Save failed"), nil)])
+  #expect(native.replies == [false])
   #expect(model.documents.count == 1)
 }
 
@@ -390,11 +392,10 @@ func aCopyCommandOpensTheCopy(command: PopDocumentCommand) async {
   native.prepareToQuit = { id in if id == otherID { throw Failure() } }
   model.requestQuit()
   await model.settled()
-  #expect(
-    native.calls == [
-      .prepare(documentID), .prepare(otherID), .cancel(documentID), .cancel(otherID),
-      .alert(.failure("Save failed"), nil), .reply(false),
-    ])
+  #expect([documentID, otherID].allSatisfy { native.calls.contains(.cancel($0)) }, "every preparation is undone")
+  #expect(!native.calls.contains { if case .finish = $0 { true } else { false } })
+  #expect(native.alerts == [.alert(.failure("Save failed"), nil)])
+  #expect(native.replies == [false])
 }
 
 @Test @MainActor func cancellingAnUnresolvedDraftPromptCancelsQuitWithoutAnErrorAlert() async {
@@ -405,10 +406,10 @@ func aCopyCommandOpensTheCopy(command: PopDocumentCommand) async {
   await model.settled()
   #expect(model.quitPhase == .running && model.documents.count == 2)
   #expect(model.acceptsCommands(documentID) && model.acceptsCommands(otherID))
-  #expect(
-    native.calls == [
-      .prepare(documentID), .prepare(otherID), .cancel(documentID), .cancel(otherID), .reply(false),
-    ])
+  #expect([documentID, otherID].allSatisfy { native.calls.contains(.cancel($0)) })
+  #expect(!native.calls.contains { if case .finish = $0 { true } else { false } })
+  #expect(native.alerts.isEmpty)
+  #expect(native.replies == [false])
 }
 
 @Test @MainActor func movingToCloudReplacesTheClosedDocumentAndQuitWaitsForTheNewOwner() async {

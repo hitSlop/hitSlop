@@ -38,6 +38,7 @@ outputs:
 runs:
   using: composite
   steps:
+    - uses: ./.github/actions/select-xcode
     - shell: bash
       run: echo "GH_TOKEN=${{ github.token }}" >> "$GITHUB_ENV"
     - id: started
@@ -57,8 +58,8 @@ runs:
     - id: cache-keys
       shell: bash
       env:
-        RUST_KEY: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
-        TOOLS_KEY: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ inputs.bindings }}-${{ hashFiles('scripts/build/tool-versions.json') }}
+        RUST_KEY: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ env.APPLE_TOOLCHAIN_CACHE_KEY }}${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'scripts/build/core.ts') }}
+        TOOLS_KEY: ${{ env.CI_CACHE_NAMESPACE }}core-tools-${{ runner.os }}-${{ runner.arch }}-${{ env.APPLE_TOOLCHAIN_CACHE_KEY }}${{ inputs.bindings }}-${{ hashFiles('scripts/build/tool-versions.json') }}
       run: |
         echo "rust=$RUST_KEY" >> "$GITHUB_OUTPUT"
         echo "tools=$TOOLS_KEY" >> "$GITHUB_OUTPUT"
@@ -74,7 +75,7 @@ runs:
           ~/.cargo/git
           target
         key: ${{ steps.cache-keys.outputs.rust }}
-        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ env.APPLE_TOOLCHAIN_CACHE_KEY }}${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - id: rust-cache-restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.rust == 'true' && (github.event_name == 'pull_request' || inputs.save-build-cache != 'true')
@@ -84,7 +85,7 @@ runs:
           ~/.cargo/git
           target
         key: ${{ steps.cache-keys.outputs.rust }}
-        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
+        restore-keys: ${{ env.CI_CACHE_NAMESPACE }}rust-${{ inputs.cache-scope }}-${{ inputs.bindings }}-${{ runner.os }}-${{ runner.arch }}-${{ env.APPLE_TOOLCHAIN_CACHE_KEY }}${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-
     - id: compat-writers-cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       if: inputs.rust == 'true' && github.event_name != 'pull_request'

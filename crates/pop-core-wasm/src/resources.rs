@@ -13,7 +13,7 @@ impl BrowserCopy {
             return Err(error("Resource app identity mismatch"));
         }
         for item in &manifest.resources {
-            let route = pop_core::file::ResourceRoute::App;
+            let route = pop_storage::file::ResourceRoute::App;
             let info = store
                 .resource_info(route, &item.key)
                 .map_err(error)?
@@ -78,7 +78,7 @@ impl BrowserCopy {
     ) -> Result<(), JsValue> {
         let item: Resource = serde_json::from_str(json).map_err(error)?;
         resource_types::validate(std::slice::from_ref(&item), true).map_err(error)?;
-        let accepted = pop_core::store::Attachment::from_bytes(bytes).map_err(error)?;
+        let accepted = pop_storage::store::Attachment::from_bytes(bytes).map_err(error)?;
         if accepted.id != item.hash || accepted.bytes != item.size || accepted.media_type != item.media_type {
             return Err(error("Attachment checksum, size or type mismatch"));
         }
@@ -108,6 +108,7 @@ pub fn frame_operation(bytes: &[u8]) -> Result<String, JsValue> {
         pop_core::sync::Frame::Error { code, .. } if code == pop_sharing_protocol::frame::ERROR_ENDED => "ended",
         pop_core::sync::Frame::Push { .. } => "upload",
         pop_core::sync::Frame::Records(_) => "download",
+        pop_core::sync::Frame::Ack { .. } => "acknowledge",
         _ => "control",
     }
     .into())

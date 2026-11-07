@@ -1,7 +1,8 @@
 # dotpop
 
-dotpop starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not pop acceptance inputs.
-
+dotpop is document lineage 2, released under `@hitslop/pop` (2.0.0 and up). Nothing written
+before it is supported: hitSlop `.slop` files and APIs, and files from earlier products, are
+refused at open and never modified.
 
 Architecture: [architecture](docs/architecture.md). Status and open work:
 [direction](docs/roadmap.md); proposals in [ideas](docs/ideas.md).
@@ -10,13 +11,21 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 
 ## Non-negotiable
 
-- **Every released pop stays openable.** See [Compatibility](#compatibility).
-- `pop-core` (Rust on Loro) owns document semantics and durable storage: the `.pop`
-  file (one SQLite database holding the app and its saved state), the writer lock and the
-  save policy, serial owner, persistence worker and socket routing. Swift `DocumentOwner`
+- **From the first public lineage-2 release, every released pop stays openable.** See
+  [Compatibility](#compatibility).
+- `pop-core` (Rust on Loro) owns document semantics and app acceptance. `pop-storage`
+  owns durable `.pop` storage (one SQLite database holding the app and its saved state),
+  the writer lock and save policy; `pop-runtime` owns the serial owner, persistence worker
+  and socket routing. Swift `DocumentOwner`
   is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
   (`packages/pop/src/shell`) holds no CRDT; `packages/pop/src/sdk` is the author SDK, and pop
   contain only their app.
+- **Cloud documents have one authority.** Persistent Cloudflare Document DOs and R2 own
+  cloud state and permissions. Clients maintain their own Firestore discovery references
+  after upload acknowledgement; catalog metadata never grants document access. Swift's
+  official SDK handles Firestore IO; Rust keeps local files and pending reference writes.
+  One default `FirebaseApp` serves Auth, Firestore, Analytics and Crashlytics; guests use
+  Firebase Anonymous Auth. See [cloud documents](docs/cloud-documents.md).
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or remove a lock file from the registry
   (`~/.pop/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
@@ -38,21 +47,29 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 
 ## Compatibility
 
-Starting with public v1.0.0, a newer pop must open, render, edit, save and reopen
-every document a released build wrote. Downgrades are not supported. The full rules, by
-boundary and marker, are in the [engineering contract](docs/engineering-contract.md#compatibility).
-Pre-launch documents are unsupported; there is no prelaunch corpus fallback.
+Lineage 2 is a fresh start. The compatibility promise begins with its first public release:
+from then on a newer pop must open, render, edit, save and reopen every document a
+released build wrote. Downgrades are not supported. The full rules, by boundary and marker,
+are in the [engineering contract](docs/engineering-contract.md#compatibility).
 
+- **Lineage is one check**: the SQLite `application_id`, read at open. A file from an older
+  product or lineage is refused ("made by an older version") and nothing is written; SQLite
+  may first recover a crashed transaction's hot journal, a policy to preserve. A newer lineage
+  is refused with `requires_update`. The live-owner hello carries
+  the same constant, so a new CLI never forwards edits into an old running app. Cloud
+  isolation from the earlier product comes from fresh infrastructure names, not code.
+- **Markers** are `packageFormat` (the stored definition), `runtimeABI` (app-facing
+  behavior), the storage version (tables, columns, triggers) and the document layout. All
+  start at 1. Persisted formats change only additively, or behind the marker that owns the
+  change. A newer marker is refused with `requires_update` and nothing is written. Markers
+  are requirements, not release numbers; refactors and mechanical extractions never raise
+  them. There are no adapters for values below 1; raising a marker adds a reader and keeps
+  the released one.
 - Every public release carries its frozen compatibility corpus as an immutable release
-  asset. Affected builds replay all published corpora. Never replace, regenerate or delete
-  one, its expectations or the command prelude it froze. Capture is part of the candidate
-  workflow ([releasing](docs/guides/releasing.md)). Retain the first release's hash pin in
-  `scripts/compat/pop-required-history.json` permanently.
-- Persisted formats change only additively, or behind the marker that owns the change:
-  `packageFormat` (the stored definition), `runtimeABI` (app-facing behavior), the storage
-  version (tables, columns, triggers) or the document layout. Markers are requirements,
-  not release numbers; refactors never raise them. A newer marker is refused with
-  `requires_update` and nothing is written.
+  asset. Affected builds replay all published lineage-2 corpora. Never replace,
+  regenerate or delete one, its expectations or the command prelude it froze. Capture is
+  part of the candidate workflow ([releasing](docs/guides/releasing.md)). Pin the first
+  release's corpus hash in `scripts/compat/dotpop-required-history.json` permanently.
 - Opening a file applies only its format's acceptance, which never tightens. Authoring
   rules run at `pack` and `init` and may tighten freely; they never judge a saved file.
 - Installing pop never replaces the app inside an existing document. Only a write
@@ -110,6 +127,6 @@ A document history UI, schema evolution, synced folders and hosted catalog/publi
 remain deferred. Live collaboration connects the existing Rust owners through a Durable
 Object byte relay and is available in the Mac app and the iPhone app on TestFlight;
 release qualification remains in the [roadmap](docs/roadmap.md). `archive/`,
-`spikes/`, `plans/`, `POP.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
+`spikes/`, `POP.todo`, `apps/promo/inspo/` and `_docs/` stay
 local and are not active contracts. Shared decisions belong in the architecture, roadmap
 and ideas pages.

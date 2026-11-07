@@ -62,7 +62,5 @@ this is distinct from the page text, which now renders at the destination resolu
 
 ## Scope
 
-This is Mac fullscreen qualification. It does not implement browser document opening,
-browser fullscreen, Wake Lock, downloads or hosted share URLs. The separate
-[browser evaluator evidence](browser-evaluator-2026-10-08.md) records the first browser
-gate and the durable owner work that remains.
+This is Mac fullscreen qualification. It does not cover browser document opening,
+browser fullscreen, Wake Lock, downloads or hosted share URLs.

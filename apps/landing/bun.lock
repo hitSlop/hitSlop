@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@hitslop/landing",
+      "name": "@pop/landing",
       "dependencies": {
         "@astrojs/sitemap": "^3.7.4",
         "@astrojs/starlight": "^0.42.0",

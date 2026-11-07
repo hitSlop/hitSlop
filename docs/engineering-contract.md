@@ -1,14 +1,14 @@
 # Engineering contract
 
-dotpop starts a new product and compatibility lineage at 1.0.0. Legacy hitSlop `.slop` files and APIs are unsupported. Historical hitSlop release evidence and its original hash pin remain immutable; they are not pop acceptance inputs.
-
-
-How the system works is in [architecture](architecture.md).
+How the system works is in [architecture](architecture.md). dotpop is document lineage 2;
+nothing written before it is supported, and an older product's file is refused at open
+without edits. SQLite may first recover a crashed transaction's hot journal;
+byte-for-byte preservation of the database and journal is not promised.
 
 ## Compatibility
 
-The compatibility promise starts with the public v1.0.0 release. Pre-launch documents
-are unsupported. Every document a released build wrote must open, render, edit, save and reopen in every later
+The compatibility promise starts with the first public document-lineage-2 release; documents written before
+it are unsupported. Every document a released build wrote must open, render, edit, save and reopen in every later
 build, on supported macOS versions. Downgrades are not supported: an older build refuses
 newer formats with `requires_update` and writes nothing.
 
@@ -16,20 +16,21 @@ Old documents depend on a few public boundaries; everything behind them may chan
 
 | Boundary | Marker | A later build |
 |---|---|---|
-| The app in a `.pop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics | `app.package_format`, stamped by the engine from the build | Dispatches to the reader for that format |
-| App behavior: `ctx`, handles, errors, the command prelude, stored capture programs and host DOM/CSS conventions | `app.runtime_abi`, stamped by the build | Dispatches to the app-facing context adapter for that ABI |
-| The file's tables, and the layout every open checks | SQLite `user_version` (storage version) | Migrates forward under the writer lock, in one transaction |
-| How descriptor kinds map to Loro containers ([layout 1](reference/document-types.md#storage-layout)) | `meta.layout` in each document, written when it is created | Reads it, or migrates it losslessly (same value, row IDs, text, theme and attachments) in one commit with its marker; snapshots migrate in memory only |
+| Product document lineage | Rust `DOCUMENT_LINEAGE`, encoded in SQLite `application_id`, read first on every open | Refuses an older lineage or another product's file ("made by an older version") and writes nothing; a newer lineage requires an update. The live-owner hello carries the same value, so a new CLI never forwards edits into an old running app. Cloud isolation from the earlier product is by fresh infrastructure names, not code. Release versions remain independent. |
+| The app in a `.pop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics | `app.package_format`, stamped by the engine from the build (1) | Reads every format it has shipped, through one reader per format; refuses a newer one |
+| App behavior: `ctx`, handles, errors, the command prelude, stored capture programs and host DOM/CSS conventions | `app.runtime_abi`, stamped by the build (1) | Dispatches to the app-facing context adapter for that ABI; refuses a newer one |
+| The file's tables, and the layout every open checks | SQLite `user_version` (storage version, 1) | Migrates forward under the writer lock, in one transaction once a later version exists; refuses a newer one |
+| How descriptor kinds map to Loro containers ([storage layout](reference/document-types.md#storage-layout)) | `meta.layout` in each document (1), written when it is created | Reads and edits the layout it has shipped; refuses a newer one. Opening and saving never change a document's layout |
 | CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `pop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's `socket` and `documentPath` fields (other fields are ignored; its location is per platform); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
 
 ### Local browser storage
 
-The Chrome beta uses browser-container format 1, separate from the `.pop` storage
+The Chrome beta uses browser-container format 2, separate from the `.pop` storage
 version. Each `copies/<id>/container.json` marker is checked before sahpool opens or
-cleanup touches that pool. Unknown and unmarked pre-launch containers are refused
+cleanup touches that pool. Unknown and unmarked containers are refused
 without repair or migration. IndexedDB version 1 stores only the copies catalog.
 Record and qualify changes to the pinned VFS against persisted pool fixtures before
-shipping browser storage publicly; current pre-launch copies remain unsupported.
+shipping browser storage publicly.
 
 Import validates the staged SQLite file before renewing its document UUID in one
 transaction. Reopening a browser copy retains its UUID. Export drains page drafts,
@@ -47,7 +48,8 @@ depend on is the host side they call into, the runtime ABI that `sdk/abi.ts` lis
 host change an old app cannot run raises `runtimeABI` and keeps the old behavior for apps
 built at the lower level.
 
-Each marker in the table above has its own mechanism. Only storage is rewritten:
+Each marker in the table above has its own mechanism. All four are 1 in lineage 2, and
+there are no adapters for older values. When one is first raised, only storage is rewritten:
 SQL migrations move a file forward. A package format is read in place and translated into
 the host model in memory, a runtime ABI keeps its adapter, and a Loro layout is read as it
 is or migrated losslessly. The app inside a document is an author's compiled code, so it
@@ -70,11 +72,11 @@ additions need no ABI bump. A required member an older host cannot supply raises
 checked before the reader is chosen. The build stamps `runtimeABI`; the CLI refuses a
 project whose SDK version differs from its own, and refuses an ABI it cannot validate or preview. Raising one
 adds a reader and leaves released behavior in place. The current format reader is
-`app/package_format_1.rs`; the page context is `shell/abi/1.ts`, the command prelude
+`app/format.rs`; the page context is `shell/abi/1.ts`, the command prelude
 is built from `shell/abi/runner-1.ts`, and `sdk/abi.ts` lists every part of the app ABI,
 including the globals, markup and CSS variables that are not `ctx`. Compile-time guards require a new arm when their marker rises.
 The page receives the stored descriptor unchanged, while native UI receives the translated
-host model. Storage-1 SQL freezes at the first release; later physical changes use a
+host model. Storage-1 SQL freezes at the first public release; later physical changes use a
 writer-locked transactional migration. Every open reads
 the markers (application ID, storage version, then `package_format` and `runtime_abi`)
 before it compares the exact tables, so a newer file is refused with `requires_update`
@@ -104,7 +106,7 @@ error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports a
 unrecognized outcome and tells the user to inspect state before retrying; the engine relay
 forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--pop-*`,
 `data-pop-root`, the embed relay, and capture program requests and replies.
-The pop sharing `/v1` HTTP/link/socket contract grows only additively; its [immutable fixtures](../crates/pop-sharing-protocol/tests/fixtures/v1/README.md), including both binary frame and socket-envelope codecs, remain valid and are never replaced, regenerated or deleted. Breaking changes require `/v2` while `/v1` continues serving old pop clients. Historical hitSlop fixtures remain preserved separately and are not pop acceptance inputs. The npm package ships the document engine; the Mac app contains its linked core
+The pop sharing `/v1` HTTP/link/socket contract starts from its [2.0.0 baseline fixtures](../crates/pop-sharing-protocol/tests/fixtures/v1/README.md), including the binary frame codec. From the first public release it grows only additively: those fixtures remain valid and are never replaced, regenerated or deleted, and a breaking change requires `/v2` while `/v1` continues serving released pop clients. The npm package ships the document engine; the Mac app contains its linked core
 and restricted evaluator. Release acceptance checks that the engine and the app contain
 the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
 
@@ -153,11 +155,12 @@ including after replacement, undo or reopen; no exactness is guaranteed. See
 
 How an edit, a save and a close move is in [architecture](architecture.md). The rules:
 
-- `pop-core` (Rust on Loro, `crates/`) owns document semantics and durable storage
-  (the writer lock, the `.pop` file, the save policy), and is the only code that opens a
-  `.pop` file: the app, Quick Look and the CLI's `pop-engine` all read and
-  write through it. The Rust owner schedules saves and serializes edits; Swift
-  `DocumentOwner` delivers typed requests and events. Loro bytes never reach Swift. The page shell (`packages/pop/src/shell`) holds no CRDT.
+- `pop-core` owns document semantics and app acceptance over Loro. `pop-contracts`
+  owns passive wire types and shared limits. `pop-storage` owns the `.pop` database,
+  writer lease, storage acceptance and save policy; `pop-runtime` owns the serial
+  document owner, persistence worker and socket routing. Native and browser adapters
+  use these same boundaries. Swift `DocumentOwner` delivers typed requests and events;
+  Loro bytes never reach Swift. The page shell (`packages/pop/src/shell`) holds no CRDT.
 - A `.pop` file is one SQLite database. A template holds its app: the `app` row
   (catalog columns, a definition document and two requirements), `assets` (including
   `ui.js`, optional CSS, media and the private command program) and optional preview and icon `artwork`, and its initial values as its
@@ -170,6 +173,70 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 `appDigest` hashes a fixed encoding of named app and asset columns with stable domain
 and field identifiers, never SQL query text. An inert schema extension therefore never
 changes an unchanged app's digest.
+
+Rust distinguishes `AppRevisionId` (those exact digest bytes) from `StateContractId`
+(the interpreted descriptor, slug and unordered theme defaults). Descriptions, window
+presentation and command metadata do not change the state contract. Descriptor option
+presence remains significant; parsed number spelling and floating zero signs do not.
+These are internal identities; existing wire `appDigest` fields retain their encoding.
+
+Matching state contracts mean two apps read the same saved state. They do not authorize replacing
+an embedded app: a future updater must accept a complete revision, check its runtime
+requirements and publish the replacement atomically under the writer lock. App updating
+and schema evolution remain deferred.
+
+### Document acceptance and publication
+
+Documents use deterministic mergeable containers, creation-default projection and
+selected payload generations for deletable containers. Clear/remove hides the previous
+generation; stale edits to it do not recreate current content. Undo restores the prior
+generation. Application row `$id`s are distinct from physical Loro container identities
+([storage layout](reference/document-types.md#storage-layout)).
+
+Core is the single acceptance boundary for local edits, accepted saved state and imported
+history. Authoring completeness and creation limits are not re-applied as a new rejection
+of an accepted merged document: concurrent valid inserts can exceed an authoring list
+limit without making that saved state unreadable. Sanitized copying reconstructs accepted
+visible state rather than calling new-document authoring validation. Schema evolution is
+not inferred from currently equal values.
+
+An accepted visible edit publishes immutable data and effective theme after acceptance.
+Publications are ordered by previous/current sequence; row IDs and surviving snapshot
+identity remain stable for ordinary edits. Async write completion follows snapshot
+publication; it is not permission to replay an intent whose outcome is uncertain.
+
+### Checkpoints, copies and sharing seeds
+
+An ordinary save appends history or checkpoints it. Routine and explicit checkpoints
+retain replica identity and live session undo; a shallow current-frontier checkpoint may
+prune old operations while still retaining hidden containers. It is not a sanitized copy.
+A sanitized independent copy retains accepted visible values, theme and application row
+IDs, creates a new document UUID and physical history, copies only referenced immutable
+blobs, and removes stale artwork and hidden historical data. It does not copy a live
+sharing membership.
+
+A large edited unshared document may rebuild its durable history at final close. The
+still-live owner retains its undo until close succeeds. Saved frontier accounting uses the
+bytes actually written. If an old live owner continues after a rebuilt close write, its
+next save checkpoints its own identity rather than appending updates against an unrelated
+durable frontier. Ambiguous write outcomes fence appends until a checkpoint; definite
+rolled-back busy/refusal outcomes need not force a full snapshot.
+
+Sharing starts from a seed: a copy of the creator's saved document staged without touching
+the live owner or its file, holding one snapshot, only the attachments it references and no
+artwork (`Request::StageSeed`, `Store::stage_seed`). From then on the document keeps its
+whole history and every attachment, because other replicas can reference them. The relay
+only folds: `/compact` swaps retained update records for one opaque base. The base is
+capped at 16 MiB (`BASE_BYTES`), a transport limit (one WebSocket frame under `MAX_FRAME`),
+not a smaller `.pop` acceptance limit. When a fold cannot fit, the session pauses with
+`PauseKind::Outgrown`; local edits keep saving, and the person saves an unshared copy.
+A full attachment budget (`FilesFull`) stops sharing. The relay and client are specified
+in [cloud documents](cloud-documents.md).
+
+Retention and compatibility assertions are normative. Passing the published corpora is
+regression evidence, not a proof over all possible documents. Timing, memory and file-size
+measurements are qualification results, not new public format limits. Platform/browser
+and release qualification remain tracked in the [roadmap](roadmap.md).
 
 ## Rules
 
@@ -202,10 +269,11 @@ changes an unchanged app's digest.
   refused without modifying the file.
 - Never add a JSON copy of the document, persistent JSON mirrors, JSON reconciliation, a
   JavaScriptCore engine or a second document engine. The WASM core serves SDK tests and local browser copies with the same Rust owner and SQLite store. Browser authoring development uses a native owner; the native engine validates authoring input. Browser copies hold a per-copy Web Lock and save through OPFS; authored code runs on a separate per-copy origin. A download drains the page, flushes the owner and streams one SQLite read transaction.
-- Rust owns wire types and shared limits (`crates/pop-core/src/wire`); ts-rs exports
+- Rust owns wire types and shared limits (`crates/pop-contracts/src/wire`); ts-rs exports
   TypeScript and UniFFI carries native types to Swift. App acceptance also belongs to Rust; JSON Schema is only a descriptor projection for tool clients. Run `bun run schema:generate`; never edit generated files.
-- The core checks every file it opens (its layout, rows, markers and resource bounds) and
-  every build it packs, not authored UI behavior. Rust decodes and checks page/socket requests once; Swift checks the page sender and receives typed native actions.
+- Storage checks every file it opens (its tables, markers and resource bounds); core
+  checks its accepted app definition and document layout/state. Packing also applies
+  authoring rules, not authored UI behavior. Rust decodes and checks page/socket requests once; Swift checks the page sender and receives typed native actions.
 - Attachments are host-owned immutable content-addressed blobs in the file's
   `attachments` table, referenced by ordinary document fields and served by URL. Media types are sniffed when stored; the first read verifies the full hash and refuses a stored label that does not match the content, except `application/octet-stream`, the fallback any content may carry.
 - Agent commands use the owner's descriptor validation and restricted child. Pages use handles and `doc.change`; command implementations stay outside the UI graph. Every evaluation gets a fresh runtime; no command globals persist across calls.

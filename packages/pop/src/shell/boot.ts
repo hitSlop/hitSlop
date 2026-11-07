@@ -107,15 +107,16 @@ export async function boot() {
   );
   app.catch(() => {});
   const opened = openDocument(native);
-  const hostEnvironment = call({ method: "host.environment" }).catch(() => undefined);
-  const { config, doc, attachments } = await opened;
+  // `pop dev` supplies its selected preset; every other host answers host.environment.
+  const hostEnvironment = preview.host ? undefined : call({ method: "host.environment" });
+  const [{ config, doc, attachments }, identity] = await Promise.all([opened, hostEnvironment]);
   const environment = installEnvironment(
-    preview.host?.environment?.current ?? (await hostEnvironment)?.environment,
+    preview.host ? preview.host.environment.current : identity!.environment,
   );
   globalThis.__pop!.keyboard = environment.keyboard;
   globalThis.__pop!.safeArea = environment.safeArea;
-  const stopPreviewEnvironment = preview.host?.environment?.subscribe(() => {
-    environment.setHost(preview.host!.environment!.current);
+  const stopPreviewEnvironment = preview.host?.environment.subscribe(() => {
+    environment.setHost(preview.host!.environment.current);
   });
   if (native && config.style) {
     await new Promise<void>((resolve, reject) => {

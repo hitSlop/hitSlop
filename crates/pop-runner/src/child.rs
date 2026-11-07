@@ -19,7 +19,7 @@ pub fn child() {
         crate::evaluation::evaluate_job(job, move || Instant::now() > deadline)
     };
     let output = run().unwrap_or_else(|error| {
-        serde_json::to_string(&crate::protocol::JobFailure { ok: false, error }).expect("failure serialization")
+        serde_json::to_string(&pop_contracts::evaluator::RenderReply::Failure(error)).expect("failure serialization")
     });
     if output.len() <= output_limit {
         println!("{output}");

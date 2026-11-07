@@ -27,10 +27,8 @@ case "$build_arch" in
 esac
 
 # This local installer uses automatic development provisioning, not Developer ID.
-# Keep library-only permissions but select the development CloudKit/APNs environments.
+# Preserve the cloud-document authentication and associated-domain permissions.
 /bin/cp "$repo_root/apps/apple/App/macOS/pop.Release.entitlements" "$stage_dir/development.entitlements"
-/usr/bin/plutil -replace 'com\.apple\.developer\.icloud-container-environment' -string Development "$stage_dir/development.entitlements"
-/usr/bin/plutil -replace 'com\.apple\.developer\.aps-environment' -string development "$stage_dir/development.entitlements"
 
 echo "Building development-signed pop Release for ${build_arch}…"
 /usr/bin/env xcodegen generate --spec "$repo_root/apps/apple/project.yml" --quiet

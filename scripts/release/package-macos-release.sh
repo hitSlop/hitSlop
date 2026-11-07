@@ -200,7 +200,7 @@ echo "Signing nested tools and app…"
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$app"
 /usr/bin/codesign -d --entitlements - --xml "$app" > "$stage_dir/signed-entitlements.plist"
 validate_macos_profile "$app/Contents/embedded.provisionprofile" "$stage_dir/signed-entitlements.plist" "$stage_dir"
-# Assert every requested entitlement survived final signing, including Production CloudKit.
+# Assert every requested entitlement survived final signing, including associated domains and Keychain access.
 /usr/bin/plutil -convert json -o "$stage_dir/expected-entitlements.json" "$project_dir/App/macOS/pop.Release.entitlements"
 bun --eval '
   const [work] = process.argv.slice(1);

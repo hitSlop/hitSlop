@@ -1,10 +1,10 @@
 //! Page transport stays opaque in Swift; only native actions cross as typed values.
-use pop_core::command::PageDispatch;
-use pop_core::owner::Failure;
 use pop_core::page_wire::{
     HapticFeedback, HapticImpactStyle, HapticNotification, HostAction, HostDevice, HostEnvironment, HostPlatform,
     HostReply, HostRequest, PageErrorKind, SpeechOutcome, SpeechUnavailable,
 };
+use pop_runtime::command::PageDispatch;
+use pop_runtime::owner::Failure;
 
 #[uniffi::remote(Enum)]
 pub enum HostPlatform {

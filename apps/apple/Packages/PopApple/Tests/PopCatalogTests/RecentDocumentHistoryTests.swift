@@ -79,11 +79,11 @@ import Testing
   let stage = try Fixtures.minimalStage()
   defer { try? FileManager.default.removeItem(at: stage.deletingLastPathComponent()) }
   let template = try Fixtures.template(stage: stage)
-  let legacy = folder.appendingPathComponent("legacy.slop")
-  try Data().write(to: legacy)
+  let unsupported = folder.appendingPathComponent("unsupported.txt")
+  try Data().write(to: unsupported)
   let file = folder.appendingPathComponent("recents.json")
   let services = CatalogServices(
-    templatesURL: nil, historyURL: file, systemRecents: { [first, template, legacy, second, first] })
+    templatesURL: nil, historyURL: file, systemRecents: { [first, template, unsupported, second, first] })
   #expect(await services.recents().map(\.source) == [.recent(first), .recent(second)])
   await services.clearRecents()
   #expect(await services.recents().isEmpty)
@@ -191,6 +191,41 @@ import Testing
   #expect(alerts.count == 1)
   #expect(opening.recentDocuments == entries)
   #expect(opening.model.documents.isEmpty)
+}
+
+/// Recents can name a file an older version of pop wrote. It is reachable, so it must say why
+/// it can't open (the core's refusal), not look openable or unreachable, and leave Recents on
+/// request without the file changing.
+@Test @MainActor func recentDocumentFromAnOlderVersionSaysSoAndCanLeaveRecents() async throws {
+  let folder = try Fixtures.folder()
+  defer { try? FileManager.default.removeItem(at: folder) }
+  let older = try Fixtures.document(at: folder.appendingPathComponent("older.pop"))
+  // An older lineage's application ID.
+  try Fixtures.sql(older, "PRAGMA application_id = \(0x504F_5000)")
+  let bytes = try Data(contentsOf: older)
+  let current = try Fixtures.document(at: folder.appendingPathComponent("current.pop"))
+  let file = folder.appendingPathComponent("recents.json")
+  let history = RecentDocumentHistory(fileURL: file)
+  _ = await history.recordOpened(current, at: Date(timeIntervalSince1970: 1))
+  _ = await history.recordOpened(older, at: Date(timeIntervalSince1970: 2))
+  let services = CatalogServices(templatesURL: nil, historyURL: file, systemRecents: { [] })
+  let catalog = CatalogModel(client: services.client)
+  await catalog.reloadRecents()
+  let entry = try #require(catalog.recents.first)
+  #expect(entry.source == .recent(older))
+  #expect(!entry.isUnavailable, "The file is reachable")
+  #expect(entry.needsAttention)
+  let refusal = try #require(entry.refusal)
+  #expect(refusal.contains("made by an older version of pop and can't be opened"))
+  #expect(refusal.hasSuffix(". The file is unchanged."))
+  #expect(catalog.recents.last?.refusal == nil)
+
+  catalog.removeRecent(entry)
+  await catalog.work.settled()
+  #expect(catalog.recents.map(\.source) == [.recent(current)])
+  let relaunched = CatalogServices(templatesURL: nil, historyURL: file, systemRecents: { [] })
+  #expect(await relaunched.recents().map(\.source) == [.recent(current)])
+  #expect(try Data(contentsOf: older) == bytes, "Listing and removal never modify the refused file")
 }
 
 @Test @MainActor func recentHistoryWarningCanRetryWithoutDroppingTheCatalog() async throws {

@@ -1,10 +1,10 @@
 # Architecture
 
 pop documents are local files (`.pop`): one SQLite database that pairs an immutable
-authored app with a structured document. One Rust core, `pop-core` on Loro, owns
-document semantics, durable storage and the live owner: the file, writer lock, edit queue
-and save scheduler, and it answers the page's document requests. Swift `DocumentOwner`
-passes them through, answers the window's own, and delivers owner events to the page;
+authored app with a structured document. The Rust foundation separates Loro document
+semantics and app acceptance in `pop-core`, durable storage in `pop-storage`, and the live
+owner in `pop-runtime`. Swift `DocumentOwner` passes document requests through, answers
+the window's own, and delivers owner events to the page;
 Loro bytes never reach Swift. The WebView renders immutable snapshots and holds no CRDT.
 
 ```text
@@ -25,10 +25,11 @@ list of object rows with `$id`; list of scalars by index; record of scalars or o
 by key; and counter. [Document types](reference/document-types.md) describes each
 kind's snapshot, merge, write rules, handles and CLI paths.
 
-The same core compiles to WASM for SDK tests and the local Chrome browser beta.
+The pure `pop-core` semantics compile to WASM for SDK tests. The browser feature adds
+`pop-runtime` and `pop-storage` for durable browser copies.
 `pop open --browser file.pop` asks the native owner for a clean snapshot, then imports
 it into an independent OPFS copy. A dedicated worker runs the shared Rust owner, Loro
-and SQLite; disposable QuickJS workers evaluate named commands and return intents.
+and SQLite; named command execution is unavailable in browser copies.
 The trusted host stays on `127.0.0.1:41238`; authored apps run in per-copy
 `<id>.localhost:41238` frames. Each copy has a Web Lock, its own SQLite VFS pool
 and a Service Worker resource channel bound to that frame client. Each successful import renews the document UUID; reload preserves it. Downloads drain
@@ -125,26 +126,91 @@ payload interpretation; hello preflight and transport limits still apply. Stored
 remain independent; [compatibility](engineering-contract.md#compatibility) and the
 [corpus](testing.md#compatibility-corpus) define the released-file guarantee.
 
+## Crates
+
+`pop-contracts` contains passive wire, error and limit types plus app-presentation,
+media-registry and evaluator types; it has no Loro, SQLite or renderer. `pop-core` owns
+pure Loro semantics, app acceptance and sync and has no storage/runtime features by
+default. Its optional `acceptance` feature enables tooling codecs and `ts` enables type
+generation. `pop-storage` owns SQLite files, file acceptance, registry, attachments and
+atomic publication. `pop-capture` owns saved-source capture and widgets. `pop-runtime`
+owns owner, command, socket and persistence orchestration. `pop-renderer` owns Takumi and
+fonts without JavaScript or owner code. `pop-library` owns local library indexing and cloud-document
+coordination over runtime/storage; `pop-sync` holds the pure reconnect, maintenance and
+push-budget decisions, and the native cancellable-I/O sharing client (`pop-sharing-client`)
+uses runtime. The engine and FFI compose these crates; WASM SDK uses pure core, while its
+browser feature adds runtime and storage. Loro remains pinned; there is one owner/edit path
+and no persistent JSON mirror or second document engine.
+
+`BUILD_ID` in core identifies the semantic fingerprint. Runtime's foundation fingerprint
+covers core, storage, capture, runner, renderer, contracts, sharing protocol and fonts;
+engine and FFI report that runtime foundation ID.
+
+The document layout uses generation-aware mergeable slots: creation from the same
+observed absence shares a payload; clear advances the generation; stale edits cannot
+revive cleared content. Creation defaults are a shared baseline rather than writes
+that overwrite another peer's explicit values. Saved-state acceptance and projection
+share one path.
+
+Routine checkpoints preserve CRDT identity and session undo. Deep compaction is a
+separate safe-close or explicit operation: it reconstructs accepted visible state into
+a fresh checkpoint and may reclaim old generations and unreferenced attachments. A
+shallow Loro snapshot alone does not guarantee that hidden mergeable data disappears.
+A shared document never rebuilds its history: the relay folds retained updates into one
+opaque base, and a document that outgrows the base cap pauses sharing (see [Relay](#relay)).
+
+Firestore discovers cloud documents across a person's devices. Persistent Document
+DOs carry private sync and collaboration through one authority; R2 holds immutable
+payloads. Account identity belongs to the control plane; permission checks
+and resource limits remain server-enforced. The transport carries opaque Loro bytes.
+
+Named `commands.ts` commands remain an optional Mac CLI/agent automation interface.
+Ordinary page editing uses handles; UI and commands can share plain transaction
+functions. Process and in-process capture providers coexist explicitly; iPhone command
+calls, SDK command calls and browser command workers are deferred until a concrete
+invocation surface is implemented. In-process iPhone capture remains supported.
+
+Separate Rust `StateContractId` and exact `AppRevisionId` identities prepare future explicit
+bundle updates. Documents continue pinning an immutable accepted app; background
+updates, mutable partial bundles and schema migration are outside this work.
+
+### Owner admission and callbacks
+
+The serial owner admits at most 128 ordinary requests retaining up to 56 MiB, with eight
+separate control slots and a shared 64 MiB ceiling. Flush, Discard, Close and native Handoff
+use control admission. Copy requests share a two-producer limit. Host dispatches use
+ordinary admission; derived snapshot/export buffers retain byte leases until their work
+settles. Exhaustion returns typed `busy` before mutation. Control payloads can also exceed
+the shared ceiling. These operational budgets account for retained work, not total Loro
+memory or process RSS.
+
+Callbacks settle once, including requests queued behind shutdown. Their admission permits
+are released before invocation; a listener, completion or sync-sink panic does not kill
+the owner or leave later requests stranded. Definite Busy/Locked/refusal results keep the
+owner retryable. An uncertain write fences further writes until its outcome is reconciled.
+
 ## Layers
 
 | Layer | Where | Owns |
 |---|---|---|
-| Core | `crates/pop-core` | Descriptors, validation, `$id` rows, atomic batches, the palette, publications, counters, text merges, frontier version tokens, window-shape geometry (`shape`, Loro-free) |
-| File | `crates/pop-core/src/file/` (feature `storage`, native and browser) | The `.pop` file's layout, every statement on its tables (every write in `rows`) and the checks every open runs; pack, create, copy; where documents may live; the app's assets and artwork |
-| Storage | `crates/pop-core/src/store/`, `registry.rs` | Saved Loro state, including theme overrides, on the platform SQLite, attachments (each committed in its own transaction before an edit references it), append-or-checkpoint choice, size limits, identity checks; the writer lock and discovery in the registry |
+| Contracts | `crates/pop-contracts`, `crates/pop-sharing-protocol` | Passive wire/error/limit and evaluator contracts; sharing wire contract |
+| Core | `crates/pop-core` | Pure Loro semantics, app acceptance and sync; no storage or runtime feature by default |
+| Storage | `crates/pop-storage` | SQLite `.pop` layout, file acceptance, registry/writer lock, attachments, save policy and atomic publication |
+| Capture | `crates/pop-capture` | Saved-source capture and widgets, using storage, core and runner |
+| Runtime | `crates/pop-runtime` | Owner, command/socket routing, persistence worker and save orchestration |
 | Engine | `crates/pop-engine` | Authoring validation and packing, including artwork rendering on macOS and Linux; document creation, inspection and requests; closed PNG/PDF export on both platforms and macOS app opening through `/usr/bin/open -a` |
 | Runner | `crates/pop-runner` | Restricted child evaluation of build declarations, stored commands and native image capture; ABI-specific preludes, sandbox and execution limits |
-| Commands and socket | `crates/pop-core/src/{command,socket}.rs` | Typed command dispatch, writer admission, live-owner routing, handshake, framing and deadlines |
-| Adapters | `crates/pop-core-{ffi,wasm}` | Records and typed errors (`Rejected`, `Invalidated`, and the storage failures); no semantics |
-| Sync | `crates/pop-core/src/sync/`, `owner/actor/sync.rs` | The relay wire and the session that decides what frames mean, without IO; the owner hooks that order frames with edits ([sync](#sync)) |
-| Owner | `crates/pop-core/src/owner/` | Serial edit and persistence workers, save scheduling, view tokens, discard and close, and the page's document requests (`command.rs`); Swift is a typed façade that keeps what the owner's events tell it |
+| Renderer | `crates/pop-renderer` | Takumi raster/PDF output and fonts; no JavaScript or owner |
+| Library | `crates/pop-library` | Local library indexing and cloud-document coordination |
+| Sharing client | `crates/pop-sharing-client` | Native cancellable I/O over runtime |
+| Adapters | `crates/pop-core-ffi`, `crates/pop-core-wasm` | Compose crates for native FFI and WASM SDK/browser adapters |
 | Session | `PopDocument/DocumentSession.swift` | WebView, the `pop` message handler, the push queue, native export callback and the lifetime of the Rust socket server; the window is its `DocumentSessionDelegate` |
 | Window | `PopHost/PopWindow.swift`, `PopDocumentAttention.swift`, `PageFailureNotice.swift` | How a document looks: shape, toolbar, pin level, theme panel, failure screen (Reopen, Copy details, Get help) and the save-failure sheet (from the owner's save status); its document operations go to the app |
 | Quick Look | `apps/apple/App/QuickLook{Thumbnail,Preview}` | Finder, Mail and share-sheet thumbnails and previews from the file's artwork, read through the core in a sandbox |
 | App | `PopFeatures` (`AppModel`, `CommandQueue`, `CatalogModel`), `PopCatalog/PopApplicationCoordinator.swift` | Opening, one document operation at a time per document (a close or a save recovery requested meanwhile runs next), quit, the catalog, and alerts for failures that are not save failures |
 | Author SDK | `packages/pop/src/sdk` | Descriptors, public types, errors, Svelte adapter; no host runtime |
 | Page shell | `packages/pop/src/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
-| Contracts | `crates/pop-core/src/wire` and `packages/pop/src/schema` | Rust owns wire and app types and shared limits; ts-rs exports TypeScript and UniFFI carries native types |
+| Contracts | `crates/pop-contracts` and `packages/pop/src/schema` | Rust owns shared wire types and limits; ts-rs exports TypeScript and UniFFI carries native types |
 
 The window's failure screen (Reopen, Copy details, Get help) and the save-failure sheet
 are presented by `PopDocumentAttention.swift` and `PageFailureNotice.swift`. Native
@@ -309,7 +375,7 @@ The SQLite schema has seven tables:
 | `artwork` | Preview and icon PNGs | Pack; refreshed at close or supplied for a clean copy |
 | `document` | Identity singleton: UUID | Document creation and independent copies |
 | `history` | Loro snapshot, then updates: the saved state | Pack seeds it; saves, checkpoints and close-time trims update it; clean copies replace it with current state |
-| `share` | Singleton room and relay endpoint of a shared document | The live sync path; empty when unshared, cleared on clean copies |
+| `share` | Singleton relay endpoint of a shared document, which the relay names by the document's UUID | The live sync path; empty when unshared, cleared on clean copies |
 | `attachments` | Host-owned immutable content-addressed blobs | The owner's attachment store; unshared documents reclaim unreferenced blobs |
 
 The schema check is exact. A new table or column requires a storage version bump and a
@@ -319,8 +385,9 @@ that need no bump live in open surfaces: definition JSON members, Loro container
 artwork rows. [App identity](engineering-contract.md#app-identity) uses a fixed encoding
 of the sealed app and assets.
 
-A shared document keeps its whole history and every attachment, because another
-replica's edits can depend on any of it; a clean copy drops the share. Creating a
+A shared document's ordinary saves retain all history and attachments that other replicas
+can reference; membership alone never authorizes discarding them. A clean independent copy
+drops the share. Creating a
 document validates the template's complete saved state in the source read transaction,
 then atomically writes a fresh UUID and initial snapshot before publishing the file.
 The UUID names the logical document, not its writer or its inode-based lease. Open,
@@ -333,26 +400,25 @@ Saving prefers a checkpoint (one snapshot replacing the saved log) once the log 
 snapshot discards history before its starting version. The limits are 4,096 saved updates
 and 32 MiB of saved Loro checkpoint and update bytes, not the whole `.pop` file: the app,
 attachments and artwork are separate. Shared storage limits are defined in
-[`wire/limits.rs`](../crates/pop-core/src/wire/limits.rs) and projected into host types.
+[`wire/limits.rs`](../crates/pop-contracts/src/wire/limits.rs) and projected into host types.
 
 Unshared documents need no lifetime edit history: undo covers the open session only.
 After its final save, a session that saved an edit or stored an attachment to an unshared
 document with more than 4 MiB of saved Loro data attempts one more checkpoint
 (`Store::close_job`) that keeps only current state, when that would shrink the saved data.
 This pruning is best-effort housekeeping: failure does not prevent closing after the
-final save succeeded. A session that only reads does not prune.
+final save succeeded. The checkpoint rebuilds the history from accepted visible state. A
+session that only reads does not prune.
 
 While open, an unshared document's checkpoint keeps the whole history when it fits the
 32 MiB limit and only current state otherwise. If neither a checkpoint nor an append fits,
 saving fails and ownership is retained for retry. The live document keeps its own history
-either way, so the session's undo still works. There is no live history rebuild: a long,
-heavy session's memory can grow until it closes. This retention policy is intentional;
-compacting a document's live history on the owner remains deferred (a relay room's
-compaction is separate), and there is no public live-compaction command. Only
-the checkpoint may start history late. Files
+either way, so the session's undo still works. There is no public live-compaction command.
+Only the checkpoint may start history late. Files
 use full auto-vacuum: every commit returns the pages it freed (the log a checkpoint
-replaces, the artwork a close replaces), so a file holds no dead space. The store links the platform SQLite, the one library every other in-process user
-loads, and the core is the only code that opens a `.pop` file.
+replaces, the artwork a close replaces), so a file holds no dead space. Storage links the
+platform SQLite, the same library other in-process consumers load, and the Rust storage
+layer is the only code that opens a `.pop` file.
 
 Live commits record timestamps and the messages `page`, `agent`, `command:{name}`,
 `window`, `undo`, `redo` and `create`. Template
@@ -453,7 +519,7 @@ PNG and PDF share layout, fonts and resources. PDF is one content-sized vector p
 with selectable text and uniform scaling to 14,400 points per side through upstream viewport DPR.
 Takumi and its experimental PDF crate use one pinned Git revision; no local source fork
 or spike supplies production code. Distribution notices live in
-`crates/pop-runner/renderer-licenses`. Capture never changes the open
+`crates/pop-renderer/renderer-licenses`. Capture never changes the open
 editor's focus, selection, scroll, frame or selected tab.
 Source acquisition preserves speech, media access, file selection, downloads and resize
 eligibility. Its native queue still coordinates close, discard, reload and reopen.
@@ -544,8 +610,8 @@ Home Screen widgets use the shared image cache and canvases, keyed by library do
 publishes an atomic library index with stored icons for the picker and renders only placed ids,
 on saves, close, library version changes and foreground freshness checks. Taps open the library
 document by id. Account changes clear the phone cache; Mac bookmarks and file identity stay local
-to macOS. `PhoneAppDelegate` registers a `BGAppRefreshTask` and CloudKit remote-notification
-handling. A background lease fetches library changes and refreshes placed widgets, with
+to macOS. `PhoneAppDelegate` registers a `BGAppRefreshTask`. A background lease
+refreshes downloaded library documents and placed widgets, with
 expiration cancelling work. The app requests a refresh no earlier than 30 minutes later;
 iOS decides whether and when it runs, and WidgetKit controls visible reloads. See the
 historical [platform spike evidence](evidence/widget-images-2026-10-11.md).
@@ -555,7 +621,7 @@ historical [platform spike evidence](evidence/widget-images-2026-10-11.md).
 `pop` is the user-facing CLI. Its private engine accepts one Rust-owned `EngineRequest`
 on bounded standard input and returns one method-specific `EngineReply`. Authoring,
 catalog, inspection, named commands and owner operations share this JSON boundary.
-`crates/pop-core/src/wire/engine.rs` defines the serde types and explicit checks;
+`crates/pop-contracts/src/wire/engine.rs` defines the serde types and explicit checks;
 ts-rs exports the CLI's TypeScript. The engine renders for itself. `export` of a closed
 document on macOS or Linux draws a read-only snapshot of its saved state in the
 engine's restricted evaluator, without the app or a lock. It refuses a template and an
@@ -634,195 +700,58 @@ history keeps nothing alive.
 
 ### Synced Library
 
-The Synced Library keeps managed documents in sync between Mac and iPhone through the
-person's iCloud account. The Mac app includes the library on CloudKit Production. The
-iPhone app supports iOS 26+ in TestFlight; its App Store release remains open. The phone
-opens, edits and creates pop, includes the Popular templates and imports from Files.
+The [persistent cloud document specification](cloud-documents.md) defines cloud
+documents. Firestore is account-scoped discovery; a Document Durable Object keyed by UUID
+is the single cloud authority for permissions and accepted opaque Loro changes. R2 holds
+the seed, app resources and attachments.
 
-Managed documents live in account-scoped Application Support. One Swift `LibrarySync`
-actor uses direct CloudKit zone-change, record-fetch and conflict-checked modify operations
-on complete `.pop` assets in the fixed `PopLibrary` zone of the private database in
-`iCloud.com.hitslop.app`. Debug uses Development; TestFlight, App Store and the Developer ID
-Mac release use Production ([Apple's distribution rule](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitQuickStart/TestingYourApp/TestingYourApp.html)).
-These environments do not share records. Each account's local index and managed files
-live in a matching `PopLibrary` folder; Debug adds a separate `Development` folder.
-The legacy `Library` zone and earlier local indexes remain untouched and are not read
-by dotpop.
-All callers await one coalesced run, with one queued rerun and full
-reconciliation taking precedence. Foreground, Sync Now, push and background refresh
-enumerate from a nil token: metadata first, then assets whose confirmed revisions differ.
-Debounced edits and editor polling fetch metadata changes from the saved token, then
-fetch any required assets. The token advances
-only after every record is accepted or its issue and retry are durable in `library.sqlite`.
-A conflict merges the server record and restages, with at most three save rounds.
-Per-record failures never stop other documents. A missing CloudKit record for a local
-pending deletion clears only its stale library transport metadata and republishes a
-conflict-checked tombstone; absence alone never acknowledges a deletion. Live entries
-are never reset through this recovery. Both catalogs expose sync attention through a
-tappable status and a help sheet with Retry, Copy diagnostics and Discord. Background
-and manual sync failures never present that sheet automatically; diagnostics exclude
-document contents and credentials.
-Rust owns library metadata, retained history, writer admission, staging, merging through
-the existing owner, and receipts; a receipt requires the incoming history to be present.
-Swift carries file paths and opaque version tokens, never Loro bytes. Both catalogs show
-sync progress, errors and last success; a clean row says synced only after a successful
-check since foregrounding. Unified logs use subsystem `click.dotpop.library` without content.
-Ordinary Mac files retain their existing path.
-On Mac, Recents and File → Open Recent share a local history of successfully opened
-documents. Native Swift metadata lives in an atomically replaced versioned JSON file
-under Application Support's pop/Recents folder, with separate Debug and Release files.
-It contains bookmarks, entry IDs, last known locations and opening times, never document
-contents. Release seeds it once from compatible .pop entries in macOS Recents; Debug
-starts independently. Later system-list changes cannot replace it. Entries have no count
-or age limit. Bookmarks follow renames and moves; unreachable files stay visible as
-Unavailable and can be retried. Active-library account filtering still applies. Explicit
-Clear Menu clears both histories and persists an empty initialized list. Storage failures
-retain previous saved metadata and pending in-memory openings, with a catalog warning
-and Retry; they never fail a document open. Widgets retain their independent cache and
-document references.
+A local document requires no account. Enabling sync preserves its UUID and owner and
+stages a durable initial upload, a seed copied from the saved document. Sign-in retrieves
+metadata; opening downloads the file. Rust owns validation, local installation, merge
+and persistence. Swift provides Firebase authentication and typed Firestore listener events.
+Account changes fence callbacks, flush owners and retain downloaded files while hiding
+account entries.
 
-On iPhone, Recents interleaves local and library documents by their latest opening or
-file change. Opening times are device preferences, never edits to a document. Swipe
-actions distinguish **Delete Everywhere** from **Remove Download** for iCloud documents;
-local documents offer **Delete from This iPhone**. A full swipe removes a clean iCloud
-download, never the cloud document. Rust refuses eviction of unsynced data or an active
-writer and records eviction in local library metadata before removing the file. Sync
-continues accepting metadata without restoring that download. Tapping its cloud-marked
-row explicitly fetches and validates the asset before opening it with its existing
-identity. Files imports remain independent local copies.
-Deleting a local-only rescue copy removes its file under the writer lock without waiting
-for a cloud receipt. Cleanup finishes interrupted local deletions and reclaims copies
-left behind by earlier deletion attempts.
-Library sync requires iCloud sign-in, separately from the sharing account. A different
-account fences the active library and retains the previous account's local files without
-uploading them to the new account. Rust checks the library's stored account identity before
-opening it. Active loose files in iCloud Drive or detected synced folders remain refused;
-the Mac open flow offers **Move to ~/pop and Open**, saving a verified local copy before
-trashing the original. If removing the original fails, the local copy opens and the original
-is retained with a warning.
-
-On Mac, creation asks where to keep a pop when the library is ready: iCloud asks for
-its catalog name, independent of fields inside the authored app; On this Mac opens the
-existing folder picker. Without iCloud, creation uses the local picker.
-**Move to iCloud** flushes and closes a local document through its normal close path.
-Rust adopts an accepted copy under the source writer lock, preserving its identity,
-refuses shared or already managed documents, and records library membership for upload.
-After the library copy opens, coordinated cleanup takes the source lock, verifies both
-saved copies and checks the source has not changed before moving it to Trash. Failed
-cleanup keeps both files and reports their locations. No document format changes.
-The iPhone starter build reads Popular membership from repository metadata, which
-includes Little Days (`baby-journal`), and leaves out templates that declare camera,
-microphone or speech capabilities, which the iPhone host refuses.
-Both catalogs share the Corner Hello file character and bundled Baloo 2 headings;
-controls and body copy use native fonts. The app icon remains the gradient tile;
-documents retain their own captured artwork. The vector master and Rive project live in
-`artwork/brand/corner-hello`. `PopLaunch` owns the decorative, roughly one-second
-foreground greeting, separate from document loading: it runs once per process when
-opening the catalog, exits on local listing readiness, and never waits for iCloud or a
-server. Incoming iPhone links dismiss it; Reduce Motion skips it, a tap dismisses it,
-and inactivity or a renderer failure cancels it. Rive's timeline reports the landing
-and fold cues to native iPhone haptics, respecting the existing device preference;
-desktop remains silent. The page shell and document formats do not participate.
-Catalog columns accept the window's available height and scroll their contents;
-the category list cannot impose a larger minimum height that clips the header.
-The iPhone editor runs edge to edge: the page extends under
-the status bar and home indicator and pads itself with `--pop-safe-top` and
-`--pop-safe-bottom`, and the keyboard covers the page while the shell reveals fields.
-Every iPhone document has a floating native glass actions menu beside its header.
-The shell exposes the corner reservation as live-editor CSS variables. Native edge
-swipes and Back to Library use the normal close path; failed saves retain ownership.
-Done appears above the keyboard.
-
-Leaving an edited iPhone document refreshes its icon and preview from an immutable saved
-source. Managed Mac documents use the same version-checked artwork publication path;
-ordinary Mac documents keep their existing close behavior. A stale or failed capture
-keeps the previous artwork and cannot prevent a save. Derived images never edit Loro.
-Rust library metadata records the artwork's source version. A content-derived asset
-revision detects artwork-only uploads and invalidates catalog caches. Receipts confirm
-the revision actually staged; downloads adopt artwork only when its source matches the
-merged document state. Library merges require the same document identity and app slug, equivalent parsed data descriptors and
-the same theme token names and defaults. UI/code and description changes do not block
-state sync; each existing replica retains its own embedded app. Schema evolution
-still requires a migration, and the owner validates every merged state against its local
-contract. Supported file/runtime marker checks remain in force. Stale fallback images do
-not participate in asset revisions, so different fallback pictures cannot create a
-replication loop.
-
-A CloudKit download preserves any existing local relay binding. The library supplies its
-history-retention placeholder only when the installed document has no share row;
-checkpoint delivery does not change an existing owner's room membership.
+The [Apple catalog](apple-catalog.md) uses a device-local Inbox flag and cached nullable
+sharing state. Receiving a remote reference does not make it a recent document until
+it is opened here. These fields live only in the local library index; they do not
+change the `.pop` format or grant cloud access.
 
 ### Relay
 
-Live collaboration uses one Rust owner per local copy and a Loro-free
-Cloudflare Durable Object per room. Local saves and relay sends are independent;
-offline edits merge on reconnect. The relay stores opaque updates and their operation
-spans, backfills by version vector, and never runs authored code or validates document
-state. Rust owns the HTTP DTOs, generated TypeScript/OpenAPI, binary protocol and native
-transport; Swift calls through UniFFI.
+Private sync and collaboration use the same persistent cloud document. Sharing enables
+or revokes an invitation; it never transfers byte authority. Signed-in guests discover
+joined documents across devices while the invitation generation is active. Anonymous
+guests open links with an automatically created Firebase anonymous identity. Revocation
+fences guest sockets and membership,
+while owner sync continues and downloaded guest copies remain usable offline.
 
-A Room owns `Uploading → Live → Ended`. It stores its verified owner UID, document UUID,
-plaintext edit capability, app digest, seed hash/size and update records. Only the verified
-owner can recover the capability. An Account object holds a document-to-current-room
-index and a count of non-Ended rooms for the ten-room quota; it stores no credentials or
-phases. Account creation calls Room; Room releases its account slot when it ends.
+The relay only folds: `/compact` swaps the retained update records for one opaque base.
+The base is capped at 16 MiB, a transport limit (one WebSocket frame under `MAX_FRAME`).
+A document too large to fold pauses its session with `Outgrown`; local edits keep saving
+and the person saves an unshared copy. A full attachment budget (`FilesFull`) stops
+sharing. Clients publish their own Firestore references after cloud acknowledgement, with a
+small durable local retry queue. Stale references are cleaned up when access is checked.
+The Worker never connects to Firestore; the account registry supports discovery repair.
 
-`POST /v1/rooms` with Firebase identity returns the existing Uploading/Live room or
-creates one. During Uploading, the owner can replace the seed and manifest and upload
-app assets and attachments. `POST /v1/rooms/{room}/open` checks the seed, manifest and
-assets in private R2 before making the room Live. Failed creation retries from a fresh
-temporary backup, including on another owner device. No local seed journal is needed.
-Uploading rooms expire after 24 hours. `DELETE /v1/rooms/{room}` ends sharing, closes
-sockets, purges resources and update tables, and releases quota. Uploads crossing Stop
-remove late writes. Re-share creates a fresh room; the old room returns 410.
+`pop-sync` owns pure reconnect, maintenance and push-budget decisions shared by native
+and browser adapters. Loro replication stays in `pop-core`; the native Tokio transport
+reacts to owner events, socket frames, cancellation and deadlines. Blocking
+resource helpers run off the async runtime while socket controls remain serviced.
+Only durable owner confirmations advance journal receipts. Library invalidation callbacks
+run outside index locks; Swift supplies Firebase IO and publishes native snapshots.
 
-Rooms expose an optional compaction hint after 4 MiB or 8,192 retained updates.
-A capability writer can POST a full-history blob and frontier to `/compact`. The relay
-archives covered records in private R2 for 14 days, then transactionally replaces them
-with one base at sequence zero; heads do not change. Hello sends the base first when
-a copy lacks its spans. No binary frame changes or base broadcasts are needed.
-Native and browser transports check the hint on connection and every ten minutes,
-then jitter 0–30 seconds and recheck before uploading. The serial Rust owner exports
-Loro updates from its retained-history start to the confirmed relay frontier; it
-checks the export metadata and 16 MiB bound. Normal compaction requires caught-up
-write access with no push or unsent local edits. A Quota acknowledgement waits as
-`RoomFull`: compact confirmed history without including the rejected local push,
-then reconnect to retry. A second Quota with no compaction due becomes `Outgrown`.
-Both transports send a text ping every twenty seconds and ignore text/pong controls.
-
-Pauses carry a typed recovery kind alongside their reason: `RoomFull` is transient;
-`Outgrown` offers the creator a clean copy and new link; `NeedsUpdate` opens updates;
-`FilesFull` stops attachment-upload retries; `MissingHistory` and `Refused` offer an
-unshared copy; `Ended` preserves the local copy. Protocol refusal codes select
-`NeedsUpdate`; app/malformed refusals select `Refused`. Swift carries these kinds
-through UniFFI; browser transport reads the same Rust classification.
-
-The base and remaining updates each have a 16 MiB bound; updates also have a 32,768-row
-bound. Per-IP admission and per-socket Push budgets bound abuse. Permanent refusals
-send Error and close 1008; transient failures close 1011 without Error so shipped
-clients reconnect. A socket over its Push budget closes 1013 before storing anything.
-
-Live rooms expire after 90 idle days without open sockets. Stop releases the account
-slot and current-room index, purges payloads and identifiers, and keeps only an Ended
-tombstone for 30 days (410), then deletes all storage (404). Account deletion need not
-revisit cleaned Ended rooms. Owner routes require an Apple-provider Firebase identity.
-
-An edit link is `https://share.dotpop.click/join#<room>.<capability>`.
-Join fetches document and seed metadata from the room. Owner recovery looks up
-`GET /v1/account/rooms/{document}`, then reads the room with Firebase identity. Guests
-use the capability and need no account. Device-local credentials contain only the link
-and an ended flag; CloudKit never distributes them. Signing out preserves existing
-capability sync, while creation, recovery and Stop require sign-in.
+### Hosted browser isolation
 
 The trusted browser host/storage is `share.dotpop.click`; authored apps run on isolated
-UUID subdomains of `dotslop.com`. One browser host uses Service Worker channels for local
-resources and network delivery with host-scoped, partitioned HttpOnly cookies for hosted
-resources. SQLite uses OPFS in the trusted worker; IndexedDB stores the copy catalog.
-Authored pages receive the SDK bridge, never the invitation. Incoming files are verified
-and installed before Records apply; failed transfers fence queued CaughtUp messages.
-Connected web opening is required. Open copies remain editable offline and after Stop.
-Automatic CloudKit checkpoints of relay documents run at most once a minute per process;
-manual/background saves bypass the interval.
+UUID subdomains of `dotslop.com`. Service Worker channels deliver local resources;
+host-scoped, partitioned HttpOnly cookies authorize hosted resources. SQLite uses OPFS
+in the trusted worker; IndexedDB stores its local-copy catalog. Authored pages receive
+the SDK bridge, never invitation credentials. Files are verified and installed before
+updates apply; a failed transfer cannot acknowledge catch-up. Browser copies remain
+editable offline and exportable after access is revoked.
+
+### Native authentication
 
 Mac and iPhone builds enable live collaboration without a launch flag. Mac Release
 entitlements include the sharing Keychain group and the `share.dotpop.click` associated
@@ -835,84 +764,10 @@ A static page forwards the unchanged fragment to `dotpop://auth/apple`; tokens n
 reach the host. Only the active session consumes it, checks its random state and supplies
 the ID token and raw nonce to Firebase. The callback page has a script-hash CSP,
 `no-store` and `no-referrer`.
-The owner signs in with Apple; anyone holding the link can edit in the Mac/iPhone app
-or Chrome. Stop ends the link and every participant keeps a local copy. Browser copies
-are saved in that browser and downloadable as `.pop` files.
 
-On Mac, the Share popover contains the **Live collaboration** toggle and **Copy Link**;
-on iPhone, **Collaborate** in document actions opens the shared section. Turning the
-toggle off asks for confirmation before **Stop** ends the link. **Save Unshared Copy…**
-uses the owner's clean-copy path, retaining accepted state and referenced attachments
-with a new identity and no share/history, without ending the source's link. Rejoining
-with a new link rebinds the matching local owner and preserves current edits, but only
-after the relay confirms the previous room ended; a live predecessor or failed check
-refuses the replacement.
-
-**Delete Account…** confirms that local and iCloud documents stay. The native flow ends
-all indexed rooms and purges their relay resources, deletes the Firebase user, attempts
-Apple token revocation and clears owned link credentials on this device. Failed Apple
-revocation directs the person to Apple Account settings. Participant copies remain.
-Universal links route `/join` on `share.dotpop.click` to installed Mac apps and phone apps;
-without the app, the web host offers the browser path, qualified in Chrome. The associated
-domain entitlements and the host's AASA response define that route. The sharing CI workflow
-builds and qualifies the relay and host on `master` and deploys them, checking health and
-AASA, for a release tag or a manual run.
-
-[Sharing operations and qualification](../apps/sharing/README.md) describes the service;
-[the roadmap](roadmap.md#open-now) tracks release and polish work. Historical qualifications are recorded in the
-[account](evidence/live-sharing-accounts-2026-10-19.md),
-[device](evidence/live-sharing-phone-2026-10-19.md) and
-[native/browser](evidence/authoring-environment-2026-10-19.md) evidence.
-
-- **Sharing.** The `share` row names the room and its relay endpoint. The room's key is a
-  credential the host keeps, never in the file or in authored code. Sharing uploads a
-  backup of the document (same UUID and history) as the room's seed, and joining
-  downloads it; a room starts at the seed's version. A shared document keeps its whole
-  history and every attachment, because another copy's edits can depend on any of it, and
-  it refuses discard, because other copies may already hold its edits. Relay compaction
-  may only ever keep full history. A clean copy is unshared.
-- **Hooks** (`owner/actor/sync.rs`). The host opens a socket
-  and attaches the owner with a sink (`sync_attach`), hands it each frame in order
-  (`sync_frame`), sends each frame the sink receives and detaches when the socket closes
-  (`sync_detach`). The sink also hears the status: offline; syncing (catching up, or
-  sending changes the relay has not acknowledged); synced (caught up, and the relay holds
-  every change this copy made); or paused, with a reason a person can act on. The
-  document's own listener hears only the changes.
-- **Session** (`pop_core::sync`, without IO, in memory). A Hello carries the
-  document's version and its app digest (`Store::app_digest`: the whole app row and its
-  assets); the relay welcomes with its own version, sends what the copy lacks, then says
-  it caught up. After every commit the owner pushes what the relay lacks, one push at a
-  time. A lost acknowledgement, a dropped socket or a crash heals with the next Hello:
-  nothing about sync is saved except the `share` row.
-- **Remote changes** import, pass the acceptance a saved file passes, and publish and save
-  like an edit; undo keeps them. A change the app refuses pauses sync and leaves the
-  document as it was. Changes whose history never arrives wait inside Loro, and pause sync
-  once the relay has caught the copy up. Frames wait while a command evaluates.
-- **Wire.** Binary frames (`sync::Frame`). The pop v1 relay contract is
-  grow-only: immutable HTTP, link and both binary codec fixtures (frames and socket
-  envelopes in `frames.json`) live in `crates/pop-sharing-protocol/tests/fixtures/v1`. Historical hitSlop fixtures remain preserved separately and are not pop acceptance inputs.
-  Breaking changes require `/v2` while `/v1` keeps serving old clients.
-
-Accepted limits, chosen for mini apps over heavier machinery:
-
-- **Text** merges on strings: when both sides delete one of several identical adjacent
-  characters, one of them may survive ([text](#text)).
-- **Container creation and undo** follow the conflict semantics of the
-  [storage layout](reference/document-types.md#storage-layout).
-- **Counters** are Loro counters, exact until a counter's increments, summed as absolute
-  values over its whole history, reach 2^53 (about 9×10^15). Beyond that envelope an
-  off-by-one result is possible; no exactness is guaranteed.
-- **Live history** can grow through a long session despite the undo step limit and saved
-  data limits. Compacting a document's live history on the owner remains deferred (a
-  relay room's compaction is separate); unshared documents attempt pruning on close under
-  the size and edit conditions above.
-- **Undo** starts over for the session if a live batch is refused after rehearsal
-  admitted it, which a rehearsed batch should never be ([undo](#undo)).
-- **A shared document** never trims, so the 32 MiB save limit bounds it, including iCloud
-  library documents. Saved history pressure warns at 75% of either storage limit.
-  Save Unshared Copy and Duplicate copy accepted live state without first saving the
-  source history, preserving unsaved edits and referenced attachments with a new identity.
-  The copy has no share row or retained history; discard remains refused on the source.
+The sharing host retains its `/join` universal-link route, Apple callback and AASA
+response. Links identify a document UUID and invitation capability. The browser
+resolves the document service directly and does not require Firestore to render it.
 
 ## Tests and performance
 

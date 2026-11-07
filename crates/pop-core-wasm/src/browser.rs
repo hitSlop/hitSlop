@@ -1,7 +1,8 @@
 use pop_core::{
     browser_wire::{BrowserEvent as Event, BrowserRequest, BrowserSaveStatus as Status, ResourceRoute},
-    owner, page_wire,
+    page_wire,
 };
+use pop_runtime::owner;
 use rsqlite_vfs::transfer::{DbImport, DbTransfer};
 use sha2::{Digest, Sha256};
 use sqlite_wasm_vfs::sahpool::{OpfsSAHImportTarget, OpfsSAHPoolCfgBuilder, OpfsSAHPoolUtil, install};
@@ -10,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 
 use pop_sharing_protocol::{
-    envelope, failure, frame,
+    envelope, failure, frame, hex,
     http::{Invitation, RoomInfo, RoomPhase},
 };
 fn invitation(link: &str, origin: &str) -> Result<Invitation, JsValue> {
@@ -20,7 +21,8 @@ fn invitation(link: &str, origin: &str) -> Result<Invitation, JsValue> {
     Invitation::parse(link).map_err(error)
 }
 /// Room metadata comes from an authenticated GET, never from the link or authored frame.
-fn room_info(json: &str) -> Result<RoomInfo, JsValue> {
+/// It must describe the document the invitation names.
+fn room_info(json: &str, invitation: &Invitation) -> Result<RoomInfo, JsValue> {
     let info: RoomInfo = serde_json::from_str(json).map_err(error)?;
     if info.phase != RoomPhase::Live
         || !pop_sharing_protocol::valid_copy(&info.document)
@@ -29,6 +31,9 @@ fn room_info(json: &str) -> Result<RoomInfo, JsValue> {
         || !info.seed_size.is_some_and(|size| size >= 100 && size as usize <= pop_sharing_protocol::SEED_BYTES)
     {
         return Err(error("Room is not live or has invalid metadata"));
+    }
+    if info.document != invitation.room {
+        return Err(error("Room metadata belongs to another document"));
     }
     Ok(info)
 }
@@ -44,9 +49,6 @@ type SyncEvents = Arc<Mutex<SyncQueue>>;
 
 fn error(value: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&value.to_string())
-}
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 type Events = Arc<Mutex<Vec<Event>>>;
 fn push(events: &Events, event: Event) {
@@ -65,11 +67,10 @@ impl rsqlite_vfs::OsCallback for BrowserOs {
     }
 }
 
-/// One pool and owner per dedicated worker. The pool must outlive SQLite and imports;
-/// its allocation is reclaimed when this worker and its WASM instance terminate.
+/// The live copy's pool outlives its owner and imports.
 #[wasm_bindgen]
 pub struct BrowserCopy {
-    pool: &'static OpfsSAHPoolUtil,
+    pool: Option<&'static OpfsSAHPoolUtil>,
     vfs: String,
     importing: Option<DbImport<OpfsSAHImportTarget<'static>>>,
     imported: u64,
@@ -90,8 +91,11 @@ pub async fn install_copy(copy: &str) -> Result<BrowserCopy, JsValue> {
     }
     let config = OpfsSAHPoolCfgBuilder::new().vfs_name(copy).directory(&format!("copies/{copy}")).build();
     let pool = install::<BrowserOs>(&config, false).await.map_err(error)?;
+    if pool.is_paused() {
+        pool.resume().await.map_err(error)?;
+    }
     Ok(BrowserCopy {
-        pool: Box::leak(Box::new(pool)),
+        pool: Some(Box::leak(Box::new(pool))),
         vfs: copy.into(),
         importing: None,
         imported: 0,
@@ -117,7 +121,7 @@ impl BrowserCopy {
         {
             return Err(error("Invalid browser import"));
         }
-        self.importing = Some(self.pool.begin_import_unchecked("document.pop", size as u64).map_err(error)?);
+        self.importing = Some(self.pool()?.begin_import_unchecked("document.pop", size as u64).map_err(error)?);
         self.imported = 0;
         self.expected = size as u64;
         self.digest = Sha256::new();
@@ -155,7 +159,7 @@ impl BrowserCopy {
             return Err(error("Copy is already open or importing"));
         }
         let events = self.events.clone();
-        let driver = owner::BrowserDriver::open(
+        let mut driver = owner::BrowserDriver::open(
             "document.pop",
             &self.vfs,
             self.fresh,
@@ -176,6 +180,8 @@ impl BrowserCopy {
             }),
         )
         .map_err(error)?;
+        // Initialize the fresh owner's clock once; subsequent drains preserve it.
+        driver.poll(0, js_sys::Date::now() as u64);
         driver.owner().attach("browser".into());
         push(
             &self.events,
@@ -195,8 +201,8 @@ impl BrowserCopy {
     #[wasm_bindgen(js_name = recoverStorage)]
     pub async fn recover_storage(&self) -> Result<(), JsValue> {
         if self.driver.as_ref().is_some_and(|driver| driver.store().browser_needs_recovery()) {
-            self.pool.pause().map_err(error)?;
-            self.pool.resume().await.map_err(error)?;
+            self.pool()?.pause().map_err(error)?;
+            self.pool()?.resume().await.map_err(error)?;
         }
         Ok(())
     }
@@ -214,7 +220,7 @@ impl BrowserCopy {
                     .resource_info(route, &key)
                     .map_err(error)?
                     .ok_or_else(|| error("Resource not found"))?;
-                let plan = pop_core::file::resource_response(&info, route, range.as_deref());
+                let plan = pop_storage::file::resource_response(&info, route, range.as_deref());
                 push(&self.events, Event::ResourcePlan { id, size: info.size, plan });
             }
             BrowserRequest::Resource { id, route, key, offset, length } => {
@@ -238,10 +244,10 @@ impl BrowserCopy {
     pub fn page(&self, id: String, request: &str) -> Result<(), JsValue> {
         let driver = self.driver.as_ref().ok_or_else(|| error("Copy is not open"))?;
         let events = self.events.clone();
-        pop_core::command::page(driver.owner(), "browser".into(), request, move |dispatch| {
+        pop_runtime::command::page(driver.owner(), "browser".into(), request, move |dispatch| {
             let json = match dispatch {
-                pop_core::command::PageDispatch::Reply { json, .. } => json,
-                pop_core::command::PageDispatch::Host { action } => match action {
+                pop_runtime::command::PageDispatch::Reply { json, .. } => json,
+                pop_runtime::command::PageDispatch::Host { action } => match action {
                     page_wire::HostAction::Environment => {
                         page_wire::HostReply::Environment { environment: page_wire::HostEnvironment::unknown() }
                     }
@@ -315,7 +321,7 @@ impl BrowserCopy {
                 write
                     .call1(&JsValue::NULL, &bytes)
                     .map(|_| ())
-                    .map_err(|e| pop_core::store::Error::Failed(format!("Export write failed: {e:?}")))
+                    .map_err(|e| pop_storage::store::Error::Failed(format!("Export write failed: {e:?}")))
             })
             .map_err(error)
     }
@@ -333,7 +339,10 @@ impl BrowserCopy {
         self.open()?;
         let driver = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?;
         let share = driver.owner().share().map_err(error)?;
-        if !share.is_some_and(|share| share.endpoint == origin && share.room == key.room) {
+        let document = driver.owner().app().document_uuid.as_deref();
+        // A prior terminal-room cleanup may have cleared membership before its
+        // flush/catalog acknowledgment was interrupted. Keep that local copy open.
+        if share.is_some_and(|share| share.endpoint != origin || document != Some(key.room.as_str())) {
             self.driver = None;
             self.events.lock().unwrap().clear();
             return Err(error("Saved membership mismatch"));
@@ -343,38 +352,28 @@ impl BrowserCopy {
     #[wasm_bindgen(js_name = openJoined)]
     pub fn open_joined(&mut self, link: &str, origin: &str, metadata: &str) -> Result<(), JsValue> {
         let key = invitation(link, origin)?;
-        let info = room_info(metadata)?;
+        let info = room_info(metadata, &key)?;
         if self.fresh && self.imported_hash.as_deref() != info.seed_hash.as_deref() {
             return Err(error("Seed checksum mismatch"));
         }
         // An ordinary local import still calls open(), renewing identity. Joining is
         // a separate operation preserving document identity and binding the validated room.
-        let imported = self.fresh;
         self.fresh = false;
         self.open()?;
         let driver = self.driver.as_mut().ok_or_else(|| error("Copy missing"))?;
         let share = driver.owner().share().map_err(error)?;
-        if driver.owner().app().document_uuid.as_deref() != Some(info.document.as_str())
+        // The invitation's UUID names the room (`room_info`); the copy must be that document.
+        if driver.owner().app().document_uuid.as_deref() != Some(key.room.as_str())
             || Some(hex(&driver.store().app_digest().map_err(error)?)).as_deref() != info.app.as_deref()
-            || share.is_some_and(|share| {
-                share.endpoint != pop_core::LIBRARY_SHARE_ENDPOINT
-                    && (share.endpoint != origin || (!imported && share.room != key.room))
-            })
+            || share.is_some_and(|share| share.endpoint != origin)
         {
             self.driver = None;
             self.events.lock().unwrap().clear();
             return Err(error("Seed identity or membership mismatch"));
         }
-        let (send, receive) = std::sync::mpsc::channel();
-        driver.owner().submit(
-            owner::Request::Share { share: pop_core::store::Share { room: key.room, endpoint: origin.into() } },
-            None,
-            Box::new(move |reply| {
-                let _ = send.send(reply);
-            }),
-        );
-        driver.poll(0, js_sys::Date::now() as u64);
-        receive.try_recv().map_err(|_| error("Sharing membership is still saving"))?.map_err(error)?;
+        driver
+            .request(owner::Request::Share { share: pop_storage::store::Share { endpoint: origin.into() } })
+            .map_err(error)?;
         Ok(())
     }
     #[wasm_bindgen(js_name = syncAttach)]
@@ -457,12 +456,14 @@ impl BrowserCopy {
     pub fn sync_base(&mut self, monotonic: u64, unix: u64) -> Result<Option<SharingBase>, JsValue> {
         let link = self.sync_link.as_ref().ok_or_else(|| error("Connection missing"))?;
         let (send, receive) = std::sync::mpsc::channel();
-        link.base(move |base| {
+        link.maintenance_base(move |base| {
             let _ = send.send(base);
         });
         self.driver.as_mut().ok_or_else(|| error("Copy missing"))?.poll(monotonic, unix);
         match receive.try_recv().map_err(error)? {
-            Ok(base) => Ok(base.map(SharingBase)),
+            Ok(pop_core::sync::BaseRead::Pending) => Ok(None),
+            Ok(pop_core::sync::BaseRead::Ready(base)) => Ok(Some(SharingBase(Some(base)))),
+            Ok(pop_core::sync::BaseRead::TooLarge) => Ok(Some(SharingBase(None))),
             Err(pause) => {
                 link.pause(pause.kind, pause.reason);
                 self.driver.as_mut().expect("checked above").poll(monotonic, unix);
@@ -475,14 +476,11 @@ impl BrowserCopy {
 #[wasm_bindgen(js_name = invitationRequest)]
 pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<String, JsValue> {
     let key = invitation(link, origin)?;
-    let info = room_info(metadata)?;
+    let info = room_info(metadata, &key)?;
+    // Authentication belongs to the trusted host, which refreshes its ID token per request.
     serde_json::to_string(&pop_sharing_protocol::http::ConnectionPlan {
         document: info.document,
         size: info.seed_size.expect("validated size"),
-        url: format!("{origin}/v1/rooms/{}/seed", key.room),
-        headers: [("Authorization".into(), format!("Bearer {}", key.capability))].into_iter().collect(),
-        socket: format!("{}/v1/rooms/{}/sync", origin.replacen("https://", "wss://", 1), key.room),
-        protocols: vec![pop_sharing_protocol::SOCKET_PROTOCOL.into(), format!("cap.{}", key.capability)],
     })
     .map_err(error)
 }
@@ -491,7 +489,17 @@ pub fn invitation_request(link: &str, origin: &str, metadata: &str) -> Result<St
 #[wasm_bindgen(js_name = classifyFailure)]
 pub fn classify_failure(status: u16, code: Option<String>, url: &str) -> String {
     let outcome = failure::classify(status, code.as_deref(), failure::Route::of(url));
-    serde_json::json!({"outcome": outcome, "message": outcome.message(status)}).to_string()
+    serde_json::to_string(&failure::Failure { outcome, message: outcome.message(status) })
+        .expect("failure is serializable")
+}
+
+/// Apply the same compaction policy as the native supervisor.
+#[wasm_bindgen(js_name = maintenanceAction)]
+pub fn maintenance_action(full: &str, step: &str, random: u16) -> Result<String, JsValue> {
+    use pop_sync::maintenance;
+    let full = serde_json::from_str(full).map_err(error)?;
+    let step = serde_json::from_str(step).map_err(error)?;
+    serde_json::to_string(&maintenance::decide(full, step, random)).map_err(error)
 }
 
 #[wasm_bindgen(js_name = socketBudget)]
@@ -499,8 +507,8 @@ pub fn socket_budget() -> u32 {
     pop_sharing_protocol::QUEUED_BYTES as u32
 }
 
-fn route_to_file(attachment: bool) -> pop_core::file::ResourceRoute {
-    if attachment { pop_core::file::ResourceRoute::Attachment } else { pop_core::file::ResourceRoute::App }
+fn route_to_file(attachment: bool) -> pop_storage::file::ResourceRoute {
+    if attachment { pop_storage::file::ResourceRoute::Attachment } else { pop_storage::file::ResourceRoute::App }
 }
 
 /// Validate asynchronous browser operations before JavaScript starts them.
@@ -512,17 +520,132 @@ pub fn decode_browser_request(json: &str) -> Result<String, JsValue> {
 #[path = "resources.rs"]
 mod resources;
 
+/// A base to compact, or `None` when the relay frontier does not fit `BASE_BYTES`.
 #[wasm_bindgen]
-pub struct SharingBase(pop_core::sync::Base);
+pub struct SharingBase(Option<pop_core::sync::Base>);
 #[wasm_bindgen]
 impl SharingBase {
-    pub fn bytes(&self) -> Vec<u8> {
-        self.0.bytes.clone()
+    #[wasm_bindgen(js_name = tooLarge)]
+    pub fn too_large(&self) -> bool {
+        self.0.is_none()
     }
-    pub fn frontier(&self) -> String {
-        frame::version_json(self.0.frontier.iter().map(|(&p, &n)| (p, n as u32)))
+    fn base(&self) -> Result<&pop_core::sync::Base, JsValue> {
+        self.0.as_ref().ok_or_else(|| error("This document has outgrown sharing"))
     }
-    pub fn root(&self) -> String {
-        frame::version_json(self.0.start.iter().map(|(&p, &n)| (p, n as u32)))
+    pub fn bytes(&self) -> Result<Vec<u8>, JsValue> {
+        Ok(self.base()?.bytes.clone())
+    }
+    pub fn frontier(&self) -> Result<String, JsValue> {
+        Ok(frame::version_json(self.base()?.frontier.iter().map(|(&p, &n)| (p, n as u32))))
+    }
+}
+
+/// Browser timers execute transitions decided by the same pure native supervisor.
+#[derive(Default)]
+#[wasm_bindgen]
+pub struct SharingSupervisor(pop_sync::Supervisor);
+#[wasm_bindgen]
+impl SharingSupervisor {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn connect(&mut self) -> bool {
+        self.0.step(pop_sync::Event::Connect) != pop_sync::Action::Stop
+    }
+    pub fn live(&mut self) -> bool {
+        self.0.step(pop_sync::Event::Live) != pop_sync::Action::Stop
+    }
+    pub fn retry(&mut self) -> Result<Option<u32>, JsValue> {
+        match self.0.step(pop_sync::Event::Retry) {
+            pop_sync::Action::RetryAfter { milliseconds } => u32::try_from(milliseconds).map(Some).map_err(error),
+            pop_sync::Action::Continue | pop_sync::Action::Stop => Ok(None),
+        }
+    }
+    pub fn stop(&mut self) {
+        self.0.step(pop_sync::Event::Stop);
+    }
+}
+
+/// Per-socket admission uses the shared transport policy. Only the matching Push
+/// acknowledgment anchors its window; control frames never consume the budget.
+#[wasm_bindgen]
+pub struct SocketPushBudget {
+    budget: pop_sync::budget::PushBudget,
+    pending: Option<u64>,
+}
+#[wasm_bindgen]
+impl SocketPushBudget {
+    #[wasm_bindgen(constructor)]
+    pub fn new(monotonic: u64) -> Self {
+        Self { budget: pop_sync::budget::PushBudget::new(monotonic), pending: None }
+    }
+    pub fn admit(&mut self, monotonic: u64, bytes: &[u8]) -> Result<String, JsValue> {
+        use pop_sync::budget::BudgetDecision;
+        let decision = match envelope::decode(bytes).map_err(error)? {
+            frame::Frame::Push { id, .. } => {
+                if self.pending.is_some() {
+                    return Err(error("A Push acknowledgment is still pending"));
+                }
+                let decision = self.budget.admit(monotonic, bytes.len());
+                if decision == BudgetDecision::Ready {
+                    self.pending = Some(id);
+                }
+                decision
+            }
+            _ => BudgetDecision::Ready,
+        };
+        serde_json::to_string(&decision).map_err(error)
+    }
+    pub fn acknowledge(&mut self, monotonic: u64, bytes: &[u8]) -> Result<(), JsValue> {
+        if let frame::Frame::Ack { id, .. } = envelope::decode(bytes).map_err(error)?
+            && self.pending == Some(id)
+        {
+            self.pending = None;
+            self.budget.acknowledge(monotonic);
+        }
+        Ok(())
+    }
+}
+
+#[wasm_bindgen]
+impl BrowserCopy {
+    /// Detach the copy from its room once remote access has ended.
+    #[wasm_bindgen(js_name = leaveRoom)]
+    pub fn leave_room(&mut self) -> Result<(), JsValue> {
+        let driver = self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?;
+        driver.request(owner::Request::Unshare).map_err(error)?;
+        // Clear the shared retention policy before flushing: shared history may have
+        // reached its limit, while the latest local state still fits. Keep this owner
+        // and accepted edits alive if either operation cannot be acknowledged.
+        driver.flush().map_err(error)
+    }
+
+    #[wasm_bindgen(js_name = openLocal)]
+    pub fn open_local(&mut self) -> Result<(), JsValue> {
+        self.open()?;
+        if self.driver.as_ref().expect("opened").store().share().map_err(error)?.is_some() {
+            self.driver = None;
+            self.events.lock().expect("events").clear();
+            return Err(error("This shared copy needs its invitation"));
+        }
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = confirmedVersion)]
+    pub fn confirmed_version(&mut self) -> Result<Option<String>, JsValue> {
+        let Some(link) = &self.sync_link else { return Ok(None) };
+        let (send, receive) = std::sync::mpsc::channel();
+        link.confirmed_version(move |confirmation| {
+            let _ = send.send(confirmation.map(|value| value.version));
+        });
+        self.driver.as_mut().ok_or_else(|| error("Copy is not open"))?.drain();
+        receive.try_recv().map_err(error)
+    }
+}
+
+impl BrowserCopy {
+    fn pool(&self) -> Result<&'static OpfsSAHPoolUtil, JsValue> {
+        self.pool.ok_or_else(|| error("Copy storage has been released"))
     }
 }

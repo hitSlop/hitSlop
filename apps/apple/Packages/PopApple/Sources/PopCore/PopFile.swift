@@ -123,6 +123,19 @@ public struct PopFile: Sendable {
     }
   }
 
+  /// Why this build will not open a file, in the core's words, from a refusal `opening`
+  /// reported; nil for a failure that may pass, such as a busy or unreachable file. Trying
+  /// again cannot help, and a refused file is never modified.
+  public static func refusal(_ error: Error) -> String? {
+    switch error {
+    case PopError.invalid(let reason):
+      let sentence = reason.prefix(1).uppercased() + reason.dropFirst()
+      return (sentence.hasSuffix(".") ? sentence : sentence + ".") + " The file is unchanged."
+    case let error as PopRequiresUpdate: return error.localizedDescription
+    default: return nil
+    }
+  }
+
   /// A file's kind from its header checks alone, for deciding how to open it.
   public static func kind(of url: URL) throws -> FileKind {
     try opening { try fileKind(path: url.path) }

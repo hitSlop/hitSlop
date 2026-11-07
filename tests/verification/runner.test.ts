@@ -64,11 +64,12 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
   expect(affected("docs/architecture.md")).toEqual([]);
   expect(affected(".gitignore", "AGENTS.md", ".vscode/launch.json", ".agents/skills/pop-native/SKILL.md")).toEqual([]);
   expect(affected("packages/pop/skills/pop/SKILL.md")).not.toContain("contracts");
-  for (const path of ["scripts/compat/required-history.json", "scripts/compat/check.ts", "crates/pop-core/src/app/package_format_1.rs", "crates/pop-core/src/file/storage-1.sql"])
+  for (const path of ["scripts/compat/dotpop-required-history.json", "scripts/compat/check.ts", "crates/pop-core/src/app/format.rs", "crates/pop-storage/src/file/storage-1.sql"])
     expect(affected(path)).toContain("compat");
   expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
   expect(affected("apps/apple/Packages/PopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
-  expect(affected("crates/pop-core/src/store.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "sharing", "packed", "swift", "native"]);
+  expect(affected("tools/pop-bindgen/src/main.rs")).toEqual(affected("crates/pop-storage/src/store/mod.rs"));
+  expect(affected("crates/pop-storage/src/store/mod.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "sharing", "packed", "swift", "native"]);
   for (const path of ["packages/pop/src/sdk/context.ts", "packages/pop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
@@ -77,11 +78,15 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
 
 test("a pull request qualifies sharing for every input of the sharing tier, and for nothing else", () => {
   for (const path of [
-    "crates/pop-core/src/owner/actor/sync.rs",
+    "crates/pop-runtime/src/owner/actor/sync.rs",
     "crates/pop-core/src/document/mod.rs",
     "Cargo.lock",
     "crates/pop-sharing-client/src/transport.rs",
     "apps/sharing/src/lib.rs",
+    "firestore.rules",
+    "firestore.indexes.json",
+    "firebase.json",
+    ".github/workflows/sharing.yml",
     "scripts/sharing/check-accounts.ts",
     "packages/pop/src/browser/host.ts",
     "packages/pop/src/sharing/room.ts",
@@ -90,7 +95,7 @@ test("a pull request qualifies sharing for every input of the sharing tier, and 
   for (const path of ["docs/testing.md", "README.md", "apps/landing/src/routes/+page.svelte", "apps/apple/App/iOS/PhoneDocuments.swift", "packages/pop/src/sdk/context.ts"])
     expect(touchesSharing([path])).toBe(false);
   // Whatever the tier selects from the workspace, the pull request gate selects too.
-  for (const path of ["crates/pop-core/src/store.rs", "rust-toolchain.toml", "apps/sharing/Cargo.toml"]) {
+  for (const path of ["crates/pop-storage/src/store/mod.rs", "rust-toolchain.toml", "apps/sharing/Cargo.toml"]) {
     expect(affected(path)).toContain("sharing");
     expect(touchesSharing([path])).toBe(true);
   }
@@ -122,7 +127,7 @@ test("nightly, manual and release branches select the full suite; ordinary chang
 
 test("required CI keeps document compatibility and packaging, without browser qualification or duplicated portable checks", () => {
   const jobs = (paths: string[], event = "pull_request") => ciJobs(affected(...paths), event, true, affectedTiers(paths, ["app"]).length > 0);
-  const core = jobs(["crates/pop-core/src/store.rs"]);
+  const core = jobs(["crates/pop-storage/src/store/mod.rs"]);
   expect(core.native).toBe("swift,native");
   expect(core.nativeRust).toBe("rust");
   expect(core.rust).toBe("rust");
@@ -137,7 +142,7 @@ test("required CI keeps document compatibility and packaging, without browser qu
   for (const event of ["schedule", "workflow_dispatch"])
     expect(ciJobs([], event).app).toBe("app");
   expect(ciJobs([], "pull_request", false, true).app).toBe("app");
-  const corpus = jobs(["scripts/compat/required-history.json"]);
+  const corpus = jobs(["scripts/compat/dotpop-required-history.json"]);
   expect(corpus.fast.split(",")).toContain("compat");
   expect(corpus.native).toBe("swift,native");
   const none = { app: "", native: "", nativeRust: "", rust: "", deferred: "", qualification: "" };
@@ -161,8 +166,8 @@ test("a pull request defers Swift/native tiers unless it affects a critical boun
   const deferred = ciJobs(affected(...authoring), "pull_request", touchesNativeGate(authoring));
   expect(deferred.native).toBe("");
   expect(deferred.deferred.split(",")).toContain("native");
-  for (const path of ["crates/pop-core/src/file/open.rs", "apps/apple/Packages/PopApple/Sources/PopHost/PopWindow.swift",
-    "packages/pop/src/shell/owner.ts", "scripts/compat/required-history.json", "tests/native/crash.native.test.ts",
+  for (const path of ["crates/pop-storage/src/file/open.rs", "apps/apple/Packages/PopApple/Sources/PopHost/PopWindow.swift",
+    "packages/pop/src/shell/owner.ts", "scripts/compat/dotpop-required-history.json", "tests/native/crash.native.test.ts",
     "tests/apps/fixture-checklist/pop.ts", "scripts/lib/native.ts", "scripts/lib/native-fixtures.ts", "scripts/lib/swift-tests.ts",
     "packages/pop/src/sdk/index.ts"]) {
     expect(touchesNativeGate([path])).toBe(true);

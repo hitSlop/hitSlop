@@ -9,6 +9,37 @@ import Testing
 @testable import PopHost
 
 extension HostTests {
+  @Test @MainActor func equivalentWidgetCapturesReuseCompleteImages() async throws {
+    let root = try widgetCloseFixture()
+    let folder = try Fixtures.folder()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let capture = try await PopRenderer.widgetCapture(url: root)
+    let cache = WidgetCache(root: folder)
+    let identity = try WidgetCache.identity(root)
+    let session = try await DocumentSession.open(url: root)
+    let options = try #require(session.file.views.widget)
+    try await session.close()
+    var reloads = 0
+    let publisher = PopWidgetPublisher.shared
+    publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
+    defer { publisher.stop() }
+    await publisher.capture(url: root, identity: identity, capturedAt: Date(), options: options) { capture }
+    let first = try #require(cache.record(for: root))
+    // Two completed renders can deliver the same accepted source across close and save.
+    await publisher.capture(url: root, identity: identity, capturedAt: Date(), options: options) { capture }
+    #expect(cache.record(for: root)?.generation == first.generation)
+    #expect(reloads == 1)
+    try FileManager.default.removeItem(at: cache.imageURL(first, .small))
+    await publisher.capture(url: root, identity: identity, capturedAt: Date(), options: options) { capture }
+    let repaired = try #require(cache.record(for: root))
+    #expect(repaired.generation != first.generation)
+    #expect(reloads == 2)
+    for family in WidgetImageFamily.allCases { #expect(cache.imageData(repaired, family) != nil) }
+  }
+
   @Test @MainActor func widgetOnlyCloseDoesNotRewriteDocumentArtwork() async throws {
     _ = NSApplication.shared
     let root = try widgetCloseFixture()

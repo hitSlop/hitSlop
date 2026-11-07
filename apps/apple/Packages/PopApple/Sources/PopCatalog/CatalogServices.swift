@@ -64,6 +64,10 @@ import PopHost
       guard let id = entry.recentHistoryID else { return url }
       return try await history.resolve(id)
     }
+    client.removeRecent = { [self] entry in
+      guard let id = entry.recentHistoryID else { return }
+      receive(await history.remove(id))
+    }
     return client
   }
 

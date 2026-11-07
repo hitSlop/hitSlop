@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import PopCore
+import PopCoreBinding
 import PopDocument
 import PopWidgets
 import UIKit
@@ -9,21 +10,21 @@ import WidgetKit
 @MainActor final class PhoneWidgetPublisher {
   private let cache = try? WidgetCache.shared()
   private var subscriptions: Set<AnyCancellable> = []
-  private var entries: [SyncedPop] = []
-  private var pending: [String: Task<Void, Never>] = [:]
+  private var entries: [LibraryEntry] = []
+  /// A saved document's debounced refresh. A newer save replaces it; only the current one clears itself.
+  private var pending: [String: (version: UUID, task: Task<Void, Never>)] = [:]
   private var tail: Task<Void, Never>?
-  private var captures: [UUID: Task<Void, Never>] = [:]
   private var backgroundRefreshes = 0
-  private var captureLifetime = UUID()
   private var captureAllowed: Bool {
     UIApplication.shared.applicationState == .active || backgroundRefreshes > 0
   }
   private var lifetime = UUID()
   private var indexRevision = UUID()
   private var account = ""
-  private let session: () -> DocumentSession?
+  /// The live session for a document, on screen or still closing.
+  private let session: (URL) -> DocumentSession?
 
-  init(session: @escaping () -> DocumentSession?) {
+  init(session: @escaping (URL) -> DocumentSession?) {
     self.session = session
     PopLibrary.shared.$accountIdentity.sink { [weak self] in self?.accountChanged($0) }.store(in: &subscriptions)
     PopLibrary.shared.$entries.sink { [weak self] in self?.libraryChanged($0) }.store(in: &subscriptions)
@@ -34,7 +35,7 @@ import WidgetKit
     self.account = account
     lifetime = UUID()
     indexRevision = UUID()
-    for task in pending.values { task.cancel() }
+    for save in pending.values { save.task.cancel() }
     pending.removeAll()
     let marker = cache.root.appendingPathComponent("account")
     do {
@@ -52,7 +53,7 @@ import WidgetKit
     } catch { report(error) }
   }
 
-  private func libraryChanged(_ next: [SyncedPop]) {
+  private func libraryChanged(_ next: [LibraryEntry]) {
     let previous = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.version) })
     entries = next
     guard !account.isEmpty, account != "unavailable", let cache else { return }
@@ -93,29 +94,24 @@ import WidgetKit
 
   func refreshPlaced() async { await refresh(ids: nil) }
 
-  private func cancelCaptures() {
-    captureLifetime = UUID()
-    for task in captures.values { task.cancel() }
-    for task in pending.values { task.cancel() }
-    pending.removeAll()
-    tail?.cancel()
-  }
-
   func saved(_ session: DocumentSession) {
     guard UIApplication.shared.applicationState == .active, backgroundRefreshes == 0 else { return }
     guard let entry = PopLibrary.shared.entry(at: session.file.url), !entry.deleted else { return }
-    pending[entry.id]?.cancel()
-    pending[entry.id] = Task { [weak self] in
+    pending[entry.id]?.task.cancel()
+    let version = UUID()
+    let task = Task { [weak self] in
       do { try await Task.sleep(for: .seconds(1)) } catch { return }
-      guard let self else { return }
+      // An older save woken after a newer one replaced it leaves the newer one in place.
+      guard let self, pending[entry.id]?.version == version else { return }
       pending[entry.id] = nil
       await refresh(ids: [entry.id])
     }
+    pending[entry.id] = (version, task)
   }
 
   func closing(_ session: DocumentSession) async {
     guard let entry = PopLibrary.shared.entry(at: session.file.url), !entry.deleted else { return }
-    pending.removeValue(forKey: entry.id)?.cancel()
+    pending.removeValue(forKey: entry.id)?.task.cancel()
     await refresh(ids: [entry.id])
   }
 
@@ -137,16 +133,15 @@ import WidgetKit
   private func refresh(ids: Set<String>?) async {
     guard !Task.isCancelled, captureAllowed else { return }
     let started = lifetime
-    let captureStarted = captureLifetime
     let placed = await placedIDs()
-    guard !Task.isCancelled, captureAllowed, captureLifetime == captureStarted, lifetime == started else { return }
+    guard !Task.isCancelled, captureAllowed, lifetime == started else { return }
     let requested = ids.map { placed.intersection($0) } ?? placed
     guard !requested.isEmpty else { return }
     let previous = tail
     let task = Task { [self] in
       await previous?.value
       for id in requested {
-        guard !Task.isCancelled, captureAllowed, captureLifetime == captureStarted else { return }
+        guard !Task.isCancelled, captureAllowed else { return }
         guard lifetime == started, account != "unavailable", !account.isEmpty, let cache,
           let entry = entries.first(where: { $0.id == id && !$0.deleted })
         else { continue }
@@ -154,18 +149,18 @@ import WidgetKit
           let url = URL(fileURLWithPath: entry.path)
           let version = try await DocumentArtworkRenderer.widgetSourceVersion(url: url)
           try Task.checkCancellation()
-          guard captureAllowed, captureLifetime == captureStarted else { return }
+          guard captureAllowed else { return }
           guard lifetime == started, cache.record(id: id)?.sourceVersion != version else { continue }
           let capturedAt = Date()
           let capture: DocumentWidgetCapture
-          if let open = session(), open.file.url == url {
+          if let open = session(url) {
             guard open.isReady else { continue }
             capture = try await DocumentArtworkRenderer.widgetCapture(session: open)
           } else {
             capture = try await DocumentArtworkRenderer.widgetCapture(url: url)
           }
           try Task.checkCancellation()
-          guard captureAllowed, captureLifetime == captureStarted else { return }
+          guard captureAllowed else { return }
           guard lifetime == started, let current = entries.first(where: { $0.id == id && !$0.deleted }) else {
             continue
           }
@@ -181,14 +176,11 @@ import WidgetKit
       }
     }
     tail = task
-    let token = UUID()
-    captures[token] = task
-    defer { captures[token] = nil }
+    // A cancelled refresh stops only its own captures; a closing document's capture goes on.
     await withTaskCancellationHandler {
       await task.value
     } onCancel: {
       task.cancel()
-      Task { @MainActor [weak self] in self?.cancelCaptures() }
     }
   }
 

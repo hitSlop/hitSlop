@@ -1,5 +1,5 @@
-use pop_core::capture::{CaptureFormat, CaptureOutput, CaptureValue};
-use pop_core::widgets::{WidgetFamily, WidgetLimits, WidgetViewport};
+use pop_capture::capture::{CaptureFormat, CaptureOutput, CaptureValue};
+use pop_capture::widgets::{WidgetFamily, WidgetLimits, WidgetViewport};
 
 #[uniffi::remote(Enum)]
 pub enum CaptureFormat {
@@ -19,7 +19,7 @@ pub enum CaptureOutput {
 pub enum RenderedOutput {
     Image { bytes: Option<Vec<u8>> },
     Widgets { capture: RenderedWidgets },
-    Failed { failure: pop_core::owner::Failure },
+    Failed { failure: pop_runtime::owner::Failure },
 }
 
 #[derive(uniffi::Record)]
@@ -35,19 +35,22 @@ pub struct CapturedArtwork {
     pub icon: Option<Vec<u8>>,
 }
 
-/// Shared executable configuration, not a shared interpreter. Each output runs in a
-/// fresh restricted child and widget freshness still checks the installed binary.
+/// Explicit platform capture policy. Desktop outputs use fresh restricted children;
+/// iOS capture runs in process. Widget freshness checks the installed binary on both.
 #[derive(uniffi::Object)]
 pub struct CaptureRuntime {
-    evaluator: pop_core::owner::Evaluator,
+    evaluator: pop_runtime::owner::Evaluator,
 }
 
 #[uniffi::export]
 impl CaptureRuntime {
     #[uniffi::constructor]
     pub fn new(evaluator_path: String) -> Result<std::sync::Arc<Self>, crate::CoreError> {
-        let evaluator =
-            pop_core::owner::Evaluator::new(evaluator_path.into(), vec![]).map_err(pop_core::store::Error::Failed)?;
+        #[cfg(target_os = "ios")]
+        let evaluator = pop_runtime::owner::Evaluator::in_process_capture(evaluator_path.into());
+        #[cfg(not(target_os = "ios"))]
+        let evaluator = pop_runtime::owner::Evaluator::process(evaluator_path.into(), vec![]);
+        let evaluator = evaluator.map_err(pop_storage::store::Error::Failed)?;
         Ok(std::sync::Arc::new(Self { evaluator }))
     }
 
@@ -58,9 +61,9 @@ impl CaptureRuntime {
     ) -> Result<Vec<CaptureResult>, crate::CoreError> {
         #[cfg(target_os = "ios")]
         if outputs.iter().any(|output| matches!(output, CaptureOutput::Export { .. })) {
-            return Err(pop_core::store::Error::Failed("Export is unavailable on this host".into()).into());
+            return Err(pop_storage::store::Error::Failed("Export is unavailable on this host".into()).into());
         }
-        Ok(pop_core::capture::render_batch(std::path::Path::new(&path), &self.evaluator, &outputs)?
+        Ok(pop_capture::capture::render_batch(std::path::Path::new(&path), &self.evaluator, &outputs)?
             .into_iter()
             .map(|capture| CaptureResult {
                 output: capture.output,
@@ -76,12 +79,12 @@ impl CaptureRuntime {
     /// A complete pair from one immutable source; a partial failure preserves old artwork.
     pub fn render_artwork(&self, path: String) -> Result<CapturedArtwork, crate::CoreError> {
         let path = std::path::Path::new(&path);
-        let store = pop_core::store::Store::open(path, pop_core::store::Mode::Snapshot)?;
+        let store = pop_storage::store::Store::open(path, pop_storage::store::Mode::Snapshot)?;
         let source_version = store.document()?.reading()?.version;
         drop(store);
         let mut result = CapturedArtwork { source_version, preview: None, icon: None };
         for capture in
-            pop_core::capture::render_batch(path, &self.evaluator, &[CaptureOutput::Preview, CaptureOutput::Icon])?
+            pop_capture::capture::render_batch(path, &self.evaluator, &[CaptureOutput::Preview, CaptureOutput::Icon])?
         {
             if let CaptureValue::Image { bytes } = capture.result? {
                 match capture.output {
@@ -95,7 +98,7 @@ impl CaptureRuntime {
     }
 
     pub fn saved_widget_version(&self, path: String) -> Result<String, crate::CoreError> {
-        Ok(pop_core::widgets::saved_version(std::path::Path::new(&path), &self.evaluator)?)
+        Ok(pop_capture::widgets::saved_version(std::path::Path::new(&path), &self.evaluator)?)
     }
 }
 
@@ -107,7 +110,7 @@ pub struct WidgetLimits {
 }
 #[uniffi::export]
 pub fn widget_limits() -> WidgetLimits {
-    pop_core::widgets::widget_limits()
+    pop_capture::widgets::widget_limits()
 }
 
 #[uniffi::remote(Enum)]
@@ -124,7 +127,7 @@ pub struct WidgetViewport {
 }
 #[uniffi::export]
 pub fn widget_viewports() -> Vec<WidgetViewport> {
-    pop_core::widgets::widget_viewports()
+    pop_capture::widgets::widget_viewports()
 }
 
 #[derive(uniffi::Record)]
@@ -137,8 +140,8 @@ pub struct RenderedWidgets {
     pub source_version: String,
     pub images: Vec<RenderedWidgetImage>,
 }
-impl From<pop_core::widgets::WidgetCapture> for RenderedWidgets {
-    fn from(capture: pop_core::widgets::WidgetCapture) -> Self {
+impl From<pop_capture::widgets::WidgetCapture> for RenderedWidgets {
+    fn from(capture: pop_capture::widgets::WidgetCapture) -> Self {
         Self {
             source_version: capture.source_version,
             images: capture

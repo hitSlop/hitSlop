@@ -3,7 +3,7 @@ use crate::wire::present_option as present;
 
 // The descriptor is authored data, never executable application code. Parsed, two
 // descriptors compare by meaning: key order and number spelling never matter.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "descriptor.generated.ts"))]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Node {
@@ -210,7 +210,7 @@ impl Node {
     /// The value an object field takes when a write omits it: empty text, lists and
     /// records, a zero counter, a scalar's declared default, or an object of its own
     /// defaults. Optional fields stay absent.
-    fn default_value(&self) -> Option<Value> {
+    pub(super) fn default_value(&self) -> Option<Value> {
         match self {
             Self::Text {} => Some(json!("")),
             Self::List { .. } => Some(json!([])),

@@ -138,7 +138,7 @@
       let attributes = try manager.attributesOfItem(atPath: staging.path)
       guard let size = attributes[.size] as? NSNumber, size.int64Value <= limit else {
         throw NSError(
-          domain: "pop.Download", code: 1,
+          domain: "click.dotpop.download", code: 1,
           userInfo: [NSLocalizedDescriptionKey: limitMessage])
       }
       let replacement = try manager.url(

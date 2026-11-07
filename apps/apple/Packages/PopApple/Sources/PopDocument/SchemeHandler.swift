@@ -29,7 +29,7 @@ import WebKit
   /// Scripts only from the document and the shell; WebAssembly may compile (MilkDrop presets
   /// compile their equations at runtime). Inline, `blob:` and `data:` scripts stay refused.
   nonisolated private static let contentSecurityPolicy = AppResourcePolicy.contentSecurityPolicy
-  private static let reads = DispatchQueue(label: "pop.scheme", qos: .userInitiated, attributes: .concurrent)
+  private static let reads = DispatchQueue(label: "click.dotpop.scheme", qos: .userInitiated, attributes: .concurrent)
   let shell: URL
   /// The document's assets, through its owner's long-lived connection.
   private let assets: ResourceReader

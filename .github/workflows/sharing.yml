@@ -2,13 +2,15 @@ name: Deploy sharing
 
 # The live-sharing relay and its browser host (share.dotpop.click, *.dotslop.com) deploy with
 # a release tag or a manual run, so browser guests run the same core as released apps. Master
-# changes are qualified only. The relay's /v1 wire contract is frozen
-# (crates/pop-sharing-protocol/tests/fixtures/v1).
+# changes are qualified only. Persistent document clients and host deploy together.
 on:
   push:
     branches: [master]
     tags: ["pop-v*"]
     paths:
+      - firebase.json
+      - firestore.rules
+      - firestore.indexes.json
       - apps/sharing/**
       - apps/apple/App/Shared/Assets.xcassets/AppIcon.appiconset/appicon-1024.png
       - crates/pop-sharing-*/**
@@ -44,6 +46,8 @@ jobs:
       - name: Build
         run: bun scripts/build/sharing.ts
       # The built WASM relay on Miniflare: create, join, Stop, account deletion, limits, AASA.
+      - name: Install catalog emulator CLI
+        run: npm install --global firebase-tools@14.17.0
       - name: Qualify
         id: qualify
         run: bun run verify sharing

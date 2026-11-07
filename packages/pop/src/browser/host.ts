@@ -1,3 +1,4 @@
+import { GuestIdentity } from "../sharing/identity";
 import { config } from "../sharing/config";
 import { resourceDelivery } from "./resource-delivery";
 import type { SharingEvent, SharingControl } from "../wire/sharing.generated";
@@ -5,7 +6,7 @@ import { BrowserHost } from "../schema/constants";
 import type { BrowserRequest } from "../wire/browser.generated";
 import type { Capability, WindowDefinition } from "../wire/app.generated";
 import type { PageFailure } from "../wire/page";
-import { cleanup, listCopies, lockName, putCopy, removeCopy } from "./copies";
+import { cleanup, listCopies, lockName, putCopy, updateCopy, removeCopy } from "./copies";
 import { JoinGate } from "./join";
 import { silhouetteClip } from "../schema/presentation";
 import { capabilityFeatures } from "../schema/policy";
@@ -26,6 +27,8 @@ const title = document.querySelector<HTMLElement>("#title")!;
 const stage = document.querySelector<HTMLElement>("#stage")!;
 const download = document.querySelector<HTMLButtonElement>("#download")!;
 const retry = document.querySelector<HTMLButtonElement>("#retry")!;
+const resetGuest = document.querySelector<HTMLButtonElement>("#reset-guest")!;
+let copyOpened = false;
 const fullscreen = document.querySelector<HTMLButtonElement>("#fullscreen")!;
 const awake = document.querySelector<HTMLButtonElement>("#awake")!;
 const hosted = resourceDelivery.kind === "network";
@@ -285,6 +288,11 @@ async function own() {
           );
         worker.onmessage = async ({ data }: MessageEvent<WorkerEvent | SharingEvent>) => {
           if (requests.failure) return;
+          if (data.type === "identityAttention") {
+            resetGuest.hidden = false;
+            fail(data.message);
+            return;
+          }
           if (data.type === "resourcesReady") {
             join.handle(data);
             return;
@@ -300,10 +308,10 @@ async function own() {
           }
           if (data.type === "ready") {
             opened = true;
+            copyOpened = true;
             title.textContent = data.title;
             try {
-              await putCopy({
-                id: id!,
+              await updateCopy(id!, {
                 title: data.title,
                 created: existing?.created ?? Date.now(),
                 state: "ready",
@@ -355,11 +363,16 @@ async function own() {
               toFrame({ type: "error", id: data.id, error: data.error });
           }
         };
-        if (hosted)
-          worker!.postMessage({
-            type: "joinCredential",
-            credential: localStorage.getItem("sharing.invitation." + id) ?? "",
-          } satisfies SharingControl);
+        if (hosted) {
+          // A copy without its stored invitation is refused by the worker, never opened locally.
+          const control: SharingControl = existing?.local
+            ? { type: "openLocal" }
+            : {
+                type: "joinInvitation",
+                invitation: localStorage.getItem("sharing.invitation." + id) ?? "",
+              };
+          worker!.postMessage(control);
+        }
         send({ type: "open", copy: id!, source });
       };
       launch(0);
@@ -413,6 +426,33 @@ download.onclick = async () => {
   } finally {
     await staged?.folder.removeEntry(staged.name).catch(fail);
     download.disabled = requests.failure !== undefined;
+  }
+};
+resetGuest.onclick = async () => {
+  resetGuest.disabled = true;
+  try {
+    if (page) {
+      await drain();
+      // Stop new authored requests before flushing accepted FIFO work. Identity
+      // renewal may wait on the network; the owner and its export remain available.
+      toFrame({
+        type: "fatal",
+        error: "The guest session is changing; reopen this copy to continue",
+      });
+      page.close();
+      page = undefined;
+      stage.inert = true;
+    }
+    if (copyOpened) {
+      const reply = await request({ type: "flush" });
+      const outcome = JSON.parse(reply.json) as { ok: true } | PageFailure;
+      if (!outcome.ok) throw new Error(outcome.error);
+    }
+    await new GuestIdentity().reset();
+    location.reload();
+  } catch (error) {
+    fail(error);
+    resetGuest.disabled = false;
   }
 };
 retry.onclick = () => {
@@ -504,7 +544,11 @@ async function main() {
   await cleanup();
   const fragment = location.hash;
   if (hosted && location.pathname === "/join") {
-    if (!/^#[0-9a-f]{32}\.[0-9a-f]{64}$/.test(fragment))
+    if (
+      !/^#[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{64}$/.test(
+        fragment,
+      )
+    )
       throw new Error("Sharing link is no longer valid");
     const invitation = config.host + "/join" + fragment;
     const existing = (await listCopies()).find(
@@ -540,7 +584,9 @@ async function main() {
       const link = new URL(input.value);
       if (
         link.href !== `${config.host}/join${link.hash}` ||
-        !/^#[0-9a-f]{32}\.[0-9a-f]{64}$/.test(link.hash)
+        !/^#[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[0-9a-f]{64}$/.test(
+          link.hash,
+        )
       )
         throw new Error("Paste a pop sharing link");
       location.assign(link.href);

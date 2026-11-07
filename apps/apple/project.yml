@@ -11,8 +11,8 @@ settings:
     DEVELOPMENT_TEAM: 78UAXU8QG8
     CODE_SIGN_STYLE: Automatic
     # The app and its extensions ship as one version.
-    MARKETING_VERSION: "1.4.1"
-    CURRENT_PROJECT_VERSION: "51"
+    MARKETING_VERSION: "2.0.0"
+    CURRENT_PROJECT_VERSION: "52"
 packages:
   PopApple:
     path: Packages/PopApple
@@ -44,11 +44,32 @@ targets:
       - package: PopApple
         product: PopAccount
       - package: PopApple
+        product: PopFirebase
+      - package: PopApple
         product: PopWidgets
       - package: PopApple
         product: PopLaunch
       - target: pop-iOS-Widgets
       - target: pop-iOS-Thumbnail
+    postBuildScripts:
+      - name: Upload Crashlytics symbols
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(DWARF_DSYM_FOLDER_PATH)/$(DWARF_DSYM_FILE_NAME)
+          - $(DWARF_DSYM_FOLDER_PATH)/$(DWARF_DSYM_FILE_NAME)/Contents/Resources/DWARF/$(PRODUCT_NAME)
+          - $(DWARF_DSYM_FOLDER_PATH)/$(DWARF_DSYM_FILE_NAME)/Contents/Info.plist
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist
+          - $(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)
+        script: |
+          set -euo pipefail
+          case "${CONFIGURATION:-}" in
+            Release) ;;
+            *) exit 0 ;;
+          esac
+          if [ "${POP_SKIP_SYMBOL_UPLOAD:-0}" = "1" ] || [ "${CODE_SIGNING_ALLOWED:-YES}" = "NO" ]; then
+            exit 0
+          fi
+          "${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hitslop.app

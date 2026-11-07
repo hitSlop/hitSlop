@@ -21,29 +21,33 @@ Pop can make HTTPS requests and load external images, media and embedded web pag
 Those requests reach their respective providers. Local document storage and on-device
 transcription do not mean that all authored apps work offline or never use the network.
 
-## Live collaboration
+## Cloud documents and collaboration
 
-Live collaboration is optional. To create a link, the owner signs in with Apple through
-Firebase Authentication. On the Mac, sign-in opens Apple's page in a browser sheet;
-the iPhone uses Apple's native sign-in. The relay uses that account identity to manage the owner's
-links. Guests join with the edit link and need no account.
+Cloud sync is optional. Local-only documents require no account or upload. To sync,
+the owner signs in with Apple through Firebase Authentication. On Mac, sign-in opens
+Apple's page in a browser sheet; iPhone uses Apple's native sign-in.
 
-Sharing uploads the document's app, saved content, edit history and referenced
-attachments to the pop relay, hosted on Cloudflare. Participants receive the same
-copy, including text that was later deleted, and exchange edits through that relay. This
-content is not end-to-end encrypted. Anyone with the link can edit, so share it only
-with people you intend to give access to. While you are signed in, the app asks the relay
-whether your shared and iCloud documents have a link, so you can manage it from any of
-your devices.
+Enabling sync uploads the embedded app, document state and referenced attachments to
+Cloudflare. Durable Objects and private R2 storage hold the current document and the
+bounded replication data needed for synchronization. The client separately maintains
+Firestore references with account-scoped
+library metadata such as document IDs, titles, app identity and access status. This
+content is not end-to-end encrypted. Deleted content may remain in replication data
+until a checkpoint replaces it; cloud storage is not a document history service.
 
-Stopping sharing ends the link and deletes the room's documents, edits, attachments and
-your account and document identifiers from the relay. A record that the link has ended
-remains for 30 days so old links report it, then it is deleted too. A link nobody opens
-for 90 days ends the same way. When a busy room is condensed, the edits it replaces are
-kept for up to 14 days for recovery, then deleted. Deleting the sharing account ends all
-of its links, removes their relay data and deletes the Firebase account; the app also
-attempts to revoke Apple access. Copies already saved on participants' devices remain
-theirs. Signing out alone does not end links. See
+Sharing grants access to that same cloud document. Anyone with the invitation can edit;
+anonymous guests need no account. Signed-in guests can discover joined documents on
+other devices while their invitation remains active.
+
+Stopping collaboration revokes guest access while your own devices keep syncing.
+Cloud documents do not expire merely from inactivity. **Delete Everywhere** deletes
+the cloud payloads and revokes access. Minimal service lifecycle records prevent delayed
+requests restoring a deleted cloud document. A guest's library reference may remain
+listed until their device checks access and cleans it up. Already downloaded participant
+copies remain on their devices. **Delete Account** deletes owned cloud documents and
+joined memberships before deleting Firebase identity, and attempts Apple access
+revocation. Signing out alone hides the account library and pauses this device's sync;
+it does not delete cloud documents or end links. See
 [live sharing](/docs/guides/live-sharing/) for these controls.
 
 Sharing event metrics record event names and counts, without document contents,

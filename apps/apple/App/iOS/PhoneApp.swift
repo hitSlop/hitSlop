@@ -1,6 +1,7 @@
 import BackgroundTasks
-import CloudKit
 import PopCore
+import PopDocument
+import PopFirebase
 import SwiftUI
 import UIKit
 
@@ -12,6 +13,18 @@ import UIKit
   func application(
     _ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    PopFirebase.configure()
+    PopLibrary.shared.concealAccountDocuments = { [weak self] paths, concealed in
+      guard let self, let session = self.model.session, paths.contains(session.file.url.path) else { return }
+      self.model.accountRequired = concealed
+    }
+    PopLibrary.shared.closeAccountDocuments = { [weak self] paths in
+      guard let self else { return }
+      guard await self.model.leave(paths: Set(paths)) else {
+        throw PopFailure("Save or recover your text, then retry signing out.")
+      }
+    }
+    DocumentSharing.installLibraryServices()
     BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshIdentifier, using: .main) { [weak self] task in
       MainActor.assumeIsolated {
         guard let self, let refresh = task as? BGAppRefreshTask else {
@@ -34,7 +47,6 @@ import UIKit
       }
     }
     PopLibrary.shared.activated(application.applicationState == .active)
-    application.registerForRemoteNotifications()
     return true
   }
 
@@ -46,20 +58,7 @@ import UIKit
     }
   }
 
-  func application(
-    _ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-    fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
-  ) {
-    guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo),
-      notification.containerIdentifier == "iCloud.com.hitslop.app"
-    else {
-      completionHandler(.noData)
-      return
-    }
-    Task { completionHandler(await refreshWidgets(background: false)) }
-  }
-
-  private func refreshWidgets(background: Bool = true) async -> UIBackgroundFetchResult {
+  private func refreshWidgets() async -> UIBackgroundFetchResult {
     let lease = PhoneRefreshLease()
     // UIKit calls this on the main thread; end the task before returning or the app is killed.
     lease.identifier = UIApplication.shared.beginBackgroundTask(withName: "Refresh library widgets") {
@@ -73,11 +72,7 @@ import UIKit
       let before = PopLibrary.shared.entries
       do {
         try Task.checkCancellation()
-        if background {
-          try await PopLibrary.shared.fetchInBackground()
-        } else {
-          await PopLibrary.shared.receivedPush()
-        }
+        try await PopLibrary.shared.fetchInBackground()
         if PopLibrary.shared.lastError != nil || !PopLibrary.shared.isReady { return UIBackgroundFetchResult.failed }
         try Task.checkCancellation()
         await model.widgets.refreshPlaced()

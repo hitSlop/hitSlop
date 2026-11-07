@@ -32,7 +32,7 @@ import Testing
   let model = CatalogModel(client: client)
   model.select(.all)
   model.start()
-  #expect(try await eventually { model.hasLoadedLocal })
+  #expect(await eventually { model.hasLoadedLocal })
   let host = NSHostingController(rootView: CatalogView(model: model))
   host.sizingOptions = []
   let size = minimumSize ? NSSize(width: 900, height: 560) : NSSize(width: 1040, height: 680)
@@ -50,7 +50,7 @@ import Testing
     (view as? NSSplitView).map { [$0] } ?? view.subviews.flatMap { splitViews(in: $0) }
   }
   #expect(
-    try await eventually {
+    await eventually {
       host.view.layoutSubtreeIfNeeded()
       return host.view.bounds.height == size.height && !splitViews(in: host.view).isEmpty
     })
@@ -81,7 +81,7 @@ import Testing
   client.recent = { try? await scanner.recent($0) }
   let model = CatalogModel(client: client)
   model.start()
-  #expect(try await eventually(timeout: .seconds(5)) { !model.recents.isEmpty })
+  #expect(await eventually(timeout: .seconds(5)) { !model.recents.isEmpty })
   model.select(.recents)
   let selected = try #require(model.selectedID)
   let host = NSHostingView(rootView: CatalogView(model: model))
@@ -136,6 +136,8 @@ private func coloredArtwork(_ color: NSColor) throws -> Data {
 }
 
 @Test @MainActor func discoversAndCreatesFromInstalledTemplate() async throws {
+  // The running catalog observes owner saves, including saves on Rust's owner thread.
+  PopLibrary.shared.start()
   let root = try Fixtures.folder()
   defer { try? FileManager.default.removeItem(at: root) }
   let file = try writeTemplate(named: "pop-counter", in: root, categories: ["utilities", "other"])

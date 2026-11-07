@@ -3,8 +3,8 @@ use pop_core::app::{
     self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WidgetOptions,
     WindowDefinition, WindowFrame,
 };
-use pop_core::file::{Kind, ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, Summary};
 use pop_core::shape::Silhouette;
+use pop_storage::file::{Kind, ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, Summary};
 
 #[uniffi::remote(Enum)]
 pub enum Category {
@@ -115,7 +115,7 @@ pub struct ResponsePlan {
 }
 #[uniffi::export]
 pub fn resource_response(info: ResourceInfo, route: ResourceRoute, range: Option<String>) -> ResponsePlan {
-    pop_core::file::resource_response(&info, route, range.as_deref())
+    pop_storage::file::resource_response(&info, route, range.as_deref())
 }
 /// The native view of an accepted app. The original descriptor is opaque to Swift.
 #[derive(uniffi::Record)]

@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>SharingKeychainGroup</key><string>$(AppIdentifierPrefix)com.hitslop.sharing</string>
-  <key>UIBackgroundModes</key><array><string>remote-notification</string><string>fetch</string></array>
+<key>FirebaseCrashlyticsCollectionEnabled</key><false/>
+<key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key><false/>
+  <key>UIBackgroundModes</key><array><string>fetch</string></array>
   <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>com.hitslop.app.widgets.refresh</string></array>
   <key>CFBundleDisplayName</key><string>dotpop</string>
   <key>CFBundleDevelopmentRegion</key><string>en</string>

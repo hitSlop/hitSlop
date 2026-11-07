@@ -1055,6 +1055,25 @@
     "preview": "/assets/templates/pocket-sheet/preview.png"
   },
   {
+    "slug": "focus-timer",
+    "title": "Pomodoro",
+    "description": "A cheerful tomato timer. A little time for you.",
+    "categories": [
+      "productivity"
+    ],
+    "shape": "ellipse",
+    "width": 320,
+    "height": 320,
+    "emoji": "🍅",
+    "colors": {
+      "background": "#ee4c3f",
+      "accent": "#ff7862",
+      "ink": "#ffffff"
+    },
+    "icon": "/assets/templates/focus-timer/icon.png",
+    "preview": "/assets/templates/focus-timer/preview.png"
+  },
+  {
     "slug": "practice-sheet",
     "title": "Practice Sheet",
     "description": "Learn a piece at a speed you can play: an engraved score with a playback cursor, a tempo ladder that climbs after each clean run, and a practice record with a streak.",

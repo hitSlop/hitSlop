@@ -1,6 +1,5 @@
 //! wasm-bindgen adapter for the shared document core.
 #![cfg(target_arch = "wasm32")]
-#[cfg(not(feature = "browser"))]
 mod test_adapter {
     use pop_core::{AppSpec, Applied, Document as Core, Origin};
     use wasm_bindgen::prelude::*;

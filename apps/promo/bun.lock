@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@hitslop/promo",
+      "name": "@pop/promo",
       "dependencies": {
         "@remotion/cli": "4.0.350",
         "@remotion/transitions": "4.0.350",

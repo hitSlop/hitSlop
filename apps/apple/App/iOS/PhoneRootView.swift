@@ -20,7 +20,6 @@ struct PhoneRootView: View {
   @ObservedObject var model: PhoneDocuments
   @ObservedObject private var library = PopLibrary.shared
   @Environment(\.scenePhase) private var scenePhase
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var tab = PhoneTab.recents
   @State private var path: [PhoneRoute] = []
   @State private var query = ""
@@ -32,23 +31,28 @@ struct PhoneRootView: View {
   @State private var showSharingAccount = false
   @State private var launchReady = false
   @State private var launchGreeting = true
+  @Namespace private var zoom
 
   var body: some View {
     NavigationStack(path: navigationPath) {
       PhoneCatalogView(
-        model: model, library: library, tab: $tab, showSettings: $showSettings, query: $query, category: $category
+        model: model, library: library, tab: $tab, showSettings: $showSettings, query: $query, category: $category,
+        zoom: zoom
       )
       .toolbar(.hidden, for: .navigationBar)
       .navigationDestination(for: PhoneRoute.self) { route in
         switch route {
         case .template(let template):
-          PhoneTemplateDetail(template: template, creating: model.busy, canCreate: library.isReady) {
-            model.create(template, name: $0)
+          PhoneTemplateDetail(template: template, creating: model.busy, canSync: !library.accountIdentity.isEmpty) {
+            name, sync in
+            model.create(template, name: name, sync: sync)
           }
         case .document(let url):
-          if let session = model.session, session.file.url == url {
-            PhoneEditorView(session: session, model: model, library: library)
-          }
+          // The tile zooms into its document and the system's edge and swipe-down gestures
+          // zoom it back; with Reduce Motion the system cross-fades instead. A page's own
+          // touch handlers (`touch-action`, pointer events) keep their drags.
+          PhoneDocumentScreen(url: url, model: model, library: library, showSharingAccount: $showSharingAccount)
+            .navigationTransition(.zoom(sourceID: PhoneRecent.key(url), in: zoom))
         }
       }
       .overlay {
@@ -82,7 +86,7 @@ struct PhoneRootView: View {
             Toggle("Haptic Feedback", isOn: $hapticsEnabled)
               .appHaptic(.selection, trigger: hapticsEnabled)
           }
-          Section("iCloud") {
+          Section("Sync across devices") {
             LibrarySyncStatusView(library: library)
             Button("Sync Now") {
               model.tapped()
@@ -134,7 +138,10 @@ struct PhoneRootView: View {
       }
     }
     .alert("dotpop", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
-      if case .failed = model.saveStatus {
+      if model.pageFailure != nil {
+        Button("Reopen") { model.reopenFailedPage() }
+        Button("Close", role: .cancel) { model.dismissPageFailure() }
+      } else if case .failed = model.saveStatus {
         Button("Retry Save") { model.save() }
         if model.saveStatus == .failed(.full), model.session?.retainsHistory == true {
           Button("Save Unshared Copy…") { model.saveUnsharedCopy() }
@@ -153,21 +160,40 @@ struct PhoneRootView: View {
     .appHaptic(.success, trigger: model.successFeedback)
     .appHaptic(.impact(weight: .medium), trigger: model.deletionFeedback)
     .appHaptic(.error, trigger: model.message) { _, message in message != nil }
+    .appHaptic(.error, trigger: model.closeFailureFeedback)
+    .appHaptic(.impact(flexibility: .soft, intensity: 0.7), trigger: model.leaveFeedback)
+    .appHaptic(.impact(flexibility: .soft, intensity: 0.5), trigger: model.readyFeedback)
     .task {
       library.activated(scenePhase == .active)
       library.start()
       await model.loadTemplates()
       launchReady = true
     }
-    .onChange(of: model.session?.file.url) { _, url in
+    // The document is on screen from the tap: a tile zooms into it while it opens behind.
+    .onChange(of: model.presented) { _, url in
       library.editorOpen = url != nil
       if let url {
-        withAnimation(reduceMotion ? nil : .default) { path = [.document(url)] }
+        if path.contains(where: { !$0.isDocument }) {
+          // SwiftUI keeps a pushed screen by its place in the stack: a document put in place of a
+          // template (a new pop, or a file or link opened over one) would take over the
+          // template's screen, which was not pushed with the zoom and so has no edge-swipe or
+          // swipe-down back. The stack returns to the library at once, and the document is
+          // pushed from there on the next turn, as from its tile.
+          var instant = Transaction()
+          instant.disablesAnimations = true
+          withTransaction(instant) { path = [] }
+          DispatchQueue.main.async {
+            if model.presented == url, path.isEmpty { path = [.document(url)] }
+          }
+        } else if path != [.document(url)] {
+          path = [.document(url)]
+        }
         tab = .recents
-      } else {
-        withAnimation(reduceMotion ? nil : .default) { path.removeAll(where: \.isDocument) }
+      } else if path.contains(where: \.isDocument) {
+        path.removeAll(where: \.isDocument)
       }
     }
+    .onChange(of: library.accountBoundPaths) { _, _ in model.libraryChanged() }
     .onChange(of: library.entries) { _, _ in model.libraryChanged() }
     .onChange(of: library.hasLoaded) { _, _ in model.libraryChanged() }
     .onChange(of: scenePhase) { _, phase in
@@ -217,14 +243,10 @@ struct PhoneRootView: View {
       set: { next in
         let leavingDocument = path.contains(where: \.isDocument) && !next.contains(where: \.isDocument)
         path = next
-        if leavingDocument {
-          model.close { closed in
-            // A failed flush retains its owner and returns to the editor for Retry.
-            if !closed, let url = model.session?.file.url {
-              withAnimation(reduceMotion ? nil : .default) { path = [.document(url)] }
-            }
-          }
-        }
+        // The system has committed the dismissal (a swipe past its point of no return) and the
+        // page is still on screen while it animates out: the save starts now. A failed save
+        // keeps the document's owner and marks its tile for Retry, never bouncing back here.
+        if leavingDocument { model.leave() }
       })
   }
 }

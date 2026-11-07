@@ -19,37 +19,8 @@ pub struct CreateRoom {
     pub document: String,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct CreatedRoom {
-    pub room: String,
-    pub capability: String,
-    pub phase: RoomPhase,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct AccountRoom {
-    pub room: String,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
-pub struct RoomInit {
-    pub owner_uid: String,
-    pub document: String,
-}
-
-fn is_false(value: &bool) -> bool {
-    !*value
-}
-
+/// A document's seed and app, read by any member. Access and the invitation secret are
+/// only in `AccessState`.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
@@ -60,43 +31,41 @@ pub struct RoomInfo {
     pub seed_hash: Option<String>,
     pub seed_size: Option<u32>,
     pub app: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    pub capability: Option<String>,
-    #[serde(default, skip_serializing_if = "is_false")]
-    #[cfg_attr(feature = "ts", ts(as = "Option<bool>", optional))]
+    /// Whether retained updates have reached the size at which a member may compact.
     pub compact: bool,
 }
+/// What a browser copy joins: the invitation's document, checked against its metadata,
+/// and the seed's declared size. Routes are `/v1/documents/{document}/...`.
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct ConnectionPlan {
     pub document: String,
     pub size: u32,
-    pub url: String,
-    pub headers: std::collections::BTreeMap<String, String>,
-    pub socket: String,
-    pub protocols: Vec<String>,
 }
+/// How the trusted host opens a browser copy: through its invitation, or as a local copy
+/// that no longer syncs.
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum SharingControl {
-    JoinCredential { credential: String },
+    JoinInvitation { invitation: String },
+    OpenLocal,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum SharingEvent {
+    IdentityAttention {
+        message: String,
+    },
     ResourcesReady,
     Files {
         status: String,
     },
-    /// `status` is for people. `phase` is what a host routes on; older workers omit it.
+    /// `status` is for people. `phase` is what a host routes on.
     Sync {
         status: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        #[cfg_attr(feature = "ts", ts(optional))]
-        phase: Option<SyncPhase>,
+        phase: SyncPhase,
     },
 }
 /// Where a replica stands with its room, apart from the words shown for it.
@@ -146,7 +115,8 @@ impl ApiFailure {
     }
 }
 
-/// A bearer capability stays in the fragment of a pinned-origin link.
+/// An invitation secret stays in the fragment of a pinned-origin link.
+/// It grants membership only through the authenticated members exchange.
 #[derive(Clone)]
 pub struct Invitation {
     pub room: String,
@@ -166,7 +136,7 @@ impl Invitation {
     pub fn parse(link: &str) -> Result<Self, String> {
         let prefix = format!("{}/join#", crate::TRUSTED_ORIGIN);
         let link = link.trim();
-        if link.len() != prefix.len() + 32 + 1 + 64 {
+        if link.len() != prefix.len() + 36 + 1 + 64 {
             return Err("Sharing link is no longer valid".into());
         }
         let fragment = link.strip_prefix(&prefix).ok_or("Sharing link is no longer valid")?;
@@ -177,12 +147,110 @@ impl Invitation {
     }
 }
 
+#[cfg(feature = "openapi")]
+fn openapi_paths() -> serde_json::Map<String, serde_json::Value> {
+    use crate::routes::{Actor, Payload, ROUTES, Scope, parameters};
+    use serde_json::json;
+    let failure = |description: &str| json!({"description":description,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiFailure"}}}});
+    let content = |payload: Payload| -> Option<serde_json::Value> {
+        let schema = match payload {
+            Payload::None | Payload::Empty => return None,
+            Payload::Json(name) => json!({"$ref":format!("#/components/schemas/{name}")}),
+            Payload::JsonArray(name) => json!({"type":"array","items":{"$ref":format!("#/components/schemas/{name}")}}),
+            Payload::Bytes => {
+                return Some(json!({"application/octet-stream":{"schema":{"type":"string","format":"binary"}}}));
+            }
+        };
+        Some(json!({"application/json":{"schema":schema}}))
+    };
+    let mut paths = serde_json::Map::new();
+    for route in ROUTES {
+        let mut responses = serde_json::Map::new();
+        if route.op == crate::routes::Op::Sync {
+            responses.insert("101".into(), json!({"description":"Switching Protocols to opaque update frames"}));
+        } else if route.response == Payload::Empty {
+            responses.insert("204".into(), json!({"description":"Accepted; no content"}));
+        } else {
+            let mut ok = json!({"description":"Accepted"});
+            if let Some(content) = content(route.response) {
+                ok["content"] = content;
+            }
+            responses.insert("200".into(), ok);
+        }
+        let mut operation = json!({"summary":route.summary,"operationId":format!("{:?}",route.op)});
+        if route.request != Payload::None {
+            operation["requestBody"] = json!({"required":true,"content":content(route.request)});
+            responses.insert("400".into(), failure("Invalid request"));
+            responses.insert("413".into(), failure("Request exceeds its byte limit"));
+        }
+        if route.actor != Actor::Public {
+            responses.insert("401".into(), failure("Sign in required"));
+            responses.insert("403".into(), failure("Permission denied; local copy retained"));
+            responses.insert("429".into(), failure("Rate or quota limit"));
+            operation["security"] = json!([{"firebaseIdentity":[]}]);
+        }
+        if route.scope == Scope::Document {
+            responses.insert("404".into(), failure("Unknown document or route"));
+            responses.insert("409".into(), failure("Conditional conflict"));
+            responses.insert("410".into(), failure("Document deleted"));
+        }
+        operation["responses"] = responses.into();
+        // `document` names a document and the `after` cursor is the last one listed.
+        let schema = |name: &str| match name {
+            "document" | "after" => json!({"type":"string","format":"uuid"}),
+            _ => json!({"type":"string"}),
+        };
+        let parameters: Vec<_> = parameters(route.path)
+            .map(|name| json!({"name":name,"in":"path","required":true,"schema":schema(name)}))
+            .chain(
+                route.query.iter().map(|name| json!({"name":name,"in":"query","required":false,"schema":schema(name)})),
+            )
+            .collect();
+        if !parameters.is_empty() {
+            operation["parameters"] = parameters.into();
+        }
+        let entry = paths.entry(route.path.to_string()).or_insert_with(|| json!({}));
+        entry[route.method.to_ascii_lowercase()] = operation;
+    }
+    paths
+}
+
+#[cfg(feature = "openapi")]
+pub fn openapi() -> utoipa::openapi::OpenApi {
+    use utoipa::OpenApi;
+    #[derive(OpenApi)]
+    #[openapi(components(schemas(
+        CreateRoom,
+        RoomInfo,
+        RoomPhase,
+        ResourceGrant,
+        ApiFailure,
+        crate::document::DocumentEntry,
+        crate::document::DocumentRole,
+        crate::document::AccessState,
+        crate::document::JoinDocument,
+        crate::document::UpdateDocument,
+        crate::document::RegisteredDocument,
+        crate::document::RegisteredDocuments,
+        crate::document::DocumentMetadata,
+        crate::resources::Manifest,
+        crate::resources::Resource
+    )))]
+    struct Description;
+    let mut value = serde_json::to_value(Description::openapi()).expect("OpenAPI components");
+    value["info"] = serde_json::json!({"title":"pop persistent document service","version":"1"});
+    value["paths"] = openapi_paths().into();
+    value["components"]["securitySchemes"] =
+        serde_json::json!({"firebaseIdentity":{"type":"http","scheme":"bearer","bearerFormat":"JWT"}});
+    serde_json::from_value(value).expect("document OpenAPI")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn invitations_pin_the_host_identity_limits_and_keep_capabilities_in_the_fragment() {
-        let key = Invitation { room: "a".repeat(32), capability: "b".repeat(64) };
+        let key = Invitation { room: "00000000-0000-4000-8000-000000000001".into(), capability: "b".repeat(64) };
         let link = key.link().unwrap();
         assert_eq!(link.split('#').next(), Some("https://share.dotpop.click/join"));
         assert_eq!(Invitation::parse(&link).unwrap().capability, key.capability);
@@ -196,10 +264,35 @@ mod tests {
             assert!(Invitation::parse(&invalid).is_err());
         }
     }
+    #[cfg(feature = "openapi")]
+    #[test]
+    fn openapi_describes_every_route_with_its_parameters_and_refusals() {
+        let value = serde_json::to_value(openapi()).unwrap();
+        for route in crate::routes::ROUTES {
+            let operation = &value["paths"][route.path][route.method.to_ascii_lowercase()];
+            assert!(operation.is_object(), "{} {}", route.method, route.path);
+            let declared: Vec<_> = operation["parameters"]
+                .as_array()
+                .map(|all| all.iter().map(|p| (p["in"].as_str().unwrap(), p["name"].as_str().unwrap())).collect())
+                .unwrap_or_default();
+            let expected: Vec<_> = crate::routes::parameters(route.path)
+                .map(|name| ("path", name))
+                .chain(route.query.iter().map(|name| ("query", *name)))
+                .collect();
+            assert_eq!(declared, expected, "{}", route.path);
+        }
+        let created = &value["paths"]["/v1/documents"]["post"]["responses"];
+        assert!(created["204"].is_object() && created["200"].is_null(), "creation replies with no body");
+        let upload = &value["paths"]["/v1/documents/{document}/blob/{hash}"]["put"]["responses"];
+        for status in ["200", "401", "413", "429"] {
+            assert!(upload[status].is_object(), "{status}");
+        }
+        assert!(value["paths"]["/v1/documents/{document}/sync"]["get"]["responses"]["101"].is_object());
+    }
     #[test]
     fn authored_origins_require_one_exact_canonical_copy_uuid() {
         let copy = "00000000-0000-4000-8000-000000000001";
-        assert!(crate::is_authored_origin(&crate::authored_origin(copy).unwrap()));
+        assert!(crate::is_authored_origin(&format!("https://{copy}.{}", crate::AUTHORED_DOMAIN)));
         for origin in [
             "https://dotslop.com",
             "https://other.dotslop.com",
@@ -209,174 +302,4 @@ mod tests {
             assert!(!crate::is_authored_origin(origin));
         }
     }
-}
-
-#[cfg(feature = "openapi")]
-pub fn openapi() -> utoipa::openapi::OpenApi {
-    use utoipa::OpenApi;
-    #[derive(OpenApi)]
-    #[openapi(components(schemas(
-        CreateRoom,
-        CreatedRoom,
-        AccountRoom,
-        RoomInfo,
-        RoomPhase,
-        ResourceGrant,
-        ApiFailure,
-        crate::resources::Manifest,
-        crate::resources::Resource
-    )))]
-    struct Description;
-    let mut doc = Description::openapi();
-    doc.info.title = "pop sharing".into();
-    doc.info.version = "1".into();
-    // Binary files and the negotiated WebSocket remain transports of their own;
-    // all JSON request and response schemas come from these Rust DTOs.
-    let mut paths = serde_json::Map::new();
-    for (path, methods) in [
-        (
-            "/v1/rooms",
-            vec![("post", Some("CreateRoom"), Some("CreatedRoom"), "Create or recover the document's current room")],
-        ),
-        (
-            "/v1/account",
-            vec![(
-                "delete",
-                None,
-                None,
-                "End every indexed room and remove the signed-in relay account; retryable and idempotent",
-            )],
-        ),
-        (
-            "/v1/account/rooms/{document}",
-            vec![("get", None, Some("AccountRoom"), "Look up the signed-in owner's current room, or null")],
-        ),
-        (
-            "/v1/rooms/{room}",
-            vec![
-                ("get", None, Some("RoomInfo"), "Read room metadata; only its owner receives the capability"),
-                ("delete", None, None, "End the room and purge retained files"),
-            ],
-        ),
-        (
-            "/v1/rooms/{room}/open",
-            vec![("post", None, Some("RoomInfo"), "Open a room after its seed and app resources are uploaded")],
-        ),
-        (
-            "/v1/rooms/{room}/compact",
-            vec![("post", None, None, "Replace covered updates with an opaque full-history base")],
-        ),
-        (
-            "/v1/rooms/{room}/seed",
-            vec![
-                ("get", None, None, "Download the canonical SQLite seed"),
-                ("put", None, None, "Replace the SQLite seed while Uploading (owner only)"),
-            ],
-        ),
-        (
-            "/v1/rooms/{room}/resources",
-            vec![
-                ("get", None, Some("Manifest"), "Read accepted app inventory"),
-                ("post", Some("Manifest"), None, "Replace app inventory while Uploading (owner only)"),
-            ],
-        ),
-        (
-            "/v1/rooms/{room}/asset/{hash}",
-            vec![("put", None, None, "Publish an immutable app resource (creator only)")],
-        ),
-        (
-            "/v1/rooms/{room}/blob/{hash}",
-            vec![("get", None, None, "Download an attachment"), ("put", None, None, "Publish an immutable attachment")],
-        ),
-        ("/v1/rooms/{room}/blobs", vec![("get", None, Some("ResourceList"), "Read retained attachment inventory")]),
-        (
-            "/_resources/{room}",
-            vec![(
-                "post",
-                Some("ResourceGrant"),
-                None,
-                "Grant a short lived host-bound resource cookie on a UUID.dotslop.com origin",
-            )],
-        ),
-    ] {
-        let mut operations = serde_json::Map::new();
-        for (method, input, output, summary) in methods {
-            let mut parameters = vec![];
-            if path.contains("{room}") {
-                parameters.push(serde_json::json!({"name":"room","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{32}$"}}));
-            }
-            if path.contains("{hash}") {
-                parameters.push(serde_json::json!({"name":"hash","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}));
-            }
-            if path.contains("{document}") {
-                parameters.push(serde_json::json!({"name":"document","in":"path","required":true,"schema":{"type":"string","format":"uuid"}}));
-            }
-            if method == "put" && path.ends_with("/seed") {
-                for header in ["X-Sharing-SHA256", "X-Sharing-App", "X-Sharing-Version"] {
-                    parameters.push(
-                        serde_json::json!({"name":header,"in":"header","required":true,"schema":{"type":"string"}}),
-                    );
-                }
-            }
-            if path.ends_with("/compact") {
-                for (header, description) in [
-                    ("X-Sharing-SHA256", "Lowercase 64-digit hex SHA-256 digest of the body"),
-                    ("X-Sharing-Version", "F: JSON array of [16-digit hex peer, non-negative i32 counter] pairs"),
-                    (
-                        "X-Sharing-Root",
-                        "Seed version in the same encoding; required only without a stored root, otherwise ignored",
-                    ),
-                ] {
-                    parameters.push(serde_json::json!({"name":header,"in":"header","required":header != "X-Sharing-Root","description":description,"schema":{"type":"string"}}));
-                }
-            }
-            let mut operation = serde_json::json!({"summary":summary,"parameters":parameters,"security":[{"capability":[]}],"responses":{
-                "200":{"description":"Accepted"},"403":{"$ref":"#/components/responses/Refused"},"409":{"$ref":"#/components/responses/Refused"},"410":{"$ref":"#/components/responses/Refused"},"413":{"$ref":"#/components/responses/Refused"},"429":{"$ref":"#/components/responses/Refused"}
-            }});
-            if path.ends_with("/compact") {
-                operation["responses"].as_object_mut().unwrap().remove("200");
-                operation["responses"]["204"] = serde_json::json!({"description":"Base installed"});
-                for status in ["400", "404"] {
-                    operation["responses"][status] = serde_json::json!({"$ref":"#/components/responses/Refused"});
-                }
-                operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/octet-stream":{"schema":{"type":"string","format":"binary","maxLength":crate::BASE_BYTES}}}});
-            }
-            let creator = path.starts_with("/v1/account/")
-                || path == "/v1/rooms"
-                || path.ends_with("/open")
-                || method == "delete"
-                || (method == "put" && (path.ends_with("/seed") || path.contains("/asset/")))
-                || (method == "post" && path.ends_with("/resources"));
-            if creator {
-                operation["security"] = serde_json::json!([{"firebaseIdentity":[]}]);
-                operation["responses"]["401"] = serde_json::json!({"$ref":"#/components/responses/Refused"});
-            }
-            if (method == "get" && path == "/v1/rooms/{room}") || (method == "put" && path.contains("/blob/")) {
-                operation["security"] = serde_json::json!([{"firebaseIdentity":[]},{"capability":[]}]);
-            }
-            if path == "/v1/account" {
-                operation["responses"]["200"]["content"] =
-                    serde_json::json!({"application/json":{"schema":{"type":"null"}}});
-            }
-            if let Some(name) = input {
-                operation["requestBody"] = serde_json::json!({"required":true,"content":{"application/json":{"schema":{"$ref":format!("#/components/schemas/{name}")}}}});
-            }
-            if let Some(name) = output {
-                operation["responses"]["200"]["content"] = serde_json::json!({"application/json":{"schema":if name=="ResourceList"{serde_json::json!({"type":"array","items":{"$ref":"#/components/schemas/Resource"}})}else{serde_json::json!({"$ref":format!("#/components/schemas/{name}")})}}});
-                if path.starts_with("/v1/account/rooms/") {
-                    operation["responses"]["200"]["content"]["application/json"]["schema"] =
-                        serde_json::json!({"anyOf":[{"type":"null"},{"$ref":"#/components/schemas/AccountRoom"}]});
-                }
-            }
-            operations.insert(method.into(), operation);
-        }
-        paths.insert(path.into(), operations.into());
-    }
-    doc.paths = serde_json::from_value(paths.into()).expect("static HTTP paths");
-    let mut value = serde_json::to_value(doc).expect("OpenAPI document");
-    value["components"]["securitySchemes"] = serde_json::json!({"capability":{"type":"http","scheme":"bearer","description":"Room edit capability for guest data access. Creator administration requires a verified Firebase identity."}});
-    value["components"]["securitySchemes"]["firebaseIdentity"] = serde_json::json!({"type":"http","scheme":"bearer","bearerFormat":"JWT","description":"Firebase ID token, not a room capability"});
-    value["components"]["responses"] = serde_json::json!({"Refused":{"description":"Request refused; the local document is retained","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiFailure"}}}}});
-    let doc = serde_json::from_value(value).expect("complete OpenAPI document");
-    doc
 }

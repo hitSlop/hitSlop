@@ -1,22 +1,25 @@
-# Frozen sharing v1
+# Sharing fixtures: the 2.0.0 baseline
 
-These examples are immutable once committed. Add fixtures; do not regenerate, replace
-or delete existing fixtures or their expectations. Breaking changes need a new path
-version while v1 keeps serving old clients.
+These examples are the pop 2.0.0 sharing contract under the `/v1` routes. They freeze with
+the first public release: from then on, add fixtures and never regenerate, replace or delete
+existing ones or their expectations. A change an old client cannot read needs a new route
+version. Until that release, a contract change rewrites the fixture it changes.
 
-`http.json` freezes every DTO in `src/http.rs`, all phase values, every current public
-ApiFailure code, nullable account lookup, resource inventories, and extra fields on
-replies. Canonical form means JSON value equality (object key order and whitespace do
-not matter); all known field names, omission/null behavior and values must survive.
-`invitation.txt` freezes pinned-origin fragment parsing and link generation.
-`frames.json` freezes the hand-written frame codec (`hex`) and the socket's postcard
-envelope (`envelopeHex`), with one example per variant, all permissions and all acks,
-varint boundaries, u64 peers/ids and UTF-8. Both decode to the documented `frame` value
-and re-encode byte-for-byte. The fixture bytes are independent expectations, not
-produced by tests.
+`http.json` holds every public DTO in `src/http.rs` and `src/document.rs`, all phase and role
+values, every public ApiFailure code with the statuses that map to it, account listing pages
+with and without a cursor, resource inventories, and extra fields on replies. Every schema
+the generated OpenAPI publishes has at least one case. Canonical form means JSON value
+equality (object key order and whitespace do not matter); all known field names,
+omission/null behavior and values must survive.
+`invitation.txt` is a pinned-origin invitation link (`/join#<document UUID>.<64 hex>`) that
+parses and regenerates byte for byte.
+`frames.json` freezes the hand-written frame codec (`hex`) that sockets carry, with one
+example per variant, all permissions and all acks, varint boundaries, u64 peers/ids and
+UTF-8. Each decodes to the documented `frame` value and re-encodes byte-for-byte. The
+fixture bytes are independent expectations, not produced by tests.
 
-`unknown.json` freezes fail-closed behavior: unknown JSON phases, control/event tags,
-frame tags, permissions and acknowledgements are rejected. Unknown HTTP failure codes
+`unknown.json` holds fail-closed behavior: unknown JSON phases, control/event tags, frame
+tags, permissions and acknowledgements are rejected, and a value missing a required field
+(`incomplete`) is refused rather than completed with a default. Unknown HTTP failure codes
 remain strings; unknown binary Error codes remain bytes. Extra JSON reply fields are
-ignored, including resource inventory fields. Binary trailing bytes are rejected;
-postcard enums must never be reordered or extended on an existing v1 connection.
+ignored, including resource inventory fields. Binary trailing bytes are rejected.

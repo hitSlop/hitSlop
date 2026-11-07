@@ -692,3 +692,99 @@ test("Chrome fails every page request for good when the document worker stops an
     expect(await asked(worker)).toEqual(sent);
   } finally { await context.close(); }
 }, 60_000);
+
+test("Chrome WASM socket budget keeps control traffic live and matches acknowledgments", async () => {
+  const cases = await Bun.file("crates/pop-sharing-protocol/tests/fixtures/v1/frames.json").json() as { name: string; hex: string }[];
+  const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "socket-budget-profile-")), { channel: "chrome" });
+  try {
+    const page = await context.newPage(); await page.goto(await imported());
+    await page.frameLocator("iframe").getByRole("textbox").waitFor();
+    const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
+    const result = await worker.evaluate(async cases => {
+      const runtimeURL = "/browser/core/pop_core_wasm.js";
+      const runtime = await import(runtimeURL); await runtime.default();
+      const bytes = (name: string) => new Uint8Array(cases.find(item => item.name === name)!.hex.match(/../g)!.map(byte => parseInt(byte, 16)));
+      const push = bytes("push"), ack = bytes("ack stored"), control = bytes("caught up");
+      const matching = ack.slice(); new DataView(matching.buffer).setBigUint64(1, 42n);
+      const budget = new runtime.SocketPushBudget(0n);
+      try {
+        const admit = (now: bigint, bytes: Uint8Array) => JSON.parse(budget.admit(now, bytes));
+        const first = admit(0n, push);
+        budget.acknowledge(100n, ack); // A different Push ID cannot release this reservation.
+        let pending = false;
+        try { admit(100n, push); } catch { pending = true; }
+        const controlWhilePending = admit(100n, control);
+        budget.acknowledge(100n, matching);
+        for (let n = 1; n < 1800; n++) { admit(100n, push); budget.acknowledge(100n, matching); }
+        return { first, pending, controlWhilePending, waiting: admit(100n, push),
+          controlWhileWaiting: admit(100n, control), next: admit(60_100n, push), operation: runtime.frameOperation(matching) };
+      } finally { budget.free(); }
+    }, cases);
+    expect(result).toEqual({ first: { action: "ready" }, pending: true,
+      controlWhilePending: { action: "ready" }, waiting: { action: "wait", milliseconds: 60_000 },
+      controlWhileWaiting: { action: "ready" }, next: { action: "ready" }, operation: "acknowledge" });
+  } finally { await context.close(); }
+}, 60_000);
+
+test("Chrome guest reset fences authored writes before waiting for identity and keeps export", async () => {
+  const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "guest-reset-profile-")), { channel: "chrome" });
+  try {
+    const page = await context.newPage(); await page.goto(await imported());
+    await page.frameLocator("iframe").getByRole("textbox").waitFor();
+    const frame = page.frames().find(frame => frame.url().includes(".localhost:"))!;
+    await frame.evaluate(() => (globalThis as any).__devProbe.doc.fields.title.set("Before guest reset"));
+    await page.evaluate(() => {
+      const original = globalThis.fetch.bind(globalThis);
+      Object.defineProperty(globalThis, "fetch", { value: async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.endsWith("/auth/config")) return Response.json({ apiKey: "fake", projectId: "reset-test" });
+        if (url.startsWith("https://identitytoolkit.googleapis.com/"))
+          return new Promise<Response>((_resolve, reject) => {
+            (globalThis as any).__signupStarted = true;
+            (globalThis as any).__releaseSignup = () => reject(new Error("Simulated guest identity outage"));
+          });
+        return original(input, init);
+      } });
+    });
+    const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
+    await worker.evaluate(() => postMessage({ type: "identityAttention", message: "Guest session needs attention" }));
+    await page.getByRole("button", { name: "Start a new guest session", exact: true }).click();
+    await page.waitForFunction(() => (globalThis as any).__signupStarted === true);
+    const late = await frame.evaluate(() => (globalThis as any).__devProbe.doc.fields.title.set("After reset started")
+      .then(() => "accepted", () => "refused"));
+    expect(late).toBe("refused");
+    await page.evaluate(() => (globalThis as any).__releaseSignup());
+    await page.getByRole("alert").filter({ hasText: "Simulated guest identity outage" }).waitFor();
+    const output = join(directory, "guest-reset-saved.pop");
+    await saveCopy(page, output);
+    expect((await execute({ method: "get", documentPath: output })).state.value).toMatchObject({ title: "Before guest reset" });
+    expect(await page.getByRole("button", { name: "Start a new guest session", exact: true }).isEnabled()).toBe(true);
+  } finally { await context.close(); }
+}, 60_000);
+
+test("Chrome WASM sharing supervisors reset live retries and keep stopped sessions stopped", async () => {
+  const context = await chromium.launchPersistentContext(await mkdtemp(join(directory, "sharing-supervisor-profile-")), { channel: "chrome" });
+  try {
+    const page = await context.newPage(); await page.goto(await imported());
+    await page.frameLocator("iframe").getByRole("textbox").waitFor();
+    const worker = page.workers().find(worker => worker.url().endsWith("/worker.js"))!;
+    const result = await worker.evaluate(async () => {
+      const runtimeURL = "/browser/core/pop_core_wasm.js";
+      const runtime = await import(runtimeURL); await runtime.default();
+      const connection = new runtime.SharingSupervisor(), maintenance = new runtime.SharingSupervisor();
+      try {
+        const connected = connection.connect(), first = connection.retry(), second = connection.retry();
+        const independent = maintenance.retry();
+        const live = connection.live(), reset = connection.retry();
+        connection.stop();
+        return { connected, first, second, independent, live, reset,
+          stopped: connection.retry() === undefined && !connection.connect() && !connection.live(),
+          stillStopped: connection.retry() === undefined };
+      } finally { connection.free(); maintenance.free(); }
+    });
+    expect(result.connected).toBe(true); expect(result.live).toBe(true);
+    expect(result.first).toBeGreaterThan(0); expect(result.second).toBeGreaterThan(result.first);
+    expect(result.independent).toBe(result.first); expect(result.reset).toBe(result.first);
+    expect(result.stopped).toBe(true); expect(result.stillStopped).toBe(true);
+  } finally { await context.close(); }
+}, 60_000);

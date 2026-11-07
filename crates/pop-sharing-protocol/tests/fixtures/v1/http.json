@@ -10,41 +10,32 @@
     }
   },
   {
+    "type": "JoinDocument",
+    "name": "join request",
+    "input": {
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "canonical": {
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "type": "UpdateDocument",
+    "name": "metadata update",
+    "input": {
+      "title": "Weekly plan",
+      "templateId": "planner"
+    },
+    "canonical": {
+      "title": "Weekly plan",
+      "templateId": "planner"
+    }
+  },
+  {
     "type": "RoomPhase",
     "name": "uploading",
     "input": "uploading",
     "canonical": "uploading"
-  },
-  {
-    "type": "CreatedRoom",
-    "name": "created uploading",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "uploading"
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "uploading"
-    }
-  },
-  {
-    "type": "CreatedRoom",
-    "name": "created uploading with unknown field",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "uploading",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "uploading"
-    }
   },
   {
     "type": "RoomPhase",
@@ -53,163 +44,21 @@
     "canonical": "live"
   },
   {
-    "type": "CreatedRoom",
-    "name": "created live",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "live"
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "live"
-    }
-  },
-  {
-    "type": "CreatedRoom",
-    "name": "created live with unknown field",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "live",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "live"
-    }
-  },
-  {
     "type": "RoomPhase",
     "name": "ended",
     "input": "ended",
     "canonical": "ended"
   },
   {
-    "type": "CreatedRoom",
-    "name": "created ended",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "ended"
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "ended"
-    }
-  },
-  {
-    "type": "CreatedRoom",
-    "name": "created ended with unknown field",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "ended",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "phase": "ended"
-    }
-  },
-  {
-    "type": "AccountRoom",
-    "name": "account lookup",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    }
-  },
-  {
-    "type": "AccountRoom",
-    "name": "account lookup with unknown field",
-    "input": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "room": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    }
-  },
-  {
-    "type": "AccountRoom",
-    "name": "account lookup absent",
-    "input": null,
-    "canonical": null
-  },
-  {
-    "type": "RoomInit",
-    "name": "internal init",
-    "input": {
-      "ownerUid": "fixture-owner",
-      "document": "00000000-0000-4000-8000-000000000001"
-    },
-    "canonical": {
-      "ownerUid": "fixture-owner",
-      "document": "00000000-0000-4000-8000-000000000001"
-    }
-  },
-  {
     "type": "RoomInfo",
-    "name": "guest metadata",
-    "input": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "phase": "live",
-      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "seedSize": 512,
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    },
-    "canonical": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "phase": "live",
-      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "seedSize": 512,
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
-  },
-  {
-    "type": "RoomInfo",
-    "name": "guest metadata with unknown field",
+    "name": "live metadata",
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "phase": "live",
       "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "seedSize": 512,
       "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "phase": "live",
-      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "seedSize": 512,
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
-  },
-  {
-    "type": "RoomInfo",
-    "name": "owner metadata",
-    "input": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "phase": "live",
-      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "seedSize": 512,
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "compact": false
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
@@ -217,19 +66,19 @@
       "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "seedSize": 512,
       "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "compact": false
     }
   },
   {
     "type": "RoomInfo",
-    "name": "owner metadata with unknown field",
+    "name": "live metadata with unknown field",
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "phase": "live",
       "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "seedSize": 512,
       "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "compact": false,
       "futureHint": {
         "ignored": true
       }
@@ -240,7 +89,7 @@
       "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
       "seedSize": 512,
       "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "compact": false
     }
   },
   {
@@ -251,14 +100,16 @@
       "phase": "uploading",
       "seedHash": null,
       "seedSize": null,
-      "app": null
+      "app": null,
+      "compact": false
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "phase": "uploading",
       "seedHash": null,
       "seedSize": null,
-      "app": null
+      "app": null,
+      "compact": false
     }
   },
   {
@@ -270,6 +121,7 @@
       "seedHash": null,
       "seedSize": null,
       "app": null,
+      "compact": false,
       "futureHint": {
         "ignored": true
       }
@@ -279,489 +131,369 @@
       "phase": "uploading",
       "seedHash": null,
       "seedSize": null,
-      "app": null
+      "app": null,
+      "compact": false
     }
   },
   {
-    "type": "ConnectionPlan",
-    "name": "native connection",
+    "type": "RoomInfo",
+    "name": "compaction due",
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512,
-      "url": "https://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
-      "headers": {
-        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      },
-      "socket": "wss://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
-      "protocols": [
-        "pop.sync.v1"
-      ]
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "compact": true
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512,
-      "url": "https://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
-      "headers": {
-        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      },
-      "socket": "wss://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
-      "protocols": [
-        "pop.sync.v1"
+      "phase": "live",
+      "seedHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "seedSize": 512,
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "compact": true
+    }
+  },
+  {
+    "type": "AccessState",
+    "name": "owner while sharing",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "role": "owner"
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "role": "owner"
+    }
+  },
+  {
+    "type": "AccessState",
+    "name": "owner while sharing with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "role": "owner",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "role": "owner"
+    }
+  },
+  {
+    "type": "AccessState",
+    "name": "owner not sharing",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": false,
+      "generation": 3,
+      "capability": null,
+      "role": "owner"
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": false,
+      "generation": 3,
+      "capability": null,
+      "role": "owner"
+    }
+  },
+  {
+    "type": "AccessState",
+    "name": "editor",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": null,
+      "role": "editor"
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": null,
+      "role": "editor"
+    }
+  },
+  {
+    "type": "AccessState",
+    "name": "editor with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": null,
+      "role": "editor",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "generation": 2,
+      "capability": null,
+      "role": "editor"
+    }
+  },
+  {
+    "type": "DocumentRole",
+    "name": "owner",
+    "input": "owner",
+    "canonical": "owner"
+  },
+  {
+    "type": "DocumentRole",
+    "name": "editor",
+    "input": "editor",
+    "canonical": "editor"
+  },
+  {
+    "type": "DocumentMetadata",
+    "name": "catalog metadata",
+    "input": {
+      "title": "Weekly plan",
+      "templateId": "planner"
+    },
+    "canonical": {
+      "title": "Weekly plan",
+      "templateId": "planner"
+    }
+  },
+  {
+    "type": "DocumentMetadata",
+    "name": "catalog metadata with unknown field",
+    "input": {
+      "title": "Weekly plan",
+      "templateId": "planner",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "title": "Weekly plan",
+      "templateId": "planner"
+    }
+  },
+  {
+    "type": "DocumentEntry",
+    "name": "catalog entry",
+    "input": {
+      "documentId": "00000000-0000-4000-8000-000000000001",
+      "title": "Weekly plan",
+      "templateId": "planner",
+      "modifiedAt": 1767225600000,
+      "role": "editor",
+      "catalogRevision": 7,
+      "deleted": false
+    },
+    "canonical": {
+      "documentId": "00000000-0000-4000-8000-000000000001",
+      "title": "Weekly plan",
+      "templateId": "planner",
+      "modifiedAt": 1767225600000,
+      "role": "editor",
+      "catalogRevision": 7,
+      "deleted": false
+    }
+  },
+  {
+    "type": "DocumentEntry",
+    "name": "catalog entry with unknown field",
+    "input": {
+      "documentId": "00000000-0000-4000-8000-000000000001",
+      "title": "Weekly plan",
+      "templateId": "planner",
+      "modifiedAt": 1767225600000,
+      "role": "editor",
+      "catalogRevision": 7,
+      "deleted": false,
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "documentId": "00000000-0000-4000-8000-000000000001",
+      "title": "Weekly plan",
+      "templateId": "planner",
+      "modifiedAt": 1767225600000,
+      "role": "editor",
+      "catalogRevision": 7,
+      "deleted": false
+    }
+  },
+  {
+    "type": "RegisteredDocument",
+    "name": "registration",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "role": "owner"
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "role": "owner"
+    }
+  },
+  {
+    "type": "RegisteredDocument",
+    "name": "registration with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "role": "owner",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "role": "owner"
+    }
+  },
+  {
+    "type": "RegisteredDocuments",
+    "name": "page with a cursor",
+    "input": {
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
+      ],
+      "next": "00000000-0000-4000-8000-000000000002"
+    },
+    "canonical": {
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
+      ],
+      "next": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "type": "RegisteredDocuments",
+    "name": "page with a cursor with unknown field",
+    "input": {
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
+      ],
+      "next": "00000000-0000-4000-8000-000000000002",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
+      ],
+      "next": "00000000-0000-4000-8000-000000000002"
+    }
+  },
+  {
+    "type": "RegisteredDocuments",
+    "name": "last page",
+    "input": {
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
+      ]
+    },
+    "canonical": {
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
       ]
     }
   },
   {
-    "type": "ConnectionPlan",
-    "name": "native connection with unknown field",
+    "type": "RegisteredDocuments",
+    "name": "last page with unknown field",
     "input": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512,
-      "url": "https://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
-      "headers": {
-        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      },
-      "socket": "wss://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
-      "protocols": [
-        "pop.sync.v1"
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
       ],
       "futureHint": {
         "ignored": true
       }
     },
     "canonical": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512,
-      "url": "https://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/seed",
-      "headers": {
-        "Authorization": "Bearer bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      },
-      "socket": "wss://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/sync",
-      "protocols": [
-        "pop.sync.v1"
+      "documents": [
+        {
+          "document": "00000000-0000-4000-8000-000000000001",
+          "role": "owner"
+        },
+        {
+          "document": "00000000-0000-4000-8000-000000000002",
+          "role": "editor"
+        }
       ]
     }
   },
   {
-    "type": "SharingControl",
-    "name": "join credential",
+    "type": "RegisteredDocuments",
+    "name": "empty listing",
     "input": {
-      "type": "joinCredential",
-      "credential": "fixture-credential"
+      "documents": []
     },
     "canonical": {
-      "type": "joinCredential",
-      "credential": "fixture-credential"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "resourcesReady",
-    "input": {
-      "type": "resourcesReady"
-    },
-    "canonical": {
-      "type": "resourcesReady"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "resourcesReady with unknown field",
-    "input": {
-      "type": "resourcesReady",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "type": "resourcesReady"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "files",
-    "input": {
-      "type": "files",
-      "status": "ready"
-    },
-    "canonical": {
-      "type": "files",
-      "status": "ready"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "files with unknown field",
-    "input": {
-      "type": "files",
-      "status": "ready",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "type": "files",
-      "status": "ready"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync",
-    "input": {
-      "type": "sync",
-      "status": "synced"
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "synced"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync with unknown field",
-    "input": {
-      "type": "sync",
-      "status": "synced",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "synced"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync with phase",
-    "input": {
-      "type": "sync",
-      "status": "Reason shown to a person",
-      "phase": "paused"
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "Reason shown to a person",
-      "phase": "paused"
-    }
-  },
-  {
-    "type": "ResourceGrant",
-    "name": "resource grant",
-    "input": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    },
-    "canonical": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
-  },
-  {
-    "type": "ResourceGrant",
-    "name": "resource grant with unknown field",
-    "input": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
-  },
-  {
-    "type": "ApiFailure",
-    "name": "sign_in_required",
-    "input": {
-      "code": "sign_in_required",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "sign_in_required",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      401
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "sign_in_required with unknown field",
-    "input": {
-      "code": "sign_in_required",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "sign_in_required",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      401
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "invalid_request",
-    "input": {
-      "code": "invalid_request",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "invalid_request",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      400,
-      413,
-      422
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "invalid_request with unknown field",
-    "input": {
-      "code": "invalid_request",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "invalid_request",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      400,
-      413,
-      422
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "denied",
-    "input": {
-      "code": "denied",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "denied",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      403
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "denied with unknown field",
-    "input": {
-      "code": "denied",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "denied",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      403
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "not_found",
-    "input": {
-      "code": "not_found",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "not_found",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      404
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "not_found with unknown field",
-    "input": {
-      "code": "not_found",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "not_found",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      404
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "conflict",
-    "input": {
-      "code": "conflict",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "conflict",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      409
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "conflict with unknown field",
-    "input": {
-      "code": "conflict",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "conflict",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      409
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "sharing_ended",
-    "input": {
-      "code": "sharing_ended",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "sharing_ended",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      410
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "sharing_ended with unknown field",
-    "input": {
-      "code": "sharing_ended",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "sharing_ended",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      410
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "limited",
-    "input": {
-      "code": "limited",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "limited",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      429
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "limited with unknown field",
-    "input": {
-      "code": "limited",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "limited",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      429
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "unavailable",
-    "input": {
-      "code": "unavailable",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "unavailable",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      500,
-      503
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "unavailable with unknown field",
-    "input": {
-      "code": "unavailable",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "unavailable",
-      "message": "The sharing service refused this request"
-    },
-    "statuses": [
-      500,
-      503
-    ]
-  },
-  {
-    "type": "ApiFailure",
-    "name": "future_code",
-    "input": {
-      "code": "future_code",
-      "message": "The sharing service refused this request"
-    },
-    "canonical": {
-      "code": "future_code",
-      "message": "The sharing service refused this request"
-    }
-  },
-  {
-    "type": "ApiFailure",
-    "name": "future_code with unknown field",
-    "input": {
-      "code": "future_code",
-      "message": "The sharing service refused this request",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "code": "future_code",
-      "message": "The sharing service refused this request"
+      "documents": []
     }
   },
   {
@@ -875,29 +607,527 @@
     ]
   },
   {
+    "type": "ResourceGrant",
+    "name": "resource grant",
+    "input": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "canonical": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
+    "type": "ResourceGrant",
+    "name": "resource grant with unknown field",
+    "input": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
     "type": "EmptyReply",
     "name": "delete account success",
     "input": null,
     "canonical": null
   },
   {
-    "type": "RoomInfo",
-    "name": "compaction due metadata",
+    "type": "ApiFailure",
+    "name": "sign_in_required",
+    "input": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      401
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "sign_in_required with unknown field",
+    "input": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "sign_in_required",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "invalid_request",
+    "input": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      400,
+      413,
+      422
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "invalid_request with unknown field",
+    "input": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "invalid_request",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "denied",
+    "input": {
+      "code": "denied",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "denied",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      403
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "denied with unknown field",
+    "input": {
+      "code": "denied",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "denied",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "not_found",
+    "input": {
+      "code": "not_found",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "not_found",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      404
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "not_found with unknown field",
+    "input": {
+      "code": "not_found",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "not_found",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "conflict",
+    "input": {
+      "code": "conflict",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "conflict",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      409
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "conflict with unknown field",
+    "input": {
+      "code": "conflict",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "conflict",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "sharing_ended",
+    "input": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      410
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "sharing_ended with unknown field",
+    "input": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "sharing_ended",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "limited",
+    "input": {
+      "code": "limited",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "limited",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      429
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "limited with unknown field",
+    "input": {
+      "code": "limited",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "limited",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "unavailable",
+    "input": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request"
+    },
+    "statuses": [
+      500,
+      503
+    ]
+  },
+  {
+    "type": "ApiFailure",
+    "name": "unavailable with unknown field",
+    "input": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "unavailable",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "requires_update",
+    "input": {
+      "code": "requires_update",
+      "message": "Update pop to use this document service"
+    },
+    "canonical": {
+      "code": "requires_update",
+      "message": "Update pop to use this document service"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "requires_update with unknown field",
+    "input": {
+      "code": "requires_update",
+      "message": "Update pop to use this document service",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "requires_update",
+      "message": "Update pop to use this document service"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "future_code",
+    "input": {
+      "code": "future_code",
+      "message": "The sharing service refused this request"
+    },
+    "canonical": {
+      "code": "future_code",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ApiFailure",
+    "name": "future_code with unknown field",
+    "input": {
+      "code": "future_code",
+      "message": "The sharing service refused this request",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "code": "future_code",
+      "message": "The sharing service refused this request"
+    }
+  },
+  {
+    "type": "ConnectionPlan",
+    "name": "browser connection",
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
-      "phase": "live",
-      "seedHash": null,
-      "seedSize": null,
-      "app": null,
-      "compact": true
+      "size": 512
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
-      "phase": "live",
-      "seedHash": null,
-      "seedSize": null,
-      "app": null,
-      "compact": true
+      "size": 512
+    }
+  },
+  {
+    "type": "ConnectionPlan",
+    "name": "browser connection with unknown field",
+    "input": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "size": 512,
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "document": "00000000-0000-4000-8000-000000000001",
+      "size": 512
+    }
+  },
+  {
+    "type": "SharingControl",
+    "name": "join invitation",
+    "input": {
+      "type": "joinInvitation",
+      "invitation": "https://share.dotpop.click/join#00000000-0000-4000-8000-000000000001.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "canonical": {
+      "type": "joinInvitation",
+      "invitation": "https://share.dotpop.click/join#00000000-0000-4000-8000-000000000001.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "type": "SharingControl",
+    "name": "open local",
+    "input": {
+      "type": "openLocal"
+    },
+    "canonical": {
+      "type": "openLocal"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "identity attention",
+    "input": {
+      "type": "identityAttention",
+      "message": "Sign in again to keep editing"
+    },
+    "canonical": {
+      "type": "identityAttention",
+      "message": "Sign in again to keep editing"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "resources ready",
+    "input": {
+      "type": "resourcesReady"
+    },
+    "canonical": {
+      "type": "resourcesReady"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "resources ready with unknown field",
+    "input": {
+      "type": "resourcesReady",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "type": "resourcesReady"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "files",
+    "input": {
+      "type": "files",
+      "status": "Files ready"
+    },
+    "canonical": {
+      "type": "files",
+      "status": "Files ready"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "files with unknown field",
+    "input": {
+      "type": "files",
+      "status": "Files ready",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "type": "files",
+      "status": "Files ready"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync offline",
+    "input": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "offline"
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "offline"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync syncing",
+    "input": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "syncing"
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "syncing"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync synced",
+    "input": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "synced"
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "synced"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync paused",
+    "input": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "paused"
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "paused"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync paused with unknown field",
+    "input": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "paused",
+      "futureHint": {
+        "ignored": true
+      }
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "paused"
+    }
+  },
+  {
+    "type": "SharingEvent",
+    "name": "sync ended",
+    "input": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "ended"
+    },
+    "canonical": {
+      "type": "sync",
+      "status": "Shown to a person",
+      "phase": "ended"
     }
   }
 ]

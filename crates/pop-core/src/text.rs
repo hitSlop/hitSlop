@@ -326,7 +326,7 @@ pub(super) fn set(
         }
         if !to.is_empty() {
             let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Expected a field"))?;
-            put(&map, &key, &Node::Text {}, value)?;
+            put(&map, &key, at.node, value)?;
         }
         *typed = record(given.unwrap_or_default(), false);
         return Ok(());

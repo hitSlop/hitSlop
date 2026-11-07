@@ -1,8 +1,9 @@
 # Releasing pop
 
 The latest host must open, render, edit, save and reopen every document a public
-release wrote. Downgrades are unsupported. The public v1.0.0 corpus starts the frozen
-compatibility history; retain it and every later release's original evidence.
+release in document lineage 2 wrote. Downgrades are unsupported. The promise starts with
+the first public lineage-2 release; retain its corpus and every later release's original
+evidence.
 
 ## Release flow
 
@@ -38,13 +39,13 @@ workflow run/attempt, all artifact hashes and `qualified` (every prior corpus ve
 and SHA-256 actually replayed). Frozen evidence is never imported into Git, edited,
 deleted or recaptured. GitHub allows whole-release deletion even with immutability;
 do not delete public releases. The secondary copy lives on the maintainer's Mac, under
-`~/.cache/pop/compat-corpora/releases/`, and is retained by Time Machine. Keep this
+`~/.cache/pop/compat-corpora/lineage-2/releases/`, and is retained by Time Machine. Keep this
 folder when cleaning build caches. Recovery requires original retained bytes;
 rebuilding from a tag creates new evidence. See [Local release backup](#local-release-backup).
 
 `bun run compat:resolve` discovers published releases with pagination, verifies their
 immutable status and history closure, downloads missing archives and verifies hashes,
-then extracts each archive once under `~/.cache/pop/compat-corpora/trees/<sha>/`.
+then extracts each archive once under `~/.cache/pop/compat-corpora/lineage-2/trees/<sha>/`.
 A verified snapshot of version links is activated atomically at `.pop/compat/current`.
 Standalone Rust, Swift and TypeScript tests use that pointer; run `bun run compat:resolve`
 before them on a fresh checkout and whenever published history changes. The verifier
@@ -83,14 +84,15 @@ If an unreleased ABI drifts, run `bun run compat:runner`, review the generated c
 and start a new candidate from the committed result. Released preludes are never regenerated.
 Capture requires clean source and a matching candidate writer. No corpus-only commit,
 source fingerprint, import PR, engine rebuild for publication or freeze command exists.
-dotpop starts a separate release lineage in the original repository, renamed to `hitSlop/dotpop`. Release tags use `pop-vX.Y.Z`; legacy `vX.Y.Z` tags remain unchanged and are excluded from pop discovery. Legacy public releases may be retired only through the verified offline archival procedure in [the launch checklist](pop-transition.md); their original assets and attestations stay immutable in that archive. Before its first publication,
-ordinary development permits empty history; release qualification still requires a frozen
-candidate corpus. After publishing pop-v1.0.0, permanently pin its `corpus.sha256` from the
-retained release record in `scripts/compat/pop-required-history.json` before another
-release. Missing or changed published history must then fail on a cold machine.
-The original hitSlop pin in `scripts/compat/required-history.json` and its archived release assets
-remain immutable historical evidence. They are not pop acceptance inputs. This one-time
-public retirement does not permit deleting any published dotpop corpus or release.
+Release tags are `pop-vX.Y.Z` under `@hitslop/pop`, with increasing release
+versions and Mac build numbers. The record's Rust-generated `documentLineage` must equal
+this build's lineage: discovery skips published releases of an earlier lineage and refuses
+a newer one. Before the first lineage-2 publication,
+`scripts/compat/dotpop-required-history.json` is `{}`; ordinary development permits empty
+history, and release qualification still requires a frozen candidate corpus. After that
+first publication, permanently pin its `corpus.sha256` from the retained release record in
+that file before another release. Missing or changed public history must then fail on a
+cold machine.
 
 ## Publication and recovery
 
@@ -132,12 +134,13 @@ Archive and export both use manual signing with the installed **Developer ID App
 certificate for direct DMG distribution. App Store Connect credentials are used only
 for notarization; packaging does not create development certificates or provisioning profiles.
 
-Mac releases ship the Synced Library using **Production** CloudKit in
-`iCloud.com.hitslop.app`, matching TestFlight and App Store iPhones. Restricted
-CloudKit and push entitlements require a **Developer ID provisioning profile** for
+Mac and iPhone releases use the same Firebase account and cloud-document service.
+Deploy and qualify Firestore rules/indexes and the Document DO/R2 service before
+shipping clients that require it. Associated domains and Keychain access require
+a **Developer ID provisioning profile** for
 team `78UAXU8QG8`, App ID `78UAXU8QG8.com.hitslop.app`. Store its base64 bytes in the
 GitHub Actions secret `MACOS_PROVISIONING_PROFILE`. Regenerate the Developer ID
-profile after changing App ID capabilities (including iCloud containers, push, associated domains or Keychain groups),
+profile after changing App ID capabilities (including associated domains or Keychain groups),
 when renewing its signing certificate, or before expiration, then update the secret.
 Packaging validates the profile before building, selects it for archive/export,
 embeds it at `Contents/embedded.provisionprofile` before final signing, and checks
@@ -164,8 +167,7 @@ This archives, signs and produces a local DMG/ZIP/appcast; it does not publish
 or upload Crashlytics symbols. Normal candidates retain the dSYM upload phase.
 It skips automated signed-host acceptance and notarization, so it cannot replace the
 notarized workflow candidate or its Gatekeeper qualification. Archive and derived
-data are temporary and removed on exit. The local development-signed installer uses
-the Development CloudKit environment; it does not prove Production sync.
+data are temporary and removed on exit. Local development credentials do not prove production cloud-document access.
 
 Stapling and ticket validation retry ticket-service error 68 up to three times, waiting
 10, 20 and 40 seconds. Other errors fail immediately; exhausting the retries also fails
@@ -228,6 +230,23 @@ below and confirm a Time Machine backup includes it. Check website health separa
 `native-rust` required alongside the existing required checks. Retire `release/1.0`
 after its fixes are merged; new hotfix branches are temporary and may be deleted.
 
+## Operational identifiers that keep their names
+
+dotpop grew out of hitSlop. These identifiers keep their earlier names; never rename
+them, because installed apps, signed entitlements, accounts and stored credentials
+depend on them:
+
+- Apple bundle IDs `com.hitslop.app` and its extensions (`com.hitslop.app.widgets`,
+  `com.hitslop.app.quicklook-thumbnail`, `com.hitslop.app.quicklook-preview`), App ID
+  `78UAXU8QG8.com.hitslop.app`, and the identifiers derived from them.
+- Keychain access group `78UAXU8QG8.com.hitslop.sharing`; app groups
+  `78UAXU8QG8.com.hitslop.widgets` (Mac) and `group.com.hitslop` (iPhone).
+- Apple Services ID `com.hitslop.app.signin`, the Mac's web sign-in flow.
+- Firebase project `hitslopapp`, serving Auth, Firestore, Analytics and Crashlytics.
+- `dotslop.com`, the isolated browser rendering domain whose UUID subdomains serve
+  authored pages.
+- The npm package `@hitslop/pop` and the GitHub repository `hitSlop/dotpop`.
+
 ## Local release backup
 
 After each publication, resolve history and download all original assets into the Mac's
@@ -239,9 +258,9 @@ Replace `X.Y.Z` with the published version:
 ```sh
 bun run compat:resolve
 gh release download pop-vX.Y.Z --repo hitSlop/dotpop --skip-existing \
-  --dir "$HOME/.cache/pop/compat-corpora/releases/vX.Y.Z"
-(cd "$HOME/.cache/pop/compat-corpora/releases/vX.Y.Z" && shasum -a 256 -c SHA256SUMS)
-tmutil isexcluded "$HOME/.cache/pop/compat-corpora/releases/vX.Y.Z"
+  --dir "$HOME/.cache/pop/compat-corpora/lineage-2/releases/vX.Y.Z"
+(cd "$HOME/.cache/pop/compat-corpora/lineage-2/releases/vX.Y.Z" && shasum -a 256 -c SHA256SUMS)
+tmutil isexcluded "$HOME/.cache/pop/compat-corpora/lineage-2/releases/vX.Y.Z"
 ```
 
 Require every checksum to pass and the folder to report `Included`. `--skip-existing`
@@ -258,7 +277,7 @@ Draft locally with your coding agent; CI publishes reviewed text and never calls
 provider. After the code changes are committed, collect the release's evidence:
 
 ```sh
-bun run release:notes --from pop-v1.0.0 --to HEAD
+bun run release:notes --from pop-v2.0.0 --to HEAD
 # First supported release: summarize current capabilities, not prelaunch history.
 bun run release:notes --initial --to HEAD
 ```
@@ -275,7 +294,7 @@ Ask the agent to inspect relevant diffs and referenced PRs, then draft
 capability or change; omit internal refactors and deferred work. Use this structure:
 
 ```markdown
-# pop 1.0.1
+# pop 2.0.1
 
 ## Mac app
 
@@ -296,7 +315,7 @@ Keep links absolute so they work outside GitHub. Review and edit the draft, run
 `bun run release:notes --check`, then commit it before running the candidate workflow. `bun run release:check` also validates the current notes
 before building. Regenerate or amend the draft if later code changes affect its claims.
 
-Packaging writes `pop-<version>.md` for Sparkle with only the Mac app section and
+Packaging writes `dotpop-<version>.md` for Sparkle with only the Mac app section and
 `release-notes.md` for GitHub with all supplied sections, installation requirements and the
 first-release compatibility notice when applicable. Both files are checksummed and
 retained with the candidate. The appcast links to the versioned Markdown asset on
@@ -336,18 +355,19 @@ After each public release, create about ten varied mini apps with that exact pub
 their documents. Pin the SDK dependency too; a versioned CLI alone does not pin the
 app's SDK. Keep these projects outside the repository's npm workspace resolution and
 confirm they use the installed release, not a workspace link or engine override.
-Start this history with the first public release; local prelaunch builds are practice.
+Start this history with 2.0.0, the first public lineage-2 release; earlier sets are
+lineage 1 and only check refusal (below), and local prelaunch builds are practice.
 
 ```text
 release-sanity/
-  1.0.0/
+  2.0.0/
     originals/          # Closed, saved .pop documents; never edit these
     projects/           # Optional original source and lockfiles
     README.md           # Package/host versions, build, and checks for each example
     SHA256SUMS          # Hashes of originals/*.pop
   runs/
-    1.1.0-candidate-RUN/
-      1.0.0/            # Disposable writable copies of the 1.0.0 documents
+    2.1.0-candidate-RUN/
+      2.0.0/            # Disposable writable copies of the 2.0.0 documents
       results.md        # Candidate run/hash, macOS, observations and failures
 ```
 
@@ -372,12 +392,15 @@ Mac's Time Machine backup alongside the retained release assets.
 - Install from the downloaded DMG and confirm Gatekeeper launch and the expected version.
   The installed app must work without Node/Bun or an engine download.
 - Open fresh copies from every version in the [local sanity library](#local-sanity-library).
-  Check the page, edit, save, close and reopen; create one new document too. Until the
-  first public release, use the prelaunch sanity set and record that limitation.
+  Check the page, edit, save, close and reopen; create one new document too. Lineage-1
+  (1.x) sets are opened only for the refusal check below. 2.0.0 has no earlier lineage-2
+  set: use the prelaunch sanity set and record that limitation.
 - Check Recents, a basic PNG/PDF export, and quit/relaunch with saved edits intact.
-- Check Synced Library with the same iCloud account on the Mac candidate and a
+- Check Synced Library with the same Firebase account on the Mac candidate and a
   TestFlight/App Store iPhone: create and edit from each device, quit/relaunch,
-  and confirm both directions sync through Production.
+  and confirm both directions sync through the production document service.
+  Verify discovery on a fresh device, download-on-open, invitation revocation while
+  owner sync continues, and sign-out hiding files without losing pending edits.
 - Check live collaboration without launch flags in the signed Mac candidate: Apple
   sign-in, create/copy a link, join on another Mac/iPhone and in Chrome, edit from
   each copy, reconnect after offline edits, Stop and re-share, Save Unshared Copy,
@@ -385,11 +408,14 @@ Mac's Time Machine backup alongside the retained release assets.
   confirm the app receives its complete capability fragment.
 - Update from the previous supported signed release through Sparkle. Confirm publisher,
   resulting version and that its existing documents still work. For the first public
-  release, record this as unavailable and exercise an isolated appcast instead.
+  release, record this as unavailable and exercise an isolated appcast instead. For the
+  first lineage-2 release (2.0.0), the previous release's documents must instead be
+  refused unchanged ("made by an older version"): open a 1.x document and confirm the
+  message, that the file is byte-identical afterwards, and that Recents offers Remove.
 
 ### When the change touches the area
 
-Run all of these for 1.0.0. Later releases select them from the diff; record what ran.
+Run all of these for 2.0.0. Later releases select them from the diff; record what ran.
 
 - **Packaging, templates or catalog:** fresh offline install, every bundled starter,
   external template install/removal, local discovery, categories, Mail template handling,

@@ -4,8 +4,10 @@
 //! renders a closed document's export in this executable's restricted evaluator. Only
 //! opening a window needs dotpop.app. Only build/protocol queries and the exact restricted
 //! evaluator entry point are outside the JSON wire.
-use pop_core::owner::{Failure, FailureKind};
-use pop_core::{Code, EngineRequest, EngineSuccess, command, engine::True, file, registry, store};
+use pop_core::{Code, EngineRequest, EngineSuccess, engine::True};
+use pop_runtime::command;
+use pop_runtime::owner::{Failure, FailureKind};
+use pop_storage::{file, registry, store};
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -29,7 +31,10 @@ fn refusal(code: Code, message: impl Into<String>) -> store::Error {
 }
 /// The restricted evaluator: this same executable, run with `--evaluate-command`.
 fn evaluator() -> Result<pop_runner::Evaluator, String> {
-    pop_runner::Evaluator::new(std::env::current_exe().map_err(|e| e.to_string())?, vec!["--evaluate-command".into()])
+    pop_runner::Evaluator::process(
+        std::env::current_exe().map_err(|e| e.to_string())?,
+        vec!["--evaluate-command".into()],
+    )
 }
 
 fn success(result: EngineSuccess) -> String {
@@ -56,7 +61,7 @@ fn dispatch(request: EngineRequest) -> String {
                         refusal(Code::InvalidRequest, format!("Cannot start the capture renderer: {e}"))
                     })?;
                     let render = |template: &Path, roles: &[file::Artwork]| {
-                        pop_core::capture::render_views(template, &evaluator, roles)
+                        pop_capture::capture::render_views(template, &evaluator, roles)
                     };
                     file::pack(app.get(), stage, path, Some(&render))?
                 } else {
@@ -91,7 +96,15 @@ fn dispatch(request: EngineRequest) -> String {
             EngineRequest::Open { document_path } => {
                 EngineSuccess::Open { ok: True, document_path: open::document(Path::new(&document_path))? }
             }
-            _ => unreachable!("routed before file dispatch"),
+            EngineRequest::Get { .. }
+            | EngineRequest::Batch { .. }
+            | EngineRequest::Copy { .. }
+            | EngineRequest::Export { .. }
+            | EngineRequest::ThemeExport { .. }
+            | EngineRequest::AttachmentsList { .. }
+            | EngineRequest::AttachmentsRead { .. }
+            | EngineRequest::Describe { .. }
+            | EngineRequest::Call { .. } => unreachable!("document requests route to the owner"),
         })
     })();
     match result {
@@ -139,7 +152,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     if args == ["--build-id"] {
-        println!("{}", pop_core::BUILD_ID);
+        println!("{}", pop_runtime::BUILD_ID);
         return ExitCode::SUCCESS;
     }
     if args == ["--limits"] {

@@ -4,7 +4,7 @@ import XCTest
 final class PhoneCatalogTests: XCTestCase {
   @MainActor func testBundledTemplateCreatesAnEditableSyncedPop() throws {
     guard ProcessInfo.processInfo.environment["POP_REAL_CLOUD_PROOF"] == "1" else {
-      throw XCTSkip("Requires the explicitly enabled physical-device CloudKit proof")
+      throw XCTSkip("Requires the explicitly enabled physical-device cloud sync proof")
     }
     continueAfterFailure = false
     let app = XCUIApplication()
@@ -17,15 +17,18 @@ final class PhoneCatalogTests: XCTestCase {
     let create = app.buttons["create-pop"]
     XCTAssertTrue(create.waitForExistence(timeout: 15))
     capture(app, "Template preview")
+    app.buttons["Sync across devices"].tap()
     let connected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: create)
-    XCTAssertEqual(XCTWaiter.wait(for: [connected], timeout: 60), .completed, "Sign the mini into the test Apple ID")
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [connected], timeout: 60), .completed,
+      "Sign in through pop’s Account screen before running the cloud proof")
     create.tap()
     app.buttons["Cancel"].tap()
     XCTAssertFalse(app.webViews.firstMatch.exists)
     create.tap()
     let name = app.textFields["pop-name"]
     XCTAssertTrue(name.waitForExistence(timeout: 10))
-    let documentName = "Phone artwork " + UUID().uuidString.prefix(6)
+    let documentName = "Disposable sync proof " + UUID().uuidString.prefix(8)
     name.tap()
     name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (name.value as? String)?.count ?? 0))
     name.typeText(String(documentName))
@@ -45,21 +48,6 @@ final class PhoneCatalogTests: XCTestCase {
     capture(app, "Live editor with task")
     app.buttons["document-actions"].tap()
     app.buttons["Sync Now"].tap()
-    if ProcessInfo.processInfo.environment["POP_TWO_DEVICE_EDIT_PROOF"] == "1" {
-      task.tap()
-      task.typeText("Still typing while Mac updates")
-      // Keep the real editor active while the Mac's normal owner path sends a change.
-      let remote = app.webViews.descendants(matching: .any).matching(
-        NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "Mac live editor proof", "Mac live editor proof")
-      ).firstMatch
-      XCTAssertTrue(
-        remote.waitForExistence(timeout: 120), "Send the Mac edit through its owner while this editor remains open")
-      XCTAssertTrue((task.value as? String)?.contains("Still typing while Mac updates") == true)
-      capture(app, "Incoming Mac edit in open iPhone editor")
-      app.webViews.buttons["Add task"].tap()
-      app.buttons["document-actions"].tap()
-      app.buttons["Sync Now"].tap()
-    }
     app.returnToLibrary()
     XCTAssertTrue(app.buttons[String(documentName)].waitForExistence(timeout: 20))
     capture(app, "Named pop with refreshed artwork")

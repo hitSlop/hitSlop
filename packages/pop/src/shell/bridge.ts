@@ -49,7 +49,8 @@ export async function call<M extends PageMethod>(request: PageRequest<M>): Promi
   return result as PageResult<M>;
 }
 
-// Safari 18.2+ has native base64 on Uint8Array; the fallbacks avoid per-byte callbacks.
+// WebKit hosts (macOS 15.2+, iOS 26+) have native base64 on Uint8Array; Chrome has it from
+// 140, and the browser host sets no minimum Chrome. The fallbacks avoid per-byte callbacks.
 const encode = (bytes: Uint8Array) => {
   if (bytes.toBase64) return bytes.toBase64();
   const chunks: string[] = [];

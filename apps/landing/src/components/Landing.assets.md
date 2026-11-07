@@ -20,9 +20,10 @@ curated emoji tile. Commit the outputs: the Cloudflare build installs only
 
 ## Share image
 
-`public/og.jpg` (1200×630) is rendered from `scripts/og-card.html` with the dev
-server running (`bun run --cwd apps/landing dev`), then screenshotted in a browser at
-1200×630 and saved as JPEG. It reuses the product-tour poster.
+`public/og-dotpop.jpg` (1200×630) is rendered from `scripts/og-card.html`: open it in a
+browser at 1200×630 (it loads fonts and art from `../public/assets`, no dev server needed) or
+screenshot it with headless Chrome, then save the result as JPEG. It reuses the product-tour
+poster. The file name changes when the card does, so link previews refetch it.
 
 ## Brand art
 
@@ -31,8 +32,8 @@ Rive project in `artwork/brand/corner-hello`. That source exports `mark.svg`, `h
 `mark.webp`, the main `logo.webp` paired with the existing lettering, and the live
 `mascot-wave` and `mascot-party` images. The app keeps its gradient icon and documents
 keep their captured artwork. Run the source folder's `export.mjs` to rebuild those
-outputs; its README describes the CLI requirement. The remaining artwork below is
-retained from the earlier sticker treatment.
+outputs; its README describes the CLI requirement. The remaining artwork below comes
+from the sticker treatment.
 
 `public/assets/brand/` holds the `.pop` logo and its parts (`logo`, `mark`, `wordmark`, favicons and
 `apple-touch.png`), cut from the supplied sticker. The hero's cup, the mascot poses (`mascot-wave`,
@@ -125,6 +126,6 @@ montage pops and the logo to those beats. **This is a commercial recording: lice
 or replace it before the video is published.**
 
 The terminal commands and their output were run for real against copies of the
-documents using CLI 1.2.0. The desktop chrome and wallpaper are drawn, not captured.
+documents using the pop CLI. The desktop chrome and wallpaper are drawn, not captured.
 The Tenchi Muyo skin and Akitsuki Airi pet are third-party community files, used only
 as import examples.

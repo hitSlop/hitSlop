@@ -113,6 +113,16 @@ export class WorkerOwner<C extends BrowserCopy = BrowserCopy> {
     });
   // Serial async control operations; authored page work never interleaves an import/export.
   private queue = Promise.resolve();
+  /** Authority changes join the same queue as authored work. The caller detaches
+   * its sync connection before awaiting metadata/storage inside this operation. */
+  serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(operation);
+    this.queue = result.then(
+      () => {},
+      () => {},
+    );
+    return result;
+  }
   handle = ({ data: input }: MessageEvent<unknown>) => {
     this.queue = this.queue.then(async () => {
       let data: BrowserRequest | undefined;

@@ -25,11 +25,12 @@ extension PopCategory {
 }
 
 public enum CatalogFilter: Hashable, Sendable {
-  case all, recents, synced
+  case all, inbox, recents, synced
   case category(PopCategory)
   public var title: String {
     switch self {
     case .all: "Templates"
+    case .inbox: "Inbox"
     case .recents: "Recents"
     case .synced: "Synced"
     case .category(let category): category.label
@@ -65,9 +66,12 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
   public var title: String
   public var slug = ""
   public var isBundled = false
-  public var isSynced = false
-  /// A synced entry kept in iCloud, not one kept only on this device.
+  public var isManaged = false
+  /// Managed entries live in the library; this one is synced across devices rather than kept only on this device.
   public var inCloud = false
+  public var inbox = false
+  public var savedDocumentID: String?
+  public var documentPresentation: CatalogDocumentPresentation?
   public var description = ""
   public var categories: [PopCategory] = []
   public var authorName: String?
@@ -80,7 +84,12 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
   public var initialSize: String?
   /// Local Mac navigation metadata; independent of the document's contents and widgets.
   public var recentHistoryID: UUID?
+  /// The file can't be reached; reconnecting or restoring it lets it open again.
   public var isUnavailable = false
+  /// Why this build will not open the file, in the core's words. Trying again cannot help, so
+  /// the entry offers removal from Recents instead.
+  public var refusal: String?
+  public var needsAttention: Bool { isUnavailable || refusal != nil }
   public init(id: String, source: Source, title: String) {
     self.id = id
     self.source = source
@@ -91,7 +100,7 @@ public struct CatalogEntry: Equatable, Identifiable, Sendable {
     guard case .recent(let url) = source else { return nil }
     return PopDocumentIdentity(url: url)
   }
-  public var displayTitle: String { isSynced ? title : (documentIdentity?.filename ?? title) }
+  public var displayTitle: String { isManaged ? title : (documentIdentity?.filename ?? title) }
   public var searchableText: String {
     ([title, description, authorName ?? "", documentIdentity?.path ?? "", documentIdentity?.folderPath ?? ""]
       + categories.flatMap { [$0.rawValue, $0.label] })
@@ -122,6 +131,8 @@ public struct CatalogClient {
     guard case .recent(let url) = entry.source else { throw CocoaError(.fileNoSuchFile) }
     return url
   }
+  /// Forgets a recent document; its file is untouched.
+  public var removeRecent: @MainActor (CatalogEntry) async -> Void = { _ in }
   /// Returns nil when the destination picker is cancelled.
   public var chooseDestination: @MainActor (CatalogEntry) async throws -> URL?
   /// Copies the template to the chosen destination and returns the new document.
@@ -168,6 +179,7 @@ public enum CatalogStorageChoice: Sendable {
   /// The managed library's folder. Files inside it appear in Recents only as their synced
   /// entries; anything else there (another account's or an earlier preview's library) is left out.
   public var managedFolder: String?
+  public var accountBoundPaths: Set<String> = []
   /// Recent documents, newest first; a library document shows as its synced entry.
   public var recents: [CatalogEntry] {
     let synced = Dictionary(
@@ -179,16 +191,19 @@ public enum CatalogStorageChoice: Sendable {
       guard case .recent(let url) = recent.source else { return recent }
       let path = url.standardizedFileURL.path
       if var entry = synced[path] {
+        guard !entry.inbox else { return nil }
         entry.createdAt = recent.createdAt
         entry.updatedAt = recent.updatedAt
         entry.recentHistoryID = recent.recentHistoryID
         entry.isUnavailable = recent.isUnavailable
+        entry.refusal = recent.refusal
         return entry
       }
+      if accountBoundPaths.contains(path) { return nil }
       if let managedFolder {
         let folder = URL(fileURLWithPath: managedFolder).standardizedFileURL.path
-        // Earlier previews left sibling Library-development-… folders. Other siblings are local files.
-        if path.hasPrefix(folder + "/") || path.hasPrefix(folder + "-development-") { return nil }
+        // Siblings of the managed folder are ordinary local files.
+        if path.hasPrefix(folder + "/") { return nil }
       }
       return recent
     }
@@ -226,6 +241,8 @@ public enum CatalogStorageChoice: Sendable {
 
   public var synced: [CatalogEntry] = [] { didSet { synchronizeSelection() } }
 
+  public var inbox: [CatalogEntry] { synced.filter(\.inbox) }
+
   public var categories: [PopCategory] {
     let present = Set(local.flatMap(\.categories))
     return PopCategory.allCases.filter { present.contains($0) }
@@ -235,6 +252,7 @@ public enum CatalogStorageChoice: Sendable {
     switch filter {
     case .all: items = local
     case .category(let category): items = local.filter { $0.categories.contains(category) }
+    case .inbox: items = inbox
     case .recents: items = recents
     case .synced: items = synced
     }
@@ -293,6 +311,15 @@ public enum CatalogStorageChoice: Sendable {
       guard let index = self.recentFiles.firstIndex(where: { $0.source == .recent(url) }) else { return }
       if let entry { self.recentFiles[index] = entry } else { self.recentFiles[index].isUnavailable = true }
       self.synchronizeSelection()
+    }
+  }
+
+  /// Removes a document from Recents, such as one this build refuses; its file is untouched.
+  public func removeRecent(_ entry: CatalogEntry) {
+    guard !isQuitting, entry.recentHistoryID != nil else { return }
+    work.run {
+      await self.client.removeRecent(entry)
+      self.refreshRecents()
     }
   }
 

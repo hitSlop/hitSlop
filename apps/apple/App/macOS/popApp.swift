@@ -1,5 +1,4 @@
 import AppKit
-import CloudKit
 import Combine
 import PopAccount
 import PopCatalog
@@ -75,7 +74,13 @@ private struct AppSettingsView: View {
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.regular)
     installMenus()
-    NSApp.registerForRemoteNotifications()
+    PopLibrary.shared.concealAccountDocuments = { [weak self] paths, concealed in
+      self?.coordinator.concealAccountDocuments(paths, concealed: concealed)
+    }
+    PopLibrary.shared.closeAccountDocuments = { [weak self] paths in
+      try await self?.coordinator.closeAccountDocuments(paths)
+    }
+    DocumentSharing.installLibraryServices()
     PopLibrary.shared.start()
     libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
       [weak self] _ in
@@ -115,12 +120,6 @@ private struct AppSettingsView: View {
     } else {
       urls.forEach(openDocument)
     }
-  }
-  func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
-    guard let notification = CKNotification(fromRemoteNotificationDictionary: userInfo),
-      notification.containerIdentifier == "iCloud.com.hitslop.app"
-    else { return }
-    Task { await PopLibrary.shared.receivedPush() }
   }
   func applicationDidBecomeActive(_ notification: Notification) {
     NotificationCenter.default.post(name: .popSharingForeground, object: nil)
@@ -334,7 +333,7 @@ private struct AppSettingsView: View {
     file.addItem(.separator())
     item(file, "Duplicate…", .duplicate, "d")
     unsharedCopyMenuItem = item(file, "Save Unshared Copy…", .saveUnsharedCopy)
-    item(file, "Move to iCloud…", .moveToCloud)
+    item(file, "Enable Sync Across Devices…", .moveToCloud)
     item(file, "Share…", .share)
     let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
     let exportMenu = NSMenu(title: "Export")
@@ -407,7 +406,7 @@ private struct AppSettingsView: View {
     } else {
       for entry in documents {
         let recent = menu.addItem(
-          withTitle: entry.displayTitle + (entry.isUnavailable ? " — Unavailable" : ""),
+          withTitle: entry.displayTitle + (entry.needsAttention ? " — Unavailable" : ""),
           action: #selector(openRecent(_:)), keyEquivalent: "")
         recent.representedObject = entry.id
         recent.toolTip = entry.documentIdentity?.path

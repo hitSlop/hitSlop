@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // A personal catalog is a list of references. The document service authorizes
+    // actual document access; catalog fields never grant permissions.
+    match /users/{userId}/pops/{documentId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

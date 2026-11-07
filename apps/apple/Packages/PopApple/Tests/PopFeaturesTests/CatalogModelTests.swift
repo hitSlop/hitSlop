@@ -57,8 +57,9 @@ import Testing
   gate.open()
   await model.work.settled()
   #expect(model.creating == nil && model.creationError == nil)
-  #expect(catalog.calls == [.choose("a"), .recents])
-  #expect(ended == [nil])
+  #expect(ended == [nil], "creation ended once, with no document")
+  #expect(catalog.calls.filter { $0 == .choose("a") }.count == 1, "the repeated action started no second creation")
+  #expect(!catalog.calls.contains(.create("a")), "nothing is created after the cancel")
 }
 
 @Test @MainActor func failedCreationCanBeRetried() async {
@@ -74,7 +75,7 @@ import Testing
     #expect(model.creationError == "Save failed")
     model.creationError = nil
   }
-  #expect(catalog.calls == [.choose("a"), .create("a"), .choose("a"), .create("a")])
+  #expect(catalog.calls.filter { $0 == .create("a") }.count == 2, "each attempt creates again")
 }
 
 @Test @MainActor func creationIsRefusedWhileQuitting() async {

@@ -21,7 +21,7 @@ public struct LibrarySyncStatusView: View {
         Button {
           showing = true
         } label: {
-          Label("iCloud needs attention", systemImage: "exclamationmark.icloud")
+          Label("Sync needs attention", systemImage: "exclamationmark.triangle")
             .padding(.horizontal, 12).frame(minHeight: 44)
         }
         .accessibilityHint("Shows sync issues, retry, and help")
@@ -35,8 +35,8 @@ public struct LibrarySyncStatusView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
             Label(
-              library.attention != nil ? "iCloud needs attention" : "iCloud is up to date",
-              systemImage: library.attention != nil ? "exclamationmark.icloud" : "checkmark.icloud"
+              library.attention != nil ? "Sync needs attention" : "Everything is synced",
+              systemImage: library.attention != nil ? "exclamationmark.triangle" : "checkmark.circle"
             )
             .font(.title2.bold())
             Text(library.attention != nil ? library.syncExplanation : "Your changes have synced successfully.")

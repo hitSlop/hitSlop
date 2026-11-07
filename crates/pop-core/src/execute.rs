@@ -1,30 +1,37 @@
 use super::*;
 use layout::RowList;
 
-/// Writes every declared field of the object `value` into `map`. A field the value leaves
-/// out is removed when optional: a present map may still hold it.
+/// Initializes an object from a fully validated value. Canonical scalar defaults write
+/// nothing, so concurrent creation cannot overwrite another writer's explicit fields.
 pub(super) fn fill(map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
     let Node::Object { properties } = node else {
         return Err(err(Code::TypeMismatch, "Expected object"));
     };
     for (key, child) in properties {
         match value.get(key) {
+            Some(value)
+                if is_scalar(child)
+                    && child.default_value().is_some_and(|default| {
+                        project(Some(child), default) == project(Some(child), value.clone())
+                    }) => {}
             Some(value) => put(map, key, child, value)?,
             None if matches!(child, Node::Optional { .. }) => {
-                if map.get(key).is_some() {
-                    map.delete(key).map_err(engine)?;
-                }
+                layout::clear_field(map, key, child, false)?;
             }
             None => return Err(err(Code::TypeMismatch, format!("Missing {key}"))),
         }
     }
     Ok(())
 }
-/// Stores a validated value at `map[key]` in the representation its kind uses (`layout`):
-/// a plain value for scalars, an ordinary child for text, counters, objects, records and
+/// Stores a validated value at `map[key]` in the representation its kind uses:
+/// a plain value for scalars, a mergeable child for text, counters, objects, records and
 /// lists. Present children keep their identity while their content is replaced.
 pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
     match node {
+        Node::Optional { inner } if !is_scalar(inner) => {
+            let (slot, current) = layout::slot_parent(map, key)?;
+            put(&slot, &current, inner, value)
+        }
         Node::Optional { inner } => put(map, key, inner, value),
         scalar if is_scalar(scalar) => map.insert(key, loro_scalar(scalar, value)).map_err(engine),
         Node::Counter {} => {
@@ -41,10 +48,10 @@ pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Resul
             let wanted = value.as_object().expect("validated record");
             let gone: Vec<String> = record.keys().map(|k| k.to_string()).filter(|k| !wanted.contains_key(k)).collect();
             for key in gone {
-                record.delete(&key).map_err(engine)?;
+                layout::clear_field(&record, &key, entry, true)?;
             }
             for (key, value) in wanted {
-                put(&record, key, entry, value)?;
+                put_entry(&record, key, entry, value)?;
             }
             Ok(())
         }
@@ -63,6 +70,15 @@ pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Resul
         }
         // Validated values only: the descriptor admits nothing else.
         _ => unreachable!("put of a validated {node:?}"),
+    }
+}
+/// Creates an entry; container entries use the same generation slots as optional fields.
+pub(super) fn put_entry(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
+    if layout::slotted(node, true) {
+        let (slot, current) = layout::slot_parent(map, key)?;
+        put(&slot, &current, node, value)
+    } else {
+        put(map, key, node, value)
     }
 }
 pub(super) struct Location<'a> {
@@ -98,11 +114,14 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
         match (segment, current, &value) {
             (Segment::Key(key), Node::Object { properties }, ValueOrContainer::Container(Container::Map(map))) => {
                 let next = properties.get(key).ok_or_else(|| err(Code::PathNotFound, "Unknown field"))?;
-                let child = match map.get(key) {
+                let child = match layout::field(map, key, next, false) {
                     Some(child) => child,
                     None if matches!(next, Node::Optional { .. }) => {
                         absent = true;
                         ValueOrContainer::Value(LoroValue::Null)
+                    }
+                    None if is_scalar(next) && next.default_value().is_some() => {
+                        ValueOrContainer::Value(loro_scalar(next, &next.default_value().expect("declared default")))
                     }
                     None => return Err(err(Code::PathNotFound, "Missing field")),
                 };
@@ -114,7 +133,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
                 if !valid_key(key) {
                     return Err(err(Code::InvalidKey, "Record keys are 1–256 characters and not reserved"));
                 }
-                let child = match map.get(key) {
+                let child = match layout::field(map, key, next, true) {
                     Some(child) => child,
                     None => {
                         absent = true;
@@ -225,7 +244,11 @@ pub(super) fn execute(
                 }
             }
             let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Cannot replace a row"))?;
-            put(&map, &key, kind, value)?;
+            if at.entry {
+                put_entry(&map, &key, at.node, value)?;
+            } else {
+                put(&map, &key, at.node, value)?;
+            }
         }
         Intent::Clear { .. } => {
             let at = resolve(doc, schema, op.path())?;
@@ -234,7 +257,7 @@ pub(super) fn execute(
             }
             if !at.absent {
                 let (map, key) = at.parent.ok_or_else(|| err(Code::TypeMismatch, "Cannot clear a row"))?;
-                map.delete(&key).map_err(engine)?;
+                layout::clear_field(&map, &key, at.node, at.entry)?;
             }
         }
         Intent::Insert { id, value, at: anchor, index, .. } => {

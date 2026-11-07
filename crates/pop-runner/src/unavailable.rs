@@ -1,4 +1,4 @@
-//! Mobile hosts retain the evaluator interface and protocol, without process execution.
+//! Explicitly requested providers omitted from a host build fail construction.
 use super::{Batch, JobKind};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -9,8 +9,8 @@ pub struct Evaluator {
 }
 const UNAVAILABLE: &str = "Authored commands and native capture are unavailable on this host";
 impl Evaluator {
-    pub fn new(_executable: PathBuf, _arguments: Vec<String>) -> Result<Self, String> {
-        Err(UNAVAILABLE.into())
+    pub fn new(_executable: PathBuf, _arguments: Vec<String>, provider: &str) -> Result<Self, String> {
+        Err(format!("The {provider} provider is unavailable in this build"))
     }
     pub fn executable_path(&self) -> &Path {
         &self.executable

@@ -61,9 +61,9 @@ test("catching up settles the join without resources, and resources alone do not
   expect(gate.stopped).toBeUndefined();
 });
 
-test("the words shown never decide: an old worker's event without a phase waits", async () => {
+test("the words shown never decide: a syncing event that reads Synced waits", async () => {
   const gate = new JoinGate();
   const waiting = watch(gate);
-  gate.handle({ type: "sync", status: "Synced" });
+  gate.handle(sync("syncing", "Synced"));
   expect(await waiting.catchup()).toBe(false);
 });

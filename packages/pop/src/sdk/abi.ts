@@ -111,10 +111,10 @@ export interface PopView {
 }
 
 export interface PopContext {
-  /** Optional on older hosts: the SDK falls back to unknown identity and live layout. */
-  readonly environment?: Environment;
-  /** Optional on older hosts. Feedback is best effort and never blocks an edit. */
-  readonly haptics?: Haptics;
+  /** Host identity (`unknown` where the host does not report one) and live layout. */
+  readonly environment: Environment;
+  /** Best effort and never blocks an edit; silent where the host has no feedback. */
+  readonly haptics: Haptics;
   readonly document: PopDocument<ObjectNode>;
   readonly bind: {
     /** Two-way text binding with IME composition and remote-edit transforms. */

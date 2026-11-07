@@ -2,7 +2,10 @@
 
 ## Set up the checkout
 
-Use the Bun version in root `package.json` (currently 1.4.2), Xcode, and XcodeGen on macOS. The shipped Mac app supports Apple silicon on macOS 15.2 or newer. The iPhone app
+Use the Bun version in root `package.json` (currently 1.4.2), Xcode 26.2 or newer
+(Swift 6.2+), and XcodeGen on macOS. Apple CI and release builds explicitly select
+Xcode 26.2 before restoring build caches; a missing installation fails rather than
+falling back to the runner default. The shipped Mac app supports Apple silicon on macOS 15.2 or newer. The iPhone app
 supports iOS 26+ in TestFlight; see [current availability](../../apps/landing/src/content/docs/docs/availability.mdx).
 
 ```sh
@@ -120,10 +123,10 @@ Test locations, including `tests/release`, `tests/presentation`, `tests/verifica
 
 ## Change discipline
 
-Read AGENTS and the template's `pop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter historical compatibility fixtures or release hashes to make a check pass.
+Read AGENTS and the template's `pop.ts` first. Preserve contributor changes already in the worktree. Keep generated artifacts separate from authored source and inspect generated changes after building. Never alter frozen compatibility fixtures or release hashes to make a check pass.
 
-`archive/`, `spikes/`, `plans/`, `POP.todo`, `apps/promo/inspo/`,
-`_docs/`, `_vibe/` and `deferred/` stay local and are ignored by
+`archive/`, `spikes/`, `POP.todo`, `apps/promo/inspo/`,
+`_docs/` and `_vibe/` stay local and are ignored by
 Git. They are not active contracts. Keep shared decisions in the architecture, roadmap
 and ideas pages. Restore an old project only after updating its source to the current
 document API; there is no legacy document migration.

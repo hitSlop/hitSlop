@@ -1,0 +1,45 @@
+[package]
+name = "pop-runtime"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+pop-core = { path = "../pop-core", default-features = false }
+pop-contracts = { path = "../pop-contracts" }
+pop-storage = { path = "../pop-storage", default-features = false }
+pop-sharing-protocol = { path = "../pop-sharing-protocol" }
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+thiserror.workspace = true
+getrandom = "0.2"
+data-encoding = "=2.11.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pop-capture = { path = "../pop-capture", default-features = false }
+pop-runner = { path = "../pop-runner", default-features = false }
+libc = "0.2"
+
+[features]
+default = ["desktop"]
+desktop = ["pop-runner/process"]
+mobile-capture = ["pop-runner/capture-in-process"]
+bundled-sqlite = ["pop-storage/bundled-sqlite"]
+
+[dev-dependencies]
+brotli = "=9.0.0"
+pop-core = { path = "../pop-core", default-features = false, features = ["acceptance"] }
+loro.workspace = true
+rusqlite = { version = "=0.40.2", features = ["hooks"] }
+sha2 = "=0.11.0"
+png = "=0.18.1"
+tempfile = "3"
+
+[[test]]
+name = "runtime"
+path = "tests/main.rs"

@@ -4,6 +4,7 @@ export type Copy = {
   title: string;
   created: number;
   state: "importing" | "ready" | "missing";
+  local?: boolean;
 };
 let database: Promise<IDBDatabase> | undefined;
 function openDatabase() {
@@ -28,6 +29,26 @@ async function transaction<T>(
 }
 export const listCopies = () => transaction<Copy[]>("readonly", (store) => store.getAll());
 export const putCopy = (copy: Copy) => transaction("readwrite", (store) => store.put(copy));
+/** Merge catalog metadata in one transaction; a concurrent Ready event must not
+ * erase another field or turn a ready canonical copy back into an import. */
+export async function updateCopy(id: string, changes: Partial<Copy>): Promise<void> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("copies", "readwrite"),
+      store = tx.objectStore("copies");
+    const request = store.get(id);
+    request.onsuccess = () => {
+      if (!request.result) {
+        tx.abort();
+        return;
+      }
+      store.put({ ...request.result, ...changes, id });
+    };
+    tx.oncomplete = () => resolve();
+    tx.onabort = tx.onerror = () =>
+      reject(tx.error ?? new Error("Browser copy catalog entry is missing"));
+  });
+}
 const removeRecord = (id: string) => transaction("readwrite", (store) => store.delete(id));
 export const lockName = (id: string) => `pop-copy:${id}`;
 export async function removeCopy(id: string) {
@@ -38,7 +59,8 @@ export async function removeCopy(id: string) {
     await removeRecord(id);
   });
 }
-/** Check before installing sahpool or deleting its files. Pre-launch unmarked pools are unsupported. */
+/** Check before installing sahpool or deleting its files. A pool without the current container
+ * marker is refused and left unchanged. */
 export async function checkContainer(id: string, create = false) {
   const root = await navigator.storage.getDirectory();
   const copies = await root.getDirectoryHandle("copies", { create: true });

@@ -4,10 +4,10 @@
 uniffi::setup_scaffolding!();
 
 use pop_core::Origin;
-use pop_core::file::{self, Artwork, Kind, TemplateSource};
-use pop_core::owner::Failure;
 use pop_core::shape::{Length, Segment, Silhouette};
-use pop_core::store::{self, Attachment, Mode};
+use pop_runtime::owner::Failure;
+use pop_storage::file::{self, Artwork, Kind, TemplateSource};
+use pop_storage::store::{self, Attachment, Mode};
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -86,7 +86,7 @@ pub enum Origin {
 /// Whether another writer holds the document's lock now.
 #[uniffi::export]
 pub fn writer_lock_held(path: String) -> Result<bool, CoreError> {
-    match pop_core::registry::Lease::acquire(Path::new(&path)) {
+    match pop_storage::registry::Lease::acquire(Path::new(&path)) {
         Ok(_) => Ok(false),
         Err(store::Error::Locked) => Ok(true),
         Err(error) => Err(error.into()),
@@ -95,7 +95,7 @@ pub fn writer_lock_held(path: String) -> Result<bool, CoreError> {
 /// The core build this library embeds; app and engine must report the same value.
 #[uniffi::export]
 pub fn core_build_id() -> String {
-    pop_core::BUILD_ID.into()
+    pop_runtime::BUILD_ID.into()
 }
 
 #[uniffi::remote(Enum)]
@@ -236,17 +236,17 @@ pub fn file_artwork(path: String, preferred: Vec<Artwork>) -> Result<Option<Artw
 /// (`POP_TEST_REGISTRY`). Every process sharing documents must use the same folder.
 #[uniffi::export]
 pub fn use_registry_folder(path: String) -> Result<(), CoreError> {
-    Ok(pop_core::registry::use_folder(Path::new(&path))?)
+    Ok(pop_storage::registry::use_folder(Path::new(&path))?)
 }
 /// Removes discovery files a crashed owner left; returns how many. Run at app launch.
 #[uniffi::export]
 pub fn sweep_registry() -> Result<u32, CoreError> {
-    Ok(pop_core::registry::sweep()? as u32)
+    Ok(pop_storage::registry::sweep()? as u32)
 }
 /// The live owner's discovery for a document file, when one is published.
 #[uniffi::export]
 pub fn live_discovery(path: String) -> Result<Option<String>, CoreError> {
-    Ok(pop_core::registry::discovery(Path::new(&path))?)
+    Ok(pop_storage::registry::discovery(Path::new(&path))?)
 }
 /// Whether `path` is an app asset's key a page may name: relative, at most 240 bytes, with
 /// no empty, dot or parent segments.

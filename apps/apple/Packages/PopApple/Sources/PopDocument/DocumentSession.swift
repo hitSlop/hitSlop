@@ -94,6 +94,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   private var closeDrafts: [UnresolvedTextDraft] = []
   var pageCallTimeout = Timeouts.pageCall
   var readyTimeout = Timeouts.pageReady
+  private var openingWatchdog: Task<Void, Never>?
   public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
   private(set) var capturing = false
   /// Captures queued behind the one in progress (`withCapture`).
@@ -370,7 +371,19 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     liveWebView = view
   }
 
-  public func load() { liveWebView?.load(URLRequest(url: URL(string: "pop://app/")!)) }
+  public func load() {
+    guard let view = liveWebView else { return }
+    if case .opening? = renderer {
+      openingWatchdog?.cancel()
+      let timeout = readyTimeout
+      openingWatchdog = Task { [weak self, weak view] in
+        do { try await Task.sleep(for: timeout) } catch { return }
+        guard let self, let view, isCurrent(view), case .opening? = renderer else { return }
+        failOpening("Document page did not become ready", reason: .unresponsive)
+      }
+    }
+    view.load(URLRequest(url: URL(string: "pop://app/")!))
+  }
 
   public func waitUntilReady(timeout: Duration? = nil) async throws {
     let timeout = timeout ?? readyTimeout
@@ -464,6 +477,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
         reply(pageFailure(OwnerFailure.rejected("Document page is not opening")), nil)
         return
       }
+      openingWatchdog?.cancel()
+      openingWatchdog = nil
       completeWaiters(.success(()))
       delegate?.pageSessionDidBecomeReady(self)
       reply(encodeHostReply(reply: .ready), nil)
@@ -564,7 +579,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     await liveWebView?.setCameraCaptureState(.none)
     await liveWebView?.setMicrophoneCaptureState(.none)
     try await saveAccepted()
-    await sharing?.pause()
+    try await sharing?.pause()
   }
 
   /// Edit ▸ Undo or Redo. A live page sends its unsent edits first, as the person sees
@@ -751,7 +766,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
         throw PopFailure("Some text could not be saved. Keep this document open and copy that text before leaving.")
       }
     },
-    renderArtwork: @MainActor (URL) async -> PopRenderedArtwork? = { _ in nil }
+    renderArtwork: (@MainActor (URL) async -> PopRenderedArtwork?)? = nil
   ) async throws -> URL {
     guard !closed, !closing, closeTask == nil else { throw PopFailure("Document is closing") }
     let drafts = try await prepareClose(for: .handoff)
@@ -764,7 +779,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
       defer { try? FileManager.default.removeItem(at: directory) }
       let source = directory.appendingPathComponent("copy.pop")
       try await owner.copy(to: source, artwork: nil)
-      artwork = await renderArtwork(source)
+      if let renderArtwork {
+        artwork = await renderArtwork(source)
+      } else {
+        artwork = nil
+      }
       try Task.checkCancellation()
     } catch {
       await cancelClose()
@@ -801,7 +820,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     // Discovery goes before the writer lock, so it can never name the next owner. A
     // failed close keeps ownership, so commands reach this session again.
     server?.withdraw()
-    await sharing?.pause()
+    try await sharing?.pause()
     do {
       let interval = trace?.begin("Rust owner close")
       defer { trace?.end("Rust owner close", interval) }
@@ -875,6 +894,8 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   }
 
   private func destroyWebView() {
+    openingWatchdog?.cancel()
+    openingWatchdog = nil
     filePicker.cancel()
     fileSaver.cancel()
     cancelSpeech()
@@ -920,7 +941,11 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     cancelSpeech()
     let wasReady = isReady
     let failed = Renderer.failed(message, terminated: terminated)
-    phase = closing ? .closing(failed, preparation: .pending) : .active(failed)
+    switch phase {
+    case .active: phase = .active(failed)
+    case .closing(_, let preparation): phase = .closing(failed, preparation: preparation)
+    case .closed: return
+    }
     // The owner is fully loaded before the page starts, so it keeps the writer lock and
     // the socket; a retry reattaches a new page to the same owner.
     if !wasReady {

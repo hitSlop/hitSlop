@@ -5,9 +5,9 @@ mod account;
 #[cfg(any(target_arch = "wasm32", test))]
 mod auth;
 #[cfg(target_arch = "wasm32")]
+mod input;
+#[cfg(target_arch = "wasm32")]
 mod room;
 
-#[cfg(any(target_arch = "wasm32", test))]
-mod abuse;
 #[cfg(target_arch = "wasm32")]
 mod metrics;

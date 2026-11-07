@@ -1,8 +1,8 @@
 //! Typed native adapter; sequencing and persistence remain in pop-core::owner.
 use super::*;
-use pop_core::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
-use pop_core::store::Pressure;
 use pop_core::{Batch, Code};
+use pop_runtime::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
+use pop_storage::store::Pressure;
 use std::path::PathBuf;
 #[uniffi::remote(Enum)]
 pub enum ThemeChange {
@@ -190,9 +190,24 @@ impl NativeOwner {
             Path::new(&path),
             mode,
             Arc::new(move |event| listener.event(event)),
-            evaluator_path.map(|path| core::Evaluator::new(PathBuf::from(path), vec![])).transpose().map_err(|e| {
-                Failure { kind: FailureKind::Rejected, message: e, reason: Some(Code::InvalidRequest), op_index: None }
-            })?,
+            evaluator_path
+                .map(|path| {
+                    #[cfg(target_os = "ios")]
+                    {
+                        core::Evaluator::in_process_capture(PathBuf::from(path))
+                    }
+                    #[cfg(not(target_os = "ios"))]
+                    {
+                        core::Evaluator::process(PathBuf::from(path), vec![])
+                    }
+                })
+                .transpose()
+                .map_err(|e| Failure {
+                    kind: FailureKind::Rejected,
+                    message: e,
+                    reason: Some(Code::InvalidRequest),
+                    op_index: None,
+                })?,
         )?))))
     }
     pub fn app(&self) -> OpenedFile {

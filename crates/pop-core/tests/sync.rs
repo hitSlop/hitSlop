@@ -3,6 +3,7 @@
 //! Durable Object's rules over memory. The relay's own codec is tested against `sync-frames.json`.
 use crate::support;
 use loro::{ExportMode, LoroDoc, VersionVector};
+use pop_contracts::hex;
 use pop_core::Document;
 use pop_core::Origin;
 use pop_core::sync::{Ack, Frame, Permission, Record, Session, Span, Status, Version};
@@ -16,9 +17,6 @@ const APP: [u8; 32] = [7; 32];
 
 // --- The relay wire ---------------------------------------------------------------------
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 fn unhex(text: &str) -> Vec<u8> {
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 }
@@ -712,4 +710,84 @@ fn status_gives_hosts_a_phase_and_a_pause() {
         json!({"phase":"paused","pause":{"kind":"needsUpdate","reason":"Update pop"}})
     );
     assert_eq!(serde_json::to_value(Status::Synced.state()).unwrap(), json!({"phase":"synced"}));
+}
+
+#[test]
+fn offline_backlog_uses_bounded_causally_complete_updates() {
+    let schema = app(r#"{"kind":"object","properties":{"title":{"kind":"string"},"done":{"kind":"boolean"}}}"#);
+    let origin = Document::create(&schema, r#"{"title":"initial","done":false}"#).unwrap();
+    let seed = origin.checkpoint().unwrap();
+    let mut source = Document::open(&schema, &seed, &[]).unwrap();
+    let mut target = Document::open(&schema, &seed, &[]).unwrap();
+    let mut random = 91_u64;
+    for index in 0..12 {
+        let value: String = (0..65_536).map(|_| char::from(b' ' + (next(&mut random) % 95) as u8)).collect();
+        source
+            .apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":value}]}).to_string(), Origin::Page)
+            .unwrap();
+        if index == 5 {
+            let before = version(&source);
+            let mut other = Document::open(&schema, &source.checkpoint().unwrap(), &[]).unwrap();
+            other.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
+            let raw = LoroDoc::new();
+            raw.import(&other.checkpoint().unwrap()).unwrap();
+            let update = raw.export(ExportMode::updates(&before)).unwrap();
+            source.import_remote(&[&update]).unwrap();
+        }
+    }
+    let mut session = Session::new(APP);
+    session.connect(&source);
+    let welcome = Frame::Welcome {
+        permission: Permission::Write,
+        version: version(&origin).iter().map(|(&p, &n)| (p, n as u32)).collect(),
+    };
+    let mut queue: VecDeque<_> = session.receive(&mut source, &welcome.encode()).send.into();
+    queue.extend(session.receive(&mut source, &Frame::CaughtUp.encode()).send);
+    let mut frames = 0;
+    while let Some(bytes) = queue.pop_front() {
+        assert!(bytes.len() <= 256 * 1024, "offline backlog must be batched; got {} bytes", bytes.len());
+        let Frame::Push { id, records } = Frame::decode(&bytes).unwrap() else { panic!("expected push") };
+        let updates: Vec<_> = records.iter().map(|record| record.bytes.as_slice()).collect();
+        target.import_remote(&updates).expect("each batch must be a valid causal document state");
+        queue.extend(session.receive(&mut source, &Frame::Ack { id, status: Ack::Stored }.encode()).send);
+        frames += 1;
+        assert!(frames < 100, "the backlog must make bounded progress");
+    }
+    assert!(frames > 1);
+    assert_eq!(support::value(&target), support::value(&source));
+    assert_eq!(version(&target), version(&source));
+    assert_eq!(session.status(), &Status::Synced);
+}
+
+/// Retained history a replica cannot accept (here, intermediate states the app never
+/// validated) cannot be relayed or rebuilt: sharing pauses as outgrown. The copy keeps
+/// editing locally and pushes nothing more.
+#[test]
+fn unrelayable_retained_history_pauses_outgrown_and_keeps_local_editing() {
+    let schema = app(r#"{"kind":"object","properties":{"title":{"kind":"string"},"done":{"kind":"boolean"}}}"#);
+    let origin = Document::create(&schema, r#"{"title":"initial","done":false}"#).unwrap();
+    let seed = origin.checkpoint().unwrap();
+    let raw = LoroDoc::new();
+    raw.import(&seed).unwrap();
+    raw.set_change_merge_interval(-1);
+    // A saved checkpoint may have valid current state with older invalid prefixes.
+    for value in 0..129 {
+        raw.get_map("data").insert("title", value).unwrap();
+        raw.commit();
+    }
+    raw.get_map("data").insert("title", "retained").unwrap();
+    raw.commit();
+    let checkpoint = raw.export(ExportMode::Snapshot).unwrap();
+    let mut source = Document::open(&schema, &checkpoint, &[]).unwrap();
+    let mut session = Session::new(APP);
+    session.connect(&source);
+    let welcome = Frame::Welcome {
+        permission: Permission::Write,
+        version: version(&origin).iter().map(|(&p, &n)| (p, n as u32)).collect(),
+    };
+    assert!(session.receive(&mut source, &welcome.encode()).send.is_empty());
+    assert!(matches!(session.status(), Status::Paused { kind: pop_core::sync::PauseKind::Outgrown, .. }));
+    source.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
+    assert_eq!(support::value(&source)["done"], true, "an outgrown copy keeps editing locally");
+    assert!(session.push(&source).is_none(), "an outgrown copy pushes nothing");
 }

@@ -16,7 +16,7 @@ const appleCallbackPolicy = "default-src 'none'; script-src 'sha256-7iMYMZ++YoqO
 type Binding = { fetch(request: Request): Promise<Response> };
 /** HTTP/static glue only; Rust authorizes resources and owns the protocol. */
 export default {
-  async fetch(request: Request, env: { ASSETS: Binding; RELAY: Binding }) {
+  async fetch(request: Request, env: { ASSETS: Binding; RELAY: Binding; FIREBASE_PROJECT?: string; FIREBASE_WEB_API_KEY?: string }) {
     const url = new URL(request.url);
     const trusted = url.origin === SharingHost.origin;
     const authored = url.protocol === "https:" && url.hostname.endsWith(`.${SharingHost.domain}`);
@@ -26,6 +26,15 @@ export default {
       return env.RELAY.fetch(request);
     if (request.method !== "GET" && request.method !== "HEAD")
       return new Response(null, { status: 405 });
+    if (trusted && url.pathname === "/auth/config") {
+      const configured = !!env.FIREBASE_PROJECT && !!env.FIREBASE_WEB_API_KEY;
+      return new Response(request.method === "HEAD" ? null : JSON.stringify(configured
+        ? { projectId: env.FIREBASE_PROJECT, apiKey: env.FIREBASE_WEB_API_KEY }
+        : { code: "unavailable", message: "Guest sessions are not configured; retry later" }), {
+        status: configured ? 200 : 503,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+      });
+    }
     if (trusted && url.pathname === "/auth/apple") {
       return new Response(request.method === "HEAD" ? null : appleCallbackPage, {
         headers: {

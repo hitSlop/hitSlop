@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import {
   sharedTemplatePaths,
   inputs,
@@ -132,7 +132,7 @@ test("failed builds never publish cache entries; cached templates are template f
   }
 });
 
-test.each(["crates/pop-core/src/file/mod.rs", "bun.lock"])(
+test.each(["crates/pop-storage/src/file/mod.rs", "bun.lock"])(
   "changing shared input %s rebuilds every cached template",
   async (changed) => {
     const root = await mkdtemp(join(tmpdir(), "pop-shared-input-"));
@@ -144,13 +144,13 @@ test.each(["crates/pop-core/src/file/mod.rs", "bun.lock"])(
         await writeFile(path, "export {};");
       }
       await mkdir(join(root, "pop"), { recursive: true });
-      await mkdir(join(root, "crates/pop-core/src/file"), { recursive: true });
-      await writeFile(join(root, "crates/pop-core/src/file/mod.rs"), "// original format");
+      await mkdir(join(root, "crates/pop-storage/src/file"), { recursive: true });
+      await writeFile(join(root, "crates/pop-storage/src/file/mod.rs"), "// original format");
       await writeFile(join(root, "bun.lock"), "{}");
       const paths = await sharedTemplatePaths(root, []);
       for (const path of paths) {
         if (await Bun.file(join(root, path)).exists()) continue;
-        if (["crates/pop-core/src", "crates/pop-engine"].includes(path)) {
+        if (path.startsWith("crates/") && !extname(path)) {
           await mkdir(join(root, path), { recursive: true });
           continue;
         }

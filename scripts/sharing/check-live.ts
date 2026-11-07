@@ -22,7 +22,7 @@ const note=(value:string)=>{checks.push(value);console.log(value);};
 const report=join(root,"report.json");
 const template=await buildTemplate(join(repository,"tests/apps/sharing"),join(root,"fixture.pop"),{renderViews:false});
 const invitationFile=process.env.POP_SHARING_INVITATION_FILE;
-const child=spawn(join(repository,"target/debug/examples/sharing"),[template,root,invitationFile ?? process.env.POP_SHARING_TOKEN_FILE ?? join(repository,".pop/sharing/identity-token"),...(invitationFile?["--guest"]:[])],{stdio:["pipe","pipe","pipe"]});
+const child=spawn(join(repository,"target/debug/examples/sharing"),[template,root,process.env.POP_SHARING_TOKEN_FILE ?? join(repository,".pop/sharing/identity-token"),...(invitationFile?[invitationFile]:[])],{stdio:["pipe","pipe","pipe"]});
 let failure="";child.stderr.on("data",bytes=>{failure+=String(bytes);});
 const messages:any[]=[];let waiting:((value:any)=>void)|undefined;
 createInterface({input:child.stdout}).on("line",line=>{const value=JSON.parse(line);if(waiting){const next=waiting;waiting=undefined;next(value);}else messages.push(value);});
@@ -52,14 +52,14 @@ async function restrict(page:Page,context:BrowserContext){
 let contexts:BrowserContext[]=[];
 let stopped=false;
 try {
-  const lookup="https://share.dotpop.click/v1/account/rooms/00000000-0000-4000-8000-000000000000";
+  const lookup="https://share.dotpop.click/v1/account/documents";
   const unknownKey=[{alg:"RS256",kid:"pop-deliberately-unknown-test-key"},{sub:"test-user"}].map(part=>Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")+"."+Buffer.alloc(256).toString("base64url");
   for(const token of [undefined,"malformed",unknownKey]) {
     const response=await fetch(lookup,{headers:token?{Authorization:"Bearer "+token}:{}});
-    assert.equal(response.status,401,"Account lookup must refuse absent or untrusted identities");
+    assert.equal(response.status,401,"The account listing must refuse absent or untrusted identities");
     assert.equal((await response.json() as {code:string}).code,"sign_in_required");
   }
-  note("The account lookup refuses anonymous, malformed and unknown-key identities; valid native identity remains a separate qualification");
+  note("The account listing refuses anonymous, malformed and unknown-key identities; valid native identity remains a separate qualification");
   const ready=await next();assert(ready.ready,"Native client failed to publish");
   note(invitationFile ? "A signed-out native guest joins the disposable owner-app invitation without a Firebase session" : "A verified account creates and publishes the disposable native fixture");
   const invitation=(await readFile(join(root,"invitation.txt"),"utf8")).trim();
@@ -110,7 +110,7 @@ try {
   // Hold all blob reads after the first failure. CaughtUp queued behind failed Records
   // must never publish a reference to a file which the owner has not installed.
   let blocked=false,release:()=>void=()=>{};const gate=new Promise<void>(resolve=>{release=resolve;});
-  await first.route("**/rooms/*/blob/*",async route=>{
+  await first.route("**/documents/*/blob/*",async route=>{
     if(route.request().method()!=="GET"){await route.continue();return;}
     if(!blocked){blocked=true;await route.abort("failed");return;}
     await gate;await route.continue();
@@ -126,7 +126,7 @@ try {
   } finally {release();}
   await app.getByAltText(name,{exact:true}).waitFor({timeout:45_000});
   await until(async()=>app.getByAltText(name,{exact:true}).evaluate(img=>(img as HTMLImageElement).naturalWidth>0),"Delivered photo could not render");
-  await first.unroute("**/rooms/*/blob/*");
+  await first.unroute("**/documents/*/blob/*");
   note("An interrupted receive fences queued CaughtUp; reconnect installs the verified image before publishing its reference");
   await page.evaluate(async()=>{
     const root=await navigator.storage.getDirectory();const file=await root.getFileHandle("sharing-download.pop",{create:true});
@@ -144,7 +144,7 @@ try {
   const reopen=page.url();await first.close();contexts=contexts.filter(context=>context!==first);
   const restored=await chromium.launchPersistentContext(join(root,"chrome-a"),{channel:"chrome",headless:true});contexts.push(restored);
   let resumedBlobPuts=0;
-  restored.on("request",request=>{if(request.method()==="PUT"&&/\/rooms\/[^/]+\/blob\//.test(new URL(request.url()).pathname))resumedBlobPuts++;});
+  restored.on("request",request=>{if(request.method()==="PUT"&&/\/documents\/[^/]+\/blob\//.test(new URL(request.url()).pathname))resumedBlobPuts++;});
   const reopened=await restored.newPage();await restrict(reopened,restored);await reopened.goto(reopen);
   await reopened.frameLocator("iframe").getByText(label,{exact:true}).waitFor({timeout:45_000});
   note("Connected process reopen retains the browser copy and its edits");

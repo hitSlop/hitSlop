@@ -39,7 +39,7 @@ without touching the document, then store it in the app schema with
 its reference are saved together. `pop attachments list PATH` and
 `pop attachments export PATH ID --output FILE` read them back. Store the `id` exactly as
 printed; an unshared document removes a file whose ID appears nowhere in it when it closes.
-Shared and Synced Library documents retain every attachment for other replicas.
+Shared and privately synced documents retain blobs needed by their current history and undo. Safe cloud epoch maintenance can reclaim superseded history and unreferenced blobs; removing a reference alone does not promise immediate deletion.
 A clean unshared copy keeps only referenced attachments.
 Never write attachments into the file yourself. Limits are 10 MiB per file, 100 MiB and
 256 unique files per document. After an uncertain edit, run `get` before another.

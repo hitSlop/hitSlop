@@ -1,119 +1,60 @@
-//! Version-one serde/postcard envelope: opaque payloads, one update per push.
-use crate::frame::{Ack, Frame, MAX_FRAME, Permission, Record, Span, Version};
-use serde::{Deserialize, Serialize};
+//! Socket transport: the shared Frame codec, one update per push, within `MAX_FRAME`.
+use crate::frame::{Frame, MAX_FRAME};
 
-#[derive(Serialize, Deserialize)]
-enum Wire {
-    Hello { protocol: u8, app: [u8; 32], vv: Vec<(u64, u32)> },
-    Welcome { write: bool, vv: Vec<(u64, u32)> },
-    Records(Vec<Update>),
-    CaughtUp,
-    Push { id: u64, update: Update },
-    Ack { id: u64, status: Outcome },
-    Error { code: u8, message: String },
-}
-#[derive(Serialize, Deserialize)]
-struct Update {
-    spans: Vec<(u64, u32, u32)>,
-    #[serde(with = "serde_bytes")]
-    bytes: Vec<u8>,
-}
-#[derive(Serialize, Deserialize)]
-enum Outcome {
-    Stored,
-    Gap,
-    TooLarge,
-    Denied,
-    Quota,
-}
-fn version(v: Vec<(u64, u32)>) -> Result<Version, String> {
-    if v.windows(2).any(|w| w[0].0 >= w[1].0) || v.iter().any(|(_, n)| *n > i32::MAX as u32) {
-        return Err("Invalid version".into());
+fn transport_frame(frame: &Frame) -> Result<(), String> {
+    if matches!(frame, Frame::Push { records, .. } if records.len() != 1) {
+        return Err("One update per push".into());
     }
-    Ok(v.into_iter().collect())
-}
-impl From<Record> for Update {
-    fn from(r: Record) -> Self {
-        Self { spans: r.spans.into_iter().map(|s| (s.peer, s.start, s.end)).collect(), bytes: r.bytes }
-    }
-}
-impl Update {
-    fn record(self) -> Result<Record, String> {
-        if self.spans.is_empty() || self.spans.iter().any(|(_, s, e)| s >= e || *e > i32::MAX as u32) {
-            return Err("Invalid spans".into());
-        }
-        Ok(Record {
-            spans: self.spans.into_iter().map(|(peer, start, end)| Span { peer, start, end }).collect(),
-            bytes: self.bytes,
-        })
-    }
+    Ok(())
 }
 pub fn encode(frame: Frame) -> Result<Vec<u8>, String> {
-    let vv = |v: Version| v.into_iter().collect();
-    let wire = match frame {
-        Frame::Hello { protocol, app_digest, version } => Wire::Hello { protocol, app: app_digest, vv: vv(version) },
-        Frame::Welcome { permission, version } => {
-            Wire::Welcome { write: permission == Permission::Write, vv: vv(version) }
-        }
-        Frame::Records(records) => Wire::Records(records.into_iter().map(Into::into).collect()),
-        Frame::CaughtUp => Wire::CaughtUp,
-        Frame::Push { id, mut records } => {
-            if records.len() != 1 {
-                return Err("One update per push".into());
-            }
-            Wire::Push { id, update: records.remove(0).into() }
-        }
-        Frame::Ack { id, status } => Wire::Ack {
-            id,
-            status: match status {
-                Ack::Stored => Outcome::Stored,
-                Ack::Gap => Outcome::Gap,
-                Ack::TooLarge => Outcome::TooLarge,
-                Ack::Denied => Outcome::Denied,
-                Ack::Quota => Outcome::Quota,
-            },
-        },
-        Frame::Error { code, message } => Wire::Error { code, message },
-    };
-    let bytes = postcard::to_allocvec(&wire).map_err(|e| e.to_string())?;
+    transport_frame(&frame)?;
+    let bytes = frame.encode();
     if bytes.len() > MAX_FRAME {
         return Err("Frame too large".into());
     }
     Ok(bytes)
 }
 pub fn decode(bytes: &[u8]) -> Result<Frame, String> {
-    if bytes.len() > MAX_FRAME {
-        return Err("Frame too large".into());
-    }
-    let (wire, rest) = postcard::take_from_bytes::<Wire>(bytes).map_err(|e| e.to_string())?;
-    if !rest.is_empty() {
-        return Err("Trailing bytes".into());
-    }
-    Ok(match wire {
-        Wire::Hello { protocol, app, vv } => Frame::Hello { protocol, app_digest: app, version: version(vv)? },
-        Wire::Welcome { write, vv } => Frame::Welcome {
-            permission: if write { Permission::Write } else { Permission::Read },
-            version: version(vv)?,
-        },
-        Wire::Records(records) => Frame::Records(records.into_iter().map(Update::record).collect::<Result<_, _>>()?),
-        Wire::CaughtUp => Frame::CaughtUp,
-        Wire::Push { id, update } => Frame::Push { id, records: vec![update.record()?] },
-        Wire::Ack { id, status } => Frame::Ack {
-            id,
-            status: match status {
-                Outcome::Stored => Ack::Stored,
-                Outcome::Gap => Ack::Gap,
-                Outcome::TooLarge => Ack::TooLarge,
-                Outcome::Denied => Ack::Denied,
-                Outcome::Quota => Ack::Quota,
-            },
-        },
-        Wire::Error { code, message } => Frame::Error { code, message },
-    })
+    let frame = Frame::decode(bytes).map_err(|error| error.to_string())?;
+    transport_frame(&frame)?;
+    Ok(frame)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame::{Ack, Permission, Record, Span};
+    #[test]
+    fn transport_uses_the_shared_frame_codec() {
+        let record = Record { spans: vec![Span { peer: 7, start: 1, end: 2 }], bytes: vec![12, 13] };
+        let frames = [
+            Frame::Hello { protocol: 1, app_digest: [3; 32], version: [(7, 2)].into_iter().collect() },
+            Frame::Welcome { permission: Permission::Write, version: [(7, 2)].into_iter().collect() },
+            Frame::Records(vec![record.clone()]),
+            Frame::CaughtUp,
+            Frame::Push { id: 9, records: vec![record] },
+            Frame::Ack { id: 9, status: Ack::Stored },
+            Frame::Error { code: 255, message: "opaque".into() },
+        ];
+        for frame in frames {
+            let bytes = frame.encode();
+            assert_eq!(encode(frame.clone()).unwrap(), bytes);
+            assert_eq!(decode(&bytes).unwrap(), frame);
+        }
+    }
+    #[test]
+    fn transport_keeps_one_update_per_push_and_frame_bounds() {
+        let record = Record { spans: vec![Span { peer: 7, start: 1, end: 2 }], bytes: vec![12] };
+        for records in [vec![], vec![record.clone(), record]] {
+            let frame = Frame::Push { id: 1, records };
+            assert!(decode(&frame.encode()).is_err());
+            assert!(encode(frame).is_err());
+        }
+        assert!(decode(&vec![0; MAX_FRAME + 1]).is_err());
+        let invalid =
+            Frame::Records(vec![Record { spans: vec![Span { peer: 7, start: 0, end: u32::MAX }], bytes: vec![12] }]);
+        assert!(decode(&invalid.encode()).is_err());
+    }
     #[test]
     fn malformed_lengths_and_extra_bytes_are_refused() {
         let valid = encode(Frame::Error { code: 1, message: String::new() }).unwrap();

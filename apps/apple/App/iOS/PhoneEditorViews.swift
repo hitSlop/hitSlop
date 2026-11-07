@@ -5,6 +5,64 @@ import SwiftUI
 import UIKit
 import WebKit
 
+/// One document on screen: its tile's artwork from the tap, then its live page, which
+/// cross-fades in once ready. A document leaving keeps its page through the transition.
+struct PhoneDocumentScreen: View {
+  let url: URL
+  @ObservedObject var model: PhoneDocuments
+  @ObservedObject var library: PopLibrary
+  @Binding var showSharingAccount: Bool
+
+  var body: some View {
+    let session = model.session(showing: url)
+    let concealed = model.accountRequired && session != nil && session === model.session
+    let revealed = concealed || session.map(model.shows) == true
+    ZStack {
+      if concealed {
+        VStack(spacing: 16) {
+          Text("Sign in to reopen this document").font(.headline)
+          Text("Your file and unsaved text are retained on this device.")
+          Button("Account") { showSharingAccount = true }
+          Button("Retry") { Task { await library.syncNow() } }
+        }.padding()
+      } else if let session {
+        PhoneEditorView(session: session, model: model, library: library)
+      }
+      if !revealed {
+        PhoneOpeningSurface(url: url).transition(.opacity)
+      }
+    }
+    .animation(.easeOut(duration: 0.25), value: revealed)
+    .toolbar(.hidden, for: .navigationBar)
+    .navigationBarBackButtonHidden(true)
+    .onDisappear { model.documentScreenLeft() }
+  }
+}
+
+/// What a document shows from the tap until its page is ready: the tile's artwork on the
+/// tile's own card, so the zoom grows the tile into the page. Progress appears only when
+/// opening takes a moment (a download, a slow page).
+private struct PhoneOpeningSurface: View {
+  let url: URL
+  @State private var slow = false
+
+  var body: some View {
+    ZStack {
+      PopBrand.card.ignoresSafeArea()
+      VStack(spacing: 24) {
+        PhoneArtworkView(url: url).frame(width: 128, height: 128)
+        ProgressView().opacity(slow ? 1 : 0)
+      }
+    }
+    .task {
+      do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+      withAnimation(.easeIn(duration: 0.2)) { slow = true }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Opening pop")
+  }
+}
+
 struct PhoneEditorView: View {
   let session: DocumentSession
   @ObservedObject var model: PhoneDocuments
@@ -58,7 +116,8 @@ struct PhoneEditorView: View {
           }
       }
     }
-    .allowsHitTesting(!model.opening)
+    // A page still opening or already leaving takes no touches.
+    .allowsHitTesting(isOnScreen && !model.opening)
     .overlay(alignment: .topTrailing) {
       documentActions
         .buttonStyle(.plain)
@@ -67,7 +126,6 @@ struct PhoneEditorView: View {
     }
     // The keyboard covers the page, which keeps its size. Its own toolbar's ✓ dismisses it.
     .ignoresSafeArea(.keyboard)
-    .background(PhoneNavigationGesture(blocked: model.opening || model.busy))
     .safeAreaInset(edge: .top) {
       if let notice = session.storageNotice {
         VStack(alignment: .leading, spacing: 6) {
@@ -76,16 +134,10 @@ struct PhoneEditorView: View {
         }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.regularMaterial)
       }
     }
-    .overlay {
-      if model.opening {
-        ZStack {
-          Color(uiColor: pageBackground).ignoresSafeArea(.container)
-          ProgressView("Opening pop…").font(.callout)
-        }
-      }
+    .background {
+      Color.clear.ignoresSafeArea()
+        .onGeometryChange(for: CGFloat.self, of: \.safeAreaInsets.top) { _, _ in model.republishSafeArea(session) }
     }
-    .toolbar(.hidden, for: .navigationBar)
-    .navigationBarBackButtonHidden(true)
     .sheet(isPresented: $showSharing) {
       if let sharing = session.sharing {
         NavigationStack {
@@ -131,7 +183,7 @@ struct PhoneEditorView: View {
       Button("Back Up File", systemImage: "square.and.arrow.up") { tap { model.export() } }
         .accessibilityIdentifier("export-file")
       Divider()
-      Button("Back to Library", systemImage: "chevron.backward") { tap { model.close() } }
+      Button("Back to Library", systemImage: "chevron.backward") { tap { model.leave() } }
         .accessibilityIdentifier("back-to-library")
       Text(model.saveDescription)
     } label: {
@@ -139,90 +191,11 @@ struct PhoneEditorView: View {
         .frame(width: 44, height: 44)
     }
     .accessibilityLabel("Document actions").accessibilityIdentifier("document-actions")
-    .disabled(model.opening || model.busy)
+    .disabled(!isOnScreen || model.opening || model.busy)
     .tint(.primary)
   }
-}
-
-/// Keep the system edge transition without a visible Back button. Scope the
-/// delegate override to this editor and leave authored horizontal gestures alone.
-private struct PhoneNavigationGesture: UIViewControllerRepresentable {
-  let blocked: Bool
-
-  func makeUIViewController(context: Context) -> Controller { Controller() }
-  func updateUIViewController(_ controller: Controller, context: Context) {
-    controller.blocked = blocked
-    if controller.viewIfLoaded?.window != nil { controller.install() }
-  }
-  static func dismantleUIViewController(_ controller: Controller, coordinator: ()) { controller.restore() }
-
-  final class Controller: UIViewController, UIGestureRecognizerDelegate {
-    var blocked = false
-    private weak var edgeGesture: UIGestureRecognizer?
-    private weak var previousDelegate: (any UIGestureRecognizerDelegate)?
-    private var previousEnabled = false
-    private weak var contentGesture: UIGestureRecognizer?
-    private var contentEnabled = false
-
-    override func loadView() {
-      view = UIView()
-      view.isUserInteractionEnabled = false
-    }
-    override func viewDidAppear(_ animated: Bool) {
-      super.viewDidAppear(animated)
-      install()
-    }
-    override func viewDidDisappear(_ animated: Bool) {
-      super.viewDidDisappear(animated)
-      restore()
-    }
-    func install() {
-      guard edgeGesture == nil, let navigationController,
-        let gesture = navigationController.interactivePopGestureRecognizer
-      else { return }
-      edgeGesture = gesture
-      previousDelegate = gesture.delegate
-      previousEnabled = gesture.isEnabled
-      gesture.delegate = self
-      gesture.isEnabled = true
-      contentGesture = navigationController.interactiveContentPopGestureRecognizer
-      contentEnabled = contentGesture?.isEnabled ?? false
-      contentGesture?.isEnabled = false
-    }
-    func restore() {
-      if let gesture = edgeGesture, gesture.delegate === self {
-        gesture.delegate = previousDelegate
-        gesture.isEnabled = previousEnabled
-      }
-      contentGesture?.isEnabled = contentEnabled
-      edgeGesture = nil
-      contentGesture = nil
-    }
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      guard !blocked, let navigationController else { return false }
-      return navigationController.viewControllers.count > 1
-        && navigationController.transitionCoordinator == nil
-        && navigationController.presentedViewController == nil
-    }
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldReceive: touch) ?? true
-    }
-    func gestureRecognizer(
-      _ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
-    ) -> Bool {
-      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldRecognizeSimultaneouslyWith: other) ?? false
-    }
-    func gestureRecognizer(
-      _ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf other: UIGestureRecognizer
-    ) -> Bool {
-      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldRequireFailureOf: other) ?? false
-    }
-    func gestureRecognizer(
-      _ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer
-    ) -> Bool {
-      previousDelegate?.gestureRecognizer?(gestureRecognizer, shouldBeRequiredToFailBy: other) ?? false
-    }
-  }
+  /// The document on screen, as opposed to one animating out while it closes.
+  private var isOnScreen: Bool { session === model.session }
 }
 
 private struct PhoneWebView: UIViewRepresentable {

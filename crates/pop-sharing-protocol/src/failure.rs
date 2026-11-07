@@ -24,6 +24,8 @@ impl Route {
 /// A failure's meaning. Names match the pause kinds of the four that pause sync.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
 pub enum Outcome {
     /// The room is gone.
     Ended,
@@ -39,6 +41,14 @@ pub enum Outcome {
     SignIn,
     /// Anything else: shown, and retried where the caller retries.
     Failed,
+}
+/// The browser-facing projection of a classified relay failure.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
+pub struct Failure {
+    pub outcome: Outcome,
+    pub message: String,
 }
 /// `code` is the relay's `ApiFailure` code, when the body carried one.
 pub fn classify(status: u16, code: Option<&str>, route: Route) -> Outcome {
@@ -88,6 +98,8 @@ mod tests {
             (410, None, Other, Ended),
             (410, None, Compact, Ended),
             (413, None, Compact, Outgrown),
+            // The relay's refusal of a base over `BASE_BYTES`: sharing pauses as outgrown.
+            (413, Some("invalid_request"), Compact, Outgrown),
             (413, None, Blob, FilesFull),
             (413, None, Other, Failed),
             (409, None, Other, Conflict),
@@ -102,7 +114,7 @@ mod tests {
     }
     #[test]
     fn routes_follow_the_room_url() {
-        let room = "https://share.dotpop.click/v1/rooms/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let room = "https://share.dotpop.click/v1/documents/00000000-0000-4000-8000-000000000001";
         assert_eq!(Route::of(&format!("{room}/compact")), Route::Compact);
         assert_eq!(Route::of(&format!("{room}/blob/{}", "b".repeat(64))), Route::Blob);
         for other in ["", "/seed", "/blobs", "/resources", "/sync"] {

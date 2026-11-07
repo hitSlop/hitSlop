@@ -2,23 +2,17 @@
 use worker::{AnalyticsEngineDataPointBuilder, Env};
 
 pub(crate) enum Metric {
-    RoomCreated,
-    RoomOpened,
-    RoomEndedStop,
-    RoomEndedAlarm,
-    RoomEndedIdle,
-    AccountDeleted,
+    DocumentCreated,
+    DocumentReady,
+    DocumentDeleted,
     GuestJoin,
     Limited,
 }
 pub(crate) fn record(env: &Env, event: Metric) {
     let name = match event {
-        Metric::RoomCreated => "room_created",
-        Metric::RoomOpened => "room_opened",
-        Metric::RoomEndedStop => "room_ended_stop",
-        Metric::RoomEndedIdle => "room_ended_idle",
-        Metric::RoomEndedAlarm => "room_ended_alarm",
-        Metric::AccountDeleted => "account_deleted",
+        Metric::DocumentCreated => "document_created",
+        Metric::DocumentReady => "document_ready",
+        Metric::DocumentDeleted => "document_deleted",
         Metric::GuestJoin => "guest_join",
         Metric::Limited => "limited",
     };

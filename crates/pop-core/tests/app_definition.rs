@@ -1,4 +1,3 @@
-#![cfg(feature = "storage")]
 use pop_core::app::{AppDefinition, Capability, StandardFrame, WindowFrame};
 use pop_core::{Code, Document, build::BuildDeclaration};
 use serde_json::{Value, json};
@@ -44,6 +43,67 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
     let reopened = Document::open(reread.spec(), &document.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(document.state().unwrap(), reopened.state().unwrap());
     assert_eq!(app.definition_json(), reread.definition_json());
+}
+
+#[test]
+fn state_contract_identity_tracks_replica_semantics_and_ignores_presentation() {
+    let metadata = metadata();
+    let mut definition = definition();
+    definition["document"] = json!({"kind":"object","properties":{
+        "number":{"kind":"number","min":-0.0,"max":10.0,"default":0.0},
+        "title":{"kind":"string"},
+        "choice":{"kind":"enum","values":["first","second"]},
+        "nested":{"kind":"record","value":{"kind":"number","min":-0.0}}
+    }});
+    let original = read(&metadata, &definition).unwrap();
+    let mut cases = Vec::new();
+    let mut presentation = definition.clone();
+    presentation["window"]["width"] = json!(480);
+    presentation["commands"][0]["description"] = json!("Different help");
+    presentation["commands"][0]["args"]["properties"]["title"]["minLength"] = json!(2);
+    presentation["document"]["properties"]["title"]["description"] = json!("Different field help");
+    presentation["theme"].as_array_mut().unwrap().reverse();
+    let mut cosmetic_metadata = metadata.clone();
+    cosmetic_metadata["title"] = json!("A different title");
+    cosmetic_metadata["description"] = json!("Different app help");
+    cosmetic_metadata["author"]["name"] = json!("Another author");
+    cases.push(("presentation and theme order", cosmetic_metadata, presentation, true));
+
+    let mut spelling = definition.clone();
+    spelling["document"]["properties"]["number"]["min"] = json!(0);
+    spelling["document"]["properties"]["number"]["max"] = json!(10);
+    spelling["document"]["properties"]["number"]["default"] = json!(-0.0);
+    spelling["document"]["properties"]["nested"]["value"]["min"] = json!(0.0);
+    cases.push(("integer spelling and both zero signs", metadata.clone(), spelling, true));
+
+    let mut slug = metadata.clone();
+    slug["slug"] = json!("other-fixture");
+    cases.push(("slug", slug, definition.clone(), false));
+    for (label, pointer, value) in [
+        ("number bound", "/document/properties/number/max", json!(11)),
+        ("number default", "/document/properties/number/default", json!(1)),
+        ("absent versus present length", "/document/properties/title/minLength", json!(0)),
+        ("absent versus present default", "/document/properties/title/default", json!("")),
+        ("enum order", "/document/properties/choice/values", json!(["second", "first"])),
+        ("theme default", "/theme/0/color", json!("#888888")),
+    ] {
+        let mut changed = definition.clone();
+        let (parent, key) = pointer.rsplit_once('/').unwrap();
+        changed.pointer_mut(parent).unwrap().as_object_mut().unwrap().insert(key.into(), value);
+        cases.push((label, metadata.clone(), changed, false));
+    }
+    let mut absent_bound = definition.clone();
+    absent_bound["document"]["properties"]["number"].as_object_mut().unwrap().remove("min");
+    cases.push(("absent versus present numeric bound", metadata.clone(), absent_bound, false));
+    for (label, metadata, definition, expected) in cases {
+        let other = read(&metadata, &definition).unwrap();
+        assert_eq!(original.state_contract_id() == other.state_contract_id(), expected, "{label}");
+    }
+    let encoded = definition.to_string();
+    let reordered = encoded.replace(r#""max":10.0,"min":-0.0"#, r#""min":-0.0,"max":10.0"#);
+    assert_ne!(encoded, reordered, "fixture must change JSON property order");
+    let reordered = AppDefinition::decode(1, 1, &metadata.to_string(), &reordered).unwrap();
+    assert_eq!(original.state_contract_id(), reordered.state_contract_id());
 }
 
 #[test]
@@ -100,7 +160,7 @@ fn widget_role_and_refresh_policy_survive_pack_and_reopen() {
 fn bootstrap_receives_the_original_descriptor_including_descriptions() {
     let descriptor = r#"{ "kind":"object", "properties": {"z": {"kind":"string","description":"Keep this"}, "a": {"kind":"number","min":1.0}} }"#;
     let definition = format!(
-        r#"{{"window":{{"kind":"standard","width":320,"height":240}},"document":{descriptor},"theme":[],"commands":[],"views":{{"export":false,"icon":false}}}}"#
+        r#"{{"window":{{"kind":"standard","width":320,"height":240}},"document":{descriptor},"theme":[],"commands":[],"views":{{"preview":false,"export":false,"icon":false}}}}"#
     );
     let app = AppDefinition::decode(1, 1, &metadata().to_string(), &definition).unwrap();
     assert_eq!(app.document_json(), descriptor);

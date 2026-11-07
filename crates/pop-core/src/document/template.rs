@@ -69,7 +69,7 @@ impl Document {
     /// same app always packs the same bytes, so a rebuild reproduces its template: rows
     /// without an `$id` get one derived from their place, and the operations belong to a
     /// fixed peer. A document that opens it edits as a peer of its own.
-    pub(crate) fn initial_checkpoint(app: &AppSpec, initial: &str) -> Result<Vec<u8>> {
+    pub fn initial_checkpoint(app: &AppSpec, initial: &str) -> Result<Vec<u8>> {
         let mut initial: Value = parse(initial)?;
         app.schema.fill_defaults(&mut initial);
         app.schema.validate(&initial, false)?;

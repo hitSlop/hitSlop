@@ -6,7 +6,7 @@ import type { PagePush } from "../wire/page";
 import type { HostEnvironment } from "../wire/page.generated";
 export type PreviewHost = {
   uiURL: string;
-  environment?: {
+  environment: {
     readonly current: HostEnvironment;
     subscribe(receiver: () => void): () => void;
   };

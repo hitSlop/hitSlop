@@ -6,6 +6,7 @@ import SwiftUI
 struct CatalogRail: View {
   let title: String
   let entries: [CatalogEntry]
+  let guestDocumentIDs: Set<String>
   @Binding var selectedID: String?
   @Binding var query: String
   var searchFocused: FocusState<Bool>.Binding
@@ -13,6 +14,10 @@ struct CatalogRail: View {
   var recentsIssue: String? = nil
   let onRefresh: () -> Void
   var onDelete: (CatalogEntry) -> Void = { _ in }
+  var onRemoveDownload: (CatalogEntry) -> Void = { _ in }
+  var onLocalCopy: (CatalogEntry) -> Void = { _ in }
+  var onEnableSync: (CatalogEntry) -> Void = { _ in }
+  var onRemoveRecent: (CatalogEntry) -> Void = { _ in }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -54,10 +59,15 @@ struct CatalogRail: View {
 
       if entries.isEmpty {
         ContentUnavailableView {
-          Label("Nothing here", systemImage: "sparkles.rectangle.stack")
-            .symbolRenderingMode(.hierarchical).foregroundStyle(PopBrand.accent)
+          Label(
+            query.isEmpty ? "Nothing here yet" : "No results",
+            systemImage: query.isEmpty ? "sparkles.rectangle.stack" : "magnifyingglass"
+          )
+          .symbolRenderingMode(.hierarchical).foregroundStyle(PopBrand.accent)
         } description: {
-          Text("Try another search or category.")
+          Text(
+            query.isEmpty
+              ? "Choose a template to create a pop, or open a document." : "Try another name or clear the search.")
         }
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,17 +76,34 @@ struct CatalogRail: View {
           ScrollView {
             LazyVStack(spacing: 2) {
               ForEach(entries) { entry in
-                CatalogRow(entry: entry, selected: entry.id == selectedID) { selectedID = entry.id }
-                  .id(entry.id)
-                  .contextMenu {
-                    if entry.isSynced,
-                      PopLibrary.shared.visibleEntries.contains(where: { "library:" + $0.id == entry.id })
-                    {
-                      Button("Delete Pop", role: .destructive) {
-                        onDelete(entry)
+                CatalogRow(
+                  entry: entry, showFolder: duplicateTitles.contains(entry.displayTitle),
+                  isGuest: entry.savedDocumentID.map { guestDocumentIDs.contains($0) } == true,
+                  selected: entry.id == selectedID
+                ) { selectedID = entry.id }
+                .id(entry.id)
+                .contextMenu {
+                  if let document = PopLibrary.shared.visibleEntries.first(where: { "library:" + $0.id == entry.id }) {
+                    if document.localOnly {
+                      Button("Enable Sync Across Devices") { onEnableSync(entry) }
+                        .disabled(PopLibrary.shared.accountIdentity.isEmpty)
+                    } else {
+                      if document.downloaded {
+                        Button("Save Local Copy") { onLocalCopy(entry) }
+                        Button("Remove Download") { onRemoveDownload(entry) }
+                          .disabled(document.dirty || document.problem != nil)
                       }
                     }
+                    Button(
+                      document.localOnly
+                        ? "Delete from This Device"
+                        : document.role == .editor ? "Leave Shared Document" : "Delete Everywhere", role: .destructive
+                    ) { onDelete(entry) }
                   }
+                  if entry.recentHistoryID != nil {
+                    Button("Remove from Recents") { onRemoveRecent(entry) }
+                  }
+                }
               }
             }
             .padding(.horizontal, 8).padding(.vertical, 8)
@@ -97,6 +124,10 @@ struct CatalogRail: View {
         .padding(.horizontal, 16).padding(.vertical, 12)
     }
     .background(CatalogStyle.content)
+  }
+
+  private var duplicateTitles: Set<String> {
+    Set(Dictionary(grouping: entries.filter(\.isRecent), by: \.displayTitle).filter { $0.value.count > 1 }.keys)
   }
 
   private func neighbor(_ direction: MoveCommandDirection) -> String? {
@@ -167,18 +198,26 @@ private struct CatalogSearchBar: View {
 
 private struct CatalogRow: View {
   let entry: CatalogEntry
+  let showFolder: Bool
+  let isGuest: Bool
   let selected: Bool
   let select: () -> Void
   @State private var isHovering = false
 
   var body: some View {
     HStack(spacing: 11) {
-      IconTile(artwork: entry.icons, size: 40, radius: 11)
+      IconTile(artwork: entry.icons, size: 50, radius: 13)
+        .overlay(alignment: .bottomTrailing) {
+          if let badge = presentation?.badge {
+            CatalogDocumentBadgeView(badge: badge).offset(x: 3, y: 3)
+          }
+        }
       VStack(alignment: .leading, spacing: 2) {
         Text(entry.displayTitle).font(PopBrand.heading(15, relativeTo: .body)).lineLimit(1)
           .truncationMode(entry.isRecent ? .middle : .tail)
-        Text(subtitle)
-          .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+        if showFolder, let identity = entry.documentIdentity {
+          Text(folderName(identity.folderPath)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        }
       }
       Spacer(minLength: 0)
     }
@@ -195,24 +234,26 @@ private struct CatalogRow: View {
     .onTapGesture(perform: select)
     .onHover { isHovering = $0 }
     .help(entry.documentIdentity?.path ?? entry.title)
-    .accessibilityElement(children: .combine)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(entry.displayTitle)
+    .accessibilityValue(
+      [
+        presentation?.accessibilityValue,
+        showFolder ? entry.documentIdentity?.folderPath : nil,
+      ].compactMap { $0 }
+        .joined(separator: ", ")
+    )
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     .accessibilityAction(.default, select)
   }
 
-  private var subtitle: String {
-    if let identity = entry.documentIdentity {
-      let folder = entry.inCloud ? "iCloud" : folderName(identity.folderPath)
-      if entry.isUnavailable { return "\(folder) · Unavailable" }
-      guard let date = entry.updatedAt else { return folder }
-      return "\(folder) · \(relativeDate(date))"
+  private var presentation: CatalogDocumentPresentation? {
+    guard entry.isRecent else { return nil }
+    if let presentation = entry.documentPresentation {
+      return entry.needsAttention ? presentation.requiringAttention() : presentation
     }
-    var parts = entry.categories.prefix(2).map(\.label)
-    if !entry.isBundled { parts.append("Installed") }
-    return parts.isEmpty ? entry.title : parts.joined(separator: " · ")
+    return CatalogDocumentPresentation(
+      needsAttention: entry.needsAttention, downloaded: true, localOnly: true,
+      sharing: isGuest ? .sharedWithYou : .none)
   }
-}
-
-private func relativeDate(_ date: Date, now: Date = .now) -> String {
-  now.timeIntervalSince(date) < 60 ? "Just now" : date.formatted(.relative(presentation: .named))
 }

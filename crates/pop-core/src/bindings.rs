@@ -1,6 +1,6 @@
 //! Code-generation values. Types use ts-rs; these small registries are serialized
 //! from the same limits and enum variants the Rust checks consume.
-use crate::app::package_format_1::*;
+use crate::app::format::*;
 pub use crate::descriptor::Node;
 use crate::wire::engine::ExportFormat;
 use crate::wire::*;
@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
+        ("DocumentLineage", json!(pop_contracts::lineage::DOCUMENT_LINEAGE)),
         ("CompactLayoutWidth", json!(crate::page_wire::COMPACT_LAYOUT_WIDTH)),
         (
             "BrowserHost",

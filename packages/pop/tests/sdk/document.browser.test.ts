@@ -44,8 +44,9 @@ export const other = defineDocument({ label: s.string() }, { initial: { label: "
   import { other } from "./schema";
   getDocument(other);
 </script>`,
-  // A ctx whose document publishes like the shell's: an accepted write replaces the frozen
-  // snapshot and notifies subscribers; reading a handle's value reports to the observer.
+  // A ctx with every service the shell supplies, whose document publishes like the shell's:
+  // an accepted write replaces the frozen snapshot and notifies subscribers; reading a
+  // handle's value reports to the observer. Unused services refuse loudly.
   "entry.ts": `import { svelteApp } from "@hitslop/pop/svelte";
 import schema from "./schema";
 import App from "./App.svelte";
@@ -72,7 +73,21 @@ win.context = (label: string) => {
     subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
     observe(read: () => void) { observer = read; return () => { if (observer === read) observer = () => {}; }; },
   };
-  return { ctx: { document, reportError: (error: Error) => errors.push(error.message) }, publish, listeners, errors };
+  const unused = (name: string) => () => { throw new Error(name + " is not used by this test"); };
+  const ctx = {
+    document,
+    environment: {
+      current: Object.freeze({ platform: "unknown", device: "unknown", layout: "regular" }),
+      subscribe: () => () => {},
+    },
+    bind: { text: unused("bind.text") },
+    attachments: { import: unused("attachments.import"), url: unused("attachments.url"), read: unused("attachments.read") },
+    speech: { transcribe: unused("speech.transcribe") },
+    haptics: { selection() {}, impact() {}, notification() {} },
+    window: { resize: unused("window.resize") },
+    reportError: (error: Error) => errors.push(error.message),
+  };
+  return { ctx, publish, listeners, errors };
 };`,
 };
 
@@ -164,8 +179,7 @@ test("a remount acquires a fresh document and the previous one stops listening",
   expect(result).toEqual({ listening: 1, afterUnmount: 0, fresh: true, shown: "Reloaded" });
 });
 
-test("getEnvironment is reactive per mount, cleans up and falls back on older hosts", async () => {
-  await page.setViewportSize({ width: 639, height: 800 });
+test("getEnvironment is reactive per mount and stops listening at unmount", async () => {
   const result = await page.evaluate(async () => {
     const win = window as any;
     const target = document.getElementById("c")!;
@@ -189,15 +203,9 @@ test("getEnvironment is reactive per mount, cleans up and falls back on older ho
     current = Object.freeze({ platform: "ios", device: "phone", layout: "compact" });
     for (const listener of listeners) listener();
     const retained = environment.current.platform;
-    const older = await win.apps.App.mount(win.context("Older host").ctx, target);
-    await older.rendered();
-    win.olderEnvironmentView = older;
-    return { before, changed, count, retained, fallback: target.querySelector("[data-environment]")!.textContent };
+    return { before, changed, count, retained };
   });
-  expect(result).toEqual({ before: "macos/desktop/compact", changed: "macos/desktop/regular", count: 0, retained: "macos", fallback: "unknown/unknown/compact" });
-  await page.setViewportSize({ width: 640, height: 800 });
-  await page.locator("#c [data-environment]").filter({ hasText: "unknown/unknown/regular" }).waitFor();
-  await page.evaluate(async () => { await (window as any).olderEnvironmentView.unmount(); });
+  expect(result).toEqual({ before: "macos/desktop/compact", changed: "macos/desktop/regular", count: 0, retained: "macos" });
 });
 
 test("getDocument refuses calls after initialization and a definition the app did not mount", async () => {

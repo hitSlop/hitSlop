@@ -45,7 +45,7 @@ fn mismatch(node: &Node) -> Error {
     )
 }
 
-/// The stored `value` (absent when `None`) against `node`, in layout 1 (`layout`): text in a
+/// The stored `value` (absent when `None`) against `node`, in the document layout: text in a
 /// text container, counters in finite counters, objects and records in maps, scalar lists
 /// in movable lists of scalars, row lists as a map of rows by valid `$id` plus their order,
 /// and scalars within their rules. It checks only what merging valid edits preserves: an
@@ -56,7 +56,9 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
         || err(Code::InvalidBytes, "Saved state does not match the document's schema; keep the file for recovery");
     match (node, value) {
         (Node::Optional { .. }, None) => Ok(()),
+        (Node::Optional { inner }, value) if !is_scalar(inner) => stored_slot(inner, value),
         (Node::Optional { inner }, value) => stored(inner, value),
+        (node, None) if is_scalar(node) && node.default_value().is_some() => Ok(()),
         (Node::Text {}, Some(ValueOrContainer::Container(Container::Text(_)))) => Ok(()),
         (Node::Counter {}, Some(ValueOrContainer::Container(Container::Counter(counter)))) => {
             if counter.get_value().is_finite() { Ok(()) } else { Err(invalid()) }
@@ -72,7 +74,16 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
         }
         (Node::Record { value: entry }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
             let keys: Vec<String> = map.keys().map(|key| key.to_string()).collect();
-            keys.iter().try_for_each(|key| if valid_key(key) { stored(entry, map.get(key)) } else { Err(invalid()) })
+            keys.iter().try_for_each(|key| {
+                if !valid_key(key) {
+                    return Err(invalid());
+                }
+                if layout::slotted(entry, true) {
+                    stored_slot(entry, map.get(key))
+                } else {
+                    stored(entry, map.get(key))
+                }
+            })
         }
         (Node::List { item }, Some(ValueOrContainer::Container(Container::MovableList(list)))) if is_scalar(item) => {
             let mut result = Ok(());
@@ -96,10 +107,7 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
                 if !valid_id(id) {
                     return Err(invalid());
                 }
-                match list.rows().get(id) {
-                    row @ Some(ValueOrContainer::Container(Container::Map(_))) => stored(item, row),
-                    _ => Err(invalid()),
-                }
+                stored_slot(item, list.rows().get(id))
             })?;
             let mut result = Ok(());
             list.order().for_each(|entry| {
@@ -111,4 +119,22 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
         }
         _ => Err(invalid()),
     }
+}
+
+/// Every retained generation is valid, including one a later undo can select again.
+fn stored_slot(node: &Node, value: Option<ValueOrContainer>) -> Result<()> {
+    let invalid = || err(Code::InvalidBytes, "Saved state has an invalid generation slot");
+    let Some(value) = value else { return Ok(()) };
+    let ValueOrContainer::Container(Container::Map(slot)) = value else { return Err(invalid()) };
+    layout::generation(&slot)?;
+    for key in slot.keys() {
+        if key.as_ref() == layout::CURRENT {
+            continue;
+        }
+        if !layout::valid_generation(&key) {
+            return Err(invalid());
+        }
+        stored(node, slot.get(&key))?;
+    }
+    Ok(())
 }

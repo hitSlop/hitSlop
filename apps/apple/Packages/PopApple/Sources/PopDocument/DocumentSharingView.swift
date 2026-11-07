@@ -38,14 +38,14 @@ public struct LiveCollaborationSection: View {
     self.onUpdate = onUpdate
   }
 
-  private var live: Bool { model.status.map { $0.phase != .ended } ?? false }
-  private var joined: Bool { live && model.status?.creator == false }
+  private var live: Bool { model.sharingEnabled }
+  private var joined: Bool { model.joined }
   private var holdingOpen: Bool { model.acting || signingIn || pendingStart || confirmingStop }
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Toggle(
-        "Live collaboration",
+        "Share an editing link",
         isOn: Binding(
           get: { live || wantsLink || starting },
           set: { enabled in
@@ -81,7 +81,7 @@ public struct LiveCollaborationSection: View {
           joined
             ? "You joined this live document. Anyone with the link can edit."
             : "Anyone with the link can edit.")
-        if let link = model.status?.link {
+        if let link = model.link {
           HStack {
             Button(copied ? "Copied" : "Copy Link") { copy(link) }
               .accessibilityIdentifier("sharing-link")
@@ -90,7 +90,9 @@ public struct LiveCollaborationSection: View {
             #endif
           }
         }
-        if model.status?.phase == .offline {
+        if model.status?.phase == .paused && model.status?.pauseKind == nil {
+          caption(model.status?.detail ?? "Finish stopping this live link.")
+        } else if model.status?.phase == .offline {
           caption("Offline — changes will sync when you're back online.")
         } else if model.status?.phase == .syncing {
           caption("Syncing…")
@@ -98,7 +100,7 @@ public struct LiveCollaborationSection: View {
       } else {
         caption(
           model.status?.phase == .ended
-            ? "Live collaboration ended. Turn it on again for a new link."
+            ? "The link is off. Your document still syncs across your devices."
             : "Edit together in real time. Anyone with the link can edit.")
       }
 
@@ -127,10 +129,11 @@ public struct LiveCollaborationSection: View {
         caption("The copy is an independent document. To share it, turn on live collaboration in the copy.")
       }
       if confirmingStop {
-        caption("Stop live collaboration? The link stops working. Everyone keeps their own copy.")
+        caption(
+          "Revoke this link? Guests keep their downloaded copies. Your document continues syncing across your devices.")
         HStack {
           Button("Cancel") { confirmingStop = false }
-          Button("Stop", role: .destructive) {
+          Button("Revoke Link", role: .destructive) {
             confirmingStop = false
             wantsLink = false
             failedAction = .stop

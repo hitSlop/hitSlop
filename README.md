@@ -17,7 +17,7 @@ Make little apps for your Mac with Svelte & your AI coding agent: a planner that
 
 **Install dotpop once. Make and share little apps as files.** Each `.pop` carries its interface, saved work and imported files. Send a fresh template or a filled document to anyone with dotpop, without packaging and signing a separate Mac app.
 
-You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings dotpop to your phone, with a Synced Library through your iCloud account. The Mac app includes the Synced Library.
+You and your agent work on the same document. Check something off and your agent can read it. Ask your agent to add a row and it appears in your open window. Your documents stay yours to keep, copy and share. The iPhone app on TestFlight brings dotpop to your phone, and your documents can sync between your devices when you sign in.
 
 [Download for Mac](https://github.com/hitSlop/dotpop/releases/latest/download/dotpop.dmg) · [Download for iPhone][ios-download] · [Explore the website](https://dotpop.click) · [Make your first pop](#make-your-own-with-an-agent) · [Docs](docs/README.md)
 
@@ -25,7 +25,7 @@ You and your agent work on the same document. Check something off and your agent
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
-iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates pops, includes the Popular templates, and imports from Files. [Availability](https://dotpop.click/docs/availability/) covers Synced Library and live collaboration. Synced Library uses CloudKit Production on Mac and matches TestFlight/App Store iPhones.
+iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates pops, includes the Popular templates, and imports from Files. [Availability](https://dotpop.click/docs/availability/) covers sync and live collaboration.
 
 <p align="center">
   <a href="apps/landing/public/assets/desktop-hero.mp4"><img src="apps/landing/public/assets/desktop-hero-poster.jpg" width="900" alt="A Mac desktop full of open dotpop: a Winamp-style music player, a desktop pet, a focus timer, flashcards, a doodle board, a koi pond, Wordle, and school planners."></a>
@@ -34,7 +34,7 @@ iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edit
 
 ## On your iPhone
 
-The iPhone app (iOS 26+, TestFlight) opens, edits and creates pops. Start from the Popular templates and keep your library in sync with your Mac through iCloud.
+The iPhone app (iOS 26+, TestFlight) opens, edits and creates pops. Start from the Popular templates and keep your documents in sync with your Mac when you sign in.
 
 [Download for iPhone][ios-download] · iOS 26+ · TestFlight
 
@@ -103,7 +103,7 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Local documents need no account or server. Choose iCloud when creating a pop to keep it in sync with your iPhone through your private iCloud storage, or choose On this Mac and pick a folder. Move an existing local pop with **File ▸ Move to iCloud…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders.
+- Local documents need no account or server. Choose **Sync across devices** when creating a pop to keep it in sync with your iPhone, or keep it on this device. Turn sync on later with **File ▸ Enable Sync Across Devices…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders.
 - A `.pop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through dotpop or the CLI. Close a document before moving it in Finder.
 - Send a freshly built template so someone can start their own document. They need dotpop; opening the template asks where to save their writable copy. [How to share a pop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
@@ -172,7 +172,7 @@ Document creation and editing run on macOS and Linux. The CLI carries its own en
 Here’s where we’re heading:
 
 - [x] **iPhone app.** Open, edit and create pops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
-- [x] **Synced Library.** Keep pops in sync between Mac and iPhone through iCloud.
+- [x] **Sync.** Keep pops in sync between your Mac and iPhone when you sign in.
 - [x] **Live collaboration.** Edit together through a link on Mac, iPhone or Chrome.
 - [ ] **Release the iPhone app.** Bring iPhone to the App Store and qualify sharing on release devices.
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.

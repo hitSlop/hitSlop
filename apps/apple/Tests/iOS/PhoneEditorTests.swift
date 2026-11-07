@@ -31,8 +31,11 @@ final class PhoneEditorTests: XCTestCase {
     XCTAssertEqual(PhoneRecent.localTitle(shared.appendingPathComponent(uuid + ".pop")), "Shared pop")
   }
 
-  @MainActor func testLibraryNavigationRetainsTheDocumentWhenSaveFailsAndCanRetry() async throws {
-    let file = try outputFolder().appendingPathComponent("close-\(UUID().uuidString).pop")
+  /// Leaving returns to the library at once and saves behind it: the page's last typing is
+  /// drained before anything is torn down, a failed save keeps the owner and every edit for
+  /// Retry (or reopening), and leaving twice starts one close.
+  @MainActor func testLeavingSavesBehindTheLibraryAndKeepsAFailedDocumentForRetry() async throws {
+    let file = try outputFolder().appendingPathComponent("leave-\(UUID().uuidString).pop")
     let moved = file.appendingPathExtension("moved")
     _ = try PopFile.importCopy(from: input("host-probe"), to: file)
     let (session, window) = try await show(file)
@@ -40,29 +43,231 @@ final class PhoneEditorTests: XCTestCase {
     let model = PhoneDocuments()
     model.session = session
     session.delegate = model
-    _ = try await session.owner.apply(
-      batch: #"{"intents":[{"type":"set","path":["title"],"value":"Keep my edits"}]}"#)
+    let key = PhoneRecent.key(file)
+    // Typed on the page and not yet sent to the owner when the person swipes back.
+    _ = try await session.webView.callAsyncJavaScript(
+      "const input = document.querySelector('textarea'); input.value = 'Typed before leaving'; input.dispatchEvent(new Event('input')); return true",
+      arguments: [:], in: nil, contentWorld: .page)
     try FileManager.default.moveItem(at: file, to: moved)
     defer {
-      if FileManager.default.fileExists(atPath: moved.path) {
-        try? FileManager.default.moveItem(at: moved, to: file)
-      }
+      if FileManager.default.fileExists(atPath: moved.path) { try? FileManager.default.moveItem(at: moved, to: file) }
     }
-    let closed = await withCheckedContinuation { reply in
-      model.close { reply.resume(returning: $0) }
+    let failing = try XCTUnwrap(model.leave())
+    model.message = nil
+    XCTAssertNil(model.session, "The library is usable while the document saves")
+    XCTAssertEqual(model.closing[key], .saving)
+    XCTAssertNil(model.leave(), "Leaving again starts nothing new")
+    XCTAssertNil(model.retryClose(file), "Retry waits for the close in progress")
+    let failed = await failing.value
+    XCTAssertFalse(failed)
+    guard case .failed = model.closing[key] else { return XCTFail("A failed close marks its tile for Retry") }
+    XCTAssertTrue(session.acceptsPageWork, "A failed close keeps the owner and its live page")
+    XCTAssertNil(model.message, "The tile, not an alert over the library, reports the failed close")
+
+    // Reopening the tile brings back the same owner with its edits.
+    model.open(file)
+    for _ in 0..<100 where !(model.session === session && !model.opening) {
+      try await Task.sleep(for: .milliseconds(100))
     }
-    XCTAssertFalse(closed)
-    XCTAssertTrue(model.session === session)
-    XCTAssertNotNil(model.message)
+    XCTAssertTrue(model.session === session && !model.opening)
+    XCTAssertNil(model.closing[key])
+
     try FileManager.default.moveItem(at: moved, to: file)
-    let retried = await withCheckedContinuation { reply in
-      model.close { reply.resume(returning: $0) }
-    }
-    XCTAssertTrue(retried)
-    XCTAssertNil(model.session)
+    let retried = try XCTUnwrap(model.leave())
+    model.retryClose(file)
+    let closed = await retried.value
+    XCTAssertTrue(closed)
+    XCTAssertNil(model.closing[key])
+    XCTAssertNil(model.session(showing: file))
     let reopened = try await DocumentSession.open(url: file)
     let saved = try await state(reopened.owner)
-    XCTAssertEqual((saved["value"] as? [String: Any])?["title"] as? String, "Keep my edits")
+    XCTAssertEqual((saved["value"] as? [String: Any])?["title"] as? String, "Typed before leaving")
+    try await reopened.close()
+  }
+
+  /// Signing out closes the account's documents however their paths are spelled, on screen
+  /// or still leaving. Only a document that is leaving keeps the save status it reports.
+  @MainActor func testSigningOutClosesTheAccountsDocumentsByPath() async throws {
+    let file = try outputFolder().appendingPathComponent("sign-out-\(UUID().uuidString).pop")
+    let moved = file.appendingPathExtension("moved")
+    _ = try PopFile.importCopy(from: input("host-probe"), to: file)
+    let (session, window) = try await show(file)
+    defer { window.isHidden = true }
+    let model = PhoneDocuments()
+    session.delegate = model
+    let key = PhoneRecent.key(file)
+    // Neither on screen nor leaving: nothing keeps this status for later.
+    model.pageSession(session, saveStatus: .failed(.busy))
+    model.session = session
+    _ = try await session.webView.callAsyncJavaScript(
+      "const input = document.querySelector('textarea'); input.value = 'Typed before signing out'; input.dispatchEvent(new Event('input')); return true",
+      arguments: [:], in: nil, contentWorld: .page)
+    try FileManager.default.moveItem(at: file, to: moved)
+    defer {
+      if FileManager.default.fileExists(atPath: moved.path) { try? FileManager.default.moveItem(at: moved, to: file) }
+    }
+    let folder = file.deletingLastPathComponent()
+    let spelled = folder.path + "/../" + folder.lastPathComponent + "/./" + file.lastPathComponent
+    let refused = await model.leave(paths: [spelled])
+    XCTAssertFalse(refused, "Sign-out stops while a document's changes are not saved")
+    XCTAssertNil(model.session, "The document on screen left")
+    guard case .failed = model.closing[key] else { return XCTFail("The failed close is kept for Retry") }
+
+    model.open(file)
+    for _ in 0..<100 where !(model.session === session && !model.opening) {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertTrue(model.session === session && !model.opening)
+    XCTAssertNotEqual(model.saveStatus, .failed(.busy), "Only a status reported while leaving comes back")
+    let failing = try XCTUnwrap(model.leave())
+    let failed = await failing.value
+    XCTAssertFalse(failed)
+
+    try FileManager.default.moveItem(at: moved, to: file)
+    let signedOut = await model.leave(paths: [spelled])
+    XCTAssertTrue(signedOut, "Sign-out retries the document still leaving")
+    XCTAssertNil(model.closing[key])
+    XCTAssertNil(model.session(showing: file))
+    let reopened = try await DocumentSession.open(url: file)
+    let saved = try await state(reopened.owner)
+    XCTAssertEqual((saved["value"] as? [String: Any])?["title"] as? String, "Typed before signing out")
+    try await reopened.close()
+  }
+
+  /// Leaving a document whose owner is still opening, then opening it again at once, ends
+  /// with one owner on screen: the open that was left releases what it opened before the next
+  /// begins. A second owner would be refused the file and fail the reopen.
+  @MainActor func testLeavingWhileADocumentOpensAndReopeningKeepsOneOwner() async throws {
+    let file = try outputFolder().appendingPathComponent("leave-opening-\(UUID().uuidString).pop")
+    _ = try PopFile.importCopy(from: input("host-probe"), to: file)
+    let model = PhoneDocuments()
+    let opening = Gate()
+    model.openSession = { url in
+      let session = try await DocumentSession.open(url: url)
+      await opening.wait()  // The owner holds the file; the open has not returned.
+      return session
+    }
+    model.open(file)
+    for _ in 0..<100 where opening.reached == 0 { try await Task.sleep(for: .milliseconds(20)) }
+    XCTAssertEqual(opening.reached, 1)
+    model.leave()
+    XCTAssertNil(model.presented)
+    model.open(file)
+    opening.open()
+    for _ in 0..<100 where model.session == nil && model.message == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertNil(model.message, "The reopen was refused the file")
+    XCTAssertNotNil(model.session)
+    XCTAssertEqual(model.presented.map(PhoneRecent.key), PhoneRecent.key(file))
+    let left = await model.leave(paths: [file.path])
+    XCTAssertTrue(left)
+    let check = try await DocumentSession.open(url: file)
+    try await check.close()
+  }
+
+  /// Signing out while one of the account's documents is still opening waits for that open
+  /// and releases what it opened: no owner outlives the sign-out (the file opens again at
+  /// once), and the document never comes on screen afterwards.
+  @MainActor func testSigningOutWhileADocumentOpensLeavesNoOwnerAndShowsNothing() async throws {
+    let file = try outputFolder().appendingPathComponent("sign-out-opening-\(UUID().uuidString).pop")
+    _ = try PopFile.importCopy(from: input("host-probe"), to: file)
+    let key = PhoneRecent.key(file)
+    let model = PhoneDocuments()
+    let opening = Gate()
+    model.openSession = { url in
+      let session = try await DocumentSession.open(url: url)
+      await opening.wait()
+      return session
+    }
+    model.open(file)
+    for _ in 0..<100 where opening.reached == 0 { try await Task.sleep(for: .milliseconds(20)) }
+    XCTAssertEqual(opening.reached, 1)
+    let signedOut = Gate()
+    let signOut = Task { @MainActor in
+      let result = await model.leave(paths: [file.path])
+      signedOut.open()
+      return result
+    }
+    for _ in 0..<20 { await Task.yield() }
+    XCTAssertFalse(signedOut.isOpen, "Sign-out waits for the open in flight")
+    opening.open()
+    let result = await signOut.value
+    XCTAssertTrue(result)
+    let check = try await DocumentSession.open(url: file)
+    try await check.close()
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertNil(model.session)
+    XCTAssertNil(model.presented)
+    XCTAssertFalse(model.opening)
+    XCTAssertNil(model.closing[key])
+    XCTAssertNil(model.session(showing: file))
+    XCTAssertNil(model.message)
+  }
+
+  /// Reopening a document whose close is still saving waits for that close: the new owner
+  /// reads what the close saved (it would be refused the file while the old one held it), and
+  /// the old owner is gone.
+  @MainActor func testReopeningWhileTheCloseSavesWaitsForIt() async throws {
+    let file = try outputFolder().appendingPathComponent("reopen-closing-\(UUID().uuidString).pop")
+    _ = try PopFile.importCopy(from: input("host-probe"), to: file)
+    let (session, window) = try await show(file)
+    defer { window.isHidden = true }
+    let model = PhoneDocuments()
+    model.session = session
+    session.delegate = model
+    let key = PhoneRecent.key(file)
+    _ = try await session.webView.callAsyncJavaScript(
+      "const input = document.querySelector('textarea'); input.value = 'Typed before reopening'; input.dispatchEvent(new Event('input')); return true",
+      arguments: [:], in: nil, contentWorld: .page)
+    let closing = try XCTUnwrap(model.leave())
+    model.open(file)
+    XCTAssertEqual(model.closing[key], .saving, "The reopen began while the close was saving")
+    let closed = await closing.value
+    XCTAssertTrue(closed)
+    for _ in 0..<100 where model.session == nil && model.message == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertNil(model.message)
+    let reopened = try XCTUnwrap(model.session)
+    XCTAssertFalse(reopened === session, "A closed owner never comes back")
+    XCTAssertFalse(session.isActive)
+    let saved = try await state(reopened.owner)
+    XCTAssertEqual((saved["value"] as? [String: Any])?["title"] as? String, "Typed before reopening")
+    let left = await model.leave(paths: [file.path])
+    XCTAssertTrue(left)
+  }
+
+  /// Signing out while a reopen waits for the document's close keeps the edit the close
+  /// saves and shows nothing afterwards; no owner outlives the sign-out.
+  @MainActor func testSigningOutWhileAReopenWaitsForItsCloseKeepsTheEdit() async throws {
+    let file = try outputFolder().appendingPathComponent("sign-out-reopen-\(UUID().uuidString).pop")
+    _ = try PopFile.importCopy(from: input("host-probe"), to: file)
+    let (session, window) = try await show(file)
+    defer { window.isHidden = true }
+    let model = PhoneDocuments()
+    model.session = session
+    session.delegate = model
+    let key = PhoneRecent.key(file)
+    _ = try await session.webView.callAsyncJavaScript(
+      "const input = document.querySelector('textarea'); input.value = 'Typed before signing out'; input.dispatchEvent(new Event('input')); return true",
+      arguments: [:], in: nil, contentWorld: .page)
+    let closing = try XCTUnwrap(model.leave())
+    model.open(file)
+    XCTAssertEqual(model.closing[key], .saving)
+    let signedOut = await model.leave(paths: [file.path])
+    XCTAssertTrue(signedOut)
+    let closed = await closing.value
+    XCTAssertTrue(closed)
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertNil(model.session)
+    XCTAssertNil(model.presented)
+    XCTAssertFalse(model.opening)
+    XCTAssertNil(model.closing[key])
+    XCTAssertNil(model.session(showing: file))
+    let reopened = try await DocumentSession.open(url: file)
+    let saved = try await state(reopened.owner)
+    XCTAssertEqual((saved["value"] as? [String: Any])?["title"] as? String, "Typed before signing out")
     try await reopened.close()
   }
 
@@ -240,9 +445,10 @@ final class PhoneEditorTests: XCTestCase {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("Documents", isDirectory: true)
     let seed = support.appendingPathComponent("Editor fixture with icon.pop")
-    if !FileManager.default.fileExists(atPath: seed.path) {
-      _ = try PopFile.importCopy(from: input("host-probe"), to: seed)
-    }
+    // A fresh copy every run: neither an earlier run's edits nor a file an earlier build
+    // wrote carries over into the UI tests.
+    try? FileManager.default.removeItem(at: seed)
+    _ = try PopFile.importCopy(from: input("host-probe"), to: seed)
   }
 
   @MainActor func testSavedArtworkRendersOnPhoneAndTracksEditsWithoutEditingState() async throws {
@@ -323,7 +529,8 @@ final class PhoneEditorTests: XCTestCase {
     let sources = try FileManager.default.contentsOfDirectory(at: fixtures, includingPropertiesForKeys: nil).filter {
       $0.lastPathComponent.hasPrefix("released-") && $0.pathExtension == "pop"
     }
-    XCTAssertFalse(sources.isEmpty)
+    // Lineage 2 has no published corpus until its first release freezes one.
+    try XCTSkipIf(sources.isEmpty, "No released compatibility documents are published yet")
     let folder = try outputFolder()
     for source in sources {
       let document = folder.appendingPathComponent(UUID().uuidString + ".pop")
@@ -343,6 +550,24 @@ final class PhoneEditorTests: XCTestCase {
       try await reopened.close()
       reopenedWindow.isHidden = true
     }
+  }
+}
+
+/// Holds work until the test opens it.
+@MainActor private final class Gate {
+  private(set) var isOpen = false
+  /// How many times work reached the gate.
+  private(set) var reached = 0
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+  func wait() async {
+    reached += 1
+    guard !isOpen else { return }
+    await withCheckedContinuation { waiters.append($0) }
+  }
+  func open() {
+    isOpen = true
+    for waiter in waiters { waiter.resume() }
+    waiters = []
   }
 }
 

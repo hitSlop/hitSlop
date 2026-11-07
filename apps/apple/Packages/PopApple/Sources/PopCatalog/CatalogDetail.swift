@@ -9,6 +9,7 @@ struct CatalogDetail: View {
   let isCreating: Bool
   let isCopying: Bool
   let isQuitting: Bool
+  var removeRecent: (CatalogEntry) -> Void = { _ in }
   let primaryAction: (CatalogEntry) -> Void
 
   var body: some View {
@@ -52,7 +53,17 @@ struct CatalogDetail: View {
 
             details(entry)
 
-            if entry.isUnavailable {
+            if let refusal = entry.refusal {
+              // Trying again cannot help; the entry can leave Recents instead.
+              VStack(alignment: .leading, spacing: 10) {
+                Label(refusal, systemImage: "exclamationmark.triangle")
+                  .font(.callout).foregroundStyle(.secondary)
+                  .fixedSize(horizontal: false, vertical: true)
+                if entry.recentHistoryID != nil {
+                  Button("Remove from Recents") { removeRecent(entry) }.disabled(isQuitting)
+                }
+              }
+            } else if entry.isUnavailable {
               Label(
                 "This file can’t be reached. Reconnect its drive or restore the file, then try opening it again.",
                 systemImage: "exclamationmark.triangle"
@@ -71,13 +82,15 @@ struct CatalogDetail: View {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
         .overlay(alignment: .bottomTrailing) {
-          PrimaryButton(
-            title: entry.isUnavailable ? "Try Again" : entry.isRecent ? "Open" : "Create",
-            icon: entry.isRecent ? "arrow.up.forward.square" : "plus",
-            isBusy: isCreating, isWorking: isCopying
-          ) { primaryAction(entry) }
-          .disabled(isQuitting)
-          .padding(24)
+          if entry.refusal == nil {
+            PrimaryButton(
+              title: entry.isUnavailable ? "Try Again" : entry.isRecent ? "Open" : "Create",
+              icon: entry.isRecent ? "arrow.up.forward.square" : "plus",
+              isBusy: isCreating, isWorking: isCopying
+            ) { primaryAction(entry) }
+            .disabled(isQuitting)
+            .padding(24)
+          }
         }
       } else {
         ContentUnavailableView {
@@ -104,8 +117,8 @@ struct CatalogDetail: View {
         if let identity = entry.documentIdentity {
           Text(entry.title).font(.body).foregroundStyle(.secondary)
           Label(
-            entry.inCloud ? "iCloud" : folderName(identity.folderPath),
-            systemImage: entry.inCloud ? "icloud" : "folder"
+            entry.inCloud ? "Synced" : folderName(identity.folderPath),
+            systemImage: entry.inCloud ? "cloud" : "folder"
           )
           .font(.callout).foregroundStyle(.secondary)
           .labelStyle(.titleAndIcon)
@@ -159,7 +172,7 @@ struct CatalogDetail: View {
       CatalogFact(
         title: "Source",
         value: entry.inCloud
-          ? "iCloud"
+          ? "Synced"
           : entry.isRecent ? "Local document" : entry.isBundled ? "Included with pop" : "Installed locally")
     ]
     if entry.isRecent, let date = entry.createdAt {

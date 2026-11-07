@@ -2,7 +2,7 @@ import Foundation
 
 /// A device preference shared by every document, never saved in a .pop file.
 public enum HapticPreferences {
-  public static let enabledKey = "hapticsEnabled"
+  public static let enabledKey = "click.dotpop.hapticsEnabled"
   public static var isEnabled: Bool {
     UserDefaults.standard.object(forKey: enabledKey) == nil || UserDefaults.standard.bool(forKey: enabledKey)
   }

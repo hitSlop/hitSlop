@@ -1,0 +1,118 @@
+{
+  "doodle-board": {
+    "frames": 261,
+    "marks": {
+      "action": 21
+    },
+    "width": 744,
+    "height": 594,
+    "grabbed": 240,
+    "startFrame": 0
+  },
+  "baby-journal": {
+    "frames": 155,
+    "marks": {
+      "action": 21
+    },
+    "width": 900,
+    "height": 640,
+    "grabbed": 67,
+    "startFrame": 0
+  },
+  "wordle": {
+    "frames": 172,
+    "marks": {
+      "action": 21
+    },
+    "width": 440,
+    "height": 620,
+    "grabbed": 123,
+    "startFrame": 0
+  },
+  "flashcards": {
+    "frames": 207,
+    "marks": {
+      "action": 21
+    },
+    "width": 540,
+    "height": 440,
+    "grabbed": 127,
+    "startFrame": 54
+  },
+  "koi-pond": {
+    "frames": 157,
+    "marks": {
+      "action": 21
+    },
+    "width": 420,
+    "height": 420,
+    "grabbed": 70,
+    "startFrame": 0
+  },
+  "focus-timer": {
+    "frames": 164,
+    "marks": {
+      "action": 21
+    },
+    "width": 320,
+    "height": 320,
+    "grabbed": 131,
+    "startFrame": 0
+  },
+  "pocket-sheet": {
+    "frames": 157,
+    "marks": {
+      "action": 21
+    },
+    "width": 700,
+    "height": 640,
+    "grabbed": 92,
+    "startFrame": 51
+  },
+  "baby-journal-phone": {
+    "frames": 120,
+    "marks": {},
+    "width": 390,
+    "height": 844,
+    "grabbed": 80,
+    "startFrame": 0
+  },
+  "pocket-pod": {
+    "frames": 157,
+    "marks": {
+      "action": 21
+    },
+    "width": 360,
+    "height": 603,
+    "grabbed": 54,
+    "startFrame": 0
+  },
+  "codex-pet": {
+    "frames": 158,
+    "marks": {
+      "action": 21
+    },
+    "width": 240,
+    "height": 180,
+    "grabbed": 131,
+    "startFrame": 18
+  },
+  "pocket-pod-phone": {
+    "frames": 119,
+    "marks": {},
+    "width": 390,
+    "height": 844,
+    "grabbed": 45,
+    "startFrame": 0
+  },
+  "pixel-art": {
+    "frames": 157,
+    "marks": {
+      "action": 21
+    },
+    "width": 460,
+    "height": 620,
+    "grabbed": 139,
+    "startFrame": 0
+  }
+}

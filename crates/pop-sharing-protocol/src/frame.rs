@@ -14,7 +14,7 @@
 //! 0x07 Error    { code u8, message varString }                    then the relay closes
 //! ```
 //!
-//! `tests/fixtures/v1/frames.json` freezes both frame and socket envelope codecs.
+//! `tests/fixtures/v1/frames.json` freezes this codec's bytes.
 use crate::{Code, Result, err};
 use std::collections::BTreeMap;
 
@@ -29,7 +29,7 @@ pub const ERROR_PROTOCOL: u8 = 1;
 pub const ERROR_APP: u8 = 2;
 /// Permanent refusal: ended or unknown room.
 pub const ERROR_ENDED: u8 = 3;
-/// Permanent refusal: invalid capability.
+/// Permanent refusal: identity or membership is not authorized.
 pub const ERROR_UNAUTHORIZED: u8 = 4;
 /// Permanent refusal: malformed frame or client message sequence.
 pub const ERROR_MALFORMED: u8 = 5;
@@ -212,6 +212,9 @@ impl<'a> Reader<'a> {
         let mut n = 0u64;
         for shift in (0..64).step_by(7) {
             let byte = self.byte()?;
+            if shift == 63 && byte & 0x7f > 1 {
+                return Err(invalid("integer overflow"));
+            }
             n |= u64::from(byte & 0x7f) << shift;
             if byte & 0x80 == 0 {
                 return Ok(n);

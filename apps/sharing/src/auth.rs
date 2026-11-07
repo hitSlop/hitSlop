@@ -5,6 +5,27 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 const TOKEN_BYTES: usize = pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum IdentityError {
+    Denied,
+    Unavailable,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CreatorAuthorization {
+    Allowed,
+    Denied,
+    Unavailable,
+}
+pub(crate) fn creator_authorization(
+    identity: std::result::Result<String, IdentityError>,
+    owner_uid: &str,
+) -> CreatorAuthorization {
+    match identity {
+        Ok(uid) if uid == owner_uid => CreatorAuthorization::Allowed,
+        Ok(_) | Err(IdentityError::Denied) => CreatorAuthorization::Denied,
+        Err(IdentityError::Unavailable) => CreatorAuthorization::Unavailable,
+    }
+}
 #[derive(Clone, Deserialize)]
 pub(crate) struct Claims {
     pub sub: String,
@@ -12,6 +33,11 @@ pub(crate) struct Claims {
     pub exp: u64,
     pub iat: u64,
     pub auth_time: u64,
+}
+impl Claims {
+    pub(crate) fn may_create(&self) -> bool {
+        self.firebase.sign_in_provider != "anonymous"
+    }
 }
 #[derive(Clone, Deserialize)]
 pub(crate) struct Firebase {
@@ -37,10 +63,9 @@ pub(crate) fn verify(token: &str, project: &str, key: &DecodingKey, now: u64) ->
     policy.validate_exp = false;
     policy.leeway = 0;
     let claims = decode::<Claims>(token, key, &policy).map_err(|_| "Invalid identity")?.claims;
-    // Any Firebase provider may own links (Apple today; Google or others later), but an
-    // anonymous account is free to mint and must not reach the room quota.
-    if claims.firebase.sign_in_provider == "anonymous"
-        || claims.sub.is_empty()
+    // Verification establishes identity. Endpoint policy separately limits creation
+    // to named accounts; anonymous identities may exchange invitations for membership.
+    if claims.sub.is_empty()
         || claims.sub.chars().count() > 128
         || claims.exp <= now
         || claims.iat > now
@@ -77,11 +102,6 @@ mod runtime {
     use super::*;
     use std::cell::RefCell;
     use worker::*;
-    #[derive(Debug)]
-    pub(crate) enum IdentityError {
-        Denied,
-        Unavailable,
-    }
     type IdentityResult<T> = std::result::Result<T, IdentityError>;
     const CERTIFICATES: &str =
         "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
@@ -138,7 +158,7 @@ mod runtime {
     }
 }
 #[cfg(target_arch = "wasm32")]
-pub(crate) use runtime::{IdentityError, identity};
+pub(crate) use runtime::identity;
 
 #[cfg(test)]
 mod tests {
@@ -149,6 +169,13 @@ mod tests {
     use serde_json::{Value, json};
     use std::sync::OnceLock;
     const NOW: u64 = 1_700_000_000;
+    #[test]
+    fn creator_authorization_distinguishes_denial_from_identity_outage() {
+        assert_eq!(creator_authorization(Ok("owner".into()), "owner"), CreatorAuthorization::Allowed);
+        assert_eq!(creator_authorization(Ok("other".into()), "owner"), CreatorAuthorization::Denied);
+        assert_eq!(creator_authorization(Err(IdentityError::Denied), "owner"), CreatorAuthorization::Denied);
+        assert_eq!(creator_authorization(Err(IdentityError::Unavailable), "owner"), CreatorAuthorization::Unavailable);
+    }
     fn keys() -> &'static (EncodingKey, DecodingKey) {
         static KEYS: OnceLock<(EncodingKey, DecodingKey)> = OnceLock::new();
         KEYS.get_or_init(|| {
@@ -204,15 +231,15 @@ mod tests {
         assert!(verify(&forged.join("."), "hitslopapp", &keys().1, NOW).is_err());
     }
     #[test]
-    fn owner_identity_accepts_named_providers_but_not_anonymous_accounts() {
+    fn verified_anonymous_identity_may_join_but_cannot_create() {
         for provider in ["apple.com", "google.com", "password"] {
             let mut changed = claims();
             changed["firebase"]["sign_in_provider"] = json!(provider);
-            assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_ok());
+            assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap().may_create());
         }
         let mut changed = claims();
         changed["firebase"]["sign_in_provider"] = json!("anonymous");
-        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());
+        assert!(!verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap().may_create());
         let mut changed = claims();
         changed.as_object_mut().unwrap().remove("firebase");
         assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());

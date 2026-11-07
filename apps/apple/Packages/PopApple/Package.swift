@@ -38,7 +38,7 @@ let package = Package(
       // The core parses window silhouettes, so manifest geometry has one parser.
       dependencies: ["PopCoreBinding"],
       resources: [.process("Resources")],
-      linkerSettings: [.linkedFramework("ImageIO"), .linkedFramework("CloudKit")]
+      linkerSettings: [.linkedFramework("ImageIO")]
     ),
     .target(
       name: "PopAccount",
@@ -46,8 +46,10 @@ let package = Package(
         "PopCore", "PopCoreBinding",
         .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
         .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+        .product(name: "FirebaseFirestore", package: "firebase-ios-sdk"),
       ]
     ),
+    .testTarget(name: "PopAccountTests", dependencies: ["PopAccount"]),
     .target(
       name: "PopFirebase",
       dependencies: [

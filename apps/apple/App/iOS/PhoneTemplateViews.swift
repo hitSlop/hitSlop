@@ -7,11 +7,33 @@ struct PhoneTemplate: Identifiable, Hashable {
   let url: URL, title: String, description: String, categories: [String]
   var id: URL { url }
 }
+/// Decoded tile artwork by file, so a document opening shows its tile's image in the
+/// first frame of the zoom, and a tile keeps its image while its file is busy.
+@MainActor enum PhoneArtworkCache {
+  private static let images = NSCache<NSString, UIImage>()
+  static func image(_ url: URL, preview: Bool) -> UIImage? { images.object(forKey: key(url, preview)) }
+  static func store(_ image: UIImage?, _ url: URL, preview: Bool) {
+    if let image {
+      images.setObject(image, forKey: key(url, preview))
+    } else {
+      images.removeObject(forKey: key(url, preview))
+    }
+  }
+  private static func key(_ url: URL, _ preview: Bool) -> NSString {
+    ((preview ? "preview|" : "tile|") + url.standardizedFileURL.path) as NSString
+  }
+}
 struct PhoneArtworkView: View {
   let url: URL
   var preview = false
   var revision = ""
   @State private var image: UIImage?
+  init(url: URL, preview: Bool = false, revision: String = "") {
+    self.url = url
+    self.preview = preview
+    self.revision = revision
+    _image = State(initialValue: PhoneArtworkCache.image(url, preview: preview))
+  }
   var body: some View {
     Group {
       if let image {
@@ -22,46 +44,86 @@ struct PhoneArtworkView: View {
       }
     }.task(id: url.path + "|" + revision) {
       let preview = preview
-      let data = await Task.detached(priority: .utility) {
-        try? PopArtwork.first(url, preview ? [.preview] : [.icon, .preview])?.png
+      let read = await Task.detached(priority: .utility) {
+        Result { try PopArtwork.first(url, preview ? [.preview] : [.icon, .preview])?.png }
       }.value
+      // A busy file (its owner is saving) keeps the image already shown.
+      guard case .success(let data) = read else { return }
       image = data.flatMap(UIImage.init(data:))
+      PhoneArtworkCache.store(image, url, preview: preview)
     }
   }
 }
-struct PhonePopRow: View {
-  let url: URL, title: String, subtitle: String
+struct PhonePopTile: View {
+  let url: URL, title: String
   var revision = ""
-  /// A synced row shows a small iCloud mark instead of a status line.
-  var synced = false
-  var downloaded = true
+  var presentation: CatalogDocumentPresentation?
+  var artworkSize: CGFloat = 96
+  var zoom: (id: String, namespace: Namespace.ID)?
+  var closing: PhoneClosing?
+  @Environment(\.dynamicTypeSize) private var typeSize
   var body: some View {
-    HStack(spacing: 12) {
-      PhoneArtworkView(url: url, revision: revision + (downloaded ? "|local" : "|cloud")).padding(3).frame(
-        width: 44, height: 46
-      )
-      .background(PopBrand.card, in: RoundedRectangle(cornerRadius: 12))
-      .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.08), lineWidth: 1))
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(PopBrand.heading(16)).foregroundStyle(.primary).lineLimit(1)
-        if !synced { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-      }.frame(maxWidth: .infinity, alignment: .leading)
-      if synced {
-        Image(systemName: "checkmark.icloud").font(.footnote).foregroundStyle(.tertiary)
-          .accessibilityLabel(subtitle)
+    VStack(spacing: 7) {
+      PhoneArtworkView(url: url, revision: revision)
+        .frame(width: artworkSize, height: artworkSize)
+        .compositingGroup()
+        .modifier(PhoneZoomSource(zoom: zoom))
+        .shadow(color: .black.opacity(0.1), radius: 6, y: 3)
+        .overlay(alignment: .bottomTrailing) {
+          if let badge = presentation?.badge {
+            CatalogDocumentBadgeView(badge: badge).offset(x: 3, y: 3)
+          }
+        }
+        .overlay(alignment: .bottom) {
+          if let closing {
+            closingLabel(closing).offset(y: 8)
+              .transition(.opacity.animation(.easeIn(duration: 0.2).delay(closing == .saving ? 0.3 : 0)))
+          }
+        }
+      Text(title).font(.system(.subheadline, design: .rounded).weight(.semibold)).foregroundStyle(.primary)
+        .multilineTextAlignment(.center)
+        .lineLimit(typeSize.isAccessibilitySize ? nil : 2)
+        .frame(maxWidth: .infinity, minHeight: typeSize.isAccessibilitySize ? nil : 38, alignment: .top)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .top)
+    .contentShape(Rectangle())
+  }
+  /// A document that just left saves quietly here; one that could not save says so.
+  private func closingLabel(_ closing: PhoneClosing) -> some View {
+    HStack(spacing: 4) {
+      if closing == .saving {
+        ProgressView().controlSize(.mini)
+        Text("Saving")
+      } else {
+        Image(systemName: "exclamationmark.triangle.fill")
+        Text("Not saved")
       }
-      Image(systemName: downloaded ? "chevron.right" : "icloud.and.arrow.down")
-        .font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-    }.padding(.vertical, 6).padding(.horizontal, 8).contentShape(Rectangle())
-      .overlay(alignment: .bottom) {
-        Rectangle().fill(Color.primary.opacity(0.065)).frame(height: 0.5).padding(.leading, 64)
+    }
+    .font(.caption2.weight(.semibold))
+    .foregroundStyle(closing == .saving ? Color.secondary : PopBrand.accent)
+    .padding(.horizontal, 7).padding(.vertical, 3)
+    .background(.regularMaterial, in: Capsule())
+    .accessibilityHidden(true)
+  }
+}
+private struct PhoneZoomSource: ViewModifier {
+  let zoom: (id: String, namespace: Namespace.ID)?
+  func body(content: Content) -> some View {
+    if let zoom {
+      content.matchedTransitionSource(id: zoom.id, in: zoom.namespace) { source in
+        source.background(PopBrand.card).clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
       }
+    } else {
+      content
+    }
   }
 }
 struct PhoneTemplateDetail: View {
   let template: PhoneTemplate
-  let creating: Bool, canCreate: Bool
-  let create: (String) -> Void
+  let creating: Bool, canSync: Bool
+  let create: (String, Bool) -> Void
+  @State private var syncAcrossDevices = false
   @State private var showName = false
   /// The name chosen in the sheet, created once the sheet has closed: navigation and any
   /// error alert cannot present from behind a sheet.
@@ -99,7 +161,7 @@ struct PhoneTemplateDetail: View {
       onDismiss: {
         guard let chosen = chosenName else { return }
         chosenName = nil
-        create(chosen)
+        create(chosen, syncAcrossDevices)
       }
     ) {
       PhoneNameSheet(template: template, creating: creating, name: $name) { chosen in
@@ -111,6 +173,10 @@ struct PhoneTemplateDetail: View {
     .navigationBarTitleDisplayMode(.inline)
     .safeAreaInset(edge: .bottom) {
       VStack(spacing: 8) {
+        Picker("Keep this pop", selection: $syncAcrossDevices) {
+          Text("This device").tag(false)
+          Text("Sync across devices").tag(true)
+        }.pickerStyle(.segmented)
         Button {
           taps += 1
           name = template.title
@@ -125,10 +191,11 @@ struct PhoneTemplateDetail: View {
           PopBrand.accent, in: RoundedRectangle(cornerRadius: 18)
         )
         .accessibilityIdentifier("create-pop")
-        .disabled(creating || !canCreate).opacity(canCreate ? 1 : 0.55)
+        .disabled(creating || (syncAcrossDevices && !canSync))
         Text(
-          canCreate
-            ? "Saved on this iPhone. Synced with your Mac." : "Connect to iCloud in Settings to create a synced pop."
+          syncAcrossDevices
+            ? (canSync ? "Saved here and synced with your Mac and iPhone." : "Sign in to sync across devices.")
+            : "Saved on this device. You can enable sync later."
         )
         .font(.caption).foregroundStyle(.secondary)
       }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 8).background(.regularMaterial)

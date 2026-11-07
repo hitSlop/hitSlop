@@ -271,10 +271,6 @@ background execution remain design work; this proposal sets no new API names or 
 
 ## On the desktop, and with other people
 
-- **Widgets.** Mac desktop widgets and iPhone Home Screen widgets in the TestFlight
-  app use dedicated `Widget.svelte` captures of saved state. iPhone background
-  refresh runs when iOS allows; release-candidate qualification remains;
-  see [widget qualification](roadmap.md#later).
 - **History scrubber.** A timeline of whatever history remains under the
   [current retention policy](architecture.md#saving). Saved history can be pruned while
   open or on close; reopening does not guarantee a retained timeline, and undo starts empty.
@@ -309,7 +305,7 @@ host today; its scope, lifecycle and sharing admission need a separate design.
 ### Other platforms
 
 The Swift Mac and iPhone hosts use the same Rust core and page shell; the iPhone app
-is in TestFlight on iOS 26+. See the [Apple library architecture](architecture.md#synced-library).
+is in TestFlight on iOS 26+. See the [sync architecture](architecture.md#sync).
 Windows, Android and Linux remain proposed thin hosts around that core and shell. A host never owns document semantics, so a new
 one is a window, a WebView, one bridge and a lifecycle, not a second engine. No additional platform is
 scheduled; the [roadmap](roadmap.md#next) lists the prerequisites.
@@ -366,22 +362,30 @@ Windows.
 
 ### Sync between your own devices
 
-Apple devices use the CloudKit Synced Library ([architecture](architecture.md#synced-library)).
-For platforms without CloudKit, a person's own devices could use the same room model as people
-collaborating. Each keeps a `.pop` replica and its local writer lease, edits offline and
-merges through the relay when it reconnects. Replicate Loro updates, not SQL rows or a
-second JSON document. Attachments
-travel separately by hash, so installed data and a complete exportable file are distinct
-states until its blobs arrive.
+[Cloud documents](cloud-documents.md) sync a person's devices. Native clients maintain
+personal Firestore references after Cloudflare confirms document uploads, and one
+persistent Document Durable Object serves private sync and collaboration. Other native
+platforms need account/catalog adapters rather than another document engine. Closed-file
+CLI changes sync on the next native open; autonomous background sync for closed
+documents remains an extension to consider.
 
 ### Realtime collaboration on Durable Objects
 
-The selected direction is local owners and a byte relay;
-[architecture](architecture.md#sync) describes it, and the [roadmap](roadmap.md#later)
-tracks what remains. What stays open:
+Private and collaborative documents share one UUID and cloud location. Enabling or
+revoking an invitation changes access without moving bytes between cloud providers.
+The client-written library is intentionally eventual: revoked references and stale
+shared titles refresh when access is checked. The DO remains the permission authority.
 
-- **Presence:** cursors and who is here, probably through Loro's `EphemeralStore`, never
-  saved.
+### Slimmer history for shared documents
+
+[Compaction](cloud-documents.md#sync-and-compaction) folds retained updates into one
+base but never drops history, so a document that rewrites large values eventually hits
+the 16 MiB base cap and must be forked. A later trim could replace history with a Loro
+shallow snapshot elected by the Durable Object; a peer still holding older history would
+keep its edits as a recovery copy. Not built, and not needed while typical documents stay
+far below the cap. A warning near 75% of the cap is the smaller step and would come first.
+
+### Per-person persistent preferences
 
 Per-person persistent preferences remain a separate `s.local(node)` proposal. Today,
 keep temporary view state in Svelte and document content in fields. A new local-field
@@ -410,8 +414,8 @@ does not freeze their API or promise that every future addition is compatible.
 The manifesto also argues for cloud sandboxes, organization-wide governance and routing
 between model providers. Those serve an enterprise agent platform. pop takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
-keeps local documents usable without an account. Optional Synced Library uses the
-person's iCloud account; live-link owners sign in with Apple.
+keeps local documents usable without an account. Cloud sync is optional; owners sign in
+with Apple, and link guests need no account.
 
 ## Possible command extensions after launch
 
@@ -419,3 +423,27 @@ Commands currently serve agents and take flat scalar arguments. Page command cal
 could add a context method behind a new runtime ABI; `s.row(list)` could add a checked
 argument kind, and nested arguments could widen package-format acceptance. None is
 required for launch. Pages share plain functions over `Scope` with commands today.
+
+## Resource leases after a member leaves
+
+**Product decision needed.** Cloud resource cookies currently grant a bounded read lease
+for the document's immutable app assets and listed attachment hashes. Creating a grant
+requires current Firebase identity and membership, checked again after reading the request
+body and after the storage acknowledgment. Individual leave removes membership and socket
+access but does not invalidate an already issued resource cookie before its TTL. Global
+invitation revocation and document deletion clear all resource sessions.
+These cookies cannot read the SQLite seed, document state or sync stream.
+
+A former member who learns a new attachment hash can therefore fetch that attachment
+through an unexpired lease. Decide whether this bounded lease is intended or whether
+individual leave must revoke resource reads immediately. The immediate-revocation option
+is to bind each grant to its Firebase UID and membership generation, checking current
+membership before and after an awaited resource read. That change needs explicit tests
+for individual leave, global revocation and continuing private owner access. No UID-bound
+resource-session schema or broader revocation policy has been implemented yet.
+
+A separate nonblocking hardening follow-up is invalid-cookie admission. The authored
+resource entry runs before the ordinary document-route IP limiter. A forged cookie with
+valid syntax can therefore reach an arbitrary Document DO before its token is looked up;
+the lookup still denies access to bytes. Consider bounded invalid-cookie or IP controls
+that account for legitimate parallel asset and attachment loads.
