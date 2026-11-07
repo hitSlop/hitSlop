@@ -818,7 +818,7 @@ fn a_shared_document_keeps_its_history_and_blobs_and_a_clean_copy_is_unshared() 
     let (dir, path) = document();
     let (store, mut doc) = open(&path);
     assert_eq!(store.share().unwrap(), None);
-    let share = Share { room: "room-1".into(), endpoint: "wss://relay.example".into() };
+    let share = Share { endpoint: "wss://relay.example".into() };
     store.set_share(&share).unwrap();
     let unreferenced = store.put_attachment(b"no field names this").unwrap().id;
     set_title(&mut doc, "Edited");

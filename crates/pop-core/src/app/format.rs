@@ -66,7 +66,6 @@ struct Command {
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 struct StoredViews {
-    #[serde(default)]
     preview: bool,
     export: bool,
     icon: bool,

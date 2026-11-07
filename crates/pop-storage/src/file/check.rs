@@ -19,8 +19,7 @@ fn tables(conn: &Connection, limit: usize) -> Result<Vec<SchemaRow>> {
 }
 /// The tables and indexes `SCHEMA` makes, including SQLite's automatic primary-key
 /// indexes; built once.
-fn expected_tables(version: i64) -> &'static [SchemaRow] {
-    assert_eq!(version, 1, "reader selected after marker validation");
+fn expected_tables() -> &'static [SchemaRow] {
     static LAYOUT: OnceLock<Vec<SchemaRow>> = OnceLock::new();
     LAYOUT.get_or_init(|| {
         let memory = Connection::open_in_memory().expect("in-memory database");
@@ -38,8 +37,8 @@ fn expected_tables(version: i64) -> &'static [SchemaRow] {
 /// caller's if it holds one (`opened`), so they see one state while another process saves.
 pub(crate) fn check(conn: &Connection, integrity: bool) -> Result<Kind> {
     let _read = if conn.is_autocommit() { Some(conn.unchecked_transaction().map_err(sqlite("read"))?) } else { None };
-    let version = markers(conn)?;
-    layout(conn, version)?;
+    markers(conn)?;
+    layout(conn)?;
     contents(conn, integrity)
 }
 /// The checks after the markers and exact layout: sizes, assets, saved-state rows and,
@@ -61,7 +60,7 @@ pub(super) fn one(conn: &Connection, sql: &str) -> Result<i64> {
 }
 /// The application ID, the storage version and the app's requirements: what tells a file
 /// this build reads from one it is too old for.
-pub(super) fn markers(conn: &Connection) -> Result<i64> {
+pub(super) fn markers(conn: &Connection) -> Result<()> {
     let application_id = one(conn, "PRAGMA application_id")?;
     if application_id & !0xff == 0x504F_5000 && application_id > APPLICATION_ID {
         return Err(requires_update("This document belongs to a newer pop document lineage"));
@@ -107,8 +106,7 @@ pub(super) fn markers(conn: &Connection) -> Result<i64> {
         }
         Err(e) => return Err(sqlite("read")(e)),
     };
-    requirements(package_format, runtime_abi)?;
-    Ok(version)
+    requirements(package_format, runtime_abi)
 }
 /// The app's requirements, as `pack` reads them from a build and every open from a file:
 /// none newer than this build supports, and each at least 1.
@@ -116,8 +114,8 @@ fn requirements(package_format: i64, runtime_abi: i64) -> Result<()> {
     crate::app::requirements(package_format.into(), runtime_abi.into()).map_err(Error::Rejected)
 }
 /// The exact tables, and at most one row, row 1, in each one-row table.
-pub(super) fn layout(conn: &Connection, version: i64) -> Result<()> {
-    let expected = expected_tables(version);
+pub(super) fn layout(conn: &Connection) -> Result<()> {
+    let expected = expected_tables();
     if tables(conn, expected.len() + 1)? != expected {
         return Err(invalid("Unexpected document tables"));
     }

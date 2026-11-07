@@ -78,11 +78,10 @@ impl Account {
         }
     }
 }
-/// The room a shared document syncs through: its ID and the relay's endpoint. The room's
-/// key is a credential the host keeps outside the document.
+/// Where a shared document syncs: the relay's endpoint. The relay names the document by
+/// its UUID; access credentials stay with the host, outside the document.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Share {
-    pub room: String,
     pub endpoint: String,
 }
 
@@ -257,23 +256,21 @@ impl Store {
         Ok(doc)
     }
 
-    /// The room this document syncs through, when it is shared.
+    /// Where this document syncs, when it is shared.
     pub fn share(&self) -> Result<Option<Share>> {
         self.check(false)?;
-        Ok(self.read(rows::read_share)?.map(|(room, endpoint)| Share { room, endpoint }))
+        Ok(self.read(rows::read_share)?.map(|endpoint| Share { endpoint }))
     }
-    /// Shares the document through `share`'s room: from now on it keeps its whole history
-    /// and every attachment.
+    /// Shares the document through `share`'s endpoint: from now on it keeps its whole
+    /// history and every attachment.
     pub fn set_share(&self, share: &Share) -> Result<()> {
         self.check(true)?;
-        if !(1..=crate::wire::SHARE_ROOM_BYTES).contains(&share.room.len())
-            || !(1..=crate::wire::SHARE_ENDPOINT_BYTES).contains(&share.endpoint.len())
-        {
-            return Err(rejected(crate::Code::InvalidRequest, "Invalid room or endpoint"));
+        if !(1..=crate::wire::SHARE_ENDPOINT_BYTES).contains(&share.endpoint.len()) {
+            return Err(rejected(crate::Code::InvalidRequest, "Invalid endpoint"));
         }
         self.connected(&mut lock(&self.backing).conn, |conn| {
             let tx = file::begin_write(conn, "share")?;
-            rows::put_share(&tx, &share.room, &share.endpoint)?;
+            rows::put_share(&tx, &share.endpoint)?;
             tx.commit()
         })?;
         lock(&self.account).shared = true;

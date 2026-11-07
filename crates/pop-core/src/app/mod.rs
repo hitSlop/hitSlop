@@ -132,5 +132,5 @@ pub fn validate_metadata(metadata: &AppMetadata) -> Result<()> {
     format::authoring_metadata(metadata)
 }
 
-// Freeze this module when format 1 releases. Pre-launch fixtures may start fresh.
+// Format 1 freezes with the first public release; a newer format adds its own reader.
 const _: () = assert!(crate::PACKAGE_FORMAT == 1, "add a package reader and keep the released format's reader");

@@ -160,7 +160,7 @@ fn widget_role_and_refresh_policy_survive_pack_and_reopen() {
 fn bootstrap_receives_the_original_descriptor_including_descriptions() {
     let descriptor = r#"{ "kind":"object", "properties": {"z": {"kind":"string","description":"Keep this"}, "a": {"kind":"number","min":1.0}} }"#;
     let definition = format!(
-        r#"{{"window":{{"kind":"standard","width":320,"height":240}},"document":{descriptor},"theme":[],"commands":[],"views":{{"export":false,"icon":false}}}}"#
+        r#"{{"window":{{"kind":"standard","width":320,"height":240}},"document":{descriptor},"theme":[],"commands":[],"views":{{"preview":false,"export":false,"icon":false}}}}"#
     );
     let app = AppDefinition::decode(1, 1, &metadata().to_string(), &definition).unwrap();
     assert_eq!(app.document_json(), descriptor);

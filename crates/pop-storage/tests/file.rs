@@ -68,9 +68,7 @@ fn files_import_creates_an_independent_document_without_writing_the_source() {
     let source = document(dir.path());
     let original = Store::open(&source, Mode::Document).unwrap();
     original.set_artwork(&[(Artwork::Icon, &png(512, 512, 6))]).unwrap();
-    original
-        .set_share(&pop_storage::store::Share { room: "source-room".into(), endpoint: "wss://relay.example".into() })
-        .unwrap();
+    original.set_share(&pop_storage::store::Share { endpoint: "wss://relay.example".into() }).unwrap();
     original.close().unwrap();
     let before = fs::read(&source).unwrap();
     let uuid = file::open(&source, true).unwrap().document_uuid;
@@ -777,7 +775,7 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
         "INSERT INTO assets VALUES('invalid.css', 'text/css', 'identity', 2, x'00')",
         "INSERT INTO assets VALUES('commands.js', 'text/javascript', 'br', 2, x'789c')",
         "INSERT INTO history(bytes) VALUES(x'00')",
-        "INSERT INTO share VALUES(1, 'room', 'wss://relay.example')",
+        "INSERT INTO share VALUES(1, 'wss://relay.example')",
         "DELETE FROM app",
         "PRAGMA ignore_check_constraints=ON; INSERT INTO attachments VALUES('not-an-id', 'application/octet-stream', x'00')",
     ] {

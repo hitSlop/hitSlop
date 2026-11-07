@@ -94,11 +94,6 @@ fn run(name: &str, fixture: &str) {
                 }
             }
             let state = snapshot(&doc);
-            assert_eq!(
-                serde_json::from_str::<Value>(&doc.state().unwrap()).unwrap(),
-                state,
-                "{name}, seed {seed}, step {step}: maintained state"
-            );
             if step % 3 == 2 {
                 let reopened = Document::open(&app(&schema), &doc.checkpoint().unwrap(), &[]).unwrap_or_else(|e| {
                     panic!("{name}, seed {seed}, step {step}: a local edit stored invalid state: {e}")

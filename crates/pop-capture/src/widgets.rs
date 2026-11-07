@@ -51,7 +51,7 @@ pub(crate) fn render_source(
         .app()
         .widget
         .as_deref()
-        .ok_or_else(|| invalid("Rebuild this pre-launch pop to include its widget render program".into()))?;
+        .ok_or_else(|| invalid("Rebuild this pop to include its widget render program".into()))?;
     let source_version = source_version(document, &renderer);
     let input = source.input()?;
     let request = WidgetRenderRequest {

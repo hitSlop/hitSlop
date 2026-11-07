@@ -3,7 +3,7 @@ use super::check::{markers, one};
 use super::{STORAGE_VERSION, check};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::error::failed;
-use crate::error::{Result, invalid, sqlite};
+use crate::error::{Result, sqlite};
 use rusqlite::{Connection, Transaction, TransactionBehavior, config::DbConfig, limits::Limit};
 #[cfg(not(target_arch = "wasm32"))]
 use {
@@ -90,8 +90,9 @@ pub(crate) fn reader(path: &Path) -> Result<Connection> {
         Err(_) => connect(path, OpenFlags::SQLITE_OPEN_READ_ONLY, busy),
     }
 }
-/// All durable writes pass through this transaction. Future forward migrations run
-/// here, never on reads, and validate before the same transaction commits.
+/// All durable writes pass through this transaction. A future storage migration runs
+/// inside `begin_write`, under the writer lock and never on reads, and the commit checks
+/// the migrated file in full before it is durable.
 pub(crate) struct WriteTransaction<'a> {
     tx: Transaction<'a>,
     validate: bool,
@@ -110,22 +111,11 @@ impl WriteTransaction<'_> {
         self.tx.commit().map_err(sqlite("commit"))
     }
 }
+/// Begins a write after rechecking the file's markers inside the transaction.
 pub(crate) fn begin_write<'a>(conn: &'a Connection, action: &str) -> Result<WriteTransaction<'a>> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(sqlite(action))?;
-    let version = markers(&tx)?;
-    let validate = migrate(&tx, version)?;
-    Ok(WriteTransaction { tx, validate })
-}
-/// Brings a file from `from` to `STORAGE_VERSION` inside the write's transaction; the commit
-/// then checks the result in full. Version 1 is the first. A later version adds its arm
-/// here, admits `from` in `markers`, and creates new files by replaying the same chain
-/// (`storage-1.sql`, then each migration), so a migrated file and a new one share one
-/// exact layout. Display reads never call this.
-fn migrate(_tx: &Connection, from: i64) -> Result<bool> {
-    match from {
-        STORAGE_VERSION => Ok(false),
-        _ => Err(invalid("Unsupported document storage")),
-    }
+    markers(&tx)?;
+    Ok(WriteTransaction { tx, validate: false })
 }
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn initialize(conn: &Connection) -> Result<WriteTransaction<'_>> {

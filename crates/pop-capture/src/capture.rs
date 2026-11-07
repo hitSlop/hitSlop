@@ -175,7 +175,7 @@ fn render_source(
         if icon && !store.app().app.views().icon {
             return Ok(None);
         }
-        return Err(invalid("Rebuild this pre-launch pop with a synchronous native capture view".into()));
+        return Err(invalid("Rebuild this pop with a synchronous native capture view".into()));
     };
     let input = source.input()?;
     let request = ViewRenderRequest {

@@ -82,17 +82,17 @@ pub(crate) fn document_uuid(conn: &Connection) -> Result<Option<String>> {
         .map_err(sqlite("read the document identity"))
 }
 
-/// The room a shared document syncs through and its endpoint, absent when it is not shared.
-pub(crate) fn read_share(conn: &Connection) -> Result<Option<(String, String)>> {
-    conn.query_row("SELECT room, endpoint FROM share WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?)))
+/// The endpoint a shared document syncs through, absent when it is not shared.
+pub(crate) fn read_share(conn: &Connection) -> Result<Option<String>> {
+    conn.query_row("SELECT endpoint FROM share WHERE id=1", [], |row| row.get(0))
         .optional()
         .map_err(sqlite("read the share"))
 }
-/// Shares the document through `room`, in place of any room before.
-pub(crate) fn put_share(conn: &Connection, room: &str, endpoint: &str) -> Result<()> {
+/// Shares the document through `endpoint`, in place of any endpoint before.
+pub(crate) fn put_share(conn: &Connection, endpoint: &str) -> Result<()> {
     conn.execute(
-        "INSERT INTO share(id, room, endpoint) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET room=excluded.room, endpoint=excluded.endpoint",
-        params![room, endpoint],
+        "INSERT INTO share(id, endpoint) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET endpoint=excluded.endpoint",
+        params![endpoint],
     )
     .map(|_| ())
     .map_err(sqlite("write the share"))

@@ -42,8 +42,8 @@ fn scalar_metadata(conn: &Connection) -> Result<AppMetadata> {
 /// Common display preamble: marker dispatch, exact layout and bounded catalog fields.
 /// No definition, app blob or attachment blob (even its length) is read here.
 fn summary_on(conn: &Connection, path: &Path) -> Result<Summary> {
-    let version = markers(conn)?;
-    layout(conn, version)?;
+    markers(conn)?;
+    layout(conn)?;
     let (package_format, runtime_abi) = conn
         .query_row("SELECT package_format,runtime_abi FROM app WHERE id=1", [], |r| {
             Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64))

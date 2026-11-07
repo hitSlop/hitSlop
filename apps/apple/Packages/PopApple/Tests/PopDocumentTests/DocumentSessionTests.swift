@@ -58,9 +58,7 @@ import WebKit
       try? FileManager.default.removeItem(at: directory)
     }
     // A closed, accepted shared-file fixture exercises retention without any cloud service.
-    let document = try #require(try sharingLocalDocument(path: original.path))
-    try Fixtures.sql(
-      original, "INSERT INTO share(id,room,endpoint) VALUES(1,'\(document)','https://share.dotpop.click')")
+    try Fixtures.sql(original, "INSERT INTO share(id,endpoint) VALUES(1,'https://share.dotpop.click')")
     let root = original
     let session = try await DocumentSession.open(url: root)
     session.load()
