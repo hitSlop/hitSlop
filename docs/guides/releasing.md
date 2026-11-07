@@ -230,6 +230,23 @@ below and confirm a Time Machine backup includes it. Check website health separa
 `native-rust` required alongside the existing required checks. Retire `release/1.0`
 after its fixes are merged; new hotfix branches are temporary and may be deleted.
 
+## Operational identifiers that keep their names
+
+dotpop grew out of hitSlop. These identifiers keep their earlier names; never rename
+them, because installed apps, signed entitlements, accounts and stored credentials
+depend on them:
+
+- Apple bundle IDs `com.hitslop.app` and its extensions (`com.hitslop.app.widgets`,
+  `com.hitslop.app.quicklook-thumbnail`, `com.hitslop.app.quicklook-preview`), App ID
+  `78UAXU8QG8.com.hitslop.app`, and the identifiers derived from them.
+- Keychain access group `78UAXU8QG8.com.hitslop.sharing`; app groups
+  `78UAXU8QG8.com.hitslop.widgets` (Mac) and `group.com.hitslop` (iPhone).
+- Apple Services ID `com.hitslop.app.signin`, the Mac's web sign-in flow.
+- Firebase project `hitslopapp`, serving Auth, Firestore, Analytics and Crashlytics.
+- `dotslop.com`, the isolated browser rendering domain whose UUID subdomains serve
+  authored pages.
+- The npm package `@hitslop/pop` and the GitHub repository `hitSlop/dotpop`.
+
 ## Local release backup
 
 After each publication, resolve history and download all original assets into the Mac's
@@ -260,7 +277,7 @@ Draft locally with your coding agent; CI publishes reviewed text and never calls
 provider. After the code changes are committed, collect the release's evidence:
 
 ```sh
-bun run release:notes --from pop-v1.0.0 --to HEAD
+bun run release:notes --from pop-v2.0.0 --to HEAD
 # First supported release: summarize current capabilities, not prelaunch history.
 bun run release:notes --initial --to HEAD
 ```
@@ -277,7 +294,7 @@ Ask the agent to inspect relevant diffs and referenced PRs, then draft
 capability or change; omit internal refactors and deferred work. Use this structure:
 
 ```markdown
-# pop 1.0.1
+# pop 2.0.1
 
 ## Mac app
 
@@ -298,7 +315,7 @@ Keep links absolute so they work outside GitHub. Review and edit the draft, run
 `bun run release:notes --check`, then commit it before running the candidate workflow. `bun run release:check` also validates the current notes
 before building. Regenerate or amend the draft if later code changes affect its claims.
 
-Packaging writes `pop-<version>.md` for Sparkle with only the Mac app section and
+Packaging writes `dotpop-<version>.md` for Sparkle with only the Mac app section and
 `release-notes.md` for GitHub with all supplied sections, installation requirements and the
 first-release compatibility notice when applicable. Both files are checksummed and
 retained with the candidate. The appcast links to the versioned Markdown asset on
@@ -338,18 +355,19 @@ After each public release, create about ten varied mini apps with that exact pub
 their documents. Pin the SDK dependency too; a versioned CLI alone does not pin the
 app's SDK. Keep these projects outside the repository's npm workspace resolution and
 confirm they use the installed release, not a workspace link or engine override.
-Start this history with the first public release; local prelaunch builds are practice.
+Start this history with 2.0.0, the first public lineage-2 release; earlier sets are
+lineage 1 and only check refusal (below), and local prelaunch builds are practice.
 
 ```text
 release-sanity/
-  1.0.0/
+  2.0.0/
     originals/          # Closed, saved .pop documents; never edit these
     projects/           # Optional original source and lockfiles
     README.md           # Package/host versions, build, and checks for each example
     SHA256SUMS          # Hashes of originals/*.pop
   runs/
-    1.1.0-candidate-RUN/
-      1.0.0/            # Disposable writable copies of the 1.0.0 documents
+    2.1.0-candidate-RUN/
+      2.0.0/            # Disposable writable copies of the 2.0.0 documents
       results.md        # Candidate run/hash, macOS, observations and failures
 ```
 
@@ -374,8 +392,9 @@ Mac's Time Machine backup alongside the retained release assets.
 - Install from the downloaded DMG and confirm Gatekeeper launch and the expected version.
   The installed app must work without Node/Bun or an engine download.
 - Open fresh copies from every version in the [local sanity library](#local-sanity-library).
-  Check the page, edit, save, close and reopen; create one new document too. Until the
-  first public release, use the prelaunch sanity set and record that limitation.
+  Check the page, edit, save, close and reopen; create one new document too. Lineage-1
+  (1.x) sets are opened only for the refusal check below. 2.0.0 has no earlier lineage-2
+  set: use the prelaunch sanity set and record that limitation.
 - Check Recents, a basic PNG/PDF export, and quit/relaunch with saved edits intact.
 - Check Synced Library with the same Firebase account on the Mac candidate and a
   TestFlight/App Store iPhone: create and edit from each device, quit/relaunch,
@@ -396,7 +415,7 @@ Mac's Time Machine backup alongside the retained release assets.
 
 ### When the change touches the area
 
-Run all of these for 1.0.0. Later releases select them from the diff; record what ran.
+Run all of these for 2.0.0. Later releases select them from the diff; record what ran.
 
 - **Packaging, templates or catalog:** fresh offline install, every bundled starter,
   external template install/removal, local discovery, categories, Mail template handling,

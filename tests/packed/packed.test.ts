@@ -108,7 +108,8 @@ test("the installed CLI creates, checks and builds a project with the engine it 
   expect(inspected.kind).toBe("template");
   expect(inspected.metadata.slug).toBe("my-pop");
   expect(JSON.parse(await run([process.execPath, cli(), "schema", built()], root, noNode)).kind).toBe("object");
-  expect(appAsset(built(), "ui.css")).toContain(".pop-paper");
+  // The starter's stylesheet is packaged; the preview below checks that styles load.
+  expect(appAsset(built(), "ui.css")).not.toBe("");
   expect(appAsset(built(), "ui.js")).not.toContain(repository);
   const document = join(root, "Command example.pop");
   await run([process.execPath, cli(), "create", "--from", built(), "--output", document], root, noNode);

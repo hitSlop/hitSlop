@@ -36,20 +36,24 @@ export function verifyHistory(entries: HistoricalRelease[], known: CorpusInvento
   return inventory;
 }
 
+/** Document lineage 2 began with pop 2.0.0. Earlier releases are never acceptance inputs,
+ * so their records are not downloaded; a new lineage moves this with DocumentLineage. */
+const lineageFirstMajor = 2;
+const inLineage = (tag: string) => Number(stableTag.exec(tag)?.[1] ?? -1) >= lineageFirstMajor;
+
 export async function publishedHistory(options: {
   list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>; required?: CorpusInventory;
 } = {}): Promise<HistoricalRelease[]> {
   const all = await (options.list ?? releaseInventory)();
   const entries: HistoricalRelease[] = [];
-  for (const release of all.filter(entry => stableTag.test(entry.tag_name) && !entry.draft && !entry.prerelease)) {
+  for (const release of all.filter(entry => inLineage(entry.tag_name) && !entry.draft && !entry.prerelease)) {
     const bytes = await (options.download ?? assetBytes)(requiredAsset(release, "release-record.json").id);
     const record: ReleaseRecord = JSON.parse(bytes.toString());
     validateRecord(record, release.tag_name, record.commit);
-    if (record.documentLineage !== DocumentLineage) {
-      if (record.documentLineage !== undefined && record.documentLineage > DocumentLineage)
-        throw new Error("Published document lineage requires newer release tooling");
-      continue;
-    }
+    if (record.documentLineage !== undefined && record.documentLineage > DocumentLineage)
+      throw new Error("Published document lineage requires newer release tooling");
+    if (record.documentLineage !== DocumentLineage)
+      throw new Error(`${release.tag_name}: release record must declare document lineage ${DocumentLineage}`);
     entries.push({ release, record });
   }
   verifyHistory(entries, options.required ?? requiredHistory);

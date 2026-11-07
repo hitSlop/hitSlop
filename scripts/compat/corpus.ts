@@ -30,7 +30,7 @@ export type Release = {
   captured: string;
   /** The compatibility markers the entry's build wrote. */
   markers: {
-    documentLineage?: number;
+    documentLineage: number;
     packageFormat: number;
     runtimeABI: number;
     storage: number;

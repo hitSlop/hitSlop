@@ -15,7 +15,7 @@ const nightly = process.env.POP_NIGHTLY === "1";
 
 test.if(nightly)("landing generation reads current templates and preserves outputs when a later input fails", async () => {
   await prepareNativeFixtures();
-  const destination = await mkdtemp(join(tmpdir(), "hitslop-landing-"));
+  const destination = await mkdtemp(join(tmpdir(), "pop-landing-"));
   const source = { slug: "document-fixture", file: resolve("generated/native-fixtures/document-fixture.pop") };
   try {
     const before = await readFile(source.file);
@@ -43,7 +43,7 @@ test.if(nightly)("landing generation reads current templates and preserves outpu
 }, 120_000);
 
 test.if(nightly)("a skinned template without artwork keeps its dimensions and fallback tile", async () => {
-  const folder = await mkdtemp(join(tmpdir(), "hitslop-landing-skin-"));
+  const folder = await mkdtemp(join(tmpdir(), "pop-landing-skin-"));
   try {
     const stage = join(folder, "stage");
     await mkdir(stage);

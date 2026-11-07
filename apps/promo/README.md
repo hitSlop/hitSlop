@@ -21,7 +21,6 @@ Run `bun pop build pop/focus-timer` and `bun pop register pop/focus-timer` from
 the repository root before preparing the demo if Pomodoro is not registered.
 `prepare:launch` leaves existing demo documents intact and copies brand artwork
 from the landing page. Templates are immutable; all demo documents use `.pop`.
-There is no `.slop` conversion.
 
 Doodle Board uses `public/captures/launch-doodle-native.png`, a native window
 capture of a heart created in its writable document through the `drawStroke` CLI

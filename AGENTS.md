@@ -127,6 +127,6 @@ A document history UI, schema evolution, synced folders and hosted catalog/publi
 remain deferred. Live collaboration connects the existing Rust owners through a Durable
 Object byte relay and is available in the Mac app and the iPhone app on TestFlight;
 release qualification remains in the [roadmap](docs/roadmap.md). `archive/`,
-`spikes/`, `POP.todo`, `apps/promo/inspo/`, `_docs/` and `deferred/` stay
+`spikes/`, `POP.todo`, `apps/promo/inspo/` and `_docs/` stay
 local and are not active contracts. Shared decisions belong in the architecture, roadmap
 and ideas pages.

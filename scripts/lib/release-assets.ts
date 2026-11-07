@@ -1,8 +1,6 @@
 import { run } from "../../packages/pop/src/cli/process";
 
-// The original repository is renamed in place; its old URL remains a redirect.
-export const releaseRepository = process.env.GITHUB_REPOSITORY?.toLowerCase() === "hitslop/dotpop"
-  ? "hitSlop/dotpop" : "hitSlop/hitSlop";
+export const releaseRepository = "hitSlop/dotpop";
 export type Asset = { id: number; name: string; digest?: string };
 export type PublishedRelease = { id: number; tag_name: string; draft: boolean; prerelease: boolean; immutable: boolean; assets: Asset[] };
 export const stableTag = /^pop-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
