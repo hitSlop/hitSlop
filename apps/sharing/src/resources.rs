@@ -6,6 +6,7 @@ use pop_contracts::resources as policy;
 
 #[derive(Deserialize)]
 struct SessionRow {
+    uid: String,
     host: String,
     app: String,
     expires: f64,
@@ -102,13 +103,13 @@ impl CloudDocument {
                 };
             // Reading the body may yield while membership is revoked without
             // changing Live. Recheck authority before creating a delegated grant.
-            let authorized = self.authorized_guest(&req).await?;
+            let caller = self.identity_role(&req).await?;
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
             }
-            if !authorized || self.phase()? != Some(RoomPhase::Live) {
+            let (Some((uid, _)), Some(RoomPhase::Live)) = (caller, self.phase()?) else {
                 return denied();
-            }
+            };
             let app = self.text("app")?.ok_or_else(|| fail("Missing app"))?;
             if input.app != app || self.text("resources")?.is_none() {
                 return denied();
@@ -121,9 +122,10 @@ impl CloudDocument {
             if self.sql.exec("SELECT count(*) AS n FROM resource_sessions", None)?.one::<NumberRow>()?.n >= 128 {
                 return Response::error("Too many resource sessions", 429);
             }
+            // The session belongs to the member it was granted to; reads require that member.
             self.sql.exec(
-                "INSERT INTO resource_sessions VALUES(?,?,?,?)",
-                vec![hash(&token).into(), host.into(), app.into(), expires.into()],
+                "INSERT INTO resource_sessions(token,uid,host,app,expires) VALUES(?,?,?,?,?)",
+                vec![hash(&token).into(), uid.into(), host.into(), app.into(), expires.into()],
             )?;
             self.state.storage().sync().await?;
             let authorized = self.authorized_guest(&req).await?;
@@ -143,12 +145,16 @@ impl CloudDocument {
         };
         let rows = self
             .sql
-            .exec("SELECT host,app,expires FROM resource_sessions WHERE token=?", vec![hash(&token).into()])?
+            .exec("SELECT uid,host,app,expires FROM resource_sessions WHERE token=?", vec![hash(&token).into()])?
             .to_array::<SessionRow>()?;
         let Some(row) = rows.first() else {
             return denied();
         };
-        if row.host != host || row.expires <= js_sys::Date::now() || self.text("app")?.as_deref() != Some(&row.app) {
+        if row.host != host
+            || row.expires <= js_sys::Date::now()
+            || self.text("app")?.as_deref() != Some(&row.app)
+            || self.role_for_uid(&row.uid)?.is_none()
+        {
             return denied();
         }
         let path = req.path();
@@ -180,6 +186,10 @@ impl CloudDocument {
                 .await?;
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
+            }
+            // The member may have left while R2 answered.
+            if self.role_for_uid(&row.uid)?.is_none() {
+                return denied();
             }
             let Some(object) = object else {
                 return Response::error("Resource unavailable", 503);

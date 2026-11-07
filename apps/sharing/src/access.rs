@@ -13,15 +13,16 @@ impl CloudDocument {
     pub(super) fn generation(&self) -> Result<u64> {
         Ok(self.text("access_generation")?.and_then(|v| v.parse().ok()).unwrap_or(1))
     }
-    pub(super) async fn identity_role(&self, req: &Request) -> Result<Option<DocumentRole>> {
+    /// The verified caller and the role it holds here, if any.
+    pub(super) async fn identity_role(&self, req: &Request) -> Result<Option<(String, DocumentRole)>> {
         let claims = match crate::auth::identity(req, &self.env).await {
             Ok(claims) => claims,
             Err(crate::auth::IdentityError::Denied) => return Ok(None),
             Err(crate::auth::IdentityError::Unavailable) => return Err(fail("Identity unavailable")),
         };
-        self.role_for_uid(&claims.sub)
+        Ok(self.role_for_uid(&claims.sub)?.map(|role| (claims.sub, role)))
     }
-    fn role_for_uid(&self, uid: &str) -> Result<Option<DocumentRole>> {
+    pub(super) fn role_for_uid(&self, uid: &str) -> Result<Option<DocumentRole>> {
         if self.text("owner_uid")?.as_deref() == Some(uid) {
             return Ok(Some(DocumentRole::Owner));
         }
@@ -107,13 +108,16 @@ impl CloudDocument {
             }
             let owner = self.text("owner_uid")?.as_deref() == Some(&claims.sub);
             if !owner {
-                if self
-                    .sql
-                    .exec("SELECT count(*) AS n FROM members WHERE uid<>?", vec![claims.sub.clone().into()])?
-                    .one::<NumberRow>()?
-                    .n
-                    >= 64
-                {
+                // Other members only: a member joining again keeps its place.
+                let full = || -> Result<bool> {
+                    Ok(self
+                        .sql
+                        .exec("SELECT count(*) AS n FROM members WHERE uid<>?", vec![claims.sub.clone().into()])?
+                        .one::<NumberRow>()?
+                        .n
+                        >= 64)
+                };
+                if full()? {
                     return Response::error("Membership limit", 429);
                 }
                 let generation = self.generation()?;
@@ -142,6 +146,14 @@ impl CloudDocument {
                 {
                     return Response::error("Invitation revoked", 403);
                 }
+                // Other joins ran during the registration await. Nothing awaits between this
+                // count and the insert; a refusal withdraws the registration it just made.
+                if full()? {
+                    if !self.release_registration(&claims.sub, Some(generation)).await? {
+                        return Response::error("Account unavailable", 503);
+                    }
+                    return Response::error("Membership limit", 429);
+                }
                 self.sql.exec(
                     "INSERT INTO members VALUES(?,?) ON CONFLICT(uid) DO UPDATE SET generation=excluded.generation",
                     vec![claims.sub.clone().into(), (self.generation()? as i64).into()],
@@ -166,6 +178,7 @@ impl CloudDocument {
                 return Response::error("Account unavailable", 503);
             }
             self.sql.exec("DELETE FROM members WHERE uid=?", vec![claims.sub.clone().into()])?;
+            self.sql.exec("DELETE FROM resource_sessions WHERE uid=?", vec![claims.sub.clone().into()])?;
             let revision = self
                 .text("membership_revision")?
                 .and_then(|value| value.parse::<u64>().ok())

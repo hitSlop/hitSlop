@@ -297,9 +297,62 @@ try {
   assert.deepEqual(JSON.parse(heads[0]!.value),[["0000000000000001",1]],"a revoked guest push never enters the accepted frontier");
   ownerSocket.close();
   const reopened=await json<AccessState>(base+"/sharing",a,"POST");assert.notEqual(reopened.capability,enabled.capability);
+  const staying=uid("staying-guest","anonymous");
   await json(base+"/members",b,"POST",{capability:reopened.capability});
+  await json(base+"/members",staying,"POST",{capability:reopened.capability});
+  const attachment=new Uint8Array([3,1,4,1,5,9]);
+  assert.equal((await call(base+"/blob/"+hash(attachment),a,"PUT",attachment,{"Content-Length":String(attachment.length)})).status,200);
+  const resourceSession=async(token:string)=>{
+    const response=await worker.dispatchFetch(`https://${document}.${SharingHost.domain}/_resources/${document}`,{method:"POST",
+      headers:{Origin:SharingHost.origin,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({app})});
+    assert.equal(response.status,200,"A member is granted a resource session");await response.arrayBuffer();
+    const cookie=/__Host-pop-resource=[^;]+/.exec(response.headers.get("Set-Cookie")??"")?.[0];assert(cookie);
+    return cookie;
+  };
+  const readAttachment=async(cookie:string)=>{
+    const response=await worker.dispatchFetch(`https://${document}.${SharingHost.domain}/attachments/${hash(attachment)}`,{headers:{Cookie:cookie}});
+    const bytes=new Uint8Array(await response.arrayBuffer());
+    if (response.status===200) assert.deepEqual(bytes,attachment);
+    return response.status;
+  };
+  const leavingCookie=await resourceSession(b),stayingCookie=await resourceSession(staying);
+  assert.equal(await readAttachment(leavingCookie),200,"A member's resource session reads attachments");
   assert.equal((await call(base+"/members/me",b,"DELETE")).status,200);
   assert.equal((await call(base+"/seed",b)).status,403,"leave removes identity membership without deleting canonical bytes");
+  assert.equal(await readAttachment(leavingCookie),403,"Leaving ends that member's resource sessions before they expire");
+  assert.equal(await readAttachment(stayingCookie),200,"Another member's resource session stays valid");
+  // Two joins race for the last of 64 member places. Members go straight into the document:
+  // 63 real joins would only repeat the join path. The first join's account registration is
+  // held, so it has passed the early member count; the second joins meanwhile.
+  const crowded="00000000-0000-4000-8000-000000000096",crowdedBase="documents/"+crowded;
+  assert.equal((await call("documents",a,"POST",{document:crowded})).status,204);
+  assert.equal((await call(crowdedBase+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
+  assert.equal((await call(crowdedBase+"/resources",a,"POST",{app,resources:[]})).status,200);
+  assert.equal((await call(crowdedBase+"/open",a,"POST")).status,200);
+  const crowdedInvite=await json<AccessState>(crowdedBase+"/sharing",a,"POST");
+  const crowdedStub=documents.get(documents.idFromName(documentName(crowded)));
+  const crowdedSQL=async(sql:string,args:unknown[]=[])=>
+    (await (await crowdedStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql,args})})).json()) as {n:number}[];
+  await crowdedSQL("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<63) INSERT INTO members SELECT 'filler-'||i,? FROM n",[crowdedInvite.generation]);
+  const crowdAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const heldAccount=crowdAccounts.get(crowdAccounts.idFromName(hash(Buffer.from("crowd-held"))));
+  const held=uid("crowd-held","anonymous"),racing=uid("crowd-racing","anonymous");
+  assert.equal((await heldAccount.fetch("https://test/__test/hold-registration",{method:"POST"})).status,200);
+  const heldJoin=call(crowdedBase+"/members",held,"POST",{capability:crowdedInvite.capability});
+  let waiting=false;
+  for (let attempt=0; attempt<500 && !waiting; attempt++) {
+    waiting=Number(await (await heldAccount.fetch("https://test/__test/held-registrations")).text())>0;
+    if (!waiting) await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.ok(waiting,"The first join awaits its account registration after counting 63 members");
+  assert.equal((await call(crowdedBase+"/members",racing,"POST",{capability:crowdedInvite.capability})).status,200,
+    "The second join takes the last place");
+  assert.equal((await heldAccount.fetch("https://test/__test/release-registration",{method:"POST"})).status,200);
+  assert.equal((await heldJoin).status,429,"A join that counted members before an awaited registration rechecks the limit");
+  assert.equal((await crowdedSQL("SELECT count(*) AS n FROM members"))[0]!.n,64,"The member limit holds under concurrent joins");
+  const registered=async(token:string)=>(await json<RegisteredDocuments>("account/documents",token)).documents.some(row=>row.document===crowded);
+  assert.ok(await registered(racing),"The admitted member's account lists the document");
+  assert.ok(!(await registered(held)),"A join refused for the limit leaves no account registration");
   assert.equal((await call(base+"/seed",a)).status,200);
   assert.equal((await call(base,a,"PATCH",{title:"Repairable private document",templateId:"fixture"})).status,200);
   // A metadata write still reading its body when the owner deletes the document is refused
@@ -396,5 +449,5 @@ try {
     assert.equal((await call(path, undefined, "GET")).status, 404, "unlisted routes never reach a handler: " + path);
   }
   assert.equal((await call("documents/" + document + "/members", prolific, "DELETE")).status, 404, "only members/me leaves");
-  console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
+  console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, member-bound resource sessions, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
 } finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

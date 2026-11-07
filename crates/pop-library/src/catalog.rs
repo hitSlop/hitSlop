@@ -90,10 +90,7 @@ impl Library {
                 })
                 .optional()?
                 .map_or_else(|| paths::store(&self.root, &self.cached_path(&entry.document_id)), Ok)?;
-            let role = match entry.role {
-                DocumentRole::Owner => "owner",
-                DocumentRole::Editor => "editor",
-            };
+            let role = stored_role(entry.role);
             tx.execute("INSERT INTO documents(account,id,title,template,path,role,revision,deleted,catalog_seen,opened) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0)) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,revision=excluded.revision,deleted=excluded.deleted,catalog_seen=1",params![self.account,entry.document_id,entry.title,entry.template_id,path,role,i64::try_from(entry.catalog_revision).map_err(failed)?,entry.deleted])?;
             if entry.deleted && source == Source::Authority {
                 tx.execute(

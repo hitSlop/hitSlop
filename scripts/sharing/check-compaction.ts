@@ -12,11 +12,25 @@ export function relayHarness(source: string) {
   return `import relay, {CloudDocument as Room, DocumentAccount as Account} from ${JSON.stringify(source)};
 export default relay;
 export class DocumentAccount {
-  constructor(state,env){this.state=state;this.inner=new Account(state,env);}
+  constructor(state,env){this.state=state;this.inner=new Account(state,env);this.heldRegistrations=0;}
   async fetch(req){
-    if (new URL(req.url).pathname === '/__test/sql') {
+    const path = new URL(req.url).pathname;
+    if (path === '/__test/sql') {
       const {sql,args=[]} = await req.json();
       return Response.json(this.state.storage.sql.exec(sql,...args).toArray());
+    }
+    // Holds the next member registration until released: a document awaiting it lets other requests in.
+    if (path === '/__test/hold-registration') {
+      this.registration = new Promise(resolve => this.releaseRegistration = resolve);
+      return new Response('ready');
+    }
+    if (path === '/__test/held-registrations') return Response.json(this.heldRegistrations);
+    if (path === '/__test/release-registration') { this.releaseRegistration?.(); return new Response('ready'); }
+    if (path === '/internal/member' && this.registration) {
+      const registration = this.registration;
+      this.registration = undefined;
+      this.heldRegistrations++;
+      await registration;
     }
     try{return await this.inner.fetch(req);}catch(error){console.error('Test account failure:',String(error));throw error;}
   }

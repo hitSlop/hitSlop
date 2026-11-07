@@ -24,7 +24,7 @@ const INDEX: &str = "index.sqlite";
 use pop_runtime::owner::{Failure, FailureKind, Owner, Request};
 use pop_sharing_client::{Client, ClientStatus, local};
 pub use pop_sharing_protocol::document::{AccessState, DocumentEntry, DocumentRole};
-use pop_sharing_protocol::hex;
+use pop_sharing_protocol::{document::DocumentMetadata, hex};
 use pop_storage::{
     file,
     store::{Mode, Store},
@@ -595,16 +595,21 @@ impl Library {
         let _change = self.changing();
         let generation = self.operation()?;
         let access = pop_sharing_client::join_member(link, token).map_err(failed)?;
-        let id = access.document;
-        let metadata = pop_sharing_client::document_metadata(&id, token).map_err(failed)?;
+        let metadata = pop_sharing_client::document_metadata(&access.document, token).map_err(failed)?;
         self.current_operation(generation)?;
-        let path = self.cached_path(&id);
+        self.remember_join(&access, &metadata)?;
+        self.download(&access.document, token)
+    }
+    /// The document decides the role: an owner opening their own invitation stays the owner,
+    /// so catalog deletion later deletes rather than leaves.
+    fn remember_join(&self, access: &AccessState, metadata: &DocumentMetadata) -> Result<()> {
+        let id = &access.document;
+        let path = self.cached_path(id);
         {
             let inner = self.inner.lock().unwrap();
-            inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,'editor',coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?6) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role='editor',deleted=0,sharing_enabled=excluded.sharing_enabled",params![self.account,id,metadata.title,metadata.template_id,paths::store(&self.root,&path)?,access.sharing])?;
+            inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0,sharing_enabled=excluded.sharing_enabled",params![self.account,id,metadata.title,metadata.template_id,paths::store(&self.root,&path)?,stored_role(access.role),access.sharing])?;
         }
-        self.queue_catalog(&id, false)?;
-        self.download(&id, token)
+        self.queue_catalog(id, false)
     }
     pub fn leave(&self, id: &str, token: &str) -> Result<()> {
         let _change = self.changing();
@@ -738,7 +743,7 @@ impl Library {
                 };
                 self.current_operation(generation)?;
                 let inner = self.inner.lock().unwrap();
-                inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0",params![self.account,document.document,metadata.title,metadata.template_id,paths::store(&self.root,&self.cached_path(&document.document))?,if access.role == DocumentRole::Owner {"owner"} else {"editor"},access.sharing])?;
+                inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0",params![self.account,document.document,metadata.title,metadata.template_id,paths::store(&self.root,&self.cached_path(&document.document))?,stored_role(access.role),access.sharing])?;
                 drop(inner);
                 self.queue_catalog(&document.document, false)?;
             }
@@ -979,6 +984,13 @@ impl Library {
         Ok(())
     }
 }
+/// The index's `role` column, read back by `Library::project`.
+fn stored_role(role: DocumentRole) -> &'static str {
+    match role {
+        DocumentRole::Owner => "owner",
+        DocumentRole::Editor => "editor",
+    }
+}
 /// A discovery reference to `id`.
 fn catalog_entry(
     id: &str,
@@ -1159,6 +1171,29 @@ mod catalog_tests {
         assert!(Library::open(directory.path(), "account-b").unwrap().pending_catalog_writes().unwrap().is_empty());
         library.ack_catalog_write(id, writes[0].catalog_revision).unwrap();
         assert!(library.pending_catalog_writes().unwrap().is_empty());
+    }
+    #[test]
+    fn joining_records_the_role_the_document_granted_in_the_index_and_catalog_write() {
+        let directory = tempfile::tempdir().unwrap();
+        let library = Library::open(directory.path(), "account-a").unwrap();
+        let metadata = DocumentMetadata { title: "Shared".into(), template_id: "fixture".into() };
+        let join = |id: &str, role| {
+            let access = AccessState { document: id.into(), sharing: true, generation: 1, capability: None, role };
+            library.remember_join(&access, &metadata).unwrap();
+            let indexed = library.entries().unwrap().into_iter().find(|entry| entry.id == id).unwrap().role;
+            let queued =
+                library.pending_catalog_writes().unwrap().into_iter().find(|write| write.document_id == id).unwrap();
+            (indexed, queued.role)
+        };
+        // The owner opens their own invitation, on a device that indexes it as owned and on one
+        // that has never seen it: the Worker answers Owner, and catalog deletion must not Leave.
+        let owned = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        library.receive_catalog(&[reference(owned, 1, "Owned")]).unwrap();
+        assert_eq!(join(owned, DocumentRole::Owner), (Some(DocumentRole::Owner), DocumentRole::Owner));
+        let unseen = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        assert_eq!(join(unseen, DocumentRole::Owner), (Some(DocumentRole::Owner), DocumentRole::Owner));
+        let shared = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+        assert_eq!(join(shared, DocumentRole::Editor), (Some(DocumentRole::Editor), DocumentRole::Editor));
     }
     #[test]
     fn sharing_cache_is_authoritative_optional_durable_and_account_scoped() {

@@ -719,7 +719,7 @@ impl CloudDocument {
 
 fn initialize(sql: &SqlStorage) {
     sql.exec("CREATE TABLE IF NOT EXISTS pending_registry(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS members(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL)",None).expect("document access tables");
-    sql.exec("CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
+    sql.exec("CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,uid TEXT NOT NULL,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
 }
 
 fn decode_hex(text: &str) -> Result<Vec<u8>> {
@@ -756,7 +756,6 @@ impl DurableObject for CloudDocument {
             && parts[4] == "init"
             && req.method() == Method::Post
         {
-            let room = parts[3];
             let input: crate::account::DocumentInit = match crate::input::body(&mut req, CONTROL_BYTES).await {
                 Ok(input) => input,
                 Err(error) => return error.response(),
@@ -771,7 +770,6 @@ impl DurableObject for CloudDocument {
             if creating {
                 self.put("owner_uid", &input.owner_uid)?;
                 self.put("document", &input.document)?;
-                self.put("room", room)?;
                 self.put("access_generation", "1")?;
                 self.set_phase(RoomPhase::Uploading)?;
                 record(&self.env, Metric::DocumentCreated);
@@ -825,7 +823,10 @@ impl DurableObject for CloudDocument {
         }
         if op == Op::GetDocument {
             let guest = self.authorized_guest(&req).await?;
-            let owner = if self.identity_role(&req).await? == Some(pop_sharing_protocol::document::DocumentRole::Owner)
+            let owner = if self
+                .identity_role(&req)
+                .await?
+                .is_some_and(|(_, role)| role == pop_sharing_protocol::document::DocumentRole::Owner)
             {
                 true
             } else if guest {
@@ -1025,13 +1026,13 @@ impl DurableObject for CloudDocument {
     }
     async fn alarm(&self) -> Result<Response> {
         if self.phase()? == Some(RoomPhase::Ended) {
-            let room = self.text("room")?.ok_or_else(|| fail("Missing document"))?;
-            self.stop_room(&room, Metric::DocumentDeleted).await?;
+            let document = self.text("document")?.ok_or_else(|| fail("Missing document"))?;
+            self.stop_room(&document, Metric::DocumentDeleted).await?;
         }
         {
             let _guard = self.uploads.lock().await;
-            if let Some(room) = self.text("room")? {
-                self.sweep_garbage(&room).await?;
+            if let Some(document) = self.text("document")? {
+                self.sweep_garbage(&document).await?;
             }
         }
         self.flush_registry().await?;
