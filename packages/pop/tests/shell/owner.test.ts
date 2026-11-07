@@ -536,6 +536,7 @@ test("attachment import uses host identity and media type before writing its ref
   let uploads = 0;
   preview.host = {
     uiURL: "",
+    environment: { current: { platform: "unknown", device: "unknown" }, subscribe: () => () => {} },
     onPush: () => {},
     request: async (request: any) => {
       expect(request).toEqual({ method: "attachments.put", bytes: "AQID" });

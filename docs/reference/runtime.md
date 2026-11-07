@@ -25,13 +25,14 @@ helpers compiled into the app, without separate host APIs.
 `ctx.environment` supplies an immutable `current` snapshot (`platform`, `device`,
 `layout`) and `subscribe(listener)` with idempotent disposal. `getEnvironment()` adapts
 it to each Svelte editor mount. Native identity comes from the typed `host.environment`
-host action, not the Rust owner's process or a user agent. Browser identity is unknown;
-the shell computes layout from the document viewport using Rust's 640 CSS-pixel
-breakpoint. The optional member has a real SDK fallback on older hosts: unknown identity
-and live viewport layout. It adds no runtime ABI requirement or document fields.
-New shells install `data-pop-platform`, `data-pop-device` and `data-pop-layout` on
-`<html>` before editor mount. They are absent from static captures and static dev views.
-Older shells lack these attributes, so authored CSS keeps a usable base layout.
+host action, not the Rust owner's process or a user agent; `pop dev` supplies its selected
+preset instead. Browser identity is unknown; the shell computes layout from the document
+viewport using Rust's 640 CSS-pixel breakpoint. Every host supplies `ctx.environment` and
+`ctx.haptics`; neither adds document fields. A failed `host.environment` reply fails the
+page's boot rather than guessing an identity.
+The shell installs `data-pop-platform`, `data-pop-device` and `data-pop-layout` on
+`<html>` before editor mount. They are absent from static captures and static dev views,
+so authored CSS keeps a usable base layout.
 
 The complete ABI inventory lives in `sdk/abi.ts`: `data-pop-root`, capture and
 controls attributes, the notice region, `--pop-*` variables, `__popCommands`,

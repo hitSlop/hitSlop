@@ -92,7 +92,7 @@ For editor presentation, call `const environment = getEnvironment()` from `@hits
 during component initialization. Read `environment.current.platform` (`macos`, `ios`,
 `android`, `windows`, `linux`, `unknown`), `.device` (`phone`, `tablet`, `desktop`,
 `unknown`) and `.layout` (`compact` below 640 CSS px of the document viewport, otherwise
-`regular`). Native hosts report identity; browsers and older hosts use `unknown`.
+`regular`). Native hosts report identity; browsers use `unknown`.
 A narrow Mac window remains desktop/macOS. Use layout for available space and ordinary
 pointer/hover queries for input differences; identity does not grant capabilities.
 Keep reads reactive rather than destructuring `current` once. Editor CSS can select

@@ -12,10 +12,10 @@ export function createContext(
   options: {
     attachments: ReturnType<typeof ownerAttachments>;
     speech: ReturnType<typeof ownerSpeech>;
-    haptics: NonNullable<PopContext["haptics"]>;
+    haptics: PopContext["haptics"];
     resize(size: { width: number; height: number }): Promise<void>;
     reportError(error: unknown): void;
-    environment: NonNullable<PopContext["environment"]>;
+    environment: PopContext["environment"];
   },
 ): PopContext {
   const { attachments } = options;

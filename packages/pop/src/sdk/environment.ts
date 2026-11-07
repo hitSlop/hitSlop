@@ -8,11 +8,9 @@ export interface Environment {
   subscribe(listener: () => void): () => void;
 }
 
-/** Shared viewport behavior for the page shell and the SDK's older-host fallback.
- * Identity is supplied by the host, never inferred from a user agent or window size. */
-export function createEnvironment(
-  identity: HostEnvironment = { platform: "unknown", device: "unknown" },
-) {
+/** The page shell's viewport behavior around the host's identity. Identity is supplied
+ * by the host, never inferred from a user agent or window size. */
+export function createEnvironment(identity: HostEnvironment) {
   const regular = matchMedia(`(min-width: ${CompactLayoutWidth}px)`);
   let host = identity;
   const snapshot = (): EnvironmentSnapshot =>

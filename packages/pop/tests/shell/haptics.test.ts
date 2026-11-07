@@ -45,13 +45,3 @@ test("standard feedback reaches the bridge and a failed bridge stays silent", as
     ]);
   } finally { deactivate(ctx); }
 });
-
-test("an older host without feedback still runs the new Svelte helper", () => {
-  const ctx = {} as PopContext;
-  activate(ctx);
-  try {
-    expect(haptics.selection()).toBeUndefined();
-    expect(haptics.impact("soft")).toBeUndefined();
-    expect(haptics.notification("error")).toBeUndefined();
-  } finally { deactivate(ctx); }
-});

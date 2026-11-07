@@ -174,8 +174,8 @@ haptics.notification("success");
 ```
 
 These methods return `void`; never await them or make an edit depend on feedback.
-The framework-neutral host service is optional `ctx.haptics`. Older hosts, desktop,
-browser previews and unsupported hardware stay silent. No capability declaration
+The framework-neutral host service is `ctx.haptics`. Desktop, browser previews and
+unsupported hardware stay silent. No capability declaration
 or permission prompt is needed. The iPhone Settings toggle controls all documents;
 inactive, hidden and closing editors do not play feedback. Keep haptics out of
 document observers, typing, rendering, static views and background work.
@@ -222,7 +222,7 @@ just like `getDocument(schema)`. Its read-only `current` snapshot is reactive:
 
 `platform` is `macos`, `ios`, `android`, `windows`, `linux` or `unknown`.
 `device` is `phone`, `tablet`, `desktop` or `unknown`. Native hosts supply identity;
-browser hosts and older hosts report `unknown`. Android and Windows hosts are future
+browser hosts report `unknown`. Android and Windows hosts are future
 work. A device category is a presentation hint, not a permission or capability check.
 
 `layout` is `compact` below 640 CSS pixels of the actual document viewport and
@@ -238,7 +238,8 @@ CSS receives the same editor information on `<html>`:
 ```
 
 Use plain `html[...]` selectors in standalone CSS. Keep base styles usable without
-these attributes for older hosts; ordinary media and container queries also work.
+these attributes, which static captures and static dev views omit; ordinary media and
+container queries also work.
 Choose responsive layout for available space and pointer/hover media queries for input
 differences. On the iPhone, pad around system areas with `--pop-safe-top` and
 `--pop-safe-bottom` (see iPhone editing below). These insets do not describe floating
@@ -362,7 +363,7 @@ m4a, mp3, wav, flac, mp4 and mov. It returns `unavailable` with reason `format` 
 other formats, including Ogg and WebM, before asking for permission. Let the provider
 decide format support rather than keeping a format list in authored code. A transcript holds at most
 1 MiB of text. `unavailable` carries a `reason`: `notDeclared` (no `"speech"` in
-`capabilities`), `host` (`pop dev`, a browser copy, an export, or an older pop),
+`capabilities`), `host` (`pop dev`, a browser copy or an export),
 `system` (the Mac cannot recognize speech now), `locale` (no on-device recognizer for the
 locale), `permission` (the person declined speech recognition for pop), or
 `format` (this provider cannot transcribe the recording format). `cancelled`

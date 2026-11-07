@@ -33,7 +33,4 @@ test("identity and viewport layout are independent; snapshots and subscription c
   state.dispose(); state.dispose();
   matches = false; events.dispatchEvent(new Event("change"));
   expect(state.environment.current.layout).toBe("regular");
-  const fallback = createEnvironment();
-  expect(fallback.environment.current).toEqual({ platform: "unknown", device: "unknown", layout: "compact" });
-  fallback.dispose();
 });

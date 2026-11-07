@@ -1,5 +1,4 @@
 import type { SpeechClip, SpeechOptions, SpeechTranscript } from "../abi";
-import { SpeechError } from "../errors";
 import { current } from "./context";
 export type { SpeechClip, SpeechOptions, SpeechTranscript };
 // A type only, like DocumentError: the shell's errors come from another bundle, so
@@ -14,12 +13,6 @@ export const speech = {
    * `failed`. Saving the text is an ordinary edit:
    * `const { text } = await speech.transcribe(ref, { locale: "en-US" })`. */
   transcribe(clip: SpeechClip, options?: SpeechOptions): Promise<SpeechTranscript> {
-    const service = (current() as Partial<ReturnType<typeof current>>).speech;
-    // A pop older than this SDK has no speech service.
-    if (!service)
-      return Promise.reject(
-        new SpeechError("unavailable", "This pop cannot transcribe speech; update pop", "host"),
-      );
-    return service.transcribe(clip, options);
+    return current().speech.transcribe(clip, options);
   },
 };
