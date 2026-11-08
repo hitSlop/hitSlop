@@ -45,6 +45,11 @@ impl BrowserCopy {
         }
         Ok(app)
     }
+    /// Finish the initial file barrier before the host publishes Ready.
+    #[wasm_bindgen(js_name = finishDownload)]
+    pub fn finish_download(&mut self) -> Result<(), JsValue> {
+        self.driver.as_mut().ok_or_else(|| error("Copy missing"))?.flush().map_err(error)
+    }
     #[wasm_bindgen(js_name = attachmentInventory)]
     pub fn attachment_inventory(&self) -> Result<String, JsValue> {
         let store = self.driver.as_ref().ok_or_else(|| error("Copy missing"))?.store();

@@ -1,9 +1,14 @@
 //! The Document DO is the sole permissions and lifecycle authority.
 use super::*;
+use futures_util::future::{Either, select};
 use pop_sharing_protocol::{
     document::{AccessState, DocumentMetadata, DocumentRole, JoinDocument, UpdateDocument},
     routes::Op,
 };
+/// An account call unanswered by then has an unknown outcome: the account may have
+/// committed it. The bound also limits how long a membership lock holder waits.
+const ACCOUNT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Deserialize)]
 struct RegistryRow {
     uid: String,
@@ -48,24 +53,46 @@ impl CloudDocument {
         self.sql.exec("INSERT INTO pending_registry SELECT uid,generation FROM members WHERE true ON CONFLICT(uid) DO UPDATE SET generation=max(pending_registry.generation,excluded.generation)",None)?;
         Ok(())
     }
-    pub(super) async fn release_registration(&self, uid: &str, generation: Option<u64>) -> Result<bool> {
+    /// Queue the release of a registration this document may have left at `uid`'s account.
+    async fn queue_release(&self, uid: &str, generation: u64) -> Result<()> {
+        self.sql.exec(
+            "INSERT INTO pending_registry VALUES(?,?) ON CONFLICT(uid) DO UPDATE SET generation=max(pending_registry.generation,excluded.generation)",
+            vec![uid.into(), (generation as i64).into()],
+        )?;
+        self.schedule_cleanup(5_000).await?;
+        self.state.storage().sync().await
+    }
+    /// The status of one call to `uid`'s account registry, or `None` when the outcome is
+    /// unknown: the call failed or timed out, and the account may still have committed it.
+    async fn account(&self, uid: &str, path: &str, generation: Option<u64>) -> Result<Option<u16>> {
         let body = serde_json::to_string(&crate::account::RegistryRequest {
             document: self.text("document")?.ok_or_else(|| fail("Missing document"))?,
             generation,
         })?;
         let mut init = RequestInit::new();
         init.with_method(Method::Post).with_body(Some(body.into()));
-        let response = self
-            .env
-            .durable_object("ACCOUNTS")?
-            .get_by_name(&hash(uid))?
-            .fetch_with_request(Request::new_with_init("https://document.internal/internal/release", &init)?)
-            .await?;
-        Ok(response.status_code() == 200)
+        let request = Request::new_with_init(&format!("https://document.internal{path}"), &init)?;
+        let stub = self.env.durable_object("ACCOUNTS")?.get_by_name(&hash(uid))?;
+        let call = std::pin::pin!(stub.fetch_with_request(request));
+        let timeout = std::pin::pin!(Delay::from(ACCOUNT_TIMEOUT));
+        Ok(match select(call, timeout).await {
+            Either::Left((Ok(response), _)) => Some(response.status_code()),
+            _ => None,
+        })
     }
+    pub(super) async fn release_registration(&self, uid: &str, generation: Option<u64>) -> Result<bool> {
+        Ok(self.account(uid, "/internal/release", generation).await? == Some(200))
+    }
+    /// Release queued registrations at their generation or older. A queued UID that is a
+    /// member again holds a valid registration, made by its later join: only the row goes.
     pub(super) async fn flush_registry(&self) -> Result<()> {
         for row in self.sql.exec("SELECT uid,generation FROM pending_registry", None)?.to_array::<RegistryRow>()? {
-            if self.release_registration(&row.uid, Some(row.generation as u64)).await.unwrap_or(false) {
+            // A join registers before inserting its member; a release between the two
+            // would strip a live member's hint, so each release waits for the join.
+            let _membership = self.membership.lock().await;
+            if self.role_for_uid(&row.uid)?.is_some()
+                || self.release_registration(&row.uid, Some(row.generation as u64)).await?
+            {
                 self.sql.exec(
                     "DELETE FROM pending_registry WHERE uid=? AND generation=?",
                     vec![row.uid.into(), row.generation.into()],
@@ -99,72 +126,62 @@ impl CloudDocument {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
-            if self.phase()? != Some(RoomPhase::Live)
-                || self
-                    .text("capability")?
-                    .is_none_or(|cap| input.capability.len() != 64 || hash(&cap) != hash(&input.capability))
-            {
+            let invited = || -> Result<bool> {
+                Ok(self.phase()? == Some(RoomPhase::Live)
+                    && self
+                        .text("capability")?
+                        .is_some_and(|cap| input.capability.len() == 64 && hash(&cap) == hash(&input.capability)))
+            };
+            if !invited()? {
                 return Response::error("Invitation revoked", 403);
             }
-            let owner = self.text("owner_uid")?.as_deref() == Some(&claims.sub);
-            if !owner {
-                // Other members only: a member joining again keeps its place.
-                let full = || -> Result<bool> {
-                    Ok(self
-                        .sql
-                        .exec("SELECT count(*) AS n FROM members WHERE uid<>?", vec![claims.sub.clone().into()])?
-                        .one::<NumberRow>()?
-                        .n
-                        >= 64)
-                };
-                if full()? {
-                    return Response::error("Membership limit", 429);
-                }
-                let generation = self.generation()?;
-                let membership_revision = self.text("membership_revision")?;
-                let mut init = RequestInit::new();
-                init.with_method(Method::Post).with_body(Some(
-                    serde_json::to_string(&crate::account::RegistryRequest {
-                        document: self.text("document")?.ok_or_else(|| fail("Missing document"))?,
-                        generation: Some(generation),
-                    })?
-                    .into(),
-                ));
-                let response = self
-                    .env
-                    .durable_object("ACCOUNTS")?
-                    .get_by_name(&hash(&claims.sub))?
-                    .fetch_with_request(Request::new_with_init("https://document.internal/internal/member", &init)?)
-                    .await?;
-                if response.status_code() != 200 {
-                    return Response::error("Account unavailable", 409);
-                }
-                if self.phase()? != Some(RoomPhase::Live)
-                    || self.generation()? != generation
-                    || self.text("membership_revision")? != membership_revision
-                    || self.text("capability")?.is_none_or(|cap| hash(&cap) != hash(&input.capability))
-                {
-                    return Response::error("Invitation revoked", 403);
-                }
-                // Other joins ran during the registration await. Nothing awaits between this
-                // count and the insert; a refusal withdraws the registration it just made.
-                if full()? {
-                    if !self.release_registration(&claims.sub, Some(generation)).await? {
-                        return Response::error("Account unavailable", 503);
-                    }
-                    return Response::error("Membership limit", 429);
-                }
-                self.sql.exec(
-                    "INSERT INTO members VALUES(?,?) ON CONFLICT(uid) DO UPDATE SET generation=excluded.generation",
-                    vec![claims.sub.clone().into(), (self.generation()? as i64).into()],
-                )?;
-                self.state.storage().sync().await?;
+            if self.text("owner_uid")?.as_deref() == Some(&claims.sub) {
+                return Response::from_json(&self.access_state(DocumentRole::Owner)?);
             }
-            return Response::from_json(&self.access_state(if owner {
-                DocumentRole::Owner
-            } else {
-                DocumentRole::Editor
-            })?);
+            // Joins, leaves and registry cleanup on this document run one at a time. A holder
+            // awaits only bounded `/internal/*` account calls, which never take an account's
+            // `operations` lock, so account deletion (which holds that lock while it leaves
+            // documents) waits here only for those calls: the lock graph has no cycle. Stop and
+            // revocation never take this lock; the recheck after the account call catches them.
+            let _membership = self.membership.lock().await;
+            if !invited()? {
+                return Response::error("Invitation revoked", 403);
+            }
+            let member = self.role_for_uid(&claims.sub)?.is_some();
+            // Other members only: a member joining again keeps its place. Nothing is
+            // registered yet, so a refusal leaves no account hint.
+            if self
+                .sql
+                .exec("SELECT count(*) AS n FROM members WHERE uid<>?", vec![claims.sub.clone().into()])?
+                .one::<NumberRow>()?
+                .n
+                >= 64
+            {
+                return Response::error("Membership limit", 429);
+            }
+            // Register before inserting: a member row never exists without its account hint,
+            // and a hint without a member is a stale discovery entry that cleanup releases.
+            let generation = self.generation()?;
+            let registered = self.account(&claims.sub, "/internal/member", Some(generation)).await?;
+            if registered != Some(200) {
+                // The account may have stored it anyway. A member keeps the hint it had.
+                if !member {
+                    self.queue_release(&claims.sub, generation).await?;
+                }
+                return Response::error("Account unavailable", if registered.is_some() { 409 } else { 503 });
+            }
+            if !invited()? || self.generation()? != generation {
+                self.queue_release(&claims.sub, generation).await?;
+                return Response::error("Invitation revoked", 403);
+            }
+            self.sql.exec(
+                "INSERT INTO members VALUES(?,?) ON CONFLICT(uid) DO UPDATE SET generation=excluded.generation",
+                vec![claims.sub.clone().into(), (generation as i64).into()],
+            )?;
+            // This registration now belongs to a member; an earlier attempt's release must not remove it.
+            self.sql.exec("DELETE FROM pending_registry WHERE uid=?", vec![claims.sub.into()])?;
+            self.state.storage().sync().await?;
+            return Response::from_json(&self.access_state(DocumentRole::Editor)?);
         }
         if op == Op::Leave {
             let claims = match crate::auth::identity(req, &self.env).await {
@@ -174,18 +191,17 @@ impl CloudDocument {
             if self.text("owner_uid")?.as_deref() == Some(&claims.sub) {
                 return Response::error("Owner must delete document explicitly", 409);
             }
+            // Serialized with joins (see Join): a same-UID join completes, then this removes it.
+            let _membership = self.membership.lock().await;
+            // A hint left by a failed join is already queued for cleanup.
+            if self.role_for_uid(&claims.sub)?.is_none() {
+                return Response::ok("left");
+            }
             if !self.release_registration(&claims.sub, Some(self.generation()?)).await? {
                 return Response::error("Account unavailable", 503);
             }
             self.sql.exec("DELETE FROM members WHERE uid=?", vec![claims.sub.clone().into()])?;
             self.sql.exec("DELETE FROM resource_sessions WHERE uid=?", vec![claims.sub.clone().into()])?;
-            let revision = self
-                .text("membership_revision")?
-                .and_then(|value| value.parse::<u64>().ok())
-                .unwrap_or(0)
-                .checked_add(1)
-                .ok_or_else(|| fail("Membership revision exhausted"))?;
-            self.put("membership_revision", &revision.to_string())?;
             self.state.storage().sync().await?;
             for ws in self.state.get_websockets() {
                 if ws.deserialize_attachment::<SocketState>()?.is_some_and(|state| state.uid == claims.sub) {

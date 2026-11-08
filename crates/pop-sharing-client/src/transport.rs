@@ -428,15 +428,20 @@ pub(crate) fn room_control(
 /// An access lookup keeps HTTP status until deciding whether access was denied.
 /// Bad requests, missing routes and expired credentials cannot authorize local removal.
 pub(crate) fn access_request(url: &str, identity: &str) -> TransportResult<Option<Vec<u8>>> {
+    lookup(url, identity, &[403, 410])
+}
+/// A GET whose `absent` statuses are the answer `None`; any other refusal is an error.
+pub(crate) fn lookup(url: &str, identity: &str, absent: &[u16]) -> TransportResult<Option<Vec<u8>>> {
     let client = network()?.http.clone();
     let request = client.get(url).bearer_auth(fresh_identity(Some(identity)).unwrap_or_else(|| identity.to_owned()));
+    let absent = absent.to_vec();
     run_network(async move {
         let response = request.send().await.map_err(|_| HttpFailure::from("Sharing service is unavailable"))?;
         let status = response.status().as_u16();
         let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await?;
         match status {
             200 => Ok(Some(bytes)),
-            403 | 410 => Ok(None),
+            status if absent.contains(&status) => Ok(None),
             _ => Err(refusal(status, &bytes, Route::Other)),
         }
     })
@@ -742,6 +747,17 @@ mod tests {
             compact: false,
         })
         .unwrap();
+        let remote_bytes = b"quiet-room attachment".to_vec();
+        let remote = pop_storage::store::Attachment::from_bytes(&remote_bytes).unwrap();
+        let remote_id = remote.id.clone();
+        let inventory = serde_json::to_vec(&vec![pop_sharing_protocol::resources::Resource {
+            key: remote.id.clone(),
+            hash: remote.id,
+            size: remote.bytes,
+            media_type: remote.media_type,
+        }])
+        .unwrap();
+        let observing_owner = owner.clone();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let key = RoomKey {
@@ -760,6 +776,10 @@ mod tests {
                 };
                 let info = info.clone();
                 let version = version.clone();
+                let inventory = inventory.clone();
+                let remote_bytes = remote_bytes.clone();
+                let remote_id = remote_id.clone();
+                let observing_owner = observing_owner.clone();
                 handlers.push(thread::spawn(move || {
                     stream.set_nonblocking(false).unwrap();
                     stream.set_read_timeout(Some(Duration::from_secs(25))).unwrap();
@@ -784,6 +804,21 @@ mod tests {
                             [Frame::Welcome { permission: pop_core::sync::Permission::Write, version }, Frame::CaughtUp]
                         {
                             ws.send(Message::Binary(envelope::encode(frame).unwrap().into())).unwrap();
+                        }
+                        // No Records frame is sent. The initial connection must hydrate files anyway.
+                        let deadline = Instant::now() + Duration::from_secs(5);
+                        loop {
+                            if matches!(
+                                request(&observing_owner, Request::ReadAttachment { id: remote_id.clone() }).unwrap(),
+                                Reply::Bytes { bytes: Some(_) }
+                            ) {
+                                break;
+                            }
+                            assert!(
+                                Instant::now() < deadline,
+                                "a quiet connection never downloaded its missing attachment"
+                            );
+                            thread::sleep(Duration::from_millis(5));
                         }
                         ws.send(Message::Text("pong".into())).unwrap();
                         ws.send(Message::Pong(vec![1, 2].into())).unwrap();
@@ -816,7 +851,9 @@ mod tests {
                         let (code, body) = if header.starts_with("PUT ") {
                             (413, &[][..])
                         } else if header.contains("/blobs ") {
-                            (200, &b"[]"[..])
+                            (200, inventory.as_slice())
+                        } else if header.contains(&format!("/blob/{remote_id} ")) {
+                            (200, remote_bytes.as_slice())
                         } else {
                             (200, info.as_slice())
                         };

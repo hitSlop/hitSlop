@@ -19,6 +19,18 @@ pub struct CreateRoom {
     pub document: String,
 }
 
+/// The seed an upload makes live. The relay refuses (409) one that is not the seed it
+/// stores, so an older attempt cannot publish a seed uploaded after it. The relay does not
+/// check attachments: the creator uploads every attachment the seed references first.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct OpenRoom {
+    /// Lowercase hex SHA-256 of the uploaded seed bytes.
+    pub seed_sha256: String,
+}
+
 /// A document's seed and app, read by any member. Access and the invitation secret are
 /// only in `AccessState`.
 #[derive(Clone, Serialize, Deserialize)]
@@ -221,6 +233,7 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     #[derive(OpenApi)]
     #[openapi(components(schemas(
         CreateRoom,
+        OpenRoom,
         RoomInfo,
         RoomPhase,
         ResourceGrant,

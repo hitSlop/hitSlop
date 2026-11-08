@@ -444,7 +444,8 @@ async fn connected_attempt(
     let mut uploaded = pump
         .effect(operations.call(|operation| {
             trace("inventory_start");
-            let uploaded = resources::remote_blobs(&operation.key)?;
+            let mut uploaded = Vec::new();
+            resources::download_blobs(&operation.owner, &operation.key, &mut uploaded)?;
             trace("inventory_done");
             Ok(uploaded)
         }))

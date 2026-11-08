@@ -45,6 +45,17 @@ export type MaintenanceAction = { "action": "idle" } | { "action": "jitter", mil
 export type Manifest = { app: string, resources: Array<Resource>, };
 
 /**
+ * The seed an upload makes live. The relay refuses (409) one that is not the seed it
+ * stores, so an older attempt cannot publish a seed uploaded after it. The relay does not
+ * check attachments: the creator uploads every attachment the seed references first.
+ */
+export type OpenRoom = {
+/**
+ * Lowercase hex SHA-256 of the uploaded seed bytes.
+ */
+seedSha256: string, };
+
+/**
  * A failure's meaning. Names match the pause kinds of the four that pause sync.
  */
 export type Outcome = "ended" | "needsUpdate" | "refused" | "outgrown" | "filesFull" | "conflict" | "signIn" | "failed";

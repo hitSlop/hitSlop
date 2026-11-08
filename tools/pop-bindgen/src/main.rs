@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pop_core::browser_wire::BrowserRequest::export_all(&config)?;
     pop_core::browser_wire::BrowserEvent::export_all(&config)?;
     pop_sharing_protocol::http::CreateRoom::export_all(&config)?;
+    pop_sharing_protocol::http::OpenRoom::export_all(&config)?;
     pop_sharing_protocol::http::RoomInfo::export_all(&config)?;
     pop_sharing_protocol::document::DocumentEntry::export_all(&config)?;
     pop_sharing_protocol::document::RegisteredDocument::export_all(&config)?;

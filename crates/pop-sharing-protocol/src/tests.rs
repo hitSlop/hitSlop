@@ -44,6 +44,7 @@ fn decode_as(kind: &str, input: &Value) -> Result<Value, serde_json::Error> {
     match kind {
         "EmptyReply" => decoded::<()>(input),
         "CreateRoom" => decoded::<CreateRoom>(input),
+        "OpenRoom" => decoded::<OpenRoom>(input),
         "JoinDocument" => decoded::<JoinDocument>(input),
         "UpdateDocument" => decoded::<UpdateDocument>(input),
         "RoomInfo" => decoded::<RoomInfo>(input),

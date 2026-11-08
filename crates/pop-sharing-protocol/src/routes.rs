@@ -275,9 +275,9 @@ pub static ROUTES: &[Route] = &[
         Document,
         Owner,
         L::None,
-        NO,
+        Json("OpenRoom"),
         Json("RoomInfo"),
-        "Make a fully uploaded document live.",
+        "Make the named seed live (409 for any other). Attachments are not checked: upload them first.",
     ),
     route(
         Op::GetSeed,

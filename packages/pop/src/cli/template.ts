@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { execute } from "./engine";
 import { stageProject } from "./build";
 import { defaultOutput } from "./fs";
+import { SharingHost } from "../wire/constants.generated";
+
+/** Live collaboration first uploads the embedded app and saved history as one seed of at most
+ * `SharingHost.seedBytes`. An app storing three quarters of that leaves about 4 MiB for history
+ * and SQLite overhead, so builds warn there. Attachments travel separately and do not count. */
+const largeAppBytes = (SharingHost.seedBytes / 4) * 3;
 
 /** Builds a project into a template file and returns its path: the stage, packed by the file
  * engine in one request. Artwork the project supplies (`definePop({ artwork })`) is stored as
@@ -34,6 +40,11 @@ export async function buildTemplate(
     if (absent.length)
       console.warn(
         `No ${absent.join(" or ")} artwork: import ${absent.join(" and ")} PNGs in definePop({ artwork }).`,
+      );
+    const { info } = await execute({ method: "inspect", file: output });
+    if (info.storedAssetBytes > largeAppBytes)
+      console.warn(
+        `The app stores ${(info.storedAssetBytes / 2 ** 20).toFixed(1)} MiB of resources. Live collaboration cannot share a document whose app and saved history exceed ${SharingHost.seedBytes / 2 ** 20} MiB: keep large media in document attachments.`,
       );
     return output;
   } finally {
