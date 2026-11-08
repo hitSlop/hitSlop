@@ -125,7 +125,7 @@ the seed's hash. The transmitted SQLite seed keeps the complete embedded app and
 attachments and artwork are not part of it, and downloads fetch and verify attachments
 before becoming ready. Its 16 MiB bound covers the embedded app, history and SQLite
 overhead, separately from the attachment budget, and is checked before the cloud document
-is created: a document beyond it cannot be shared. Templates contain no attachments. The stored cloud
+is created: a document beyond it cannot start sharing, while one that is already live only reconnects to its room. Templates contain no attachments. The stored cloud
 association contains only the relay endpoint; invitation credentials stay outside the file.
 
 Theme overrides are limited to 256 declared colors, checked on write and on open. Their storage, publication and undo behavior are described in [themes and attachments](../architecture.md#themes-and-attachments). Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.

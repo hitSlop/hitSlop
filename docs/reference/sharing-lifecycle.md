@@ -37,7 +37,7 @@ upload order is the whole guarantee. The owner binds to the document only after 
 | The document grew past 16 MiB after going live | Enabling sync again stages nothing and reconnects; the base limit under [Outgrown](#outgrown) still applies. |
 
 The 16 MiB limit covers the embedded app, history and SQLite overhead; attachments have
-their own budgets. A document beyond it cannot be shared, so keep large media in
+their own budgets. A document beyond it cannot start sharing (a room that is already live keeps reconnecting), so keep large media in
 attachments. A valid local app can exceed the limit within its 50 MiB authoring budget,
 and `pop build` warns once it stores 12 MiB of resources. Initial downloads fetch and
 verify attachments before they become ready, including when the room has no subsequent

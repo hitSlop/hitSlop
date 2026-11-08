@@ -327,8 +327,9 @@ The Sparkle package's `exactVersion` in `apps/apple/project.yml` also selects th
 
 ## Validate what ships
 
-For the first lineage-2 release, hand-test old-product refusal (including the existing
-SQLite hot-journal recovery policy), Mac/iPhone edits, offline/reconnect, sign-out,
+For the first lineage-2 release, hand-test old-product refusal (a clean older file stays byte-identical;
+if SQLite recovers a hot journal first, check the last committed state and the refusal instead),
+Mac/iPhone edits, offline/reconnect, sign-out,
 anonymous Chrome joining and Apple account linking. Transfer photos totalling more
 than 16 MiB from Mac to iPhone and verify the images after reopening. Exercise outgrowth
 and Save Unshared Copy. Deploy the final Firestore rules, then the document Worker and
