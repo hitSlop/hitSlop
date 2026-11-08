@@ -53,13 +53,16 @@ impl CloudDocument {
         self.sql.exec("INSERT INTO pending_registry SELECT uid,generation FROM members WHERE true ON CONFLICT(uid) DO UPDATE SET generation=max(pending_registry.generation,excluded.generation)",None)?;
         Ok(())
     }
-    /// Queue the release of a registration this document may have left at `uid`'s account.
+    /// Queue `uid`'s release before an account call whose outcome may be lost: a join's
+    /// registration or a leave's release. The row and its alarm are durable first, so a
+    /// failure, timeout or reset after the call still ends in cleanup, which skips a member.
+    /// The alarm falls due after the call's bound; a cleanup during the call waits for it.
     async fn queue_release(&self, uid: &str, generation: u64) -> Result<()> {
         self.sql.exec(
             "INSERT INTO pending_registry VALUES(?,?) ON CONFLICT(uid) DO UPDATE SET generation=max(pending_registry.generation,excluded.generation)",
             vec![uid.into(), (generation as i64).into()],
         )?;
-        self.schedule_cleanup(5_000).await?;
+        self.schedule_cleanup(ACCOUNT_TIMEOUT.as_millis() as u64 + 5_000).await?;
         self.state.storage().sync().await
     }
     /// The status of one call to `uid`'s account registry, or `None` when the outcome is
@@ -84,7 +87,7 @@ impl CloudDocument {
         Ok(self.account(uid, "/internal/release", generation).await? == Some(200))
     }
     /// Release queued registrations at their generation or older. A queued UID that is a
-    /// member again holds a valid registration, made by its later join: only the row goes.
+    /// member holds a valid registration: only the row goes.
     pub(super) async fn flush_registry(&self) -> Result<()> {
         for row in self.sql.exec("SELECT uid,generation FROM pending_registry", None)?.to_array::<RegistryRow>()? {
             // A join registers before inserting its member; a release between the two
@@ -147,7 +150,6 @@ impl CloudDocument {
             if !invited()? {
                 return Response::error("Invitation revoked", 403);
             }
-            let member = self.role_for_uid(&claims.sub)?.is_some();
             // Other members only: a member joining again keeps its place. Nothing is
             // registered yet, so a refusal leaves no account hint.
             if self
@@ -161,24 +163,23 @@ impl CloudDocument {
             }
             // Register before inserting: a member row never exists without its account hint,
             // and a hint without a member is a stale discovery entry that cleanup releases.
+            // Its release is queued first, so a join that ends short of a member (refused, lost
+            // reply, timed out, revoked or reset) leaves no hint behind; a member joining again
+            // keeps the one it had.
             let generation = self.generation()?;
+            self.queue_release(&claims.sub, generation).await?;
             let registered = self.account(&claims.sub, "/internal/member", Some(generation)).await?;
             if registered != Some(200) {
-                // The account may have stored it anyway. A member keeps the hint it had.
-                if !member {
-                    self.queue_release(&claims.sub, generation).await?;
-                }
                 return Response::error("Account unavailable", if registered.is_some() { 409 } else { 503 });
             }
             if !invited()? || self.generation()? != generation {
-                self.queue_release(&claims.sub, generation).await?;
                 return Response::error("Invitation revoked", 403);
             }
             self.sql.exec(
                 "INSERT INTO members VALUES(?,?) ON CONFLICT(uid) DO UPDATE SET generation=excluded.generation",
                 vec![claims.sub.clone().into(), (generation as i64).into()],
             )?;
-            // This registration now belongs to a member; an earlier attempt's release must not remove it.
+            // This registration now belongs to a member; no queued release may remove it.
             self.sql.exec("DELETE FROM pending_registry WHERE uid=?", vec![claims.sub.into()])?;
             self.state.storage().sync().await?;
             return Response::from_json(&self.access_state(DocumentRole::Editor)?);
@@ -197,16 +198,23 @@ impl CloudDocument {
             if self.role_for_uid(&claims.sub)?.is_none() {
                 return Response::ok("left");
             }
-            if !self.release_registration(&claims.sub, Some(self.generation()?)).await? {
-                return Response::error("Account unavailable", 503);
-            }
+            // Revoke first, written with the queued release before any await: access never
+            // depends on the account's reply.
+            let generation = self.generation()?;
             self.sql.exec("DELETE FROM members WHERE uid=?", vec![claims.sub.clone().into()])?;
             self.sql.exec("DELETE FROM resource_sessions WHERE uid=?", vec![claims.sub.clone().into()])?;
-            self.state.storage().sync().await?;
+            self.queue_release(&claims.sub, generation).await?;
             for ws in self.state.get_websockets() {
                 if ws.deserialize_attachment::<SocketState>()?.is_some_and(|state| state.uid == claims.sub) {
                     let _ = ws.close(Some(1008), Some("Membership removed"));
                 }
+            }
+            // A refused, lost or late reply leaves the release to cleanup.
+            if self.release_registration(&claims.sub, Some(generation)).await? {
+                self.sql.exec(
+                    "DELETE FROM pending_registry WHERE uid=? AND generation=?",
+                    vec![claims.sub.into(), (generation as i64).into()],
+                )?;
             }
             return Response::ok("left");
         }

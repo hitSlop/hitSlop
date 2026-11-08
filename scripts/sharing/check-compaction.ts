@@ -34,9 +34,16 @@ export class DocumentAccount {
     if (path === '/__test/held-registration-responses') return Response.json(this.heldRegistrationResponses ?? 0);
     if (path === '/__test/finish-registration-response') { this.finishRegistrationResponse?.(); return new Response('ready'); }
     if (path === '/__test/fail-registration-response') { this.failRegistrationResponse = true; return new Response('ready'); }
-    // Releases are refused while enabled.
-    if (path === '/__test/release-failure') { this.failRelease = (await req.json()).enabled; return new Response('ready'); }
-    if (path === '/internal/release' && this.failRelease) return new Response('unavailable',{status:503});
+    // Releases fail while enabled: refused, or committed with the reply lost.
+    if (path === '/__test/release-failure') {
+      const {enabled,committed=false} = await req.json();
+      this.failRelease = enabled; this.commitFailedRelease = committed;
+      return new Response('ready');
+    }
+    if (path === '/internal/release' && this.failRelease) {
+      if (this.commitFailedRelease) await this.inner.fetch(req);
+      return new Response('unavailable',{status:503});
+    }
     if (path === '/internal/member' && this.registration) {
       const registration = this.registration;
       this.registration = undefined;
@@ -117,6 +124,9 @@ export class CloudDocument {
       return new Response('ready');
     }
     if (path === '/__test/alarm') return await this.inner.alarm();
+    if (path === '/__test/alarm-time') return Response.json(await this.state.storage.getAlarm());
+    // Resets the object as a crash would: in-flight requests fail and memory is lost.
+    if (path === '/__test/reset') this.state.abort('Test reset');
     try { return await this.inner.fetch(req); } catch(error) { console.error('Test document failure:',String(error)); throw error; }
   }
   alarm() { return this.inner.alarm(); }
