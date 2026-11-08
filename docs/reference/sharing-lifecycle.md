@@ -10,13 +10,39 @@ Each device keeps a small receipt per relay endpoint and cloud document, in its 
 directory, naming the one document version that **both** the cloud holds and the local save
 holds. The
 owner writes it only when the cloud has acknowledged every push, the session is caught
-up and not paused, and the saved file's exact history matches. A seed upload or
-download also writes it. The receipt is replaced atomically under an OS lock; a failed
+up and not paused, and the saved file's exact history matches. A seed upload also writes
+it once Open succeeds, which follows the upload of every attachment the seed references; a
+download writes it once its attachments are verified and persisted. The receipt is replaced atomically under an OS lock; a failed
 write keeps the previous one. It holds no document state and no credentials.
 
 The receipt is the only thing that decides whether a downloaded copy is clean. **Remove
 Download** is refused while the saved version differs from the receipt, and catalog
 status compares the saved version with it. A missing receipt means unconfirmed.
+
+## Initial upload
+
+The creator stages one immutable local snapshot of the saved document. The transmitted
+seed is SQLite with the complete embedded app and retained history; attachments are not
+part of it, and neither is artwork. In order, the creator uploads the seed, the app
+resources and every attachment the seed references, all from that snapshot, so later
+edits, imports or removals in the live document do not change what is sent. Only then does
+it call Open, naming the seed's SHA-256. The relay refuses Open for any other seed, which
+stops an older attempt from publishing a later one, and it does not check attachments: the
+upload order is the whole guarantee. The owner binds to the document only after Open.
+
+| Failure | Result |
+|---|---|
+| A seed, app or attachment upload fails | The document stays uploading and the owner unbound. A retry stages a fresh snapshot, replaces the seed and sends only the attachments the relay does not list. |
+| The seed exceeds 16 MiB | Refused before the cloud document is created; the local document is retained. |
+| The document grew past 16 MiB after going live | Enabling sync again stages nothing and reconnects; the base limit under [Outgrown](#outgrown) still applies. |
+
+The 16 MiB limit covers the embedded app, history and SQLite overhead; attachments have
+their own budgets. A document beyond it cannot start sharing (a room that is already live keeps reconnecting), so keep large media in
+attachments. A valid local app can exceed the limit within its 50 MiB authoring budget,
+and `pop build` warns once it stores 12 MiB of resources. Initial downloads fetch and
+verify attachments before they become ready, including when the room has no subsequent
+edits. An interrupted transfer remains retryable rather than publishing an incomplete
+download.
 
 ## Outgrown
 

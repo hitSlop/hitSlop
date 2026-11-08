@@ -1378,7 +1378,7 @@
     },
     "/v1/documents/{document}/open": {
       "post": {
-        "summary": "Make a fully uploaded document live.",
+        "summary": "Make the named seed live (409 for any other). Attachments are not checked: upload them first.",
         "operationId": "Open",
         "parameters": [
           {
@@ -1391,6 +1391,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenRoom"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Accepted",
@@ -1398,6 +1408,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RoomInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
                 }
               }
             }
@@ -1444,6 +1464,16 @@
           },
           "410": {
             "description": "Document deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiFailure"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request exceeds its byte limit",
             "content": {
               "application/json": {
                 "schema": {
@@ -2402,6 +2432,19 @@
             "items": {
               "$ref": "#/components/schemas/Resource"
             }
+          }
+        }
+      },
+      "OpenRoom": {
+        "type": "object",
+        "description": "The seed an upload makes live. The relay refuses (409) one that is not the seed it\nstores, so an older attempt cannot publish a seed uploaded after it. The relay does not\ncheck attachments: the creator uploads every attachment the seed references first.",
+        "required": [
+          "seedSha256"
+        ],
+        "properties": {
+          "seedSha256": {
+            "type": "string",
+            "description": "Lowercase hex SHA-256 of the uploaded seed bytes."
           }
         }
       },

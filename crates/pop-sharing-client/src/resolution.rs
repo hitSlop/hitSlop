@@ -15,6 +15,15 @@ impl ResolvedRoom {
     /// Installs only a missing file; existing local state is never replaced. The relay
     /// already holds the seed, so the new replica starts confirmed.
     pub fn install(&self, destination: &Path, state_directory: &Path) -> Result<()> {
+        self.install_if_current(destination, state_directory, || Ok(()))
+    }
+    /// Check the caller's account-operation fence after network IO, before publishing.
+    pub fn install_if_current(
+        &self,
+        destination: &Path,
+        state_directory: &Path,
+        current: impl FnOnce() -> Result<()>,
+    ) -> Result<()> {
         if destination.exists() {
             return Err("A local document already exists; resolve it through its owner".into());
         }
@@ -23,7 +32,7 @@ impl ResolvedRoom {
         let version = source.document().map_err(fail)?.version();
         source.close().map_err(fail)?;
         let bytes = std::fs::read(&self.seed.path).map_err(fail)?;
-        install_seed(destination, &self.key, &self.info, &bytes)?;
+        install_seed(destination, &self.key, &self.info, &bytes, current)?;
         journal::confirm_seed(&journal, version)?;
         Ok(())
     }

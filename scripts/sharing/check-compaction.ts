@@ -26,13 +26,44 @@ export class DocumentAccount {
     }
     if (path === '/__test/held-registrations') return Response.json(this.heldRegistrations);
     if (path === '/__test/release-registration') { this.releaseRegistration?.(); return new Response('ready'); }
+    // The next registration is stored, then its reply is held until finished, or replaced by a failure.
+    if (path === '/__test/hold-registration-response') {
+      this.registrationResponse = new Promise(resolve => this.finishRegistrationResponse = resolve);
+      return new Response('ready');
+    }
+    if (path === '/__test/held-registration-responses') return Response.json(this.heldRegistrationResponses ?? 0);
+    if (path === '/__test/finish-registration-response') { this.finishRegistrationResponse?.(); return new Response('ready'); }
+    if (path === '/__test/fail-registration-response') { this.failRegistrationResponse = true; return new Response('ready'); }
+    // Releases fail while enabled: refused, or committed with the reply lost.
+    if (path === '/__test/release-failure') {
+      const {enabled,committed=false} = await req.json();
+      this.failRelease = enabled; this.commitFailedRelease = committed;
+      return new Response('ready');
+    }
+    if (path === '/internal/release' && this.failRelease) {
+      if (this.commitFailedRelease) await this.inner.fetch(req);
+      return new Response('unavailable',{status:503});
+    }
     if (path === '/internal/member' && this.registration) {
       const registration = this.registration;
       this.registration = undefined;
       this.heldRegistrations++;
       await registration;
     }
-    try{return await this.inner.fetch(req);}catch(error){console.error('Test account failure:',String(error));throw error;}
+    try {
+      const response = await this.inner.fetch(req);
+      if (path === '/internal/member' && this.registrationResponse) {
+        const held = this.registrationResponse;
+        this.registrationResponse = undefined;
+        this.heldRegistrationResponses = (this.heldRegistrationResponses ?? 0) + 1;
+        await held;
+      }
+      if (path === '/internal/member' && this.failRegistrationResponse) {
+        this.failRegistrationResponse = false;
+        return new Response('reply lost',{status:500});
+      }
+      return response;
+    } catch(error){console.error('Test account failure:',String(error));throw error;}
   }
 }
 export class CloudDocument {
@@ -93,6 +124,9 @@ export class CloudDocument {
       return new Response('ready');
     }
     if (path === '/__test/alarm') return await this.inner.alarm();
+    if (path === '/__test/alarm-time') return Response.json(await this.state.storage.getAlarm());
+    // Resets the object as a crash would: in-flight requests fail and memory is lost.
+    if (path === '/__test/reset') this.state.abort('Test reset');
     try { return await this.inner.fetch(req); } catch(error) { console.error('Test document failure:',String(error)); throw error; }
   }
   alarm() { return this.inner.alarm(); }
@@ -218,7 +252,7 @@ export async function checkCompaction(
       .status,
     200,
   );
-  assert.equal((await call(base + "/open", owner, "POST")).status, 200);
+  assert.equal((await call(base + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);
   room.access = identity("room-guest", "anonymous");
   assert.equal((await call(base+"/members",room.access,"POST",{capability:room.capability})).status,200);
   const unlistedBlob = new Uint8Array([23, 24, 25]);
@@ -550,7 +584,7 @@ export async function checkCompaction(
       .status,
     200,
   );
-  assert.equal((await call(idleBase + "/open", owner, "POST")).status, 200);
+  assert.equal((await call(idleBase + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);
   idleRoom.access = identity("idleRoom-guest", "anonymous");
   assert.equal((await call(idleBase+"/members",idleRoom.access,"POST",{capability:idleRoom.capability})).status,200);
   const idleStub = namespace.get(namespace.idFromName(documentName(idleRoom.room)));

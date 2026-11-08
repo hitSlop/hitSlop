@@ -40,6 +40,11 @@
       }
     },
     {
+      "type": "OpenRoom",
+      "name": "open without its seed hash",
+      "input": {}
+    },
+    {
       "type": "ConnectionPlan",
       "name": "connection without its size",
       "input": {

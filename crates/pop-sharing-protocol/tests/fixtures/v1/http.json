@@ -10,6 +10,16 @@
     }
   },
   {
+    "type": "OpenRoom",
+    "name": "open request",
+    "input": {
+      "seedSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "canonical": {
+      "seedSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  },
+  {
     "type": "JoinDocument",
     "name": "join request",
     "input": {

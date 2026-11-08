@@ -114,27 +114,43 @@ fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
 /// The saved document as uploaded once, before the room goes live. Its history is the
 /// room's root: the owner keeps editing on top of it and members start from it.
 struct Seed {
+    snapshot: std::path::PathBuf,
     path: std::path::PathBuf,
     version: Vec<(String, u32)>,
     owner_version: String,
     app: String,
     hash: String,
 }
+impl Drop for Seed {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_file(&self.snapshot);
+        if let Some(parent) = self.path.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
+}
+
 fn stage(owner: &Owner) -> Result<Seed> {
     let directory = std::env::temp_dir().join(format!("pop-sharing-{}", random()?));
     use std::os::unix::fs::DirBuilderExt;
     std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(fail)?;
     let path = directory.join("seed.pop");
+    let snapshot = directory.join("snapshot.pop");
     let result = (|| {
-        retry_busy(owner, || Request::StageSeed { destination: path.clone() })?;
+        retry_busy(owner, || Request::StageSeed { destination: snapshot.clone() })?;
+        let source = Store::open(&snapshot, Mode::Snapshot).map_err(fail)?;
+        source.seed_without_attachments(&path).map_err(fail)?;
+        source.close().map_err(fail)?;
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(fail)?;
         if std::fs::metadata(&path).map_err(fail)?.len() > pop_sharing_protocol::SEED_BYTES as u64 {
-            return Err("This document exceeds the 16 MiB sharing limit. Your local document is retained.".into());
+            return Err("The embedded app and saved history exceed the 16 MiB initial sync limit. Your local document is retained.".into());
         }
         let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
         let document = store.document().map_err(fail)?;
         let seed = Seed {
+            snapshot: snapshot.clone(),
             path: path.clone(),
             version: document.wire_history(),
             owner_version: document.version(),
@@ -146,6 +162,7 @@ fn stage(owner: &Owner) -> Result<Seed> {
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&snapshot);
         let _ = std::fs::remove_dir(&directory);
     }
     result
@@ -276,7 +293,13 @@ pub fn verify_account(token: &str) -> Result<()> {
 pub fn delete_account(token: &str) -> Result<()> {
     cloud::control("DELETE", "account", token, &[]).map(|_| ())
 }
-fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]) -> Result<()> {
+fn install_seed(
+    destination: &Path,
+    key: &RoomKey,
+    info: &RoomInfo,
+    bytes: &[u8],
+    current: impl FnOnce() -> Result<()>,
+) -> Result<()> {
     if Some(hex(&Sha256::digest(bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {
         return Err("Seed checksum mismatch".into());
     }
@@ -289,10 +312,15 @@ fn install_seed(destination: &Path, key: &RoomKey, info: &RoomInfo, bytes: &[u8]
         // A re-share seed may still contain its predecessor's membership. Bind the
         // new replica through its owner before callers restore the new credential.
         let owner = Owner::open(&stage, Mode::Document, Arc::new(|_| {})).map_err(fail)?;
-        let binding = request(&owner, Request::Share { share: Share { endpoint: key.origin.clone() } });
+        let binding: Result<()> = (|| {
+            request(&owner, Request::Share { share: Share { endpoint: key.origin.clone() } })?;
+            resources::download_blobs(&owner, key, &mut Vec::new())?;
+            Ok(())
+        })();
         let closed = request(&owner, Request::Close { preview: None, icon: None });
         binding?;
         closed?;
+        current()?;
         local::install(&stage, destination, &info.document)?;
         Ok(())
     })();

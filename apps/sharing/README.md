@@ -42,8 +42,9 @@ repository. Complete it before the first deployment.
    Worker, bucket, dataset and namespaces.
 5. **Worker name.** The document Worker is `dotpop` (`dotpop-staging` for `--env staging`) and
    `host.wrangler.jsonc` binds its `RELAY` service to it. It is a new Worker, so migration tag
-   `documents-v1` declares the Durable Object classes without conflict. Every client reaches
-   the service through `share.dotpop.click`, so deploying the host Worker moves all traffic to
+   `documents-v1` declares the Durable Object classes without conflict. `dotpop` has never
+   had a live Durable Object, so its storage tables change without a migration until it ships.
+   Every client reaches the service through `share.dotpop.click`, so deploying the host Worker moves all traffic to
    `dotpop` at once: pop 1.x clients lose live sharing and cloud documents when it goes out,
    and nothing from the earlier Worker carries over. Deploy `dotpop` first, the host Worker
    with the 2.0.0 release.
@@ -58,7 +59,7 @@ repository. Complete it before the first deployment.
 Miniflare with real Rust WASM, SQLite Durable Objects and R2:
 
 - `check-accounts.ts`: identity, UUID ownership, access generations, revocation, the
-  account registry, deletion and request limits. Only external identity certificates are
+  account registry and its cleanup under racing joins, deletion, request limits and the seed hash Open requires. Only external identity certificates are
   substituted, in the local outbound harness; production has no test route, asserted-UID
   bypass, configurable certificate endpoint or clock override.
 - `check-compaction.ts`: opaque frames, bounds, folding under concurrent pushes,

@@ -175,6 +175,27 @@ impl Store {
         })
     }
 
+    /// A transport seed keeps the complete app and saved history, while attachments
+    /// travel separately. Call on the immutable sharing snapshot, never the live file.
+    pub fn seed_without_attachments(&self, dest: &Path) -> Result<()> {
+        file::document_destination(dest)?;
+        self.check(false)?;
+        self.read(|source| {
+            file::copy(
+                source,
+                dest,
+                false,
+                true,
+                Some(&|staged: &Connection| {
+                    let tx = file::begin_write(staged, "separate sharing attachments")?;
+                    tx.execute("DELETE FROM attachments", []).map_err(sqlite("separate sharing attachments"))?;
+                    tx.commit()?;
+                    staged.execute_batch("VACUUM").map_err(sqlite("compact sharing seed"))
+                }),
+            )
+        })
+    }
+
     /// Copies the open document to `dest` as it is stored, without syncing: a capture's
     /// source, rendered once and then deleted.
     pub fn capture_source(&self, dest: &Path) -> Result<()> {

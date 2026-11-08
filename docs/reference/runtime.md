@@ -60,8 +60,9 @@ The Mac catalog combines immutable bundled starters, `~/.pop/templates`, and Rec
 
 ## File layout
 
-A `.pop` file is one SQLite database (application ID `0x504F5000`; storage version in
-`user_version`). Rust defines internal wires and package-format acceptance. `pop.ts`
+A `.pop` file is one SQLite database. Its application ID is `0x504F5002`
+(`0x504F5000 | 2`, document lineage 2); its storage version is in `user_version`.
+Rust defines internal wires and package-format acceptance. `pop.ts`
 declares identity, window, ordered theme, capabilities and optional artwork. `schema.ts`
 supplies the descriptor and initial values; fixed root component and command files
 supply the views and agent commands. The build writes `packageFormat` and `runtimeABI`; readers check
@@ -75,7 +76,7 @@ artwork      preview and icon PNGs: built, then rewritten as an edited document'
 document     a document's identity; none in a template
 history      the saved Loro state in order: a snapshot (data and theme overrides; a template's
              holds the initial values), then the updates saved after it
-share        the room a shared document syncs through and its relay endpoint; none otherwise
+share        the relay endpoint for a cloud document; none otherwise (the document UUID identifies it)
 attachments  sha256, sniffed media_type, bytes: imported files
 ```
 
@@ -117,8 +118,15 @@ The store enforces the [attachment limits](../../apps/landing/src/content/docs/d
 relay's folded base has a separate 16 MiB bound, a transport limit; a valid local
 document can exceed it, which pauses sharing without stopping local saves. Duplicate and
 Share Pop File carry only referenced attachments, fresh accepted state and artwork
-rendered for the copy (`Store::copy_clean`); the sharing seed is staged the same way
-(`Store::stage_seed`). Templates contain no attachments.
+rendered for the copy (`Store::copy_clean`). Initial cloud upload instead preserves the
+document UUID and retained history. It uses one immutable staged snapshot for the seed
+and for every attachment the seed references, all uploaded before Open, which checks only
+the seed's hash. The transmitted SQLite seed keeps the complete embedded app and history;
+attachments and artwork are not part of it, and downloads fetch and verify attachments
+before becoming ready. Its 16 MiB bound covers the embedded app, history and SQLite
+overhead, separately from the attachment budget, and is checked before the cloud document
+is created: a document beyond it cannot start sharing, while one that is already live only reconnects to its room. Templates contain no attachments. The stored cloud
+association contains only the relay endpoint; invitation credentials stay outside the file.
 
 Theme overrides are limited to 256 declared colors, checked on write and on open. Their storage, publication and undo behavior are described in [themes and attachments](../architecture.md#themes-and-attachments). Fonts, arbitrary CSS overrides and layout changes need authoring source and a rebuild.
 

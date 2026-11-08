@@ -558,7 +558,12 @@ impl Library {
             .map_err(failed)?
             .ok_or_else(|| failed("Cloud document is not ready"))?;
         self.current_operation(generation)?;
-        resolved.install(Path::new(&entry.path), &self.state_dir()).map_err(failed)?;
+        resolved
+            .install_if_current(Path::new(&entry.path), &self.state_dir(), || {
+                self.current_operation(generation).map_err(|error| error.message)
+            })
+            .map_err(failed)?;
+        self.current_operation(generation)?;
         self.cache_file(id, None)?;
         let inner = self.inner.lock().unwrap();
         self.row(&inner, id)

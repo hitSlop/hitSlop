@@ -105,6 +105,8 @@ mod runtime {
             {
                 return Response::error("Denied", 403);
             }
+            // The `/internal/*` calls above stay outside this lock: a document holding its
+            // membership lock awaits them while account deletion, holding this one, leaves it.
             let _guard = self.operations.lock().await;
             if op == Op::DeleteAccount {
                 self.sql.exec("INSERT OR IGNORE INTO deleting VALUES(1)", None)?;

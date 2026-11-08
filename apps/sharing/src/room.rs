@@ -273,6 +273,8 @@ pub struct CloudDocument {
     env: Env,
     sql: SqlStorage,
     uploads: futures_util::lock::Mutex<()>,
+    /// Serializes joins, leaves and registry cleanup; lifecycle changes never wait for it.
+    membership: futures_util::lock::Mutex<()>,
 }
 
 impl CloudDocument {
@@ -740,7 +742,13 @@ impl DurableObject for CloudDocument {
         );
         let sql = state.storage().sql();
         initialize(&sql);
-        Self { state, env, sql, uploads: futures_util::lock::Mutex::new(()) }
+        Self {
+            state,
+            env,
+            sql,
+            uploads: futures_util::lock::Mutex::new(()),
+            membership: futures_util::lock::Mutex::new(()),
+        }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
         if req.path().starts_with("/assets/")
@@ -878,11 +886,27 @@ impl DurableObject for CloudDocument {
             return Response::error("Sharing ended", 410);
         }
         if op == Op::Open {
+            let input: pop_sharing_protocol::http::OpenRoom = match crate::input::body(&mut req, CONTROL_BYTES).await {
+                Ok(input) => input,
+                Err(error) => return error.response(),
+            };
+            if !crate::resource_types::hash_id(&input.seed_sha256) {
+                return Response::error("Invalid seed hash", 400);
+            }
+            // Reading the body yielded to Stop, which also removes the seed.
+            if self.phase()? == Some(RoomPhase::Ended) {
+                return Response::error("Sharing ended", 410);
+            }
+            // The one fence: only the stored seed can go live, so an older upload attempt
+            // cannot publish a seed uploaded after it. Attachments are not checked here;
+            // the creator uploads every one the seed references before Open.
+            match self.text("seed_hash")? {
+                None => return Response::error("Seed not ready", 409),
+                Some(stored) if stored != input.seed_sha256 => return Response::error("Different seed", 409),
+                Some(_) => {}
+            }
             if phase == RoomPhase::Live {
                 return Response::from_json(&self.info()?);
-            }
-            if self.text("seed_hash")?.is_none() {
-                return Response::error("Seed not ready", 409);
             }
             let Some(manifest) = self.text("resources")? else {
                 return Response::error("App not ready", 409);

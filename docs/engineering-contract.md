@@ -222,9 +222,19 @@ next save checkpoints its own identity rather than appending updates against an 
 durable frontier. Ambiguous write outcomes fence appends until a checkpoint; definite
 rolled-back busy/refusal outcomes need not force a full snapshot.
 
-Sharing starts from a seed: a copy of the creator's saved document staged without touching
-the live owner or its file, holding one snapshot, only the attachments it references and no
-artwork (`Request::StageSeed`, `Store::stage_seed`). From then on the document keeps its
+Sharing starts from an immutable snapshot of the creator's saved document, staged without
+touching the live owner or its file (`Request::StageSeed`, `Store::stage_seed`). The wire
+seed is a SQLite copy containing the complete embedded app, the same document UUID and
+retained history; attachments are not part of the seed, and neither is artwork. The creator
+uploads every attachment the seed references, from the same snapshot, before Open. Open
+names the seed's SHA-256 and the relay refuses any other seed, but it does not check
+attachments: completeness is the creator's contract, held by the client's upload order. A
+download becomes ready only after its attachments are verified and persisted. The initial
+seed's 16 MiB bound covers the embedded app, history and SQLite overhead, and is checked
+before the cloud document is created; a document beyond it cannot be shared (large media
+belong in attachments, which have their own budgets). Local authoring still permits 50 MiB
+of app resources, so local acceptance does not guarantee cloud eligibility; `pack` warns from
+12 MiB of stored app resources. From then on the document keeps its
 whole history and every attachment, because other replicas can reference them. The relay
 only folds: `/compact` swaps retained update records for one opaque base. The base is
 capped at 16 MiB (`BASE_BYTES`), a transport limit (one WebSocket frame under `MAX_FRAME`),

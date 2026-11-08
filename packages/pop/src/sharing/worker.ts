@@ -27,6 +27,7 @@ import { SharingHost } from "../wire/constants.generated";
 
 interface BrowserCopy extends LocalCopy {
   openLocal(): void;
+  finishDownload(): void;
   leaveRoom(): void;
   confirmedVersion(): string | undefined;
   openJoined(invitation: string, origin: string, info: string): void;
@@ -125,6 +126,7 @@ let networkAbort: AbortController | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let ended = false;
 let resourcesReady = false;
+let importingSeed = false;
 let compacting = 0;
 let compactAfter = 0;
 let checkedRoomAt = 0;
@@ -409,6 +411,14 @@ async function uploadFiles(attempt: number) {
     remoteAttachments.set(item.hash, item);
   }
 }
+/** Refuses a download the browser's storage quota cannot hold, before any of it is written.
+ * The seed and missing attachments are checked separately: they are different bytes, and a
+ * copy that already exists receives only attachments. */
+async function assertStorageFor(bytes: number, message: string) {
+  const estimate = await navigator.storage.estimate();
+  if (estimate.quota !== undefined && estimate.quota - (estimate.usage ?? 0) < bytes)
+    throw new Error(message);
+}
 async function receiveFiles(attempt: number) {
   receiving = attempt;
   try {
@@ -425,6 +435,9 @@ async function receiveInventory(attempt: number) {
   const missing = JSON.parse(owner.copy!.missingAttachments(inventory)) as Resource[];
   // Rust validated the complete inventory, including metadata for existing hashes.
   for (const item of JSON.parse(inventory) as Resource[]) remoteAttachments.set(item.hash, item);
+  const remaining = missing.reduce((total, item) => total + item.size, 0);
+  await assertStorageFor(remaining, "Not enough browser storage for attachments");
+  assertCurrent(attempt);
   for (const item of missing) {
     const response = await checkedFetch(documentURL("/blob/" + item.hash), {}, attempt);
     const bytes = await boundedBody(response, item.size, attempt);
@@ -718,6 +731,7 @@ const owner = new WorkerOwner<BrowserCopy>({
   },
   async importCopy(installed, request) {
     if (request.source) {
+      importingSeed = true;
       if (identityUnavailable) throw identityFailure!;
       if (ended) throw new TransportError(410);
       const response = await checkedFetch(documentURL("/seed"), { credentials: "omit" });
@@ -725,9 +739,7 @@ const owner = new WorkerOwner<BrowserCopy>({
         throw new Error("Seed download refused: " + response.status);
       const size = connection.size;
       if (size > BrowserHost.fileBytes) throw new Error("Seed too large");
-      const estimate = await navigator.storage.estimate();
-      if (estimate.quota !== undefined && estimate.quota - (estimate.usage ?? 0) < size * 2)
-        throw new Error("Not enough browser storage");
+      await assertStorageFor(size * 2, "Not enough browser storage");
       installed.importBegin(size);
       const reader = response.body.getReader();
       let received = 0;
@@ -746,7 +758,7 @@ const owner = new WorkerOwner<BrowserCopy>({
       installed.importFinish();
     }
   },
-  openCopy(installed) {
+  async openCopy(installed) {
     if (localRecovery) {
       installed.openLocal();
       return;
@@ -758,7 +770,16 @@ const owner = new WorkerOwner<BrowserCopy>({
     if (ended) {
       installed.openSavedJoined(invitation, config.relay);
       reportSync("Sharing ended; keeping this browser copy", "ended");
-    } else installed.openJoined(invitation, config.relay, roomInfo);
+    } else {
+      installed.openJoined(invitation, config.relay, roomInfo);
+      if (importingSeed) {
+        const attempt = generation;
+        await receiveFiles(attempt);
+        assertCurrent(attempt);
+        installed.finishDownload();
+        importingSeed = false;
+      }
+    }
   },
   afterPoll: flushSocket,
   afterOpen() {

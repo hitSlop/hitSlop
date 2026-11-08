@@ -22,7 +22,7 @@ The authored bundle does not contain its own document engine. The installed app 
 
 ## A document adds its saved state
 
-Creating a document copies a template into a new file. As it is edited, the same file gains the document's identity, its saved data and theme overrides, and any imported files. A document shared through [live sharing](/docs/guides/live-sharing/) also remembers its link.
+Creating a document copies a template into a new file. As it is edited, the same file gains the document's identity, its saved data and theme overrides, and any imported files. A document shared through [live sharing](/docs/guides/live-sharing/) also records its cloud association. Invitation credentials are separate and are not stored in the file.
 
 The Rust owner, shared by the app and CLI, owns the live document and its saved history; the page renders snapshots of it. Initial values are read only when a document is created, and the stored schema is a descriptor rather than JSON Schema. There is no editable document JSON file.
 
