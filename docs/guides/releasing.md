@@ -327,6 +327,14 @@ The Sparkle package's `exactVersion` in `apps/apple/project.yml` also selects th
 
 ## Validate what ships
 
+For the first lineage-2 release, hand-test old-product refusal (including the existing
+SQLite hot-journal recovery policy), Mac/iPhone edits, offline/reconnect, sign-out,
+anonymous Chrome joining and Apple account linking. Transfer photos totalling more
+than 16 MiB from Mac to iPhone and verify the images after reopening. Exercise outgrowth
+and Save Unshared Copy. Deploy the final Firestore rules, then the document Worker and
+browser host, following the sharing operator checklist. The candidate workflow captures
+the first lineage-2 corpus; pin its retained hash after publication.
+
 `bun run release:check` runs all release tiers with the shipping `dist` Cargo profile.
 The workflow uses `--skip-app` because it checks the actual signed Release app after
 packaging. Reports and render evidence are retained with the workflow.

@@ -426,21 +426,11 @@ required for launch. Pages share plain functions over `Scope` with commands toda
 
 ## Resource leases after a member leaves
 
-**Product decision needed.** Cloud resource cookies currently grant a bounded read lease
-for the document's immutable app assets and listed attachment hashes. Creating a grant
-requires current Firebase identity and membership, checked again after reading the request
-body and after the storage acknowledgment. Individual leave removes membership and socket
-access but does not invalidate an already issued resource cookie before its TTL. Global
-invitation revocation and document deletion clear all resource sessions.
-These cookies cannot read the SQLite seed, document state or sync stream.
-
-A former member who learns a new attachment hash can therefore fetch that attachment
-through an unexpired lease. Decide whether this bounded lease is intended or whether
-individual leave must revoke resource reads immediately. The immediate-revocation option
-is to bind each grant to its Firebase UID and membership generation, checking current
-membership before and after an awaited resource read. That change needs explicit tests
-for individual leave, global revocation and continuing private owner access. No UID-bound
-resource-session schema or broader revocation policy has been implemented yet.
+**Implemented.** Resource sessions are bound to the Firebase UID that created them.
+Reads check current membership before and after awaited R2 access. Individual leave
+deletes that member's sessions; global invitation revocation and document deletion
+clear all sessions. Boundary tests cover leave, global revocation and continued private
+owner access. The cookies cannot read the SQLite seed, document state or sync stream.
 
 A separate nonblocking hardening follow-up is invalid-cookie admission. The authored
 resource entry runs before the ordinary document-route IP limiter. A forged cookie with

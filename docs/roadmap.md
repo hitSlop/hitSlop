@@ -63,7 +63,8 @@ Release qualification of the fresh 2.0.0 lineage. The record of what shipped is
 - **Membership policy.** A reset anonymous credential leaves its old UID's membership in
   place until revocation, and a document admits at most 64 members. Decide owner member
   management and any change to the limit; no quota changes have been made.
-- **Resource leases after a member leaves.** See [ideas](ideas.md#resource-leases-after-a-member-leaves).
+- **Invalid-cookie admission.** UID-bound resource revocation is implemented; the separate
+  request-admission hardening remains in [ideas](ideas.md#resource-leases-after-a-member-leaves).
 - **Who may compact, and who owns an ID.** Any invited editor, including an anonymous guest,
   can compact a room, and the Worker validates only the digest and frontier of the base it
   receives; decide owner-only compaction or validating the base. Document UUIDs are chosen by

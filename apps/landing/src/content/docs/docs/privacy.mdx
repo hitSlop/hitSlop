@@ -32,8 +32,10 @@ Cloudflare. Durable Objects and private R2 storage hold the current document and
 bounded replication data needed for synchronization. The client separately maintains
 Firestore references with account-scoped
 library metadata such as document IDs, titles, app identity and access status. This
-content is not end-to-end encrypted. Deleted content may remain in replication data
-until a checkpoint replaces it; cloud storage is not a document history service.
+content is not end-to-end encrypted. Synchronization retains document history, including
+content removed from view; routine checkpoints and compaction do not erase it. Live
+collaborators can receive that retained content. **Share a Copy** sends an independent,
+sanitized copy instead. Cloud storage does not provide a document history interface.
 
 Sharing grants access to that same cloud document. Anyone with the invitation can edit;
 anonymous guests need no account. Signed-in guests can discover joined documents on
@@ -57,7 +59,7 @@ closes.
 
 ## Analytics and crash reporting
 
-Release builds of the Mac app enable Firebase Analytics and Crashlytics. They send
+Release builds of the Mac and iPhone apps enable Firebase Analytics and Crashlytics. They send
 launch, open, create (source), duplicate and export (format) events; operation
 breadcrumbs; failure records with fixed operation, classification, reason and format
 fields; crash reports; and Firebase's standard app and device data.

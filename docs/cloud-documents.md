@@ -19,7 +19,10 @@ opaque Loro updates and never interprets them. Operators deploy it from
   holds the editor role while the invitation generation they joined under is current.
 - **Authority.** The per-document Durable Object (named by the UUID) owns permissions,
   lifecycle, accepted updates and the resource inventory. A per-account Durable Object
-  (named by the SHA-256 of the Firebase UID) registers the account's documents. R2 holds
+  (named by the SHA-256 of the Firebase UID) registers the account's documents; that
+  registration is only a discovery hint. Joins, leaves and registry cleanup on one
+  document run one at a time: a join registers before it becomes a member, and a
+  retried cleanup releases hints left by failed joins but never a live member's. R2 holds
   the seed, app resources and attachments under `{uuid}/…`. Every request is checked
   against Firebase identity and current membership; knowing a UUID grants nothing, and
   a link secret is exchanged once at `POST /members`, never reused as a credential.
@@ -50,7 +53,7 @@ JSON bodies over their limit are 413 and malformed ones 400. Sockets negotiate
 | `DELETE …/members/me` | member | Leave without deleting the document. |
 | `PUT …/seed`, `GET …/seed` | owner, member | The seed snapshot, uploaded with its SHA-256, app digest and version in `X-Sharing-*` headers; immutable once live. Its version is the document's root. |
 | `GET`, `POST …/resources`; `PUT …/asset/{hash}` | member, owner | App resource manifest and its files. |
-| `POST …/open` | owner | Make a fully uploaded document live; replies with the document metadata. |
+| `POST …/open` | owner | Make the uploaded seed live. The body names it, `{"seedSha256": "<hex>"}`; any other seed is 409. Attachments are not checked. Replies with the document metadata. |
 | `GET …/blobs`; `GET`, `PUT …/blob/{hash}` | member | Immutable attachments. |
 | `POST …/compact` | member | Replace the retained updates with one base; 204 with no body. |
 | `GET …/sync` | member | WebSocket carrying opaque update frames. |
@@ -62,11 +65,26 @@ ID token; authored frames never receive credentials.
 ## Sync and compaction
 
 On connect a replica sends its version and receives what it lacks; pushes carry whole
-causal changes, one in flight at a time. The first upload seeds the document with the
-creator's saved file as one snapshot: attachments and artwork no longer referenced are
-dropped. Live sharing carries the document's retained history, not a sanitized copy: a person
-who joins receives everything the saved file holds, including content since removed from view
-(**Share a Copy** sends a sanitized copy instead).
+causal changes, one in flight at a time. Live sharing carries the document's retained
+history, not a sanitized copy: a person who joins receives retained document history,
+including content since removed from view (**Share a Copy** sends a sanitized copy instead).
+
+The first upload seeds the document with the creator's saved file, staged once as an
+immutable local snapshot. The seed is SQLite holding the complete embedded app and retained
+history; attachments and artwork are not part of it. From that snapshot the creator uploads
+the seed, the app resources and every attachment the seed references, then calls
+`POST …/open` with the seed's SHA-256. **The relay does not prove completeness**: Open
+checks that it names the stored seed and that the seed and app resources are in place, never
+the attachments, so uploading every required attachment first is the creator's contract. A failed upload
+leaves the document uploading and unbound; a retry stages again and sends only the blobs the
+relay lacks. Downloads fetch, verify and persist attachments before becoming ready.
+
+The seed is limited to 16 MiB of embedded app, history and SQLite overhead. A document
+beyond it cannot be shared; keep large media in attachments, which have their own limits
+below. The limit is checked before the cloud document is created, so a refusal leaves
+nothing behind and keeps the local file. A document that is already live only reconnects,
+however large it has grown. The 50 MiB app-resource budget does not guarantee that a
+document fits; a build warns once the app stores 12 MiB of resources.
 
 The cloud keeps one opaque **base** plus the updates since. **Compaction folds only**:
 a client posts `/compact` with the base and its frontier, and the retained updates it
@@ -78,7 +96,7 @@ the 32 MiB frame limit and is stored in 1.8 MB chunks).
 
 When a base would exceed 16 MiB, `/compact` answers 413 and the session pauses
 `Outgrown`. Local edits keep saving. The person chooses **Save Unshared Copy…** to
-fork the document into a new, independent one. A full attachment budget (10 MB per
+fork the document into a new, independent one. A full attachment budget (10 MiB per
 file, 100 MiB and 256 files per document; they sit outside history) pauses sharing as
 `FilesFull`.
 

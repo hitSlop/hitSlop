@@ -51,5 +51,8 @@ a document history view, and app/schema upgrades. Windows, Android and Linux nat
 apps are longer-term directions without release dates. Per-pop permission decisions
 tied to an app's code and additional device capabilities remain proposals.
 
-Newer pop opens documents from every released version. Installing
-a newer host never automatically replaces the app embedded in an existing document.
+Starting with public 2.0.0, newer pop opens documents written by every public release
+in document lineage 2. Pre-launch documents carry no compatibility guarantee. Files
+from earlier products or document lineages are refused rather than converted. SQLite
+may recover a hot journal from an interrupted transaction before that refusal. Installing a newer host never
+automatically replaces the app embedded in an existing document.
