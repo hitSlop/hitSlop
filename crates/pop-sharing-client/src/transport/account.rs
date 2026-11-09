@@ -19,6 +19,7 @@ pub enum LibraryUpdate {
 struct FeedState {
     ready: bool,
     error: Option<String>,
+    delivery_failed: bool,
 }
 
 /// A stoppable account subscription. Document sockets remain independent.
@@ -67,8 +68,13 @@ impl Account {
                     }
                     let snapshot = matches!(update, LibraryUpdate::Snapshot(_));
                     if let Err(error) = apply(update) {
-                        ready.0.lock().unwrap().error = Some(error);
-                        retry.notify_one();
+                        if generation.load(Ordering::Acquire) == epoch {
+                            let mut state = ready.0.lock().unwrap();
+                            state.error = Some(error);
+                            state.ready = false;
+                            state.delivery_failed = true;
+                            retry.notify_one();
+                        }
                         continue;
                     }
                     if snapshot && generation.load(Ordering::Acquire) == epoch {
@@ -192,7 +198,6 @@ async fn run(
                         if !last {
                             continue;
                         }
-                        backoff = pop_sharing_protocol::limits::BACKOFF_MIN_MS;
                         LibraryUpdate::Snapshot(snapshot.take().unwrap_or_default())
                     }
                     LibraryFrame::Upsert { entry } if snapshot.is_none() => LibraryUpdate::Upsert(entry),
@@ -205,9 +210,18 @@ async fn run(
         let outcome = tokio::select! {
             _ = cancel.cancelled() => break,
             _ = identity.changed() => continue,
-            _ = wake.notified() => continue,
+            _ = wake.notified() => {
+                let failure = {
+                    let mut state = ready.0.lock().unwrap();
+                    std::mem::take(&mut state.delivery_failed).then(|| state.error.clone().unwrap_or_else(|| "Library update could not be applied".into()))
+                };
+                if let Some(error) = failure { Err(HttpFailure::from(error)) } else { continue; }
+            },
             outcome = session => outcome,
         };
+        if ready.0.lock().unwrap().ready {
+            backoff = pop_sharing_protocol::limits::BACKOFF_MIN_MS;
+        }
         if let Err(error) = &outcome {
             let message = match error {
                 HttpFailure::Ended => "The cloud account was deleted".into(),
@@ -221,6 +235,7 @@ async fn run(
             tokio::select! {
                 _ = cancel.cancelled() => break,
                 _ = identity.changed() => continue,
+                _ = wake.notified(), if !matches!(outcome, Err(HttpFailure::Ended)) => continue,
             }
         }
         tokio::select! {
@@ -250,6 +265,25 @@ mod tests {
             Ok(response)
         })
         .unwrap()
+    }
+
+    #[test]
+    fn failed_snapshot_application_waits_before_reconnecting() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut first = accept(&listener);
+            let start = std::time::Instant::now();
+            first.send(Message::Text(r#"{"type":"snapshot","entries":[],"last":true}"#.into())).unwrap();
+            let second = accept(&listener);
+            let elapsed = start.elapsed();
+            drop(second);
+            elapsed
+        });
+        let account = Account::start_at(&origin, "fixture-token", Arc::new(|_| Err("Recovery failed".into()))).unwrap();
+        let elapsed = server.join().unwrap();
+        account.stop();
+        assert!(elapsed >= Duration::from_millis(180), "reconnected after {elapsed:?}");
     }
 
     #[test]

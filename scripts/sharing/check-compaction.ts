@@ -131,6 +131,12 @@ export class CloudDocument {
     if (path === '/__test/alarm') return await this.inner.alarm();
     if (path === '/__test/alarm-time') return Response.json(await this.state.storage.getAlarm());
     // Resets the object as a crash would: in-flight requests fail and memory is lost.
+    if (path === '/__test/hold-library') { this.libraryHold = new Promise(resolve => this.releaseLibrary = resolve); return new Response('ready'); }
+    if (path === '/__test/library-waiting') return Response.json(!!this.libraryWaiting);
+    if (path === '/__test/release-library') { this.releaseLibrary?.(); this.libraryHold=undefined; return new Response('ready'); }
+    if (path.endsWith('/library') && this.libraryHold) { this.libraryWaiting=true; await this.libraryHold; this.libraryWaiting=false; }
+    if (path === '/__test/library-unavailable') { this.libraryUnavailable = (await req.json()).enabled; return new Response('ready'); }
+    if (path.endsWith('/library') && this.libraryUnavailable) return new Response('unavailable',{status:503});
     if (path === '/__test/reset') this.state.abort('Test reset');
     try { return await this.inner.fetch(req); } catch(error) { console.error('Test document failure:',String(error)); throw error; }
   }

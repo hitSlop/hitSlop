@@ -18,6 +18,7 @@ impl CloudDocument {
             .ok_or_else(|| fail("Library revision exhausted"))?;
         self.put("library_revision", &revision.to_string())?;
         self.put("library_pending", "1")?;
+        self.put("library_retry_ms", "10000")?;
         self.schedule_cleanup(1).await?;
         self.state.storage().sync().await
     }
@@ -27,7 +28,10 @@ impl CloudDocument {
             return Ok(());
         }
         // Leave a durable wake before issuing calls whose outcome can be lost.
-        self.schedule_cleanup(10_000).await?;
+        let retry =
+            self.text("library_retry_ms")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(10_000).clamp(10_000, 300_000);
+        self.put("library_retry_ms", &retry.saturating_mul(2).min(300_000).to_string())?;
+        self.schedule_cleanup(retry).await?;
         let revision: u64 = self.text("library_revision")?.and_then(|s| s.parse().ok()).unwrap_or(1);
         let document = self.text("document")?.ok_or_else(|| fail("Missing document"))?;
         let owner = self.text("owner_uid")?.ok_or_else(|| fail("Missing owner"))?;

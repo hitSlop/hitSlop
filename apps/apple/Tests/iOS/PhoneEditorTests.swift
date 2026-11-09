@@ -13,11 +13,14 @@ import XCTest
 final class PhoneEditorTests: XCTestCase {
   func testADocumentKeepsItsKeyWhenItsFileAppears() throws {
     // A pop downloaded on open starts without a file; the open must still recognise itself.
-    let url = URL(fileURLWithPath: "/private/var/tmp/\(UUID().uuidString).pop")
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pop")
     let before = PhoneRecent.key(url)
     XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data()))
     defer { try? FileManager.default.removeItem(at: url) }
     XCTAssertEqual(PhoneRecent.key(url), before)
+    if url.path.hasPrefix("/private/var/") {
+      XCTAssertEqual(PhoneRecent.key(URL(fileURLWithPath: String(url.path.dropFirst("/private".count)))), before)
+    }
   }
 
   func testSharedRecentUsesEmbeddedTitleWithoutRenamingItsCanonicalFile() throws {

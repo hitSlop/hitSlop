@@ -251,6 +251,24 @@ try {
   assert.equal(changed.type,"upsert"); assert.equal(changed.entry.title,"Live title");
   ownerLibrary.socket.close(); outsiderLibrary.socket.close();
   await bootstrapAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"DELETE FROM projections"})});
+  await libraryDocument.fetch("https://test/__test/hold-library",{method:"POST"});
+  const stalledSnapshot=call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket","Sec-WebSocket-Protocol":"pop.library.v1"});
+  for(let n=0;n<500;n++) {
+    if(await (await libraryDocument.fetch("https://test/__test/library-waiting")).json()) break;
+    assert(n<499,"Bootstrap reached the stalled document");
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  const creationDuringBootstrap=await Promise.race([
+    call("documents",a,"POST",{document:"00000000-0000-4000-8000-000000000089"}).then(reply=>reply.status),
+    new Promise(resolve=>setTimeout(()=>resolve("blocked"),1500)),
+  ]);
+  assert.equal(creationDuringBootstrap,204,"Bootstrap lookup does not hold the account operations lock");
+  assert.equal((await stalledSnapshot).status,503,"A stalled bootstrap has a bounded failure");
+  await libraryDocument.fetch("https://test/__test/release-library",{method:"POST"});
+  await libraryDocument.fetch("https://test/__test/library-unavailable",{method:"POST",body:JSON.stringify({enabled:true})});
+  const unavailableSnapshot=await call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket","Sec-WebSocket-Protocol":"pop.library.v1"});
+  assert.equal(unavailableSnapshot.status,503,"An unresolved lookup must not produce authoritative absence");
+  await libraryDocument.fetch("https://test/__test/library-unavailable",{method:"POST",body:JSON.stringify({enabled:false})});
   const reconnected=await library(secondSession);
   assert.equal((await reconnected.next()).entries[0].title,"Live title", "Existing registrations backfill without a reset or Firestore");
   reconnected.socket.close();
@@ -672,5 +690,29 @@ try {
     assert.equal((await call(path, undefined, "GET")).status, 404, "unlisted routes never reach a handler: " + path);
   }
   assert.equal((await call("documents/" + document + "/members", prolific, "DELETE")).status, 404, "only members/me leaves");
+  // An initialization committed before the account stored its registration.
+  const intentName="creation-intent", intentToken=uid(intentName);
+  const intentId="00000000-0000-4000-8000-000000000088";
+  const intentAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const intentAccount=intentAccounts.get(intentAccounts.idFromName(hash(Buffer.from(intentName))));
+  const intentSQL=async(sql:string,args:unknown[]=[])=>
+    (await intentAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql,args})})).json();
+  await intentSQL("INSERT INTO creation_intents VALUES(?)",[intentId]);
+  const intentDocs=await worker.getDurableObjectNamespace("DOCUMENTS");
+  const intentDoc=intentDocs.get(intentDocs.idFromName(intentId));
+  assert.equal((await intentDoc.fetch(`https://test/internal/documents/${intentId}/init`,{method:"POST",body:JSON.stringify({owner_uid:intentName,document:intentId})})).status,204);
+  await worker.dispose(); worker=runtime();
+  const recovering=await library(intentToken);
+  assert.deepEqual((await recovering.next()).entries,[],"Unfinished uploads remain hidden after intent recovery");
+  recovering.socket.close();
+  const recoveredAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const recoveredAccount=recoveredAccounts.get(recoveredAccounts.idFromName(hash(Buffer.from(intentName))));
+  const recoveredRows=await (await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT owned FROM documents WHERE document=?",args:[intentId]})})).json();
+  assert.deepEqual(recoveredRows,[{owned:1}],"Restart recovers the owned registration from its durable intent");
+  // Deletion must also cover an intent not yet recovered by a library connection.
+  await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"DELETE FROM documents WHERE document=?",args:[intentId]})});
+  await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"INSERT INTO creation_intents VALUES(?)",args:[intentId]})});
+  assert.equal((await call("account",intentToken,"DELETE")).status,200);
+  assert.equal((await call("documents/"+intentId,intentToken)).status,410,"Account deletion includes unfinished initialization intents");
   console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, member-bound resource sessions, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
 } finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

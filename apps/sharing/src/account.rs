@@ -60,11 +60,15 @@ mod runtime {
             if let Some(body) = body {
                 init.with_body(Some(body.into()));
             }
-            self.env
-                .durable_object("DOCUMENTS")?
-                .get_by_name(id)?
-                .fetch_with_request(Request::new_with_init(&format!("https://account.internal{path}"), &init)?)
-                .await
+            let stub = self.env.durable_object("DOCUMENTS")?.get_by_name(id)?;
+            let call = std::pin::pin!(
+                stub.fetch_with_request(Request::new_with_init(&format!("https://account.internal{path}"), &init)?)
+            );
+            let timeout = std::pin::pin!(worker::Delay::from(std::time::Duration::from_secs(5)));
+            match futures_util::future::select(call, timeout).await {
+                futures_util::future::Either::Left((reply, _)) => reply,
+                futures_util::future::Either::Right(_) => Err(Error::RustError("Document request timed out".into())),
+            }
         }
         fn send_frame(&self, ws: &WebSocket, frame: &str) -> Result<()> {
             if ws
@@ -142,10 +146,44 @@ mod runtime {
             }
             Response::ok("described")
         }
+        async fn initialize_owned(&self, document: &str, uid: &str) -> Result<Response> {
+            self.document(
+                document,
+                &format!("/internal/documents/{document}/init"),
+                Method::Post,
+                Headers::new(),
+                Some(serde_json::to_string(&super::DocumentInit { owner_uid: uid.into(), document: document.into() })?),
+            )
+            .await
+        }
+        fn finish_creation(&self, document: &str) -> Result<()> {
+            // Deletion owns pending intents once fenced; do not erase its recovery work.
+            if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n != 0 {
+                return Ok(());
+            }
+            self.sql.exec(
+                "INSERT INTO documents VALUES(?,1,0) ON CONFLICT(document) DO UPDATE SET owned=1",
+                vec![document.into()],
+            )?;
+            self.sql.exec("DELETE FROM creation_intents WHERE document=?", vec![document.into()])?;
+            Ok(())
+        }
         async fn bootstrap_library(&self, uid: &str) -> Result<()> {
             use futures_util::{StreamExt, stream};
+            let pending =
+                self.sql.exec("SELECT document,1 AS owned FROM creation_intents", None)?.to_array::<Registration>()?;
+            for row in pending {
+                let reply = self.initialize_owned(&row.document, uid).await?;
+                match reply.status_code() {
+                    200..=299 => self.finish_creation(&row.document)?,
+                    403 | 410 => {
+                        self.sql.exec("DELETE FROM creation_intents WHERE document=?", vec![row.document.into()])?;
+                    }
+                    _ => return Err(Error::RustError("Creation recovery unavailable".into())),
+                }
+            }
             let missing = self.sql.exec("SELECT document,owned FROM documents LEFT JOIN projections USING(document) WHERE projections.document IS NULL", None)?.to_array::<Registration>()?;
-            let replies = stream::iter(missing.into_iter().map(|row| async move {
+            let mut replies = stream::iter(missing.into_iter().map(|row| async move {
                 self.document(
                     &row.document,
                     &format!("/internal/documents/{}/library", row.document),
@@ -155,15 +193,17 @@ mod runtime {
                 )
                 .await
             }))
-            .buffer_unordered(4)
-            .collect::<Vec<_>>()
-            .await;
-            for reply in replies {
-                if let Ok(mut reply) = reply
-                    && reply.status_code() == 200
-                {
-                    let input: crate::room::publication::Description = reply.json().await?;
-                    self.describe(input).await?;
+            .buffer_unordered(4);
+            while let Some(reply) = replies.next().await {
+                let mut reply = reply?;
+                match reply.status_code() {
+                    200 => {
+                        let input: crate::room::publication::Description = reply.json().await?;
+                        self.describe(input).await?;
+                    }
+                    // The authority explicitly reports a hidden upload or lost access.
+                    403 | 404 | 409 | 410 => {}
+                    _ => return Err(Error::RustError("Library lookup unavailable".into())),
                 }
             }
             Ok(())
@@ -251,6 +291,16 @@ mod runtime {
             }
             // The `/internal/*` calls above stay outside this lock: a document holding its
             // membership lock awaits them while account deletion, holding this one, leaves it.
+            if op == Op::AccountLibrary {
+                let lookup = std::pin::pin!(self.bootstrap_library(&claims.sub));
+                let deadline = std::pin::pin!(worker::Delay::from(std::time::Duration::from_secs(8)));
+                if !matches!(
+                    futures_util::future::select(lookup, deadline).await,
+                    futures_util::future::Either::Left((Ok(()), _))
+                ) {
+                    return Response::error("Library temporarily unavailable", 503);
+                }
+            }
             let _guard = self.operations.lock().await;
             if op == Op::DeleteAccount {
                 self.sql.exec("INSERT OR IGNORE INTO deleting VALUES(1)", None)?;
@@ -258,7 +308,11 @@ mod runtime {
                     let _ = ws.close(Some(1008), Some("Account deleted"));
                 }
                 self.state.storage().sync().await?;
-                for row in self.sql.exec("SELECT document,owned FROM documents", None)?.to_array::<Registration>()? {
+                for row in self.sql.exec("SELECT document,max(owned) AS owned FROM (SELECT document,owned FROM documents UNION ALL SELECT document,1 AS owned FROM creation_intents) GROUP BY document", None)?.to_array::<Registration>()? {
+                    if self.sql.exec("SELECT count(*) AS n FROM creation_intents WHERE document=?", vec![row.document.clone().into()])?.one::<Number>()?.n > 0 {
+                        let reply = self.initialize_owned(&row.document, &claims.sub).await?;
+                        if !matches!(reply.status_code(), 200..=299 | 403 | 410) { return Ok(reply); }
+                    }
                     let path = if row.owned != 0 {
                         format!("/v1/documents/{}", row.document)
                     } else {
@@ -269,6 +323,7 @@ mod runtime {
                     if !matches!(response.status_code(), 200 | 403 | 404 | 410) {
                         return Ok(response);
                     }
+                    self.sql.exec("DELETE FROM creation_intents WHERE document=?", vec![row.document.clone().into()])?;
                     self.sql.exec("DELETE FROM projections WHERE document=?", vec![row.document.clone().into()])?;
                     self.sql.exec("DELETE FROM documents WHERE document=?", vec![row.document.into()])?;
                 }
@@ -304,7 +359,6 @@ mod runtime {
                         let _ = ws.close(Some(4401), Some("Authentication expired"));
                     }
                 }
-                self.bootstrap_library(&claims.sub).await?;
                 let entries = self
                     .sql
                     .exec("SELECT payload FROM projections JOIN documents USING(document) ORDER BY document", None)?
@@ -352,23 +406,17 @@ mod runtime {
                     return Response::error("Limited", 429);
                 }
             }
-            let init = super::DocumentInit { owner_uid: claims.sub, document: input.document.clone() };
-            let result = self
-                .document(
-                    &input.document,
-                    &format!("/internal/documents/{}/init", input.document),
-                    Method::Post,
-                    Headers::new(),
-                    Some(serde_json::to_string(&init)?),
-                )
-                .await?;
-            if result.status_code() < 400 {
-                self.sql.exec(
-                    "INSERT INTO documents VALUES(?,1,0) ON CONFLICT(document) DO UPDATE SET owned=1",
-                    vec![input.document.into()],
-                )?;
-                self.state.storage().sync().await?;
+            self.sql.exec("INSERT OR IGNORE INTO creation_intents VALUES(?)", vec![input.document.clone().into()])?;
+            self.state.storage().sync().await?;
+            let result = self.initialize_owned(&input.document, &claims.sub).await?;
+            match result.status_code() {
+                200..=299 => self.finish_creation(&input.document)?,
+                403 | 410 => {
+                    self.sql.exec("DELETE FROM creation_intents WHERE document=?", vec![input.document.into()])?;
+                }
+                _ => {}
             }
+            self.state.storage().sync().await?;
             Ok(result)
         }
     }
@@ -378,6 +426,8 @@ mod runtime {
                 &worker::worker_sys::WebSocketRequestResponsePair::new("ping", "pong").expect("valid heartbeat"),
             );
             let sql = state.storage().sql();
+            sql.exec("CREATE TABLE IF NOT EXISTS creation_intents(document TEXT PRIMARY KEY)", None)
+                .expect("creation intents");
             sql.exec("CREATE TABLE IF NOT EXISTS projections(document TEXT PRIMARY KEY,payload TEXT NOT NULL)", None)
                 .expect("library projections");
             sql.exec("CREATE TABLE IF NOT EXISTS documents(document TEXT PRIMARY KEY,owned INTEGER NOT NULL,generation INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS deleting(id INTEGER PRIMARY KEY)",None).expect("account registry");
