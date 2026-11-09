@@ -2,6 +2,15 @@
 
 export type AccessState = { document: string, sharing: boolean, generation: number, capability: string | null, role: DocumentRole, };
 
+/**
+ * A server-maintained projection of one document into an account's library.
+ */
+export type AccountEntry = { document: string, role: DocumentRole, title: string, templateId: string, sharing: boolean,
+/**
+ * Monotonic metadata revision, independent of CRDT progress.
+ */
+revision: number, };
+
 export type ApiFailure = { code: string, message: string, };
 
 export type BudgetDecision = { "action": "ready" } | { "action": "wait", milliseconds: number, } | { "action": "tooLarge" };
@@ -19,8 +28,6 @@ export type ConnectionPlan = { document: string, size: number, };
 
 export type CreateRoom = { document: string, };
 
-export type DocumentEntry = { documentId: string, title: string, templateId: string, modifiedAt: number, role: DocumentRole, catalogRevision: number, deleted: boolean, };
-
 export type DocumentMetadata = { title: string, templateId: string, };
 
 export type DocumentRole = "owner" | "editor";
@@ -36,6 +43,11 @@ export type Failure = { outcome: Outcome, message: string, };
 export type FullState = "available" | "waiting" | "retried";
 
 export type JoinDocument = { capability: string, };
+
+/**
+ * Server frames; only a final snapshot page establishes absence from a library.
+ */
+export type LibraryFrame = { "type": "snapshot", entries: Array<AccountEntry>, last: boolean, } | { "type": "upsert", entry: AccountEntry, } | { "type": "remove", document: string, };
 
 /**
  * The next operation, without performing it or sampling a clock.
@@ -66,22 +78,6 @@ export type Pause = { kind: PauseKind, reason: string, };
  * Stable recovery choices shared by every transport and UI.
  */
 export type PauseKind = "roomFull" | "outgrown" | "needsUpdate" | "refused" | "missingHistory" | "filesFull" | "ended";
-
-/**
- * Registry hints for repairing a missing personal catalog reference. Authorization
- * is always checked by the document before any bytes are returned.
- */
-export type RegisteredDocument = { document: string, role: DocumentRole, };
-
-/**
- * One page of the account's registrations in document order. An account has no
- * document cap, so the list is read with `?after=<next>` until `next` is absent.
- */
-export type RegisteredDocuments = { documents: Array<RegisteredDocument>,
-/**
- * The cursor for the following page: this page's last document. Absent on the last page.
- */
-next?: string, };
 
 export type Resource = { key: string, hash: string, size: number, media_type: string, };
 

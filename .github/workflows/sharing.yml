@@ -8,9 +8,6 @@ on:
     branches: [master]
     tags: ["pop-v*"]
     paths:
-      - firebase.json
-      - firestore.rules
-      - firestore.indexes.json
       - apps/sharing/**
       - apps/apple/App/Shared/Assets.xcassets/AppIcon.appiconset/appicon-1024.png
       - crates/pop-sharing-*/**
@@ -46,8 +43,6 @@ jobs:
       - name: Build
         run: bun scripts/build/sharing.ts
       # The built WASM relay on Miniflare: create, join, Stop, account deletion, limits, AASA.
-      - name: Install catalog emulator CLI
-        run: npm install --global firebase-tools@14.17.0
       - name: Qualify
         id: qualify
         run: bun run verify sharing

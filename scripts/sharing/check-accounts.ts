@@ -28,7 +28,7 @@ if (process.versions.bun) {
   process.exit(await child.exited);
 }
 import { SharingHost } from "../../packages/pop/src/wire/constants.generated";
-import type { AccessState, RegisteredDocuments, RoomInfo } from "../../packages/pop/src/wire/sharing.generated";
+import type { AccessState, RoomInfo } from "../../packages/pop/src/wire/sharing.generated";
 
 const hash = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const root = await mkdtemp(join(tmpdir(), "pop-account-relay-"));
@@ -212,7 +212,48 @@ try {
   const base="documents/"+document;
   assert.equal((await call(base+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
   assert.equal((await call(base+"/resources",a,"POST",{app,resources:[]})).status,200);
+  assert.equal((await call(base+"/blobs",a)).status,200,"The creator lists uploaded blobs before Open");
+  assert.equal((await call(base+"/blobs",b)).status,403,"Others cannot");
   assert.equal((await call(base+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
+  // The live account feed is isolated by verified identity and survives reconnects.
+  const library = async (token:string) => {
+    const reply = await call("account/library", token, "GET", undefined, {Upgrade:"websocket", "Sec-WebSocket-Protocol":"pop.library.v1"});
+    assert.equal(reply.status,101);
+    assert.equal(reply.headers.get("Sec-WebSocket-Protocol"),"pop.library.v1");
+    const socket = reply.webSocket!; socket.accept();
+    const queue:any[]=[]; const waiters:((value:any)=>void)[]=[];
+    socket.addEventListener("message", (event:any)=>{ if(event.data === "pong")return; const frame=JSON.parse(event.data); const waiter=waiters.shift(); if(waiter)waiter(frame);else queue.push(frame); });
+    const next=()=>queue.length ? Promise.resolve(queue.shift()) : new Promise<any>((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error("Expected library frame")),5000);
+      waiters.push(frame=>{clearTimeout(timer);resolve(frame);});
+    });
+    return {socket,next};
+  };
+  const libraryNamespace = await worker.getDurableObjectNamespace("DOCUMENTS");
+  const libraryDocument = libraryNamespace.get(libraryNamespace.idFromName(document));
+  await libraryDocument.fetch("https://test/__test/alarm");
+  const ownerLibrary=await library(a), outsiderLibrary=await library(b);
+  const initialLibrary=await ownerLibrary.next();
+  assert.equal(initialLibrary.type,"snapshot"); assert.equal(initialLibrary.last,true);
+  assert.equal(initialLibrary.entries[0].document,document);
+  assert.deepEqual((await outsiderLibrary.next()).entries,[],"An unrelated account sees no private entries");
+  const bootstrapAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const bootstrapAccount=bootstrapAccounts.get(bootstrapAccounts.idFromName(hash(Buffer.from("creator-a"))));
+  await bootstrapAccount.fetch("https://test/__test/fail-descriptions",{method:"POST",body:JSON.stringify({enabled:true})});
+  await json(base,a,"PATCH",{title:"Live title",templateId:"fixture"});
+  await libraryDocument.fetch("https://test/__test/alarm");
+  const owed=await (await libraryDocument.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT value FROM meta WHERE key='library_pending'"})})).json() as {value:string}[];
+  assert.equal(owed[0]!.value,"1","Failed publication stays durable without another edit");
+  await bootstrapAccount.fetch("https://test/__test/fail-descriptions",{method:"POST",body:JSON.stringify({enabled:false})});
+  await libraryDocument.fetch("https://test/__test/alarm");
+  let changed=await ownerLibrary.next();
+  while(changed.type === "upsert" && changed.entry.title !== "Live title")changed=await ownerLibrary.next();
+  assert.equal(changed.type,"upsert"); assert.equal(changed.entry.title,"Live title");
+  ownerLibrary.socket.close(); outsiderLibrary.socket.close();
+  await bootstrapAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"DELETE FROM projections"})});
+  const reconnected=await library(secondSession);
+  assert.equal((await reconnected.next()).entries[0].title,"Live title", "Existing registrations backfill without a reset or Firestore");
+  reconnected.socket.close();
   assert.equal((await call(base+"/seed",b)).status,403,"private bytes require owner identity");
   assert.equal((await call(base+"/sharing","not-a-valid-identity")).status,401,"invalid identity is retryable authentication, not lost membership");
   assert.equal((await call(base+"/sharing",b)).status,403,"a valid nonmember is denied access");
@@ -233,6 +274,12 @@ try {
   assert.equal((await call(base+"/seed",enabled.capability!)).status,403,"Invitation secrets cannot authorize document reads");
   const member=await json<AccessState>(base+"/members",b,"POST",{capability:enabled.capability});assert.equal(member.role,"editor");
   assert.equal((await call(base+"/seed",b)).status,200);
+  await libraryDocument.fetch("https://test/__test/alarm");
+  const memberLibrary=await library(b);
+  const memberSnapshot=await memberLibrary.next();
+  assert.equal(memberSnapshot.entries[0].document,document);
+  assert.equal(memberSnapshot.entries[0].role,"editor");
+
   const connect=async(token:string)=>{
     const response=await call(base+"/sync",token,"GET",undefined,{Upgrade:"websocket","Sec-WebSocket-Protocol":SharingHost.socketProtocol});
     assert.equal(response.status,101);const socket=response.webSocket;assert(socket);socket.accept();
@@ -326,7 +373,11 @@ try {
     const held=async()=>await count("registrations")>0,stored=async()=>await count("registration-responses")>0;
     return {name,token:uid(name,"anonymous"),account,hook,held,stored};
   };
-  const lists=async(token:string,id:string)=>(await json<RegisteredDocuments>("account/documents",token)).documents.some(row=>row.document===id);
+  const registered = async(token:string,id:string) => {
+    const name = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()).sub;
+    const account = accountNamespace.get(accountNamespace.idFromName(hash(Buffer.from(name))));
+    return (await stubSQL<{n:number}>(account,"SELECT count(*) AS n FROM documents WHERE document=?",[id]))[0]!.n > 0;
+  };
   const queuedAt=async(stub:typeof documentStub,name:string)=>(await stubSQL<{n:number}>(stub,"SELECT count(*) AS n FROM pending_registry WHERE uid=?",[name]))[0]!.n>0;
   const leavingCookie=await resourceSession(b),stayingCookie=await resourceSession(staying);
   assert.equal(await readAttachment(leavingCookie),200,"A member's resource session reads attachments");
@@ -336,9 +387,14 @@ try {
   await leaver.hook("release-failure",{enabled:true,committed:true});
   assert.equal((await call(base+"/members/me",b,"DELETE")).status,200,"Leave succeeds whatever the account replies");
   assert.equal((await call(base+"/seed",b)).status,403,"leave removes identity membership without deleting canonical bytes");
+  let removal = await memberLibrary.next();
+  while(removal.type !== "remove")removal = await memberLibrary.next();
+  assert.equal(removal.document, document, "Leave removes the entry live");
+  memberLibrary.socket.close();
+
   assert.equal(await readAttachment(leavingCookie),403,"Leaving ends that member's resource sessions before they expire");
   assert.equal(await readAttachment(stayingCookie),200,"Another member's resource session stays valid");
-  assert.ok(!await lists(b,document)&&await queuedAt(documentStub,leaver.name),"The release without a reply stays queued");
+  assert.ok(!await registered(b,document)&&await queuedAt(documentStub,leaver.name),"The release without a reply stays queued");
   await leaver.hook("release-failure",{enabled:false});
   assert.equal((await documentStub.fetch("https://test/__test/alarm")).status,200);
   assert.ok(!await queuedAt(documentStub,leaver.name),"Cleanup completes the queued release");
@@ -383,12 +439,12 @@ try {
   await lost.hook("fail-registration-response");
   assert.equal((await joinIdle(lost.token)).status,409);
   assert.equal((await call(idleBase+"/seed",lost.token)).status,403,"A failed registration reply authorizes nothing");
-  assert.ok(await lists(lost.token,idle)&&await queued(lost.name),"The stored hint is queued for release");
+  assert.ok(await registered(lost.token,idle)&&await queued(lost.name),"The stored hint is queued for release");
   await cleanup();
-  assert.ok(await lists(lost.token,idle)&&await queued(lost.name),"A refused release stays queued");
+  assert.ok(await registered(lost.token,idle)&&await queued(lost.name),"A refused release stays queued");
   await lost.hook("release-failure",{enabled:false});
   await cleanup();
-  assert.ok(!await lists(lost.token,idle)&&!await queued(lost.name),"A retried cleanup releases the stale hint");
+  assert.ok(!await registered(lost.token,idle)&&!await queued(lost.name),"A retried cleanup releases the stale hint");
   // No reply in time is an unknown outcome: the join fails closed, and its queued release
   // (whose alarm may already have run it) removes what the account stored.
   const slow=joiner("slow-account");
@@ -397,7 +453,7 @@ try {
   assert.ok(await slow.stored()&&await memberRows(slow.name)===0,"The account stored it; the document did not admit it");
   await slow.hook("finish-registration-response");
   await cleanup();
-  assert.ok(!await lists(slow.token,idle)&&!await queued(slow.name),"Cleanup releases the hint of a timed-out registration");
+  assert.ok(!await registered(slow.token,idle)&&!await queued(slow.name),"Cleanup releases the hint of a timed-out registration");
   // A reset after the account stored a registration, before the join recorded anything more:
   // the release was queued with its alarm before the call, so cleanup still finds the hint.
   const resetDocument=await liveDocument("00000000-0000-4000-8000-000000000092");
@@ -410,12 +466,12 @@ try {
   assert.equal((await call(resetDocument.base+"/seed",reset.token)).status,403,"A join interrupted by a reset admits no one");
   await reset.hook("finish-registration-response");
   const restarted=documents.get(documents.idFromName(documentName(resetDocument.id))); // A reset breaks old stubs.
-  assert.ok(await lists(reset.token,resetDocument.id),"The account kept the registration");
+  assert.ok(await registered(reset.token,resetDocument.id),"The account kept the registration");
   assert.ok(await queuedAt(restarted,reset.name),"Its release outlives the reset");
   assert.notEqual(await (await restarted.fetch("https://test/__test/alarm-time")).json(),null,
     "Its cleanup alarm outlives the reset");
   assert.equal((await restarted.fetch("https://test/__test/alarm")).status,200);
-  assert.ok(!await lists(reset.token,resetDocument.id)&&!await queuedAt(restarted,reset.name),
+  assert.ok(!await registered(reset.token,resetDocument.id)&&!await queuedAt(restarted,reset.name),
     "Cleanup releases the hint the interrupted join left");
   // A delayed cleanup of a failed attempt never removes the registration of the rejoin that
   // succeeds meanwhile. The rejoin's registration is stored, its reply held; the cleanup has
@@ -432,7 +488,7 @@ try {
   await rejoin.hook("finish-registration-response");
   assert.equal((await rejoinRetry).status,200);
   await delayed;
-  assert.ok(await lists(rejoin.token,idle),"A successful rejoin keeps its registration through a delayed cleanup");
+  assert.ok(await registered(rejoin.token,idle),"A successful rejoin keeps its registration through a delayed cleanup");
   assert.equal((await call(idleBase+"/seed",rejoin.token)).status,200,"The rejoined member still works");
   assert.ok(!await queued(rejoin.name));
   // Concurrent joins by one identity run in turn: the first fails, the second succeeds, and
@@ -449,7 +505,7 @@ try {
   assert.equal((await secondJoin).status,200);
   await cleanup();
   assert.equal(await memberRows(twice.name),1);
-  assert.ok(await lists(twice.token,idle),"The failed attempt's cleanup keeps the successful join's registration");
+  assert.ok(await registered(twice.token,idle),"The failed attempt's cleanup keeps the successful join's registration");
   // Account deletion while that account's join is pending. Deletion holds the account's lock
   // while its leave waits for the document's; the join's registration needs neither, so the
   // fence refuses it and nothing deadlocks. The leave then removes the existing member.
@@ -492,7 +548,7 @@ try {
   assert.equal((await revokedJoin).status,403);
   assert.equal(await memberRows(revokedJoiner.name),0,"A join revoked during its registration is not a member");
   await cleanup();
-  assert.ok(!await lists(revokedJoiner.token,idle),"Cleanup releases the revoked join's hint");
+  assert.ok(!await registered(revokedJoiner.token,idle),"Cleanup releases the revoked join's hint");
   // Deletion likewise ends a document at once. The pending join fails closed; deletion's
   // registry cleanup waits for it, and the next cleanup releases its hint.
   const stopping=await liveDocument("00000000-0000-4000-8000-000000000094");
@@ -508,7 +564,7 @@ try {
   assert.equal((await stoppingDeletion).status,200);
   assert.equal((await stopping.stub.fetch("https://test/__test/alarm")).status,200);
   for (const token of [stoppingMember.token,stopper.token])
-    assert.ok(!await lists(token,"00000000-0000-4000-8000-000000000094"),"Deletion releases every member's and pending join's hint");
+    assert.ok(!await registered(token,"00000000-0000-4000-8000-000000000094"),"Deletion releases every member's and pending join's hint");
   // Open names the seed it makes live: an older bootstrap attempt cannot publish the seed
   // a later attempt uploaded. Nothing else fences it; attachments are the creator's to upload first.
   const competing="00000000-0000-4000-8000-000000000093",competingBase="documents/"+competing;
@@ -542,10 +598,10 @@ try {
   assert.deepEqual([...statuses].sort((x,y)=>x-y),[200,429],"Exactly one racing join takes the last place");
   assert.equal(await crowdedMembers(),64,"The member limit holds under concurrent joins");
   const [admitted,refused]=statuses[0]===200?[held,racing]:[racing,held];
-  assert.ok(await lists(admitted.token,crowded),"The admitted member's account lists the document");
-  assert.ok(!await lists(refused.token,crowded),"A join refused for the limit leaves no account registration");
+  assert.ok(await registered(admitted.token,crowded),"The admitted member's account lists the document");
+  assert.ok(!await registered(refused.token,crowded),"A join refused for the limit leaves no account registration");
   assert.equal((await crowdedJoin(admitted.token)).status,200,"A member joining again at the limit keeps its place");
-  assert.ok(await crowdedMembers()===64&&await lists(admitted.token,crowded),"A rejoining member counts once and keeps its registration");
+  assert.ok(await crowdedMembers()===64&&await registered(admitted.token,crowded),"A rejoining member counts once and keeps its registration");
   assert.equal((await call(base+"/seed",a)).status,200);
   assert.equal((await call(base,a,"PATCH",{title:"Repairable private document",templateId:"fixture"})).status,200);
   // A metadata write still reading its body when the owner deletes the document is refused
@@ -581,12 +637,22 @@ try {
   assert.equal((await call(repairBase+"/resources",a,"POST",{app,resources:[]})).status,200);
   assert.equal((await call(repairBase+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
   await worker.dispose();worker=runtime();
-  const registry=await (await call("account/documents",secondSession)).json() as RegisteredDocuments;
-  assert(registry.documents.some(row=>row.document===document&&row.role==="owner"));
-  assert(registry.documents.some(row=>row.document===repairDocument&&row.role==="owner"),"an acknowledged cloud upload remains discoverable for client catalog repair");
+  const restored = await library(secondSession);
+  const restoredEntries:any[] = [];
+  for (;;) {
+    const page = await restored.next();
+    assert.equal(page.type,"snapshot");
+    restoredEntries.push(...page.entries);
+    if (page.last) break;
+  }
+  restored.socket.close();
+  assert(restoredEntries.some(row=>row.document===document&&row.role==="owner"));
+  assert(restoredEntries.some(row=>row.document===repairDocument&&row.role==="owner"),"Acknowledged uploads remain discoverable through the live library after restart");
   const metadata=await (await call(base+"/metadata",secondSession)).json();
   assert.deepEqual(metadata,{title:"Repairable private document",templateId:"fixture"});
-  assert.deepEqual(await (await call("account/documents",b)).json(),{documents:[]},"leave removes the guest registry hint");
+  const departed = await library(b);
+  assert.deepEqual((await departed.next()).entries,[],"Leave removes the guest library entry after restart");
+  departed.socket.close();
   assert.equal((await call(base+"/seed",secondSession)).status,200,"restart retains private document bytes");
   assert.equal((await call(base,secondSession,"DELETE")).status,200);
   assert.equal((await call(base+"/seed",secondSession)).status,410);
@@ -602,43 +668,7 @@ try {
     const id = `00000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`;
     assert.equal((await call("documents", prolific, "POST", { document: id })).status, 204, "no account document cap: " + index);
   }
-  const listed = (await (await call("account/documents", prolific)).json()) as RegisteredDocuments;
-  assert.equal(listed.documents.length, 12);
-  assert.equal(listed.next, undefined, "a listing that fits one page has no cursor");
-  const after = listed.documents[4]!.document;
-  const rest = (await (await call("account/documents?after=" + after, prolific)).json()) as RegisteredDocuments;
-  assert.deepEqual(rest.documents, listed.documents.slice(5), "a cursor lists the registrations after it in document order");
-  assert.equal((await call("account/documents?after=invalid", prolific)).status, 400, "an invalid cursor is refused");
-  // Past one page (ACCOUNT_DOCUMENTS_PAGE = 1000), the real handler pages by cursor: every
-  // registration exactly once, in document order. Rows go straight into the account's
-  // registry; account creation's own rate limit would otherwise bound the fixture.
-  const pagedName = "paged-account";
-  const paged = uid(pagedName);
-  const accounts = await worker.getDurableObjectNamespace("ACCOUNTS");
-  const pagedAccount = accounts.get(accounts.idFromName(hash(Buffer.from(pagedName))));
-  const registrations = 2345;
-  const accountSQL = async (sql: string, args: unknown[] = []) =>
-    (await pagedAccount.fetch("https://test/__test/sql", { method: "POST", body: JSON.stringify({ sql, args }) })).json() as Promise<{ n: number }[]>;
-  await accountSQL("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<?) INSERT INTO documents SELECT printf('00000000-0000-4000-8000-%012x',i), CASE WHEN i%3=0 THEN 0 ELSE 1 END, 0 FROM n", [registrations]);
-  assert.equal((await accountSQL("SELECT count(*) AS n FROM documents"))[0]!.n, registrations);
-  const expected = Array.from({ length: registrations }, (_, index) => ({
-    document: `00000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, "0")}`,
-    role: (index + 1) % 3 === 0 ? "editor" : "owner",
-  }));
-  const pages: RegisteredDocuments[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await json<RegisteredDocuments>("account/documents" + (cursor ? "?after=" + cursor : ""), paged);
-    pages.push(page);
-    cursor = page.next;
-    assert.ok(pages.length <= 4, "the cursor reaches the last page");
-  } while (cursor);
-  assert.deepEqual(pages.map((page) => page.documents.length), [1000, 1000, 345], "full pages, then the remainder");
-  for (const page of pages.slice(0, -1))
-    assert.equal(page.next, page.documents.at(-1)!.document, "a full page's cursor is its last document");
-  assert.equal(pages.at(-1)!.next, undefined, "the last page has no cursor");
-  assert.deepEqual(pages.flatMap((page) => page.documents), expected, "every registration once, in order");
-  for (const path of ["documents/" + document + "/blob/" + "b".repeat(64) + "/extra", "account/documents/" + document, "account/documents/" + document + "/extra", "account/extra"]) {
+  for (const path of ["documents/" + document + "/blob/" + "b".repeat(64) + "/extra", "account/library/" + document, "account/library/" + document + "/extra", "account/extra"]) {
     assert.equal((await call(path, undefined, "GET")).status, 404, "unlisted routes never reach a handler: " + path);
   }
   assert.equal((await call("documents/" + document + "/members", prolific, "DELETE")).status, 404, "only members/me leaves");

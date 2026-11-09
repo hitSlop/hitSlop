@@ -14,7 +14,7 @@ here. Local creation and adoption do not add an Inbox item.
 Rust stores the opened flag in the device's library index. Receiving a new remote
 reference creates an unopened entry. Registering its real document owner marks it
 opened; downloading alone does not. Metadata refresh and removing a download never
-reset this flag. Inbox state belongs to this device, not Firestore or the shared
+reset this flag. Inbox state belongs to this device, not the cloud library or the shared
 document.
 
 ## Document badges
@@ -49,11 +49,11 @@ startup, foreground and credential changes. Account-generation checks fence late
 
 ## Sync and accounts
 
-Cloud transport is event driven, with no polling of the service: Firestore listeners
-deliver the person's references and each owner's connection reports its sync status. The
+Cloud transport is event driven, with no polling of the service: one Rust account connection
+delivers the person's library metadata and each owner's connection reports its sync status. The
 native library also re-reads its local index every two seconds, with no network request,
 to notice changes made by another process. The Mac and iPhone use one default
-Firebase app (Authentication, Firestore, Analytics, Crashlytics); telemetry collection is
+Firebase app (Authentication, Analytics, Crashlytics); telemetry collection is
 on only in Release builds. Cloud documents are described in [cloud documents](cloud-documents.md).
 
 ## Layout and interaction

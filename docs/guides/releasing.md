@@ -135,7 +135,7 @@ certificate for direct DMG distribution. App Store Connect credentials are used 
 for notarization; packaging does not create development certificates or provisioning profiles.
 
 Mac and iPhone releases use the same Firebase account and cloud-document service.
-Deploy and qualify Firestore rules/indexes and the Document DO/R2 service before
+Deploy and qualify the account library feed and Document DO/R2 service before
 shipping clients that require it. Associated domains and Keychain access require
 a **Developer ID provisioning profile** for
 team `78UAXU8QG8`, App ID `78UAXU8QG8.com.hitslop.app`. Store its base64 bytes in the
@@ -242,7 +242,7 @@ depend on them:
 - Keychain access group `78UAXU8QG8.com.hitslop.sharing`; app groups
   `78UAXU8QG8.com.hitslop.widgets` (Mac) and `group.com.hitslop` (iPhone).
 - Apple Services ID `com.hitslop.app.signin`, the Mac's web sign-in flow.
-- Firebase project `hitslopapp`, serving Auth, Firestore, Analytics and Crashlytics.
+- Firebase project `hitslopapp`, serving Auth, Analytics and Crashlytics.
 - `dotslop.com`, the isolated browser rendering domain whose UUID subdomains serve
   authored pages.
 - The npm package `@hitslop/pop` and the GitHub repository `hitSlop/dotpop`.
@@ -332,7 +332,7 @@ if SQLite recovers a hot journal first, check the last committed state and the r
 Mac/iPhone edits, offline/reconnect, sign-out,
 anonymous Chrome joining and Apple account linking. Transfer photos totalling more
 than 16 MiB from Mac to iPhone and verify the images after reopening. Exercise outgrowth
-and Save Unshared Copy. Deploy the final Firestore rules, then the document Worker and
+and Save Unshared Copy. Deploy the account/document Worker and
 browser host, following the sharing operator checklist. The candidate workflow captures
 the first lineage-2 corpus; pin its retained hash after publication.
 

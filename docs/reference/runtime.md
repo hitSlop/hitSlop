@@ -334,7 +334,7 @@ closed export takes no writer lock and can render while another process holds th
 
 ## Telemetry
 
-One default Firebase app serves Auth, Firestore, Crashlytics and Analytics on macOS and iOS. Telemetry collection is on only in Release: the Info.plist flags keep it off until configuration runs, and Debug and test builds never collect. App Check remains deferred. Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
+One default Firebase app serves Auth, Crashlytics and Analytics on macOS and iOS. Telemetry collection is on only in Release: the Info.plist flags keep it off until configuration runs, and Debug and test builds never collect. App Check remains deferred. Analytics events record launch, creation source, opening, duplication, and export format. Cancelled operations produce only fixed breadcrumbs.
 
 Non-fatals carry a fixed operation, classification (platform/authored/rejection), and reason. Native storage and WebKit callbacks supply diagnostic categories before error text is flattened. Fixed category-specific domains and stable numeric codes distinguish issue groups; per-event keys can include export format. No document IDs, paths, titles, contents, guest codes, authored error strings, or raw error userInfo enter reports. Document context never uses global Crashlytics keys.
 

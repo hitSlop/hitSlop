@@ -180,7 +180,7 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
     guard !deleting else { throw PopFailure("Account deletion is in progress.") }
     let user = try await identity()
     guard let auth else { throw PopFailure("Sign-in is unavailable in this app.") }
-    await CloudCatalog.shared.connect(auth: auth, user: user)
+    await CloudAccount.connect(auth: auth, user: user)
     guard auth.currentUser?.uid == user.uid, PopLibrary.shared.isReady,
       PopLibrary.shared.accountIdentity == user.uid, !deleting
     else {
@@ -219,7 +219,7 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
         if previous != self.observedUID {
           NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
         }
-        await CloudCatalog.shared.connect(auth: auth, user: auth.currentUser)
+        await CloudAccount.connect(auth: auth, user: auth.currentUser)
         // Firebase refreshes the retained identity; push its latest token into
         // existing Rust connections even when no document sharing panel is open.
         await PopLibrary.shared.syncNow()
@@ -345,8 +345,11 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
       }
       updateIdentity()
       NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
-      try await verify()
-      await CloudCatalog.shared.connect(auth: auth, user: auth.currentUser)
+      guard let user = auth.currentUser else { throw PopFailure("Sign in required") }
+      _ = try await user.getIDToken(forcingRefresh: true)
+      message = ""
+      updateIdentity()
+      await CloudAccount.connect(auth: auth, user: auth.currentUser)
       return true
     } catch AppleWebCallback.Failure.cancelled {
       return false
@@ -360,15 +363,6 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
       message = "Could not finish signing in. Try again."
       return false
     }
-  }
-  private func verify() async throws {
-    guard let user = auth?.currentUser else { throw PopFailure("Sign in required") }
-    let token = try await user.getIDToken(forcingRefresh: true)
-    try await Task.detached(priority: .utility) {
-      try sharingVerifyAccount(token: token)
-    }.value
-    message = ""
-    updateIdentity()
   }
   private var deleting = false
 

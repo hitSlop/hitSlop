@@ -14,9 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pop_sharing_protocol::http::CreateRoom::export_all(&config)?;
     pop_sharing_protocol::http::OpenRoom::export_all(&config)?;
     pop_sharing_protocol::http::RoomInfo::export_all(&config)?;
-    pop_sharing_protocol::document::DocumentEntry::export_all(&config)?;
-    pop_sharing_protocol::document::RegisteredDocument::export_all(&config)?;
-    pop_sharing_protocol::document::RegisteredDocuments::export_all(&config)?;
+    pop_sharing_protocol::library::LibraryFrame::export_all(&config)?;
     pop_sharing_protocol::document::DocumentMetadata::export_all(&config)?;
 
     pop_sharing_protocol::document::AccessState::export_all(&config)?;
@@ -67,7 +65,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "backoffMinMs":pop_sharing_protocol::limits::BACKOFF_MIN_MS,"backoffMaxMs":pop_sharing_protocol::limits::BACKOFF_MAX_MS,
         "hostPolicy":pop_sharing_protocol::host_policy(),"pagePolicy":pop_sharing_protocol::page_policy()
     }))?));
-    std::fs::write(directory.join("sharing.openapi.json"), pop_sharing_protocol::http::openapi().to_pretty_json()?)?;
     std::fs::write(directory.join("constants.generated.ts"), constants)?;
     // ts-rs exports types. Small value registries come from their Rust data directly.
     std::fs::write(

@@ -32,17 +32,16 @@ opaque Loro updates and never interprets them. Operators deploy it from
 ## API
 
 Every route is a row of `ROUTES` in
-`crates/pop-sharing-protocol/src/routes.rs`, which drives dispatch, per-IP rate limiting
-and the generated [`openapi.json`](../apps/sharing/openapi.json). An unlisted method,
+`crates/pop-sharing-protocol/src/routes.rs`, which drives dispatch and per-IP rate limiting. An unlisted method,
 path or trailing segment is a 404 before any limiter, identity check or Durable Object.
-JSON bodies over their limit are 413 and malformed ones 400. Sockets negotiate
-`pop.sync.v2`; an older protocol gets 426 `requires_update`.
+JSON bodies over their limit are 413 and malformed ones 400. Document sockets negotiate
+`pop.sync.v2`; the library uses `pop.library.v1`. An unsupported protocol gets 426 `requires_update`.
 
 | Route | Who | Effect |
 |---|---|---|
 | `GET /health` | public | Liveness. |
 | `POST /v1/documents` | named identity | Idempotently reserve the UUID; 204 with no body. |
-| `GET /v1/account/documents` | identity | Registered UUIDs and roles, a hint for repairing a missing catalog entry. Paged: up to 1,000 per reply, `?after=<last uuid>` continues and `next` marks another page; the client follows every page. |
+| `GET /v1/account/library` | identity | WebSocket: complete library snapshot followed by metadata updates and removals. |
 | `DELETE /v1/account` | identity | Fence the account, delete owned documents, leave joined ones. |
 | `GET /v1/documents/{document}` | member | Phase, seed and app metadata, and whether compaction is due. It never carries the invitation. |
 | `PATCH /v1/documents/{document}` | owner | Store title and template ID. |
@@ -116,26 +115,33 @@ a large scalar value every commit stores the whole value again each time (ratio 
 - **Delete account** deletes owned documents and memberships, then the Firebase identity.
 - Cloud documents never expire from inactivity.
 
-## Personal catalog
+## Personal library
 
-Firestore is each person's list of document references at
-`users/{uid}/pops/{documentId}` (see `firestore.rules`): a client reads and writes only
-its own entries. After Cloudflare acknowledges an upload, Rust records a pending
-catalog write, Swift publishes it with the Firestore SDK and acknowledges it; retry is
-idempotent. The entry carries identity and display metadata, never access: the
-Durable Object checks every request. A guest's entry can outlive revocation until
-their client next checks access; it cannot read bytes. If an upload succeeded but the
-entry was never written, the client repairs it from `GET /v1/account/documents`. The
-Worker has no Firestore credentials, and a Firestore outage never blocks editing or an
-open connection.
+Each account Durable Object stores a derived library projection: document ID, title,
+template ID, owner/editor role, sharing state and metadata revision. The Document
+Object remains the sole content and permissions authority. After Open, rename,
+sharing changes or Join, it durably queues publication and an alarm. Bounded fan-out
+retries failed deliveries without requiring another edit. Leave and deletion remove
+account entries. Uploading documents stay hidden until Open succeeds.
+
+`GET /v1/account/library` negotiates `pop.library.v1` with a Firebase identity.
+It sends byte/count-bounded snapshot pages, then upsert/remove messages. Clients apply
+absence only after a complete snapshot; interruption preserves the last known library.
+One account connection serves all library entries, and every device of that account
+has its own connection. Account entries never contain invitation secrets or document bytes.
+
+Existing registrations backfill from Document Object metadata when their account projection is missing; the cutover needs no cloud reset.
+
+Rust owns the subscription and local index. Foreground reconnect obtains a current
+snapshot; backgrounding stops the account socket. Account switches fence old callbacks.
+Expired sockets cannot receive private updates and reconnect with refreshed identity.
+Firebase remains responsible for Authentication, Analytics and Crashlytics.
+
+The activity badge and its seen-state/protocol changes are deferred. Document replication
+continues using the existing version-vector protocol.
 
 ## Operations
 
-Deployment, the operator checklist and local checks are in
-[apps/sharing/README.md](../apps/sharing/README.md). Verify with `bun run verify sharing`
-(Rust WASM Worker in Miniflare, plus the Firestore rules check below) and
-`bun run verify browser` for anonymous join, edit, offline reopen and export.
-
-```sh
-firebase emulators:exec --only auth,firestore --project demo-pop-catalog 'bun scripts/sharing/check-firestore.ts'
-```
+Deployment and local checks are in [apps/sharing/README.md](../apps/sharing/README.md).
+Verify the Rust Worker, SQLite Durable Objects and R2 with `bun run verify sharing`;
+use `bun run verify browser` for anonymous join, edit, offline reopen and export.

@@ -29,8 +29,7 @@ Apple's page in a browser sheet; iPhone uses Apple's native sign-in.
 
 Enabling sync uploads the embedded app, document state and referenced attachments to
 Cloudflare. Durable Objects and private R2 storage hold the current document and the
-bounded replication data needed for synchronization. The client separately maintains
-Firestore references with account-scoped
+bounded replication data needed for synchronization. Account Durable Objects hold derived
 library metadata such as document IDs, titles, app identity and access status. This
 content is not end-to-end encrypted. Synchronization retains document history, including
 content removed from view; routine checkpoints and compaction do not erase it. Live

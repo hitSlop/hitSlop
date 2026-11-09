@@ -3,7 +3,6 @@ use crate::limits;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Resource {
     pub key: String,
     pub hash: String,
@@ -12,7 +11,6 @@ pub struct Resource {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Manifest {
     pub app: String,
     pub resources: Vec<Resource>,

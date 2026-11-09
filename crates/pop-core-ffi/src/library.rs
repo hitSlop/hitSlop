@@ -1,6 +1,6 @@
 //! Typed device-local index and persistent cloud document composition.
 use super::*;
-use core::{CatalogOutcome, DocumentEntry, DocumentRole, Entry, Issue};
+use core::{DocumentRole, Entry, Issue};
 use pop_library as core;
 
 /// The document lineage this build reads and writes. Swift scopes per-account flags to it so a
@@ -33,22 +33,6 @@ pub enum Issue {
 pub enum DocumentRole {
     Owner,
     Editor,
-}
-#[uniffi::remote(Record)]
-pub struct CatalogOutcome {
-    pub applied: u32,
-    pub rejected: u32,
-    pub deferred: u32,
-}
-#[uniffi::remote(Record)]
-pub struct DocumentEntry {
-    pub document_id: String,
-    pub title: String,
-    pub template_id: String,
-    pub modified_at: u64,
-    pub role: core::DocumentRole,
-    pub catalog_revision: u64,
-    pub deleted: bool,
 }
 #[uniffi::remote(Record)]
 pub struct Entry {
@@ -88,20 +72,11 @@ impl NativeLibrary {
     pub fn reconcile(&self) -> Result<(), LibraryError> {
         Ok(self.0.reconcile()?)
     }
-    pub fn pending_catalog_writes(&self) -> Result<Vec<core::DocumentEntry>, LibraryError> {
-        Ok(self.0.pending_catalog_writes()?)
-    }
-    pub fn ack_catalog_write(&self, document_id: String, catalog_revision: u64) -> Result<(), LibraryError> {
-        Ok(self.0.ack_catalog_write(&document_id, catalog_revision)?)
-    }
     pub fn account_paths(&self) -> Result<Vec<String>, LibraryError> {
         Ok(self.0.account_paths()?)
     }
     pub fn entries(&self) -> Result<Vec<core::Entry>, LibraryError> {
         Ok(self.0.entries()?)
-    }
-    pub fn receive_catalog(&self, entries: Vec<core::DocumentEntry>) -> Result<core::CatalogOutcome, LibraryError> {
-        Ok(self.0.receive_catalog(&entries)?)
     }
     pub fn register_owner(&self, owner: Arc<crate::owner::NativeOwner>) -> Result<(), LibraryError> {
         Ok(self.0.register(&owner.0)?)
@@ -120,6 +95,9 @@ impl NativeLibrary {
     }
     pub fn download(&self, id: String, token: String) -> Result<core::Entry, LibraryError> {
         Ok(self.0.download(&id, &token)?)
+    }
+    pub fn set_account_active(&self, active: bool) {
+        self.0.set_account_active(active);
     }
     pub fn sync(&self, token: String) -> Result<(), LibraryError> {
         Ok(self.0.sync(&token)?)

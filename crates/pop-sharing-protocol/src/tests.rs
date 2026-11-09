@@ -3,6 +3,68 @@ use crate::{document::*, envelope, frame::*, hex, http::*, resources::*};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
+fn library_entry(n: usize, title: String) -> crate::library::AccountEntry {
+    crate::library::AccountEntry {
+        document: format!("00000000-0000-4000-8000-{n:012x}"),
+        role: DocumentRole::Owner,
+        title,
+        template_id: "test".into(),
+        sharing: false,
+        revision: 1,
+    }
+}
+
+#[test]
+fn library_snapshot_pages_bound_escaped_bytes_and_preserve_every_entry() {
+    use crate::library::{LibraryFrame, snapshot_pages};
+    let entries: Vec<_> = (0..600).map(|n| library_entry(n, "\0".repeat(crate::limits::TITLE_BYTES))).collect();
+    let pages = snapshot_pages(entries.clone()).unwrap();
+    assert!(pages.len() > 3, "Escaped control characters must split before the entry-count limit");
+    let mut received = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        assert!(page.len() <= crate::CONTROL_BYTES);
+        let LibraryFrame::Snapshot { entries, last } = LibraryFrame::decode(page.as_bytes()).unwrap() else {
+            panic!("Expected snapshot");
+        };
+        assert_eq!(last, i == pages.len() - 1);
+        assert!(entries.len() <= crate::limits::ACCOUNT_SNAPSHOT_PAGE);
+        received.extend(entries);
+    }
+    assert_eq!(received, entries);
+}
+
+#[test]
+fn library_empty_snapshot_and_count_bounded_pages_complete() {
+    use crate::library::{LibraryFrame, snapshot_pages};
+    let pages = snapshot_pages([]).unwrap();
+    assert_eq!(pages.len(), 1);
+    assert_eq!(
+        LibraryFrame::decode(pages[0].as_bytes()).unwrap(),
+        LibraryFrame::Snapshot { entries: vec![], last: true }
+    );
+    let pages = snapshot_pages((0..257).map(|n| library_entry(n, "Small".into()))).unwrap();
+    assert_eq!(pages.len(), 2);
+    let LibraryFrame::Snapshot { entries, last } = LibraryFrame::decode(pages[0].as_bytes()).unwrap() else {
+        panic!("Expected snapshot");
+    };
+    assert_eq!(entries.len(), 256);
+    assert!(!last);
+}
+
+#[test]
+fn library_frames_refuse_invalid_identity_metadata_and_oversized_input() {
+    use crate::library::LibraryFrame;
+    let mut entry = library_entry(1, "Valid".into());
+    entry.revision = 0;
+    assert!(LibraryFrame::Upsert { entry: entry.clone() }.encode().is_err());
+    entry.revision = 1;
+    entry.title = "é".repeat(crate::limits::TITLE_BYTES);
+    assert!(LibraryFrame::Upsert { entry }.encode().is_err());
+    assert!(LibraryFrame::Remove { document: "other-account".into() }.encode().is_err());
+    assert_eq!(LibraryFrame::decode(&vec![b' '; crate::CONTROL_BYTES + 1]).unwrap_err().code, crate::Code::TooLarge);
+    assert!(LibraryFrame::decode(br#"{"type":"upsert","entry":{}}"#).is_err());
+}
+
 fn unhex(text: &str) -> Vec<u8> {
     (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
 }
@@ -52,9 +114,6 @@ fn decode_as(kind: &str, input: &Value) -> Result<Value, serde_json::Error> {
         "AccessState" => decoded::<AccessState>(input),
         "DocumentRole" => decoded::<DocumentRole>(input),
         "DocumentMetadata" => decoded::<DocumentMetadata>(input),
-        "DocumentEntry" => decoded::<DocumentEntry>(input),
-        "RegisteredDocument" => decoded::<RegisteredDocument>(input),
-        "RegisteredDocuments" => decoded::<RegisteredDocuments>(input),
         "ConnectionPlan" => decoded::<ConnectionPlan>(input),
         "SharingControl" => decoded::<SharingControl>(input),
         "SharingEvent" => decoded::<SharingEvent>(input),
@@ -85,17 +144,27 @@ fn baseline_http_dtos_and_extra_reply_fields() {
         }
     }
 }
-/// Every schema the service publishes has an example a reader must decode.
-#[cfg(feature = "openapi")]
+/// Keep HTTP wire coverage independent from documentation generators.
 #[test]
-fn every_published_schema_has_a_fixture() {
-    let covered: std::collections::HashSet<String> =
-        http_cases().iter().map(|case| case["type"].as_str().unwrap().to_owned()).collect();
-    let description = serde_json::to_value(crate::http::openapi()).unwrap();
-    let schemas = description["components"]["schemas"].as_object().unwrap();
-    assert!(!schemas.is_empty());
-    for name in schemas.keys() {
-        assert!(covered.contains(name), "OpenAPI component {name} has no fixture in http.json");
+fn every_http_dto_has_a_fixture() {
+    let cases = http_cases();
+    let covered: std::collections::HashSet<_> = cases.iter().map(|case| case["type"].as_str().unwrap()).collect();
+    for name in [
+        "CreateRoom",
+        "OpenRoom",
+        "RoomInfo",
+        "RoomPhase",
+        "ResourceGrant",
+        "ApiFailure",
+        "DocumentRole",
+        "AccessState",
+        "JoinDocument",
+        "UpdateDocument",
+        "DocumentMetadata",
+        "Manifest",
+        "Resource",
+    ] {
+        assert!(covered.contains(name), "HTTP DTO {name} has no fixture in http.json");
     }
 }
 #[test]
@@ -149,35 +218,6 @@ fn unknown_variants_fail_closed_but_error_codes_remain_opaque() {
     for case in cases["incomplete"].as_array().unwrap() {
         assert!(decode_as(case["type"].as_str().unwrap(), &case["input"]).is_err(), "{}", case["name"]);
     }
-}
-
-#[test]
-fn an_account_listing_beyond_one_control_reply_is_many_pages_far_below_it() {
-    use crate::limits::ACCOUNT_DOCUMENTS_PAGE;
-    let all: Vec<_> = (0..16_000u32)
-        .map(|n| RegisteredDocument {
-            document: format!("00000000-0000-4000-8000-{n:012x}"),
-            role: DocumentRole::Owner,
-        })
-        .collect();
-    let whole = serde_json::to_vec(&RegisteredDocuments { documents: all.clone(), next: None }).unwrap();
-    assert!(whole.len() > crate::CONTROL_BYTES, "one reply would exceed what clients read: {}", whole.len());
-    // Walk the cursor as the account handler's keyset query does.
-    let (mut listed, mut after, mut pages) = (Vec::new(), String::new(), 0);
-    loop {
-        let rows = all.iter().filter(|row| row.document > after).take(ACCOUNT_DOCUMENTS_PAGE + 1).cloned().collect();
-        let page = RegisteredDocuments::page(rows);
-        let bytes = serde_json::to_vec(&page).unwrap();
-        assert!(bytes.len() < crate::CONTROL_BYTES / 8, "page {pages} is {} bytes", bytes.len());
-        pages += 1;
-        listed.extend(page.documents);
-        let Some(next) = page.next else { break };
-        after = next;
-    }
-    assert_eq!(pages, 16);
-    assert_eq!(listed, all);
-    let last: Value = serde_json::to_value(RegisteredDocuments::page(vec![])).unwrap();
-    assert_eq!(last, json!({"documents": []}), "the last page has no cursor");
 }
 
 #[test]

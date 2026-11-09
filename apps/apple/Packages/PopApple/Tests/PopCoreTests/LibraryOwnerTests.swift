@@ -190,18 +190,26 @@ import Testing
     try await owner.close()
   }
 
-  @Test @MainActor func lateCatalogAndTokenCallbacksCannotReopenTheOldAccount() async throws {
+  @Test @MainActor func accountActivationDoesNotRequireCredentialsOrStartSync() async throws {
+    let folder = try Fixtures.folder()
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let library = PopLibrary(root: folder)
+    library.tokenProvider = { throw PopFailure("Account activation must not acquire credentials") }
+    try await library.connectAccount("account-a", anonymous: false)
+    #expect(library.isReady && library.accountIdentity == "account-a")
+    #expect(library.allowsCloudCreation)
+    #expect(library.lastError == nil, "Activation must finish independently of token acquisition")
+    try await library.connectAccount("account-a", anonymous: true)
+    #expect(!library.allowsCloudCreation)
+    #expect(library.lastError == nil)
+  }
+
+  @Test @MainActor func lateTokenCallbacksCannotReopenTheOldAccount() async throws {
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     let library = PopLibrary(root: folder)
     try await library.setAccount("first-account")
     let oldID = UUID().uuidString.lowercased()
-    let newID = UUID().uuidString.lowercased()
-    func entry(_ id: String, _ title: String) -> DocumentEntry {
-      DocumentEntry(
-        documentId: id, title: title, templateId: "fixture", modifiedAt: 1,
-        role: .owner, catalogRevision: 1, deleted: false)
-    }
     var releaseToken: CheckedContinuation<String, Never>?
     var tokenRequested: CheckedContinuation<Void, Never>?
     library.tokenProvider = {
@@ -213,8 +221,10 @@ import Testing
     let syncing = Task { await library.syncNow() }
     await withCheckedContinuation { tokenRequested = $0 }
     try await library.setAccount("second-account")
-    try await library.receiveCatalog([entry(newID, "Current account")], account: "second-account")
-    try await library.receiveCatalog([entry(oldID, "Late old callback")], account: "first-account")
+    let template = try Fixtures.template(stage: Fixtures.stage())
+    defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+    let current = try await library.create(template: template, title: "Current account")
+    let newID = current.id
     releaseToken?.resume(returning: "expired-old-account-token")
     await syncing.value
     #expect(library.accountIdentity == "second-account")
@@ -229,11 +239,13 @@ import Testing
     defer { try? FileManager.default.removeItem(at: folder) }
     let library = PopLibrary(root: folder)
     try await library.setAccount("owner")
-    let id = UUID().uuidString.lowercased()
-    let item = DocumentEntry(
-      documentId: id, title: "Private", templateId: "fixture", modifiedAt: 1,
-      role: .owner, catalogRevision: 1, deleted: false)
-    try await library.receiveCatalog([item], account: "owner")
+    let template = try Fixtures.template(stage: Fixtures.stage())
+    defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
+    let created = try await library.create(template: template, title: "Private")
+    let id = created.id
+    let native = try NativeLibrary.open(root: folder.path, account: "owner")
+    _ = try? native.enableSync(id: id, token: "")
+    await library.refresh()
     library.closeAccountDocuments = { _ in throw PopFailure("Recover unsaved text first") }
     await #expect(throws: (any Error).self) { try await library.setAccount("") }
     #expect(library.accountIdentity == "owner")

@@ -363,7 +363,7 @@ Windows.
 ### Sync between your own devices
 
 [Cloud documents](cloud-documents.md) sync a person's devices. Native clients maintain
-personal Firestore references after Cloudflare confirms document uploads, and one
+a live account Durable Object library after Cloudflare confirms document uploads, and one
 persistent Document Durable Object serves private sync and collaboration. Other native
 platforms need account/catalog adapters rather than another document engine. Closed-file
 CLI changes sync on the next native open; autonomous background sync for closed

@@ -11,6 +11,15 @@ import XCTest
 @testable import dotpopPhone
 
 final class PhoneEditorTests: XCTestCase {
+  func testADocumentKeepsItsKeyWhenItsFileAppears() throws {
+    // A pop downloaded on open starts without a file; the open must still recognise itself.
+    let url = URL(fileURLWithPath: "/private/var/tmp/\(UUID().uuidString).pop")
+    let before = PhoneRecent.key(url)
+    XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: Data()))
+    defer { try? FileManager.default.removeItem(at: url) }
+    XCTAssertEqual(PhoneRecent.key(url), before)
+  }
+
   func testSharedRecentUsesEmbeddedTitleWithoutRenamingItsCanonicalFile() throws {
     let folder = try outputFolder().appendingPathComponent("SharedDocuments", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

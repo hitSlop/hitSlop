@@ -48,7 +48,7 @@ test("CI selection works before dependencies are installed", async () => {
 
 const candidates = (Object.keys(tierInputs) as TierName[]).filter(name => name !== "app");
 const affected = (...paths: string[]) => affectedTiers(paths, candidates).map(tier => tier.name);
-test("attribution policy PR #5 does not build the product or allocate macOS", () => {
+test("attribution policy changes does not build the product or allocate macOS", () => {
   expect(affected(
     ".claude/settings.json",
     ".github/workflows/block-ai-attribution.yml",
@@ -66,8 +66,8 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
   expect(affected("packages/pop/skills/pop/SKILL.md")).not.toContain("contracts");
   for (const path of ["scripts/compat/dotpop-required-history.json", "scripts/compat/check.ts", "crates/pop-core/src/app/format.rs", "crates/pop-storage/src/file/storage-1.sql"])
     expect(affected(path)).toContain("compat");
-  expect(affected("apps/landing/src/routes/+page.svelte")).toEqual(["types", "landing"]);
-  expect(affected("apps/apple/Packages/PopApple/Tests/OwnerTests.swift")).toEqual(["swift", "native"]);
+  expect(affected("apps/landing/src/pages/index.astro")).toEqual(["landing"]);
+  expect(affected("apps/apple/Packages/PopApple/Tests/PopCoreTests/LibraryOwnerTests.swift")).toEqual(["swift", "native"]);
   expect(affected("tools/pop-bindgen/src/main.rs")).toEqual(affected("crates/pop-storage/src/store/mod.rs"));
   expect(affected("crates/pop-storage/src/store/mod.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "sharing", "packed", "swift", "native"]);
   for (const path of ["packages/pop/src/sdk/context.ts", "packages/pop/src/shell/boot.js"])
@@ -83,16 +83,13 @@ test("a pull request qualifies sharing for every input of the sharing tier, and 
     "Cargo.lock",
     "crates/pop-sharing-client/src/transport.rs",
     "apps/sharing/src/lib.rs",
-    "firestore.rules",
-    "firestore.indexes.json",
-    "firebase.json",
     ".github/workflows/sharing.yml",
     "scripts/sharing/check-accounts.ts",
     "packages/pop/src/browser/host.ts",
-    "packages/pop/src/sharing/room.ts",
+    "packages/pop/src/sharing/worker.ts",
   ])
     expect(touchesSharing([path])).toBe(true);
-  for (const path of ["docs/testing.md", "README.md", "apps/landing/src/routes/+page.svelte", "apps/apple/App/iOS/PhoneDocuments.swift", "packages/pop/src/sdk/context.ts"])
+  for (const path of ["docs/testing.md", "README.md", "apps/landing/src/pages/index.astro", "apps/apple/App/iOS/PhoneDocuments.swift", "packages/pop/src/sdk/context.ts"])
     expect(touchesSharing([path])).toBe(false);
   // Whatever the tier selects from the workspace, the pull request gate selects too.
   for (const path of ["crates/pop-storage/src/store/mod.rs", "rust-toolchain.toml", "apps/sharing/Cargo.toml"]) {

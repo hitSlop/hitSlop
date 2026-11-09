@@ -63,7 +63,7 @@ export default {
       else return new Response("Not found", { status: 404 });
     } else if (path === "/" || path === "/join") path = "/index.html";
     else if (!/^\/browser\/(host|worker)\.js$/.test(path) &&
-             !/^\/browser\/core\/[a-zA-Z0-9_.-]+$/.test(path) && path !== "/openapi.json" && path !== "/share-icon.png")
+             !/^\/browser\/core\/[a-zA-Z0-9_.-]+$/.test(path) && path !== "/share-icon.png")
       return new Response("Not found", { status: 404 });
     const result = await env.ASSETS.fetch(new Request(new URL(path, request.url), { method: request.method }));
     const response = new Response(request.method === "HEAD" ? null : result.body, result);
